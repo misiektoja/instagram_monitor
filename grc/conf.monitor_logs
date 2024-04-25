@@ -1,0 +1,213 @@
+regexp=.*(Error|Warning|Failure|connect error|HTTP redirect|disappeared,\s|Redirected to login).*
+colours=red
+-
+regexp=.* user:\s+(.*)$
+colours=unchanged, blue underline
+-
+regexp=.*Display name:\s+(.*)$
+colours=unchanged, blue underline
+-
+regexp=.*Summoner name:\s+(.*)$
+colours=unchanged, blue underline
+-
+regexp=.*Username:\s+(.*)$
+colours=unchanged, blue underline
+-
+#regexp=Alive check, timestamp:\s+(.*)$
+#colours=unchanged, cyan
+#-
+regexp=Timestamp:\s+(.*)$
+colours=unchanged, cyan
+-
+regexp=Last activity:\s+(.*)(\(inactive timer:.*\))$
+colours=unchanged, magenta, unchanged
+-
+regexp=Last activity:\s+(.*\d\d)$
+colours=unchanged, magenta, unchanged
+-
+regexp=.*between (.*) and (.*)$
+colours=unchanged, magenta, magenta
+-
+regexp=\(last track start changed from (.*) to (.*) - offline mode \?\)$
+colours=unchanged, magenta, magenta
+-
+regexp=\* Last status:.*\((.*)\)$
+colours=unchanged, magenta, unchanged
+-
+regexp=\* Last time user was available:\s+(.*)$
+colours=unchanged, magenta
+-
+regexp=Track:\s+(.*)$
+colours=unchanged, yellow
+-
+regexp=^\*\*\* .*matched with the list\!$
+colours=yellow
+-
+regexp=Last track:\s+(.*)$
+colours=unchanged, yellow
+-
+regexp=Last played:\s+(.*)$
+colours=unchanged, yellow
+-
+regexp=Playlist:\s+(.*)$
+colours=unchanged, yellow
+-
+regexp=Context.*\):\s+(.*)$
+colours=unchanged, yellow
+-
+regexp=Match start-end date:\s+(.*)$
+colours=unchanged, magenta
+-
+regexp=Match creation date:\s+(.*)$
+colours=unchanged, magenta
+-
+regexp=^Date:\s+(.*) \(.*$
+colours=unchanged, magenta
+-
+regexp=^User played last time:\s+(\w\w\w\s.*$)
+colours=unchanged, magenta
+-
+regexp=^- '.*'$
+colours=yellow
+-
+regexp=^(- .*) \[( .* )\]$
+colours=unchanged, yellow, blue, unchanged
+-
+regexp=(?i).*(GOT ACTIVE|GOT INACTIVE|GOT OFFLINE|is currently ACTIVE).*
+colours=yellow
+-
+regexp=^\*\*\* Friend got.*after being.*for.* \((.*)\)$
+colours=unchanged, magenta
+-
+regexp=^Match start-end date:\s+.*(\d\d:\d\d:\d\d) - \w+
+colours=unchanged, bold magenta, unchanged
+-
+regexp=^Match start-end date:.* -.*(\d\d:\d\d:\d\d)
+colours=unchanged, bold magenta
+-
+regexp=^(Date:|Match creation date:|\*\*\* Last activity:|\*\*\* Friend got.*after being.*for.*)(\s+.*)(\d\d:\d\d:\d\d)
+colours=unchanged, unchanged, unchanged, bold magenta
+-
+regexp=^(Timestamp:)(\s+.*)(\d\d:\d\d:\d\d)
+colours=unchanged, unchanged, unchanged, underline cyan
+-
+regexp=(?i).*(\*\*\* Friend is|\*\*\* User is).*
+colours=yellow
+-
+regexp=(\* Added tracks:|\* Removed tracks:)
+colours=yellow
+-
+regexp=(User played the previous track for|User PAUSED playing|User RESUMED playing|User SKIPPED the previous track)
+colours=yellow
+-
+regexp=(User )(SKIPPED)( the previous track)
+colours=unchanged, unchanged, red, unchanged
+-
+regexp=(User )(CONT)( the previous track)
+colours=unchanged, unchanged, yellow, unchanged
+-
+regexp=(User )(PAUSED)( playing)
+colours=unchanged, unchanged, red, unchanged
+-
+regexp=(User )(RESUMED)( playing)
+colours=unchanged, unchanged, green, unchanged
+-
+regexp=(.*)( - SKIPPED )(\()(\d+\%)(\))
+colours=unchanged, unchanged, red, unchanged, green, unchanged
+-
+regexp=(.*)( - CONT )(\()(\d+\%)(\))
+colours=unchanged, unchanged, yellow, unchanged, green, unchanged
+-
+regexp=(.*)( - LONGER than track duration )(\()(\+.*\%)(\))
+colours=unchanged, unchanged, red, unchanged, green, unchanged
+-
+regexp=(?i).*(changed status|started playing|stopped playing|changed game|is in game|details of last played match).*
+colours=yellow
+-
+regexp=(?i)(^Short offline interruption, online start timestamp set back to ).*
+colours=yellow, unchanged
+-
+regexp=.*Steam user (.*)( started| stopped| changed).*$
+colours=unchanged, blue underline, unchanged, unchanged
+-
+regexp=.*LoL user (\w*) (is in|stopped playing)(.*)$
+colours=unchanged, blue underline, unchanged
+-
+regexp=.*Getting details of last played match for (\w*) (\.\.\..*)$
+colours=unchanged, blue underline, unchanged
+-
+regexp=.* playing '(.*)'
+colours=unchanged, magenta
+-
+regexp=.* changed game from '(.*)'( to )'(.*)'
+colours=unchanged, magenta, unchanged, magenta
+-
+regexp=User is currently in-game:\s+(.*)
+colours=unchanged, magenta
+-
+regexp=\*\*\* (Friend|User) played music from (.*) to (.*)$
+colours=unchanged, unchanged, magenta, magenta
+-
+regexp=\*\*\* Duplicate entries found, possible private mode \((.*)\)$
+colours=unchanged, magenta
+-
+regexp=^\*\*\* User got .* \(after.*\: (.*)\)
+colours=unchanged, magenta
+-
+regexp=.* \(was offline since (.*)\)$
+colours=unchanged, magenta, unchanged
+-
+regexp=.*^Short offline interruption, online start timestamp set back to (.*)
+colours=unchanged, magenta
+-
+regexp=^Check interval:.*\((.*)\)$
+colours=unchanged, magenta, unchanged
+-
+regexp=^User was .*for.*\((.*)\)$
+colours=unchanged, magenta, unchanged
+-
+regexp=^\*\*\* User got .* \(after.*\: .*(\d\d:\d\d) -.*(\d\d:\d\d)\)
+colours=unchanged, bold magenta, bold magenta
+-
+regexp=.*\(was offline since.*, (\d\d:\d\d:\d\d)
+colours=unchanged, bold magenta
+-
+regexp=(?i).*(story for user|Newest post|Followers number changed|Followings number changed|Bio changed for|New post for user|number changed|Followings changed|Followers changed|name changed to).*
+colours=yellow
+-
+regexp=.*number.*from (\d+ )to (\d+)
+colours=unchanged, green, green
+-
+regexp=(?i)\* Signal.*received
+colours=yellow
+-
+regexp=\s+(\d+ seconds*|\d+ minutes*|\d+ hours*|\d+ days*|\d+ weeks*|\d+ months*|\d+ years*)( ago)*
+colours=green
+count=more
+-
+regexp=\s+\((\d+\%|\d+ seconds*|\d+ minutes*|\d+ hours*|\d+ days*|\d+ weeks*|\d+ months*|\d+ years*)( ago)*
+colours=unchanged, green, green
+count=more
+-
+regexp=(?i)True|online
+colours=green
+count=more
+-
+regexp=(?i)False|offline|away
+colours=red
+count=more
+-
+regexp=ACTIVE
+colours=blink green
+#colours=green
+count=more
+-
+regexp=(?i)PRIVATE MODE
+colours=blink green
+#colours=green
+count=more
+-
+regexp=INACTIVE
+colours=red
+count=more
+
