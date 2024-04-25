@@ -60,7 +60,7 @@ chmod a+x instagram_monitor.py
 
 ## Configuration
 
-Edit the *instagram_monitor.py* file and change any desired configuration variables in the marked **CONFIGURATION SECTION** (all parameters have detailed description in the comments).
+Edit the  *[instagram_monitor.py](instagram_monitor.py)* file and change any desired configuration variables in the marked **CONFIGURATION SECTION** (all parameters have detailed description in the comments).
 
 ### Mode 1 without logged in Instagram account
 
@@ -78,7 +78,7 @@ This way you can also get information about added/removed followers and followin
 
 I suggest to create a new account for the usage with the tool as there is small risk the account might get banned. However I use few accounts since more than a year with this tool and all the accounts are still active, however from time to time Instagram might present some warnings about detected suspicious activity. 
 
-You can define the username and password directly in the .py file (or via -u and -p parameters), however it means that logging procedure is performed every time the tool is executed. It is highly recommended to log in once and save the session information using *instaloader* tool. 
+You can define the username and password directly in the .py file (or via **-u** and **-p** parameters), however it means that logging procedure is performed every time the tool is executed. It is highly recommended to log in once and save the session information using **instaloader** tool. 
 
 Once you installed the instaloader pip package, the needed binary should be available and you can log in as in the example below (user *misiek_to_ja_mon*):
 
@@ -126,7 +126,7 @@ To monitor specific user activity in [mode 1](#mode-1-without-logged-in-instagra
 ./instagram_monitor.py misiek_to_ja
 ```
 
-To monitor specific user activity in [mode 2](#mode-2-with-logged-in-instagram-account) (with logged in Instagram account), you also need to specify your Instagram account name (-u) which you used in *instaloader* tool (*misiek_to_ja_mon* in the example below):
+To monitor specific user activity in [mode 2](#mode-2-with-logged-in-instagram-account) (with logged in Instagram account), you also need to specify your Instagram account name (**-u**) which you used in *instaloader* tool (*misiek_to_ja_mon* in the example below):
 
 ```sh
 ./instagram_monitor.py -u misiek_to_ja_mon misiek_to_ja
@@ -146,13 +146,13 @@ The tool in mode 2 also saves the the list of followings & followers to *instagr
 
 ### Email notifications
 
-If you want to get email notifications for different events (new posts & stories, changed followings, bio, errors) use -s parameter (works for both modes):
+If you want to get email notifications for different events (new posts & stories, changed followings, bio, errors) use **-s** parameter (works for both modes):
 
 ```sh
 ./instagram_monitor.py misiek_to_ja -s
 ```
 
-It does not include information about changed followers. For that use -m:
+It does not include information about changed followers. For that use **-m**:
 
 ```sh
 ./instagram_monitor.py misiek_to_ja -m
@@ -169,7 +169,7 @@ Example email:
 
 ### Saving user activities to the CSV file
 
-If you want to save all Instagram user's activities in the CSV file, use -b parameter with the name of the file (it will be automatically created if it does not exist):
+If you want to save all Instagram user's activities in the CSV file, use **-b** parameter with the name of the file (it will be automatically created if it does not exist):
 
 ```sh
 ./instagram_monitor.py misiek_to_ja -b instagram_misiek_to_ja.csv
@@ -177,7 +177,7 @@ If you want to save all Instagram user's activities in the CSV file, use -b para
 
 ### Check interval
 
-If you want to change the check interval to 1 hour - 3600 seconds (-c):
+If you want to change the check interval to 1 hour - 3600 seconds (**-c**):
 
 ```sh
 ./instagram_monitor.py misiek_to_ja -c 3600
@@ -187,13 +187,13 @@ It is generally not recommended to use values lower than 1 hour as it will be qu
 
 In order to make the tool's behaviour less suspicious for Instagram, by default the check interval value is randomly picked from the range: 
 
-INSTA_CHECK_INTERVAL (-c) - RANDOM_SLEEP_DIFF_LOW (-i) <-> INSTA_CHECK_INTERVAL (-c) +RANDOM_SLEEP_DIFF_HIGH (-j)
+[ INSTA_CHECK_INTERVAL (**-c**) - RANDOM_SLEEP_DIFF_LOW (**-i**) ] <-----> [ INSTA_CHECK_INTERVAL (**-c**) +RANDOM_SLEEP_DIFF_HIGH (**-j**) ]
 
-So having the check interval set to 1 hour (-c 3600), RANDOM_SLEEP_DIFF_LOW set to default 15 mins (-i 900) and RANDOM_SLEEP_DIFF_HIGH set to default 3 mins (-j 180) means that the check interval will be with every iterataion picked from the range of 45 mins to 1 hour and 3 mins:
+So having the check interval set to 1 hour (-c 3600), RANDOM_SLEEP_DIFF_LOW set to default 15 mins (-i 900) and RANDOM_SLEEP_DIFF_HIGH set to default 3 mins (-j 180) means that the check interval will be with every iteration picked from the range of 45 mins to 1 hour and 3 mins:
 
 Thats why the check interval information is printed in the console and email notifications as it is esentially a random number.
 
-On top of that you can also define that checks should be done in specific hour ranges by setting CHECK_POSTS_IN_HOURS_RANGE to True and then defining proper values for MIN/MAX_H1/H2 variables (see the comments in [instagram_monitor.py](instagram_monitor.py))
+On top of that you can also define that checks should be done in specific hour ranges by setting **CHECK_POSTS_IN_HOURS_RANGE** to True and then defining proper values for **MIN/MAX_H1/H2** variables (see the comments in [instagram_monitor.py](instagram_monitor.py))
 
 ### Controlling the script via signals
 
@@ -219,7 +219,7 @@ pkill -f -USR2 "python3 ./instagram_monitor.py -u misiek_to_ja_mon -b instagram_
 
 ### Other
 
-Check other supported parameters using -h.
+Check other supported parameters using **-h**.
 
 ## Limitations
 
