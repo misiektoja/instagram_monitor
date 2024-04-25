@@ -9,9 +9,9 @@ https://github.com/misiektoja/instagram_monitor/
 Python pip3 requirements:
 
 instaloader
+pytz
 python-dateutil
 requests
-urllib3
 """
 
 VERSION=1.0

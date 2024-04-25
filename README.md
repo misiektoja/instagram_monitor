@@ -30,7 +30,7 @@ I'm not a dev, project done as a hobby. Code is ugly and as-is, but it works (at
 
 The script requires Python 3.x.
 
-It uses [instaloader](https://github.com/instaloader/instaloader) library, also requires requests, python-dateutil and urllib3.
+It uses [instaloader](https://github.com/instaloader/instaloader) library, also requires requests, python-dateutil and pytz.
 
 It has been tested succesfully on Linux (Raspberry Pi Bullseye & Bookworm based on Debian) and Mac OS (Ventura & Sonoma). 
 
@@ -41,7 +41,7 @@ Should work on any other Linux OS and Windows with Python.
 Install the required Python packages:
 
 ```sh
-python3 -m pip install requests python-dateutil urllib3 instaloader
+python3 -m pip install requests python-dateutil instaloader pytz
 ```
 
 Or from requirements.txt:
