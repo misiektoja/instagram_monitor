@@ -189,7 +189,7 @@ In order to make the tool's behaviour less suspicious for Instagram, by default 
 
 [ INSTA_CHECK_INTERVAL (**-c**) - RANDOM_SLEEP_DIFF_LOW (**-i**) ] <-----> [ INSTA_CHECK_INTERVAL (**-c**) +RANDOM_SLEEP_DIFF_HIGH (**-j**) ]
 
-So having the check interval set to 1 hour (-c 3600), RANDOM_SLEEP_DIFF_LOW set to default 15 mins (-i 900) and RANDOM_SLEEP_DIFF_HIGH set to default 3 mins (-j 180) means that the check interval will be with every iteration picked from the range of 45 mins to 1 hour and 3 mins:
+So having the check interval set to 1 hour (-c 3600), RANDOM_SLEEP_DIFF_LOW set to default 15 mins (-i 900) and RANDOM_SLEEP_DIFF_HIGH set to default 3 mins (-j 180) means that the check interval will be with every iteration picked from the range of 45 mins to 1 hour and 3 mins.
 
 Thats why the check interval information is printed in the console and email notifications as it is esentially a random number.
 
