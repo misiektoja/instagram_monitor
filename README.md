@@ -94,9 +94,17 @@ Use Firefox web browser, log in to the Instagram account which you want to use t
 
 This method has an advantage that if you do some activities with this account in your Firefox browser every few days (like scrolling through feed, liking some posts) it will count as "good" activity which will increase reputation of tool's actions. Sometimes you might still see some warnings in your Firefox web browser where you need to solve some captcha, but it should not be too often.
 
+### Timezone
+
+You can specify your local time zone so the tool converts post's comments timestamps to your time:
+
+```
+LOCAL_TIMEZONE='Europe/Warsaw'
+```
+
 ### SMTP settings
 
-If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient).
+If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient). If you leave the default settings then no notifications will be sent.
 
 ### Other settings
 
@@ -118,7 +126,7 @@ or
 python3 ./instagram_monitor.py -h
 ```
 
-### Monitoring of user activity
+### Monitoring mode
 
 To monitor specific user activity in [mode 1](#mode-1-without-logged-in-instagram-account) (without logged in Instagram account), just type its Instagram username as parameter (**misiek_to_ja** in the example below):
 
@@ -204,8 +212,8 @@ List of supported signals:
 
 | Signal | Description |
 | ----------- | ----------- |
-| USR1 | Toggle email notifications for new posts & stories, changed followings, bio |
-| USR2 | Toggle email notifications for new followers |
+| USR1 | Toggle email notifications for new posts & stories, changed followings, bio (-s) |
+| USR2 | Toggle email notifications for new followers (-m) |
 | TRAP | Increase the user activity check interval (by 5 mins) |
 | ABRT | Decrease the user activity check interval (by 5 mins) |
 
@@ -214,12 +222,14 @@ So if you want to change functionality of the running tool, just send the proper
 I personally use **pkill** tool, so for example to toggle new followers email notifications for tool instance monitoring the *misiek_to_ja* user:
 
 ```sh
-pkill -f -USR2 "python3 ./instagram_monitor.py -u misiek_to_ja_mon -b instagram_misiek_to_ja.csv"
+pkill -f -USR2 "python3 ./instagram_monitor.py misiek_to_ja"
 ```
 
 ### Other
 
 Check other supported parameters using **-h**.
+
+You can combine all the parameters mentioned earlier.
 
 ## Limitations
 
