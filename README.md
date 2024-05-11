@@ -15,7 +15,7 @@ instagram_monitor is a Python script which allows for real-time monitoring of In
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
-   <img src="./assets/instagram_monitor.png" alt="instagram_monitor_screenshot" width="70%"/>
+   <img src="./assets/instagram_monitor.png" alt="instagram_monitor_screenshot" width="90%"/>
 </p>
 
 ## Change Log
@@ -171,7 +171,7 @@ Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-sett
 Example email:
 
 <p align="center">
-   <img src="./assets/instagram_monitor_email_notifications.png" alt="instagram_monitor_email_notifications" width="60%"/>
+   <img src="./assets/instagram_monitor_email_notifications.png" alt="instagram_monitor_email_notifications" width="70%"/>
 </p>
 
 
