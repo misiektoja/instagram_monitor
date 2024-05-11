@@ -41,7 +41,7 @@ Should work on any other Linux OS and Windows with Python.
 Install the required Python packages:
 
 ```sh
-python3 -m pip install requests python-dateutil instaloader pytz
+python3 -m pip install requests python-dateutil pytz instaloader
 ```
 
 Or from requirements.txt:
@@ -171,7 +171,7 @@ Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-sett
 Example email:
 
 <p align="center">
-   <img src="./assets/instagram_monitor_email_notifications.png" alt="instagram_monitor_email_notifications" width="50%"/>
+   <img src="./assets/instagram_monitor_email_notifications.png" alt="instagram_monitor_email_notifications" width="60%"/>
 </p>
 
 
