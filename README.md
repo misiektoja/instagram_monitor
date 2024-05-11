@@ -146,9 +146,9 @@ You can monitor multiple Instagram users by spawning multiple copies of the scri
 
 It is suggested to use sth like **tmux** or **screen** to have the script running after you log out from the server.
 
-The tool automatically saves its output to *instagram_monitor_username.log* file (can be changed in the settings or disabled with -d).
+The tool automatically saves its output to *instagram_monitor_username.log* file (can be changed in the settings or disabled with **-d** parameter).
 
-The tool in mode 2 also saves the the list of followings & followers to *instagram_username_followings.json* and *instagram_username_followers.json* files, so we do not need to refetch it every time the tool is restarted.
+The tool in mode 2 also saves the the list of followings & followers to *instagram_username_followings.json* and *instagram_username_followers.json* files, so we do not need to refetch it every time the tool is restarted and so we can also detect changes since last usage of the tool.
 
 ## How to use other features
 
@@ -160,7 +160,7 @@ If you want to get email notifications for different events (new posts & stories
 ./instagram_monitor.py misiek_to_ja -s
 ```
 
-It does not include information about changed followers. For that use **-m**:
+It does not include information about changed followers. For that use **-m** parameter:
 
 ```sh
 ./instagram_monitor.py misiek_to_ja -m
@@ -185,7 +185,7 @@ If you want to save all Instagram user's activities in the CSV file, use **-b** 
 
 ### Check interval
 
-If you want to change the check interval to 1 hour - 3600 seconds (**-c**):
+If you want to change the check interval to 1 hour (3600 seconds) use **-c** parameter:
 
 ```sh
 ./instagram_monitor.py misiek_to_ja -c 3600
@@ -204,7 +204,6 @@ Thats why the check interval information is printed in the console and email not
 On top of that you can also define that checks should be done in specific hour ranges by setting **CHECK_POSTS_IN_HOURS_RANGE** to True and then defining proper values for **MIN/MAX_H1/H2** variables (see the comments in [instagram_monitor.py](instagram_monitor.py))
 
 ### Controlling the script via signals
-
 
 The tool has several signal handlers implemented which allow to change behaviour of the tool without a need to restart it with new parameters.
 

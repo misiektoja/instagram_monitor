@@ -76,10 +76,10 @@ colours=unchanged, yellow
 regexp=Match start-end date:\s+(.*)$
 colours=unchanged, magenta
 -
-regexp=Match creation date:\s+(.*)$
-colours=unchanged, magenta
+regexp=(Match start date:|Match creation:)\s+(.*)$
+colours=unchanged, unchanged, magenta
 -
-regexp=^Date:\s+(.*) \(.*$
+regexp=^Date:\s+(\w+ \d+ \w+ \d+, \d\d:\d\d:\d\d).*$
 colours=unchanged, magenta
 -
 regexp=^\[ date: (.*) - .* \]$
@@ -97,8 +97,8 @@ colours=unchanged, unchanged, magenta
 regexp=(^Event ID:)\s+(\d+).*$
 colours=unchanged, yellow, cyan, unchanged
 -
-regexp=^Event ID:\s+.*\((.*)\)$
-colours=unchanged, magenta
+regexp=^Event ID:\s+.*\((.*:\d\d)(.*)\)$
+colours=unchanged, magenta, unchanged
 -
 regexp=^ - Commit date:\s+(.*)$
 colours=unchanged, magenta
@@ -110,7 +110,13 @@ regexp=^- '.*'$
 colours=yellow
 -
 regexp=^(- .*) \[( .* )\]$
+colours=unchanged, yellow, unchanged, unchanged
+-
+regexp=^(- .*) \[( http.* )\]$
 colours=unchanged, yellow, blue, unchanged
+-
+regexp=^(- .*) \[( \w+ \d+ \w+ \d+, \d\d:\d\d:\d\d )\]$
+colours=unchanged, unchanged, magenta, unchanged
 -
 regexp=(?i).*(GOT ACTIVE|GOT INACTIVE|GOT OFFLINE|is currently ACTIVE).*
 colours=yellow
@@ -124,14 +130,8 @@ colours=unchanged, bold magenta, unchanged
 regexp=^Match start-end date:.* -.*(\d\d:\d\d:\d\d)
 colours=unchanged, bold magenta
 -
-regexp=^(Date:|Match creation date:|\*\*\* Last activity:|\*\*\* Friend got.*after being.*for.*)(\s+.*)(\d\d:\d\d:\d\d)
-colours=unchanged, unchanged, unchanged, bold magenta
--
 regexp=^(Timestamp:)(\s+.*)(\d\d:\d\d:\d\d)
 colours=unchanged, unchanged, unchanged, underline cyan
--
-regexp=^Event ID:\s+.*\((.*)\)$
-colours=unchanged, magenta
 -
 regexp=^User played last time:\s+(\w\w\w\s.*$)
 colours=unchanged, magenta
@@ -139,9 +139,6 @@ colours=unchanged, magenta
 regexp=^- '.*'$
 colours=yellow
 -
-regexp=^(- .*) \[( .* )\]$
-colours=unchanged, yellow, blue, unchanged
--
 regexp=(?i).*(GOT ACTIVE|GOT INACTIVE|GOT OFFLINE|is currently ACTIVE).*
 colours=yellow
 -
@@ -154,7 +151,7 @@ colours=unchanged, bold magenta, unchanged
 regexp=^Match start-end date:.* -.*(\d\d:\d\d:\d\d)
 colours=unchanged, bold magenta
 -
-regexp=^(Date:|Match creation date:|\*\*\* Last activity:|\*\*\* Friend got.*after being.*for.*)(\s+.*)(\d\d:\d\d:\d\d)
+regexp=^(Date:|Match start date:|\*\*\* Last activity:|\*\*\* Friend got.*after being.*for.*)(\s+.*)(\d\d:\d\d:\d\d)
 colours=unchanged, unchanged, unchanged, bold magenta
 -
 regexp=^(Timestamp:)(\s+.*)(\d\d:\d\d:\d\d)
@@ -247,6 +244,12 @@ colours=yellow
 regexp=.*number.*from (\d+ )to (\d+)
 colours=unchanged, green, green
 -
+regexp=.*\((\+\d+)\)$
+colours=unchanged, green, green
+-
+regexp=.*\((-\d+)\)$
+colours=unchanged, red, red
+-
 regexp=(?i)\* Signal.*received
 colours=yellow
 -
@@ -295,7 +298,7 @@ colours=unchanged, green, unchanged
 regexp=^\*\*\* User paused music (\d+) times.*$
 colours=unchanged, green, unchanged
 -
-regexp=(?i)(Error |Error:|Warning|Failure|connect error|HTTP redirect| disappeared|Redirected to login|Forbidden)
+regexp=(?i)(Error |Error:|Warning|Failure|connect error|HTTP redirect| disappeared|Redirected to login|Forbidden| timeout)
 colours=red
 count=more
 -
@@ -313,4 +316,13 @@ colours=unchanged, unchanged, green
 -
 regexp=^(Repo name:)\s+(.*)
 colours=unchanged, unchanged, green
+-
+regexp=^\*.* (by|for)\s(user)\s([\w_-]+)(\s|:).*
+colours=unchanged, unchanged, unchanged, blue underline, unchanged
+-
+regexp=^\*.* (by|for)\s(user)\s([\w_-]+) !
+colours=unchanged, unchanged, unchanged, blue underline, unchanged
+-
+regexp=\* Playlist \'(.*)\'(\s|:)(.*)$
+colours=unchanged, green, unchanged, unchanged
 
