@@ -96,7 +96,7 @@ This method has an advantage that if you do some activities with this account in
 
 ### Timezone
 
-You can specify your local time zone so the tool converts post's comments timestamps to your time:
+It is recommended to specify your local time zone so the tool converts post's comments timestamps to your time:
 
 ```
 LOCAL_TIMEZONE='Europe/Warsaw'
