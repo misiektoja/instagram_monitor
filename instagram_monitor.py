@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.0
+v1.1
 
 Script implementing real-time monitoring of Instagram users activity:
 https://github.com/misiektoja/instagram_monitor/
@@ -14,7 +14,7 @@ python-dateutil
 requests
 """
 
-VERSION=1.0
+VERSION=1.1
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -24,11 +24,14 @@ VERSION=1.0
 # In such case we need Instagram username & password to monitor other user
 # Instead of typing the username & password below it is recommended to keep it empty here and log in via: 
 # <instaloader_location>/bin/instaloader -l username
-INSTA_USERNAME = ''
-INSTA_PASSWORD = ''
+INSTA_USERNAME=''
+INSTA_PASSWORD=''
 
 # How often do we perform checks for user activity; in seconds
 INSTA_CHECK_INTERVAL=5400 # 1,5 hours
+
+# Specify your local time zone so we convert post's comments timestamps to your time
+LOCAL_TIMEZONE='Europe/Warsaw'
 
 # How often do we perform alive check by printing "alive check" message in the output; in seconds
 TOOL_ALIVE_INTERVAL=21600 # 6 hours
@@ -58,25 +61,22 @@ MIN_H2=11
 MAX_H2=23
 
 # SMTP settings for sending email notifications
-SMTP_HOST = "your_smtp_server_ssl"
-SMTP_PORT = 587
-SMTP_USER = "your_smtp_user"
-SMTP_PASSWORD = "your_smtp_password"
-SMTP_SSL = True
-SENDER_EMAIL = "your_sender_email"
-#SMTP_HOST = "your_smtp_server_plaintext"
-#SMTP_PORT = 25
-#SMTP_USER = "your_smtp_user"
-#SMTP_PASSWORD = "your_smtp_password"
-#SMTP_SSL = False
-#SENDER_EMAIL = "your_sender_email"
-RECEIVER_EMAIL = "your_receiver_email"
-
-# Specify your local time zone so we convert post's comments timestamps to your time
-LOCAL_TIMEZONE='Europe/Warsaw'
+SMTP_HOST="your_smtp_server_ssl"
+SMTP_PORT=587
+SMTP_USER="your_smtp_user"
+SMTP_PASSWORD="your_smtp_password"
+SMTP_SSL=True
+SENDER_EMAIL="your_sender_email"
+#SMTP_HOST="your_smtp_server_plaintext"
+#SMTP_PORT=25
+#SMTP_USER="your_smtp_user"
+#SMTP_PASSWORD="your_smtp_password"
+#SMTP_SSL=False
+#SENDER_EMAIL="your_sender_email"
+RECEIVER_EMAIL="your_receiver_email"
 
 # The name of the .log file; the tool by default will output its messages to instagram_monitor_username.log file
-insta_logfile="instagram_monitor"
+INSTA_LOGFILE="instagram_monitor"
 
 # Value used by signal handlers increasing/decreasing the user activity check (INSTA_CHECK_INTERVAL); in seconds
 INSTA_CHECK_SIGNAL_VALUE=300 # 5 min
@@ -93,9 +93,9 @@ POST_FETCH_DELAY=0.2
 # Delay for fetching other data to avoid captcha checks and detection of automated tools
 NEXT_OPERATION_DELAY=0.7
 
-stdout_bck = None
-last_output = []
-csvfieldnames = ['Date', 'Type', 'Old', 'New']
+stdout_bck=None
+last_output=[]
+csvfieldnames=['Date', 'Type', 'Old', 'New']
 
 status_notification=False
 followers_notification=False
@@ -123,8 +123,8 @@ import instaloader
 # Logger class to output messages to stdout and log file
 class Logger(object):
     def __init__(self, filename):
-        self.terminal = sys.stdout
-        self.logfile = open(filename, "a", buffering=1)
+        self.terminal=sys.stdout
+        self.logfile=open(filename, "a", buffering=1)
 
     def write(self, message):
         global last_output
@@ -140,7 +140,7 @@ class Logger(object):
 
 # Signal handler when user presses Ctrl+C
 def signal_handler(sig, frame):
-    sys.stdout = stdout_bck
+    sys.stdout=stdout_bck
     print('\n* You pressed Ctrl+C, tool is terminated.')
     sys.exit(0)
 
@@ -148,7 +148,7 @@ def signal_handler(sig, frame):
 def check_internet():
     url=CHECK_INTERNET_URL
     try:
-        _ = req.get(url, timeout=CHECK_INTERNET_TIMEOUT)
+        _=req.get(url, timeout=CHECK_INTERNET_TIMEOUT)
         print("OK")
         return True
     except Exception as e:
@@ -158,7 +158,7 @@ def check_internet():
 
 # Function to convert absolute value of seconds to human readable format
 def display_time(seconds, granularity=2):
-    intervals = (
+    intervals=(
         ('years', 31556952), # approximation
         ('months', 2629746), # approximation
         ('weeks', 604800),  # 60 * 60 * 24 * 7
@@ -167,15 +167,15 @@ def display_time(seconds, granularity=2):
         ('minutes', 60),
         ('seconds', 1),
     )
-    result = []
+    result=[]
 
     if seconds > 0:
         for name, count in intervals:
-            value = seconds // count
+            value=seconds // count
             if value:
                 seconds -= value * count
                 if value == 1:
-                    name = name.rstrip('s')
+                    name=name.rstrip('s')
                 result.append("{} {}".format(value, name))
         return ', '.join(result[:granularity])
     else:
@@ -183,7 +183,7 @@ def display_time(seconds, granularity=2):
 
 # Function to calculate time span between two timestamps in seconds
 def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True, show_minutes=True, show_seconds=False, granularity=3):
-    result = []
+    result=[]
     intervals=['years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds']
     ts1=timestamp1
     ts2=timestamp2
@@ -208,7 +208,7 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
         ts_diff=ts1-ts2
     else:
         ts_diff=ts2-ts1
-        dt1, dt2 = dt2, dt1
+        dt1, dt2=dt2, dt1
 
     if ts_diff>0:
         date_diff=relativedelta.relativedelta(dt1, dt2)
@@ -235,7 +235,7 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
             if interval>0:
                 name=intervals[index]
                 if interval==1:
-                    name = name.rstrip('s')
+                    name=name.rstrip('s')
                 result.append("{} {}".format(interval, name))
         return ', '.join(result[:granularity])
     else:
@@ -246,25 +246,25 @@ def send_email(subject,body,body_html,use_ssl):
 
     try:     
         if use_ssl:
-            ssl_context = ssl.create_default_context()
-            smtpObj = smtplib.SMTP(SMTP_HOST,SMTP_PORT)
+            ssl_context=ssl.create_default_context()
+            smtpObj=smtplib.SMTP(SMTP_HOST,SMTP_PORT)
             smtpObj.starttls(context=ssl_context)
         else:
-            smtpObj = smtplib.SMTP(SMTP_HOST,SMTP_PORT)
+            smtpObj=smtplib.SMTP(SMTP_HOST,SMTP_PORT)
         smtpObj.login(SMTP_USER,SMTP_PASSWORD)
-        email_msg = MIMEMultipart('alternative')
-        email_msg["From"] = SENDER_EMAIL
-        email_msg["To"] = RECEIVER_EMAIL
-        email_msg["Subject"] =  Header(subject, 'utf-8')
+        email_msg=MIMEMultipart('alternative')
+        email_msg["From"]=SENDER_EMAIL
+        email_msg["To"]=RECEIVER_EMAIL
+        email_msg["Subject"]= Header(subject, 'utf-8')
 
         if body:
-            part1 = MIMEText(body, 'plain')
-            part1 = MIMEText(body.encode('utf-8'), 'plain', _charset='utf-8')
+            part1=MIMEText(body, 'plain')
+            part1=MIMEText(body.encode('utf-8'), 'plain', _charset='utf-8')
             email_msg.attach(part1)
 
         if body_html:       
-            part2 = MIMEText(body_html, 'html')
-            part2 = MIMEText(body_html.encode('utf-8'), 'html', _charset='utf-8')
+            part2=MIMEText(body_html, 'html')
+            part2=MIMEText(body_html.encode('utf-8'), 'html', _charset='utf-8')
             email_msg.attach(part2)
 
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
@@ -278,7 +278,7 @@ def send_email(subject,body,body_html,use_ssl):
 def write_csv_entry(csv_file_name, timestamp, object_type, old, new):
     try:
         csv_file=open(csv_file_name, 'a', newline='', buffering=1)
-        csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
+        csvwriter=csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
         csvwriter.writerow({'Date': timestamp, 'Type': object_type, 'Old': old, 'New': new})
         csv_file.close()
     except Exception as e:
@@ -335,9 +335,9 @@ def get_range_of_dates_from_tss(ts1,ts2,between_sep=" - ", short=False):
 
 # Function to convert UTC string returned by Instagram API to datetime object in specified timezone
 def convert_utc_datetime_to_tz_datetime(dt_utc, timezone):
-    old_tz = pytz.timezone("UTC")
-    new_tz = pytz.timezone(timezone)
-    dt_new_tz = old_tz.localize(dt_utc).astimezone(new_tz)
+    old_tz=pytz.timezone("UTC")
+    new_tz=pytz.timezone(timezone)
+    dt_new_tz=old_tz.localize(dt_utc).astimezone(new_tz)
     return dt_new_tz
 
 # Signal handler for SIGUSR1 allowing to switch email notifications for new posts/stories/followings/bio
@@ -391,7 +391,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
     try:
         if csv_file_name:
             csv_file=open(csv_file_name, 'a', newline='', buffering=1)
-            csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
+            csvwriter=csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
             if not csv_exists:
                 csvwriter.writeheader()
             csv_file.close()
@@ -404,13 +404,13 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
     followers_followings_fetched=False
 
     try:
-        bot = instaloader.Instaloader()
+        bot=instaloader.Instaloader()
         if (INSTA_USERNAME and INSTA_PASSWORD) and not skip_session:
             bot.login(user=INSTA_USERNAME,passwd=INSTA_PASSWORD)
         elif INSTA_USERNAME and not INSTA_PASSWORD and not skip_session:
             # log in via: <instaloader_location>/bin/instaloader -l username
             bot.load_session_from_file(INSTA_USERNAME)
-        profile = instaloader.Profile.from_username(bot.context, user)
+        profile=instaloader.Profile.from_username(bot.context, user)
         time.sleep(NEXT_OPERATION_DELAY)
         insta_username=profile.username
         insta_userid=profile.userid
@@ -445,20 +445,20 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
     if has_story:
         story=True
 
-    insta_followers_file = "instagram_" + str(user) + "_followers.json"
-    insta_followings_file = "instagram_" + str(user) + "_followings.json"
-    followers = []
-    followings = []
+    insta_followers_file="instagram_" + str(user) + "_followers.json"
+    insta_followings_file="instagram_" + str(user) + "_followings.json"
+    followers=[]
+    followings=[]
     followers_old=followers
     followings_old=followings
-    followers_read = []
-    followings_read = []
+    followers_read=[]
+    followings_read=[]
 
     try:
 
         if os.path.isfile(insta_followers_file):
             with open(insta_followers_file, 'r') as f:
-                followers_read = json.load(f)
+                followers_read=json.load(f)
             if followers_read:
                 followers_old_count=followers_read[0]
                 followers_old=followers_read[1]
@@ -489,7 +489,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
             print("\n* Getting followers ...")
             followers_followings_fetched=True
 
-            followers = [follower.username for follower in profile.get_followers()]
+            followers=[follower.username for follower in profile.get_followers()]
             followers_to_save=[]
             followers_count=profile.followers
             followers_to_save.append(followers_count)
@@ -499,7 +499,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
                 print(f"* Followers saved to file '{insta_followers_file}'")
 
         if ((followers_count != followers_old_count) and (followers != followers_old)) and not skip_session and not skip_followers and not is_private:
-            a, b = set(followers_old), set(followers)
+            a, b=set(followers_old), set(followers)
             removed_followers=list(a - b)
             added_followers=list(b - a)
             added_followers_list=""
@@ -533,7 +533,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
 
         if os.path.isfile(insta_followings_file):
             with open(insta_followings_file, 'r') as f:
-                followings_read = json.load(f)
+                followings_read=json.load(f)
             if followings_read:
                 followings_old_count=followings_read[0]
                 followings_old=followings_read[1]
@@ -562,7 +562,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
             print("\n* Getting followings ...")
             followers_followings_fetched=True
 
-            followings = [followee.username for followee in profile.get_followees()]
+            followings=[followee.username for followee in profile.get_followees()]
             followings_to_save=[]
             followings_count=profile.followees
             followings_to_save.append(followings_count)
@@ -572,7 +572,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
                 print(f"* Followings saved to file '{insta_followings_file}'")
 
         if ((followings_count != followings_old_count) and (followings != followings_old)) and not skip_session and not skip_followings and not is_private:
-            a, b = set(followings_old), set(followings)
+            a, b=set(followings_old), set(followings)
             removed_followings=list(a - b)
             added_followings=list(b - a)
             added_followings_list=""
@@ -638,7 +638,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
     if int(posts_count)>=1 and not is_private:
         try:
             time.sleep(NEXT_OPERATION_DELAY)
-            posts = instaloader.Profile.from_username(bot.context, user).get_posts()
+            posts=instaloader.Profile.from_username(bot.context, user).get_posts()
 
             for post in posts:
                 time.sleep(POST_FETCH_DELAY)
@@ -708,12 +708,12 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
     alive_counter=0
 
     while True:
-        last_output = []
+        last_output=[]
         try:
-            profile = instaloader.Profile.from_username(bot.context, user)
+            profile=instaloader.Profile.from_username(bot.context, user)
             time.sleep(NEXT_OPERATION_DELAY)
-            email_sent = False
-            new_post = False
+            email_sent=False
+            new_post=False
             followers_count=profile.followers
             followings_count=profile.followees
             bio=profile.biography
@@ -771,8 +771,8 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
 
             if not skip_session and not skip_followings and not is_private:
                 try:
-                    followings = []
-                    followings = [followee.username for followee in profile.get_followees()]
+                    followings=[]
+                    followings=[followee.username for followee in profile.get_followees()]
                     followings_to_save=[]
                     followings_count=profile.followees
                     if not followings and followings_count>0:
@@ -789,7 +789,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
                 if not followings and followings_count>0:
                     followings=followings_old
                 else:
-                    a, b = set(followings_old), set(followings)
+                    a, b=set(followings_old), set(followings)
 
                     removed_followings=list(a - b)
                     added_followings=list(b - a)
@@ -835,7 +835,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
             if status_notification:
                 print("Sending email notification to",RECEIVER_EMAIL)
                 send_email(m_subject,m_body,"",SMTP_SSL)
-                email_sent = True
+                email_sent=True
 
             followings_old_count=followings_count
             
@@ -864,8 +864,8 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
 
             if not skip_session and not skip_followers and not is_private:
                 try:
-                    followers = []
-                    followers = [follower.username for follower in profile.get_followers()]
+                    followers=[]
+                    followers=[follower.username for follower in profile.get_followers()]
                     followers_to_save=[]
                     followers_count=profile.followers
                     if not followers and followers_count>0:
@@ -882,7 +882,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
                 if not followers and followers_count>0:
                     followers=followers_old
                 else:
-                    a, b = set(followers_old), set(followers)
+                    a, b=set(followers_old), set(followers)
                     removed_followers=list(a - b)
                     added_followers=list(b - a)
 
@@ -927,7 +927,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
             if status_notification and followers_notification:
                 print("Sending email notification to",RECEIVER_EMAIL)
                 send_email(m_subject,m_body,"",SMTP_SSL)
-                email_sent = True                
+                email_sent=True                
 
             followers_old_count=followers_count
             
@@ -951,7 +951,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
             if status_notification:
                 print("Sending email notification to",RECEIVER_EMAIL)
                 send_email(m_subject,m_body,"",SMTP_SSL)
-                email_sent = True
+                email_sent=True
 
             bio_old=bio
             print("Check interval:\t\t" + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time())-r_sleep_time,int(time.time()),short=True) + ")")
@@ -973,7 +973,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
             if status_notification:
                 print("Sending email notification to",RECEIVER_EMAIL)
                 send_email(m_subject,m_body,"",SMTP_SSL)
-                email_sent = True
+                email_sent=True
 
             print("Check interval:\t\t" + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time())-r_sleep_time,int(time.time()),short=True) + ")")
             print_cur_ts("Timestamp:\t\t")
@@ -1003,7 +1003,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
                 post_comments_list=""
                 last_post=None
                 try:
-                    posts = instaloader.Profile.from_username(bot.context, user).get_posts()
+                    posts=instaloader.Profile.from_username(bot.context, user).get_posts()
                     for post in posts:
                         time.sleep(POST_FETCH_DELAY)
                         local_ts=int(post.date_local.timestamp())
@@ -1101,7 +1101,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
                     if status_notification:
                         print("Sending email notification to",RECEIVER_EMAIL)
                         send_email(m_subject,m_body,"",SMTP_SSL)
-                        email_sent = True
+                        email_sent=True
 
                     highestinsta_ts_old=highestinsta_ts
 
@@ -1118,7 +1118,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
                 if status_notification:
                     print("Sending email notification to",RECEIVER_EMAIL)
                     send_email(m_subject,m_body,"",SMTP_SSL)
-                    email_sent = True
+                    email_sent=True
 
                 posts_count_old=posts_count
                 
@@ -1129,7 +1129,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
 
         if alive_counter >= TOOL_ALIVE_COUNTER:
             print_cur_ts("Alive check, timestamp: ")
-            alive_counter = 0
+            alive_counter=0
 
         r_sleep_time=randomize_number(INSTA_CHECK_INTERVAL,RANDOM_SLEEP_DIFF_LOW,RANDOM_SLEEP_DIFF_HIGH)
         time.sleep(r_sleep_time)
@@ -1137,7 +1137,7 @@ def instagram_monitor_user(user,error_notification,csv_file_name,csv_exists,skip
 
 if __name__ == "__main__":
 
-    stdout_bck = sys.stdout
+    stdout_bck=sys.stdout
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -1149,7 +1149,7 @@ if __name__ == "__main__":
 
     print("Instagram Monitoring Tool",VERSION,"\n")
 
-    parser = argparse.ArgumentParser("instagram_monitor")
+    parser=argparse.ArgumentParser("instagram_monitor")
     parser.add_argument("user", nargs="?", help="Instagram username", type=str)
     parser.add_argument("-b", "--csv_file", help="Write info about new posts & stories to CSV file", type=str, metavar="CSV_FILENAME")
     parser.add_argument("-u", "--instagram_user", help="Instagram user to use to fetch followers/followings", type=str, metavar="INSTAGRAM_USER")
@@ -1164,7 +1164,7 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--check_interval_random_diff_low", help="Value substracted from check interval to randomize, in seconds", type=int)
     parser.add_argument("-j", "--check_interval_random_diff_high", help="Value added to check interval to randomize, in seconds", type=int)
     parser.add_argument("-d", "--disable_logging", help="Disable logging to file 'instagram_monitor_user.log' file", action='store_true')
-    args = parser.parse_args()
+    args=parser.parse_args()
 
     if not args.user:
         print("* user argument is required\n")
@@ -1212,8 +1212,8 @@ if __name__ == "__main__":
         csv_exists=False
 
     if not args.disable_logging:
-        insta_logfile = insta_logfile + "_" + str(args.user) + ".log"
-        sys.stdout = Logger(insta_logfile)
+        INSTA_LOGFILE=INSTA_LOGFILE + "_" + str(args.user) + ".log"
+        sys.stdout=Logger(INSTA_LOGFILE)
 
     if INSTA_CHECK_INTERVAL<=RANDOM_SLEEP_DIFF_LOW:
         check_interval_low=INSTA_CHECK_INTERVAL
@@ -1231,7 +1231,7 @@ if __name__ == "__main__":
     print("* Skip fetching followings:",str(args.skip_followings))
     print("* CSV logging enabled:",str(csv_enabled))
 
-    out = "\nMonitoring Instagram user %s" % args.user
+    out="\nMonitoring Instagram user %s" % args.user
     print(out)
     print("-" * len(out))
 
@@ -1242,6 +1242,6 @@ if __name__ == "__main__":
 
     instagram_monitor_user(args.user,args.error_notification,args.csv_file,csv_exists,skip_session,args.skip_followers,args.skip_followings)
 
-    sys.stdout = stdout_bck
+    sys.stdout=stdout_bck
     sys.exit(0)
 
