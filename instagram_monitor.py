@@ -159,7 +159,7 @@ def check_internet():
         print("OK")
         return True
     except Exception as e:
-        print("No connectivity, please check your network -", e)
+        print(f"No connectivity, please check your network - {e}")
         sys.exit(1)
     return False
 
@@ -169,9 +169,9 @@ def display_time(seconds, granularity=2):
     intervals = (
         ('years', 31556952),  # approximation
         ('months', 2629746),  # approximation
-        ('weeks', 604800),  # 60 * 60 * 24 * 7
-        ('days', 86400),    # 60 * 60 * 24
-        ('hours', 3600),    # 60 * 60
+        ('weeks', 604800),    # 60 * 60 * 24 * 7
+        ('days', 86400),      # 60 * 60 * 24
+        ('hours', 3600),      # 60 * 60
         ('minutes', 60),
         ('seconds', 1),
     )
@@ -184,7 +184,7 @@ def display_time(seconds, granularity=2):
                 seconds -= value * count
                 if value == 1:
                     name = name.rstrip('s')
-                result.append("{} {}".format(value, name))
+                result.append(f"{value} {name}")
         return ', '.join(result[:granularity])
     else:
         return '0 seconds'
@@ -245,7 +245,7 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
                 name = intervals[index]
                 if interval == 1:
                     name = name.rstrip('s')
-                result.append("{} {}".format(interval, name))
+                result.append(f"{interval} {name}")
         return ', '.join(result[:granularity])
     else:
         return '0 seconds'
@@ -348,49 +348,84 @@ def randomize_number(number, diff_low, diff_high):
 
 # Function to return the timestamp in human readable format; eg. Sun, 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
-    return (str(ts_str) + str(calendar.day_abbr[(datetime.fromtimestamp(int(time.time()))).weekday()]) + ", " + str(datetime.fromtimestamp(int(time.time())).strftime("%d %b %Y, %H:%M:%S")))
+    return (f"{ts_str}{calendar.day_abbr[(datetime.fromtimestamp(int(time.time()))).weekday()]}, {datetime.fromtimestamp(int(time.time())).strftime("%d %b %Y, %H:%M:%S")}")
 
 
 # Function to print the current timestamp in human readable format; eg. Sun, 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str=""):
     print(get_cur_ts(str(ts_str)))
-    print("-----------------------------------------------------------------------------------")
+    print("-----------------------------------------------------------------------------------------------------------------")
 
 
-# Function to return the timestamp in human readable format (long version); eg. Sun, 21 Apr 2024, 15:08:45
+# Function to return the timestamp/datetime object in human readable format (long version); eg. Sun, 21 Apr 2024, 15:08:45
 def get_date_from_ts(ts):
-    return (str(calendar.day_abbr[(datetime.fromtimestamp(ts)).weekday()]) + " " + str(datetime.fromtimestamp(ts).strftime("%d %b %Y, %H:%M:%S")))
+    if type(ts) is datetime:
+        ts_new = int(round(ts.timestamp()))
+    elif type(ts) is int:
+        ts_new = ts
+    else:
+        return ""
+
+    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %Y, %H:%M:%S")}")
 
 
-# Function to return the timestamp in human readable format (short version); eg. Sun 21 Apr 15:08
+# Function to return the timestamp/datetime object in human readable format (short version); eg. Sun 21 Apr 15:08
 def get_short_date_from_ts(ts):
-    return (str(calendar.day_abbr[(datetime.fromtimestamp(ts)).weekday()]) + " " + str(datetime.fromtimestamp(ts).strftime("%d %b %H:%M")))
+    if type(ts) is datetime:
+        ts_new = int(round(ts.timestamp()))
+    elif type(ts) is int:
+        ts_new = ts
+    else:
+        return ""
+
+    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %H:%M")}")
 
 
-# Function to return the timestamp in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
+# Function to return the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
 def get_hour_min_from_ts(ts, show_seconds=False):
+    if type(ts) is datetime:
+        ts_new = int(round(ts.timestamp()))
+    elif type(ts) is int:
+        ts_new = ts
+    else:
+        return ""
+
     if show_seconds:
         out_strf = "%H:%M:%S"
     else:
         out_strf = "%H:%M"
-    return (str(datetime.fromtimestamp(ts).strftime(out_strf)))
+    return (str(datetime.fromtimestamp(ts_new).strftime(out_strf)))
 
 
-# Function to return the range between two timestamps; eg. Sun 21 Apr 14:09 - 14:15
+# Function to return the range between two timestamps/datetime objects; eg. Sun 21 Apr 14:09 - 14:15
 def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
-    ts1_strf = datetime.fromtimestamp(ts1).strftime("%Y%m%d")
-    ts2_strf = datetime.fromtimestamp(ts2).strftime("%Y%m%d")
+    if type(ts1) is datetime:
+        ts1_new = int(round(ts1.timestamp()))
+    elif type(ts1) is int:
+        ts1_new = ts1
+    else:
+        return ""
+
+    if type(ts2) is datetime:
+        ts2_new = int(round(ts2.timestamp()))
+    elif type(ts2) is int:
+        ts2_new = ts2
+    else:
+        return ""
+
+    ts1_strf = datetime.fromtimestamp(ts1_new).strftime("%Y%m%d")
+    ts2_strf = datetime.fromtimestamp(ts2_new).strftime("%Y%m%d")
 
     if ts1_strf == ts2_strf:
         if short:
-            out_str = get_short_date_from_ts(ts1) + between_sep + get_hour_min_from_ts(ts2)
+            out_str = f"{get_short_date_from_ts(ts1_new)}{between_sep}{get_hour_min_from_ts(ts2_new)}"
         else:
-            out_str = get_date_from_ts(ts1) + between_sep + get_hour_min_from_ts(ts2, show_seconds=True)
+            out_str = f"{get_date_from_ts(ts1_new)}{between_sep}{get_hour_min_from_ts(ts2_new, show_seconds=True)}"
     else:
         if short:
-            out_str = get_short_date_from_ts(ts1) + between_sep + get_short_date_from_ts(ts2)
+            out_str = f"{get_short_date_from_ts(ts1_new)}{between_sep}{get_short_date_from_ts(ts2_new)}"
         else:
-            out_str = get_date_from_ts(ts1) + between_sep + get_date_from_ts(ts2)
+            out_str = f"{get_date_from_ts(ts1_new)}{between_sep}{get_date_from_ts(ts2_new)}"
     return (str(out_str))
 
 
@@ -408,7 +443,7 @@ def toggle_status_changes_notifications_signal_handler(sig, frame):
     status_notification = not status_notification
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Email notifications: [new posts/stories/followings/bio = " + str(status_notification) + "]")
+    print(f"* Email notifications: [new posts/stories/followings/bio = {status_notification}]")
     print_cur_ts("Timestamp:\t\t")
 
 
@@ -418,7 +453,7 @@ def toggle_followers_notifications_signal_handler(sig, frame):
     followers_notification = not followers_notification
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Email notifications: [followers = " + str(followers_notification) + "]")
+    print(f"* Email notifications: [followers = {followers_notification}]")
     print_cur_ts("Timestamp:\t\t")
 
 
@@ -432,7 +467,7 @@ def increase_check_signal_handler(sig, frame):
         check_interval_low = INSTA_CHECK_INTERVAL - RANDOM_SLEEP_DIFF_LOW
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print("* Instagram timers: [check interval: " + display_time(check_interval_low) + " - " + display_time(INSTA_CHECK_INTERVAL+RANDOM_SLEEP_DIFF_HIGH) + "]")
+    print(f"* Instagram timers: [check interval: {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)}]")
     print_cur_ts("Timestamp:\t\t")
 
 
@@ -447,7 +482,7 @@ def decrease_check_signal_handler(sig, frame):
         check_interval_low = INSTA_CHECK_INTERVAL - RANDOM_SLEEP_DIFF_LOW
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print("* Instagram timers: [check interval: " + display_time(check_interval_low) + " - " + display_time(INSTA_CHECK_INTERVAL+RANDOM_SLEEP_DIFF_HIGH) + "]")
+    print(f"* Instagram timers: [check interval: {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)}]")
     print_cur_ts("Timestamp:\t\t")
 
 
@@ -462,7 +497,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                 csvwriter.writeheader()
             csv_file.close()
     except Exception as e:
-        print("* Error -", e)
+        print(f"Error - {e}")
 
     followers_count = 0
     followings_count = 0
@@ -487,7 +522,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
         has_story = profile.has_public_story
         is_private = profile.is_private
     except Exception as e:
-        print("Error -", e)
+        print(f"Error - {e}")
         sys.exit(1)
 
     story = False
@@ -497,22 +532,22 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
     bio_old = bio
     posts_count_old = posts_count
 
-    print("\nUsername:\t\t" + str(insta_username))
-    print("User ID:\t\t" + str(insta_userid))
-    print("URL:\t\t\t" + "https://www.instagram.com/" + insta_username + "/")
-    print("Posts number:\t\t" + str(posts_count))
-    print("Followers Count:\t" + str(followers_count))
-    print("Followings Count:\t" + str(followings_count))
-    print("Story available:\t" + str(has_story))
-    print("Public profile:\t\t" + str(not is_private))
-    print("Bio:\n\n" + str(bio) + "\n")
+    print(f"\nUsername:\t\t{insta_username}")
+    print(f"User ID:\t\t{insta_userid}")
+    print(f"URL:\t\t\thttps://www.instagram.com/{insta_username}/")
+    print(f"Posts number:\t\t{posts_count}")
+    print(f"Followers Count:\t{followers_count}")
+    print(f"Followings Count:\t{followings_count}")
+    print(f"Story available:\t{has_story}")
+    print(f"Public profile:\t\t{not is_private}")
+    print(f"Bio:\n\n{bio}\n")
     print_cur_ts("Timestamp:\t\t")
 
     if has_story:
         story = True
 
-    insta_followers_file = "instagram_" + str(user) + "_followers.json"
-    insta_followings_file = "instagram_" + str(user) + "_followings.json"
+    insta_followers_file = f"instagram_{user}_followers.json"
+    insta_followings_file = f"instagram_{user}_followings.json"
     followers = []
     followings = []
     followers_old = followers
@@ -541,14 +576,14 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                 followers_diff_str = "+" + str(followers_diff)
             else:
                 followers_diff_str = str(followers_diff)
-            print("* Followers number changed for user " + user + " from " + str(followers_old_count) + " to " + str(followers_count) + " (" + followers_diff_str + ")")
+            print(f"* Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})")
             followers_followings_fetched = True
 
             try:
                 if csv_file_name:
                     write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Followers Count", followers_old_count, followers_count)
             except Exception as e:
-                print("* Cannot write CSV entry -", e)
+                print(f"Error: cannot write CSV entry - {e}")
 
         if ((followers_count != followers_old_count) or (followers_count > 0 and not followers)) and not skip_session and not skip_followers and not is_private:
             print("\n* Getting followers ...")
@@ -575,25 +610,25 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             if removed_followers:
                 print("Removed followers:\n")
                 for f_in_list in removed_followers:
-                        print("- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]")
-                        removed_followers_list = removed_followers_list + "- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]\n"
+                        print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                        removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                         try:
                             if csv_file_name:
-                                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followers", "", f_in_list)
+                                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followers", f_in_list, "")
                         except Exception as e:
-                            print("* Cannot write CSV entry -", e)
+                            print(f"Error: cannot write CSV entry - {e}")
                 print()
 
             if added_followers:
                 print("Added followers:\n")
                 for f_in_list in added_followers:
-                        print("- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]")
-                        added_followers_list = added_followers_list + "- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]\n"
+                        print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                        added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                         try:
                             if csv_file_name:
                                 write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followers", "", f_in_list)
                         except Exception as e:
-                            print("* Cannot write CSV entry -", e)
+                            print(f"Error: cannot write CSV entry - {e}")
                 print()
 
         if os.path.isfile(insta_followings_file):
@@ -615,13 +650,13 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                 followings_diff_str = "+" + str(followings_diff)
             else:
                 followings_diff_str = str(followings_diff)
-            print("* Followings number changed by user " + user + " from " + str(followings_old_count) + " to " + str(followings_count) + " (" + followings_diff_str + ")")
+            print(f"* Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})")
             followers_followings_fetched = True
             try:
                 if csv_file_name:
                     write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Followings Count", followings_old_count, followings_count)
             except Exception as e:
-                print("* Cannot write CSV entry -", e)
+                print(f"Error: cannot write CSV entry - {e}")
 
         if ((followings_count != followings_old_count) or (followings_count > 0 and not followings)) and not skip_session and not skip_followings and not is_private:
             print("\n* Getting followings ...")
@@ -648,29 +683,29 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             if removed_followings:
                 print("Removed followings:\n")
                 for f_in_list in removed_followings:
-                        print("- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]")
-                        removed_followings_list = removed_followings_list + "- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]\n"
+                        print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                        removed_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                         try:
                             if csv_file_name:
-                                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followings", "", f_in_list)
+                                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followings", f_in_list, "")
                         except Exception as e:
-                            print("* Cannot write CSV entry -", e)
+                            print(f"Error: cannot write CSV entry - {e}")
                 print()
 
             if added_followings:
                 print("Added followings:\n")
                 for f_in_list in added_followings:
-                        print("- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]")
-                        added_followings_list = added_followings_list + "- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]\n"
+                        print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                        added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                         try:
                             if csv_file_name:
                                 write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followings", "", f_in_list)
                         except Exception as e:
-                            print("* Cannot write CSV entry -", e)
+                            print(f"Error: cannot write CSV entry - {e}")
                 print()
 
     except Exception as e:
-        print("Error -", e)
+        print(f"Error - {e}")
 
     if not skip_session and not skip_followers and not is_private:
         followers_old = followers
@@ -734,31 +769,29 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                     post_comments_list=post_comments_list + "\n[ " + get_short_date_from_ts(comment_created_at.timestamp()) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
             """
         except Exception as e:
-            print("Error -", e)
+            print(f"Error - {e}")
             sys.exit(1)
 
-        post_url = "https://instagram.com/p/" + str(shortcode) + "/"
+        post_url = f"https://instagram.com/p/{shortcode}/"
 
-        print("* Newest post for user " + str(user) + ":\n")
-        print("Date:\t\t\t" + get_date_from_ts(int(highestinsta_ts)) + " (" + str(calculate_timespan(int(time.time()), int(highestinsta_ts))) + " ago)")
-        print("Post URL:\t\t" + str(post_url))
-        print("Profile URL:\t\t" + "https://www.instagram.com/" + insta_username + "/")
-        print("Likes:\t\t\t" + str(likes))
-        print("Comments:\t\t" + str(comments))
-        print("Tagged users:\t\t" + str(tagged_users))
+        print(f"* Newest post for user {user}:\n")
+        print(f"Date:\t\t\t{get_date_from_ts(int(highestinsta_ts))} ({calculate_timespan(int(time.time()), int(highestinsta_ts))} ago)")
+        print(f"Post URL:\t\t{post_url}")
+        print(f"Profile URL:\t\thttps://www.instagram.com/{insta_username}/")
+        print(f"Likes:\t\t\t{likes}")
+        print(f"Comments:\t\t{comments}")
+        print(f"Tagged users:\t\t{tagged_users}")
 
         if location:
-            print("Location:\t\t" + str(location))
+            print(f"Location:\t\t{location}")
 
-        print("Caption:\n\n" + str(caption) + "\n")
+        print(f"Caption:\n\n{caption}\n")
 
         if likes_users_list:
-            print("Likes list:\n")
-            print(likes_users_list)
+            print(f"Likes list:\n{likes_users_list}")
 
         if post_comments_list:
-            print("Comments list:")
-            print(post_comments_list)
+            print(f"Comments list:{post_comments_list}")
 
         print_cur_ts("Timestamp:\t\t")
 
@@ -772,12 +805,14 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
 
     alive_counter = 0
 
+    email_sent = False
+
+    # main loop
     while True:
         last_output = []
         try:
             profile = instaloader.Profile.from_username(bot.context, user)
             time.sleep(NEXT_OPERATION_DELAY)
-            email_sent = False
             new_post = False
             followers_count = profile.followers
             followings_count = profile.followees
@@ -785,15 +820,16 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             posts_count = profile.mediacount
             has_story = profile.has_public_story
             is_private = profile.is_private
+            email_sent = False
         except Exception as e:
             r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
-            print("Retrying in", display_time(r_sleep_time), ", error -", e)
+            print(f"Error, retrying in {display_time(r_sleep_time)} - {e}")
             if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                 print("* Session might not be valid anymore!")
                 if error_notification and not email_sent:
-                    m_subject = "instagram_monitor: session error! (user: " + str(user) + ")"
-                    m_body = "Session might not be valid anymore: " + str(e) + get_cur_ts("\n\nTimestamp: ")
-                    print("Sending email notification to", RECEIVER_EMAIL)
+                    m_subject = f"instagram_monitor: session error! (user: {user})"
+                    m_body = f"Session might not be valid anymore: {e}{get_cur_ts("\n\nTimestamp: ")}"
+                    print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
                     email_sent = True
 
@@ -804,11 +840,11 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
         if (next((s for s in last_output if "HTTP redirect from" in s), None)):
             r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
             print("* Session might not be valid anymore!")
-            print("Retrying in", display_time(r_sleep_time))
+            print(f"Retrying in {display_time(r_sleep_time)}")
             if error_notification and not email_sent:
-                m_subject = "instagram_monitor: session error! (user: " + str(user) + ")"
-                m_body = "Session might not be valid anymore: " + str(last_output) + get_cur_ts("\n\nTimestamp: ")
-                print("Sending email notification to", RECEIVER_EMAIL)
+                m_subject = f"instagram_monitor: session error! (user: {user})"
+                m_body = f"Session might not be valid anymore: {last_output}{get_cur_ts("\n\nTimestamp: ")}"
+                print(f"Sending email notification to {RECEIVER_EMAIL}")
                 send_email(m_subject, m_body, "", SMTP_SSL)
                 email_sent = True
             print_cur_ts("Timestamp:\t\t")
@@ -822,12 +858,12 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                 followings_diff_str = "+" + str(followings_diff)
             else:
                 followings_diff_str = str(followings_diff)
-            print("* Followings number changed by user " + user + " from " + str(followings_old_count) + " to " + str(followings_count) + " (" + followings_diff_str + ")")
+            print(f"* Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})")
             try:
                 if csv_file_name:
                     write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Followings Count", followings_old_count, followings_count)
             except Exception as e:
-                print("* Cannot write CSV entry -", e)
+                print(f"Error: cannot write CSV entry - {e}")
 
             added_followings_list = ""
             removed_followings_list = ""
@@ -849,7 +885,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                             json.dump(followings_to_save, f, indent=2)
                 except Exception as e:
                     followings = followings_old
-                    print("Error -", e)
+                    print(f"Error - {e}")
 
                 if not followings and followings_count > 0:
                     followings = followings_old
@@ -866,26 +902,26 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                             print("Removed followings:\n")
                             removed_followings_mbody = "\nRemoved followings:\n\n"
                             for f_in_list in removed_followings:
-                                    print("- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]")
-                                    removed_followings_list = removed_followings_list + "- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]\n"
+                                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                                    removed_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                     try:
                                         if csv_file_name:
                                             write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followings", "", f_in_list)
                                     except Exception as e:
-                                        print("* Cannot write CSV entry -", e)
+                                        print(f"Error: cannot write CSV entry - {e}")
                             print()
 
                         if added_followings:
                             print("Added followings:\n")
                             added_followings_mbody = "\nAdded followings:\n\n"
                             for f_in_list in added_followings:
-                                    print("- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]")
-                                    added_followings_list = added_followings_list + "- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]\n"
+                                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                                    added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                     try:
                                         if csv_file_name:
-                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followings", "", f_in_list)
+                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followings", f_in_list, "")
                                     except Exception as e:
-                                        print("* Cannot write CSV entry -", e)
+                                        print(f"Error: cannot write CSV entry - {e}")
                             print()
 
                     followings_old = followings
@@ -893,18 +929,17 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             m_subject = f"Instagram user {user} followings number has changed! ({followings_diff_str}, {followings_old_count} -> {followings_count})"
 
             if not skip_session and not skip_followings and not is_private:
-                m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: " + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True) + ")" + get_cur_ts("\nTimestamp: ")
+                m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
             else:
-                m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n\nCheck interval: " + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True) + ")" + get_cur_ts("\nTimestamp: ")
+                m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
 
             if status_notification:
-                print("Sending email notification to", RECEIVER_EMAIL)
+                print(f"Sending email notification to {RECEIVER_EMAIL}")
                 send_email(m_subject, m_body, "", SMTP_SSL)
-                email_sent = True
 
             followings_old_count = followings_count
 
-            print("Check interval:\t\t" + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time())-r_sleep_time, int(time.time()), short=True) + ")")
+            print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
             print_cur_ts("Timestamp:\t\t")
 
         if followers_count != followers_old_count:
@@ -914,13 +949,13 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                 followers_diff_str = "+" + str(followers_diff)
             else:
                 followers_diff_str = str(followers_diff)
-            print("* Followers number changed for user " + user + " from " + str(followers_old_count) + " to " + str(followers_count) + " (" + followers_diff_str + ")")
+            print(f"* Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})")
 
             try:
                 if csv_file_name:
                     write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Followers Count", followers_old_count, followers_count)
             except Exception as e:
-                print("* Cannot write CSV entry -", e)
+                print(f"Error: cannot write CSV entry - {e}")
 
             added_followers_list = ""
             removed_followers_list = ""
@@ -942,7 +977,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                             json.dump(followers_to_save, f, indent=2)
                 except Exception as e:
                     followers = followers_old
-                    print("Error -", e)
+                    print(f"Error - {e}")
 
                 if not followers and followers_count > 0:
                     followers = followers_old
@@ -958,26 +993,26 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                             print("Removed followers:\n")
                             removed_followers_mbody = "\nRemoved followers:\n\n"
                             for f_in_list in removed_followers:
-                                    print("- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]")
-                                    removed_followers_list = removed_followers_list + "- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]\n"
+                                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                                    removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                     try:
                                         if csv_file_name:
                                             write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followers", "", f_in_list)
                                     except Exception as e:
-                                        print("* Cannot write CSV entry -", e)
+                                        print(f"Error: cannot write CSV entry - {e}")
                             print()
 
                         if added_followers:
                             print("Added followers:\n")
                             added_followers_mbody = "\nAdded followers:\n\n"
                             for f_in_list in added_followers:
-                                    print("- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]")
-                                    added_followers_list = added_followers_list + "- " + f_in_list + " [ " + "https://www.instagram.com/" + f_in_list + "/ ]\n"
+                                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                                    added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                     try:
                                         if csv_file_name:
                                             write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followers", "", f_in_list)
                                     except Exception as e:
-                                        print("* Cannot write CSV entry -", e)
+                                        print(f"Error: cannot write CSV entry - {e}")
                             print()
 
                     followers_old = followers
@@ -985,67 +1020,64 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             m_subject = f"Instagram user {user} followers number has changed! ({followers_diff_str}, {followers_old_count} -> {followers_count})"
 
             if not skip_session and not skip_followers and not is_private:
-                m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: " + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True) + ")" + get_cur_ts("\nTimestamp: ")
+                m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
             else:
-                m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n\nCheck interval: " + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True) + ")" + get_cur_ts("\nTimestamp: ")
+                m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
 
             if status_notification and followers_notification:
-                print("Sending email notification to", RECEIVER_EMAIL)
+                print(f"Sending email notification to {RECEIVER_EMAIL}")
                 send_email(m_subject, m_body, "", SMTP_SSL)
-                email_sent = True
 
             followers_old_count = followers_count
 
-            print("Check interval:\t\t" + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True) + ")")
+            print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
             print_cur_ts("Timestamp:\t\t")
 
         if bio != bio_old:
-            print("* Bio changed for user " + str(user) + " !")
-            print("Old bio:\n\n" + str(bio_old) + "\n")
-            print("New bio:\n\n" + str(bio) + "\n")
+            print(f"* Bio changed for user {user} !")
+            print(f"Old bio:\n\n{bio_old}\n")
+            print(f"New bio:\n\n{bio}\n")
 
             try:
                 if csv_file_name:
                     write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Bio Changed", bio_old, bio)
             except Exception as e:
-                print("* Cannot write CSV entry -", e)
+                print(f"Error: cannot write CSV entry - {e}")
 
-            m_subject = "Instagram user " + user + " bio has changed!"
-            m_body = "Instagram user " + user + " bio has changed" + "\n\nOld bio:\n\n" + str(bio_old) + "\n\nNew bio:\n\n" + str(bio) + "\n\nCheck interval: " + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True) + ")" + get_cur_ts("\nTimestamp: ")
+            m_subject = f"Instagram user {user} bio has changed!"
+            m_body = f"Instagram user {user} bio has changed\n\nOld bio:\n\n{bio_old}\n\nNew bio:\n\n{bio}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
 
             if status_notification:
-                print("Sending email notification to", RECEIVER_EMAIL)
+                print(f"Sending email notification to {RECEIVER_EMAIL}")
                 send_email(m_subject, m_body, "", SMTP_SSL)
-                email_sent = True
 
             bio_old = bio
-            print("Check interval:\t\t" + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True) + ")")
+            print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
             print_cur_ts("Timestamp:\t\t")
 
         if has_story and not story:
-            print("* New story for user " + str(user) + " !")
+            print(f"* New story for user {user} !")
             story = True
 
             try:
                 if csv_file_name:
                     write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "New Story", "", "")
             except Exception as e:
-                print("* Cannot write CSV entry -", e)
+                print(f"Error: cannot write CSV entry - {e}")
 
-            m_subject = "Instagram user " + user + " has a new story!"
-            m_body = "Instagram user " + user + " has a new story" + "\n\nCheck interval: " + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True) + ")" + get_cur_ts("\nTimestamp: ")
+            m_subject = f"Instagram user {user} has a new story!"
+            m_body = f"Instagram user {user} has a new story\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
 
             if status_notification:
-                print("Sending email notification to", RECEIVER_EMAIL)
+                print(f"Sending email notification to {RECEIVER_EMAIL}")
                 send_email(m_subject, m_body, "", SMTP_SSL)
-                email_sent = True
 
-            print("Check interval:\t\t" + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True) + ")")
+            print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
             print_cur_ts("Timestamp:\t\t")
 
         if not has_story and story:
-            print("* Story for user " + str(user) + " disappeared !")
-            print("Check interval:\t\t" + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True) + ")")
+            print(f"* Story for user {user} disappeared !")
+            print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
             print_cur_ts("Timestamp:\t\t")
             story = False
 
@@ -1106,13 +1138,13 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
 
                 except Exception as e:
                     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
-                    print("Retrying in", display_time(r_sleep_time), ", error -", e)
+                    print(f"Error, retrying in {display_time(r_sleep_time)} - {e}")
                     if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                         print("* Session might not be valid anymore!")
                         if error_notification and not email_sent:
-                            m_subject = "instagram_monitor: session error! (user: " + str(user) + ")"
-                            m_body = "Session might not be valid anymore: " + str(e) + get_cur_ts("\n\nTimestamp: ")
-                            print("Sending email notification to", RECEIVER_EMAIL)
+                            m_subject = f"instagram_monitor: session error! (user: {user})"
+                            m_body = f"Session might not be valid anymore: {e}{get_cur_ts("\n\nTimestamp: ")}"
+                            print(f"Sending email notification to {RECEIVER_EMAIL}")
                             send_email(m_subject, m_body, "", SMTP_SSL)
                             email_sent = True
 
@@ -1123,70 +1155,66 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
 
                 if new_post:
 
-                    post_url = "https://instagram.com/p/" + str(shortcode) + "/"
+                    post_url = f"https://instagram.com/p/{shortcode}/"
 
-                    print("* New post for user " + str(user) + " after " + calculate_timespan(int(highestinsta_ts), int(highestinsta_ts_old)) + " (" + get_date_from_ts(int(highestinsta_ts_old)) + ")\n")
-                    print("Date:\t\t\t" + get_date_from_ts(int(highestinsta_ts)))
-                    print("Post URL:\t\t" + str(post_url))
-                    print("Profile URL:\t\t" + "https://www.instagram.com/" + insta_username + "/")
-                    print("Likes:\t\t\t" + str(likes))
-                    print("Comments:\t\t" + str(comments))
-                    print("Tagged users:\t\t" + str(tagged_users))
+                    print(f"* New post for user {user} after {calculate_timespan(int(highestinsta_ts), int(highestinsta_ts_old))} ({get_date_from_ts(int(highestinsta_ts_old))})\n")
+                    print(f"Date:\t\t\t{get_date_from_ts(int(highestinsta_ts))}")
+                    print(f"Post URL:\t\t{post_url}")
+                    print(f"Profile URL:\t\thttps://www.instagram.com/{insta_username}/")
+                    print(f"Likes:\t\t\t{likes}")
+                    print(f"Comments:\t\t{comments}")
+                    print(f"Tagged users:\t\t{tagged_users}")
 
                     location_mbody = ""
                     if location:
                         location_mbody = "\nLocation: "
-                        print("Location:\t\t" + str(location))
+                        print(f"Location:\t\t{location}")
 
-                    print("Caption:\n\n" + str(caption) + "\n")
+                    print(f"Caption:\n\n{caption}\n")
 
                     likes_users_list_mbody = ""
                     post_comments_list_mbody = ""
 
                     if likes_users_list:
                         likes_users_list_mbody = "\nLikes list:\n\n"
-                        print("Likes list:\n")
-                        print(likes_users_list)
+                        print(f"Likes list:\n{likes_users_list}")
 
                     if post_comments_list:
                         post_comments_list_mbody = "\nComments list:\n"
-                        print("Comments list:")
-                        print(post_comments_list)
+                        print(f"Comments list:{post_comments_list}")
 
                     try:
                         if csv_file_name:
                             write_csv_entry(csv_file_name, datetime.fromtimestamp(int(highestinsta_ts)), "New Post", "", pcaption)
                     except Exception as e:
-                        print("* Cannot write CSV entry -", e)
+                        print(f"Error: cannot write CSV entry - {e}")
 
-                    m_subject = "Instagram user " + user + " has a new post - " + get_short_date_from_ts(int(highestinsta_ts)) + " (after " + calculate_timespan(int(highestinsta_ts), int(highestinsta_ts_old), show_seconds=False) + " - " + get_short_date_from_ts(highestinsta_ts_old) + ")"
-                    m_body = "Instagram user " + user + " has a new post after " + calculate_timespan(int(highestinsta_ts), int(highestinsta_ts_old)) + " (" + get_date_from_ts(int(highestinsta_ts_old)) + ")\n\nDate: " + get_date_from_ts(int(highestinsta_ts)) + "\nPost URL: " + str(post_url) + "\nProfile URL: " + "https://www.instagram.com/" + insta_username + "/" + "\nLikes: " + str(likes) + "\nComments: " + str(comments) + "\nTagged: " + str(tagged_users) + location_mbody + str(location) + "\nCaption:\n\n" + str(caption) + "\n" + likes_users_list_mbody + likes_users_list + post_comments_list_mbody + post_comments_list + "\nCheck interval: " + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True) + ")" + get_cur_ts("\nTimestamp: ")
+                    m_subject = f"Instagram user {user} has a new post - {get_short_date_from_ts(int(highestinsta_ts))} (after {calculate_timespan(int(highestinsta_ts), int(highestinsta_ts_old), show_seconds=False)} - {get_short_date_from_ts(highestinsta_ts_old)})"
+                    m_body = f"Instagram user {user} has a new post after {calculate_timespan(int(highestinsta_ts), int(highestinsta_ts_old))} ({get_date_from_ts(int(highestinsta_ts_old))})\n\nDate: {get_date_from_ts(int(highestinsta_ts))}\nPost URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nLikes: {likes}\nComments: {comments}\nTagged: {tagged_users}{location_mbody}{location}\nCaption:\n\n{caption}\n{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{post_comments_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
 
                     if status_notification:
-                        print("Sending email notification to", RECEIVER_EMAIL)
+                        print(f"Sending email notification to {RECEIVER_EMAIL}")
                         send_email(m_subject, m_body, "", SMTP_SSL)
-                        email_sent = True
 
                     highestinsta_ts_old = highestinsta_ts
 
-                    print("Check interval:\t\t" + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True) + ")")
+                    print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                     print_cur_ts("Timestamp:\t\t")
 
             elif posts_count != posts_count_old and is_private:
-                print("* Posts number changed for user " + user + " from " + str(posts_count_old) + " to " + str(posts_count))
+                print(f"* Posts number changed for user {user} from {posts_count_old} to {posts_count}")
 
                 m_subject = f"Instagram user {user} posts number has changed! ({posts_count_old} -> {posts_count})"
 
-                m_body = f"Posts number changed for user {user} from {posts_count_old} to {posts_count}\n\nCheck interval: " + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True) + ")" + get_cur_ts("\nTimestamp: ")
+                m_body = f"Posts number changed for user {user} from {posts_count_old} to {posts_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
 
                 if status_notification:
-                    print("Sending email notification to", RECEIVER_EMAIL)
+                    print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
-                    email_sent = True
 
                 posts_count_old = posts_count
 
-                print("Check interval:\t\t" + str(display_time(r_sleep_time)) + " (" + get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True) + ")")
+                print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t")
 
         alive_counter += 1
@@ -1211,7 +1239,7 @@ if __name__ == "__main__":
     except:
         print("* Cannot clear the screen contents")
 
-    print("Instagram Monitoring Tool", VERSION, "\n")
+    print(f"Instagram Monitoring Tool v{VERSION}\n")
 
     parser = argparse.ArgumentParser("instagram_monitor")
     parser.add_argument("user", nargs="?", help="Instagram username", type=str)
@@ -1267,7 +1295,7 @@ if __name__ == "__main__":
         try:
             csv_file = open(args.csv_file, 'a', newline='', buffering=1)
         except Exception as e:
-            print("\n* Error, CSV file cannot be opened for writing -", e)
+            print(f"Error: CSV file cannot be opened for writing - {e}")
             sys.exit(1)
         csv_file.close()
     else:
@@ -1276,7 +1304,7 @@ if __name__ == "__main__":
         csv_exists = False
 
     if not args.disable_logging:
-        INSTA_LOGFILE = INSTA_LOGFILE + "_" + str(args.user) + ".log"
+        INSTA_LOGFILE = f"{INSTA_LOGFILE}_{args.user}.log"
         sys.stdout = Logger(INSTA_LOGFILE)
 
     if INSTA_CHECK_INTERVAL <= RANDOM_SLEEP_DIFF_LOW:
@@ -1287,15 +1315,15 @@ if __name__ == "__main__":
     status_notification = args.status_notification
     followers_notification = args.followers_notification
 
-    print("* Instagram timers: [check interval: " + display_time(check_interval_low) + " - " + display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH) + "]")
-    print("* Email notifications: [new posts/stories/followings/bio = " + str(status_notification) + "] [followers = " + str(followers_notification) + "] [errors = " + str(args.error_notification) + "]")
-    print("* Output logging disabled:", str(args.disable_logging))
-    print("* Skip session login and fetching followers/followings:", str(skip_session))
-    print("* Skip fetching followers:", str(args.skip_followers))
-    print("* Skip fetching followings:", str(args.skip_followings))
-    print("* CSV logging enabled:", str(csv_enabled))
+    print(f"* Instagram timers: [check interval: {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)}]")
+    print(f"* Email notifications: [new posts/stories/followings/bio = {status_notification}] [followers = {followers_notification}] [errors = {args.error_notification}]")
+    print(f"* Output logging disabled: {args.disable_logging}")
+    print(f"* Skip session login and fetching followers/followings: {skip_session}")
+    print(f"* Skip fetching followers: {args.skip_followers}")
+    print(f"* Skip fetching followings: {args.skip_followings}")
+    print(f"* CSV logging enabled: {csv_enabled}")
 
-    out = "\nMonitoring Instagram user %s" % args.user
+    out = f"\nMonitoring Instagram user {args.user}"
     print(out)
     print("-" * len(out))
 
@@ -1308,4 +1336,3 @@ if __name__ == "__main__":
 
     sys.stdout = stdout_bck
     sys.exit(0)
-
