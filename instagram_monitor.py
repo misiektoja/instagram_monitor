@@ -115,10 +115,13 @@ import ssl
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
 import argparse
 import csv
 import random
 import pytz
+import re
+import ipaddress
 import instaloader
 
 
@@ -249,7 +252,40 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
 
 
 # Function to send email notification
-def send_email(subject, body, body_html, use_ssl):
+def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1"):
+    fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
+    email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
+
+    try:
+        is_ip = ipaddress.ip_address(str(SMTP_HOST))
+    except ValueError:
+        if not fqdn_re.search(str(SMTP_HOST)):
+            print("Error sending email - SMTP settings are incorrect (invalid IP address/FQDN in SMTP_HOST)")
+            return 1
+
+    try:
+        port = int(SMTP_PORT)
+        if not (1 <= port <= 65535):
+            raise ValueError
+    except ValueError:
+        print("Error sending email - SMTP settings are incorrect (invalid port number in SMTP_PORT)")
+        return 1
+
+    if not email_re.search(str(SENDER_EMAIL)) or not email_re.search(str(RECEIVER_EMAIL)):
+        print("Error sending email - SMTP settings are incorrect (invalid email in SENDER_EMAIL or RECEIVER_EMAIL)")
+        return 1
+
+    if not SMTP_USER or not isinstance(SMTP_USER, str) or SMTP_USER == "your_smtp_user" or not SMTP_PASSWORD or not isinstance(SMTP_PASSWORD, str) or SMTP_PASSWORD == "your_smtp_password":
+        print("Error sending email - SMTP settings are incorrect (check SMTP_USER & SMTP_PASSWORD variables)")
+        return 1
+
+    if not subject or not isinstance(subject, str):
+        print("Error sending email - SMTP settings are incorrect (subject is not a string or is empty)")
+        return 1
+
+    if not body and not body_html:
+        print("Error sending email - SMTP settings are incorrect (body and body_html cannot be empty at the same time)")
+        return 1
 
     try:
         if use_ssl:
@@ -264,6 +300,11 @@ def send_email(subject, body, body_html, use_ssl):
         email_msg["To"] = RECEIVER_EMAIL
         email_msg["Subject"] = Header(subject, 'utf-8')
 
+        if image_file:
+            fp = open(image_file, 'rb')
+            img_part = MIMEImage(fp.read())
+            fp.close()
+
         if body:
             part1 = MIMEText(body, 'plain')
             part1 = MIMEText(body.encode('utf-8'), 'plain', _charset='utf-8')
@@ -274,10 +315,14 @@ def send_email(subject, body, body_html, use_ssl):
             part2 = MIMEText(body_html.encode('utf-8'), 'html', _charset='utf-8')
             email_msg.attach(part2)
 
+        if image_file:
+            img_part.add_header('Content-ID', f'<{image_name}>')
+            email_msg.attach(img_part)
+
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
         smtpObj.quit()
     except Exception as e:
-        print("Error sending email -", e)
+        print(f"Error sending email - {e}")
         return 1
     return 0
 
