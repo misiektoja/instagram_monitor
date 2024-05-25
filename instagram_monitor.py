@@ -21,11 +21,11 @@ VERSION = 1.1
 # ---------------------------
 
 # Session login is needed for some functionalities like getting list of followings & followers
-# In such case we need Instagram username & password to monitor other user
+# In such case we need Instagram username & password for session login in order to monitor other user
 # Instead of typing the username & password below it is recommended to keep it empty here and log in via:
-# <instaloader_location>/bin/instaloader -l username
-INSTA_USERNAME = ''
-INSTA_PASSWORD = ''
+# <instaloader_location>/bin/instaloader -l insta_username_for_session_login
+INSTA_USERNAME_FOR_SESSION_LOGIN = ''
+INSTA_PASSWORD_FOR_SESSION_LOGIN = ''
 
 # SMTP settings for sending email notifications, you can leave it as it is below and no notifications will be sent
 SMTP_HOST = "your_smtp_server_ssl"
@@ -506,11 +506,11 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
 
     try:
         bot = instaloader.Instaloader()
-        if (INSTA_USERNAME and INSTA_PASSWORD) and not skip_session:
-            bot.login(user=INSTA_USERNAME, passwd=INSTA_PASSWORD)
-        elif INSTA_USERNAME and not INSTA_PASSWORD and not skip_session:
+        if (INSTA_USERNAME_FOR_SESSION_LOGIN and INSTA_PASSWORD_FOR_SESSION_LOGIN) and not skip_session:
+            bot.login(user=INSTA_USERNAME_FOR_SESSION_LOGIN, passwd=INSTA_PASSWORD_FOR_SESSION_LOGIN)
+        elif INSTA_USERNAME_FOR_SESSION_LOGIN and not INSTA_PASSWORD_FOR_SESSION_LOGIN and not skip_session:
             # log in via: <instaloader_location>/bin/instaloader -l username
-            bot.load_session_from_file(INSTA_USERNAME)
+            bot.load_session_from_file(INSTA_USERNAME_FOR_SESSION_LOGIN)
         profile = instaloader.Profile.from_username(bot.context, user)
         time.sleep(NEXT_OPERATION_DELAY)
         insta_username = profile.username
@@ -1242,33 +1242,34 @@ if __name__ == "__main__":
     print(f"Instagram Monitoring Tool v{VERSION}\n")
 
     parser = argparse.ArgumentParser("instagram_monitor")
-    parser.add_argument("user", nargs="?", help="Instagram username", type=str)
-    parser.add_argument("-b", "--csv_file", help="Write info about new posts & stories to CSV file", type=str, metavar="CSV_FILENAME")
-    parser.add_argument("-u", "--instagram_user", help="Instagram user to use to fetch followers/followings", type=str, metavar="INSTAGRAM_USER")
-    parser.add_argument("-p", "--instagram_password", help="Instagram user's password to use to fetch followers/followings, however it is recommended to save the session via 'instaloader -l username'", type=str, metavar="INSTAGRAM_PASSWORD")
+    parser.add_argument("INSTAGRAM_USERNAME", nargs="?", help="Instagram username to monitor", type=str)
+    parser.add_argument("-u", "--instagram_user_for_session_login", help="Instagram user for session login to fetch followers/followings", type=str, metavar="INSTAGRAM_USER")
+    parser.add_argument("-p", "--instagram_password_for_session_login", help="Instagram user's password for session login to use to fetch followers/followings, however it is recommended to save the session via 'instaloader -l instagram_user_for_session_login'", type=str, metavar="INSTAGRAM_PASSWORD")
     parser.add_argument("-s", "--status_notification", help="Send email notification once user puts new post/story, changes bio or follows new users", action='store_true')
     parser.add_argument("-m", "--followers_notification", help="Send email notification once user gets new followers, by default it is disabled", action='store_true')
-    parser.add_argument("-e", "--error_notification", help="Disable sending email notifications in case of errors like invalid password", action='store_false')
-    parser.add_argument("-l", "--skip_session", help="Skip session login and do not fetch followers/followings", action='store_true')
-    parser.add_argument("-f", "--skip_followers", help="Do not fetch followers", action='store_true')
-    parser.add_argument("-g", "--skip_followings", help="Do not fetch followings", action='store_true')
+    parser.add_argument("-e", "--error_notification", help="Disable sending email notifications in case of errors like invalid session", action='store_false')
     parser.add_argument("-c", "--check_interval", help="Time between monitoring checks, in seconds", type=int)
     parser.add_argument("-i", "--check_interval_random_diff_low", help="Value substracted from check interval to randomize, in seconds", type=int)
     parser.add_argument("-j", "--check_interval_random_diff_high", help="Value added to check interval to randomize, in seconds", type=int)
-    parser.add_argument("-d", "--disable_logging", help="Disable logging to file 'instagram_monitor_user.log' file", action='store_true')
+    parser.add_argument("-b", "--csv_file", help="Write all changes to CSV file", type=str, metavar="CSV_FILENAME")
+    parser.add_argument("-l", "--skip_session", help="Skip session login and do not fetch followers/followings", action='store_true')
+    parser.add_argument("-f", "--skip_followers", help="Do not fetch followers, even if session login is used", action='store_true')
+    parser.add_argument("-g", "--skip_followings", help="Do not fetch followings, even if session login is used", action='store_true')
+    parser.add_argument("-d", "--disable_logging", help="Disable logging to file 'instagram_monitor_username.log' file", action='store_true')
     args = parser.parse_args()
 
-    if not args.user:
-        print("* user argument is required\n")
+    if len(sys.argv) == 1:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+
+    if not args.INSTAGRAM_USERNAME:
+        print("* Error: INSTAGRAM_USERNAME argument is required !")
         parser.print_help()
         sys.exit(1)
 
-    sys.stdout.write("* Checking internet connectivity ... ")
-    sys.stdout.flush()
-    check_internet()
-    print("")
-
     skip_session = args.skip_session
+    skip_followers = args.skip_followers
+    skip_followings = args.skip_followings
 
     if args.check_interval:
         INSTA_CHECK_INTERVAL = args.check_interval
@@ -1280,14 +1281,28 @@ if __name__ == "__main__":
     if args.check_interval_random_diff_high:
         RANDOM_SLEEP_DIFF_HIGH = args.check_interval_random_diff_high
 
-    if args.instagram_user:
-        INSTA_USERNAME = args.instagram_user
+    if args.instagram_user_for_session_login:
+        INSTA_USERNAME_FOR_SESSION_LOGIN = args.instagram_user_for_session_login
 
-    if args.instagram_password:
-        INSTA_PASSWORD = args.instagram_password
+    if args.instagram_password_for_session_login:
+        INSTA_PASSWORD_FOR_SESSION_LOGIN = args.instagram_password_for_session_login
 
-    if not INSTA_USERNAME:
+    if not INSTA_USERNAME_FOR_SESSION_LOGIN:
         skip_session = True
+
+    if skip_session:
+        skip_followers = True
+        skip_followings = True
+
+    if INSTA_CHECK_INTERVAL <= RANDOM_SLEEP_DIFF_LOW:
+        check_interval_low = INSTA_CHECK_INTERVAL
+    else:
+        check_interval_low = INSTA_CHECK_INTERVAL - RANDOM_SLEEP_DIFF_LOW
+
+    sys.stdout.write("* Checking internet connectivity ... ")
+    sys.stdout.flush()
+    check_internet()
+    print("")
 
     if args.csv_file:
         csv_enabled = True
@@ -1304,26 +1319,27 @@ if __name__ == "__main__":
         csv_exists = False
 
     if not args.disable_logging:
-        INSTA_LOGFILE = f"{INSTA_LOGFILE}_{args.user}.log"
+        INSTA_LOGFILE = f"{INSTA_LOGFILE}_{args.INSTAGRAM_USERNAME}.log"
         sys.stdout = Logger(INSTA_LOGFILE)
-
-    if INSTA_CHECK_INTERVAL <= RANDOM_SLEEP_DIFF_LOW:
-        check_interval_low = INSTA_CHECK_INTERVAL
-    else:
-        check_interval_low = INSTA_CHECK_INTERVAL - RANDOM_SLEEP_DIFF_LOW
 
     status_notification = args.status_notification
     followers_notification = args.followers_notification
 
-    print(f"* Instagram timers: [check interval: {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)}]")
-    print(f"* Email notifications: [new posts/stories/followings/bio = {status_notification}] [followers = {followers_notification}] [errors = {args.error_notification}]")
-    print(f"* Output logging disabled: {args.disable_logging}")
-    print(f"* Skip session login and fetching followers/followings: {skip_session}")
-    print(f"* Skip fetching followers: {args.skip_followers}")
-    print(f"* Skip fetching followings: {args.skip_followings}")
-    print(f"* CSV logging enabled: {csv_enabled}")
+    print(f"* Instagram timers:\t\t[check interval: {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)}]")
+    print(f"* Email notifications:\t\t[new posts/stories/followings/bio = {status_notification}] [followers = {followers_notification}] [errors = {args.error_notification}]")
+    print(f"* Skip session login:\t\t{skip_session}")
+    print(f"* Skip fetching followers:\t{skip_followers}")
+    print(f"* Skip fetching followings:\t{skip_followings}")
+    if not args.disable_logging:
+        print(f"* Output logging enabled:\t{not args.disable_logging} ({INSTA_LOGFILE})")
+    else:
+        print(f"* Output logging enabled:\t{not args.disable_logging}")
+    if csv_enabled:
+        print(f"* CSV logging enabled:\t\t{csv_enabled} ({args.csv_file})")
+    else:
+        print(f"* CSV logging enabled:\t\t{csv_enabled}")
 
-    out = f"\nMonitoring Instagram user {args.user}"
+    out = f"\nMonitoring Instagram user {args.INSTAGRAM_USERNAME}"
     print(out)
     print("-" * len(out))
 
@@ -1332,7 +1348,7 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTRAP, increase_check_signal_handler)
     signal.signal(signal.SIGABRT, decrease_check_signal_handler)
 
-    instagram_monitor_user(args.user, args.error_notification, args.csv_file, csv_exists, skip_session, args.skip_followers, args.skip_followings)
+    instagram_monitor_user(args.INSTAGRAM_USERNAME, args.error_notification, args.csv_file, csv_exists, skip_session, skip_followers, skip_followings)
 
     sys.stdout = stdout_bck
     sys.exit(0)
