@@ -120,6 +120,7 @@ import argparse
 import csv
 import random
 import pytz
+import platform
 import re
 import ipaddress
 import instaloader
@@ -129,7 +130,7 @@ import instaloader
 class Logger(object):
     def __init__(self, filename):
         self.terminal = sys.stdout
-        self.logfile = open(filename, "a", buffering=1)
+        self.logfile = open(filename, "a", buffering=1, encoding="utf-8")
 
     def write(self, message):
         global last_output
@@ -330,7 +331,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
 # Function to write CSV entry
 def write_csv_entry(csv_file_name, timestamp, object_type, old, new):
     try:
-        csv_file = open(csv_file_name, 'a', newline='', buffering=1)
+        csv_file = open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8")
         csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
         csvwriter.writerow({'Date': timestamp, 'Type': object_type, 'Old': old, 'New': new})
         csv_file.close()
@@ -491,7 +492,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
 
     try:
         if csv_file_name:
-            csv_file = open(csv_file_name, 'a', newline='', buffering=1)
+            csv_file = open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8")
             csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
             if not csv_exists:
                 csvwriter.writeheader()
@@ -558,7 +559,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
     try:
 
         if os.path.isfile(insta_followers_file):
-            with open(insta_followers_file, 'r') as f:
+            with open(insta_followers_file, 'r', encoding="utf-8") as f:
                 followers_read = json.load(f)
             if followers_read:
                 followers_old_count = followers_read[0]
@@ -594,7 +595,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             followers_count = profile.followers
             followers_to_save.append(followers_count)
             followers_to_save.append(followers)
-            with open(insta_followers_file, 'w') as f:
+            with open(insta_followers_file, 'w', encoding="utf-8") as f:
                 json.dump(followers_to_save, f, indent=2)
                 print(f"* Followers saved to file '{insta_followers_file}'")
 
@@ -632,7 +633,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                 print()
 
         if os.path.isfile(insta_followings_file):
-            with open(insta_followings_file, 'r') as f:
+            with open(insta_followings_file, 'r', encoding="utf-8") as f:
                 followings_read = json.load(f)
             if followings_read:
                 followings_old_count = followings_read[0]
@@ -667,7 +668,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             followings_count = profile.followees
             followings_to_save.append(followings_count)
             followings_to_save.append(followings)
-            with open(insta_followings_file, 'w') as f:
+            with open(insta_followings_file, 'w', encoding="utf-8") as f:
                 json.dump(followings_to_save, f, indent=2)
                 print(f"* Followings saved to file '{insta_followings_file}'")
 
@@ -881,7 +882,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                     else:
                         followings_to_save.append(followings_count)
                         followings_to_save.append(followings)
-                        with open(insta_followings_file, 'w') as f:
+                        with open(insta_followings_file, 'w', encoding="utf-8") as f:
                             json.dump(followings_to_save, f, indent=2)
                 except Exception as e:
                     followings = followings_old
@@ -973,7 +974,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                     else:
                         followers_to_save.append(followers_count)
                         followers_to_save.append(followers)
-                        with open(insta_followers_file, 'w') as f:
+                        with open(insta_followers_file, 'w', encoding="utf-8") as f:
                             json.dump(followers_to_save, f, indent=2)
                 except Exception as e:
                     followers = followers_old
@@ -1235,7 +1236,10 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, signal_handler)
 
     try:
-        os.system('clear')
+        if platform.system() == 'Windows':
+            os.system('cls')
+        else:
+            os.system('clear')
     except:
         print("* Cannot clear the screen contents")
 
@@ -1308,7 +1312,7 @@ if __name__ == "__main__":
         csv_enabled = True
         csv_exists = os.path.isfile(args.csv_file)
         try:
-            csv_file = open(args.csv_file, 'a', newline='', buffering=1)
+            csv_file = open(args.csv_file, 'a', newline='', buffering=1, encoding="utf-8")
         except Exception as e:
             print(f"Error: CSV file cannot be opened for writing - {e}")
             sys.exit(1)
@@ -1343,10 +1347,12 @@ if __name__ == "__main__":
     print(out)
     print("-" * len(out))
 
-    signal.signal(signal.SIGUSR1, toggle_status_changes_notifications_signal_handler)
-    signal.signal(signal.SIGUSR2, toggle_followers_notifications_signal_handler)
-    signal.signal(signal.SIGTRAP, increase_check_signal_handler)
-    signal.signal(signal.SIGABRT, decrease_check_signal_handler)
+    # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
+    if platform.system() != 'Windows':
+        signal.signal(signal.SIGUSR1, toggle_status_changes_notifications_signal_handler)
+        signal.signal(signal.SIGUSR2, toggle_followers_notifications_signal_handler)
+        signal.signal(signal.SIGTRAP, increase_check_signal_handler)
+        signal.signal(signal.SIGABRT, decrease_check_signal_handler)
 
     instagram_monitor_user(args.INSTAGRAM_USERNAME, args.error_notification, args.csv_file, csv_exists, skip_session, skip_followers, skip_followings)
 
