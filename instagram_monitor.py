@@ -562,157 +562,164 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
     followers_read = []
     followings_read = []
 
-    try:
-
-        if os.path.isfile(insta_followers_file):
+    if os.path.isfile(insta_followers_file):
+        try:
             with open(insta_followers_file, 'r', encoding="utf-8") as f:
                 followers_read = json.load(f)
-            if followers_read:
-                followers_old_count = followers_read[0]
-                followers_old = followers_read[1]
-                if followers_count == followers_old_count:
-                    followers = followers_old
-                followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file))).strftime("%d %b %Y, %H:%M:%S")
-                print(f"* Followers ({followers_old_count}) loaded from file '{insta_followers_file}' ({followers_mdate})")
-                followers_followings_fetched = True
-
-        if followers_count != followers_old_count:
-            followers_diff = followers_count - followers_old_count
-            followers_diff_str = ""
-            if followers_diff > 0:
-                followers_diff_str = "+" + str(followers_diff)
-            else:
-                followers_diff_str = str(followers_diff)
-            print(f"* Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})")
+        except Exception as e:
+            print(f"* Cannot load followers list from '{insta_followers_file}' file - {e}")
+        if followers_read:
+            followers_old_count = followers_read[0]
+            followers_old = followers_read[1]
+            if followers_count == followers_old_count:
+                followers = followers_old
+            followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file))).strftime("%d %b %Y, %H:%M:%S")
+            print(f"* Followers ({followers_old_count}) loaded from file '{insta_followers_file}' ({followers_mdate})")
             followers_followings_fetched = True
 
-            try:
-                if csv_file_name:
-                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Followers Count", followers_old_count, followers_count)
-            except Exception as e:
-                print(f"Error: cannot write CSV entry - {e}")
+    if followers_count != followers_old_count:
+        followers_diff = followers_count - followers_old_count
+        followers_diff_str = ""
+        if followers_diff > 0:
+            followers_diff_str = "+" + str(followers_diff)
+        else:
+            followers_diff_str = str(followers_diff)
+        print(f"* Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})")
+        followers_followings_fetched = True
 
-        if ((followers_count != followers_old_count) or (followers_count > 0 and not followers)) and not skip_session and not skip_followers and not is_private:
-            print("\n* Getting followers ...")
-            followers_followings_fetched = True
+        try:
+            if csv_file_name:
+                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Followers Count", followers_old_count, followers_count)
+        except Exception as e:
+            print(f"Error: cannot write CSV entry - {e}")
 
-            followers = [follower.username for follower in profile.get_followers()]
-            followers_to_save = []
-            followers_count = profile.followers
-            followers_to_save.append(followers_count)
-            followers_to_save.append(followers)
+    if ((followers_count != followers_old_count) or (followers_count > 0 and not followers)) and not skip_session and not skip_followers and not is_private:
+        print("\n* Getting followers ...")
+        followers_followings_fetched = True
+
+        followers = [follower.username for follower in profile.get_followers()]
+        followers_to_save = []
+        followers_count = profile.followers
+        followers_to_save.append(followers_count)
+        followers_to_save.append(followers)
+        try:
             with open(insta_followers_file, 'w', encoding="utf-8") as f:
                 json.dump(followers_to_save, f, indent=2)
                 print(f"* Followers saved to file '{insta_followers_file}'")
+        except Exception as e:
+            print(f"* Cannot save list of followers to '{insta_followers_file}' file - {e}")
 
-        if ((followers_count != followers_old_count) and (followers != followers_old)) and not skip_session and not skip_followers and not is_private:
-            a, b = set(followers_old), set(followers)
-            removed_followers = list(a - b)
-            added_followers = list(b - a)
-            added_followers_list = ""
-            removed_followers_list = ""
+    if ((followers_count != followers_old_count) and (followers != followers_old)) and not skip_session and not skip_followers and not is_private:
+        a, b = set(followers_old), set(followers)
+        removed_followers = list(a - b)
+        added_followers = list(b - a)
+        added_followers_list = ""
+        removed_followers_list = ""
 
+        print()
+
+        if removed_followers:
+            print("Removed followers:\n")
+            for f_in_list in removed_followers:
+                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                    removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
+                    try:
+                        if csv_file_name:
+                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followers", f_in_list, "")
+                    except Exception as e:
+                        print(f"Error: cannot write CSV entry - {e}")
             print()
 
-            if removed_followers:
-                print("Removed followers:\n")
-                for f_in_list in removed_followers:
-                        print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                        removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                        try:
-                            if csv_file_name:
-                                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followers", f_in_list, "")
-                        except Exception as e:
-                            print(f"Error: cannot write CSV entry - {e}")
-                print()
+        if added_followers:
+            print("Added followers:\n")
+            for f_in_list in added_followers:
+                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                    added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
+                    try:
+                        if csv_file_name:
+                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followers", "", f_in_list)
+                    except Exception as e:
+                        print(f"Error: cannot write CSV entry - {e}")
+            print()
 
-            if added_followers:
-                print("Added followers:\n")
-                for f_in_list in added_followers:
-                        print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                        added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                        try:
-                            if csv_file_name:
-                                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followers", "", f_in_list)
-                        except Exception as e:
-                            print(f"Error: cannot write CSV entry - {e}")
-                print()
-
-        if os.path.isfile(insta_followings_file):
+    if os.path.isfile(insta_followings_file):
+        try:
             with open(insta_followings_file, 'r', encoding="utf-8") as f:
                 followings_read = json.load(f)
-            if followings_read:
-                followings_old_count = followings_read[0]
-                followings_old = followings_read[1]
-                if followings_count == followings_old_count:
-                    followings = followings_old
-                following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file))).strftime("%d %b %Y, %H:%M:%S")
-                print(f"\n* Followings ({followings_old_count}) loaded from file '{insta_followings_file}' ({following_mdate})")
-                followers_followings_fetched = True
-
-        if followings_count != followings_old_count:
-            followings_diff = followings_count - followings_old_count
-            followings_diff_str = ""
-            if followings_diff > 0:
-                followings_diff_str = "+" + str(followings_diff)
-            else:
-                followings_diff_str = str(followings_diff)
-            print(f"* Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})")
-            followers_followings_fetched = True
-            try:
-                if csv_file_name:
-                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Followings Count", followings_old_count, followings_count)
-            except Exception as e:
-                print(f"Error: cannot write CSV entry - {e}")
-
-        if ((followings_count != followings_old_count) or (followings_count > 0 and not followings)) and not skip_session and not skip_followings and not is_private:
-            print("\n* Getting followings ...")
+        except Exception as e:
+            print(f"* Cannot load followings list from '{insta_followings_file}' file - {e}")
+        if followings_read:
+            followings_old_count = followings_read[0]
+            followings_old = followings_read[1]
+            if followings_count == followings_old_count:
+                followings = followings_old
+            following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file))).strftime("%d %b %Y, %H:%M:%S")
+            print(f"\n* Followings ({followings_old_count}) loaded from file '{insta_followings_file}' ({following_mdate})")
             followers_followings_fetched = True
 
-            followings = [followee.username for followee in profile.get_followees()]
-            followings_to_save = []
-            followings_count = profile.followees
-            followings_to_save.append(followings_count)
-            followings_to_save.append(followings)
+    if followings_count != followings_old_count:
+        followings_diff = followings_count - followings_old_count
+        followings_diff_str = ""
+        if followings_diff > 0:
+            followings_diff_str = "+" + str(followings_diff)
+        else:
+            followings_diff_str = str(followings_diff)
+        print(f"* Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})")
+        followers_followings_fetched = True
+        try:
+            if csv_file_name:
+                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Followings Count", followings_old_count, followings_count)
+        except Exception as e:
+            print(f"Error: cannot write CSV entry - {e}")
+
+    if ((followings_count != followings_old_count) or (followings_count > 0 and not followings)) and not skip_session and not skip_followings and not is_private:
+        print("\n* Getting followings ...")
+        followers_followings_fetched = True
+
+        followings = [followee.username for followee in profile.get_followees()]
+        followings_to_save = []
+        followings_count = profile.followees
+        followings_to_save.append(followings_count)
+        followings_to_save.append(followings)
+        try:
             with open(insta_followings_file, 'w', encoding="utf-8") as f:
                 json.dump(followings_to_save, f, indent=2)
                 print(f"* Followings saved to file '{insta_followings_file}'")
+        except Exception as e:
+            print(f"* Cannot save list of followings to '{insta_followings_file}' file - {e}")
 
-        if ((followings_count != followings_old_count) and (followings != followings_old)) and not skip_session and not skip_followings and not is_private:
-            a, b = set(followings_old), set(followings)
-            removed_followings = list(a - b)
-            added_followings = list(b - a)
-            added_followings_list = ""
-            removed_followings_list = ""
+    if ((followings_count != followings_old_count) and (followings != followings_old)) and not skip_session and not skip_followings and not is_private:
+        a, b = set(followings_old), set(followings)
+        removed_followings = list(a - b)
+        added_followings = list(b - a)
+        added_followings_list = ""
+        removed_followings_list = ""
 
+        print()
+
+        if removed_followings:
+            print("Removed followings:\n")
+            for f_in_list in removed_followings:
+                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                    removed_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
+                    try:
+                        if csv_file_name:
+                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followings", f_in_list, "")
+                    except Exception as e:
+                        print(f"Error: cannot write CSV entry - {e}")
             print()
 
-            if removed_followings:
-                print("Removed followings:\n")
-                for f_in_list in removed_followings:
-                        print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                        removed_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                        try:
-                            if csv_file_name:
-                                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followings", f_in_list, "")
-                        except Exception as e:
-                            print(f"Error: cannot write CSV entry - {e}")
-                print()
-
-            if added_followings:
-                print("Added followings:\n")
-                for f_in_list in added_followings:
-                        print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                        added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                        try:
-                            if csv_file_name:
-                                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followings", "", f_in_list)
-                        except Exception as e:
-                            print(f"Error: cannot write CSV entry - {e}")
-                print()
-
-    except Exception as e:
-        print(f"Error - {e}")
+        if added_followings:
+            print("Added followings:\n")
+            for f_in_list in added_followings:
+                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                    added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
+                    try:
+                        if csv_file_name:
+                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followings", "", f_in_list)
+                    except Exception as e:
+                        print(f"Error: cannot write CSV entry - {e}")
+            print()
 
     if not skip_session and not skip_followers and not is_private:
         followers_old = followers
@@ -892,7 +899,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                             json.dump(followings_to_save, f, indent=2)
                 except Exception as e:
                     followings = followings_old
-                    print(f"Error - {e}")
+                    print(f"Error while processing followings list - {e}")
 
                 if not followings and followings_count > 0:
                     followings = followings_old
@@ -984,7 +991,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                             json.dump(followers_to_save, f, indent=2)
                 except Exception as e:
                     followers = followers_old
-                    print(f"Error - {e}")
+                    print(f"Error while processing followers list - {e}")
 
                 if not followers and followers_count > 0:
                     followers = followers_old
