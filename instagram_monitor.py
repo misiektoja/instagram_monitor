@@ -10,6 +10,7 @@ Python pip3 requirements:
 
 instaloader
 pytz
+tzlocal
 python-dateutil
 requests
 """
@@ -46,7 +47,8 @@ RECEIVER_EMAIL = "your_receiver_email"
 INSTA_CHECK_INTERVAL = 5400  # 1,5 hours
 
 # Specify your local time zone so we convert Instagram API timestamps to your time (for example: 'Europe/Warsaw')
-LOCAL_TIMEZONE = 'Europe/Warsaw'
+# If you leave it as 'Auto' we will try to automatically detect the local timezone
+LOCAL_TIMEZONE = 'Auto'
 
 # How often do we perform alive check by printing "alive check" message in the output; in seconds
 TOOL_ALIVE_INTERVAL = 21600  # 6 hours
@@ -120,6 +122,10 @@ import argparse
 import csv
 import random
 import pytz
+try:
+    from tzlocal import get_localzone
+except ImportError:
+    pass
 import platform
 import re
 import ipaddress
@@ -1266,6 +1272,18 @@ if __name__ == "__main__":
         parser.print_help(sys.stderr)
         sys.exit(1)
 
+    local_tz = None
+    if LOCAL_TIMEZONE == "Auto":
+        try:
+            local_tz = get_localzone()
+        except NameError:
+            pass
+        if local_tz:
+            LOCAL_TIMEZONE = str(local_tz)
+        else:
+            print("* Error: Cannot detect local timezone, consider setting LOCAL_TIMEZONE manually !")
+            sys.exit(1)
+
     if not args.INSTAGRAM_USERNAME:
         print("* Error: INSTAGRAM_USERNAME argument is required !")
         parser.print_help()
@@ -1342,6 +1360,7 @@ if __name__ == "__main__":
         print(f"* CSV logging enabled:\t\t{csv_enabled} ({args.csv_file})")
     else:
         print(f"* CSV logging enabled:\t\t{csv_enabled}")
+    print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}")
 
     out = f"\nMonitoring Instagram user {args.INSTAGRAM_USERNAME}"
     print(out)
