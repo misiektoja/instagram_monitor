@@ -226,6 +226,9 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
 
     if type(timestamp1) is int:
         dt1 = datetime.fromtimestamp(int(ts1))
+    elif type(timestamp1) is float:
+        ts1 = int(round(ts1))
+        dt1 = datetime.fromtimestamp(ts1)
     elif type(timestamp1) is datetime:
         dt1 = timestamp1
         ts1 = int(round(dt1.timestamp()))
@@ -234,6 +237,9 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
 
     if type(timestamp2) is int:
         dt2 = datetime.fromtimestamp(int(ts2))
+    elif type(timestamp2) is float:
+        ts2 = int(round(ts2))
+        dt2 = datetime.fromtimestamp(ts2)
     elif type(timestamp2) is datetime:
         dt2 = timestamp2
         ts2 = int(round(dt2.timestamp()))
@@ -390,22 +396,41 @@ def get_date_from_ts(ts):
         ts_new = int(round(ts.timestamp()))
     elif type(ts) is int:
         ts_new = ts
+    elif type(ts) is float:
+        ts_new = int(round(ts))
     else:
         return ""
 
     return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %Y, %H:%M:%S")}")
 
 
-# Function to return the timestamp/datetime object in human readable format (short version); eg. Sun 21 Apr 15:08
-def get_short_date_from_ts(ts):
+# Function to return the timestamp/datetime object in human readable format (short version); eg.
+# Sun 21 Apr 15:08
+# Sun 21 Apr 24, 15:08 (if show_year == True and current year is different)
+# Sun 21 Apr (if show_hour == False)
+def get_short_date_from_ts(ts, show_year=False, show_hour=True):
     if type(ts) is datetime:
         ts_new = int(round(ts.timestamp()))
     elif type(ts) is int:
         ts_new = ts
+    elif type(ts) is float:
+        ts_new = int(round(ts))
     else:
         return ""
 
-    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %H:%M")}")
+    if show_hour:
+        hour_strftime = " %H:%M"
+    else:
+        hour_strftime = ""
+
+    if show_year and int(datetime.fromtimestamp(ts_new).strftime("%Y")) != int(datetime.now().strftime("%Y")):
+        if show_hour:
+            hour_prefix = ","
+        else:
+            hour_prefix = ""
+        return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime(f"%d %b %y{hour_prefix}{hour_strftime}")}")
+    else:
+        return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime(f"%d %b{hour_strftime}")}")
 
 
 # Function to return the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
@@ -414,6 +439,8 @@ def get_hour_min_from_ts(ts, show_seconds=False):
         ts_new = int(round(ts.timestamp()))
     elif type(ts) is int:
         ts_new = ts
+    elif type(ts) is float:
+        ts_new = int(round(ts))
     else:
         return ""
 
@@ -430,6 +457,8 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
         ts1_new = int(round(ts1.timestamp()))
     elif type(ts1) is int:
         ts1_new = ts1
+    elif type(ts1) is float:
+        ts1_new = int(round(ts1))
     else:
         return ""
 
@@ -437,6 +466,8 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
         ts2_new = int(round(ts2.timestamp()))
     elif type(ts2) is int:
         ts2_new = ts2
+    elif type(ts2) is float:
+        ts2_new = int(round(ts2))
     else:
         return ""
 
@@ -456,9 +487,23 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
     return (str(out_str))
 
 
-# Function to convert UTC string returned by Instagram API to datetime object in specified timezone
+# Function to convert UTC datetime object returned by Instagram API to datetime object in specified timezone
 def convert_utc_datetime_to_tz_datetime(dt_utc, timezone):
     try:
+        old_tz = pytz.timezone("UTC")
+        new_tz = pytz.timezone(timezone)
+        dt_new_tz = old_tz.localize(dt_utc).astimezone(new_tz)
+        return dt_new_tz
+    except Exception as e:
+        return datetime.fromtimestamp(0)
+
+
+# Function to convert UTC string returned by Instagram API to datetime object in specified timezone
+def convert_utc_str_to_tz_datetime(utc_string, timezone):
+    try:
+        utc_string_sanitize = utc_string.split(' GMT', 1)[0]
+        dt_utc = datetime.strptime(utc_string_sanitize, '%a, %d %b %Y %H:%M:%S')
+
         old_tz = pytz.timezone("UTC")
         new_tz = pytz.timezone(timezone)
         dt_new_tz = old_tz.localize(dt_utc).astimezone(new_tz)
@@ -521,10 +566,18 @@ def save_pic_video(image_video_url, image_video_file_name):
     try:
         image_video_response = req.get(image_video_url, timeout=FUNCTION_TIMEOUT, stream=True)
         image_video_response.raise_for_status()
+        url_time = image_video_response.headers.get('last-modified')
+        url_time_in_tz_ts = 0
+        if url_time:
+            url_time_in_tz = convert_utc_str_to_tz_datetime(url_time, LOCAL_TIMEZONE)
+            url_time_in_tz_ts = int(url_time_in_tz.timestamp())
+
         if image_video_response.status_code == 200:
             with open(image_video_file_name, 'wb') as f:
                 image_video_response.raw.decode_content = True
                 shutil.copyfileobj(image_video_response.raw, f)
+            if url_time_in_tz_ts:
+                os.utime(image_video_file_name, (url_time_in_tz_ts, url_time_in_tz_ts))
         return True
     except Exception as e:
         return False
@@ -806,6 +859,8 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
         # profile pic does not exist in the filesystem
         if not os.path.isfile(profile_pic_file):
             if save_pic_video(profile_image_url, profile_pic_file):
+                profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
+
                 if os.path.isfile(profile_pic_file_empty):
                     is_empty_profile_pic = compare_images(profile_pic_file, profile_pic_file_empty)
 
@@ -813,16 +868,17 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                     print(f"* User {user} does not have profile picture set, empty template saved to '{profile_pic_file}'")
                 else:
                     print(f"* User {user} profile picture saved to '{profile_pic_file}'")
+                    print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)")
 
                 try:
                     if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH) and not is_empty_profile_pic:
-                        subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file};echo'), shell=True)
-                    shutil.copyfile(profile_pic_file, f"instagram_{user}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
+                        subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file}'), shell=True)
+                    shutil.copy2(profile_pic_file, f"instagram_{user}_profile_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg")
                 except:
                     pass
                 try:
                     if csv_file_name and not is_empty_profile_pic:
-                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Created", "", datetime.fromtimestamp(int(time.time())))
+                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Created", "", profile_pic_mdate_dt)
                 except Exception as e:
                     print(f"* Cannot write CSV entry - {e}")
             else:
@@ -834,8 +890,9 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
         elif os.path.isfile(profile_pic_file):
             csv_text = ""
             profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
-            profile_pic_mdate = profile_pic_mdate_dt.strftime("%d %b %Y, %H:%M")
+            profile_pic_mdate = get_short_date_from_ts(profile_pic_mdate_dt, True)
             if save_pic_video(profile_image_url, profile_pic_file_tmp):
+                profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)))
                 if os.path.isfile(profile_pic_file_empty):
                     is_empty_profile_pic = compare_images(profile_pic_file, profile_pic_file_empty)
                 if not compare_images(profile_pic_file, profile_pic_file_tmp):
@@ -849,22 +906,28 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
 
                     # User has set profile picture
                     elif is_empty_profile_pic and not is_empty_profile_pic_tmp:
-                        print(f"* User {user} has set profile picture !")
+                        print(f"* User {user} has set profile picture ! ({get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)})")
                         csv_text = "Profile Picture Created"
 
                     # User has changed profile picture
                     elif not is_empty_profile_pic_tmp and not is_empty_profile_pic:
                         print(f"* User {user} has changed profile picture ! (previous one added on {profile_pic_mdate} - {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)")
+                        print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)")
                         csv_text = "Profile Picture Changed"
                     try:
                         if csv_file_name:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), csv_text, profile_pic_mdate_dt, datetime.fromtimestamp(int(time.time())))
+                            if csv_text == "Profile Picture Removed":
+                                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), csv_text, profile_pic_mdate_dt, "")
+                            elif csv_text == "Profile Picture Created":
+                                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), csv_text, "", profile_pic_tmp_mdate_dt)
+                            else:
+                                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), csv_text, profile_pic_mdate_dt, profile_pic_tmp_mdate_dt)
                     except Exception as e:
                         print(f"* Cannot write CSV entry - {e}")
                     try:
                         if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH) and not is_empty_profile_pic_tmp:
-                            subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file_tmp};echo'), shell=True)
-                        shutil.copyfile(profile_pic_file_tmp, f"instagram_{user}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
+                            subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file_tmp}'), shell=True)
+                        shutil.copy2(profile_pic_file_tmp, f"instagram_{user}_profile_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg")
                         if csv_text != "Profile Picture Created":
                             os.replace(profile_pic_file, profile_pic_file_old)
                         os.replace(profile_pic_file_tmp, profile_pic_file)
@@ -874,7 +937,8 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                     if is_empty_profile_pic:
                         print(f"* User {user} does not have profile picture set")
                     else:
-                        print(f"* Profile picture '{profile_pic_file}' already exists ({profile_pic_mdate})")
+                        print(f"* Profile picture '{profile_pic_file}' already exists")
+                        print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)")
                     try:
                         os.remove(profile_pic_file_tmp)
                     except:
@@ -1209,23 +1273,26 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             # profile pic does not exist in the filesystem
             if not os.path.isfile(profile_pic_file):
                 if save_pic_video(profile_image_url, profile_pic_file):
+                    profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
+
                     if os.path.isfile(profile_pic_file_empty):
                         is_empty_profile_pic = compare_images(profile_pic_file, profile_pic_file_empty)
 
                     if is_empty_profile_pic:
                         print(f"* User {user} does not have profile picture set, empty template saved to '{profile_pic_file}'\n")
                     else:
-                        print(f"* User {user} profile picture saved to '{profile_pic_file}'\n")
+                        print(f"* User {user} profile picture saved to '{profile_pic_file}'")
+                        print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)\n")
 
                     try:
                         if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH) and not is_empty_profile_pic:
                             subprocess.call((f'{IMGCAT_PATH} {profile_pic_file};echo'), shell=True)
-                        shutil.copyfile(profile_pic_file, f"instagram_{user}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
+                        shutil.copy2(profile_pic_file, f"instagram_{user}_profile_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg")
                     except:
                         pass
                     try:
                         if csv_file_name and not is_empty_profile_pic:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Created", "", datetime.fromtimestamp(int(time.time())))
+                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Created", "", profile_pic_mdate_dt)
                     except Exception as e:
                         print(f"* Cannot write CSV entry - {e}")
                 else:
@@ -1242,8 +1309,9 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                 m_body_html = ""
                 m_body_html_pic_saved_text = ""
                 profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
-                profile_pic_mdate = profile_pic_mdate_dt.strftime("%d %b %Y, %H:%M")
+                profile_pic_mdate = get_short_date_from_ts(profile_pic_mdate_dt, True)
                 if save_pic_video(profile_image_url, profile_pic_file_tmp):
+                    profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)))
                     if os.path.isfile(profile_pic_file_empty):
                         is_empty_profile_pic = compare_images(profile_pic_file, profile_pic_file_empty)
                     if not compare_images(profile_pic_file, profile_pic_file_tmp):
@@ -1257,37 +1325,44 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                             if status_notification:
                                 m_subject = f"Instagram user {user} has removed profile picture ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
                                 m_body = f"Instagram user {user} has removed profile picture added on {profile_pic_mdate} (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
+                                m_body_html = f"Instagram user {user} has removed profile picture added on <b>{profile_pic_mdate}</b> (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})<br><br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("<br>Timestamp: ")}"
 
                         # User has set profile picture
                         elif is_empty_profile_pic and not is_empty_profile_pic_tmp:
-                            print(f"* User {user} has set profile picture !\n")
+                            print(f"* User {user} has set profile picture ! ({get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)})\n")
                             csv_text = "Profile Picture Created"
                             if status_notification:
                                 m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
-                                m_subject = f"Instagram user {user} has set profile picture !"
-                                m_body = f"Instagram user {user} has set profile picture !\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
-                                m_body_html = f"Instagram user <b>{user}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("<br>Timestamp: ")}"
+                                m_subject = f"Instagram user {user} has set profile picture ! ({get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)})"
+                                m_body = f"Instagram user {user} has set profile picture ! ({get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
+                                m_body_html = f"Instagram user <b>{user}</b> has set profile picture ! (<b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b>){m_body_html_pic_saved_text}<br><br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("<br>Timestamp: ")}"
 
                         # User has changed profile picture
                         elif not is_empty_profile_pic_tmp and not is_empty_profile_pic:
-                            print(f"* User {user} has changed profile picture ! (previous one added on {profile_pic_mdate} - {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n")
+                            print(f"* User {user} has changed profile picture ! (previous one added on {profile_pic_mdate} - {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)")
+                            print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n")
                             csv_text = "Profile Picture Changed"
                             if status_notification:
                                 m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
                                 m_subject = f"Instagram user {user} has changed profile picture ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
-                                m_body = f"Instagram user {user} has changed profile picture !\n\nPrevious one added on {profile_pic_mdate} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
-                                m_body_html = f"Instagram user <b>{user}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{profile_pic_mdate}</b> ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("<br>Timestamp: ")}"
+                                m_body = f"Instagram user {user} has changed profile picture !\n\nPrevious one added on {profile_pic_mdate} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
+                                m_body_html = f"Instagram user <b>{user}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{profile_pic_mdate}</b> ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts("<br>Timestamp: ")}"
 
                         try:
                             if csv_file_name:
-                                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), csv_text, profile_pic_mdate_dt, datetime.fromtimestamp(int(time.time())))
+                                if csv_text == "Profile Picture Removed":
+                                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), csv_text, profile_pic_mdate_dt, "")
+                                elif csv_text == "Profile Picture Created":
+                                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), csv_text, "", profile_pic_tmp_mdate_dt)
+                                else:
+                                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), csv_text, profile_pic_mdate_dt, profile_pic_tmp_mdate_dt)
                         except Exception as e:
                             print(f"* Cannot write CSV entry - {e}")
 
                         try:
                             if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH) and not is_empty_profile_pic_tmp:
                                 subprocess.call((f'{IMGCAT_PATH} {profile_pic_file_tmp};echo'), shell=True)
-                            shutil.copyfile(profile_pic_file_tmp, f"instagram_{user}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
+                            shutil.copy2(profile_pic_file_tmp, f"instagram_{user}_profile_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg")
                             if csv_text != "Profile Picture Created":
                                 os.replace(profile_pic_file, profile_pic_file_old)
                             os.replace(profile_pic_file_tmp, profile_pic_file)
