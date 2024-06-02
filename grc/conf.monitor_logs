@@ -34,7 +34,8 @@ colours=unchanged, magenta, magenta
 regexp=\(last track start changed from (.*) to (.*) - offline mode \?\)$
 colours=unchanged, magenta, magenta
 -
-regexp=^(User played game from (.*) to (.*)$)|(^User is currently in-game:.*$)
+#regexp=^(User played game from (.*) to (.*)$)|(^User is currently in-game:.*$)
+regexp=^(^User is currently in-game:.*$)
 colours=yellow, yellow
 -
 regexp=^User played game from (.*) to (.*)$
@@ -91,14 +92,17 @@ colours=unchanged, magenta, unchanged
 regexp=^(Account creation date:|Account updated date:)\s+(.*)\(.*\)$
 colours=unchanged, unchanged, magenta
 -
-regexp=^(Old account update date:|New account update date:)\s+(.*)$
+regexp=^(Old account update date:|New account update date:|Old repo update date:|New repo update date:)\s+(.*)$
 colours=unchanged, unchanged, magenta
 -
-regexp=(^Event ID:)\s+(\d+).*$
-colours=unchanged, yellow, cyan, unchanged
+regexp=(^Event date:)\s+(\w+ \d+ \w+ \d+, \d\d:\d\d:\d\d)$
+colours=unchanged, yellow, magenta, unchanged
 -
-regexp=^Event ID:\s+.*\((.*:\d\d)(.*)\)$
-colours=unchanged, magenta, unchanged
+regexp=(^Event date:)\s+(\w+ \d+ \w+ \d+, \d\d:\d\d:\d\d) \(.*\)$
+colours=unchanged, yellow, magenta, unchanged
+-
+regexp=^Event ID:\s+(\d+).*$
+colours=unchanged, cyan, unchanged
 -
 regexp=^ - Commit date:\s+(.*)$
 colours=unchanged, magenta
@@ -214,7 +218,10 @@ colours=unchanged, magenta
 regexp=\*\*\* (Friend|User) played music from (.*) to (.*)$
 colours=unchanged, unchanged, magenta, magenta
 -
-regexp=\*\*\* Duplicate entries found, possible private mode \((.*)\)$
+regexp=(?i)\*\*\* Duplicate entries \((\d+)\) found, possible private mode \((.*)\)$
+colours=unchanged, green, magenta
+-
+regexp=(?i)\*\*\* Duplicate entries found, possible private mode \((.*)\)$
 colours=unchanged, magenta
 -
 regexp=^\*\*\* User got .* \(after.*\: (.*)\)
@@ -238,28 +245,20 @@ colours=unchanged, bold magenta, bold magenta
 regexp=.*\(was offline since.*, (\d\d:\d\d:\d\d)
 colours=unchanged, bold magenta
 -
-regexp=(?i).*(story for user|Newest post|Followers number changed|Followings number changed|Playlists number changed|Bio changed for|New post for user|number changed|Followings changed|Followers changed|name changed to|has changed for user|has been updated for user|number of tracks changed|number of likes changed|name changed to new name|description changed from).*
+regexp=(?i).*(story for user|Newest post|Followers number changed|Followings number changed|Playlists number changed|Bio changed for|New post for user|number changed|number of|Followings changed|Followers changed|name changed to|has changed for user|has been updated for user|number of tracks changed|number of likes changed|name changed to new name|description changed from|changed profile picture|removed profile picture|set profile picture|update date changed|has new story item|story items:).*
 colours=yellow
 -
 regexp=.*number.*from (\d+ )to (\d+)
 colours=unchanged, green, green
 -
-regexp=.*\((\+\d+)\)$
+regexp=.*\((\+\d+)\).*$
 colours=unchanged, green, green
 -
-regexp=.*\((-\d+)\)$
+regexp=.*\((-\d+)\).*$
 colours=unchanged, red, red
 -
 regexp=(?i)\* Signal.*received
 colours=yellow
--
-regexp=\s+(\d+ seconds*|\d+ minutes*|\d+ hours*|\d+ days*|\d+ weeks*|\d+ months*|\d+ years*)( ago)*
-colours=green
-count=more
--
-regexp=\s+\((\d+\%|\d+ seconds*|\d+ minutes*|\d+ hours*|\d+ days*|\d+ weeks*|\d+ months*|\d+ years*)( ago)*
-colours=unchanged, green, green
-count=more
 -
 regexp=(?i)(True| online| appeared )
 colours=green
@@ -298,7 +297,7 @@ colours=unchanged, green, unchanged
 regexp=^\*\*\* User paused music (\d+) times.*$
 colours=unchanged, green, unchanged
 -
-regexp=(?i)(Error |Error:|Warning|Failure|connect error|HTTP redirect| disappeared|Redirected to login|Forbidden| timeout)
+regexp=(?i)(Error |Error:|^Error|Warning|Failure|connect error|HTTP redirect| disappeared|Redirected to login| timeout)
 colours=red
 count=more
 -
@@ -320,9 +319,59 @@ colours=unchanged, unchanged, green
 regexp=^\*.* (by|for)\s(user)\s([\w_-]+)(\s|:).*
 colours=unchanged, unchanged, unchanged, blue underline, unchanged
 -
+regexp=^\*.* (by|for)\s(user)\s(.+) from .*
+colours=unchanged, unchanged, unchanged, blue underline, unchanged
+-
 regexp=^\*.* (by|for)\s(user)\s([\w_-]+) !
 colours=unchanged, unchanged, unchanged, blue underline, unchanged
 -
 regexp=\* Playlist \'(.*)\'(\s|:)(.*)$
 colours=unchanged, green, unchanged, unchanged
+-
+regexp=^\* User ([\w_-]+) has .*
+colours=unchanged, blue underline, unchanged
+-
+regexp=^\* User [\w_-]+ has .* added on (\d+ \w+ \d+, \d\d:\d\d)
+colours=unchanged, magenta, unchanged
+-
+regexp=^\* User [\w_-]+ has .* added on (\w+ \d+ \w+( \d+,)* \d\d:\d\d)
+colours=unchanged, magenta, unchanged
+-
+regexp=^\* User [\w_-]+ has set .* \((\w+ \d+ \w+( \d+,)* \d\d:\d\d)\)
+colours=unchanged, magenta, unchanged
+-
+regexp=^\* Profile picture has been added on (\w+ \d+ \w+( \d+,)* \d\d:\d\d).*
+colours=unchanged, magenta, unchanged
+-
+regexp=^\* New post for user .* after .* \((\w+ \d+ \w+ \d+, \d\d:\d\d:\d\d)\)
+colours=unchanged, magenta, unchanged
+-
+regexp=^.*; previous update: (\w+ \d+ \w+( \d+,)* \d\d:\d\d)\)
+colours=unchanged, magenta, unchanged
+-
+regexp=^User played (\d+) games for total time of (.*)
+colours=unchanged, green, unchanged
+-
+regexp=.*(online start timestamp).*
+colours=unchanged, white, unchanged
+-
+regexp=.*, online start timestamp set back to (\w+ \d+ \w+ \d\d:\d\d)
+colours=unchanged, magenta
+-
+regexp=\s+(\d+ seconds*|\d+ minutes*|\d+ hours*|\d+ days*|\d+ weeks*|\d+ months*|\d+ years*)( ago)*
+colours=green
+count=more
+-
+regexp=\s+\((\d+\%|\d+ seconds*|\d+ minutes*|\d+ hours*|\d+ days*|\d+ weeks*|\d+ months*|\d+ years*)( ago)*
+colours=unchanged, green, green
+count=more
+-
+regexp=^Event actor login:\s+(.*)$
+colours=unchanged, blue, unchanged
+-
+regexp=^\* Repo \'(.*)\'([: ]).*$
+colours=unchanged, green, unchanged
+-
+regexp=^\* Playlist URL: (.*)
+colours=unchanged, blue
 
