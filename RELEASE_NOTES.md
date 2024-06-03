@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes. 
 
-# Changes in 1.1 (02 Jun 2024)
+# Changes in 1.1 (03 Jun 2024)
 
 **Features and Improvements**:
 
@@ -28,7 +28,7 @@ This is a high-level summary of the most important changes.
 - **IMPROVEMENT:** Help screen reorganization
 - **IMPROVEMENT:** pep8 style convention corrections
 
-**Bugfixes**:
+**Bug fixes**:
 
 - **BUGFIX:** Improved exception handling while processing JSON files
 - **BUGFIX:** Escaping of potentially dangerous variables in HTML email templates
@@ -42,6 +42,6 @@ This is a high-level summary of the most important changes.
 - Support for Instagram users having no posts yet
 - Support for better handling of private profiles
 
-**Bugfixes**:
+**Bug fixes**:
 
 - Disabled fetching location, list of likes and comments for posts due to errors after recent Instagram changes (HTTP Error 400)
