@@ -76,7 +76,7 @@ First mode of tool operation assumes you do not log in with your Instagram accou
 
 This way you can still monitor basic activities of the user like new posts, stories, changed bio and also changed number of followers & followings, but without information what followers/followings have been added or removed. You also won't be able to get more detailed info about new posts & stories.
 
-This mode is easy to use, does not require any preparation and is resistant to Instagram's anticaptcha and automated tool detection mechanisms.
+This mode is easy to use, does not require any preparation and is resistant to Instagram's anti-captcha and automated tool detection mechanisms.
 
 ### Mode 2 with logged in Instagram account (with session login)
 
@@ -160,9 +160,21 @@ It is suggested to use sth like **tmux** or **screen** to have the script runnin
 
 The tool automatically saves its output to *instagram_monitor_username.log* file (can be changed in the settings via **INSTA_LOGFILE** variable or disabled completely with **-d** parameter).
 
-The tool in mode 2 (with session login) also saves the the list of followings & followers to *instagram_username_followings.json* and *instagram_username_followers.json* files, so we do not need to refetch it every time the tool is restarted and so we can also detect changes since last usage of the tool.
+The tool in mode 2 (with session login) also saves the list of followings & followers to these files:
+- *instagram_username_followings.json*
+- *instagram_username_followers.json*
 
-The tool also saves the user profile picture to *instagram_{username}_profile_pic\*.jpeg* files and also downloaded posts & story images/videos to *instagram_{username}_post_YYYYmmdd_HHMMSS.jpeg*, *instagram_{username}_post_YYYYmmdd_HHMMSS.mp4*, *instagram_{username}_story_YYYYmmdd_HHMMSS.jpeg* and *instagram_{username}_story_YYYYmmdd_HHMMSS.mp4* files.
+Thanks to this we do not need to re-fetch it every time the tool is restarted and we can also detect changes since last usage of the tool.
+
+The tool also saves the user profile picture to *instagram_{username}_profile_pic\*.jpeg* files.
+
+It also saves downloaded posts images & videos to:
+- *instagram_{username}_post_YYYYmmdd_HHMMSS.jpeg*
+- *instagram_{username}_post_YYYYmmdd_HHMMSS.mp4*
+
+And downloaded stories images & videos to:
+- *instagram_{username}_story_YYYYmmdd_HHMMSS.jpeg*
+- *instagram_{username}_story_YYYYmmdd_HHMMSS.mp4*
 
 ## How to use other features
 
@@ -225,19 +237,19 @@ If you want to change the check interval to 1 hour (3600 seconds) use **-c** par
 
 It is generally not recommended to use values lower than 1 hour as it will be quickly picked up by Instagram automated tool detection mechanisms.
 
-In order to make the tool's behaviour less suspicious for Instagram, by default the check interval value is randomly picked from the range: 
+In order to make the tool's behavior less suspicious for Instagram, by default the check interval value is randomly picked from the range: 
 
 [ INSTA_CHECK_INTERVAL (**-c**) - RANDOM_SLEEP_DIFF_LOW (**-i**) ] <-----> [ INSTA_CHECK_INTERVAL (**-c**) + RANDOM_SLEEP_DIFF_HIGH (**-j**) ]
 
 So having the check interval set to 1 hour (-c 3600), RANDOM_SLEEP_DIFF_LOW set to default 15 mins (-i 900) and RANDOM_SLEEP_DIFF_HIGH set to default 3 mins (-j 180) means that the check interval will be with every iteration picked from the range of 45 mins to 1 hour and 3 mins.
 
-Thats why the check interval information is printed in the console and email notifications as it is essentially a random number.
+That's why the check interval information is printed in the console and email notifications as it is essentially a random number.
 
 On top of that you can also define that checks for new posts should be done only in specific hour ranges by setting **CHECK_POSTS_IN_HOURS_RANGE** to True and then defining proper values for **MIN/MAX_H1/H2** variables (see the comments in [instagram_monitor.py](instagram_monitor.py) file for more information).
 
 ### Controlling the script via signals (only macOS/Linux/Unix)
 
-The tool has several signal handlers implemented which allow to change behaviour of the tool without a need to restart it with new parameters.
+The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new parameters.
 
 List of supported signals:
 
@@ -268,9 +280,9 @@ You can combine all the parameters mentioned earlier.
 
 The operation of the tool might flag the Instagram account and/or IP as being an automated tool (as described earlier).
 
-## Colouring log output with GRC
+## Coloring log output with GRC
 
-If you use [GRC](https://github.com/garabik/grc) and want to have the tool's log output properly coloured you can use the configuration file available [here](grc/conf.monitor_logs)
+If you use [GRC](https://github.com/garabik/grc) and want to have the tool's log output properly colored you can use the configuration file available [here](grc/conf.monitor_logs)
 
 Change your grc configuration (typically *.grc/grc.conf*) and add this part:
 
@@ -280,7 +292,7 @@ Change your grc configuration (typically *.grc/grc.conf*) and add this part:
 conf.monitor_logs
 ```
 
-Now copy the *conf.monitor_logs* to your *.grc* directory and instagram_monitor log files should be nicely coloured when using *grc* tool.
+Now copy the *conf.monitor_logs* to your *.grc* directory and instagram_monitor log files should be nicely colored when using *grc* tool.
 
 ## License
 
