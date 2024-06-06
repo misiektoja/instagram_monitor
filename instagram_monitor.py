@@ -519,7 +519,7 @@ def toggle_status_changes_notifications_signal_handler(sig, frame):
     status_notification = not status_notification
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Email notifications: [new posts/stories/followings/bio = {status_notification}]")
+    print(f"* Email notifications: [new posts/stories/followings/bio/profile picture = {status_notification}]")
     print_cur_ts("Timestamp:\t\t")
 
 
