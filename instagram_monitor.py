@@ -1675,8 +1675,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                 stories_old_count = stories_count
 
             except Exception as e:
-                print(f"Error - {e}")
-                sys.exit(1)
+                print(f"Error while processing story items - {e}")
 
         new_post = False
 
