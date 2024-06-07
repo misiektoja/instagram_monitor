@@ -2,6 +2,17 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 1.2 (07 Jun 2024)
+
+**Features and Improvements**:
+
+- **IMPROVE:** pyright complained the code is too complex to analyze, so it has been simplified little bit (so it does not complain anymore)
+- **IMPROVE:** Changed email notifications string in SIGUSR1 signal handler
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed nasty bug terminating the script in case of issues while processing story items (yes, copy & paste bug ;-))
+
 # Changes in 1.1 (03 Jun 2024)
 
 **Features and Improvements**:
