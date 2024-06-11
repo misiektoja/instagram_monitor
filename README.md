@@ -1,6 +1,6 @@
 # instagram_monitor
 
-instagram_monitor is a Python script which allows for real-time monitoring of Instagram users activities and profile changes. 
+instagram_monitor is an OSINT tool written in Python which allows for real-time monitoring of Instagram users activities and profile changes. 
 
 ## Features
 
