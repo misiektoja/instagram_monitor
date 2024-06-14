@@ -25,7 +25,7 @@ VERSION = 1.3
 # In such case we need Instagram username & password for session login in order to monitor other users
 # You can type the username & password below, however it is recommended to not specify the password here and log in via:
 # <instaloader_location>/bin/instaloader -l <insta_username_for_session_login>
-# Then only put the username below (or use -u parameter) to specify the user you used while doing session login via instaloader 
+# Then only put the username below (or use -u parameter) to specify the user you used while doing session login via instaloader
 INSTA_USERNAME_FOR_SESSION_LOGIN = ''
 INSTA_PASSWORD_FOR_SESSION_LOGIN = ''
 
@@ -123,6 +123,11 @@ nl_ch = "\n"
 
 
 import sys
+
+if sys.version_info < (3, 8):
+    print("* Error: Python version 3.8 or higher required !")
+    sys.exit(1)
+
 import time
 import string
 import json
