@@ -33,13 +33,16 @@ I'm not a dev, project done as a hobby. Code is ugly and as-is, but it works (at
 
 ## Requirements
 
-The script requires Python 3.x.
+The tool requires Python 3.8 or higher.
 
 It uses [instaloader](https://github.com/instaloader/instaloader) library, also requires requests, python-dateutil, pytz and tzlocal.
 
 It has been tested successfully on:
 - macOS (Ventura & Sonoma)
-- Linux (Raspberry Pi Bullseye & Bookworm based on Debian, Ubuntu 24)
+- Linux:
+   - Raspberry Pi Bullseye & Bookworm
+   - Ubuntu 24
+   - Kali Linux 2024
 - Windows (10 & 11)
 
 It should work on other versions of macOS, Linux, Unix and Windows as well.
@@ -68,7 +71,7 @@ chmod a+x instagram_monitor.py
 
 ## Configuration
 
-Edit the  *[instagram_monitor.py](instagram_monitor.py)* file and change any desired configuration variables in the marked **CONFIGURATION SECTION** (all parameters have detailed description in the comments).
+Edit the *[instagram_monitor.py](instagram_monitor.py)* file and change any desired configuration variables in the marked **CONFIGURATION SECTION** (all parameters have detailed description in the comments).
 
 ### Mode 1 without logged in Instagram account (without session login)
 
@@ -116,7 +119,13 @@ In such case it is not needed to install *tzlocal* pip module.
 
 ### SMTP settings
 
-If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient). If you leave the default settings then no notifications will be sent.
+If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient) in the *[instagram_monitor.py](instagram_monitor.py)* file. If you leave the default settings then no notifications will be sent.
+
+You can verify if your SMTP settings are correct by using **-z** parameter (the tool will try to send a test email notification):
+
+```sh
+./instagram_monitor.py -z
+```
 
 ### Other settings
 
