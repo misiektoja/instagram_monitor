@@ -289,7 +289,7 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
 
 
 # Function to send email notification
-def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1"):
+def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15):
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
 
@@ -327,10 +327,10 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     try:
         if use_ssl:
             ssl_context = ssl.create_default_context()
-            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT)
+            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
             smtpObj.starttls(context=ssl_context)
         else:
-            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT)
+            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
         smtpObj.login(SMTP_USER, SMTP_PASSWORD)
         email_msg = MIMEMultipart('alternative')
         email_msg["From"] = SENDER_EMAIL
@@ -1847,6 +1847,7 @@ if __name__ == "__main__":
     parser.add_argument("-r", "--skip_getting_story_details", help="Do not get detailed info about new stories and its images/videos, even if session login is used; you will still get generic information about new stories", action='store_true')
     parser.add_argument("-t", "--get_more_post_details", help="Get more detailed info about new posts like its location and comments +  likes list, only possible if session login is used; if not enabled you will still get generic information about new posts", action='store_true')
     parser.add_argument("-d", "--disable_logging", help="Disable output logging to file 'instagram_monitor_username.log' file", action='store_true')
+    parser.add_argument("-z", "--send_test_email_notification", help="Send test email notification to verify SMTP settings defined in the script", action='store_true')
     args = parser.parse_args()
 
     if len(sys.argv) == 1:
@@ -1864,6 +1865,19 @@ if __name__ == "__main__":
         else:
             print("* Error: Cannot detect local timezone, consider setting LOCAL_TIMEZONE manually !")
             sys.exit(1)
+
+    sys.stdout.write("* Checking internet connectivity ... ")
+    sys.stdout.flush()
+    check_internet()
+    print("")
+
+    if args.send_test_email_notification:
+        print("* Sending test email notification ...\n")
+        if send_email("instagram_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL, smtp_timeout=5) == 0:
+                print("* Email sent successfully !")
+        else:
+            sys.exit(1)
+        sys.exit(0)
 
     if not args.INSTAGRAM_USERNAME:
         print("* Error: INSTAGRAM_USERNAME argument is required !")
@@ -1908,11 +1922,6 @@ if __name__ == "__main__":
 
     if args.do_not_detect_changed_profile_pic is False:
         DETECT_CHANGED_PROFILE_PIC = False
-
-    sys.stdout.write("* Checking internet connectivity ... ")
-    sys.stdout.flush()
-    check_internet()
-    print("")
 
     if args.csv_file:
         csv_enabled = True
