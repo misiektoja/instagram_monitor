@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.3
+v1.4
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -15,7 +15,7 @@ python-dateutil
 requests
 """
 
-VERSION = 1.3
+VERSION = 1.4
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -826,6 +826,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
     followings_old_count = followings_count
     bio_old = bio
     posts_count_old = posts_count
+    is_private_old = is_private
 
     print(f"\nUsername:\t\t{insta_username}")
     print(f"User ID:\t\t{insta_userid}")
@@ -1501,6 +1502,34 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
             print_cur_ts("Timestamp:\t\t")
 
+        if is_private != is_private_old:
+
+            if is_private:
+                profile_visibility = "private"
+                profile_visibility_old = "public"
+            else:
+                profile_visibility = "public"
+                profile_visibility_old = "private"
+
+            print(f"* Profile visibility changed for user {user} to {profile_visibility} !\n")
+
+            try:
+                if csv_file_name:
+                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Visibility", profile_visibility_old, profile_visibility)
+            except Exception as e:
+                print(f"Error: cannot write CSV entry - {e}")
+
+            if status_notification:
+                m_subject = f"Instagram user {user} profile visibility has changed to {profile_visibility} !"
+
+                m_body = f"Instagram user {user} profile visibility has changed to {profile_visibility}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+                send_email(m_subject, m_body, "", SMTP_SSL)
+
+            is_private_old = is_private
+            print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+            print_cur_ts("Timestamp:\t\t")
+
         if has_story and not story_flag:
             print(f"* New story for user {user} !\n")
             story_flag = True
@@ -1836,13 +1865,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser("instagram_monitor")
     parser.add_argument("INSTAGRAM_USERNAME", nargs="?", help="Instagram username to monitor", type=str)
-    parser.add_argument("-u", "--instagram_user_for_session_login", help="Instagram username for session login to fetch followers/followings and detailed info about new stories/posts ", type=str, metavar="INSTAGRAM_USER")
-    parser.add_argument("-p", "--instagram_password_for_session_login", help="Instagram user's password for session login to fetch followers/followings and detailed info about new stories/posts, however it is recommended to save the session via 'instaloader -l <instagram_user_for_session_login>'", type=str, metavar="INSTAGRAM_PASSWORD")
-    parser.add_argument("-s", "--status_notification", help="Send email notification once user puts new post/story, changes bio, follows new users or changes profile picture", action='store_true')
+    parser.add_argument("-u", "--instagram_user_for_session_login", help="Instagram username for session login to fetch followers/followings and detailed info about new stories/posts/reels", type=str, metavar="INSTAGRAM_USER")
+    parser.add_argument("-p", "--instagram_password_for_session_login", help="Instagram user's password for session login to fetch followers/followings and detailed info about new stories/posts/reels, however it is recommended to save the session via 'instaloader -l <instagram_user_for_session_login>'", type=str, metavar="INSTAGRAM_PASSWORD")
+    parser.add_argument("-s", "--status_notification", help="Send email notification once user puts new post/reel/story, changes bio, follows new users, changes profile picture or visibility", action='store_true')
     parser.add_argument("-m", "--followers_notification", help="Send email notification once user gets new followers, by default it is disabled", action='store_true')
     parser.add_argument("-e", "--error_notification", help="Disable sending email notifications in case of errors like invalid session", action='store_false')
     parser.add_argument("-c", "--check_interval", help="Time between monitoring checks, in seconds", type=int)
-    parser.add_argument("-i", "--check_interval_random_diff_low", help="Value substracted from check interval to randomize, in seconds", type=int)
+    parser.add_argument("-i", "--check_interval_random_diff_low", help="Value subtracted from check interval to randomize, in seconds", type=int)
     parser.add_argument("-j", "--check_interval_random_diff_high", help="Value added to check interval to randomize, in seconds", type=int)
     parser.add_argument("-b", "--csv_file", help="Write all user activities and profile changes to CSV file", type=str, metavar="CSV_FILENAME")
     parser.add_argument("-k", "--do_not_detect_changed_profile_pic", help="Disable detection of changed user's profile picture", action='store_false')
@@ -1879,7 +1908,7 @@ if __name__ == "__main__":
     if args.send_test_email_notification:
         print("* Sending test email notification ...\n")
         if send_email("instagram_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL, smtp_timeout=5) == 0:
-                print("* Email sent successfully !")
+            print("* Email sent successfully !")
         else:
             sys.exit(1)
         sys.exit(0)
@@ -1950,7 +1979,7 @@ if __name__ == "__main__":
     followers_notification = args.followers_notification
 
     print(f"* Instagram timers:\t\t\t[check interval: {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)}]")
-    print(f"* Email notifications:\t\t\t[new posts/stories/followings/bio/profile picture = {status_notification}]\n*\t\t\t\t\t[followers = {followers_notification}] [errors = {args.error_notification}]")
+    print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {status_notification}]\n*\t\t\t\t\t[followers = {followers_notification}] [errors = {args.error_notification}]")
     print(f"* Detect changed profile pic:\t\t{DETECT_CHANGED_PROFILE_PIC}")
     print(f"* Skip session login:\t\t\t{skip_session}")
     print(f"* Skip fetching followers:\t\t{skip_followers}")
