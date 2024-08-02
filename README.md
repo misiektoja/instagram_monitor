@@ -5,14 +5,15 @@ instagram_monitor is an OSINT tool written in Python which allows for real-time 
 ## Features
 
 - Real-time tracking of Instagram users activities and profile changes:
-   - new posts & stories
+   - new posts, reels & stories
    - changed followings, followers, bio
    - changed profile pictures
+   - changed profile visibility (from private to public and vice-versa)
 - Anonymous download of user's story images & videos; yes, user won't know you watched their stories 😉
-- Download of user's post images & videos
-- Email notifications for different events (new posts & stories, changed followings, followers, bio, changed profile pictures, errors)
-- Attaching changed profile pictures and stories/posts images directly in email notifications
-- Displaying the profile picture and stories/posts images right in your terminal (if you have *imgcat* installed)
+- Download of user's post images & reel videos
+- Email notifications for different events (new posts, reels & stories, changed followings, followers, bio, changed profile picture, visibility, errors)
+- Attaching changed profile pictures and stories/posts/reels images directly in email notifications
+- Displaying the profile picture and stories/posts/reels images right in your terminal (if you have *imgcat* installed)
 - Saving all user activities and profile changes with timestamps to the CSV file
 - Support for both public and private profiles
 - Two modes of operation: with or without logged in Instagram account
@@ -189,7 +190,7 @@ And downloaded stories images & videos to:
 
 ### Email notifications
 
-If you want to get email notifications for different events (new posts & stories, changed followings, bio, changed profile picture) use **-s** parameter (works for both modes):
+If you want to get email notifications for different events (new posts, reels & stories, changed followings, bio, changed profile picture and visibility) use **-s** parameter:
 
 ```sh
 ./instagram_monitor.py misiek_to_ja -s
@@ -232,7 +233,7 @@ To use this feature put [instagram_profile_pic_empty.jpeg](instagram_profile_pic
 
 It is not mandatory, but highly recommended as otherwise the tool will treat empty profile pic as regular one, so for example user's removal of profile picture will be detected as changed profile picture.
 
-### Displaying profile / posts / stories images in your terminal
+### Displaying profile / posts / reels / stories images in your terminal
 
 if you have *imgcat* installed you can enable the feature displaying profile pictures and stories/posts images right in your terminal. For that put path to your *imgcat* binary in **IMGCAT_PATH** variable (or leave it empty to disable this functionality).
 
@@ -264,7 +265,7 @@ List of supported signals:
 
 | Signal | Description |
 | ----------- | ----------- |
-| USR1 | Toggle email notifications for new posts & stories, changed followings, bio, profile picture (-s) |
+| USR1 | Toggle email notifications for new posts, reels & stories, changed followings, bio, profile picture, visibility (-s) |
 | USR2 | Toggle email notifications for new followers (-m) |
 | TRAP | Increase the user activity check interval (by 5 mins) |
 | ABRT | Decrease the user activity check interval (by 5 mins) |
