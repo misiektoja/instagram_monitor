@@ -2,11 +2,18 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 1.4 (02 Aug 2024)
+
+**Features and Improvements**:
+
+- **NEW:** Detection when user changes profile visibility from public to private and vice-versa; the code already supported both private and public profiles, however it did not inform the user when the profile visibility has changed; now the tool will notify about it in the console and also via email notifications (**-s**) and CSV file records (**-b**)
+- **IMPROVE:** Added info about used mode of the tool in the main screen, so it is easier to correlate it with the description in the README
+
 # Changes in 1.3 (14 Jun 2024)
 
 **Features and Improvements**:
 
-- **NEW:** Added new parameter (-z / --send_test_email_notification) which allows to send test email notification to verify SMTP settings defined in the script
+- **NEW:** Added new parameter (**-z|*8 / **--send_test_email_notification**) which allows to send test email notification to verify SMTP settings defined in the script
 - **IMPROVE:** Checking if correct version of Python (>=3.8) is installed
 - **IMPROVE:** Possibility to define email sending timeout (default set to 15 secs)
 
