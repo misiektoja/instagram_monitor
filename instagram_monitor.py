@@ -1948,6 +1948,9 @@ if __name__ == "__main__":
         skip_followings = True
         get_more_post_details = False
         skip_getting_story_details = True
+        mode_of_the_tool = "1 (without session login)"
+    else:
+        mode_of_the_tool = "2 (with session login)"
 
     if INSTA_CHECK_INTERVAL <= RANDOM_SLEEP_DIFF_LOW:
         check_interval_low = INSTA_CHECK_INTERVAL
@@ -1981,6 +1984,7 @@ if __name__ == "__main__":
     print(f"* Instagram timers:\t\t\t[check interval: {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)}]")
     print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {status_notification}]\n*\t\t\t\t\t[followers = {followers_notification}] [errors = {args.error_notification}]")
     print(f"* Detect changed profile pic:\t\t{DETECT_CHANGED_PROFILE_PIC}")
+    print(f"* Mode of the tool:\t\t\t{mode_of_the_tool}")
     print(f"* Skip session login:\t\t\t{skip_session}")
     print(f"* Skip fetching followers:\t\t{skip_followers}")
     print(f"* Skip fetching followings:\t\t{skip_followings}")
