@@ -1002,25 +1002,25 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
         if removed_followers:
             print("Removed followers:\n")
             for f_in_list in removed_followers:
-                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                    removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                    try:
-                        if csv_file_name:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followers", f_in_list, "")
-                    except Exception as e:
-                        print(f"Error: cannot write CSV entry - {e}")
+                print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
+                try:
+                    if csv_file_name:
+                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followers", f_in_list, "")
+                except Exception as e:
+                    print(f"Error: cannot write CSV entry - {e}")
             print()
 
         if added_followers:
             print("Added followers:\n")
             for f_in_list in added_followers:
-                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                    added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                    try:
-                        if csv_file_name:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followers", "", f_in_list)
-                    except Exception as e:
-                        print(f"Error: cannot write CSV entry - {e}")
+                print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
+                try:
+                    if csv_file_name:
+                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followers", "", f_in_list)
+                except Exception as e:
+                    print(f"Error: cannot write CSV entry - {e}")
             print()
 
     if os.path.isfile(insta_followings_file):
@@ -1085,25 +1085,25 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
         if removed_followings:
             print("Removed followings:\n")
             for f_in_list in removed_followings:
-                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                    removed_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                    try:
-                        if csv_file_name:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followings", f_in_list, "")
-                    except Exception as e:
-                        print(f"Error: cannot write CSV entry - {e}")
+                print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                removed_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
+                try:
+                    if csv_file_name:
+                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followings", f_in_list, "")
+                except Exception as e:
+                    print(f"Error: cannot write CSV entry - {e}")
             print()
 
         if added_followings:
             print("Added followings:\n")
             for f_in_list in added_followings:
-                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                    added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                    try:
-                        if csv_file_name:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followings", "", f_in_list)
-                    except Exception as e:
-                        print(f"Error: cannot write CSV entry - {e}")
+                print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
+                try:
+                    if csv_file_name:
+                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followings", "", f_in_list)
+                except Exception as e:
+                    print(f"Error: cannot write CSV entry - {e}")
             print()
 
     if not skip_session and not skip_followers and not is_private:
@@ -1177,7 +1177,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
 
         try:
             if not skip_session and get_more_post_details:
-                #if last_post.location:
+                # if last_post.location:
                 #    location = last_post.location.name
                 likes_list = last_post.get_likes()
                 for like in likes_list:
@@ -1340,26 +1340,26 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                             print("Removed followings:\n")
                             removed_followings_mbody = "\nRemoved followings:\n\n"
                             for f_in_list in removed_followings:
-                                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                                    removed_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                                    try:
-                                        if csv_file_name:
-                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followings", f_in_list, "")
-                                    except Exception as e:
-                                        print(f"Error: cannot write CSV entry - {e}")
+                                print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                                removed_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
+                                try:
+                                    if csv_file_name:
+                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followings", f_in_list, "")
+                                except Exception as e:
+                                    print(f"Error: cannot write CSV entry - {e}")
                             print()
 
                         if added_followings:
                             print("Added followings:\n")
                             added_followings_mbody = "\nAdded followings:\n\n"
                             for f_in_list in added_followings:
-                                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                                    added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                                    try:
-                                        if csv_file_name:
-                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followings", "", f_in_list)
-                                    except Exception as e:
-                                        print(f"Error: cannot write CSV entry - {e}")
+                                print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                                added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
+                                try:
+                                    if csv_file_name:
+                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followings", "", f_in_list)
+                                except Exception as e:
+                                    print(f"Error: cannot write CSV entry - {e}")
                             print()
 
                     followings_old = followings
@@ -1432,26 +1432,26 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                             print("Removed followers:\n")
                             removed_followers_mbody = "\nRemoved followers:\n\n"
                             for f_in_list in removed_followers:
-                                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                                    removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                                    try:
-                                        if csv_file_name:
-                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followers", f_in_list, "")
-                                    except Exception as e:
-                                        print(f"Error: cannot write CSV entry - {e}")
+                                print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                                removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
+                                try:
+                                    if csv_file_name:
+                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followers", f_in_list, "")
+                                except Exception as e:
+                                    print(f"Error: cannot write CSV entry - {e}")
                             print()
 
                         if added_followers:
                             print("Added followers:\n")
                             added_followers_mbody = "\nAdded followers:\n\n"
                             for f_in_list in added_followers:
-                                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                                    added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                                    try:
-                                        if csv_file_name:
-                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followers", "", f_in_list)
-                                    except Exception as e:
-                                        print(f"Error: cannot write CSV entry - {e}")
+                                print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                                added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
+                                try:
+                                    if csv_file_name:
+                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followers", "", f_in_list)
+                                except Exception as e:
+                                    print(f"Error: cannot write CSV entry - {e}")
                             print()
 
                     followers_old = followers
