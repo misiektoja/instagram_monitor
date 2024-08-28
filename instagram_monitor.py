@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.4
+v1.5
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -15,7 +15,7 @@ python-dateutil
 requests
 """
 
-VERSION = 1.4
+VERSION = 1.5
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -1408,7 +1408,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                     followers_to_save = []
                     followers_count = profile.followers
                     if not followers and followers_count > 0:
-                        print("* Empty followers list returned")
+                        print("* Empty followers list returned, not saved to file")
                     else:
                         followers_to_save.append(followers_count)
                         followers_to_save.append(followers)
