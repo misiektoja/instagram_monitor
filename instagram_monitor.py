@@ -990,7 +990,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             except Exception as e:
                 print(f"* Cannot save list of followers to '{insta_followers_file}' file - {e}")
 
-    if ((followers_count != followers_old_count) and (followers != followers_old)) and not skip_session and not skip_followers and not is_private:
+    if ((followers_count != followers_old_count) and (followers != followers_old)) and not skip_session and not skip_followers and not is_private and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
         a, b = set(followers_old), set(followers)
         removed_followers = list(a - b)
         added_followers = list(b - a)
@@ -1073,7 +1073,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             except Exception as e:
                 print(f"* Cannot save list of followings to '{insta_followings_file}' file - {e}")
 
-    if ((followings_count != followings_old_count) and (followings != followings_old)) and not skip_session and not skip_followings and not is_private:
+    if ((followings_count != followings_old_count) and (followings != followings_old)) and not skip_session and not skip_followings and not is_private and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
         a, b = set(followings_old), set(followings)
         removed_followings = list(a - b)
         added_followings = list(b - a)
