@@ -1702,7 +1702,10 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                             break
 
                     if csv_file_name:
-                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(highestinsta_ts)), "Posts Count", posts_count_old, posts_count)
+                        if posts_count > posts_count_old:
+                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(highestinsta_ts)), "Posts Count", posts_count_old, posts_count)
+                        else:
+                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Posts Count", posts_count_old, posts_count)
 
                     posts_count_old = posts_count
 
