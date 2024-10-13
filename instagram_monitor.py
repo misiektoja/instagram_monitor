@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.5
+v1.6
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -15,7 +15,7 @@ python-dateutil
 requests
 """
 
-VERSION = 1.5
+VERSION = 1.6
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -779,7 +779,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
 
 
 # Main function monitoring activity of the specified Instagram user
-def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, skip_session, skip_followers, skip_followings, skip_getting_story_details, get_more_post_details):
+def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details):
 
     try:
         if csv_file_name:
@@ -1146,7 +1146,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
     thumbnail_url = ""
     video_url = ""
 
-    if int(posts_count) >= 1 and not is_private:
+    if int(posts_count) >= 1 and not is_private and not skip_getting_posts_details:
         try:
 
             time.sleep(NEXT_OPERATION_DELAY)
@@ -1673,7 +1673,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
         hours_to_check = list(range(MIN_H1, MAX_H1 + 1)) + list(range(MIN_H2, MAX_H2 + 1))
 
         if (CHECK_POSTS_IN_HOURS_RANGE and (int(cur_h) in hours_to_check)) or not CHECK_POSTS_IN_HOURS_RANGE:
-            if posts_count != posts_count_old and not is_private:
+            if posts_count != posts_count_old and not is_private and not skip_getting_posts_details:
                 likes = 0
                 comments = 0
                 caption = ""
@@ -1821,7 +1821,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                     print(f"\nCheck interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                     print_cur_ts("Timestamp:\t\t")
 
-            elif posts_count != posts_count_old and is_private:
+            elif posts_count != posts_count_old and (is_private or skip_getting_posts_details):
                 print(f"* Posts number changed for user {user} from {posts_count_old} to {posts_count}\n")
 
                 if status_notification:
@@ -1865,8 +1865,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser("instagram_monitor")
     parser.add_argument("INSTAGRAM_USERNAME", nargs="?", help="Instagram username to monitor", type=str)
-    parser.add_argument("-u", "--instagram_user_for_session_login", help="Instagram username for session login to fetch followers/followings and detailed info about new stories/posts/reels", type=str, metavar="INSTAGRAM_USER")
-    parser.add_argument("-p", "--instagram_password_for_session_login", help="Instagram user's password for session login to fetch followers/followings and detailed info about new stories/posts/reels, however it is recommended to save the session via 'instaloader -l <instagram_user_for_session_login>'", type=str, metavar="INSTAGRAM_PASSWORD")
+    parser.add_argument("-u", "--instagram_user_for_session_login", help="Instagram username for session login to fetch list of followers/followings and detailed info about new stories/posts/reels", type=str, metavar="INSTAGRAM_USER")
+    parser.add_argument("-p", "--instagram_password_for_session_login", help="Instagram user's password for session login to fetch list of followers/followings and detailed info about new stories/posts/reels, however it is recommended to save the session via 'instaloader -l <instagram_user_for_session_login>'", type=str, metavar="INSTAGRAM_PASSWORD")
     parser.add_argument("-s", "--status_notification", help="Send email notification once user puts new post/reel/story, changes bio, follows new users, changes profile picture or visibility", action='store_true')
     parser.add_argument("-m", "--followers_notification", help="Send email notification once user gets new followers, by default it is disabled", action='store_true')
     parser.add_argument("-e", "--error_notification", help="Disable sending email notifications in case of errors like invalid session", action='store_false')
@@ -1875,11 +1875,12 @@ if __name__ == "__main__":
     parser.add_argument("-j", "--check_interval_random_diff_high", help="Value added to check interval to randomize, in seconds", type=int)
     parser.add_argument("-b", "--csv_file", help="Write all user activities and profile changes to CSV file", type=str, metavar="CSV_FILENAME")
     parser.add_argument("-k", "--do_not_detect_changed_profile_pic", help="Disable detection of changed user's profile picture", action='store_false')
-    parser.add_argument("-l", "--skip_session", help="Skip session login and do not fetch followers/followings and more detailed info about new stories/posts", action='store_true')
-    parser.add_argument("-f", "--skip_followers", help="Do not fetch followers, even if session login is used", action='store_true')
-    parser.add_argument("-g", "--skip_followings", help="Do not fetch followings, even if session login is used", action='store_true')
+    parser.add_argument("-l", "--skip_session", help="Skip session login and do not fetch list of followers/followings and more detailed info about new stories/posts/reels", action='store_true')
+    parser.add_argument("-f", "--skip_followers", help="Do not fetch list of followers, even if session login is used", action='store_true')
+    parser.add_argument("-g", "--skip_followings", help="Do not fetch list of followings, even if session login is used", action='store_true')
     parser.add_argument("-r", "--skip_getting_story_details", help="Do not get detailed info about new stories and its images/videos, even if session login is used; you will still get generic information about new stories", action='store_true')
-    parser.add_argument("-t", "--get_more_post_details", help="Get more detailed info about new posts like its location and comments +  likes list, only possible if session login is used; if not enabled you will still get generic information about new posts", action='store_true')
+    parser.add_argument("-w", "--skip_getting_posts_details", help="Do not get detailed info about new posts like its date, caption, URL, tagged users, number of likes and comments, even if session login is used; you will still get information about changed number of posts for the user", action='store_true')
+    parser.add_argument("-t", "--get_more_post_details", help="Get more detailed info about new posts like its location and list of comments and likes, only possible if session login is used; if not enabled you will still get generic information about new posts (unless account is private or -w / --skip_getting_posts_details is used)", action='store_true')
     parser.add_argument("-d", "--disable_logging", help="Disable output logging to file 'instagram_monitor_username.log' file", action='store_true')
     parser.add_argument("-z", "--send_test_email_notification", help="Send test email notification to verify SMTP settings defined in the script", action='store_true')
     args = parser.parse_args()
@@ -1922,6 +1923,7 @@ if __name__ == "__main__":
     skip_followers = args.skip_followers
     skip_followings = args.skip_followings
     skip_getting_story_details = args.skip_getting_story_details
+    skip_getting_posts_details = args.skip_getting_posts_details
     get_more_post_details = args.get_more_post_details
 
     if args.check_interval:
@@ -1989,7 +1991,8 @@ if __name__ == "__main__":
     print(f"* Skip fetching followers:\t\t{skip_followers}")
     print(f"* Skip fetching followings:\t\t{skip_followings}")
     print(f"* Skip stories details:\t\t\t{skip_getting_story_details}")
-    print(f"* Get posts details:\t\t\t{get_more_post_details}")
+    print(f"* Skip posts details:\t\t\t{skip_getting_posts_details}")
+    print(f"* Get more posts details:\t\t{get_more_post_details}")
     if CHECK_POSTS_IN_HOURS_RANGE:
         print(f"* Hours for checking new posts:\t\t{MIN_H1:02d}:00 - {MAX_H1:02d}:59, {MIN_H2:02d}:00 - {MAX_H2:02d}:59")
     else:
@@ -2015,7 +2018,7 @@ if __name__ == "__main__":
         signal.signal(signal.SIGTRAP, increase_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_check_signal_handler)
 
-    instagram_monitor_user(args.INSTAGRAM_USERNAME, args.error_notification, args.csv_file, csv_exists, skip_session, skip_followers, skip_followings, skip_getting_story_details, get_more_post_details)
+    instagram_monitor_user(args.INSTAGRAM_USERNAME, args.error_notification, args.csv_file, csv_exists, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details)
 
     sys.stdout = stdout_bck
     sys.exit(0)
