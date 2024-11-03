@@ -2,6 +2,19 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 1.5 (03 Nov 2024)
+
+**Features and Improvements**:
+
+- **NEW:** Possibility to skip getting posts details (new **-w** / **--skip_getting_posts_details** parameter)
+- **IMPROVE:** Print message changed when empty followers list is returned
+- **IMPROVE:** Added message about fetching user's latest post/reel (as it might take a while)
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed bug with saving removed followers/followings to CSV file when empty list is returned and count is > 0
+- **BUGFIX:** Fixed wrong CSV entry timestamp in case posts number decreases
+
 # Changes in 1.4 (02 Aug 2024)
 
 **Features and Improvements**:
