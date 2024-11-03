@@ -1147,6 +1147,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
     video_url = ""
 
     if int(posts_count) >= 1 and not is_private and not skip_getting_posts_details:
+        print("Fetching user's latest post/reel (be patient, it might take a while depending on the number of posts) ...\n")
         try:
 
             time.sleep(NEXT_OPERATION_DELAY)
