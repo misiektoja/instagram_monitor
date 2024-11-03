@@ -39,7 +39,7 @@ The tool requires Python 3.8 or higher.
 It uses [instaloader](https://github.com/instaloader/instaloader) library, also requires requests, python-dateutil, pytz and tzlocal.
 
 It has been tested successfully on:
-- macOS (Ventura & Sonoma)
+- macOS (Ventura, Sonoma & Sequoia)
 - Linux:
    - Raspberry Pi Bullseye & Bookworm
    - Ubuntu 24
