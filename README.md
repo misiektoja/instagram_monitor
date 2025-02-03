@@ -1,22 +1,22 @@
 # instagram_monitor
 
-instagram_monitor is an OSINT tool written in Python which allows for real-time monitoring of Instagram users activities and profile changes. 
+instagram_monitor is an OSINT tool written in Python that allows for real-time monitoring of Instagram users' activities and profile changes.
 
 ## Features
 
-- Real-time tracking of Instagram users activities and profile changes:
-   - new posts, reels & stories
-   - changed followings, followers, bio
-   - changed profile pictures
-   - changed profile visibility (from private to public and vice-versa)
-- Anonymous download of user's story images & videos; yes, user won't know you watched their stories 😉
-- Download of user's post images & reel videos
-- Email notifications for different events (new posts, reels & stories, changed followings, followers, bio, changed profile picture, visibility, errors)
+- Real-time tracking of Instagram users' activities and profile changes:
+  - new posts, reels and stories
+  - changed followings, followers and bio
+  - changed profile pictures
+  - changed profile visibility (from private to public and vice versa)
+- Anonymous download of user's story images and videos; yes, the user won't know you watched their stories 😉
+- Download of user's post images and reel videos
+- Email notifications for different events (new posts, reels, stories, changed followings, followers, bio, changed profile picture, visibility and errors)
 - Attaching changed profile pictures and stories/posts/reels images directly in email notifications
 - Displaying the profile picture and stories/posts/reels images right in your terminal (if you have *imgcat* installed)
-- Saving all user activities and profile changes with timestamps to the CSV file
+- Saving all user activities and profile changes with timestamps to a CSV file
 - Support for both public and private profiles
-- Two modes of operation: with or without logged in Instagram account
+- Two modes of operation: with or without a logged-in Instagram account
 - Different mechanisms to prevent captcha and detection of automated tools
 - Possibility to control the running copy of the script via signals
 
@@ -28,13 +28,9 @@ instagram_monitor is an OSINT tool written in Python which allows for real-time 
 
 Release notes can be found [here](RELEASE_NOTES.md)
 
-## Disclaimer
-
-I'm not a dev, project done as a hobby. Code is ugly and as-is, but it works (at least for me) ;-)
-
 ## Requirements
 
-The tool requires Python 3.8 or higher.
+The tool requires Python 3.9 or higher.
 
 It uses [instaloader](https://github.com/instaloader/instaloader) library, also requires requests, python-dateutil, pytz and tzlocal.
 
