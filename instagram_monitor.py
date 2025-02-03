@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.5
+v1.6
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -15,7 +15,7 @@ python-dateutil
 requests
 """
 
-VERSION = 1.5
+VERSION = 1.6
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -673,7 +673,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
             if os.path.isfile(profile_pic_file_empty):
                 is_empty_profile_pic = compare_images(profile_pic_file, profile_pic_file_empty)
 
-            if not compare_images(profile_pic_file, profile_pic_file_tmp):
+            if not compare_images(profile_pic_file, profile_pic_file_tmp) and profile_pic_mdate_dt != profile_pic_tmp_mdate_dt:
                 if os.path.isfile(profile_pic_file_empty):
                     is_empty_profile_pic_tmp = compare_images(profile_pic_file_tmp, profile_pic_file_empty)
 
