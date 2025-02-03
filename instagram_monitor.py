@@ -124,8 +124,8 @@ nl_ch = "\n"
 
 import sys
 
-if sys.version_info < (3, 8):
-    print("* Error: Python version 3.8 or higher required !")
+if sys.version_info < (3, 9):
+    print("* Error: Python version 3.9 or higher required !")
     sys.exit(1)
 
 import time
