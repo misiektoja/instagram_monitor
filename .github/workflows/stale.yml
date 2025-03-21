@@ -3,6 +3,10 @@ name: "Close stale issues"
 on:
   schedule:
     - cron: "0 0 * * *"  # Runs once per day
+  workflow_dispatch:     # Allows manual triggering
+
+permissions:
+  issues: write
 
 jobs:
   stale:
