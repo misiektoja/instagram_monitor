@@ -142,8 +142,9 @@ import time
 import string
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from dateutil import relativedelta
+from dateutil.parser import parse
 import calendar
 import requests as req
 import shutil
@@ -253,24 +254,44 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
     ts1 = timestamp1
     ts2 = timestamp2
 
-    if type(timestamp1) is int:
-        dt1 = datetime.fromtimestamp(int(ts1))
-    elif type(timestamp1) is float:
+    if isinstance(timestamp1, str):
+        try:
+            timestamp1 = isoparse(timestamp1)
+        except Exception:
+            return ""
+
+    if isinstance(timestamp1, int):
+        dt1 = datetime.fromtimestamp(int(ts1), tz=timezone.utc)
+    elif isinstance(timestamp1, float):
         ts1 = int(round(ts1))
-        dt1 = datetime.fromtimestamp(ts1)
-    elif type(timestamp1) is datetime:
+        dt1 = datetime.fromtimestamp(ts1, tz=timezone.utc)
+    elif isinstance(timestamp1, datetime):
         dt1 = timestamp1
+        if dt1.tzinfo is None:
+            dt1 = pytz.utc.localize(dt1)
+        else:
+            dt1 = dt1.astimezone(pytz.utc)
         ts1 = int(round(dt1.timestamp()))
     else:
         return ""
 
-    if type(timestamp2) is int:
-        dt2 = datetime.fromtimestamp(int(ts2))
-    elif type(timestamp2) is float:
+    if isinstance(timestamp2, str):
+        try:
+            timestamp2 = isoparse(timestamp2)
+        except Exception:
+            return ""
+
+    if isinstance(timestamp2, int):
+        dt2 = datetime.fromtimestamp(int(ts2), tz=timezone.utc)
+    elif isinstance(timestamp2, float):
         ts2 = int(round(ts2))
-        dt2 = datetime.fromtimestamp(ts2)
-    elif type(timestamp2) is datetime:
+        dt2 = datetime.fromtimestamp(ts2, tz=timezone.utc)
+    elif isinstance(timestamp2, datetime):
         dt2 = timestamp2
+        if dt2.tzinfo is None:
+            dt2 = pytz.utc.localize(dt2)
+        else:
+            dt2 = dt2.astimezone(pytz.utc)
         ts2 = int(round(dt2.timestamp()))
     else:
         return ""
@@ -285,21 +306,19 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
         date_diff = relativedelta.relativedelta(dt1, dt2)
         years = date_diff.years
         months = date_diff.months
-        weeks = date_diff.weeks
-        if not show_weeks:
+        days_total = date_diff.days
+
+        if show_weeks:
+            weeks = days_total // 7
+            days = days_total % 7
+        else:
             weeks = 0
-        days = date_diff.days
-        if weeks > 0:
-            days = days - (weeks * 7)
-        hours = date_diff.hours
-        if (not show_hours and ts_diff > 86400):
-            hours = 0
-        minutes = date_diff.minutes
-        if (not show_minutes and ts_diff > 3600):
-            minutes = 0
-        seconds = date_diff.seconds
-        if (not show_seconds and ts_diff > 60):
-            seconds = 0
+            days = days_total
+
+        hours = date_diff.hours if show_hours or ts_diff <= 86400 else 0
+        minutes = date_diff.minutes if show_minutes or ts_diff <= 3600 else 0
+        seconds = date_diff.seconds if show_seconds or ts_diff <= 60 else 0
+
         date_list = [years, months, weeks, days, hours, minutes, seconds]
 
         for index, interval in enumerate(date_list):
@@ -308,6 +327,7 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
                 if interval == 1:
                     name = name.rstrip('s')
                 result.append(f"{interval} {name}")
+
         return ', '.join(result[:granularity])
     else:
         return '0 seconds'
@@ -417,9 +437,64 @@ def randomize_number(number, diff_low, diff_high):
         return (random.randint(number, number + diff_high))
 
 
+# Converts a datetime to local timezone and removes timezone info (naive)
+def convert_to_local_naive(dt: datetime | None = None):
+    tz = pytz.timezone(LOCAL_TIMEZONE)
+
+    if dt is not None:
+        if dt.tzinfo is None:
+            dt = pytz.utc.localize(dt)
+
+        dt_local = dt.astimezone(tz)
+
+        return dt_local.replace(tzinfo=None)
+    else:
+        return None
+
+
+# Returns current local time without timezone info (naive)
+def now_local_naive():
+    return datetime.now(pytz.timezone(LOCAL_TIMEZONE)).replace(microsecond=0, tzinfo=None)
+
+
+# Returns current local time with timezone info (aware)
+def now_local():
+    return datetime.now(pytz.timezone(LOCAL_TIMEZONE))
+
+
+# Converts UTC datetime object returned by Instagram API to datetime object in specified timezone
+def convert_utc_datetime_to_tz_datetime(dt_utc):
+    if not dt_utc:
+        return None
+
+    try:
+        if dt_utc.tzinfo is None:
+            dt_utc = pytz.utc.localize(dt_utc)
+        return dt_utc.astimezone(pytz.timezone(LOCAL_TIMEZONE))
+    except Exception:
+        return None
+
+
+# Converts UTC string returned by Instagram API to datetime object in specified timezone
+def convert_utc_str_to_tz_datetime(dt_str):
+    if not dt_str:
+        return None
+
+    try:
+        dt = parse(dt_str)
+
+        if dt.tzinfo is None:
+            dt = pytz.utc.localize(dt)
+
+        return dt.astimezone(pytz.timezone(LOCAL_TIMEZONE))
+
+    except Exception:
+        return None
+
+
 # Returns the current date/time in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
-    return (f'{ts_str}{calendar.day_abbr[(datetime.fromtimestamp(int(time.time()))).weekday()]}, {datetime.fromtimestamp(int(time.time())).strftime("%d %b %Y, %H:%M:%S")}')
+    return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]}, {now_local_naive().strftime("%d %b %Y, %H:%M:%S")}')
 
 
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
@@ -430,87 +505,132 @@ def print_cur_ts(ts_str=""):
 
 # Returns the timestamp/datetime object in human readable format (long version); eg. Sun 21 Apr 2024, 15:08:45
 def get_date_from_ts(ts):
-    if type(ts) is datetime:
-        ts_new = int(round(ts.timestamp()))
-    elif type(ts) is int:
-        ts_new = ts
-    elif type(ts) is float:
-        ts_new = int(round(ts))
+    tz = pytz.timezone(LOCAL_TIMEZONE)
+
+    if isinstance(ts, str):
+        try:
+            ts = isoparse(ts)
+        except Exception:
+            return ""
+
+    if isinstance(ts, datetime):
+        if ts.tzinfo is None:
+            ts = pytz.utc.localize(ts)
+        ts_new = ts.astimezone(tz)
+
+    elif isinstance(ts, int):
+        ts_new = datetime.fromtimestamp(ts, tz)
+
+    elif isinstance(ts, float):
+        ts_rounded = int(round(ts))
+        ts_new = datetime.fromtimestamp(ts_rounded, tz)
+
     else:
         return ""
 
-    return (f'{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %Y, %H:%M:%S")}')
+    return (f'{calendar.day_abbr[ts_new.weekday()]} {ts_new.strftime("%d %b %Y, %H:%M:%S")}')
 
 
 # Returns the timestamp/datetime object in human readable format (short version); eg.
 # Sun 21 Apr 15:08
 # Sun 21 Apr 24, 15:08 (if show_year == True and current year is different)
+# Sun 21 Apr 25, 15:08 (if always_show_year == True and current year can be the same)
 # Sun 21 Apr (if show_hour == False)
-def get_short_date_from_ts(ts, show_year=False, show_hour=True):
-    if type(ts) is datetime:
-        ts_new = int(round(ts.timestamp()))
-    elif type(ts) is int:
-        ts_new = ts
-    elif type(ts) is float:
-        ts_new = int(round(ts))
+# Sun 21 Apr 15:08:32 (if show_seconds == True)
+# 21 Apr 15:08 (if show_weekday == False)
+def get_short_date_from_ts(ts, show_year=False, show_hour=True, show_weekday=True, show_seconds=False, always_show_year=False):
+    tz = pytz.timezone(LOCAL_TIMEZONE)
+    if always_show_year:
+        show_year = True
+
+    if isinstance(ts, str):
+        try:
+            ts = isoparse(ts)
+        except Exception:
+            return ""
+
+    if isinstance(ts, datetime):
+        if ts.tzinfo is None:
+            ts = pytz.utc.localize(ts)
+        ts_new = ts.astimezone(tz)
+
+    elif isinstance(ts, int):
+        ts_new = datetime.fromtimestamp(ts, tz)
+
+    elif isinstance(ts, float):
+        ts_rounded = int(round(ts))
+        ts_new = datetime.fromtimestamp(ts_rounded, tz)
+
     else:
         return ""
 
     if show_hour:
-        hour_strftime = " %H:%M"
+        hour_strftime = " %H:%M:%S" if show_seconds else " %H:%M"
     else:
         hour_strftime = ""
 
-    if show_year and int(datetime.fromtimestamp(ts_new).strftime("%Y")) != int(datetime.now().strftime("%Y")):
-        if show_hour:
-            hour_prefix = ","
-        else:
-            hour_prefix = ""
-        return (f'{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime(f"%d %b %y{hour_prefix}{hour_strftime}")}')
+    weekday_str = f"{calendar.day_abbr[ts_new.weekday()]} " if show_weekday else ""
+
+    if (show_year and ts_new.year != datetime.now(tz).year) or always_show_year:
+        hour_prefix = "," if show_hour else ""
+        return f'{weekday_str}{ts_new.strftime(f"%d %b %y{hour_prefix}{hour_strftime}")}'
     else:
-        return (f'{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime(f"%d %b{hour_strftime}")}')
+        return f'{weekday_str}{ts_new.strftime(f"%d %b{hour_strftime}")}'
 
 
 # Returns the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
 def get_hour_min_from_ts(ts, show_seconds=False):
-    if type(ts) is datetime:
-        ts_new = int(round(ts.timestamp()))
-    elif type(ts) is int:
-        ts_new = ts
-    elif type(ts) is float:
-        ts_new = int(round(ts))
+    tz = pytz.timezone(LOCAL_TIMEZONE)
+
+    if isinstance(ts, str):
+        try:
+            ts = isoparse(ts)
+        except Exception:
+            return ""
+
+    if isinstance(ts, datetime):
+        if ts.tzinfo is None:
+            ts = pytz.utc.localize(ts)
+        ts_new = ts.astimezone(tz)
+
+    elif isinstance(ts, int):
+        ts_new = datetime.fromtimestamp(ts, tz)
+
+    elif isinstance(ts, float):
+        ts_rounded = int(round(ts))
+        ts_new = datetime.fromtimestamp(ts_rounded, tz)
+
     else:
         return ""
 
-    if show_seconds:
-        out_strf = "%H:%M:%S"
-    else:
-        out_strf = "%H:%M"
-    return (str(datetime.fromtimestamp(ts_new).strftime(out_strf)))
+    out_strf = "%H:%M:%S" if show_seconds else "%H:%M"
+    return ts_new.strftime(out_strf)
 
 
 # Returns the range between two timestamps/datetime objects; eg. Sun 21 Apr 14:09 - 14:15
 def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
-    if type(ts1) is datetime:
+    tz = pytz.timezone(LOCAL_TIMEZONE)
+
+    if isinstance(ts1, datetime):
         ts1_new = int(round(ts1.timestamp()))
-    elif type(ts1) is int:
+    elif isinstance(ts1, int):
         ts1_new = ts1
-    elif type(ts1) is float:
+    elif isinstance(ts1, float):
         ts1_new = int(round(ts1))
     else:
         return ""
 
-    if type(ts2) is datetime:
+    if isinstance(ts2, datetime):
         ts2_new = int(round(ts2.timestamp()))
-    elif type(ts2) is int:
+    elif isinstance(ts2, int):
         ts2_new = ts2
-    elif type(ts2) is float:
+    elif isinstance(ts2, float):
         ts2_new = int(round(ts2))
     else:
         return ""
 
-    ts1_strf = datetime.fromtimestamp(ts1_new).strftime("%Y%m%d")
-    ts2_strf = datetime.fromtimestamp(ts2_new).strftime("%Y%m%d")
+    ts1_strf = datetime.fromtimestamp(ts1_new, tz).strftime("%Y%m%d")
+    ts2_strf = datetime.fromtimestamp(ts2_new, tz).strftime("%Y%m%d")
 
     if ts1_strf == ts2_strf:
         if short:
@@ -522,32 +642,8 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
             out_str = f"{get_short_date_from_ts(ts1_new)}{between_sep}{get_short_date_from_ts(ts2_new)}"
         else:
             out_str = f"{get_date_from_ts(ts1_new)}{between_sep}{get_date_from_ts(ts2_new)}"
-    return (str(out_str))
 
-
-# Converts UTC datetime object returned by Instagram API to datetime object in specified timezone
-def convert_utc_datetime_to_tz_datetime(dt_utc, timezone):
-    try:
-        old_tz = pytz.timezone("UTC")
-        new_tz = pytz.timezone(timezone)
-        dt_new_tz = old_tz.localize(dt_utc).astimezone(new_tz)
-        return dt_new_tz
-    except Exception:
-        return datetime.fromtimestamp(0)
-
-
-# Converts UTC string returned by Instagram API to datetime object in specified timezone
-def convert_utc_str_to_tz_datetime(utc_string, timezone):
-    try:
-        utc_string_sanitize = utc_string.split(' GMT', 1)[0]
-        dt_utc = datetime.strptime(utc_string_sanitize, '%a, %d %b %Y %H:%M:%S')
-
-        old_tz = pytz.timezone("UTC")
-        new_tz = pytz.timezone(timezone)
-        dt_new_tz = old_tz.localize(dt_utc).astimezone(new_tz)
-        return dt_new_tz
-    except Exception:
-        return datetime.fromtimestamp(0)
+    return str(out_str)
 
 
 # Checks if the timezone name is correct
@@ -612,8 +708,11 @@ def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0):
         url_time = image_video_response.headers.get('last-modified')
         url_time_in_tz_ts = 0
         if url_time and not custom_mdate_ts:
-            url_time_in_tz = convert_utc_str_to_tz_datetime(url_time, LOCAL_TIMEZONE)
-            url_time_in_tz_ts = int(url_time_in_tz.timestamp())
+            url_time_in_tz = convert_utc_str_to_tz_datetime(url_time)
+            if url_time_in_tz:
+                url_time_in_tz_ts = int(url_time_in_tz.timestamp())
+            else:
+                url_time_in_tz_ts = 0
 
         if image_video_response.status_code == 200:
             with open(image_video_file_name, 'wb') as f:
@@ -659,7 +758,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
     # profile pic does not exist in the filesystem
     if not os.path.isfile(profile_pic_file):
         if save_pic_video(profile_image_url, profile_pic_file):
-            profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
+            profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
 
             if os.path.isfile(profile_pic_file_empty):
                 is_empty_profile_pic = compare_images(profile_pic_file, profile_pic_file_empty)
@@ -668,7 +767,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 print(f"* User {user} does not have profile picture set, empty template saved to '{profile_pic_file}'{new_line}")
             else:
                 print(f"* User {user} profile picture saved to '{profile_pic_file}'")
-                print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago){new_line}")
+                print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago){new_line}")
 
             try:
                 if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH) and not is_empty_profile_pic:
@@ -681,7 +780,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 pass
             try:
                 if csv_file_name and not is_empty_profile_pic:
-                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Created", "", profile_pic_mdate_dt)
+                    write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Created", "", convert_to_local_naive(profile_pic_mdate_dt))
             except Exception as e:
                 print(f"* Error: {e}")
         else:
@@ -700,10 +799,10 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
         m_body = ""
         m_body_html = ""
         m_body_html_pic_saved_text = ""
-        profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
+        profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
         profile_pic_mdate = get_short_date_from_ts(profile_pic_mdate_dt, True)
         if save_pic_video(profile_image_url, profile_pic_file_tmp):
-            profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)))
+            profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)), pytz.timezone(LOCAL_TIMEZONE))
             if os.path.isfile(profile_pic_file_empty):
                 is_empty_profile_pic = compare_images(profile_pic_file, profile_pic_file_empty)
 
@@ -713,50 +812,50 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
 
                 # User has removed profile picture
                 if is_empty_profile_pic_tmp and not is_empty_profile_pic:
-                    print(f"* User {user} has removed profile picture added on {profile_pic_mdate} ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)}){new_line}")
+                    print(f"* User {user} has removed profile picture added on {profile_pic_mdate} ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)}){new_line}")
                     csv_text = "Profile Picture Removed"
 
                     if send_email_notification:
-                        m_subject = f"Instagram user {user} has removed profile picture ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
+                        m_subject = f"Instagram user {user} has removed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
 
-                        m_body = f"Instagram user {user} has removed profile picture added on {profile_pic_mdate} (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"Instagram user {user} has removed profile picture added on <b>{profile_pic_mdate}</b> (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})<br><br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                        m_body = f"Instagram user {user} has removed profile picture added on {profile_pic_mdate} (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                        m_body_html = f"Instagram user {user} has removed profile picture added on <b>{profile_pic_mdate}</b> (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})<br><br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
                 # User has set profile picture
                 elif is_empty_profile_pic and not is_empty_profile_pic_tmp:
                     print(f"* User {user} has set profile picture !")
                     print(f"* User profile picture saved to '{profile_pic_file}'")
-                    print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago){new_line}")
+                    print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago){new_line}")
                     csv_text = "Profile Picture Created"
 
                     if send_email_notification:
                         m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
                         m_subject = f"Instagram user {user} has set profile picture ! ({get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)})"
 
-                        m_body = f"Instagram user {user} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"Instagram user <b>{user}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                        m_body = f"Instagram user {user} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                        m_body_html = f"Instagram user <b>{user}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
                 # User has changed profile picture
                 elif not is_empty_profile_pic_tmp and not is_empty_profile_pic:
-                    print(f"* User {user} has changed profile picture ! (previous one added on {profile_pic_mdate} - {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)")
-                    print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago){new_line}")
+                    print(f"* User {user} has changed profile picture ! (previous one added on {profile_pic_mdate} - {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)")
+                    print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago){new_line}")
                     csv_text = "Profile Picture Changed"
 
                     if send_email_notification:
                         m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
-                        m_subject = f"Instagram user {user} has changed profile picture ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
+                        m_subject = f"Instagram user {user} has changed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
 
-                        m_body = f"Instagram user {user} has changed profile picture !\n\nPrevious one added on {profile_pic_mdate} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"Instagram user <b>{user}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{profile_pic_mdate}</b> ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                        m_body = f"Instagram user {user} has changed profile picture !\n\nPrevious one added on {profile_pic_mdate} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                        m_body_html = f"Instagram user <b>{user}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{profile_pic_mdate}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
                 try:
                     if csv_file_name:
                         if csv_text == "Profile Picture Removed":
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), csv_text, profile_pic_mdate_dt, "")
+                            write_csv_entry(csv_file_name, now_local_naive(), csv_text, convert_to_local_naive(profile_pic_mdate_dt), "")
                         elif csv_text == "Profile Picture Created":
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), csv_text, "", profile_pic_tmp_mdate_dt)
+                            write_csv_entry(csv_file_name, now_local_naive(), csv_text, "", convert_to_local_naive(profile_pic_tmp_mdate_dt))
                         else:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), csv_text, profile_pic_mdate_dt, profile_pic_tmp_mdate_dt)
+                            write_csv_entry(csv_file_name, now_local_naive(), csv_text, convert_to_local_naive(profile_pic_mdate_dt), convert_to_local_naive(profile_pic_tmp_mdate_dt))
                 except Exception as e:
                     print(f"* Error: {e}")
 
@@ -793,7 +892,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                         print(f"* User {user} does not have profile picture set")
                     else:
                         print(f"* Profile picture '{profile_pic_file}' already exists")
-                        print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)")
+                        print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)")
                         try:
                             if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
                                 subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file}'), shell=True)
@@ -886,13 +985,25 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                     i = 0
                     for story_item in story.get_items():
                         i += 1
-                        local_dt = story_item.date_local
-                        local_ts = int(local_dt.timestamp())
+
+                        utc_dt = story_item.date_utc
+                        local_dt = convert_utc_datetime_to_tz_datetime(utc_dt)
+                        if local_dt:
+                            local_ts = int(local_dt.timestamp())
+                        else:
+                            local_ts = 0
+
                         processed_stories_list.append(local_ts)
-                        expire_dt = story_item.expiring_local
-                        expire_ts = int(expire_dt.timestamp())
-                        print(f"Date:\t\t\t{get_date_from_ts(int(local_ts))}")
-                        print(f"Expiry:\t\t\t{get_date_from_ts(int(expire_ts))}")
+
+                        expire_utc_dt = story_item.expiring_utc
+                        expire_local_dt = convert_utc_datetime_to_tz_datetime(expire_utc_dt)
+                        if expire_local_dt:
+                            expire_ts = int(expire_local_dt.timestamp())
+                        else:
+                            expire_ts = 0
+
+                        print(f"Date:\t\t\t{get_date_from_ts(local_dt)}")
+                        print(f"Expiry:\t\t\t{get_date_from_ts(expire_local_dt)}")
                         if story_item.typename == "GraphStoryImage":
                             story_type = "Image"
                         else:
@@ -939,7 +1050,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
                         try:
                             if csv_file_name:
-                                write_csv_entry(csv_file_name, local_dt, "New Story Item", "", story_type)
+                                write_csv_entry(csv_file_name, convert_to_local_naive(local_dt), "New Story Item", "", story_type)
                         except Exception as e:
                             print(f"* Error: {e}")
 
@@ -980,8 +1091,8 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             followers_old = followers_read[1]
             if followers_count == followers_old_count:
                 followers = followers_old
-            followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file))).strftime("%d %b %Y, %H:%M:%S")
-            print(f"* Followers ({followers_old_count}) loaded from file '{insta_followers_file}' ({followers_mdate})")
+            followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file)), pytz.timezone(LOCAL_TIMEZONE))
+            print(f"* Followers ({followers_old_count}) loaded from file '{insta_followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
             followers_followings_fetched = True
 
     if followers_count != followers_old_count:
@@ -996,7 +1107,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
         try:
             if csv_file_name:
-                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Followers Count", followers_old_count, followers_count)
+                write_csv_entry(csv_file_name, now_local_naive(), "Followers Count", followers_old_count, followers_count)
         except Exception as e:
             print(f"* Error: {e}")
 
@@ -1036,7 +1147,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                 removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                 try:
                     if csv_file_name:
-                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followers", f_in_list, "")
+                        write_csv_entry(csv_file_name, now_local_naive(), "Removed Followers", f_in_list, "")
                 except Exception as e:
                     print(f"* Error: {e}")
             print()
@@ -1048,7 +1159,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                 added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                 try:
                     if csv_file_name:
-                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followers", "", f_in_list)
+                        write_csv_entry(csv_file_name, now_local_naive(), "Added Followers", "", f_in_list)
                 except Exception as e:
                     print(f"* Error: {e}")
             print()
@@ -1064,8 +1175,8 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             followings_old = followings_read[1]
             if followings_count == followings_old_count:
                 followings = followings_old
-            following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file))).strftime("%d %b %Y, %H:%M:%S")
-            print(f"\n* Followings ({followings_old_count}) loaded from file '{insta_followings_file}' ({following_mdate})")
+            following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file)), pytz.timezone(LOCAL_TIMEZONE))
+            print(f"\n* Followings ({followings_old_count}) loaded from file '{insta_followings_file}' ({get_short_date_from_ts(following_mdate, show_weekday=False, always_show_year=True)})")
             followers_followings_fetched = True
 
     if followings_count != followings_old_count:
@@ -1079,7 +1190,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
         followers_followings_fetched = True
         try:
             if csv_file_name:
-                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Followings Count", followings_old_count, followings_count)
+                write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
         except Exception as e:
             print(f"* Error: {e}")
 
@@ -1119,7 +1230,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                 removed_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                 try:
                     if csv_file_name:
-                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followings", f_in_list, "")
+                        write_csv_entry(csv_file_name, now_local_naive(), "Removed Followings", f_in_list, "")
                 except Exception as e:
                     print(f"* Error: {e}")
             print()
@@ -1131,7 +1242,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                 added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                 try:
                     if csv_file_name:
-                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followings", "", f_in_list)
+                        write_csv_entry(csv_file_name, now_local_naive(), "Added Followings", "", f_in_list)
                 except Exception as e:
                     print(f"* Error: {e}")
             print()
@@ -1185,8 +1296,12 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
             for post in posts:
                 time.sleep(POST_FETCH_DELAY)
-                local_dt = post.date_local
-                local_ts = int(local_dt.timestamp())
+                utc_dt = post.date_utc
+                local_dt = convert_utc_datetime_to_tz_datetime(utc_dt)
+                if local_dt:
+                    local_ts = int(local_dt.timestamp())
+                else:
+                    local_ts = 0
 
                 if local_ts > highestinsta_ts:
                     highestinsta_ts = local_ts
@@ -1218,15 +1333,16 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                     likes_users_list += "- " + like.username + " [ " + "https://www.instagram.com/" + like.username + "/ ]\n"
                 comments_list = last_post.get_comments()
                 for comment in comments_list:
-                    comment_created_at = convert_utc_datetime_to_tz_datetime(comment.created_at_utc, LOCAL_TIMEZONE)
-                    post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at.timestamp()) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
+                    comment_created_at = convert_utc_datetime_to_tz_datetime(comment.created_at_utc)
+                    if comment_created_at:
+                        post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
         except Exception as e:
             print(f"* Error: Failed to get post location / likes list / comments list: {e}")
 
         post_url = f"https://instagram.com/p/{shortcode}/"
 
         print(f"* Newest post for user {user}:\n")
-        print(f"Date:\t\t\t{get_date_from_ts(int(highestinsta_ts))} ({calculate_timespan(int(time.time()), int(highestinsta_ts))} ago)")
+        print(f"Date:\t\t\t{get_date_from_ts(highestinsta_dt)} ({calculate_timespan(now_local(), highestinsta_dt)} ago)")
         print(f"Post URL:\t\t{post_url}")
         print(f"Profile URL:\t\thttps://www.instagram.com/{insta_username}/")
         print(f"Likes:\t\t\t{likes}")
@@ -1265,9 +1381,11 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
         print_cur_ts("\nTimestamp:\t\t")
 
         highestinsta_ts_old = highestinsta_ts
+        highestinsta_dt_old = highestinsta_dt
 
     else:
         highestinsta_ts_old = int(time.time())
+        highestinsta_dt_old = now_local()
 
     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
     time.sleep(r_sleep_time)
@@ -1333,7 +1451,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             print(f"* Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})")
             try:
                 if csv_file_name:
-                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Followings Count", followings_old_count, followings_count)
+                    write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
             except Exception as e:
                 print(f"* Error: {e}")
 
@@ -1378,7 +1496,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                                 removed_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                 try:
                                     if csv_file_name:
-                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followings", f_in_list, "")
+                                        write_csv_entry(csv_file_name, now_local_naive(), "Removed Followings", f_in_list, "")
                                 except Exception as e:
                                     print(f"* Error: {e}")
                             print()
@@ -1391,7 +1509,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                                 added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                 try:
                                     if csv_file_name:
-                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followings", "", f_in_list)
+                                        write_csv_entry(csv_file_name, now_local_naive(), "Added Followings", "", f_in_list)
                                 except Exception as e:
                                     print(f"* Error: {e}")
                             print()
@@ -1426,7 +1544,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
             try:
                 if csv_file_name:
-                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Followers Count", followers_old_count, followers_count)
+                    write_csv_entry(csv_file_name, now_local_naive(), "Followers Count", followers_old_count, followers_count)
             except Exception as e:
                 print(f"* Error: {e}")
 
@@ -1470,7 +1588,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                                 removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                 try:
                                     if csv_file_name:
-                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Followers", f_in_list, "")
+                                        write_csv_entry(csv_file_name, now_local_naive(), "Removed Followers", f_in_list, "")
                                 except Exception as e:
                                     print(f"* Error: {e}")
                             print()
@@ -1483,7 +1601,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                                 added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                 try:
                                     if csv_file_name:
-                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Followers", "", f_in_list)
+                                        write_csv_entry(csv_file_name, now_local_naive(), "Added Followers", "", f_in_list)
                                 except Exception as e:
                                     print(f"* Error: {e}")
                             print()
@@ -1521,7 +1639,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
             try:
                 if csv_file_name:
-                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Bio Changed", bio_old, bio)
+                    write_csv_entry(csv_file_name, now_local_naive(), "Bio Changed", bio_old, bio)
             except Exception as e:
                 print(f"* Error: {e}")
 
@@ -1549,7 +1667,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
             try:
                 if csv_file_name:
-                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Visibility", profile_visibility_old, profile_visibility)
+                    write_csv_entry(csv_file_name, now_local_naive(), "Profile Visibility", profile_visibility_old, profile_visibility)
             except Exception as e:
                 print(f"* Error: {e}")
 
@@ -1571,7 +1689,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
             try:
                 if csv_file_name:
-                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "New Story", "", "")
+                    write_csv_entry(csv_file_name, now_local_naive(), "New Story", "", "")
             except Exception as e:
                 print(f"* Error: {e}")
 
@@ -1605,16 +1723,28 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                     i = 0
                     for story_item in story.get_items():
                         i += 1
-                        local_dt = story_item.date_local
-                        local_ts = int(local_dt.timestamp())
+
+                        utc_dt = story_item.date_utc
+                        local_dt = convert_utc_datetime_to_tz_datetime(utc_dt)
+                        if local_dt:
+                            local_ts = int(local_dt.timestamp())
+                        else:
+                            local_ts = 0
+
                         if local_ts in processed_stories_list:
                             continue
                         processed_stories_list.append(local_ts)
-                        expire_dt = story_item.expiring_local
-                        expire_ts = int(expire_dt.timestamp())
+
+                        expire_utc_dt = story_item.expiring_utc
+                        expire_local_dt = convert_utc_datetime_to_tz_datetime(expire_utc_dt)
+                        if expire_local_dt:
+                            expire_ts = int(expire_local_dt.timestamp())
+                        else:
+                            expire_ts = 0
+
                         print(f"* User {user} has new story item:\n")
-                        print(f"Date:\t\t\t{get_date_from_ts(int(local_ts))}")
-                        print(f"Expiry:\t\t\t{get_date_from_ts(int(expire_ts))}")
+                        print(f"Date:\t\t\t{get_date_from_ts(local_dt)}")
+                        print(f"Expiry:\t\t\t{get_date_from_ts(expire_local_dt)}")
                         if story_item.typename == "GraphStoryImage":
                             story_type = "Image"
                         else:
@@ -1674,7 +1804,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
                         try:
                             if csv_file_name:
-                                write_csv_entry(csv_file_name, local_dt, "New Story Item", "", story_type)
+                                write_csv_entry(csv_file_name, convert_to_local_naive(local_dt), "New Story Item", "", story_type)
                         except Exception as e:
                             print(f"* Error: {e}")
 
@@ -1725,8 +1855,12 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                     posts = instaloader.Profile.from_username(bot.context, user).get_posts()
                     for post in posts:
                         time.sleep(POST_FETCH_DELAY)
-                        local_dt = post.date_local
-                        local_ts = int(local_dt.timestamp())
+                        utc_dt = post.date_utc
+                        local_dt = convert_utc_datetime_to_tz_datetime(utc_dt)
+                        if local_dt:
+                            local_ts = int(local_dt.timestamp())
+                        else:
+                            local_ts = 0
 
                         if local_ts > highestinsta_ts_old:
                             highestinsta_ts = local_ts
@@ -1737,9 +1871,9 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
                     if csv_file_name:
                         if posts_count > posts_count_old:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(highestinsta_ts)), "Posts Count", posts_count_old, posts_count)
+                            write_csv_entry(csv_file_name, convert_to_local_naive(highestinsta_dt), "Posts Count", posts_count_old, posts_count)
                         else:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Posts Count", posts_count_old, posts_count)
+                            write_csv_entry(csv_file_name, now_local_naive(), "Posts Count", posts_count_old, posts_count)
 
                     posts_count_old = posts_count
 
@@ -1784,8 +1918,9 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                             likes_users_list += "- " + like.username + " [ " + "https://www.instagram.com/" + like.username + "/ ]\n"
                         comments_list = last_post.get_comments()
                         for comment in comments_list:
-                            comment_created_at = convert_utc_datetime_to_tz_datetime(comment.created_at_utc, LOCAL_TIMEZONE)
-                            post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at.timestamp()) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
+                            comment_created_at = convert_utc_datetime_to_tz_datetime(comment.created_at_utc)
+                            if comment_created_at:
+                                post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
                 except Exception as e:
                     print(f"* Error while getting post location / likes list / comments list: {e}")
 
@@ -1793,8 +1928,8 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
                     post_url = f"https://instagram.com/p/{shortcode}/"
 
-                    print(f"* New post for user {user} after {calculate_timespan(int(highestinsta_ts), int(highestinsta_ts_old))} ({get_date_from_ts(int(highestinsta_ts_old))})\n")
-                    print(f"Date:\t\t\t{get_date_from_ts(int(highestinsta_ts))}")
+                    print(f"* New post for user {user} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n")
+                    print(f"Date:\t\t\t{get_date_from_ts(highestinsta_dt)}")
                     print(f"Post URL:\t\t{post_url}")
                     print(f"Profile URL:\t\thttps://www.instagram.com/{insta_username}/")
                     print(f"Likes:\t\t\t{likes}")
@@ -1840,15 +1975,15 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
                     try:
                         if csv_file_name:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(highestinsta_ts)), "New Post", "", pcaption)
+                            write_csv_entry(csv_file_name, convert_to_local_naive(highestinsta_dt), "New Post", "", pcaption)
                     except Exception as e:
                         print(f"* Error: {e}")
 
                     if status_notification:
-                        m_subject = f"Instagram user {user} has a new post - {get_short_date_from_ts(int(highestinsta_ts))} (after {calculate_timespan(int(highestinsta_ts), int(highestinsta_ts_old), show_seconds=False)} - {get_short_date_from_ts(highestinsta_ts_old)})"
+                        m_subject = f"Instagram user {user} has a new post - {get_short_date_from_ts(highestinsta_dt)} (after {calculate_timespan(highestinsta_dt, highestinsta_dt_old, show_seconds=False)} - {get_short_date_from_ts(highestinsta_dt_old)})"
 
-                        m_body = f"Instagram user {user} has a new post after {calculate_timespan(int(highestinsta_ts), int(highestinsta_ts_old))} ({get_date_from_ts(int(highestinsta_ts_old))})\n\nDate: {get_date_from_ts(int(highestinsta_ts))}\nPost URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nLikes: {likes}\nComments: {comments}\nTagged: {tagged_users}{location_mbody}{location}\nCaption:\n\n{caption}\n{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{post_comments_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"Instagram user <b>{user}</b> has a new post after <b>{calculate_timespan(int(highestinsta_ts), int(highestinsta_ts_old))}</b> ({get_date_from_ts(int(highestinsta_ts_old))}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(int(highestinsta_ts))}</b><br>Post URL: <a href=\"{post_url}\">{post_url}</a><br>Profile URL: <a href=\"https://www.instagram.com/{insta_username}/\">https://www.instagram.com/{insta_username}/</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {tagged_users}{location_mbody}{location}<br>Caption:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                        m_body = f"Instagram user {user} has a new post after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n\nDate: {get_date_from_ts(highestinsta_dt)}\nPost URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nLikes: {likes}\nComments: {comments}\nTagged: {tagged_users}{location_mbody}{location}\nCaption:\n\n{caption}\n{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{post_comments_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                        m_body_html = f"Instagram user <b>{user}</b> has a new post after <b>{calculate_timespan(highestinsta_dt, highestinsta_dt_old)}</b> ({get_date_from_ts(highestinsta_dt_old)}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(highestinsta_dt)}</b><br>Post URL: <a href=\"{post_url}\">{post_url}</a><br>Profile URL: <a href=\"https://www.instagram.com/{insta_username}/\">https://www.instagram.com/{insta_username}/</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {tagged_users}{location_mbody}{location}<br>Caption:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
                         print(f"\nSending email notification to {RECEIVER_EMAIL}")
                         if m_body_html_pic_saved_text:
@@ -1857,6 +1992,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                             send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
                     highestinsta_ts_old = highestinsta_ts
+                    highestinsta_dt_old = highestinsta_dt
 
                     print(f"\nCheck interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                     print_cur_ts("Timestamp:\t\t")
