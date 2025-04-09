@@ -29,19 +29,14 @@ VERSION = 1.6
 INSTA_USERNAME_FOR_SESSION_LOGIN = ''
 INSTA_PASSWORD_FOR_SESSION_LOGIN = ''
 
-# SMTP settings for sending email notifications, you can leave it as it is below and no notifications will be sent
+# SMTP settings for sending email notifications
+# If left as-is, no notifications will be sent
 SMTP_HOST = "your_smtp_server_ssl"
 SMTP_PORT = 587
 SMTP_USER = "your_smtp_user"
 SMTP_PASSWORD = "your_smtp_password"
 SMTP_SSL = True
 SENDER_EMAIL = "your_sender_email"
-# SMTP_HOST = "your_smtp_server_plaintext"
-# SMTP_PORT = 25
-# SMTP_USER = "your_smtp_user"
-# SMTP_PASSWORD = "your_smtp_password"
-# SMTP_SSL = False
-# SENDER_EMAIL = "your_sender_email"
 RECEIVER_EMAIL = "your_receiver_email"
 
 # How often do we perform checks for user activity, you can also use -c parameter; in seconds
@@ -67,7 +62,7 @@ IMGCAT_PATH = ""
 TOOL_ALIVE_INTERVAL = 21600  # 6 hours
 
 # URL we check in the beginning to make sure we have internet connectivity
-CHECK_INTERNET_URL = 'http://www.google.com/'
+CHECK_INTERNET_URL = 'https://www.instagram.com/'
 
 # Default value for initial checking of internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
@@ -96,12 +91,18 @@ INSTA_LOGFILE = "instagram_monitor"
 # Value used by signal handlers increasing/decreasing the user activity check (INSTA_CHECK_INTERVAL); in seconds
 INSTA_CHECK_SIGNAL_VALUE = 300  # 5 min
 
+# Whether to clear the terminal screen after starting the tool
+CLEAR_SCREEN = True
+
 # -------------------------
 # CONFIGURATION SECTION END
 # -------------------------
 
 # Default value for network-related timeouts in functions
 FUNCTION_TIMEOUT = 15
+
+# Width of horizontal line (─)
+HORIZONTAL_LINE = 105
 
 TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / INSTA_CHECK_INTERVAL
 
@@ -187,17 +188,26 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-# Function to check internet connectivity
-def check_internet():
-    url = CHECK_INTERNET_URL
+# Checks internet connectivity
+def check_internet(url=CHECK_INTERNET_URL, timeout=CHECK_INTERNET_TIMEOUT):
     try:
-        _ = req.get(url, timeout=CHECK_INTERNET_TIMEOUT)
-        print("OK")
+        _ = req.get(url, timeout=timeout)
         return True
-    except Exception as e:
-        print(f"No connectivity, please check your network - {e}")
-        sys.exit(1)
-    return False
+    except req.RequestException as e:
+        print(f"No connectivity, please check your network: {e}")
+        return False
+
+
+def clear_screen(enabled=True):
+    if not enabled:
+        return
+    try:
+        if platform.system() == 'Windows':
+            os.system('cls')
+        else:
+            os.system('clear')
+    except Exception:
+        print("* Cannot clear the screen contents")
 
 
 # Function to convert absolute value of seconds to human readable format
@@ -396,7 +406,7 @@ def get_cur_ts(ts_str=""):
 # Function to print the current timestamp in human readable format; eg. Sun, 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str=""):
     print(get_cur_ts(str(ts_str)))
-    print("-----------------------------------------------------------------------------------------------------------------")
+    print("─" * HORIZONTAL_LINE)
 
 
 # Function to return the timestamp/datetime object in human readable format (long version); eg. Sun, 21 Apr 2024, 15:08:45
@@ -852,7 +862,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                     stories_count = story.itemcount
                     if stories_count > 0:
                         print(f"* User {user} has {stories_count} story items:")
-                        print("-----------------------------------------------------------------------------------------------------------------")
+                        print("─" * HORIZONTAL_LINE)
                     i = 0
                     for story_item in story.get_items():
                         i += 1
@@ -916,7 +926,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                         if i == stories_count:
                             print_cur_ts("\nTimestamp:\t\t")
                         else:
-                            print("-----------------------------------------------------------------------------------------------------------------")
+                            print("─" * HORIZONTAL_LINE)
 
                     break
 
@@ -1857,13 +1867,7 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    try:
-        if platform.system() == 'Windows':
-            os.system('cls')
-        else:
-            os.system('clear')
-    except:
-        print("* Cannot clear the screen contents")
+    clear_screen(CLEAR_SCREEN)
 
     print(f"Instagram Monitoring Tool v{VERSION}\n")
 
@@ -1905,10 +1909,8 @@ if __name__ == "__main__":
             print("* Error: Cannot detect local timezone, consider setting LOCAL_TIMEZONE manually !")
             sys.exit(1)
 
-    sys.stdout.write("* Checking internet connectivity ... ")
-    sys.stdout.flush()
-    check_internet()
-    print("")
+    if not check_internet():
+        sys.exit(1)
 
     if args.send_test_email_notification:
         print("* Sending test email notification ...\n")
