@@ -80,7 +80,7 @@ CHECK_INTERNET_TIMEOUT = 5
 RANDOM_SLEEP_DIFF_LOW = 900  # -15 min
 RANDOM_SLEEP_DIFF_HIGH = 180  # +3 min
 
-# Limit checking for new posts to specific hours of the day?
+# Limit checking for new posts/reels to specific hours of the day?
 # If True, the tool will only check within the defined hour ranges below
 CHECK_POSTS_IN_HOURS_RANGE = False
 
@@ -144,7 +144,7 @@ import json
 import os
 from datetime import datetime, timezone
 from dateutil import relativedelta
-from dateutil.parser import parse
+from dateutil.parser import isoparse, parse
 import calendar
 import requests as req
 import shutil
@@ -169,7 +169,10 @@ import ipaddress
 from itertools import zip_longest
 import subprocess
 import instaloader
+from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape
+from itertools import islice
+from typing import Optional, Tuple, Any
 
 
 # Logger class to output messages to stdout and log file
@@ -651,13 +654,13 @@ def is_valid_timezone(tz_name):
     return tz_name in pytz.all_timezones
 
 
-# Signal handler for SIGUSR1 allowing to switch email notifications for new posts/stories/followings/bio
+# Signal handler for SIGUSR1 allowing to switch email notifications for new posts/reels/stories/followings/bio
 def toggle_status_changes_notifications_signal_handler(sig, frame):
     global status_notification
     status_notification = not status_notification
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Email notifications: [new posts/stories/followings/bio/profile picture = {status_notification}]")
+    print(f"* Email notifications: [new posts/reels/stories/followings/bio/profile picture = {status_notification}]")
     print_cur_ts("Timestamp:\t\t")
 
 
@@ -911,6 +914,137 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
             print_cur_ts("\nTimestamp:\t\t")
 
 
+# Return the most recent post and/or reel for the user
+def latest_post_reel(user: str, bot: instaloader.Instaloader) -> Optional[Tuple[instaloader.Post, str]]:
+    profile = instaloader.Profile.from_username(bot.context, user)
+
+    # max 3 pinned posts + the latest one
+    posts = [(p, "post") for p in islice(profile.get_posts(), 4)]
+
+    reels = [(r, "reel") for r in islice(profile.get_reels(), 4)]
+
+    candidates = posts + reels
+
+    if not candidates:
+        return None
+
+    latest, source = max(candidates, key=lambda pair: pair[0].date_utc)
+
+    return latest, source
+
+
+# Returns reels count by using Instaloader’s iPhone API (requires session login)
+def get_reels_count_mobile(user: str, bot: instaloader.Instaloader):
+    profile = instaloader.Profile.from_username(bot.context, user)
+    user_id = profile.userid
+
+    # Fetch mobile JSON
+    ctx: Any = bot.context  # type: ignore
+    data = ctx.get_iphone_json(f"api/v1/users/{user_id}/info/", {})  # type: ignore
+
+    u = data.get("user", {})
+
+    # posts_count = u.get("media_count", 0)
+    reels_count = (u.get("reel_count") or u.get("total_clips_count", 0))
+
+    return reels_count
+
+
+# Return the total number of reels (clips) for the user (two methods)
+def get_total_reels_count(user: str, bot: instaloader.Instaloader, skip_session=False):
+
+    # Try iPhone mobile API path if sessions are allowed
+    if not skip_session:
+        try:
+            return get_reels_count_mobile(user, bot)
+        except Exception:
+            pass
+
+    # Anonymous fallback: count every reel in the feed, might be API intensive
+    try:
+        profile = instaloader.Profile.from_username(bot.context, user)
+        count = 0
+        for _ in profile.get_reels():
+            count += 1
+        return count
+    except PrivateProfileNotFollowedException:
+        return 0
+
+
+def check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
+
+    if posts_count != posts_count_old:
+        print(f"* Posts number changed for user {user} from {posts_count_old} to {posts_count}\n")
+
+        if status_notification:
+            m_subject = f"Instagram user {user} posts number has changed! ({posts_count_old} -> {posts_count})"
+
+            m_body = f"Posts number changed for user {user} from {posts_count_old} to {posts_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+            print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+            send_email(m_subject, m_body, "", SMTP_SSL)
+
+        print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+        print_cur_ts("Timestamp:\t\t")
+        return 1
+    else:
+        return 0
+
+
+def check_reels_counts(user, reels_count, reels_count_old, r_sleep_time):
+
+    if reels_count != reels_count_old:
+        print(f"* Reels number changed for user {user} from {reels_count_old} to {reels_count}\n")
+
+        if status_notification:
+            m_subject = f"Instagram user {user} reels number has changed! ({reels_count_old} -> {reels_count})"
+
+            m_body = f"Reels number changed for user {user} from {reels_count_old} to {reels_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+            print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+            send_email(m_subject, m_body, "", SMTP_SSL)
+
+        print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+        print_cur_ts("Timestamp:\t\t")
+        return 1
+    else:
+        return 0
+
+
+# Returns the tagged location name of the post, we use mobile API JSON call since last_post.location does not work anymore
+def get_post_location_mobile(last_post: instaloader.Post, bot: instaloader.Instaloader) -> Optional[str]:
+
+    media_id = getattr(last_post, "mediaid", None)
+    if media_id is None:
+        return None
+
+    ctx: Any = bot.context  # type: ignore
+    try:
+        data = ctx.get_iphone_json(f"api/v1/media/{media_id}/info/", {})  # type: ignore
+        items = data.get("items", [])
+        if not items:
+            return None
+        media = items[0]
+        loc_node = media.get("location")
+        if isinstance(loc_node, dict):
+            return loc_node.get("name")
+    except Exception:
+        return None
+
+    return None
+
+
+# Returns the true shortcode for the user's latest Reel via the mobile-web_profile_info endpoint
+def get_real_reel_code(bot: instaloader.Instaloader, username: str) -> Optional[str]:
+    try:
+        data = bot.context.get_iphone_json(f"api/v1/users/web_profile_info/?username={username}", {})
+        user = data["data"]["user"]
+        edges = user.get("edge_reels_media", {}).get("edges", [])
+        if not edges:
+            return None
+        return edges[0]["node"].get("shortcode")
+    except Exception:
+        return None
+
+
 # Main function that monitors activity of the specified Instagram user
 def instagram_monitor_user(user, error_notification, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details):
 
@@ -926,14 +1060,28 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
     followers_followings_fetched = False
     stories_count = 0
     stories_old_count = 0
+    reels_count = 0
 
     try:
         bot = instaloader.Instaloader()
-        if (INSTA_USERNAME_FOR_SESSION_LOGIN and INSTA_PASSWORD_FOR_SESSION_LOGIN) and not skip_session:
-            bot.login(user=INSTA_USERNAME_FOR_SESSION_LOGIN, passwd=INSTA_PASSWORD_FOR_SESSION_LOGIN)
-        elif INSTA_USERNAME_FOR_SESSION_LOGIN and not INSTA_PASSWORD_FOR_SESSION_LOGIN and not skip_session:
-            # log in via: <instaloader_location>/bin/instaloader -l username
-            bot.load_session_from_file(INSTA_USERNAME_FOR_SESSION_LOGIN)
+
+        if not skip_session and INSTA_USERNAME_FOR_SESSION_LOGIN:
+            if INSTA_PASSWORD_FOR_SESSION_LOGIN:
+                try:
+                    bot.load_session_from_file(INSTA_USERNAME_FOR_SESSION_LOGIN)
+                except FileNotFoundError:
+                    bot.login(INSTA_USERNAME_FOR_SESSION_LOGIN, INSTA_PASSWORD_FOR_SESSION_LOGIN)
+                    bot.save_session_to_file()
+                except instaloader.exceptions.BadCredentialsException:
+                    bot.login(INSTA_USERNAME_FOR_SESSION_LOGIN, INSTA_PASSWORD_FOR_SESSION_LOGIN)
+                    bot.save_session_to_file()
+            else:
+                try:
+                    bot.load_session_from_file(INSTA_USERNAME_FOR_SESSION_LOGIN)
+                except FileNotFoundError:
+                    print("* Error: no Instagram session file found, please run 'instaloader -l INSTA_USERNAME_FOR_SESSION_LOGIN' to create one")
+                    sys.exit(1)
+
         profile = instaloader.Profile.from_username(bot.context, user)
         time.sleep(NEXT_OPERATION_DELAY)
         insta_username = profile.username
@@ -941,12 +1089,23 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
         followers_count = profile.followers
         followings_count = profile.followees
         bio = profile.biography
-        posts_count = profile.mediacount
-        has_story = profile.has_public_story
         is_private = profile.is_private
+        followed_by_viewer = profile.followed_by_viewer
+        can_view = (not is_private) or followed_by_viewer
+        posts_count = profile.mediacount
+        if not skip_session and can_view:
+            reels_count = get_total_reels_count(user, bot, skip_session)
+        has_story = profile.has_public_story
         profile_image_url = profile.profile_pic_url_no_iphone
+
+        if bot.context.is_logged_in:
+            me = instaloader.Profile.own_profile(bot.context)
+            session_username = me.username
+        else:
+            session_username = None
+
     except Exception as e:
-        print(f"* Error: {e}")
+        print(f"* Error: {type(e).__name__}: {e}")
         sys.exit(1)
 
     story_flag = False
@@ -955,17 +1114,29 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
     followings_old_count = followings_count
     bio_old = bio
     posts_count_old = posts_count
+    reels_count_old = reels_count
     is_private_old = is_private
+    followed_by_viewer_old = followed_by_viewer
+
+    print(f"\nSession user:\t\t{session_username or '<anonymous>'}")
 
     print(f"\nUsername:\t\t{insta_username}")
     print(f"User ID:\t\t{insta_userid}")
     print(f"URL:\t\t\thttps://www.instagram.com/{insta_username}/")
-    print(f"Posts number:\t\t{posts_count}")
-    print(f"Followers Count:\t{followers_count}")
-    print(f"Followings Count:\t{followings_count}")
-    print(f"Story available:\t{has_story}")
-    print(f"Public profile:\t\t{not is_private}")
-    print(f"Bio:\n\n{bio}\n")
+
+    print(f"\nProfile:\t\t{'public' if not is_private else 'private'}")
+    print(f"Can view all contents:\t{'Yes' if can_view else 'No'}")
+
+    print(f"\nPosts:\t\t\t{posts_count}")
+    if not skip_session and can_view:
+        print(f"Reels:\t\t\t{reels_count}")
+
+    print(f"\nFollowers:\t\t{followers_count}")
+    print(f"Followings:\t\t{followings_count}")
+
+    print(f"\nStory available:\t{has_story}")
+
+    print(f"\nBio:\n\n{bio}\n")
     print_cur_ts("Timestamp:\t\t")
 
     processed_stories_list = []
@@ -973,7 +1144,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
         story_flag = True
         stories_count = 1
 
-        if not skip_session and not is_private and not skip_getting_story_details:
+        if not skip_session and can_view and not skip_getting_story_details:
             try:
                 stories = bot.get_stories(userids=[profile.userid])
 
@@ -1021,7 +1192,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
                         story_caption = story_item.caption
                         if story_caption:
-                            print(f"Caption:\n\n{story_caption}\n")
+                            print(f"Description:\n\n{story_caption}\n")
                         else:
                             print()
 
@@ -1029,13 +1200,19 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                         story_video_url = story_item.video_url
 
                         if story_video_url:
-                            story_video_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
+                            if local_dt:
+                                story_video_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
+                            else:
+                                story_video_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
                             if not os.path.isfile(story_video_filename):
                                 if save_pic_video(story_video_url, story_video_filename, local_ts):
                                     print(f"Story video saved to '{story_video_filename}'")
 
                         if story_thumbnail_url:
-                            story_image_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
+                            if local_dt:
+                                story_image_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
+                            else:
+                                story_image_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
                             if not os.path.isfile(story_image_filename):
                                 if save_pic_video(story_thumbnail_url, story_image_filename, local_ts):
                                     print(f"Story thumbnail image saved to '{story_image_filename}'")
@@ -1111,7 +1288,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
         except Exception as e:
             print(f"* Error: {e}")
 
-    if ((followers_count != followers_old_count) or (followers_count > 0 and not followers)) and not skip_session and not skip_followers and not is_private:
+    if ((followers_count != followers_old_count) or (followers_count > 0 and not followers)) and not skip_session and not skip_followers and can_view:
         print("\n* Getting followers ...")
         followers_followings_fetched = True
 
@@ -1131,7 +1308,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             except Exception as e:
                 print(f"* Cannot save list of followers to '{insta_followers_file}' file: {e}")
 
-    if ((followers_count != followers_old_count) and (followers != followers_old)) and not skip_session and not skip_followers and not is_private and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
+    if ((followers_count != followers_old_count) and (followers != followers_old)) and not skip_session and not skip_followers and can_view and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
         a, b = set(followers_old), set(followers)
         removed_followers = list(a - b)
         added_followers = list(b - a)
@@ -1194,7 +1371,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
         except Exception as e:
             print(f"* Error: {e}")
 
-    if ((followings_count != followings_old_count) or (followings_count > 0 and not followings)) and not skip_session and not skip_followings and not is_private:
+    if ((followings_count != followings_old_count) or (followings_count > 0 and not followings)) and not skip_session and not skip_followings and can_view:
         print("\n* Getting followings ...")
         followers_followings_fetched = True
 
@@ -1214,7 +1391,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             except Exception as e:
                 print(f"* Cannot save list of followings to '{insta_followings_file}' file: {e}")
 
-    if ((followings_count != followings_old_count) and (followings != followings_old)) and not skip_session and not skip_followings and not is_private and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
+    if ((followings_count != followings_old_count) and (followings != followings_old)) and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
         a, b = set(followings_old), set(followings)
         removed_followings = list(a - b)
         added_followings = list(b - a)
@@ -1247,12 +1424,12 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                     print(f"* Error: {e}")
             print()
 
-    if not skip_session and not skip_followers and not is_private:
+    if not skip_session and not skip_followers and can_view:
         followers_old = followers
     else:
         followers = followers_old
 
-    if not skip_session and not skip_followings and not is_private:
+    if not skip_session and not skip_followings and can_view:
         followings_old = followings
     else:
         followings = followings_old
@@ -1272,6 +1449,8 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
         except Exception as e:
             print(f"* Error while processing changed profile picture: {e}")
 
+    # post details
+
     highestinsta_ts = 0
     highestinsta_dt = datetime.fromtimestamp(0)
     likes = 0
@@ -1280,33 +1459,32 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
     pcaption = ""
     tagged_users = []
     shortcode = ""
-    location = ""
+    location = None
     likes_users_list = ""
     post_comments_list = ""
     last_post = None
+    last_source = "post"
     thumbnail_url = ""
     video_url = ""
 
-    if int(posts_count) >= 1 and not is_private and not skip_getting_posts_details:
-        print("Fetching user's latest post/reel (be patient, it might take a while depending on the number of posts) ...\n")
+    if int(posts_count + reels_count) >= 1 and can_view and not skip_getting_posts_details:
+        print("Fetching user's latest post/reel ...\n")
         try:
 
             time.sleep(NEXT_OPERATION_DELAY)
-            posts = instaloader.Profile.from_username(bot.context, user).get_posts()
+            last_post_reel = latest_post_reel(user, bot)
 
-            for post in posts:
-                time.sleep(POST_FETCH_DELAY)
-                utc_dt = post.date_utc
+            if last_post_reel:
+                last_post, last_source = last_post_reel
+                utc_dt = last_post.date_utc
                 local_dt = convert_utc_datetime_to_tz_datetime(utc_dt)
                 if local_dt:
                     local_ts = int(local_dt.timestamp())
                 else:
                     local_ts = 0
 
-                if local_ts > highestinsta_ts:
-                    highestinsta_ts = local_ts
-                    highestinsta_dt = local_dt
-                    last_post = post
+                highestinsta_ts = local_ts
+                highestinsta_dt = local_dt
 
         except Exception as e:
             print(f"* Error: {e}")
@@ -1315,19 +1493,23 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
         if last_post:
             likes = last_post.likes
             comments = last_post.comments
-            caption = last_post.caption
-            pcaption = last_post.pcaption
+            caption = last_post.caption if last_post.caption is not None else "(empty)"
+            pcaption = last_post.pcaption or ""
             tagged_users = last_post.tagged_users
-            shortcode = last_post.shortcode
+            if last_source == "reel":
+                shortcode = get_real_reel_code(bot, user) or last_post.shortcode
+            else:
+                shortcode = last_post.shortcode
             thumbnail_url = last_post.url
             video_url = last_post.video_url
+            if last_source == "post":
+                location = get_post_location_mobile(last_post, bot)
         else:
-            print(f"* Error: Failed to get last post details")
+            print(f"* Error: Failed to get last post/reel details")
 
         try:
+            # below won't work until Instaloader updates query hashes in new release
             if not skip_session and get_more_post_details and last_post:
-                # if last_post.location:
-                #    location = last_post.location.name
                 likes_list = last_post.get_likes()
                 for like in likes_list:
                     likes_users_list += "- " + like.username + " [ " + "https://www.instagram.com/" + like.username + "/ ]\n"
@@ -1337,13 +1519,12 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                     if comment_created_at:
                         post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
         except Exception as e:
-            print(f"* Error: Failed to get post location / likes list / comments list: {e}")
+            print(f"* Error: Failed to get post's likes list / comments list: {e}")
 
-        post_url = f"https://instagram.com/p/{shortcode}/"
-
-        print(f"* Newest post for user {user}:\n")
+        post_url = f"https://www.instagram.com/{'reel' if last_source == 'reel' else 'p'}/{shortcode}/"
+        print(f"* Newest {last_source.lower()} for user {user}:\n")
         print(f"Date:\t\t\t{get_date_from_ts(highestinsta_dt)} ({calculate_timespan(now_local(), highestinsta_dt)} ago)")
-        print(f"Post URL:\t\t{post_url}")
+        print(f"{last_source.capitalize()} URL:\t\t{post_url}")
         print(f"Profile URL:\t\thttps://www.instagram.com/{insta_username}/")
         print(f"Likes:\t\t\t{likes}")
         print(f"Comments:\t\t{comments}")
@@ -1352,7 +1533,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
         if location:
             print(f"Location:\t\t{location}")
 
-        print(f"Caption:\n\n{caption}\n")
+        print(f"Description:\n\n{caption}\n")
 
         if likes_users_list:
             print(f"Likes list:\n{likes_users_list}")
@@ -1361,16 +1542,22 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             print(f"Comments list:{post_comments_list}")
 
         if video_url:
-            video_filename = f'instagram_{user}_post_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
+            if highestinsta_dt:
+                video_filename = f'instagram_{user}_{last_source.lower()}_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
+            else:
+                video_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
             if not os.path.isfile(video_filename):
                 if save_pic_video(video_url, video_filename, highestinsta_ts):
-                    print(f"Post video saved to '{video_filename}'")
+                    print(f"{last_source.capitalize()} video saved to '{video_filename}'")
 
         if thumbnail_url:
-            image_filename = f'instagram_{user}_post_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
+            if highestinsta_dt:
+                image_filename = f'instagram_{user}_{last_source.lower()}_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
+            else:
+                image_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
             if not os.path.isfile(image_filename):
                 if save_pic_video(thumbnail_url, image_filename, highestinsta_ts):
-                    print(f"Post thumbnail image saved to '{image_filename}'")
+                    print(f"{last_source.capitalize()} thumbnail image saved to '{image_filename}'")
             if os.path.isfile(image_filename):
                 try:
                     if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
@@ -1404,9 +1591,13 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             followers_count = profile.followers
             followings_count = profile.followees
             bio = profile.biography
-            posts_count = profile.mediacount
-            has_story = profile.has_public_story
             is_private = profile.is_private
+            followed_by_viewer = profile.followed_by_viewer
+            can_view = (not is_private) or followed_by_viewer
+            posts_count = profile.mediacount
+            if not skip_session and can_view:
+                reels_count = get_total_reels_count(user, bot, skip_session)
+            has_story = profile.has_public_story
             profile_image_url = profile.profile_pic_url_no_iphone
             email_sent = False
         except Exception as e:
@@ -1460,7 +1651,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             added_followings_mbody = ""
             removed_followings_mbody = ""
 
-            if not skip_session and not skip_followings and not is_private:
+            if not skip_session and not skip_followings and can_view:
                 try:
                     followings = []
                     followings = [followee.username for followee in profile.get_followees()]
@@ -1519,7 +1710,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             if status_notification:
                 m_subject = f"Instagram user {user} followings number has changed! ({followings_diff_str}, {followings_old_count} -> {followings_count})"
 
-                if not skip_session and not skip_followings and not is_private:
+                if not skip_session and not skip_followings and can_view:
 
                     m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                 else:
@@ -1553,7 +1744,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             added_followers_mbody = ""
             removed_followers_mbody = ""
 
-            if not skip_session and not skip_followers and not is_private:
+            if not skip_session and not skip_followers and can_view:
                 try:
                     followers = []
                     followers = [follower.username for follower in profile.get_followers()]
@@ -1611,7 +1802,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             if status_notification and followers_notification:
                 m_subject = f"Instagram user {user} followers number has changed! ({followers_diff_str}, {followers_old_count} -> {followers_count})"
 
-                if not skip_session and not skip_followers and not is_private:
+                if not skip_session and not skip_followers and can_view:
                     m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                 else:
                     m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
@@ -1682,6 +1873,27 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
             print_cur_ts("Timestamp:\t\t")
 
+        if followed_by_viewer != followed_by_viewer_old:
+
+            print(f"* Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user} !")
+
+            try:
+                if csv_file_name:
+                    write_csv_entry(csv_file_name, now_local_naive(), "Followed By Viewer", followed_by_viewer_old, followed_by_viewer)
+            except Exception as e:
+                print(f"* Error: {e}")
+
+            if status_notification:
+                m_subject = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user} !"
+
+                m_body = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+                send_email(m_subject, m_body, "", SMTP_SSL)
+
+            followed_by_viewer_old = followed_by_viewer
+            print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+            print_cur_ts("Timestamp:\t\t")
+
         if has_story and not story_flag:
             print(f"* New story for user {user} !\n")
             story_flag = True
@@ -1711,7 +1923,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             print_cur_ts("Timestamp:\t\t")
             story_flag = False
 
-        if has_story and not skip_session and not is_private and not skip_getting_story_details:
+        if has_story and not skip_session and can_view and not skip_getting_story_details:
             try:
                 stories = bot.get_stories(userids=[profile.userid])
 
@@ -1772,9 +1984,9 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                         story_caption_m_body_html = ""
                         story_caption = story_item.caption
                         if story_caption:
-                            story_caption_m_body = f"\nCaption:\n\n{story_caption}"
-                            story_caption_m_body_html = f"<br>Caption:<br><br>{story_caption}"
-                            print(f"Caption:\n\n{story_caption}\n")
+                            story_caption_m_body = f"\nDescription:\n\n{story_caption}"
+                            story_caption_m_body_html = f"<br>Description:<br><br>{story_caption}"
+                            print(f"Description:\n\n{story_caption}\n")
                         else:
                             print()
 
@@ -1782,13 +1994,19 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                         story_video_url = story_item.video_url
 
                         if story_video_url:
-                            story_video_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
+                            if local_dt:
+                                story_video_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
+                            else:
+                                story_video_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
                             if not os.path.isfile(story_video_filename):
                                 if save_pic_video(story_video_url, story_video_filename, local_ts):
                                     print(f"Story video saved to '{story_video_filename}'")
 
                         m_body_html_pic_saved_text = ""
-                        story_image_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
+                        if local_dt:
+                            story_image_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
+                        else:
+                            story_image_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
                         if story_thumbnail_url:
                             if not os.path.isfile(story_image_filename):
                                 if save_pic_video(story_thumbnail_url, story_image_filename, local_ts):
@@ -1837,25 +2055,27 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
         hours_to_check = list(range(MIN_H1, MAX_H1 + 1)) + list(range(MIN_H2, MAX_H2 + 1))
 
         if (CHECK_POSTS_IN_HOURS_RANGE and (int(cur_h) in hours_to_check)) or not CHECK_POSTS_IN_HOURS_RANGE:
-            if posts_count != posts_count_old and not is_private and not skip_getting_posts_details:
+            if (posts_count != posts_count_old or reels_count != reels_count_old) and can_view and not skip_getting_posts_details:
                 likes = 0
                 comments = 0
                 caption = ""
                 pcaption = ""
                 tagged_users = []
                 shortcode = ""
-                location = ""
+                location = None
                 likes_users_list = ""
                 post_comments_list = ""
                 last_post = None
+                last_source = "post"
                 thumbnail_url = ""
                 video_url = ""
 
                 try:
-                    posts = instaloader.Profile.from_username(bot.context, user).get_posts()
-                    for post in posts:
-                        time.sleep(POST_FETCH_DELAY)
-                        utc_dt = post.date_utc
+                    last_post_reel = latest_post_reel(user, bot)
+
+                    if last_post_reel:
+                        last_post, last_source = last_post_reel
+                        utc_dt = last_post.date_utc
                         local_dt = convert_utc_datetime_to_tz_datetime(utc_dt)
                         if local_dt:
                             local_ts = int(local_dt.timestamp())
@@ -1866,30 +2086,37 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                             highestinsta_ts = local_ts
                             highestinsta_dt = local_dt
                             new_post = True
-                            last_post = post
-                            break
 
                     if csv_file_name:
-                        if posts_count > posts_count_old:
-                            write_csv_entry(csv_file_name, convert_to_local_naive(highestinsta_dt), "Posts Count", posts_count_old, posts_count)
-                        else:
-                            write_csv_entry(csv_file_name, now_local_naive(), "Posts Count", posts_count_old, posts_count)
 
-                    posts_count_old = posts_count
+                        csv_dt = convert_to_local_naive(highestinsta_dt) if highestinsta_dt else now_local_naive()
+
+                        metrics = [("Posts Count", posts_count, posts_count_old), ("Reels Count", reels_count, reels_count_old)]
+
+                        for label, new, old in metrics:
+                            if new != old:
+                                # use csv_dt when it is an increase, now_local_naive() when it is a decrease
+                                dt = csv_dt if new > old else now_local_naive()
+                                write_csv_entry(csv_file_name, dt, label, old, new)
 
                     if new_post:
 
                         if last_post:
                             likes = last_post.likes
                             comments = last_post.comments
-                            caption = last_post.caption
-                            pcaption = last_post.pcaption
+                            caption = last_post.caption if last_post.caption is not None else "(empty)"
+                            pcaption = last_post.pcaption or ""
                             tagged_users = last_post.tagged_users
-                            shortcode = last_post.shortcode
+                            if last_source == "reel":
+                                shortcode = get_real_reel_code(bot, user) or last_post.shortcode
+                            else:
+                                shortcode = last_post.shortcode
                             thumbnail_url = last_post.url
                             video_url = last_post.video_url
+                            if last_source == "post":
+                                location = get_post_location_mobile(last_post, bot)
                         else:
-                            raise Exception("Failed to get last post details")
+                            raise Exception("Failed to get last post/reel details")
 
                 except Exception as e:
                     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
@@ -1911,8 +2138,6 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
                 try:
                     if new_post and not skip_session and get_more_post_details and last_post:
-                        if last_post.location:
-                            location = last_post.location.name
                         likes_list = last_post.get_likes()
                         for like in likes_list:
                             likes_users_list += "- " + like.username + " [ " + "https://www.instagram.com/" + like.username + "/ ]\n"
@@ -1922,26 +2147,28 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                             if comment_created_at:
                                 post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
                 except Exception as e:
-                    print(f"* Error while getting post location / likes list / comments list: {e}")
+                    print(f"* Error while getting post's likes list / comments list: {e}")
 
                 if new_post:
 
-                    post_url = f"https://instagram.com/p/{shortcode}/"
+                    post_url = f"https://www.instagram.com/{'reel' if last_source == 'reel' else 'p'}/{shortcode}/"
 
-                    print(f"* New post for user {user} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n")
+                    print(f"* New {last_source.lower()} for user {user} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n")
                     print(f"Date:\t\t\t{get_date_from_ts(highestinsta_dt)}")
-                    print(f"Post URL:\t\t{post_url}")
+                    print(f"{last_source.capitalize()} URL:\t\t{post_url}")
                     print(f"Profile URL:\t\thttps://www.instagram.com/{insta_username}/")
                     print(f"Likes:\t\t\t{likes}")
                     print(f"Comments:\t\t{comments}")
                     print(f"Tagged users:\t\t{tagged_users}")
 
                     location_mbody = ""
+                    location_mbody_str = ""
                     if location:
                         location_mbody = "\nLocation: "
+                        location_mbody_str = location
                         print(f"Location:\t\t{location}")
 
-                    print(f"Caption:\n\n{caption}\n")
+                    print(f"Description:\n\n{caption}\n")
 
                     likes_users_list_mbody = ""
                     post_comments_list_mbody = ""
@@ -1955,18 +2182,24 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                         print(f"Comments list:{post_comments_list}")
 
                     if video_url:
-                        video_filename = f'instagram_{user}_post_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
+                        if highestinsta_dt:
+                            video_filename = f'instagram_{user}_{last_source.lower()}_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
+                        else:
+                            video_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
                         if not os.path.isfile(video_filename):
                             if save_pic_video(video_url, video_filename, highestinsta_ts):
-                                print(f"Post video saved to '{video_filename}'")
+                                print(f"{last_source.capitalize()} video saved to '{video_filename}'")
 
                     m_body_html_pic_saved_text = ""
-                    image_filename = f'instagram_{user}_post_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
+                    if highestinsta_dt:
+                        image_filename = f'instagram_{user}_{last_source.lower()}_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
+                    else:
+                        image_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
                     if thumbnail_url:
                         if not os.path.isfile(image_filename):
                             if save_pic_video(thumbnail_url, image_filename, highestinsta_ts):
-                                m_body_html_pic_saved_text = f'<br><br><img src="cid:post_pic" width="50%">'
-                                print(f"Post thumbnail image saved to '{image_filename}'")
+                                m_body_html_pic_saved_text = f'<br><br><img src="cid:{last_source.lower()}_pic" width="50%">'
+                                print(f"{last_source.capitalize()} thumbnail image saved to '{image_filename}'")
                                 try:
                                     if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
                                         subprocess.call((f'{IMGCAT_PATH} {image_filename}'), shell=True)
@@ -1975,21 +2208,24 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
                     try:
                         if csv_file_name:
-                            write_csv_entry(csv_file_name, convert_to_local_naive(highestinsta_dt), "New Post", "", pcaption)
+                            write_csv_entry(csv_file_name, convert_to_local_naive(highestinsta_dt), f"New {last_source.capitalize()}", "", pcaption)
                     except Exception as e:
                         print(f"* Error: {e}")
 
                     if status_notification:
-                        m_subject = f"Instagram user {user} has a new post - {get_short_date_from_ts(highestinsta_dt)} (after {calculate_timespan(highestinsta_dt, highestinsta_dt_old, show_seconds=False)} - {get_short_date_from_ts(highestinsta_dt_old)})"
+                        m_subject = f"Instagram user {user} has a new {last_source.lower()} - {get_short_date_from_ts(highestinsta_dt)} (after {calculate_timespan(highestinsta_dt, highestinsta_dt_old, show_seconds=False)} - {get_short_date_from_ts(highestinsta_dt_old)})"
 
-                        m_body = f"Instagram user {user} has a new post after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n\nDate: {get_date_from_ts(highestinsta_dt)}\nPost URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nLikes: {likes}\nComments: {comments}\nTagged: {tagged_users}{location_mbody}{location}\nCaption:\n\n{caption}\n{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{post_comments_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"Instagram user <b>{user}</b> has a new post after <b>{calculate_timespan(highestinsta_dt, highestinsta_dt_old)}</b> ({get_date_from_ts(highestinsta_dt_old)}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(highestinsta_dt)}</b><br>Post URL: <a href=\"{post_url}\">{post_url}</a><br>Profile URL: <a href=\"https://www.instagram.com/{insta_username}/\">https://www.instagram.com/{insta_username}/</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {tagged_users}{location_mbody}{location}<br>Caption:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                        m_body = f"Instagram user {user} has a new {last_source.lower()} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n\nDate: {get_date_from_ts(highestinsta_dt)}\n{last_source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nLikes: {likes}\nComments: {comments}\nTagged: {tagged_users}{location_mbody}{location_mbody_str}\nDescription:\n\n{caption}\n{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{post_comments_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                        m_body_html = f"Instagram user <b>{user}</b> has a new {last_source.lower()} after <b>{calculate_timespan(highestinsta_dt, highestinsta_dt_old)}</b> ({get_date_from_ts(highestinsta_dt_old)}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(highestinsta_dt)}</b><br>{last_source.capitalize()} URL: <a href=\"{post_url}\">{post_url}</a><br>Profile URL: <a href=\"https://www.instagram.com/{insta_username}/\">https://www.instagram.com/{insta_username}/</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {tagged_users}{location_mbody}{location_mbody_str}<br>Description:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
                         print(f"\nSending email notification to {RECEIVER_EMAIL}")
                         if m_body_html_pic_saved_text:
-                            send_email(m_subject, m_body, m_body_html, SMTP_SSL, image_filename, "post_pic")
+                            send_email(m_subject, m_body, m_body_html, SMTP_SSL, image_filename, f"{last_source.lower()}_pic")
                         else:
                             send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+
+                    posts_count_old = posts_count
+                    reels_count_old = reels_count
 
                     highestinsta_ts_old = highestinsta_ts
                     highestinsta_dt_old = highestinsta_dt
@@ -1997,20 +2233,21 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                     print(f"\nCheck interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                     print_cur_ts("Timestamp:\t\t")
 
-            elif posts_count != posts_count_old and (is_private or skip_getting_posts_details):
-                print(f"* Posts number changed for user {user} from {posts_count_old} to {posts_count}\n")
+                elif not new_post and (posts_count != posts_count_old or reels_count != reels_count_old):
 
-                if status_notification:
-                    m_subject = f"Instagram user {user} posts number has changed! ({posts_count_old} -> {posts_count})"
+                    if check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
+                        posts_count_old = posts_count
 
-                    m_body = f"Posts number changed for user {user} from {posts_count_old} to {posts_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}\n")
-                    send_email(m_subject, m_body, "", SMTP_SSL)
+                    if check_reels_counts(user, reels_count, reels_count_old, r_sleep_time):
+                        reels_count_old = reels_count
 
-                posts_count_old = posts_count
+            elif (posts_count != posts_count_old or reels_count != reels_count_old) and (not can_view or skip_getting_posts_details):
 
-                print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-                print_cur_ts("Timestamp:\t\t")
+                if check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
+                    posts_count_old = posts_count
+
+                if check_reels_counts(user, reels_count, reels_count_old, r_sleep_time):
+                    reels_count_old = reels_count
 
         alive_counter += 1
 
@@ -2151,7 +2388,7 @@ if __name__ == "__main__":
         "-t", "--more-post-details",
         dest="get_more_post_details",
         action="store_true",
-        help="Fetch extra post details (comments, likes, location)"
+        help="Fetch extra post details (list of comments and likes)"
     )
 
     # Features & output
@@ -2283,7 +2520,7 @@ if __name__ == "__main__":
     print(f"* Skip stories details:\t\t\t{skip_getting_story_details}")
     print(f"* Skip posts details:\t\t\t{skip_getting_posts_details}")
     print(f"* Get more posts details:\t\t{get_more_post_details}")
-    print("* Hours for checking new posts:\t\t" + (f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59, {MIN_H2:02d}:00 - {MAX_H2:02d}:59" if CHECK_POSTS_IN_HOURS_RANGE else "00:00 - 23:59"))
+    print("* Hours for checking posts/reels:\t" + (f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59, {MIN_H2:02d}:00 - {MAX_H2:02d}:59" if CHECK_POSTS_IN_HOURS_RANGE else "00:00 - 23:59"))
     print(f"* Output logging enabled:\t\t{not args.disable_logging}" + (f" ({INSTA_LOGFILE})" if not args.disable_logging else ""))
     print(f"* CSV logging enabled:\t\t\t{bool(args.csv_file)}" + (f" ({args.csv_file})" if args.csv_file else ""))
     print(f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}")
