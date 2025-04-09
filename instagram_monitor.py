@@ -1871,26 +1871,149 @@ if __name__ == "__main__":
 
     print(f"Instagram Monitoring Tool v{VERSION}\n")
 
-    parser = argparse.ArgumentParser("instagram_monitor")
-    parser.add_argument("INSTAGRAM_USERNAME", nargs="?", help="Instagram username to monitor", type=str)
-    parser.add_argument("-u", "--instagram_user_for_session_login", help="Instagram username for session login to fetch list of followers/followings and detailed info about new stories/posts/reels", type=str, metavar="INSTAGRAM_USER")
-    parser.add_argument("-p", "--instagram_password_for_session_login", help="Instagram user's password for session login to fetch list of followers/followings and detailed info about new stories/posts/reels, however it is recommended to save the session via 'instaloader -l <instagram_user_for_session_login>'", type=str, metavar="INSTAGRAM_PASSWORD")
-    parser.add_argument("-s", "--status_notification", help="Send email notification once user puts new post/reel/story, changes bio, follows new users, changes profile picture or visibility", action='store_true')
-    parser.add_argument("-m", "--followers_notification", help="Send email notification once user gets new followers, by default it is disabled", action='store_true')
-    parser.add_argument("-e", "--error_notification", help="Disable sending email notifications in case of errors like invalid session", action='store_false')
-    parser.add_argument("-c", "--check_interval", help="Time between monitoring checks, in seconds", type=int)
-    parser.add_argument("-i", "--check_interval_random_diff_low", help="Value subtracted from check interval to randomize, in seconds", type=int)
-    parser.add_argument("-j", "--check_interval_random_diff_high", help="Value added to check interval to randomize, in seconds", type=int)
-    parser.add_argument("-b", "--csv_file", help="Write all user activities and profile changes to CSV file", type=str, metavar="CSV_FILENAME")
-    parser.add_argument("-k", "--do_not_detect_changed_profile_pic", help="Disable detection of changed user's profile picture", action='store_false')
-    parser.add_argument("-l", "--skip_session", help="Skip session login and do not fetch list of followers/followings and more detailed info about new stories/posts/reels", action='store_true')
-    parser.add_argument("-f", "--skip_followers", help="Do not fetch list of followers, even if session login is used", action='store_true')
-    parser.add_argument("-g", "--skip_followings", help="Do not fetch list of followings, even if session login is used", action='store_true')
-    parser.add_argument("-r", "--skip_getting_story_details", help="Do not get detailed info about new stories and its images/videos, even if session login is used; you will still get generic information about new stories", action='store_true')
-    parser.add_argument("-w", "--skip_getting_posts_details", help="Do not get detailed info about new posts like its date, caption, URL, tagged users, number of likes and comments, even if session login is used; you will still get information about changed number of posts for the user", action='store_true')
-    parser.add_argument("-t", "--get_more_post_details", help="Get more detailed info about new posts like its location and list of comments and likes, only possible if session login is used; if not enabled you will still get generic information about new posts (unless account is private or -w / --skip_getting_posts_details is used)", action='store_true')
-    parser.add_argument("-d", "--disable_logging", help="Disable output logging to file 'instagram_monitor_username.log' file", action='store_true')
-    parser.add_argument("-z", "--send_test_email_notification", help="Send test email notification to verify SMTP settings defined in the script", action='store_true')
+    parser = argparse.ArgumentParser(
+        prog="instagram_monitor",
+        description="Monitor an Instagram user’s activity and send customizable email alerts [ https://github.com/misiektoja/instagram_monitor/ ]"
+    )
+
+    # Positional
+    parser.add_argument(
+        "username",
+        nargs="?",
+        metavar="INSTAGRAM_USERNAME",
+        help="Instagram username to monitor",
+        type=str
+    )
+
+    # Session login credentials
+    creds = parser.add_argument_group("Session login credentials")
+    creds.add_argument(
+        "-u", "--instagram-user-for-session-login",
+        dest="instagram_user_for_session_login",
+        metavar="INSTAGRAM_USER",
+        type=str,
+        help="Instagram username for session login (to fetch followers/followings, stories, posts, reels)"
+    )
+    creds.add_argument(
+        "-p", "--instagram-password-for-session-login",
+        dest="instagram_password_for_session_login",
+        metavar="INSTAGRAM_PASSWORD",
+        type=str,
+        help="Instagram password for session login (recommended to use saved session)"
+    )
+
+    # Notifications
+    notify = parser.add_argument_group("Notifications")
+    notify.add_argument(
+        "-s", "--notify-status",
+        dest="status_notification",
+        action="store_true",
+        help="Email on new post/reel/story, bio change, new follow, profile pic/visibility change"
+    )
+    notify.add_argument(
+        "-m", "--notify-followers",
+        dest="followers_notification",
+        action="store_true",
+        help="Email on new followers (disabled by default)"
+    )
+    notify.add_argument(
+        "-e", "--no-error-notify",
+        dest="error_notification",
+        action="store_false",
+        help="Disable email on errors (e.g. invalid session)"
+    )
+
+    # Intervals & timers
+    times = parser.add_argument_group("Intervals & timers")
+    times.add_argument(
+        "-c", "--check-interval",
+        dest="check_interval",
+        metavar="SECONDS",
+        type=int,
+        help="Time between monitoring checks, in seconds"
+    )
+    times.add_argument(
+        "-i", "--random-diff-low",
+        dest="check_interval_random_diff_low",
+        metavar="SECONDS",
+        type=int,
+        help="Subtract up to this value from check-interval"
+    )
+    times.add_argument(
+        "-j", "--random-diff-high",
+        dest="check_interval_random_diff_high",
+        metavar="SECONDS",
+        type=int,
+        help="Add up to this value to check-interval"
+    )
+
+    # Session‐related skips
+    skips = parser.add_argument_group("Session‐related options")
+    skips.add_argument(
+        "-l", "--skip-session",
+        dest="skip_session",
+        action="store_true",
+        help="Skip session login (no followers/followings or detailed info)"
+    )
+    skips.add_argument(
+        "-f", "--skip-followers",
+        dest="skip_followers",
+        action="store_true",
+        help="Do not fetch followers list"
+    )
+    skips.add_argument(
+        "-g", "--skip-followings",
+        dest="skip_followings",
+        action="store_true",
+        help="Do not fetch followings list"
+    )
+    skips.add_argument(
+        "-r", "--skip-story-details",
+        dest="skip_getting_story_details",
+        action="store_true",
+        help="Do not fetch detailed story info"
+    )
+    skips.add_argument(
+        "-w", "--skip-post-details",
+        dest="skip_getting_posts_details",
+        action="store_true",
+        help="Do not fetch detailed post info"
+    )
+    skips.add_argument(
+        "-t", "--more-post-details",
+        dest="get_more_post_details",
+        action="store_true",
+        help="Fetch extra post details (comments, likes, location)"
+    )
+
+    # Output & filtering
+    opts = parser.add_argument_group("Output & filtering")
+    opts.add_argument(
+        "-b", "--csv-file",
+        dest="csv_file",
+        metavar="CSV_FILENAME",
+        type=str,
+        help="Write all activities and profile changes to CSV file"
+    )
+    opts.add_argument(
+        "-k", "--no-detect-profile-pic",
+        dest="do_not_detect_changed_profile_pic",
+        action="store_false",
+        help="Disable detection of changed profile picture"
+    )
+    opts.add_argument(
+        "-d", "--disable-logging",
+        dest="disable_logging",
+        action="store_true",
+        help="Disable output logging to instagram_monitor_<suffix>.log"
+    )
+    opts.add_argument(
+        "-z", "--send-test-email",
+        dest="send_test_email",
+        action="store_true",
+        help="Send test email to verify SMTP settings"
+    )
+
     args = parser.parse_args()
 
     if len(sys.argv) == 1:
@@ -1912,7 +2035,7 @@ if __name__ == "__main__":
     if not check_internet():
         sys.exit(1)
 
-    if args.send_test_email_notification:
+    if args.send_test_email:
         print("* Sending test email notification ...\n")
         if send_email("instagram_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL, smtp_timeout=5) == 0:
             print("* Email sent successfully !")
@@ -1920,7 +2043,7 @@ if __name__ == "__main__":
             sys.exit(1)
         sys.exit(0)
 
-    if not args.INSTAGRAM_USERNAME:
+    if not args.username:
         print("* Error: INSTAGRAM_USERNAME argument is required !")
         parser.print_help()
         sys.exit(1)
@@ -1983,7 +2106,7 @@ if __name__ == "__main__":
         csv_exists = False
 
     if not args.disable_logging:
-        INSTA_LOGFILE = f"{INSTA_LOGFILE}_{args.INSTAGRAM_USERNAME}.log"
+        INSTA_LOGFILE = f"{INSTA_LOGFILE}_{args.username}.log"
         sys.stdout = Logger(INSTA_LOGFILE)
 
     status_notification = args.status_notification
@@ -2013,7 +2136,7 @@ if __name__ == "__main__":
         print(f"* CSV logging enabled:\t\t\t{csv_enabled}")
     print(f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}")
 
-    out = f"\nMonitoring Instagram user {args.INSTAGRAM_USERNAME}"
+    out = f"\nMonitoring Instagram user {args.username}"
     print(out)
     print("-" * len(out))
 
@@ -2024,7 +2147,7 @@ if __name__ == "__main__":
         signal.signal(signal.SIGTRAP, increase_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_check_signal_handler)
 
-    instagram_monitor_user(args.INSTAGRAM_USERNAME, args.error_notification, args.csv_file, csv_exists, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details)
+    instagram_monitor_user(args.username, args.error_notification, args.csv_file, csv_exists, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details)
 
     sys.stdout = stdout_bck
     sys.exit(0)
