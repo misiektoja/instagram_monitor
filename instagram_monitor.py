@@ -1825,7 +1825,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                     print(f"\nCheck interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                     print_cur_ts("Timestamp:\t\t")
 
-            elif posts_count != posts_count_old and (is_private or skip_getting_posts_details):
+            elif posts_count != posts_count_old and skip_getting_posts_details:
                 print(f"* Posts number changed for user {user} from {posts_count_old} to {posts_count}\n")
 
                 if status_notification:
