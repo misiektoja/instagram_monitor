@@ -844,7 +844,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
         story_flag = True
         stories_count = 1
 
-        if not skip_session and not is_private and not skip_getting_story_details:
+        if not skip_session and not skip_getting_story_details:
             try:
                 stories = bot.get_stories(userids=[profile.userid])
 
@@ -970,7 +970,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
         except Exception as e:
             print(f"Error: cannot write CSV entry - {e}")
 
-    if ((followers_count != followers_old_count) or (followers_count > 0 and not followers)) and not skip_session and not skip_followers and not is_private:
+    if ((followers_count != followers_old_count) or (followers_count > 0 and not followers)) and not skip_session and not skip_followers:
         print("\n* Getting followers ...")
         followers_followings_fetched = True
 
@@ -990,7 +990,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             except Exception as e:
                 print(f"* Cannot save list of followers to '{insta_followers_file}' file - {e}")
 
-    if ((followers_count != followers_old_count) and (followers != followers_old)) and not skip_session and not skip_followers and not is_private and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
+    if ((followers_count != followers_old_count) and (followers != followers_old)) and not skip_session and not skip_followers and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
         a, b = set(followers_old), set(followers)
         removed_followers = list(a - b)
         added_followers = list(b - a)
@@ -1053,7 +1053,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
         except Exception as e:
             print(f"Error: cannot write CSV entry - {e}")
 
-    if ((followings_count != followings_old_count) or (followings_count > 0 and not followings)) and not skip_session and not skip_followings and not is_private:
+    if ((followings_count != followings_old_count) or (followings_count > 0 and not followings)) and not skip_session and not skip_followings:
         print("\n* Getting followings ...")
         followers_followings_fetched = True
 
@@ -1073,7 +1073,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             except Exception as e:
                 print(f"* Cannot save list of followings to '{insta_followings_file}' file - {e}")
 
-    if ((followings_count != followings_old_count) and (followings != followings_old)) and not skip_session and not skip_followings and not is_private and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
+    if ((followings_count != followings_old_count) and (followings != followings_old)) and not skip_session and not skip_followings and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
         a, b = set(followings_old), set(followings)
         removed_followings = list(a - b)
         added_followings = list(b - a)
@@ -1106,12 +1106,12 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
                     print(f"Error: cannot write CSV entry - {e}")
             print()
 
-    if not skip_session and not skip_followers and not is_private:
+    if not skip_session and not skip_followers:
         followers_old = followers
     else:
         followers = followers_old
 
-    if not skip_session and not skip_followings and not is_private:
+    if not skip_session and not skip_followings:
         followings_old = followings
     else:
         followings = followings_old
@@ -1146,7 +1146,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
     thumbnail_url = ""
     video_url = ""
 
-    if int(posts_count) >= 1 and not is_private and not skip_getting_posts_details:
+    if int(posts_count) >= 1 and not skip_getting_posts_details:
         print("Fetching user's latest post/reel (be patient, it might take a while depending on the number of posts) ...\n")
         try:
 
@@ -1309,7 +1309,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             added_followings_mbody = ""
             removed_followings_mbody = ""
 
-            if not skip_session and not skip_followings and not is_private:
+            if not skip_session and not skip_followings:
                 try:
                     followings = []
                     followings = [followee.username for followee in profile.get_followees()]
@@ -1368,7 +1368,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             if status_notification:
                 m_subject = f"Instagram user {user} followings number has changed! ({followings_diff_str}, {followings_old_count} -> {followings_count})"
 
-                if not skip_session and not skip_followings and not is_private:
+                if not skip_session and not skip_followings:
 
                     m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                 else:
@@ -1402,7 +1402,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             added_followers_mbody = ""
             removed_followers_mbody = ""
 
-            if not skip_session and not skip_followers and not is_private:
+            if not skip_session and not skip_followers:
                 try:
                     followers = []
                     followers = [follower.username for follower in profile.get_followers()]
@@ -1460,7 +1460,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             if status_notification and followers_notification:
                 m_subject = f"Instagram user {user} followers number has changed! ({followers_diff_str}, {followers_old_count} -> {followers_count})"
 
-                if not skip_session and not skip_followers and not is_private:
+                if not skip_session and not skip_followers:
                     m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                 else:
                     m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
@@ -1560,7 +1560,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
             print_cur_ts("Timestamp:\t\t")
             story_flag = False
 
-        if has_story and not skip_session and not is_private and not skip_getting_story_details:
+        if has_story and not skip_session and not skip_getting_story_details:
             try:
                 stories = bot.get_stories(userids=[profile.userid])
 
@@ -1674,7 +1674,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, csv_exists, 
         hours_to_check = list(range(MIN_H1, MAX_H1 + 1)) + list(range(MIN_H2, MAX_H2 + 1))
 
         if (CHECK_POSTS_IN_HOURS_RANGE and (int(cur_h) in hours_to_check)) or not CHECK_POSTS_IN_HOURS_RANGE:
-            if posts_count != posts_count_old and not is_private and not skip_getting_posts_details:
+            if posts_count != posts_count_old and not skip_getting_posts_details:
                 likes = 0
                 comments = 0
                 caption = ""
