@@ -1095,7 +1095,15 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
         posts_count = profile.mediacount
         if not skip_session and can_view:
             reels_count = get_total_reels_count(user, bot, skip_session)
-        has_story = profile.has_public_story
+
+        if not is_private:
+            has_story = profile.has_public_story
+        elif bot.context.is_logged_in and followed_by_viewer:
+            story = next(bot.get_stories(userids=[insta_userid]), None)
+            has_story = bool(story and story.itemcount)
+        else:
+            has_story = False
+
         profile_image_url = profile.profile_pic_url_no_iphone
 
         if bot.context.is_logged_in:
@@ -1138,111 +1146,6 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
     print(f"\nBio:\n\n{bio}\n")
     print_cur_ts("Timestamp:\t\t")
-
-    processed_stories_list = []
-    if has_story:
-        story_flag = True
-        stories_count = 1
-
-        if not skip_session and can_view and not skip_getting_story_details:
-            try:
-                stories = bot.get_stories(userids=[profile.userid])
-
-                for story in stories:
-                    stories_count = story.itemcount
-                    if stories_count > 0:
-                        print(f"* User {user} has {stories_count} story items:")
-                        print("─" * HORIZONTAL_LINE)
-                    i = 0
-                    for story_item in story.get_items():
-                        i += 1
-
-                        utc_dt = story_item.date_utc
-                        local_dt = convert_utc_datetime_to_tz_datetime(utc_dt)
-                        if local_dt:
-                            local_ts = int(local_dt.timestamp())
-                        else:
-                            local_ts = 0
-
-                        processed_stories_list.append(local_ts)
-
-                        expire_utc_dt = story_item.expiring_utc
-                        expire_local_dt = convert_utc_datetime_to_tz_datetime(expire_utc_dt)
-                        if expire_local_dt:
-                            expire_ts = int(expire_local_dt.timestamp())
-                        else:
-                            expire_ts = 0
-
-                        print(f"Date:\t\t\t{get_date_from_ts(local_dt)}")
-                        print(f"Expiry:\t\t\t{get_date_from_ts(expire_local_dt)}")
-                        if story_item.typename == "GraphStoryImage":
-                            story_type = "Image"
-                        else:
-                            story_type = "Video"
-                        print(f"Type:\t\t\t{story_type}")
-
-                        story_mentions = story_item.caption_mentions
-                        story_hashtags = story_item.caption_hashtags
-
-                        if story_mentions:
-                            print(f"Mentions:\t\t{story_mentions}")
-
-                        if story_hashtags:
-                            print(f"Hashtags:\t\t{story_hashtags}")
-
-                        story_caption = story_item.caption
-                        if story_caption:
-                            print(f"Description:\n\n{story_caption}\n")
-                        else:
-                            print()
-
-                        story_thumbnail_url = story_item.url
-                        story_video_url = story_item.video_url
-
-                        if story_video_url:
-                            if local_dt:
-                                story_video_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
-                            else:
-                                story_video_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
-                            if not os.path.isfile(story_video_filename):
-                                if save_pic_video(story_video_url, story_video_filename, local_ts):
-                                    print(f"Story video saved to '{story_video_filename}'")
-
-                        if story_thumbnail_url:
-                            if local_dt:
-                                story_image_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
-                            else:
-                                story_image_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
-                            if not os.path.isfile(story_image_filename):
-                                if save_pic_video(story_thumbnail_url, story_image_filename, local_ts):
-                                    print(f"Story thumbnail image saved to '{story_image_filename}'")
-                            if os.path.isfile(story_image_filename):
-                                try:
-                                    if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
-                                        subprocess.call((f'echo;{IMGCAT_PATH} {story_image_filename}'), shell=True)
-                                        if i < stories_count:
-                                            print()
-                                except Exception:
-                                    pass
-
-                        try:
-                            if csv_file_name:
-                                write_csv_entry(csv_file_name, convert_to_local_naive(local_dt), "New Story Item", "", story_type)
-                        except Exception as e:
-                            print(f"* Error: {e}")
-
-                        if i == stories_count:
-                            print_cur_ts("\nTimestamp:\t\t")
-                        else:
-                            print("─" * HORIZONTAL_LINE)
-
-                    break
-
-                stories_old_count = stories_count
-
-            except Exception as e:
-                print(f"* Error: {e}")
-                sys.exit(1)
 
     insta_followers_file = f"instagram_{user}_followers.json"
     insta_followings_file = f"instagram_{user}_followings.json"
@@ -1449,6 +1352,113 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
         except Exception as e:
             print(f"* Error while processing changed profile picture: {e}")
 
+    # stories
+
+    processed_stories_list = []
+    if has_story:
+        story_flag = True
+        stories_count = 1
+
+        if not skip_session and can_view and not skip_getting_story_details:
+            try:
+                stories = bot.get_stories(userids=[insta_userid])
+
+                for story in stories:
+                    stories_count = story.itemcount
+                    if stories_count > 0:
+                        print(f"* User {user} has {stories_count} story items:")
+                        print("─" * HORIZONTAL_LINE)
+                    i = 0
+                    for story_item in story.get_items():
+                        i += 1
+
+                        utc_dt = story_item.date_utc
+                        local_dt = convert_utc_datetime_to_tz_datetime(utc_dt)
+                        if local_dt:
+                            local_ts = int(local_dt.timestamp())
+                        else:
+                            local_ts = 0
+
+                        processed_stories_list.append(local_ts)
+
+                        expire_utc_dt = story_item.expiring_utc
+                        expire_local_dt = convert_utc_datetime_to_tz_datetime(expire_utc_dt)
+                        if expire_local_dt:
+                            expire_ts = int(expire_local_dt.timestamp())
+                        else:
+                            expire_ts = 0
+
+                        print(f"Date:\t\t\t{get_date_from_ts(local_dt)}")
+                        print(f"Expiry:\t\t\t{get_date_from_ts(expire_local_dt)}")
+                        if story_item.typename == "GraphStoryImage":
+                            story_type = "Image"
+                        else:
+                            story_type = "Video"
+                        print(f"Type:\t\t\t{story_type}")
+
+                        story_mentions = story_item.caption_mentions
+                        story_hashtags = story_item.caption_hashtags
+
+                        if story_mentions:
+                            print(f"Mentions:\t\t{story_mentions}")
+
+                        if story_hashtags:
+                            print(f"Hashtags:\t\t{story_hashtags}")
+
+                        story_caption = story_item.caption
+                        if story_caption:
+                            print(f"Description:\n\n{story_caption}\n")
+                        else:
+                            print()
+
+                        story_thumbnail_url = story_item.url
+                        story_video_url = story_item.video_url
+
+                        if story_video_url:
+                            if local_dt:
+                                story_video_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
+                            else:
+                                story_video_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
+                            if not os.path.isfile(story_video_filename):
+                                if save_pic_video(story_video_url, story_video_filename, local_ts):
+                                    print(f"Story video saved to '{story_video_filename}'")
+
+                        if story_thumbnail_url:
+                            if local_dt:
+                                story_image_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
+                            else:
+                                story_image_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
+                            if not os.path.isfile(story_image_filename):
+                                if save_pic_video(story_thumbnail_url, story_image_filename, local_ts):
+                                    print(f"Story thumbnail image saved to '{story_image_filename}'")
+                            if os.path.isfile(story_image_filename):
+                                try:
+                                    if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
+                                        subprocess.call((f'echo;{IMGCAT_PATH} {story_image_filename}'), shell=True)
+                                        if i < stories_count:
+                                            print()
+                                except Exception:
+                                    pass
+
+                        try:
+                            if csv_file_name:
+                                write_csv_entry(csv_file_name, convert_to_local_naive(local_dt), "New Story Item", "", story_type)
+                        except Exception as e:
+                            print(f"* Error: {e}")
+
+                        if i == stories_count:
+                            print_cur_ts("\nTimestamp:\t\t")
+                        else:
+                            print("─" * HORIZONTAL_LINE)
+
+                    break
+
+                stories_old_count = stories_count
+
+            except Exception as e:
+                print(f"* Error: {e}")
+                sys.exit(1)
+
     # post details
 
     highestinsta_ts = 0
@@ -1597,7 +1607,15 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             posts_count = profile.mediacount
             if not skip_session and can_view:
                 reels_count = get_total_reels_count(user, bot, skip_session)
-            has_story = profile.has_public_story
+
+            if not is_private:
+                has_story = profile.has_public_story
+            elif bot.context.is_logged_in and followed_by_viewer:
+                story = next(bot.get_stories(userids=[insta_userid]), None)
+                has_story = bool(story and story.itemcount)
+            else:
+                has_story = False
+
             profile_image_url = profile.profile_pic_url_no_iphone
             email_sent = False
         except Exception as e:
@@ -1925,7 +1943,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
         if has_story and not skip_session and can_view and not skip_getting_story_details:
             try:
-                stories = bot.get_stories(userids=[profile.userid])
+                stories = bot.get_stories(userids=[insta_userid])
 
                 for story in stories:
                     stories_count = story.itemcount
