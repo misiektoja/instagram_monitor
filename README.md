@@ -6,6 +6,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of Instagram users' 
 > 📦 We're waiting for an updated release.  
 > 👉 In the meantime, use **[mode 2](#option-3-session-login-using-firefox-cookies-recommended)** (session login) with a Firefox cookie.
 
+<a id="features"></a>
 ## Features
 
 - Real-time tracking of Instagram users' activities and profile changes:
@@ -25,9 +26,10 @@ instagram_monitor is an OSINT tool for real-time monitoring of Instagram users' 
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
-   <img src="./assets/instagram_monitor.png" alt="instagram_monitor_screenshot" width="90%"/>
+   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor.png" alt="instagram_monitor_screenshot" width="90%"/>
 </p>
 
+<a id="table-of-contents"></a>
 ## Table of Contents
 
 1. [Requirements](#requirements)
@@ -55,6 +57,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of Instagram users' 
 7. [Change Log](#change-log)
 8. [License](#license)
 
+<a id="requirements"></a>
 ## Requirements
 
 * Python 3.9 or higher
@@ -68,17 +71,20 @@ Tested on:
 
 It should work on other versions of macOS, Linux, Unix and Windows as well.
 
+<a id="installation"></a>
 ## Installation
 
+<a id="install-from-pypi"></a>
 ### Install from PyPI
 
 ```sh
 pip install instagram_monitor
 ```
 
+<a id="manual-installation"></a>
 ### Manual Installation
 
-Download the *[instagram_monitor.py](instagram_monitor.py)* file to the desired location.
+Download the *[instagram_monitor.py](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py)* file to the desired location.
 
 Install dependencies via pip:
 
@@ -86,12 +92,13 @@ Install dependencies via pip:
 pip install instaloader requests python-dateutil pytz tzlocal python-dotenv
 ```
 
-Alternatively, from the downloaded *[requirements.txt](requirements.txt)*:
+Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt)*:
 
 ```sh
 pip install -r requirements.txt
 ```
 
+<a id="quick-start"></a>
 ## Quick Start
 
 - Track the `target_insta_user` in [mode 1](#mode-1-without-logged-in-instagram-account-no-session-login) (no session login):
@@ -120,8 +127,10 @@ To get the list of all supported command-line arguments / flags:
 instagram_monitor --help
 ```
 
+<a id="configuration"></a>
 ## Configuration
 
+<a id="configuration-file"></a>
 ### Configuration File
 
 Most settings can be configured via command-line arguments.
@@ -135,6 +144,7 @@ instagram_monitor --generate-config > instagram_monitor.conf
 
 Edit the `instagram_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
+<a id="mode-1-without-logged-in-instagram-account-no-session-login"></a>
 ### Mode 1: Without Logged-In Instagram Account (No Session Login)
 
 In this mode, the tool operates without logging in to an Instagram account. 
@@ -143,12 +153,14 @@ You can still monitor basic user activity such as new posts, stories, bio change
 
 This mode requires no setup, is easy to use and is resistant to Instagram's anti-bot mechanisms and CAPTCHA challenges.
 
+<a id="mode-2-with-logged-in-instagram-account-session-login"></a>
 ### Mode 2: With Logged-In Instagram Account (Session Login)
 
 In this mode, the tool uses an Instagram session login to access additional data. This includes detailed insights into new posts, reels and stories, also about added or removed followers/followings.
 
 Recommendation: use a dedicated Instagram account for monitoring. While the risk of a ban is low (in my experience accounts have remained active long-term), Instagram may occasionally show warnings for suspicious activity.
 
+<a id="option-1-basic-session-login-not-recommended"></a>
 #### Option 1: Basic Session Login (not recommended)
 
 You can provide your Instagram username (`your_insta_user`) and password directly in the `instagram_monitor.conf` configuration file, [environment variable](#storing-secrets) or via the `-u` and `-p` flags. 
@@ -157,6 +169,7 @@ However, this triggers a full login every time the tool runs, increasing the cha
 
 If you store the `SESSION_PASSWORD` in a dotenv file you can update its value and send a `SIGHUP` signal to the process to reload the file with the new password without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
 
+<a id="option-2-session-login-via-instaloader-better-but-can-be-detected"></a>
 #### Option 2: Session Login via Instaloader (better, but can be detected)
 
 A better approach is to use `Instaloader` to perform a one-time login and save the session:
@@ -167,6 +180,7 @@ instaloader -l <your_insta_user>
 
 This saves the session locally. However, frequent follower/following/stories changes can still lead to detection, as Instagram may flag this as automated behavior.
 
+<a id="option-3-session-login-using-firefox-cookies-recommended"></a>
 #### Option 3: Session Login Using Firefox Cookies (recommended)
 
 The most reliable method is to reuse an existing Instagram session from your Firefox web browser. 
@@ -189,6 +203,7 @@ You can adjust the default Firefox cookie directory permanently via `FIREFOX_*_C
 
 This method has the added benefit of blending tool activity with regular user behavior. Interacting with Instagram via Firefox every few days (scrolling, liking posts etc.) helps maintain session trust. Occasionally, Instagram might show warnings in the browser which can be dismissed manually.
 
+<a id="time-zone"></a>
 ### Time Zone
 
 By default, time zone is auto-detected using `tzlocal`. You can set it manually in `instagram_monitor.conf`:
@@ -203,6 +218,7 @@ You can get the list of all time zones supported by pytz like this:
 python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 ```
 
+<a id="smtp-settings"></a>
 ### SMTP Settings
 
 If you want to use email notifications functionality, configure SMTP settings in the `instagram_monitor.conf` file. 
@@ -213,6 +229,7 @@ Verify your SMTP settings by using `--send-test-email` flag (the tool will try t
 instagram_monitor --send-test-email
 ```
 
+<a id="storing-secrets"></a>
 ### Storing Secrets
 
 It is recommended to store secrets like `SESSION_PASSWORD` or `SMTP_PASSWORD` as either an environment variable or in a dotenv file.
@@ -249,8 +266,10 @@ instagram_monitor <target_insta_user> --env-file none
 
 As a fallback, you can also store secrets in the configuration file or source code.
 
+<a id="usage"></a>
 ## Usage
 
+<a id="monitoring-mode"></a>
 ### Monitoring Mode
 
 To monitor specific user activity in [mode 1](#mode-1-without-logged-in-instagram-account-no-session-login) (no session login), just type Instagram username as a command-line argument (`target_insta_user` in the example below):
@@ -287,6 +306,7 @@ And downloaded stories images & videos to:
 - `instagram_<username>_story_YYYYmmdd_HHMMSS.jpeg`
 - `instagram_<username>_story_YYYYmmdd_HHMMSS.mp4`
 
+<a id="email-notifications"></a>
 ### Email Notifications
 
 To enable email notifications for various events (such as new posts, reels and stories, changes in followings, bio updates, changes in profile picture and visibility):
@@ -318,9 +338,10 @@ Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-sett
 Example email:
 
 <p align="center">
-   <img src="./assets/instagram_monitor_email_notifications.png" alt="instagram_monitor_email_notifications" width="80%"/>
+   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_email_notifications.png" alt="instagram_monitor_email_notifications" width="80%"/>
 </p>
 
+<a id="csv-export"></a>
 ### CSV Export
 
 If you want to save all Instagram user's activities and profile changes to a CSV file, set `CSV_FILE` or use `-b` flag:
@@ -331,6 +352,7 @@ instagram_monitor <target_insta_user> -b instagram_username.csv
 
 The file will be automatically created if it does not exist.
 
+<a id="detection-of-changed-profile-pictures"></a>
 ### Detection of Changed Profile Pictures
 
 The tool can detect when a monitored user changes their profile picture. Notifications appear in the console and (if the `-s` flag is enabled) via email.
@@ -340,6 +362,7 @@ This feature is enabled by default. To disable it, either:
 - set the `DETECT_CHANGED_PROFILE_PIC` to `False`
 - or use the `-k` flag
 
+<a id="how-it-works"></a>
 #### How It Works
 
 Since Instagram periodically changes the profile picture URL even when the image is the same, the tool performs a binary comparison of JPEG files to detect actual changes.
@@ -352,16 +375,18 @@ If a change is detected, the old picture is moved to `instagram_<username>_profi
 - `instagram_<username>_profile_pic.jpeg` (current)
 - `instagram_<username>_profile_pic_YYmmdd_HHMM.jpeg` (for history)
 
+<a id="empty-profile-picture-detection"></a>
 #### Empty Profile Picture Detection
 
 The tool also has built-in detection of empty profile pictures. Instagram does not indicate an empty user's profile image in their API; that's why the tool detects it by using an empty profile image template (which appears to be identical on a binary level for all users).
 
 To enable this:
-- download the [instagram_profile_pic_empty.jpeg](instagram_profile_pic_empty.jpeg) file
+- download the [instagram_profile_pic_empty.jpeg](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_profile_pic_empty.jpeg) file
 - place it in the directory where you run the tool (or change the path via `PROFILE_PIC_FILE_EMPTY` configuration option)
 
 Without this file, the tool will treat an empty profile picture as a regular image. For example, if a user removes their profile picture, it would be treated as a change rather than a removal.
 
+<a id="displaying-images-in-your-terminal"></a>
 ### Displaying Images in Your Terminal
 
 If you have `imgcat` installed, you can use the feature of displaying profile pictures and stories/reels/posts images right in your terminal. 
@@ -372,6 +397,7 @@ If you specify only the binary name, it will be auto-searched in your PATH.
 
 Set it to empty to disable this feature.
 
+<a id="check-intervals"></a>
 ### Check Intervals
 
 If you want to customize polling interval, use `-c` flag (or `INSTA_CHECK_INTERVAL` configuration option):
@@ -398,6 +424,7 @@ That's why the check interval information is printed in the console and email no
 
 On top of that you can also define that checks for new posts / reels should be done only in specific hour ranges by setting `CHECK_POSTS_IN_HOURS_RANGE` to `True` and then defining proper values for `MIN/MAX_H1/H2` configuration options (see the comments in the configuration file for more information).
 
+<a id="signal-controls-macoslinuxunix"></a>
 ### Signal Controls (macOS/Linux/Unix)
 
 The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new configuration options / flags.
@@ -420,6 +447,7 @@ pkill -USR1 -f "instagram_monitor <target_insta_user>"
 
 As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.
 
+<a id="coloring-log-output-with-grc"></a>
 ### Coloring Log Output with GRC
 
 You can use [GRC](https://github.com/garabik/grc) to color logs.
@@ -432,7 +460,7 @@ Add to your GRC config (`~/.grc/grc.conf`):
 conf.monitor_logs
 ```
 
-Now copy the [conf.monitor_logs](grc/conf.monitor_logs) to your `~/.grc/` and log files should be nicely colored when using `grc` tool.
+Now copy the [conf.monitor_logs](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/grc/conf.monitor_logs) to your `~/.grc/` and log files should be nicely colored when using `grc` tool.
 
 Example:
 
@@ -440,14 +468,17 @@ Example:
 grc tail -F -n 100 instagram_monitor_<username>.log
 ```
 
+<a id="limitations"></a>
 ## Limitations
 
 The operation of the tool might flag the Instagram account and/or IP as being an automated tool (as described earlier).
 
+<a id="change-log"></a>
 ## Change Log
 
-See [RELEASE_NOTES.md](RELEASE_NOTES.md) for details.
+See [RELEASE_NOTES.md](https://github.com/misiektoja/instagram_monitor/blob/main/RELEASE_NOTES.md) for details.
 
+<a id="license"></a>
 ## License
 
-Licensed under GPLv3. See [LICENSE](LICENSE).
+Licensed under GPLv3. See [LICENSE](https://github.com/misiektoja/instagram_monitor/blob/main/LICENSE).
