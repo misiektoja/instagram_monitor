@@ -124,8 +124,9 @@ SKIP_GETTING_POSTS_DETAILS = False
 # Can also be enabled via the -t parameter
 GET_MORE_POST_DETAILS = False
 
-# How often to print an "alive check" message to the output; in seconds
-TOOL_ALIVE_INTERVAL = 21600  # 6 hours
+# How often to print a "liveness check" message to the output; in seconds
+# Set to 0 to disable
+LIVENESS_CHECK_INTERVAL = 43200  # 12 hours
 
 # URL used to verify internet connectivity at startup
 CHECK_INTERNET_URL = 'https://www.instagram.com/'
@@ -189,7 +190,7 @@ INSTA_CHECK_SIGNAL_VALUE = 300  # 5 min
 # -------------------------
 
 # Default dummy values so linters shut up
-# Do not change values below — modify them in the configuration section or config file instead
+# Do not change values below - modify them in the configuration section or config file instead
 SESSION_INSTAGRAM_USERNAME = ""
 SESSION_INSTAGRAM_PASSWORD = ""
 SMTP_HOST = ""
@@ -214,7 +215,7 @@ SKIP_FOLLOWINGS = False
 SKIP_GETTING_STORY_DETAILS = False
 SKIP_GETTING_POSTS_DETAILS = False
 GET_MORE_POST_DETAILS = False
-TOOL_ALIVE_INTERVAL = 0
+LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
 CHECK_POSTS_IN_HOURS_RANGE = False
@@ -245,7 +246,7 @@ SECRET_KEYS = ("SESSION_INSTAGRAM_PASSWORD", "SMTP_PASSWORD")
 # Default value for network-related timeouts in functions
 FUNCTION_TIMEOUT = 15
 
-TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / INSTA_CHECK_INTERVAL
+LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / INSTA_CHECK_INTERVAL
 
 stdout_bck = None
 last_output = []
@@ -289,7 +290,7 @@ import random
 try:
     import pytz
 except ModuleNotFoundError:
-    raise SystemExit("Error: Couldn’t find the pytz library !\n\nTo install it, run:\n    pip3 install pytz\n\nOnce installed, re-run this tool")
+    raise SystemExit("Error: Couldn't find the pytz library !\n\nTo install it, run:\n    pip3 install pytz\n\nOnce installed, re-run this tool")
 try:
     from tzlocal import get_localzone
 except ImportError:
@@ -305,7 +306,7 @@ try:
     import instaloader
     from instaloader import ConnectionException, Instaloader
 except ModuleNotFoundError:
-    raise SystemExit("Error: Couldn’t find the instaloader library !\n\nTo install it, run:\n    pip3 install instaloader\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://instaloader.github.io/")
+    raise SystemExit("Error: Couldn't find the instaloader library !\n\nTo install it, run:\n    pip3 install instaloader\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://instaloader.github.io/")
 
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape
@@ -1110,7 +1111,7 @@ def latest_post_reel(user: str, bot: instaloader.Instaloader) -> Optional[Tuple[
     return latest, source
 
 
-# Returns reels count by using Instaloader’s iPhone API (requires session login)
+# Returns reels count by using Instaloader's iPhone API (requires session login)
 def get_reels_count_mobile(user: str, bot: instaloader.Instaloader):
     profile = instaloader.Profile.from_username(bot.context, user)
     user_id = profile.userid
@@ -1243,7 +1244,7 @@ def get_firefox_cookiefile():
 
     for idx, path in enumerate(cookiefiles, start=1):
         profile = basename(dirname(path))
-        print(f"  {idx}) {profile}  —  {path}")
+        print(f"  {idx}) {profile}  -  {path}")
 
     try:
         choice = int(input("Select profile number (0 to exit): "))
@@ -2557,8 +2558,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         alive_counter += 1
 
-        if alive_counter >= TOOL_ALIVE_COUNTER:
-            print_cur_ts("Alive check, timestamp: ")
+        if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
+            print_cur_ts("Liveness check, timestamp:\t")
             alive_counter = 0
 
         r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
@@ -2566,7 +2567,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, TOOL_ALIVE_COUNTER, SESSION_INSTAGRAM_USERNAME, SESSION_INSTAGRAM_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_INSTAGRAM_USERNAME, SESSION_INSTAGRAM_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -2587,7 +2588,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="instagram_monitor",
-        description=("Monitor an Instagram user’s activity and send customizable email alerts [ https://github.com/misiektoja/instagram_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
+        description=("Monitor an Instagram user's activity and send customizable email alerts [ https://github.com/misiektoja/instagram_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
     )
 
     # Positional
@@ -2892,26 +2893,26 @@ def main():
         sys.exit(1)
 
     if args.skip_session is True:
-        SKIP_SESSION = args.skip_session
+        SKIP_SESSION = True
 
     if args.skip_followers is True:
-        SKIP_FOLLOWERS = args.skip_followers
+        SKIP_FOLLOWERS = True
 
     if args.skip_followings is True:
-        SKIP_FOLLOWINGS = args.skip_followings
+        SKIP_FOLLOWINGS = True
 
     if args.skip_getting_story_details is True:
-        SKIP_GETTING_STORY_DETAILS = args.skip_getting_story_details
+        SKIP_GETTING_STORY_DETAILS = True
 
     if args.skip_getting_posts_details is True:
-        SKIP_GETTING_POSTS_DETAILS = args.skip_getting_posts_details
+        SKIP_GETTING_POSTS_DETAILS = True
 
     if args.get_more_post_details is True:
-        GET_MORE_POST_DETAILS = args.get_more_post_details
+        GET_MORE_POST_DETAILS = True
 
     if args.check_interval:
         INSTA_CHECK_INTERVAL = args.check_interval
-        TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / INSTA_CHECK_INTERVAL
+        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / INSTA_CHECK_INTERVAL
 
     if args.check_interval_random_diff_low:
         RANDOM_SLEEP_DIFF_LOW = args.check_interval_random_diff_low
@@ -2997,7 +2998,7 @@ def main():
         FOLLOWERS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
 
-    print(f"* Instagram timers:\t\t\t[check interval: {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)}]")
+    print(f"* Instagram polling interval:\t\t[ {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)} ]")
     print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
     print(f"* Mode of the tool:\t\t\t{mode_of_the_tool}")
     print(f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}")
@@ -3008,6 +3009,7 @@ def main():
     print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
     print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
     print("* Hours for checking posts/reels:\t" + (f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59, {MIN_H2:02d}:00 - {MAX_H2:02d}:59" if CHECK_POSTS_IN_HOURS_RANGE else "00:00 - 23:59"))
+    print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
     print(f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
