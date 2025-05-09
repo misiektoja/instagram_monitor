@@ -9,9 +9,9 @@ https://github.com/misiektoja/instagram_monitor/
 Python pip3 requirements:
 
 instaloader
-pytz
-python-dateutil
 requests
+python-dateutil
+pytz
 tzlocal (optional)
 python-dotenv (optional)
 """
@@ -23,22 +23,25 @@ VERSION = 1.6
 # ---------------------------
 
 CONFIG_BLOCK = """
-# Session login is required for some features such as retrieving the list of followings/followers or detailed posts/reels/stories info
-# The tool still works without login, but in a limited way
+# Session login (mode 2) is required for some features such as retrieving the list of followings/followers
+# or detailed posts/reels/stories info
 #
-# In that case, you'll need to log in with your Instagram username and password
+# The tool still works without login (mode 1), but in a limited way
 #
-# Provide the username below (or use the -u parameter)
-SESSION_INSTAGRAM_USERNAME = ""
+# For session login (mode 2), you'll need to log in with your Instagram username and password
+#
+# Provide the username below (or use the -u flag)
+SESSION_USERNAME = ""
 
 # Provide the password using one of the following methods:
-#   - Log in using instaloader: instaloader -l <SESSION_INSTAGRAM_USERNAME>
-#   - Pass it at runtime with -p / --session-instagram-password
-#   - Set it as an environment variable (e.g. export SESSION_INSTAGRAM_PASSWORD=...)
-#   - Add it to ".env" file (SESSION_INSTAGRAM_PASSWORD=...) for persistent use
+#   - Log in via Firefox web browser and import session cookie: instagram_monitor --import-firefox-session
+#   - Log in using instaloader: instaloader -l <SESSION_USERNAME>
+#   - Pass it at runtime with -p / --session-password
+#   - Set it as an environment variable (e.g. export SESSION_PASSWORD=...)
+#   - Add it to ".env" file (SESSION_PASSWORD=...) for persistent use
 # Fallback:
 #   - Hard-code it in the code or config file
-SESSION_INSTAGRAM_PASSWORD = ""
+SESSION_PASSWORD = ""
 
 # SMTP settings for sending email notifications
 # If left as-is, no notifications will be sent
@@ -57,25 +60,25 @@ SENDER_EMAIL = "your_sender_email"
 RECEIVER_EMAIL = "your_receiver_email"
 
 # Whether to send an email on new post/reel/story, bio change, new follow, profile pic or visibility change
-# Can also be enabled via the -s parameter
+# Can also be enabled via the -s flag
 STATUS_NOTIFICATION = False
 
 # Whether to send an email on new followers
 # Only applies if STATUS_NOTIFICATION / -s is enabled
-# Can also be enabled via the -m parameter
+# Can also be enabled via the -m flag
 FOLLOWERS_NOTIFICATION = False
 
 # Whether to send an email on errors
-# Can also be disabled via the -e parameter
+# Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
 
 # How often to check for user activity; in seconds
-# Can also be set using the -c parameter
+# Can also be set using the -c flag
 INSTA_CHECK_INTERVAL = 5400  # 1,5 hours
 
 # To avoid captcha checks and bot detection, the actual INSTA_CHECK_INTERVAL interval is randomized using the values below
 # Final interval = INSTA_CHECK_INTERVAL ± RANDOM_SLEEP_DIFF
-# Can also be set using -i (low) and -j (high) parameters
+# Can also be set using -i (low) and -j (high) flags
 RANDOM_SLEEP_DIFF_LOW = 900  # -15 min (-i)
 RANDOM_SLEEP_DIFF_HIGH = 180  # +3 min (-j)
 
@@ -87,11 +90,14 @@ LOCAL_TIMEZONE = 'Auto'
 
 # Notify when the user's profile picture changes? (via console and email if STATUS_NOTIFICATION / -s is enabled).
 # If enabled, the current profile picture is saved as:
-#   - instagram_username_profile_pic.jpeg (initial)
-#   - instagram_username_profile_pic_YYmmdd_HHMM.jpeg (on change)
+#   - instagram_<username>_profile_pic.jpeg (initial)
+#   - instagram_<username>_profile_pic_YYmmdd_HHMM.jpeg (on change)
 # The binary JPEGs are compared to detect changes
-# Can also be disabled by using -k parameter
+# Can also be disabled by using -k flag
 DETECT_CHANGED_PROFILE_PIC = True
+
+# Location of the optional file with the empty profile picture template
+PROFILE_PIC_FILE_EMPTY = "instagram_profile_pic_empty.jpeg"
 
 # If you have 'imgcat' installed, you can set its path below to display profile pictures directly in your terminal
 # If you specify only the binary name, it will be auto-searched in your PATH
@@ -99,29 +105,30 @@ DETECT_CHANGED_PROFILE_PIC = True
 IMGCAT_PATH = "imgcat"
 
 # Skip session login (no list of followers/followings and detailed posts/reels/stories info will be fetched)
-# Can also be enabled via the -l parameter
+# Can also be enabled via the -l flag
 SKIP_SESSION = False
 
 # Do not fetch followers list (only relevant if session login is used and SKIP_SESSION is False)
-# Can also be enabled via the -f parameter
+# Can also be enabled via the -f flag
 SKIP_FOLLOWERS = False
 
 # Do not fetch followings list (only relevant if session login is used and SKIP_SESSION is False)
-# Can also be enabled via the -g parameter
+# Can also be enabled via the -g flag
 SKIP_FOLLOWINGS = False
 
 # Do not fetch detailed story info (like story date, expiry, images/videos etc.)
 # Only relevant if session login is used and SKIP_SESSION is False
-# Can also be enabled via the -r parameter
+# Can also be enabled via the -r flag
 SKIP_GETTING_STORY_DETAILS = False
 
-# Do not fetch detailed post/reel info (like post/reel date, number of likes, comments, description, tagged users, location, images/videos etc.)
-# Can also be enabled via the -w parameter
+# Do not fetch detailed post/reel info (like post/reel date, number of likes, comments, description,
+# tagged users, location, images/videos etc.)
+# Can also be enabled via the -w flag
 SKIP_GETTING_POSTS_DETAILS = False
 
 # Fetch extra post details (list of comments and likes)
 # Only relevant if session login is used and SKIP_SESSION is False
-# Can also be enabled via the -t parameter
+# Can also be enabled via the -t flag
 GET_MORE_POST_DETAILS = False
 
 # How often to print a "liveness check" message to the output; in seconds
@@ -152,13 +159,13 @@ MAX_H2 = 23
 NEXT_OPERATION_DELAY = 0.7
 
 # CSV file to write all activities and profile changes
-# Can also be set using the -b parameter
+# Can also be set using the -b flag
 CSV_FILE = ""
 
 # Location of the optional dotenv file which can keep secrets
 # If not specified it will try to auto-search for .env files
 # To disable auto-search, set this to the literal string "none"
-# Can also be set using the --env-file parameter
+# Can also be set using the --env-file flag
 DOTENV_FILE = ""
 
 # Default Firefox cookie directories by OS
@@ -172,7 +179,7 @@ FIREFOX_LINUX_COOKIE = "~/.mozilla/firefox/*/cookies.sqlite"
 INSTA_LOGFILE = "instagram_monitor"
 
 # Whether to disable logging to instagram_monitor_<username>.log
-# Can also be disabled via the -d parameter
+# Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
 # Width of horizontal line (─)
@@ -191,8 +198,8 @@ INSTA_CHECK_SIGNAL_VALUE = 300  # 5 min
 
 # Default dummy values so linters shut up
 # Do not change values below - modify them in the configuration section or config file instead
-SESSION_INSTAGRAM_USERNAME = ""
-SESSION_INSTAGRAM_PASSWORD = ""
+SESSION_USERNAME = ""
+SESSION_PASSWORD = ""
 SMTP_HOST = ""
 SMTP_PORT = 0
 SMTP_USER = ""
@@ -208,6 +215,7 @@ RANDOM_SLEEP_DIFF_LOW = 0
 RANDOM_SLEEP_DIFF_HIGH = 0
 LOCAL_TIMEZONE = ""
 DETECT_CHANGED_PROFILE_PIC = False
+PROFILE_PIC_FILE_EMPTY = ""
 IMGCAT_PATH = ""
 SKIP_SESSION = False
 SKIP_FOLLOWERS = False
@@ -241,7 +249,7 @@ exec(CONFIG_BLOCK, globals())
 DEFAULT_CONFIG_FILENAME = "instagram_monitor.conf"
 
 # List of secret keys to load from env/config
-SECRET_KEYS = ("SESSION_INSTAGRAM_PASSWORD", "SMTP_PASSWORD")
+SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD")
 
 # Default value for network-related timeouts in functions
 FUNCTION_TIMEOUT = 15
@@ -941,7 +949,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
         if save_pic_video(profile_image_url, profile_pic_file):
             profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
 
-            if os.path.isfile(profile_pic_file_empty):
+            if profile_pic_file_empty and os.path.isfile(profile_pic_file_empty):
                 is_empty_profile_pic = compare_images(profile_pic_file, profile_pic_file_empty)
 
             if is_empty_profile_pic:
@@ -984,11 +992,11 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
         profile_pic_mdate = get_short_date_from_ts(profile_pic_mdate_dt, True)
         if save_pic_video(profile_image_url, profile_pic_file_tmp):
             profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)), pytz.timezone(LOCAL_TIMEZONE))
-            if os.path.isfile(profile_pic_file_empty):
+            if profile_pic_file_empty and os.path.isfile(profile_pic_file_empty):
                 is_empty_profile_pic = compare_images(profile_pic_file, profile_pic_file_empty)
 
             if not compare_images(profile_pic_file, profile_pic_file_tmp) and profile_pic_mdate_dt != profile_pic_tmp_mdate_dt:
-                if os.path.isfile(profile_pic_file_empty):
+                if profile_pic_file_empty and os.path.isfile(profile_pic_file_empty):
                     is_empty_profile_pic_tmp = compare_images(profile_pic_file_tmp, profile_pic_file_empty)
 
                 # User has removed profile picture
@@ -1235,7 +1243,7 @@ def get_firefox_cookiefile():
     cookiefiles = glob(expanduser(default_cookiefile))
 
     if not cookiefiles:
-        raise SystemExit("No Firefox cookies.sqlite file found, use -c COOKIEFILE parameter")
+        raise SystemExit("No Firefox cookies.sqlite file found, use -c COOKIEFILE flag")
 
     if len(cookiefiles) == 1:
         return cookiefiles[0]
@@ -1354,21 +1362,21 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     try:
         bot = instaloader.Instaloader()
 
-        if not skip_session and SESSION_INSTAGRAM_USERNAME:
-            if SESSION_INSTAGRAM_PASSWORD:
+        if not skip_session and SESSION_USERNAME:
+            if SESSION_PASSWORD:
                 try:
-                    bot.load_session_from_file(SESSION_INSTAGRAM_USERNAME)
+                    bot.load_session_from_file(SESSION_USERNAME)
                 except FileNotFoundError:
-                    bot.login(SESSION_INSTAGRAM_USERNAME, SESSION_INSTAGRAM_PASSWORD)
+                    bot.login(SESSION_USERNAME, SESSION_PASSWORD)
                     bot.save_session_to_file()
                 except instaloader.exceptions.BadCredentialsException:
-                    bot.login(SESSION_INSTAGRAM_USERNAME, SESSION_INSTAGRAM_PASSWORD)
+                    bot.login(SESSION_USERNAME, SESSION_PASSWORD)
                     bot.save_session_to_file()
             else:
                 try:
-                    bot.load_session_from_file(SESSION_INSTAGRAM_USERNAME)
+                    bot.load_session_from_file(SESSION_USERNAME)
                 except FileNotFoundError:
-                    print("* Error: No Instagram session file found, please run 'instaloader -l SESSION_INSTAGRAM_USERNAME' to create one")
+                    print("* Error: No Instagram session file found, please run 'instaloader -l SESSION_USERNAME' to create one")
                     sys.exit(1)
 
         profile = instaloader.Profile.from_username(bot.context, user)
@@ -1441,7 +1449,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     profile_pic_file = f"instagram_{user}_profile_pic.jpeg"
     profile_pic_file_old = f"instagram_{user}_profile_pic_old.jpeg"
     profile_pic_file_tmp = f"instagram_{user}_profile_pic_tmp.jpeg"
-    profile_pic_file_empty = f"instagram_profile_pic_empty.jpeg"
     followers = []
     followings = []
     followers_old = followers
@@ -1637,7 +1644,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     if DETECT_CHANGED_PROFILE_PIC:
 
         try:
-            detect_changed_profile_picture(user, profile_image_url, profile_pic_file, profile_pic_file_tmp, profile_pic_file_old, profile_pic_file_empty, csv_file_name, r_sleep_time, False, 1)
+            detect_changed_profile_picture(user, profile_image_url, profile_pic_file, profile_pic_file_tmp, profile_pic_file_old, PROFILE_PIC_FILE_EMPTY, csv_file_name, r_sleep_time, False, 1)
         except Exception as e:
             print(f"* Error while processing changed profile picture: {e}")
 
@@ -2126,7 +2133,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         if DETECT_CHANGED_PROFILE_PIC:
 
             try:
-                detect_changed_profile_picture(user, profile_image_url, profile_pic_file, profile_pic_file_tmp, profile_pic_file_old, profile_pic_file_empty, csv_file_name, r_sleep_time, STATUS_NOTIFICATION, 2)
+                detect_changed_profile_picture(user, profile_image_url, profile_pic_file, profile_pic_file_tmp, profile_pic_file_old, PROFILE_PIC_FILE_EMPTY, csv_file_name, r_sleep_time, STATUS_NOTIFICATION, 2)
             except Exception as e:
                 print(f"* Error while processing changed profile picture: {e}")
 
@@ -2567,7 +2574,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_INSTAGRAM_USERNAME, SESSION_INSTAGRAM_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -2595,7 +2602,7 @@ def main():
     parser.add_argument(
         "username",
         nargs="?",
-        metavar="TARGET_INSTAGRAM_USERNAME",
+        metavar="TARGET_USERNAME",
         help="Instagram username to monitor",
         type=str
     )
@@ -2630,16 +2637,16 @@ def main():
     # Session login credentials
     creds = parser.add_argument_group("Session login credentials")
     creds.add_argument(
-        "-u", "--session-instagram-username",
-        dest="session_instagram_username",
-        metavar="SESSION_INSTAGRAM_USERNAME",
+        "-u", "--session-username",
+        dest="session_username",
+        metavar="SESSION_USERNAME",
         type=str,
-        help="Instagram username for session login (to fetch followers/followings, stories, posts, reels)"
+        help="Instagram username for session login (to fetch followers/followings, stories/posts/reels details)"
     )
     creds.add_argument(
-        "-p", "--session-instagram-password",
-        dest="session_instagram_password",
-        metavar="SESSION_INSTAGRAM_PASSWORD",
+        "-p", "--session-password",
+        dest="session_password",
+        metavar="SESSION_PASSWORD",
         type=str,
         help="Instagram password for session login (recommended to use saved session)"
     )
@@ -2888,7 +2895,7 @@ def main():
         sys.exit(0)
 
     if not args.username:
-        print("* Error: TARGET_INSTAGRAM_USERNAME argument is required !")
+        print("* Error: TARGET_USERNAME argument is required !")
         parser.print_help()
         sys.exit(1)
 
@@ -2920,13 +2927,13 @@ def main():
     if args.check_interval_random_diff_high:
         RANDOM_SLEEP_DIFF_HIGH = args.check_interval_random_diff_high
 
-    if args.session_instagram_username:
-        SESSION_INSTAGRAM_USERNAME = args.session_instagram_username
+    if args.session_username:
+        SESSION_USERNAME = args.session_username
 
-    if args.session_instagram_password:
-        SESSION_INSTAGRAM_PASSWORD = args.session_instagram_password
+    if args.session_password:
+        SESSION_PASSWORD = args.session_password
 
-    if not SESSION_INSTAGRAM_USERNAME:
+    if not SESSION_USERNAME:
         SKIP_SESSION = True
 
     if SKIP_SESSION is True:
@@ -2934,9 +2941,9 @@ def main():
         SKIP_FOLLOWINGS = True
         GET_MORE_POST_DETAILS = False
         SKIP_GETTING_STORY_DETAILS = True
-        mode_of_the_tool = "1 (without session login)"
+        mode_of_the_tool = "1 (no session login)"
     else:
-        mode_of_the_tool = "2 (with session login)"
+        mode_of_the_tool = "2 (session login)"
 
     if INSTA_CHECK_INTERVAL <= RANDOM_SLEEP_DIFF_LOW:
         check_interval_low = INSTA_CHECK_INTERVAL
@@ -2945,6 +2952,9 @@ def main():
 
     if args.do_not_detect_changed_profile_pic is False:
         DETECT_CHANGED_PROFILE_PIC = False
+
+    if PROFILE_PIC_FILE_EMPTY:
+        PROFILE_PIC_FILE_EMPTY = os.path.expanduser(PROFILE_PIC_FILE_EMPTY)
 
     if IMGCAT_PATH:
         try:
@@ -3012,6 +3022,7 @@ def main():
     print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
+    print(f"* Empty profile pic template:\t\t{bool(PROFILE_PIC_FILE_EMPTY)}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if PROFILE_PIC_FILE_EMPTY else ""))
     print(f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
     print(f"* Configuration file:\t\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t\t{env_path or 'None'}")
