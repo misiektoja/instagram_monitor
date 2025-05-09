@@ -10,9 +10,10 @@ Python pip3 requirements:
 
 instaloader
 pytz
-tzlocal
 python-dateutil
 requests
+tzlocal (optional)
+python-dotenv (optional)
 """
 
 VERSION = 1.6
@@ -21,19 +22,32 @@ VERSION = 1.6
 # CONFIGURATION SECTION START
 # ---------------------------
 
-# Session login is required for some features such as retrieving the list of followings and followers
+CONFIG_BLOCK = """
+# Session login is required for some features such as retrieving the list of followings/followers or detailed posts/reels/stories info
+# The tool still works without login, but in a limited way
+#
 # In that case, you'll need to log in with your Instagram username and password
 #
-# It is recommended NOT to hard code your password here
-# Instead, log in manually using:
-# <instaloader_location>/bin/instaloader -l <insta_username_for_session_login>
-#
-# After login, just set the username below (or use the -u parameter) and leave the password field empty
-INSTA_USERNAME_FOR_SESSION_LOGIN = ''
-INSTA_PASSWORD_FOR_SESSION_LOGIN = ''
+# Provide the username below (or use the -u parameter)
+SESSION_INSTAGRAM_USERNAME = ""
+
+# Provide the password using one of the following methods:
+#   - Log in using instaloader: instaloader -l <SESSION_INSTAGRAM_USERNAME>
+#   - Pass it at runtime with -p / --session-instagram-password
+#   - Set it as an environment variable (e.g. export SESSION_INSTAGRAM_PASSWORD=...)
+#   - Add it to ".env" file (SESSION_INSTAGRAM_PASSWORD=...) for persistent use
+# Fallback:
+#   - Hard-code it in the code or config file
+SESSION_INSTAGRAM_PASSWORD = ""
 
 # SMTP settings for sending email notifications
 # If left as-is, no notifications will be sent
+#
+# Provide the SMTP_PASSWORD secret using one of the following methods:
+#   - Set it as an environment variable (e.g. export SMTP_PASSWORD=...)
+#   - Add it to ".env" file (SMTP_PASSWORD=...) for persistent use
+# Fallback:
+#   - Hard-code it in the code or config file
 SMTP_HOST = "your_smtp_server_ssl"
 SMTP_PORT = 587
 SMTP_USER = "your_smtp_user"
@@ -42,28 +56,73 @@ SMTP_SSL = True
 SENDER_EMAIL = "your_sender_email"
 RECEIVER_EMAIL = "your_receiver_email"
 
+# Whether to send an email on new post/reel/story, bio change, new follow, profile pic or visibility change
+# Can also be enabled via the -s parameter
+STATUS_NOTIFICATION = False
+
+# Whether to send an email on new followers
+# Only applies if STATUS_NOTIFICATION / -s is enabled
+# Can also be enabled via the -m parameter
+FOLLOWERS_NOTIFICATION = False
+
+# Whether to send an email on errors
+# Can also be disabled via the -e parameter
+ERROR_NOTIFICATION = True
+
 # How often to check for user activity; in seconds
 # Can also be set using the -c parameter
 INSTA_CHECK_INTERVAL = 5400  # 1,5 hours
 
-# Set your local time zone so that Instagram API timestamps are converted accordingly (e.g. 'Europe/Warsaw').
+# To avoid captcha checks and bot detection, the actual INSTA_CHECK_INTERVAL interval is randomized using the values below
+# Final interval = INSTA_CHECK_INTERVAL ± RANDOM_SLEEP_DIFF
+# Can also be set using -i (low) and -j (high) parameters
+RANDOM_SLEEP_DIFF_LOW = 900  # -15 min (-i)
+RANDOM_SLEEP_DIFF_HIGH = 180  # +3 min (-j)
+
+# Set your local time zone so that Instagram timestamps are converted accordingly (e.g. 'Europe/Warsaw')
 # Use this command to list all time zones supported by pytz:
-# python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
-# If set to 'Auto', the tool will try to detect your local time zone automatically
+#   python3 -c "import pytz; print('\\n'.join(pytz.all_timezones))"
+# If set to 'Auto', the tool will try to detect your local time zone automatically (requires tzlocal)
 LOCAL_TIMEZONE = 'Auto'
 
-# Notify when the user's profile picture changes? (via console and email if -s is enabled).
+# Notify when the user's profile picture changes? (via console and email if STATUS_NOTIFICATION / -s is enabled).
 # If enabled, the current profile picture is saved as:
 #   - instagram_username_profile_pic.jpeg (initial)
 #   - instagram_username_profile_pic_YYmmdd_HHMM.jpeg (on change)
 # The binary JPEGs are compared to detect changes
-# It is enabled by default, can be disabled by using -k parameter
+# Can also be disabled by using -k parameter
 DETECT_CHANGED_PROFILE_PIC = True
 
 # If you have 'imgcat' installed, you can set its path below to display profile pictures directly in your terminal
+# If you specify only the binary name, it will be auto-searched in your PATH
 # Leave empty to disable this feature
-# IMGCAT_PATH = "/usr/local/bin/imgcat"
-IMGCAT_PATH = ""
+IMGCAT_PATH = "imgcat"
+
+# Skip session login (no list of followers/followings and detailed posts/reels/stories info will be fetched)
+# Can also be enabled via the -l parameter
+SKIP_SESSION = False
+
+# Do not fetch followers list (only relevant if session login is used and SKIP_SESSION is False)
+# Can also be enabled via the -f parameter
+SKIP_FOLLOWERS = False
+
+# Do not fetch followings list (only relevant if session login is used and SKIP_SESSION is False)
+# Can also be enabled via the -g parameter
+SKIP_FOLLOWINGS = False
+
+# Do not fetch detailed story info (like story date, expiry, images/videos etc.)
+# Only relevant if session login is used and SKIP_SESSION is False
+# Can also be enabled via the -r parameter
+SKIP_GETTING_STORY_DETAILS = False
+
+# Do not fetch detailed post/reel info (like post/reel date, number of likes, comments, description, tagged users, location, images/videos etc.)
+# Can also be enabled via the -w parameter
+SKIP_GETTING_POSTS_DETAILS = False
+
+# Fetch extra post details (list of comments and likes)
+# Only relevant if session login is used and SKIP_SESSION is False
+# Can also be enabled via the -t parameter
+GET_MORE_POST_DETAILS = False
 
 # How often to print an "alive check" message to the output; in seconds
 TOOL_ALIVE_INTERVAL = 21600  # 6 hours
@@ -73,12 +132,6 @@ CHECK_INTERNET_URL = 'https://www.instagram.com/'
 
 # Timeout used when checking initial internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
-
-# To avoid captcha checks and bot detection, the actual sleep interval is randomized using the values below
-# Final interval = INSTA_CHECK_INTERVAL ± RANDOM_SLEEP_DIFF
-# Can also be set using -i (low) and -j (high)
-RANDOM_SLEEP_DIFF_LOW = 900  # -15 min
-RANDOM_SLEEP_DIFF_HIGH = 180  # +3 min
 
 # Limit checking for new posts/reels to specific hours of the day?
 # If True, the tool will only check within the defined hour ranges below
@@ -94,44 +147,113 @@ MAX_H1 = 4
 MIN_H2 = 11
 MAX_H2 = 23
 
-# Base name of the log file. The tool will save its output to instagram_monitor_{username}.log file
-INSTA_LOGFILE = "instagram_monitor"
+# Delay for fetching other data to avoid captcha checks and detection of automated tools
+NEXT_OPERATION_DELAY = 0.7
 
-# Value used by signal handlers to increase/decrease user activity check interval (INSTA_CHECK_INTERVAL); in seconds
-INSTA_CHECK_SIGNAL_VALUE = 300  # 5 min
+# CSV file to write all activities and profile changes
+# Can also be set using the -b parameter
+CSV_FILE = ""
 
-# Whether to clear the terminal screen after starting the tool
-CLEAR_SCREEN = True
+# Location of the optional dotenv file which can keep secrets
+# If not specified it will try to auto-search for .env files
+# To disable auto-search, set this to the literal string "none"
+# Can also be set using the --env-file parameter
+DOTENV_FILE = ""
 
 # Default Firefox cookie directories by OS
 FIREFOX_MACOS_COOKIE = "~/Library/Application Support/Firefox/Profiles/*/cookies.sqlite"
 FIREFOX_WINDOWS_COOKIE = "~/AppData/Roaming/Mozilla/Firefox/Profiles/*/cookies.sqlite"
 FIREFOX_LINUX_COOKIE = "~/.mozilla/firefox/*/cookies.sqlite"
 
+# Path or base name of the log file
+# If a directory or base name is provided, the final log file will be named 'instagram_monitor_<username>.log'
+# Absolute paths and custom filenames are supported. Use '~' for home directory if needed
+INSTA_LOGFILE = "instagram_monitor"
+
+# Whether to disable logging to instagram_monitor_<username>.log
+# Can also be disabled via the -d parameter
+DISABLE_LOGGING = False
+
+# Width of horizontal line (─)
+HORIZONTAL_LINE = 113
+
+# Whether to clear the terminal screen after starting the tool
+CLEAR_SCREEN = True
+
+# Value used by signal handlers to increase/decrease user activity check interval (INSTA_CHECK_INTERVAL); in seconds
+INSTA_CHECK_SIGNAL_VALUE = 300  # 5 min
+"""
+
 # -------------------------
 # CONFIGURATION SECTION END
 # -------------------------
 
+# Default dummy values so linters shut up
+# Do not change values below — modify them in the configuration section or config file instead
+SESSION_INSTAGRAM_USERNAME = ""
+SESSION_INSTAGRAM_PASSWORD = ""
+SMTP_HOST = ""
+SMTP_PORT = 0
+SMTP_USER = ""
+SMTP_PASSWORD = ""
+SMTP_SSL = False
+SENDER_EMAIL = ""
+RECEIVER_EMAIL = ""
+STATUS_NOTIFICATION = False
+FOLLOWERS_NOTIFICATION = False
+ERROR_NOTIFICATION = False
+INSTA_CHECK_INTERVAL = 0
+RANDOM_SLEEP_DIFF_LOW = 0
+RANDOM_SLEEP_DIFF_HIGH = 0
+LOCAL_TIMEZONE = ""
+DETECT_CHANGED_PROFILE_PIC = False
+IMGCAT_PATH = ""
+SKIP_SESSION = False
+SKIP_FOLLOWERS = False
+SKIP_FOLLOWINGS = False
+SKIP_GETTING_STORY_DETAILS = False
+SKIP_GETTING_POSTS_DETAILS = False
+GET_MORE_POST_DETAILS = False
+TOOL_ALIVE_INTERVAL = 0
+CHECK_INTERNET_URL = ""
+CHECK_INTERNET_TIMEOUT = 0
+CHECK_POSTS_IN_HOURS_RANGE = False
+MIN_H1 = 0
+MAX_H1 = 0
+MIN_H2 = 0
+MAX_H2 = 0
+NEXT_OPERATION_DELAY = 0
+CSV_FILE = ""
+DOTENV_FILE = ""
+FIREFOX_MACOS_COOKIE = ""
+FIREFOX_WINDOWS_COOKIE = ""
+FIREFOX_LINUX_COOKIE = ""
+INSTA_LOGFILE = ""
+DISABLE_LOGGING = False
+HORIZONTAL_LINE = 0
+CLEAR_SCREEN = False
+INSTA_CHECK_SIGNAL_VALUE = 0
+
+exec(CONFIG_BLOCK, globals())
+
+# Default name for the optional config file
+DEFAULT_CONFIG_FILENAME = "instagram_monitor.conf"
+
+# List of secret keys to load from env/config
+SECRET_KEYS = ("SESSION_INSTAGRAM_PASSWORD", "SMTP_PASSWORD")
+
 # Default value for network-related timeouts in functions
 FUNCTION_TIMEOUT = 15
 
-# Width of horizontal line (─)
-HORIZONTAL_LINE = 105
-
 TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / INSTA_CHECK_INTERVAL
-
-# Delay for fetching consecutive posts to avoid captcha checks and detection of automated tools
-POST_FETCH_DELAY = 0.2
-
-# Delay for fetching other data to avoid captcha checks and detection of automated tools
-NEXT_OPERATION_DELAY = 0.7
 
 stdout_bck = None
 last_output = []
 csvfieldnames = ['Date', 'Type', 'Old', 'New']
 
-status_notification = False
-followers_notification = False
+imgcat_exe = ""
+
+CLI_CONFIG_PATH = None
 
 # to solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
@@ -164,7 +286,10 @@ from email.mime.image import MIMEImage
 import argparse
 import csv
 import random
-import pytz
+try:
+    import pytz
+except ModuleNotFoundError:
+    raise SystemExit("Error: Couldn’t find the pytz library !\n\nTo install it, run:\n    pip3 install pytz\n\nOnce installed, re-run this tool")
 try:
     from tzlocal import get_localzone
 except ImportError:
@@ -180,7 +305,7 @@ try:
     import instaloader
     from instaloader import ConnectionException, Instaloader
 except ModuleNotFoundError:
-    raise SystemExit("Couldn’t find the Instaloader library !\n\nTo install it, run:\n    pip3 install instaloader\n\nOnce installed, re-run this script. For more help, visit:\nhttps://instaloader.github.io/")
+    raise SystemExit("Error: Couldn’t find the instaloader library !\n\nTo install it, run:\n    pip3 install instaloader\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://instaloader.github.io/")
 
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape
@@ -189,6 +314,7 @@ from typing import Optional, Tuple, Any
 from glob import glob
 import sqlite3
 from sqlite3 import OperationalError, connect
+from pathlib import Path
 
 
 # Logger class to output messages to stdout and log file
@@ -444,7 +570,7 @@ def write_csv_entry(csv_file_name, timestamp, object_type, old, new):
             csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
             csvwriter.writerow({'Date': timestamp, 'Type': object_type, 'Old': old, 'New': new})
 
-    except Exception:
+    except Exception as e:
         raise RuntimeError(f"Failed to write to CSV file '{csv_file_name}': {e}")
 
 
@@ -672,21 +798,21 @@ def is_valid_timezone(tz_name):
 
 # Signal handler for SIGUSR1 allowing to switch email notifications for new posts/reels/stories/followings/bio
 def toggle_status_changes_notifications_signal_handler(sig, frame):
-    global status_notification
-    status_notification = not status_notification
+    global STATUS_NOTIFICATION
+    STATUS_NOTIFICATION = not STATUS_NOTIFICATION
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Email notifications: [new posts/reels/stories/followings/bio/profile picture = {status_notification}]")
+    print(f"* Email notifications: [new posts/reels/stories/followings/bio/profile picture = {STATUS_NOTIFICATION}]")
     print_cur_ts("Timestamp:\t\t")
 
 
 # Signal handler for SIGUSR2 allowing to switch email notifications for new followers
 def toggle_followers_notifications_signal_handler(sig, frame):
-    global followers_notification
-    followers_notification = not followers_notification
+    global FOLLOWERS_NOTIFICATION
+    FOLLOWERS_NOTIFICATION = not FOLLOWERS_NOTIFICATION
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Email notifications: [followers = {followers_notification}]")
+    print(f"* Email notifications: [followers = {FOLLOWERS_NOTIFICATION}]")
     print_cur_ts("Timestamp:\t\t")
 
 
@@ -716,6 +842,41 @@ def decrease_check_signal_handler(sig, frame):
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
     print(f"* Instagram timers: [check interval: {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)}]")
+    print_cur_ts("Timestamp:\t\t")
+
+
+# Signal handler for SIGHUP allowing to reload secrets from .env
+def reload_secrets_signal_handler(sig, frame):
+    sig_name = signal.Signals(sig).name
+    print(f"* Signal {sig_name} received")
+
+    # disable autoscan if DOTENV_FILE set to none
+    if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
+        env_path = None
+    else:
+        # reload .env if python-dotenv is installed
+        try:
+            from dotenv import load_dotenv, find_dotenv
+            if DOTENV_FILE:
+                env_path = DOTENV_FILE
+            else:
+                env_path = find_dotenv()
+            if env_path:
+                load_dotenv(env_path, override=True)
+            else:
+                print("* No .env file found, skipping env-var reload")
+        except ImportError:
+            env_path = None
+            print("* python-dotenv not installed, skipping env-var reload")
+
+    if env_path:
+        for secret in SECRET_KEYS:
+            old_val = globals().get(secret)
+            val = os.getenv(secret)
+            if val is not None and val != old_val:
+                globals()[secret] = val
+                print(f"* Reloaded {secret} from {env_path}")
+
     print_cur_ts("Timestamp:\t\t")
 
 
@@ -789,11 +950,11 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago){new_line}")
 
             try:
-                if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH) and not is_empty_profile_pic:
+                if imgcat_exe and not is_empty_profile_pic:
                     if func_ver == 1:
-                        subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file}'), shell=True)
+                        subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file}", shell=True, check=True)
                     else:
-                        subprocess.call((f'{IMGCAT_PATH} {profile_pic_file};echo'), shell=True)
+                        subprocess.run(f"{imgcat_exe} {profile_pic_file} {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
                 shutil.copy2(profile_pic_file, f'instagram_{user}_profile_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
             except Exception:
                 pass
@@ -879,11 +1040,11 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     print(f"* Error: {e}")
 
                 try:
-                    if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH) and not is_empty_profile_pic_tmp:
+                    if imgcat_exe and not is_empty_profile_pic_tmp:
                         if func_ver == 1:
-                            subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file_tmp}'), shell=True)
+                            subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file_tmp}", shell=True, check=True)
                         else:
-                            subprocess.call((f'{IMGCAT_PATH} {profile_pic_file_tmp};echo'), shell=True)
+                            subprocess.run(f"{imgcat_exe} {profile_pic_file_tmp} {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
                     shutil.copy2(profile_pic_file_tmp, f'instagram_{user}_profile_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
                     if csv_text != "Profile Picture Created":
                         os.replace(profile_pic_file, profile_pic_file_old)
@@ -913,8 +1074,8 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                         print(f"* Profile picture '{profile_pic_file}' already exists")
                         print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)")
                         try:
-                            if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
-                                subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file}'), shell=True)
+                            if imgcat_exe:
+                                subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file}", shell=True, check=True)
                         except Exception:
                             pass
                     try:
@@ -987,12 +1148,13 @@ def get_total_reels_count(user: str, bot: instaloader.Instaloader, skip_session=
         return 0
 
 
+# Reports changed number of posts
 def check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
 
     if posts_count != posts_count_old:
         print(f"* Posts number changed for user {user} from {posts_count_old} to {posts_count}\n")
 
-        if status_notification:
+        if STATUS_NOTIFICATION:
             m_subject = f"Instagram user {user} posts number has changed! ({posts_count_old} -> {posts_count})"
 
             m_body = f"Posts number changed for user {user} from {posts_count_old} to {posts_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
@@ -1006,12 +1168,13 @@ def check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
         return 0
 
 
+# Reports changed number of reels
 def check_reels_counts(user, reels_count, reels_count_old, r_sleep_time):
 
     if reels_count != reels_count_old:
         print(f"* Reels number changed for user {user} from {reels_count_old} to {reels_count}\n")
 
-        if status_notification:
+        if STATUS_NOTIFICATION:
             m_subject = f"Instagram user {user} reels number has changed! ({reels_count_old} -> {reels_count})"
 
             m_body = f"Reels number changed for user {user} from {reels_count_old} to {reels_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
@@ -1061,8 +1224,117 @@ def get_real_reel_code(bot: instaloader.Instaloader, username: str) -> Optional[
         return None
 
 
+# Finds (or prompts you to select) your Firefox cookies.sqlite file
+def get_firefox_cookiefile():
+    default_cookiefile = {
+        "Windows": FIREFOX_WINDOWS_COOKIE,
+        "Darwin": FIREFOX_MACOS_COOKIE,
+    }.get(system(), FIREFOX_LINUX_COOKIE)
+
+    cookiefiles = glob(expanduser(default_cookiefile))
+
+    if not cookiefiles:
+        raise SystemExit("No Firefox cookies.sqlite file found, use -c COOKIEFILE parameter")
+
+    if len(cookiefiles) == 1:
+        return cookiefiles[0]
+
+    print("Multiple Firefox profiles found:")
+
+    for idx, path in enumerate(cookiefiles, start=1):
+        profile = basename(dirname(path))
+        print(f"  {idx}) {profile}  —  {path}")
+
+    try:
+        choice = int(input("Select profile number (0 to exit): "))
+        if choice == 0:
+            raise SystemExit("No profile selected, aborting ...")
+        cookiefile = cookiefiles[choice - 1]
+    except (ValueError, IndexError):
+        raise SystemExit("Invalid profile selection !")
+    return cookiefile
+
+
+# Imports Instagram cookie into Instaloader, checks login and saves the session
+def import_session(cookiefile, sessionfile):
+    print(f"Using cookies from '{cookiefile}' file\n")
+
+    try:
+        conn = connect(f"file:{cookiefile}?immutable=1", uri=True)
+
+        try:
+            cookie_iter = conn.execute(
+                "SELECT name, value FROM moz_cookies WHERE baseDomain='instagram.com'"
+            )
+        except OperationalError:
+            cookie_iter = conn.execute(
+                "SELECT name, value FROM moz_cookies WHERE host LIKE '%instagram.com'"
+            )
+
+        cookie_dict = dict(cookie_iter)
+
+    except sqlite3.DatabaseError:
+        raise SystemExit(
+            f"Error: '{cookiefile}' is not a valid Firefox cookies.sqlite file"
+        )
+
+    instaloader = Instaloader(max_connection_attempts=1)
+    instaloader.context._session.cookies.update(cookie_dict)
+    username = instaloader.test_login()
+
+    if not username:
+        raise SystemExit("Not logged in - are you logged in successfully in Firefox?")
+
+    print(f"Imported session cookies for {username}")
+
+    instaloader.context.username = username
+
+    if sessionfile:
+        instaloader.save_session_to_file(sessionfile)
+    else:
+        instaloader.save_session_to_file()
+
+
+# Finds an optional config file
+def find_config_file(cli_path=None):
+    """
+    Search for an optional config file in:
+      1) CLI-provided path (must exist if given)
+      2) ./{DEFAULT_CONFIG_FILENAME}
+      3) ~/.{DEFAULT_CONFIG_FILENAME}
+      4) script-directory/{DEFAULT_CONFIG_FILENAME}
+    """
+
+    if cli_path:
+        p = Path(os.path.expanduser(cli_path))
+        return str(p) if p.is_file() else None
+
+    candidates = [
+        Path.cwd() / DEFAULT_CONFIG_FILENAME,
+        Path.home() / f".{DEFAULT_CONFIG_FILENAME}",
+        Path(__file__).parent / DEFAULT_CONFIG_FILENAME,
+    ]
+
+    for p in candidates:
+        if p.is_file():
+            return str(p)
+    return None
+
+
+# Resolves an executable path by checking if it's a valid file or searching in $PATH
+def resolve_executable(path):
+    if os.path.isfile(path) and os.access(path, os.X_OK):
+        return path
+
+    found = shutil.which(path)
+    if found:
+        return found
+
+    raise FileNotFoundError(f"Could not find executable '{path}'")
+
+
 # Main function that monitors activity of the specified Instagram user
-def instagram_monitor_user(user, error_notification, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details):
+def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details):
 
     try:
         if csv_file_name:
@@ -1081,21 +1353,21 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
     try:
         bot = instaloader.Instaloader()
 
-        if not skip_session and INSTA_USERNAME_FOR_SESSION_LOGIN:
-            if INSTA_PASSWORD_FOR_SESSION_LOGIN:
+        if not skip_session and SESSION_INSTAGRAM_USERNAME:
+            if SESSION_INSTAGRAM_PASSWORD:
                 try:
-                    bot.load_session_from_file(INSTA_USERNAME_FOR_SESSION_LOGIN)
+                    bot.load_session_from_file(SESSION_INSTAGRAM_USERNAME)
                 except FileNotFoundError:
-                    bot.login(INSTA_USERNAME_FOR_SESSION_LOGIN, INSTA_PASSWORD_FOR_SESSION_LOGIN)
+                    bot.login(SESSION_INSTAGRAM_USERNAME, SESSION_INSTAGRAM_PASSWORD)
                     bot.save_session_to_file()
                 except instaloader.exceptions.BadCredentialsException:
-                    bot.login(INSTA_USERNAME_FOR_SESSION_LOGIN, INSTA_PASSWORD_FOR_SESSION_LOGIN)
+                    bot.login(SESSION_INSTAGRAM_USERNAME, SESSION_INSTAGRAM_PASSWORD)
                     bot.save_session_to_file()
             else:
                 try:
-                    bot.load_session_from_file(INSTA_USERNAME_FOR_SESSION_LOGIN)
+                    bot.load_session_from_file(SESSION_INSTAGRAM_USERNAME)
                 except FileNotFoundError:
-                    print("* Error: no Instagram session file found, please run 'instaloader -l INSTA_USERNAME_FOR_SESSION_LOGIN' to create one")
+                    print("* Error: No Instagram session file found, please run 'instaloader -l SESSION_INSTAGRAM_USERNAME' to create one")
                     sys.exit(1)
 
         profile = instaloader.Profile.from_username(bot.context, user)
@@ -1449,8 +1721,8 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                                     print(f"Story thumbnail image saved to '{story_image_filename}'")
                             if os.path.isfile(story_image_filename):
                                 try:
-                                    if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
-                                        subprocess.call((f'echo;{IMGCAT_PATH} {story_image_filename}'), shell=True)
+                                    if imgcat_exe:
+                                        subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {story_image_filename}", shell=True, check=True)
                                         if i < stories_count:
                                             print()
                                 except Exception:
@@ -1586,8 +1858,8 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                     print(f"{last_source.capitalize()} thumbnail image saved to '{image_filename}'")
             if os.path.isfile(image_filename):
                 try:
-                    if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
-                        subprocess.call((f'{IMGCAT_PATH} {image_filename}'), shell=True)
+                    if imgcat_exe:
+                        subprocess.run(f"{imgcat_exe} {image_filename}", shell=True, check=True)
                 except Exception:
                     pass
 
@@ -1639,7 +1911,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             print(f"* Error, retrying in {display_time(r_sleep_time)}: {e}")
             if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                 print("* Session might not be valid anymore!")
-                if error_notification and not email_sent:
+                if ERROR_NOTIFICATION and not email_sent:
                     m_subject = f"instagram_monitor: session error! (user: {user})"
 
                     m_body = f"Session might not be valid anymore: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
@@ -1655,7 +1927,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
             print("* Session might not be valid anymore!")
             print(f"Retrying in {display_time(r_sleep_time)}")
-            if error_notification and not email_sent:
+            if ERROR_NOTIFICATION and not email_sent:
                 m_subject = f"instagram_monitor: session error! (user: {user})"
 
                 m_body = f"Session might not be valid anymore: {last_output}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
@@ -1741,7 +2013,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
                     followings_old = followings
 
-            if status_notification:
+            if STATUS_NOTIFICATION:
                 m_subject = f"Instagram user {user} followings number has changed! ({followings_diff_str}, {followings_old_count} -> {followings_count})"
 
                 if not skip_session and not skip_followings and can_view:
@@ -1833,7 +2105,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
 
                     followers_old = followers
 
-            if status_notification and followers_notification:
+            if STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION:
                 m_subject = f"Instagram user {user} followers number has changed! ({followers_diff_str}, {followers_old_count} -> {followers_count})"
 
                 if not skip_session and not skip_followers and can_view:
@@ -1853,7 +2125,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
         if DETECT_CHANGED_PROFILE_PIC:
 
             try:
-                detect_changed_profile_picture(user, profile_image_url, profile_pic_file, profile_pic_file_tmp, profile_pic_file_old, profile_pic_file_empty, csv_file_name, r_sleep_time, status_notification, 2)
+                detect_changed_profile_picture(user, profile_image_url, profile_pic_file, profile_pic_file_tmp, profile_pic_file_old, profile_pic_file_empty, csv_file_name, r_sleep_time, STATUS_NOTIFICATION, 2)
             except Exception as e:
                 print(f"* Error while processing changed profile picture: {e}")
 
@@ -1868,7 +2140,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             except Exception as e:
                 print(f"* Error: {e}")
 
-            if status_notification:
+            if STATUS_NOTIFICATION:
                 m_subject = f"Instagram user {user} bio has changed!"
 
                 m_body = f"Instagram user {user} bio has changed\n\nOld bio:\n\n{bio_old}\n\nNew bio:\n\n{bio}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
@@ -1896,7 +2168,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             except Exception as e:
                 print(f"* Error: {e}")
 
-            if status_notification:
+            if STATUS_NOTIFICATION:
                 m_subject = f"Instagram user {user} profile visibility has changed to {profile_visibility} !"
 
                 m_body = f"Instagram user {user} profile visibility has changed to {profile_visibility}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
@@ -1917,7 +2189,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             except Exception as e:
                 print(f"* Error: {e}")
 
-            if status_notification:
+            if STATUS_NOTIFICATION:
                 m_subject = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user} !"
 
                 m_body = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
@@ -1939,7 +2211,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
             except Exception as e:
                 print(f"* Error: {e}")
 
-            if status_notification:
+            if STATUS_NOTIFICATION:
                 m_subject = f"Instagram user {user} has a new story!"
 
                 m_body = f"Instagram user {user} has a new story\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
@@ -2047,8 +2319,8 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                                     m_body_html_pic_saved_text = f'<br><br><img src="cid:story_pic" width="50%">'
                                     print(f"Story thumbnail image saved to '{story_image_filename}'")
                                     try:
-                                        if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
-                                            subprocess.call((f'echo;{IMGCAT_PATH} {story_image_filename}'), shell=True)
+                                        if imgcat_exe:
+                                            subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {story_image_filename}", shell=True, check=True)
                                             if i < stories_count:
                                                 print()
                                     except Exception:
@@ -2060,7 +2332,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                         except Exception as e:
                             print(f"* Error: {e}")
 
-                        if status_notification:
+                        if STATUS_NOTIFICATION:
                             m_subject = f"Instagram user {user} has a new story item ({get_short_date_from_ts(int(local_ts))})"
 
                             m_body = f"Instagram user {user} has a new story item\n\nDate: {get_date_from_ts(int(local_ts))}\nExpiry: {get_date_from_ts(int(expire_ts))}\nType: {story_type}{story_mentions_m_body}{story_hashtags_m_body}{story_caption_m_body}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
@@ -2157,7 +2429,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                     print(f"* Error, retrying in {display_time(r_sleep_time)}: {e}")
                     if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                         print("* Session might not be valid anymore!")
-                        if error_notification and not email_sent:
+                        if ERROR_NOTIFICATION and not email_sent:
                             m_subject = f"instagram_monitor: session error! (user: {user})"
 
                             m_body = f"Session might not be valid anymore: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
@@ -2235,8 +2507,8 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                                 m_body_html_pic_saved_text = f'<br><br><img src="cid:{last_source.lower()}_pic" width="50%">'
                                 print(f"{last_source.capitalize()} thumbnail image saved to '{image_filename}'")
                                 try:
-                                    if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
-                                        subprocess.call((f'{IMGCAT_PATH} {image_filename}'), shell=True)
+                                    if imgcat_exe:
+                                        subprocess.run(f"{imgcat_exe} {image_filename}", shell=True, check=True)
                                 except Exception:
                                     pass
 
@@ -2246,7 +2518,7 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
                     except Exception as e:
                         print(f"* Error: {e}")
 
-                    if status_notification:
+                    if STATUS_NOTIFICATION:
                         m_subject = f"Instagram user {user} has a new {last_source.lower()} - {get_short_date_from_ts(highestinsta_dt)} (after {calculate_timespan(highestinsta_dt, highestinsta_dt_old, show_seconds=False)} - {get_short_date_from_ts(highestinsta_dt_old)})"
 
                         m_body = f"Instagram user {user} has a new {last_source.lower()} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n\nDate: {get_date_from_ts(highestinsta_dt)}\n{last_source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nLikes: {likes}\nComments: {comments}\nTagged: {tagged_users}{location_mbody}{location_mbody_str}\nDescription:\n\n{caption}\n{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{post_comments_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
@@ -2293,78 +2565,16 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
         time.sleep(r_sleep_time)
 
 
-# Finds (or prompts you to select) your Firefox cookies.sqlite file
-def get_firefox_cookiefile():
-    default_cookiefile = {
-        "Windows": FIREFOX_WINDOWS_COOKIE,
-        "Darwin": FIREFOX_MACOS_COOKIE,
-    }.get(system(), FIREFOX_LINUX_COOKIE)
+def main():
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, TOOL_ALIVE_COUNTER, SESSION_INSTAGRAM_USERNAME, SESSION_INSTAGRAM_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck
 
-    cookiefiles = glob(expanduser(default_cookiefile))
+    if "--generate-config" in sys.argv:
+        print(CONFIG_BLOCK.strip("\n"))
+        sys.exit(0)
 
-    if not cookiefiles:
-        raise SystemExit("No Firefox cookies.sqlite file found, use -c COOKIEFILE parameter")
-
-    if len(cookiefiles) == 1:
-        return cookiefiles[0]
-
-    print("Multiple Firefox profiles found:")
-
-    for idx, path in enumerate(cookiefiles, start=1):
-        profile = basename(dirname(path))
-        print(f"  {idx}) {profile}  —  {path}")
-
-    try:
-        choice = int(input("Select profile number (0 to exit): "))
-        if choice == 0:
-            raise SystemExit("No profile selected, aborting ...")
-        cookiefile = cookiefiles[choice - 1]
-    except (ValueError, IndexError):
-        raise SystemExit("Invalid profile selection !")
-    return cookiefile
-
-
-# Imports Instagram cookie into Instaloader, checks login and saves the session
-def import_session(cookiefile, sessionfile):
-    print(f"Using cookies from '{cookiefile}' file\n")
-
-    try:
-        conn = connect(f"file:{cookiefile}?immutable=1", uri=True)
-
-        try:
-            cookie_iter = conn.execute(
-                "SELECT name, value FROM moz_cookies WHERE baseDomain='instagram.com'"
-            )
-        except OperationalError:
-            cookie_iter = conn.execute(
-                "SELECT name, value FROM moz_cookies WHERE host LIKE '%instagram.com'"
-            )
-
-        cookie_dict = dict(cookie_iter)
-
-    except sqlite3.DatabaseError:
-        raise SystemExit(
-            f"Error: '{cookiefile}' is not a valid Firefox cookies.sqlite file"
-        )
-
-    instaloader = Instaloader(max_connection_attempts=1)
-    instaloader.context._session.cookies.update(cookie_dict)
-    username = instaloader.test_login()
-
-    if not username:
-        raise SystemExit("Not logged in - are you logged in successfully in Firefox?")
-
-    print(f"Imported session cookies for {username}")
-
-    instaloader.context.username = username
-
-    if sessionfile:
-        instaloader.save_session_to_file(sessionfile)
-    else:
-        instaloader.save_session_to_file()
-
-
-if __name__ == "__main__":
+    if "--version" in sys.argv:
+        print(f"{os.path.basename(sys.argv[0])} v{VERSION}")
+        sys.exit(0)
 
     stdout_bck = sys.stdout
 
@@ -2377,31 +2587,58 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         prog="instagram_monitor",
-        description="Monitor an Instagram user’s activity and send customizable email alerts [ https://github.com/misiektoja/instagram_monitor/ ]"
+        description=("Monitor an Instagram user’s activity and send customizable email alerts [ https://github.com/misiektoja/instagram_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
     )
 
     # Positional
     parser.add_argument(
         "username",
         nargs="?",
-        metavar="INSTAGRAM_USERNAME",
+        metavar="TARGET_INSTAGRAM_USERNAME",
         help="Instagram username to monitor",
         type=str
+    )
+
+    # Version, just to list in help, it is handled earlier
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s v{VERSION}"
+    )
+
+    # Configuration & dotenv files
+    conf = parser.add_argument_group("Configuration & dotenv files")
+    conf.add_argument(
+        "--config-file",
+        dest="config_file",
+        metavar="PATH",
+        help="Location of the optional config file",
+    )
+    conf.add_argument(
+        "--generate-config",
+        action="store_true",
+        help="Print default config template and exit",
+    )
+    conf.add_argument(
+        "--env-file",
+        dest="env_file",
+        metavar="PATH",
+        help="Path to optional dotenv file (auto-search if not set, disable with 'none')",
     )
 
     # Session login credentials
     creds = parser.add_argument_group("Session login credentials")
     creds.add_argument(
-        "-u", "--instagram-user-for-session-login",
-        dest="instagram_user_for_session_login",
-        metavar="INSTAGRAM_USER",
+        "-u", "--session-instagram-username",
+        dest="session_instagram_username",
+        metavar="SESSION_INSTAGRAM_USERNAME",
         type=str,
         help="Instagram username for session login (to fetch followers/followings, stories, posts, reels)"
     )
     creds.add_argument(
-        "-p", "--instagram-password-for-session-login",
-        dest="instagram_password_for_session_login",
-        metavar="INSTAGRAM_PASSWORD",
+        "-p", "--session-instagram-password",
+        dest="session_instagram_password",
+        metavar="SESSION_INSTAGRAM_PASSWORD",
         type=str,
         help="Instagram password for session login (recommended to use saved session)"
     )
@@ -2412,22 +2649,25 @@ if __name__ == "__main__":
         "-s", "--notify-status",
         dest="status_notification",
         action="store_true",
-        help="Email on new post/reel/story, bio change, new follow, profile pic/visibility change"
+        default=None,
+        help="Email on new post/reel/story, bio change, new follow, profile pic or visibility change"
     )
     notify.add_argument(
         "-m", "--notify-followers",
         dest="followers_notification",
         action="store_true",
+        default=None,
         help="Email on new followers (disabled by default)"
     )
     notify.add_argument(
         "-e", "--no-error-notify",
         dest="error_notification",
         action="store_false",
+        default=None,
         help="Disable email on errors (e.g. invalid session)"
     )
     notify.add_argument(
-        "-z", "--send-test-email",
+        "--send-test-email",
         dest="send_test_email",
         action="store_true",
         help="Send test email to verify SMTP settings"
@@ -2463,45 +2703,52 @@ if __name__ == "__main__":
         "-l", "--skip-session",
         dest="skip_session",
         action="store_true",
+        default=None,
         help="Skip session login (no followers/followings or detailed info)"
     )
     skips.add_argument(
         "-f", "--skip-followers",
         dest="skip_followers",
         action="store_true",
+        default=None,
         help="Do not fetch followers list"
     )
     skips.add_argument(
         "-g", "--skip-followings",
         dest="skip_followings",
         action="store_true",
+        default=None,
         help="Do not fetch followings list"
     )
     skips.add_argument(
         "-r", "--skip-story-details",
         dest="skip_getting_story_details",
         action="store_true",
+        default=None,
         help="Do not fetch detailed story info"
     )
     skips.add_argument(
         "-w", "--skip-post-details",
         dest="skip_getting_posts_details",
         action="store_true",
+        default=None,
         help="Do not fetch detailed post info"
     )
     skips.add_argument(
         "-t", "--more-post-details",
         dest="get_more_post_details",
         action="store_true",
+        default=None,
         help="Fetch extra post details (list of comments and likes)"
     )
 
     # Features & output
     opts = parser.add_argument_group("Features & output")
     opts.add_argument(
-        "-k", "--no-detect-profile-pic",
+        "-k", "--no-profile-pic-detect",
         dest="do_not_detect_changed_profile_pic",
         action="store_false",
+        default=None,
         help="Disable detection of changed profile picture"
     )
     opts.add_argument(
@@ -2515,6 +2762,7 @@ if __name__ == "__main__":
         "-d", "--disable-logging",
         dest="disable_logging",
         action="store_true",
+        default=None,
         help="Disable logging to instagram_monitor_<username>.log"
     )
 
@@ -2543,6 +2791,56 @@ if __name__ == "__main__":
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
+
+    if args.config_file:
+        CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
+
+    cfg_path = find_config_file(CLI_CONFIG_PATH)
+
+    if not cfg_path and CLI_CONFIG_PATH:
+        print(f"* Error: Config file '{CLI_CONFIG_PATH}' does not exist")
+        sys.exit(1)
+
+    if cfg_path:
+        try:
+            with open(cfg_path, "r") as cf:
+                exec(cf.read(), globals())
+        except Exception as e:
+            print(f"* Error loading config file '{cfg_path}': {e}")
+            sys.exit(1)
+
+    if args.env_file:
+        DOTENV_FILE = os.path.expanduser(args.env_file)
+    else:
+        if DOTENV_FILE:
+            DOTENV_FILE = os.path.expanduser(DOTENV_FILE)
+
+    if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
+        env_path = None
+    else:
+        try:
+            from dotenv import load_dotenv, find_dotenv
+
+            if DOTENV_FILE:
+                env_path = DOTENV_FILE
+                if not os.path.isfile(env_path):
+                    print(f"* Warning: dotenv file '{env_path}' does not exist\n")
+                else:
+                    load_dotenv(env_path, override=True)
+            else:
+                env_path = find_dotenv() or None
+                if env_path:
+                    load_dotenv(env_path, override=True)
+        except ImportError:
+            env_path = DOTENV_FILE if DOTENV_FILE else None
+            if env_path:
+                print(f"* Warning: Cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n\nTo install it, run:\n    pip3 install python-dotenv\n\nOnce installed, re-run this tool\n")
+
+    if env_path:
+        for secret in SECRET_KEYS:
+            val = os.getenv(secret)
+            if val is not None:
+                globals()[secret] = val
 
     if args.import_firefox_session:
 
@@ -2589,16 +2887,27 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if not args.username:
-        print("* Error: INSTAGRAM_USERNAME argument is required !")
+        print("* Error: TARGET_INSTAGRAM_USERNAME argument is required !")
         parser.print_help()
         sys.exit(1)
 
-    skip_session = args.skip_session
-    skip_followers = args.skip_followers
-    skip_followings = args.skip_followings
-    skip_getting_story_details = args.skip_getting_story_details
-    skip_getting_posts_details = args.skip_getting_posts_details
-    get_more_post_details = args.get_more_post_details
+    if args.skip_session is True:
+        SKIP_SESSION = args.skip_session
+
+    if args.skip_followers is True:
+        SKIP_FOLLOWERS = args.skip_followers
+
+    if args.skip_followings is True:
+        SKIP_FOLLOWINGS = args.skip_followings
+
+    if args.skip_getting_story_details is True:
+        SKIP_GETTING_STORY_DETAILS = args.skip_getting_story_details
+
+    if args.skip_getting_posts_details is True:
+        SKIP_GETTING_POSTS_DETAILS = args.skip_getting_posts_details
+
+    if args.get_more_post_details is True:
+        GET_MORE_POST_DETAILS = args.get_more_post_details
 
     if args.check_interval:
         INSTA_CHECK_INTERVAL = args.check_interval
@@ -2610,20 +2919,20 @@ if __name__ == "__main__":
     if args.check_interval_random_diff_high:
         RANDOM_SLEEP_DIFF_HIGH = args.check_interval_random_diff_high
 
-    if args.instagram_user_for_session_login:
-        INSTA_USERNAME_FOR_SESSION_LOGIN = args.instagram_user_for_session_login
+    if args.session_instagram_username:
+        SESSION_INSTAGRAM_USERNAME = args.session_instagram_username
 
-    if args.instagram_password_for_session_login:
-        INSTA_PASSWORD_FOR_SESSION_LOGIN = args.instagram_password_for_session_login
+    if args.session_instagram_password:
+        SESSION_INSTAGRAM_PASSWORD = args.session_instagram_password
 
-    if not INSTA_USERNAME_FOR_SESSION_LOGIN:
-        skip_session = True
+    if not SESSION_INSTAGRAM_USERNAME:
+        SKIP_SESSION = True
 
-    if skip_session:
-        skip_followers = True
-        skip_followings = True
-        get_more_post_details = False
-        skip_getting_story_details = True
+    if SKIP_SESSION is True:
+        SKIP_FOLLOWERS = True
+        SKIP_FOLLOWINGS = True
+        GET_MORE_POST_DETAILS = False
+        SKIP_GETTING_STORY_DETAILS = True
         mode_of_the_tool = "1 (without session login)"
     else:
         mode_of_the_tool = "2 (with session login)"
@@ -2636,34 +2945,74 @@ if __name__ == "__main__":
     if args.do_not_detect_changed_profile_pic is False:
         DETECT_CHANGED_PROFILE_PIC = False
 
-    if args.csv_file:
+    if IMGCAT_PATH:
         try:
-            with open(args.csv_file, 'a', newline='', buffering=1, encoding="utf-8") as _:
+            imgcat_exe = resolve_executable(IMGCAT_PATH)
+        except Exception:
+            pass
+
+    if args.csv_file:
+        CSV_FILE = os.path.expanduser(args.csv_file)
+    else:
+        if CSV_FILE:
+            CSV_FILE = os.path.expanduser(CSV_FILE)
+
+    if CSV_FILE:
+        try:
+            with open(CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
                 pass
         except Exception as e:
             print(f"* Error, CSV file cannot be opened for writing: {e}")
             sys.exit(1)
 
-    if not args.disable_logging:
-        INSTA_LOGFILE = f"{INSTA_LOGFILE}_{args.username}.log"
-        sys.stdout = Logger(INSTA_LOGFILE)
+    if args.disable_logging is True:
+        DISABLE_LOGGING = True
 
-    status_notification = args.status_notification
-    followers_notification = args.followers_notification
+    if not DISABLE_LOGGING:
+        log_path = Path(os.path.expanduser(INSTA_LOGFILE))
+        if log_path.is_dir():
+            raise SystemExit(f"* Error: INSTA_LOGFILE '{log_path}' is a directory, expected a filename")
+        if log_path.suffix == "":
+            log_path = log_path.with_name(f"{log_path.name}_{args.username}.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        FINAL_LOG_PATH = str(log_path)
+        sys.stdout = Logger(FINAL_LOG_PATH)
+    else:
+        FINAL_LOG_PATH = None
+
+    if args.status_notification is True:
+        STATUS_NOTIFICATION = True
+
+    if args.followers_notification is True:
+        FOLLOWERS_NOTIFICATION = True
+
+    if args.error_notification is False:
+        ERROR_NOTIFICATION = False
+
+    if STATUS_NOTIFICATION is False:
+        FOLLOWERS_NOTIFICATION = False
+
+    if SMTP_HOST.startswith("your_smtp_server_"):
+        STATUS_NOTIFICATION = False
+        FOLLOWERS_NOTIFICATION = False
+        ERROR_NOTIFICATION = False
 
     print(f"* Instagram timers:\t\t\t[check interval: {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)}]")
-    print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {status_notification}]\n*\t\t\t\t\t[followers = {followers_notification}] [errors = {args.error_notification}]")
-    print(f"* Detect changed profile pic:\t\t{DETECT_CHANGED_PROFILE_PIC}")
+    print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
     print(f"* Mode of the tool:\t\t\t{mode_of_the_tool}")
-    print(f"* Skip session login:\t\t\t{skip_session}")
-    print(f"* Skip fetching followers:\t\t{skip_followers}")
-    print(f"* Skip fetching followings:\t\t{skip_followings}")
-    print(f"* Skip stories details:\t\t\t{skip_getting_story_details}")
-    print(f"* Skip posts details:\t\t\t{skip_getting_posts_details}")
-    print(f"* Get more posts details:\t\t{get_more_post_details}")
+    print(f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}")
+    print(f"* Skip session login:\t\t\t{SKIP_SESSION}")
+    print(f"* Skip fetching followers:\t\t{SKIP_FOLLOWERS}")
+    print(f"* Skip fetching followings:\t\t{SKIP_FOLLOWINGS}")
+    print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
+    print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
+    print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
     print("* Hours for checking posts/reels:\t" + (f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59, {MIN_H2:02d}:00 - {MAX_H2:02d}:59" if CHECK_POSTS_IN_HOURS_RANGE else "00:00 - 23:59"))
-    print(f"* Output logging enabled:\t\t{not args.disable_logging}" + (f" ({INSTA_LOGFILE})" if not args.disable_logging else ""))
-    print(f"* CSV logging enabled:\t\t\t{bool(args.csv_file)}" + (f" ({args.csv_file})" if args.csv_file else ""))
+    print(f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
+    print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
+    print(f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
+    print(f"* Configuration file:\t\t\t{cfg_path}")
+    print(f"* Dotenv file:\t\t\t\t{env_path or 'None'}")
     print(f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}")
 
     out = f"\nMonitoring Instagram user {args.username}"
@@ -2676,8 +3025,13 @@ if __name__ == "__main__":
         signal.signal(signal.SIGUSR2, toggle_followers_notifications_signal_handler)
         signal.signal(signal.SIGTRAP, increase_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_check_signal_handler)
+        signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
 
-    instagram_monitor_user(args.username, args.error_notification, args.csv_file, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details)
+    instagram_monitor_user(args.username, CSV_FILE, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS)
 
     sys.stdout = stdout_bck
     sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
