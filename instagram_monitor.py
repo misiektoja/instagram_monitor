@@ -2955,6 +2955,8 @@ def main():
     if PROFILE_PIC_FILE_EMPTY:
         PROFILE_PIC_FILE_EMPTY = os.path.expanduser(PROFILE_PIC_FILE_EMPTY)
 
+    profile_pic_file_exists = os.path.exists(PROFILE_PIC_FILE_EMPTY) if PROFILE_PIC_FILE_EMPTY else False
+
     if IMGCAT_PATH:
         try:
             imgcat_exe = resolve_executable(IMGCAT_PATH)
@@ -3023,7 +3025,7 @@ def main():
     print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
-    print(f"* Empty profile pic template:\t\t{bool(PROFILE_PIC_FILE_EMPTY)}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if PROFILE_PIC_FILE_EMPTY else ""))
+    print(f"* Empty profile pic template:\t\t{profile_pic_file_exists}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""))
     print(f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
     print(f"* Configuration file:\t\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t\t{env_path or 'None'}")
