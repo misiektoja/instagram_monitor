@@ -173,9 +173,8 @@ FIREFOX_MACOS_COOKIE = "~/Library/Application Support/Firefox/Profiles/*/cookies
 FIREFOX_WINDOWS_COOKIE = "~/AppData/Roaming/Mozilla/Firefox/Profiles/*/cookies.sqlite"
 FIREFOX_LINUX_COOKIE = "~/.mozilla/firefox/*/cookies.sqlite"
 
-# Path or base name of the log file
-# If a directory or base name is provided, the final log file will be named 'instagram_monitor_<username>.log'
-# Absolute paths and custom filenames are supported. Use '~' for home directory if needed
+# Base name for the log file. Output will be saved to instagram_monitor_<username>.log
+# Can include a directory path to specify the location, e.g. ~/some_dir/instagram_monitor
 INSTA_LOGFILE = "instagram_monitor"
 
 # Whether to disable logging to instagram_monitor_<username>.log
@@ -2981,10 +2980,12 @@ def main():
 
     if not DISABLE_LOGGING:
         log_path = Path(os.path.expanduser(INSTA_LOGFILE))
-        if log_path.is_dir():
-            raise SystemExit(f"* Error: INSTA_LOGFILE '{log_path}' is a directory, expected a filename")
-        if log_path.suffix == "":
-            log_path = log_path.with_name(f"{log_path.name}_{args.username}.log")
+        if log_path.parent != Path('.'):
+            if log_path.suffix == "":
+                log_path = log_path.parent / f"{log_path.name}_{args.username}.log"
+        else:
+            if log_path.suffix == "":
+                log_path = Path(f"{log_path.name}_{args.username}.log")
         log_path.parent.mkdir(parents=True, exist_ok=True)
         FINAL_LOG_PATH = str(log_path)
         sys.stdout = Logger(FINAL_LOG_PATH)
