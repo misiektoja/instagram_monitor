@@ -1,6 +1,6 @@
 instaloader
-python_dateutil
+requests
+python-dateutil
 pytz
 tzlocal
-Requests
 python-dotenv
