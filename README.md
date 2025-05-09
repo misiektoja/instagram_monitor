@@ -113,7 +113,21 @@ It will ask for your password and save the session. However, this method present
 
 To overcome the previous issue, it is suggested to use **the most recommended way**: using the session cookie from your web browser.
 
-Use the Firefox web browser, log in to the Instagram account that you want to use to monitor other users (**your_insta_user**) and then use the *[instaloader_import_firefox_session.py](instaloader_import_firefox_session.py)* tool to import the session from Firefox's *cookies.sqlite* to Instaloader (you might have to adjust the path of your Firefox profile in this script).
+For now only Firefox web browser is supported - log in to the Instagram account that you want to use to monitor other users (**your_insta_user**) and then run the tool with **--import-firefox-session** parameter:
+
+```sh
+./instagram_monitor.py --import-firefox-session
+```
+
+The script will automatically detect the list of all Firefox profiles with a *cookies.sqlite* file. If there are multiple profiles available, it will prompt you to select one. It will then import the selected profile and save it as a session in Instaloader.
+
+In the case of custom Firefox profile paths, specify the exact location with the **--cookie-file** parameter:
+
+```sh
+instagram_monitor.py --import-firefox-session --cookie-file "/your_firefox_profile_path/cookies.sqlite"
+```
+
+You can adjust the default Firefox cookie directory permanently via `FIREFOX_*_COOKIE` variables in the script.
 
 This method has the advantage that if you perform activities with this account in your Firefox browser every few days (like scrolling through the feed or liking some posts), it will count as "good" activity, increasing the reputation of the tool's actions. Sometimes you might still see some warnings in your Firefox web browser where you need to click the Dismiss button, but it should not be too often.
 
