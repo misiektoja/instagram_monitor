@@ -103,6 +103,11 @@ INSTA_CHECK_SIGNAL_VALUE = 300  # 5 min
 # Whether to clear the terminal screen after starting the tool
 CLEAR_SCREEN = True
 
+# Default Firefox cookie directories by OS
+FIREFOX_MACOS_COOKIE = "~/Library/Application Support/Firefox/Profiles/*/cookies.sqlite"
+FIREFOX_WINDOWS_COOKIE = "~/AppData/Roaming/Mozilla/Firefox/Profiles/*/cookies.sqlite"
+FIREFOX_LINUX_COOKIE = "~/.mozilla/firefox/*/cookies.sqlite"
+
 # -------------------------
 # CONFIGURATION SECTION END
 # -------------------------
@@ -142,6 +147,7 @@ import time
 import string
 import json
 import os
+from os.path import expanduser, dirname, basename
 from datetime import datetime, timezone
 from dateutil import relativedelta
 from dateutil.parser import isoparse, parse
@@ -164,15 +170,25 @@ try:
 except ImportError:
     get_localzone = None
 import platform
+from platform import system
 import re
 import ipaddress
 from itertools import zip_longest
 import subprocess
-import instaloader
+
+try:
+    import instaloader
+    from instaloader import ConnectionException, Instaloader
+except ModuleNotFoundError:
+    raise SystemExit("Couldn’t find the Instaloader library !\n\nTo install it, run:\n    pip3 install instaloader\n\nOnce installed, re-run this script. For more help, visit:\nhttps://instaloader.github.io/")
+
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape
 from itertools import islice
 from typing import Optional, Tuple, Any
+from glob import glob
+import sqlite3
+from sqlite3 import OperationalError, connect
 
 
 # Logger class to output messages to stdout and log file
@@ -2277,6 +2293,77 @@ def instagram_monitor_user(user, error_notification, csv_file_name, skip_session
         time.sleep(r_sleep_time)
 
 
+# Finds (or prompts you to select) your Firefox cookies.sqlite file
+def get_firefox_cookiefile():
+    default_cookiefile = {
+        "Windows": FIREFOX_WINDOWS_COOKIE,
+        "Darwin": FIREFOX_MACOS_COOKIE,
+    }.get(system(), FIREFOX_LINUX_COOKIE)
+
+    cookiefiles = glob(expanduser(default_cookiefile))
+
+    if not cookiefiles:
+        raise SystemExit("No Firefox cookies.sqlite file found, use -c COOKIEFILE parameter")
+
+    if len(cookiefiles) == 1:
+        return cookiefiles[0]
+
+    print("Multiple Firefox profiles found:")
+
+    for idx, path in enumerate(cookiefiles, start=1):
+        profile = basename(dirname(path))
+        print(f"  {idx}) {profile}  —  {path}")
+
+    try:
+        choice = int(input("Select profile number (0 to exit): "))
+        if choice == 0:
+            raise SystemExit("No profile selected, aborting ...")
+        cookiefile = cookiefiles[choice - 1]
+    except (ValueError, IndexError):
+        raise SystemExit("Invalid profile selection !")
+    return cookiefile
+
+
+# Imports Instagram cookie into Instaloader, checks login and saves the session
+def import_session(cookiefile, sessionfile):
+    print(f"Using cookies from '{cookiefile}' file\n")
+
+    try:
+        conn = connect(f"file:{cookiefile}?immutable=1", uri=True)
+
+        try:
+            cookie_iter = conn.execute(
+                "SELECT name, value FROM moz_cookies WHERE baseDomain='instagram.com'"
+            )
+        except OperationalError:
+            cookie_iter = conn.execute(
+                "SELECT name, value FROM moz_cookies WHERE host LIKE '%instagram.com'"
+            )
+
+        cookie_dict = dict(cookie_iter)
+
+    except sqlite3.DatabaseError:
+        raise SystemExit(
+            f"Error: '{cookiefile}' is not a valid Firefox cookies.sqlite file"
+        )
+
+    instaloader = Instaloader(max_connection_attempts=1)
+    instaloader.context._session.cookies.update(cookie_dict)
+    username = instaloader.test_login()
+
+    if not username:
+        raise SystemExit("Not logged in - are you logged in successfully in Firefox?")
+
+    print(f"Imported session cookies for {username}")
+
+    instaloader.context.username = username
+
+    if sessionfile:
+        instaloader.save_session_to_file(sessionfile)
+    else:
+        instaloader.save_session_to_file()
+
+
 if __name__ == "__main__":
 
     stdout_bck = sys.stdout
@@ -2431,11 +2518,47 @@ if __name__ == "__main__":
         help="Disable logging to instagram_monitor_<username>.log"
     )
 
+    # Firefox session import options
+    import_grp = parser.add_argument_group("Firefox session import")
+    import_grp.add_argument(
+        "--import-firefox-session",
+        action="store_true",
+        help="Import Firefox session cookies into Instaloader"
+    )
+    import_grp.add_argument(
+        "--cookie-file",
+        dest="cookie_file",
+        metavar="COOKIEFILE",
+        help="Path to Firefox cookies.sqlite; if omitted, it will list all available"
+    )
+    import_grp.add_argument(
+        "--session-file",
+        dest="session_file",
+        metavar="SESSIONFILE",
+        help="Path to save Instaloader session; if omitted, it will save to the default one"
+    )
+
     args = parser.parse_args()
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
+
+    if args.import_firefox_session:
+
+        if args.session_file:
+            session_path = os.path.expanduser(args.session_file)
+            session_dir = os.path.dirname(session_path) or "."
+            if not os.path.isdir(session_dir):
+                raise SystemExit(f"Error: Session directory '{session_dir}' not found !")
+
+        cookie_path = args.cookie_file or get_firefox_cookiefile()
+        cookie_path = os.path.expanduser(cookie_path)
+        if not os.path.isfile(cookie_path):
+            raise SystemExit(f"Error: Cookie file '{cookie_path}' not found !")
+
+        import_session(cookie_path, args.session_file)
+        sys.exit(0)
 
     local_tz = None
     if LOCAL_TIMEZONE == "Auto":
