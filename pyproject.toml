@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "instagram_monitor"
+version = "1.6"
+description = "Tool implementing real-time tracking of Instagram users activities and profile changes"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICEN[CS]E*"]
+authors = [{ name = "Michal Szymanski", email = "misiektoja-pypi@rm-rf.ninja" }]
+requires-python = ">=3.9"
+dependencies = [
+  "instaloader>=4.12",
+  "requests>=2.0",
+  "python-dateutil>=2.8",
+  "pytz>=2020.1",
+  "tzlocal>=4.0",
+  "python-dotenv>=0.19",
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS :: MacOS X",
+]
+keywords = ["instagram", "monitoring", "tracking", "real-time", "osint", "instaloader"]
+
+[project.urls]
+Homepage = "https://github.com/misiektoja/instagram_monitor"
+Source   = "https://github.com/misiektoja/instagram_monitor"
+Changelog= "https://github.com/misiektoja/instagram_monitor/blob/main/RELEASE_NOTES.md"
+
+[project.scripts]
+instagram_monitor = "instagram_monitor:main"
+
+[tool.setuptools]
+py-modules = ["instagram_monitor"]
+include-package-data = true
