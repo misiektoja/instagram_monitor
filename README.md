@@ -11,7 +11,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of Instagram users' 
   - changes in profile pictures
   - changes in profile visibility (from private to public and vice versa)
 - Anonymous download of users' story images and videos; the user won't know you watched their stories 😉
-- Download of users' post images and reel videos
+- Download of users' post images and post / reel videos
 - Email notifications for different events (new posts, reels, stories, changes in followings, followers, bio, profile pictures, visibility and errors)
 - Attachment of changed profile pictures and stories/posts/reels images directly in email notifications
 - Displaying of profile pictures and stories/posts/reels images right in your terminal (if you have `imgcat` installed)
@@ -192,7 +192,7 @@ The tool will detect available Firefox profiles with a `cookies.sqlite` file. If
 To use a specific Firefox profile path:
 
 ```sh
-instagram_monitor --import-firefox-session --cookie-file "/your_firefox_profile_path/cookies.sqlite"
+instagram_monitor --import-firefox-session --cookie-file "/path/cookies.sqlite"
 ```
 
 You can adjust the default Firefox cookie directory permanently via `FIREFOX_*_COOKIE` configuration options.
@@ -278,6 +278,17 @@ To monitor specific user activity in [mode 2](#mode-2-with-logged-in-instagram-a
 
 ```sh
 instagram_monitor -u <your_insta_user> <target_insta_user>
+```
+
+By default, the tool looks for a configuration file named `instagram_monitor.conf` in:
+ - current directory 
+ - home directory (`~`)
+ - script directory 
+
+ If you generated a configuration file as described in [Configuration](#configuration), but saved it under a different name or in a different directory, you can specify its location using the `--config-file` flag:
+
+```sh
+instagram_monitor <target_insta_user> --config-file /path/instagram_monitor_new.conf
 ```
 
 The tool runs until interrupted (`Ctrl+C`). Use `tmux` or `screen` for persistence.
