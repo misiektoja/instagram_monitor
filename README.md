@@ -2,10 +2,6 @@
 
 instagram_monitor is an OSINT tool for real-time monitoring of Instagram users' activities and profile changes.
 
-> There's a known issue with `instaloader` (<= 4.14.1) that breaks **[mode 1](#mode-1-without-logged-in-instagram-account-no-session-login)** (no session login) due to Instagram API changes (data key error).  
-> 📦 We're waiting for an updated release.  
-> 👉 In the meantime, use **[mode 2](#option-3-session-login-using-firefox-cookies-recommended)** (session login) with a Firefox cookie.
-
 <a id="features"></a>
 ## Features
 
@@ -149,7 +145,7 @@ Edit the `instagram_monitor.conf` file and change any desired configuration opti
 
 In this mode, the tool operates without logging in to an Instagram account. 
 
-You can still monitor basic user activity such as new posts, stories, bio changes and changes in follower/following counts. However, you won't see which specific followers/followings were added or removed. You also won't be able to get more detailed info about new posts, reels & stories.
+You can still monitor basic user activity such as post, reel and story counts (without details due to Instagram API limits), bio changes and changes in follower/following counts. However, you won't see which specific followers/followings were added or removed and you won't get any details about posts, reels and stories.
 
 This mode requires no setup, is easy to use and is resistant to Instagram's anti-bot mechanisms and CAPTCHA challenges.
 
