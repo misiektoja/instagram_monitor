@@ -2,6 +2,49 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 1.6 (21 May 2025)
+
+**Features and Improvements**:
+
+- **NEW:** The tool can now be installed via pip: `pip install instagram_monitor`
+- **NEW:** Added support for external config files, environment-based secrets and dotenv integration with auto-discovery
+- **NEW:** Added full support for Instagram reels (not just video posts) and optimized post/reel fetching to reduce API calls
+- **NEW:** Added `--import-firefox-session` to load session from Firefox cookies with detection of all profiles (replaces old script)
+- **IMPROVE:** Improved detail extraction for posts and reels (via mobile API)
+- **NEW:** Added notification for follow-request acceptance and for removed posts/reels
+- **NEW:** Display access scope and session user info, including reels count and content visibility
+- **IMPROVE:** Enhanced session-login logic to auto‐load or create Instaloader sessions
+- **IMPROVE:** Display whether the user can access all content of the monitored account
+- **IMPROVE:** Enhanced startup summary to show loaded config, dotenv and ignore-playlists file paths
+- **IMPROVE:** Auto detect and display availability of `imgcat` binary for profile picture preview
+- **IMPROVE:** Simplified and renamed command-line arguments for improved usability
+- **NEW:** Implemented SIGHUP handler for dynamic reload of secrets from dotenv files
+- **NEW:** Added configuration option to control clearing the terminal screen at startup
+- **IMPROVE:** Changed connectivity check to use Instagram API endpoint for better reliability
+- **IMPROVE:** Added check for missing pip dependencies with install guidance
+- **IMPROVE:** Allow disabling liveness check by setting interval to 0 (default changed to 12h)
+- **IMPROVE:** Improved handling of log file creation
+- **IMPROVE:** Refactored CSV file initialization and processing
+- **NEW:** Added support for `~` path expansion across all file paths
+- **IMPROVE:** Added validation for configured time zones
+- **IMPROVE:** Refactored code structure to support packaging for PyPI
+- **IMPROVE:** Enforced configuration option precedence: code defaults < config file < env vars < CLI flags
+- **IMPROVE:** Made empty profile picture template path configurable
+- **IMPROVE:** Only show profile picture template status if the file exists
+- **IMPROVE:** Renamed Caption to Description in logs and email bodies
+- **IMPROVE:** Email notifications now auto-disable if SMTP config is invalid
+- **IMPROVE:** Minimum required Python version increased to 3.9
+- **IMPROVE:** Removed short option for `--send-test-email` to avoid ambiguity
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed data key error, but due to Instagram changes, post/reel details can't be fetched in mode 1 (no session), but count differences are still reported
+- **BUGFIX:** Fixed post location fetching after Instagram broke legacy endpoints
+- **BUGFIX:** Corrected public vs. private story checks and iteration ([#9](https://github.com/misiektoja/instagram_monitor/issues/9))
+- **BUGFIX:** Fixed rare issue with reporting changed profile pic even though timestamp is the same
+- **BUGFIX:** Fixed issue where manually defined `LOCAL_TIMEZONE` wasn't applied correctly
+- **BUGFIX:** Fixed imgcat command under Windows (use `echo. &` instead of `echo ;`)
+
 # Changes in 1.5 (03 Nov 2024)
 
 **Features and Improvements**:
