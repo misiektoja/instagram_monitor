@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "instagram_monitor"
-version = "1.6.1"
+version = "1.6.2"
 description = "Tool implementing real-time tracking of Instagram users activities and profile changes"
 readme = "README.md"
 license = "GPL-3.0-or-later"
