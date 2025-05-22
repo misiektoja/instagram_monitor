@@ -2,11 +2,12 @@
 
 This is a high-level summary of the most important changes. 
 
-# Changes in 1.6.1 (22 May 2025)
+# Changes in 1.6.2 (22 May 2025)
 
 **Bug fixes**:
 
 - **BUGFIX:** Extended try block to suppress full stack trace
+- **BUGFIX:** Corrected VERSION assignment syntax in source code
 
 # Changes in 1.6 (21 May 2025)
 
