@@ -15,7 +15,7 @@ This is a high-level summary of the most important changes.
 - **NEW:** Display access scope and session user info, including reels count and content visibility
 - **IMPROVE:** Enhanced session-login logic to auto‐load or create Instaloader sessions
 - **IMPROVE:** Display whether the user can access all content of the monitored account
-- **IMPROVE:** Enhanced startup summary to show loaded config, dotenv and ignore-playlists file paths
+- **IMPROVE:** Enhanced startup summary to show loaded config, dotenv and empty profile pic template file paths
 - **IMPROVE:** Auto detect and display availability of `imgcat` binary for profile picture preview
 - **IMPROVE:** Simplified and renamed command-line arguments for improved usability
 - **NEW:** Implemented SIGHUP handler for dynamic reload of secrets from dotenv files
