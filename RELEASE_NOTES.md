@@ -2,6 +2,12 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 1.6.1 (22 May 2025)
+
+**Bug fixes**:
+
+- **BUGFIX:** Extended try block to suppress full stack trace
+
 # Changes in 1.6 (21 May 2025)
 
 **Features and Improvements**:
@@ -12,7 +18,7 @@ This is a high-level summary of the most important changes.
 - **NEW:** Added `--import-firefox-session` to load session from Firefox cookies with detection of all profiles (replaces old script)
 - **IMPROVE:** Improved detail extraction for posts and reels (via mobile API)
 - **NEW:** Added notification for follow-request acceptance and for removed posts/reels
-- **NEW:** Display access scope and session user info, including reels count and content visibility
+- **NEW:** Display access scope and session user info, including reels count
 - **IMPROVE:** Enhanced session-login logic to auto‐load or create Instaloader sessions
 - **IMPROVE:** Display whether the user can access all content of the monitored account
 - **IMPROVE:** Enhanced startup summary to show loaded config, dotenv and empty profile pic template file paths
@@ -38,7 +44,7 @@ This is a high-level summary of the most important changes.
 
 **Bug fixes**:
 
-- **BUGFIX:** Fixed data key error, but due to Instagram changes, post/reel details can't be fetched in mode 1 (no session), but count differences are still reported
+- **BUGFIX:** Fixed data key error, however due to Instagram changes, post/reel details can no longer be fetched in mode 1 (no session), though count differences are still reported
 - **BUGFIX:** Fixed post location fetching after Instagram broke legacy endpoints
 - **BUGFIX:** Corrected public vs. private story checks and iteration ([#9](https://github.com/misiektoja/instagram_monitor/issues/9))
 - **BUGFIX:** Fixed rare issue with reporting changed profile pic even though timestamp is the same
