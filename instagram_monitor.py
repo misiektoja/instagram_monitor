@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.6
+v1.6.1
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -16,7 +16,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = 1.6
+VERSION = 1.6.1
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -1791,26 +1791,26 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 highestinsta_ts = local_ts
                 highestinsta_dt = local_dt
 
+            if last_post:
+                likes = last_post.likes
+                comments = last_post.comments
+                caption = last_post.caption if last_post.caption is not None else "(empty)"
+                pcaption = last_post.pcaption or ""
+                tagged_users = last_post.tagged_users
+                if last_source == "reel":
+                    shortcode = get_real_reel_code(bot, user) or last_post.shortcode
+                else:
+                    shortcode = last_post.shortcode
+                thumbnail_url = last_post.url
+                video_url = last_post.video_url
+                if last_source == "post":
+                    location = get_post_location_mobile(last_post, bot)
+            else:
+                print(f"* Error: Failed to get last post/reel details")
+
         except Exception as e:
             print(f"* Error: {e}")
             sys.exit(1)
-
-        if last_post:
-            likes = last_post.likes
-            comments = last_post.comments
-            caption = last_post.caption if last_post.caption is not None else "(empty)"
-            pcaption = last_post.pcaption or ""
-            tagged_users = last_post.tagged_users
-            if last_source == "reel":
-                shortcode = get_real_reel_code(bot, user) or last_post.shortcode
-            else:
-                shortcode = last_post.shortcode
-            thumbnail_url = last_post.url
-            video_url = last_post.video_url
-            if last_source == "post":
-                location = get_post_location_mobile(last_post, bot)
-        else:
-            print(f"* Error: Failed to get last post/reel details")
 
         try:
             # below won't work until Instaloader updates query hashes in new release
