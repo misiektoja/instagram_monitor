@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.6.2
+v1.7
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -16,7 +16,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "1.6.2"
+VERSION = "1.7"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -131,6 +131,28 @@ SKIP_GETTING_POSTS_DETAILS = False
 # Can also be enabled via the -t flag
 GET_MORE_POST_DETAILS = False
 
+# Optional: specify web browser user agent manually
+#
+# For session login using Firefox cookies, ensure this matches your Firefox web browser's user agent
+#
+# Some examples:
+# Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0
+# Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:139.0) Gecko/20100101 Firefox/139.0
+#
+# Leave empty to auto-generate it randomly
+# Can also be set using the --user-agent flag
+USER_AGENT = ""
+
+# Optional: specify mobile device user agent manually
+#
+# Some examples:
+# Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0
+# Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:139.0) Gecko/20100101 Firefox/139.0
+#
+# Leave empty to auto-generate it randomly
+# Can also be set using the --user-agent-mobile flag
+USER_AGENT_MOBILE = ""
+
 # How often to print a "liveness check" message to the output; in seconds
 # Set to 0 to disable
 LIVENESS_CHECK_INTERVAL = 43200  # 12 hours
@@ -181,7 +203,7 @@ INSTA_LOGFILE = "instagram_monitor"
 # Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
-# Width of horizontal line (─)
+# Width of horizontal line
 HORIZONTAL_LINE = 113
 
 # Whether to clear the terminal screen after starting the tool
@@ -222,6 +244,8 @@ SKIP_FOLLOWINGS = False
 SKIP_GETTING_STORY_DETAILS = False
 SKIP_GETTING_POSTS_DETAILS = False
 GET_MORE_POST_DETAILS = False
+USER_AGENT = ""
+USER_AGENT_MOBILE = ""
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
@@ -354,7 +378,7 @@ def signal_handler(sig, frame):
 # Checks internet connectivity
 def check_internet(url=CHECK_INTERNET_URL, timeout=CHECK_INTERNET_TIMEOUT):
     try:
-        _ = req.get(url, timeout=timeout)
+        _ = req.get(url, headers={'User-Agent': USER_AGENT}, timeout=timeout)
         return True
     except req.RequestException as e:
         print(f"* No connectivity, please check your network:\n\n{e}")
@@ -891,7 +915,7 @@ def reload_secrets_signal_handler(sig, frame):
 # Saves user's image / video to selected file name
 def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0):
     try:
-        image_video_response = req.get(image_video_url, timeout=FUNCTION_TIMEOUT, stream=True)
+        image_video_response = req.get(image_video_url, headers={'User-Agent': USER_AGENT}, timeout=FUNCTION_TIMEOUT, stream=True)
         image_video_response.raise_for_status()
         url_time = image_video_response.headers.get('last-modified')
         url_time_in_tz_ts = 0
@@ -1125,6 +1149,7 @@ def get_reels_count_mobile(user: str, bot: instaloader.Instaloader):
 
     # Fetch mobile JSON
     ctx: Any = bot.context  # type: ignore
+
     data = ctx.get_iphone_json(f"api/v1/users/{user_id}/info/", {})  # type: ignore
 
     u = data.get("user", {})
@@ -1222,7 +1247,9 @@ def get_post_location_mobile(last_post: instaloader.Post, bot: instaloader.Insta
 # Returns the true shortcode for the user's latest Reel via the mobile-web_profile_info endpoint
 def get_real_reel_code(bot: instaloader.Instaloader, username: str) -> Optional[str]:
     try:
-        data = bot.context.get_iphone_json(f"api/v1/users/web_profile_info/?username={username}", {})
+        ctx: Any = bot.context  # type: ignore
+
+        data = ctx.get_iphone_json(f"api/v1/users/web_profile_info/?username={username}", {})
         user = data["data"]["user"]
         edges = user.get("edge_reels_media", {}).get("edges", [])
         if not edges:
@@ -1341,6 +1368,131 @@ def resolve_executable(path):
     raise FileNotFoundError(f"Could not find executable '{path}'")
 
 
+# Returns random web browser user agent string
+def get_random_user_agent() -> str:
+    browser = random.choice(['chrome', 'firefox', 'edge', 'safari'])
+
+    if browser == 'chrome':
+        os_choice = random.choice(['mac', 'windows'])
+        if os_choice == 'mac':
+            return (
+                f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_{random.randrange(11, 15)}_{random.randrange(4, 9)}) "
+                f"AppleWebKit/{random.randrange(530, 537)}.{random.randrange(30, 37)} (KHTML, like Gecko) "
+                f"Chrome/{random.randrange(80, 105)}.0.{random.randrange(3000, 4500)}.{random.randrange(60, 125)} "
+                f"Safari/{random.randrange(530, 537)}.{random.randrange(30, 36)}"
+            )
+        else:
+            chrome_version = random.randint(80, 105)
+            build = random.randint(3000, 4500)
+            patch = random.randint(60, 125)
+            return (
+                f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                f"AppleWebKit/537.36 (KHTML, like Gecko) "
+                f"Chrome/{chrome_version}.0.{build}.{patch} Safari/537.36"
+            )
+
+    elif browser == 'firefox':
+        os_choice = random.choice(['windows', 'mac', 'linux'])
+        version = random.randint(90, 110)
+        if os_choice == 'windows':
+            return (
+                f"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:{version}.0) "
+                f"Gecko/20100101 Firefox/{version}.0"
+            )
+        elif os_choice == 'mac':
+            return (
+                f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_{random.randrange(11, 15)}_{random.randrange(0, 10)}; rv:{version}.0) "
+                f"Gecko/20100101 Firefox/{version}.0"
+            )
+        else:
+            return (
+                f"Mozilla/5.0 (X11; Linux x86_64; rv:{version}.0) "
+                f"Gecko/20100101 Firefox/{version}.0"
+            )
+
+    elif browser == 'edge':
+        os_choice = random.choice(['windows', 'mac'])
+        chrome_version = random.randint(80, 105)
+        build = random.randint(3000, 4500)
+        patch = random.randint(60, 125)
+        version_str = f"{chrome_version}.0.{build}.{patch}"
+        if os_choice == 'windows':
+            return (
+                f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                f"AppleWebKit/537.36 (KHTML, like Gecko) "
+                f"Chrome/{version_str} Safari/537.36 Edg/{version_str}"
+            )
+        else:
+            return (
+                f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_{random.randrange(11, 15)}_{random.randrange(0, 10)}) "
+                f"AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                f"Version/{random.randint(13, 16)}.0 Safari/605.1.15 Edg/{version_str}"
+            )
+
+    elif browser == 'safari':
+        os_choice = 'mac'
+        if os_choice == 'mac':
+            mac_major = random.randrange(11, 16)
+            mac_minor = random.randrange(0, 10)
+            webkit_major = random.randint(600, 610)
+            webkit_minor = random.randint(1, 20)
+            webkit_patch = random.randint(1, 20)
+            safari_version = random.randint(13, 16)
+            return (
+                f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_{mac_major}_{mac_minor}) "
+                f"AppleWebKit/{webkit_major}.{webkit_minor}.{webkit_patch} (KHTML, like Gecko) "
+                f"Version/{safari_version}.0 Safari/{webkit_major}.{webkit_minor}.{webkit_patch}"
+            )
+        else:
+            return ""
+    else:
+        return ""
+
+
+# Returns random mobile user agent string (iPhone / iPad)
+def get_random_mobile_user_agent() -> str:
+    app_major = random.randint(240, 300)
+    app_minor = random.randint(0, 9)
+    app_patch = random.randint(0, 9)
+    app_revision = random.randint(100, 999)
+
+    if random.choice([True, False]):
+        device = "iPhone"
+        model, (width, height) = random.choice([
+            ("10,3", (1125, 2436)),  # X
+            ("11,2", (1125, 2436)),  # XS
+            ("12,5", (1242, 2688)),  # 11 Pro Max
+            ("13,4", (1284, 2778)),  # 12 Pro Max
+            ("14,2", (1179, 2532)),  # 13 Pro
+            ("14,4", (1080, 2340)),  # 13 mini
+            ("15,2", (1170, 2532)),  # 15
+            ("15,3", (1179, 2556)),  # 15 Pro
+            ("16,1", (1290, 2796)),  # 15 Pro Max
+        ])
+    else:
+        device = "iPad"
+        model, (width, height) = random.choice([
+            ("7,11", (1620, 2160)),  # 7th Gen
+            ("13,4", (1668, 2388)),  # Pro 11"
+            ("13,8", (2048, 2732)),  # Pro 12.9"
+            ("14,5", (2360, 1640)),  # Air 5th Gen
+            ("15,1", (2048, 2732)),  # Pro 12.9 Gen 6
+            ("15,8", (1668, 2388)),  # Pro 11 3rd Gen
+        ])
+
+    os_major = random.randint(12, 17)
+    os_minor = random.randint(0, 5)
+
+    language = "en_US"
+    locale = "en-US"
+
+    scale = random.choice([2.00, 3.00])
+
+    device_id = random.randint(10**14, 10**15 - 1)
+
+    return (f"Instagram {app_major}.{app_minor}.{app_patch}.{app_revision} ({device}{model}; iOS {os_major}_{os_minor}; {language}; {locale}; scale={scale:.2f}; {width}x{height}; {device_id}) AppleWebKit/420+")
+
+
 # Main function that monitors activity of the specified Instagram user
 def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details):
 
@@ -1359,7 +1511,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     reels_count = 0
 
     try:
-        bot = instaloader.Instaloader()
+        bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True) 
 
         if not skip_session and SESSION_USERNAME:
             if SESSION_PASSWORD:
@@ -1377,6 +1529,36 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 except FileNotFoundError:
                     print("* Error: No Instagram session file found, please run 'instaloader -l SESSION_USERNAME' to create one")
                     sys.exit(1)
+
+        # mobile user agent patch for instaloader
+        try:
+            ctx = bot.context
+            patched = False
+
+            for attr in ("iphone_headers", "_iphone_headers"):
+                if hasattr(ctx, attr):
+                    getattr(ctx, attr)["User-Agent"] = USER_AGENT_MOBILE
+                    patched = True
+                    break
+
+            if not patched:
+                if hasattr(ctx, 'get_iphone_json'):
+                    orig_get_iphone_json = ctx.get_iphone_json
+
+                    def _get_iphone_json(path, params, **kwargs):
+                        if '_extra_headers' in kwargs:
+                            kwargs['_extra_headers']['User-Agent'] = USER_AGENT_MOBILE
+                        else:
+                            kwargs['_extra_headers'] = {'User-Agent': USER_AGENT_MOBILE}
+                        return orig_get_iphone_json(path, params, **kwargs)
+
+                    ctx.get_iphone_json = _get_iphone_json
+                else:
+                    print("* Warning: Could not apply custom mobile user-agent patch (missing header attributes or get_iphone_json method)!")
+                    print("* Proceeding with the default Instaloader mobile user-agent")
+        except Exception as e:
+            print(f"* Warning: Could not apply custom mobile user-agent patch due to an unexpected error: {e}")
+            print("* Proceeding with the default Instaloader mobile user-agent")
 
         profile = instaloader.Profile.from_username(bot.context, user)
         time.sleep(NEXT_OPERATION_DELAY)
@@ -2573,7 +2755,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -2705,48 +2887,62 @@ def main():
     )
 
     # Session‐related options
-    skips = parser.add_argument_group("Session‐related options")
-    skips.add_argument(
+    session_opts = parser.add_argument_group("Session‐related options")
+    session_opts.add_argument(
         "-l", "--skip-session",
         dest="skip_session",
         action="store_true",
         default=None,
         help="Skip session login (no followers/followings or detailed info)"
     )
-    skips.add_argument(
+    session_opts.add_argument(
         "-f", "--skip-followers",
         dest="skip_followers",
         action="store_true",
         default=None,
         help="Do not fetch followers list"
     )
-    skips.add_argument(
+    session_opts.add_argument(
         "-g", "--skip-followings",
         dest="skip_followings",
         action="store_true",
         default=None,
         help="Do not fetch followings list"
     )
-    skips.add_argument(
+    session_opts.add_argument(
         "-r", "--skip-story-details",
         dest="skip_getting_story_details",
         action="store_true",
         default=None,
         help="Do not fetch detailed story info"
     )
-    skips.add_argument(
+    session_opts.add_argument(
         "-w", "--skip-post-details",
         dest="skip_getting_posts_details",
         action="store_true",
         default=None,
         help="Do not fetch detailed post info"
     )
-    skips.add_argument(
+    session_opts.add_argument(
         "-t", "--more-post-details",
         dest="get_more_post_details",
         action="store_true",
         default=None,
         help="Fetch extra post details (list of comments and likes)"
+    )
+    session_opts.add_argument(
+        "--user-agent",
+        dest="user_agent",
+        metavar="USER_AGENT",
+        type=str,
+        help="Specify a custom web browser user agent for Instagram API requests; leave empty to auto-generate it"
+    )
+    session_opts.add_argument(
+        "--user-agent-mobile",
+        dest="user_agent_mobile",
+        metavar="USER_AGENT_MOBILE",
+        type=str,
+        help="Specify a custom mobile user agent for Instagram API requests; leave empty to auto-generate it"
     )
 
     # Features & output
@@ -2881,6 +3077,18 @@ def main():
         if not is_valid_timezone(LOCAL_TIMEZONE):
             print(f"* Error: Configured LOCAL_TIMEZONE '{LOCAL_TIMEZONE}' is not valid. Please use a valid pytz timezone name.")
             sys.exit(1)
+
+    if args.user_agent:
+        USER_AGENT = args.user_agent
+
+    if not USER_AGENT:
+        USER_AGENT = get_random_user_agent()
+
+    if args.user_agent_mobile:
+        USER_AGENT_MOBILE = args.user_agent_mobile
+
+    if not USER_AGENT_MOBILE:
+        USER_AGENT_MOBILE = get_random_mobile_user_agent()
 
     if not check_internet():
         sys.exit(1)
@@ -3022,6 +3230,8 @@ def main():
     print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
     print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
     print("* Hours for checking posts/reels:\t" + (f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59, {MIN_H2:02d}:00 - {MAX_H2:02d}:59" if CHECK_POSTS_IN_HOURS_RANGE else "00:00 - 23:59"))
+    print(f"* Browser user agent:\t\t\t{USER_AGENT}")
+    print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
     print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
