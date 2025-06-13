@@ -131,6 +131,25 @@ SKIP_GETTING_POSTS_DETAILS = False
 # Can also be enabled via the -t flag
 GET_MORE_POST_DETAILS = False
 
+# Make the tool behave more like a human by performing random feed / profile / hashtag / followee actions
+# Used only with session login (mode 2), always disabled without login (anonymous mode 1)
+BE_HUMAN = False
+
+# Approximate number of simulated human actions to perform per 24 hours
+DAILY_HUMAN_HITS = 5
+
+# List of hashtags to browse
+MY_HASHTAGS = ["travel", "food", "nature"]
+
+# Set to True to enable verbose output during human simulation actions
+BE_HUMAN_VERBOSE = False
+
+# Whether to enable human-like HTTP jitter and back-off wrapper
+ENABLE_JITTER = False
+
+# Set to True to enable verbose output for HTTP jitter/back-off wrappers
+JITTER_VERBOSE = False
+
 # Optional: specify web browser user agent manually
 #
 # For session login using Firefox cookies, ensure this matches your Firefox web browser's user agent
@@ -246,6 +265,12 @@ SKIP_GETTING_POSTS_DETAILS = False
 GET_MORE_POST_DETAILS = False
 USER_AGENT = ""
 USER_AGENT_MOBILE = ""
+BE_HUMAN = False
+DAILY_HUMAN_HITS = 0
+MY_HASHTAGS = []
+BE_HUMAN_VERBOSE = False
+ENABLE_JITTER = False
+JITTER_VERBOSE = False
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
@@ -287,7 +312,7 @@ imgcat_exe = ""
 
 CLI_CONFIG_PATH = None
 
-# to solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
+# To solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
 
 
@@ -342,11 +367,12 @@ except ModuleNotFoundError:
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape
 from itertools import islice
-from typing import Optional, Tuple, Any
+from typing import Optional, Tuple, Any, Callable
 from glob import glob
 import sqlite3
 from sqlite3 import OperationalError, connect
 from pathlib import Path
+from functools import wraps
 
 
 # Logger class to output messages to stdout and log file
@@ -882,11 +908,11 @@ def reload_secrets_signal_handler(sig, frame):
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
 
-    # disable autoscan if DOTENV_FILE set to none
+    # Disable autoscan if DOTENV_FILE set to none
     if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
         env_path = None
     else:
-        # reload .env if python-dotenv is installed
+        # Reload .env if python-dotenv is installed
         try:
             from dotenv import load_dotenv, find_dotenv
             if DOTENV_FILE:
@@ -967,7 +993,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
     else:
         new_line = ""
 
-    # profile pic does not exist in the filesystem
+    # Profile pic does not exist in the filesystem
     if not os.path.isfile(profile_pic_file):
         if save_pic_video(profile_image_url, profile_pic_file):
             profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
@@ -1004,7 +1030,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
         else:
             print_cur_ts("\nTimestamp:\t\t")
 
-    # profile pic exists in the filesystem, we check if it has not changed
+    # Profile pic exists in the filesystem, we check if it has not changed
     elif os.path.isfile(profile_pic_file):
         csv_text = ""
         m_subject = ""
@@ -1127,7 +1153,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
 def latest_post_reel(user: str, bot: instaloader.Instaloader) -> Optional[Tuple[instaloader.Post, str]]:
     profile = instaloader.Profile.from_username(bot.context, user)
 
-    # max 3 pinned posts + the latest one
+    # Max 3 pinned posts + the latest one
     posts = [(p, "post") for p in islice(profile.get_posts(), 4)]
 
     reels = [(r, "reel") for r in islice(profile.get_reels(), 4)]
@@ -1493,7 +1519,126 @@ def get_random_mobile_user_agent() -> str:
     return (f"Instagram {app_major}.{app_minor}.{app_patch}.{app_revision} ({device}{model}; iOS {os_major}_{os_minor}; {language}; {locale}; scale={scale:.2f}; {width}x{height}; {device_id}) AppleWebKit/420+")
 
 
-# Main function that monitors activity of the specified Instagram user
+# Monkey-patches Instagram request to add human-like jitter and back-off
+def instagram_wrap_request(orig_request):
+    @wraps(orig_request)
+    def wrapper(*args, **kwargs):
+        method = kwargs.get("method") or (args[1] if len(args) > 1 else None)
+        url = kwargs.get("url") or (args[2] if len(args) > 2 else None)
+        if JITTER_VERBOSE:
+            print(f"[WRAP-REQ] {method} {url}")
+        time.sleep(random.uniform(0.8, 3.0))
+
+        attempt = 0
+        backoff = 60
+        while True:
+            resp = orig_request(*args, **kwargs)
+            if resp.status_code in (429, 400) and "checkpoint" in resp.text:
+                attempt += 1
+                if attempt > 3:
+                    raise instaloader.exceptions.QueryReturnedNotFoundException(
+                        "Giving up after multiple 429/checkpoint"
+                    )
+                wait = backoff + random.uniform(0, 30)
+                if JITTER_VERBOSE:
+                    print(f"* Back-off {wait:.0f}s after {resp.status_code}")
+                time.sleep(wait)
+                backoff *= 2
+                continue
+            return resp
+    return wrapper
+
+
+# Monkey-patches Instagram prepared-request send to add human-like jitter
+def instagram_wrap_send(orig_send):
+    @wraps(orig_send)
+    def wrapper(*args, **kwargs):
+        req_obj = args[1] if len(args) > 1 else kwargs.get("request")
+        method = getattr(req_obj, "method", None)
+        url = getattr(req_obj, "url", None)
+        if JITTER_VERBOSE:
+            print(f"[WRAP-SEND] {method} {url}")
+        time.sleep(random.uniform(0.8, 3.0))
+        return orig_send(*args, **kwargs)
+    return wrapper
+
+
+# Returns probability of executing one human action for cycle
+def probability_for_cycle(sleep_seconds: int) -> float:
+    return min(1.0, DAILY_HUMAN_HITS * sleep_seconds / 86_400)  # 86400 s = 1 day
+
+
+# Performs random feed / profile / hashtag / followee actions to look more like a human being
+def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> None:
+    ctx = bot.context
+    prob = probability_for_cycle(sleep_seconds)
+
+    if BE_HUMAN_VERBOSE:
+        print("─" * HORIZONTAL_LINE)
+        print("* BeHuman: simulation start")
+
+    # Explore feed
+    if ctx.is_logged_in and random.random() < prob:
+        try:
+            posts = bot.get_explore_posts()
+            post = next(posts)
+            if BE_HUMAN_VERBOSE:
+                print("* BeHuman #1: explore feed peek OK")
+            time.sleep(random.uniform(2, 6))
+        except Exception as e:
+            if BE_HUMAN_VERBOSE:
+                print(f"* BeHuman #1 error: explore peek failed ({e})")
+
+    # View your own profile
+    if ctx.is_logged_in and random.random() < prob:
+        try:
+            _ = instaloader.Profile.own_profile(ctx)
+            if BE_HUMAN_VERBOSE:
+                print("* BeHuman #2: viewed own profile OK")
+            time.sleep(random.uniform(1, 4))
+        except Exception as e:
+            if BE_HUMAN_VERBOSE:
+                print(f"* BeHuman #2 error: cannot view own profile: {e}")
+
+    # Browse a random hashtag
+    if random.random() < prob / 2:
+        tag = random.choice(MY_HASHTAGS)
+        try:
+            posts = bot.get_hashtag_posts(tag)
+            post = next(posts)
+            if BE_HUMAN_VERBOSE:
+                print(f"* BeHuman #3: browsed one post from #{tag} OK")
+            time.sleep(random.uniform(2, 5))
+        except StopIteration:
+            if BE_HUMAN_VERBOSE:
+                print(f"* BeHuman #3 warning: no posts for #{tag}")
+        except Exception as e:
+            if BE_HUMAN_VERBOSE:
+                print(f"* BeHuman #3 error: cannot browse #{tag}: {e}")
+
+    # Visit a random followee profile
+    if ctx.is_logged_in and random.random() < prob / 2:
+        try:
+            me = instaloader.Profile.own_profile(ctx)
+            followees = list(me.get_followees())
+            if not followees and BE_HUMAN_VERBOSE:
+                print("* BeHuman #4 warning: you follow 0 accounts, skipping visit")
+            else:
+                someone = random.choice(followees)
+                _ = instaloader.Profile.from_username(ctx, someone.username)
+                if BE_HUMAN_VERBOSE:
+                    print(f"* BeHuman #4: visited followee {someone.username} OK")
+                time.sleep(random.uniform(2, 5))
+        except Exception as e:
+            if BE_HUMAN_VERBOSE:
+                print(f"* BeHuman #4 error: cannot visit followee: {e}")
+
+    if BE_HUMAN_VERBOSE:
+        print("* BeHuman: simulation stop")
+        print_cur_ts("\nTimestamp:\t\t")
+
+
+# Monitors activity of the specified Instagram user
 def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details):
 
     try:
@@ -1511,7 +1656,17 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     reels_count = 0
 
     try:
-        bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True) 
+        if ENABLE_JITTER:
+            req.Session.request = instagram_wrap_request(req.Session.request)
+            req.Session.send = instagram_wrap_send(req.Session.send)
+
+        bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True, quiet=True)
+
+        ctx = bot.context
+
+        orig_request = ctx._session.request
+
+        session = ctx._session
 
         if not skip_session and SESSION_USERNAME:
             if SESSION_PASSWORD:
@@ -1530,10 +1685,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     print("* Error: No Instagram session file found, please run 'instaloader -l SESSION_USERNAME' to create one")
                     sys.exit(1)
 
-        # mobile user agent patch for instaloader
+        patched = False
+
+        # Mobile user agent patch for instaloader
         try:
-            ctx = bot.context
-            patched = False
 
             for attr in ("iphone_headers", "_iphone_headers"):
                 if hasattr(ctx, attr):
@@ -1559,6 +1714,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         except Exception as e:
             print(f"* Warning: Could not apply custom mobile user-agent patch due to an unexpected error: {e}")
             print("* Proceeding with the default Instaloader mobile user-agent")
+
+        print("Sneaking into Instagram like a ninja ... (be patient, secrets take time)")
 
         profile = instaloader.Profile.from_username(bot.context, user)
         time.sleep(NEXT_OPERATION_DELAY)
@@ -1820,7 +1977,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     if followers_followings_fetched:
         print_cur_ts("\nTimestamp:\t\t")
 
-    # profile pic
+    # Profile pic
 
     if DETECT_CHANGED_PROFILE_PIC:
 
@@ -1829,7 +1986,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         except Exception as e:
             print(f"* Error while processing changed profile picture: {e}")
 
-    # stories
+    # Stories
 
     processed_stories_list = []
     if has_story:
@@ -1936,7 +2093,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 print(f"* Error: {e}")
                 sys.exit(1)
 
-    # post details
+    # Post details
 
     highestinsta_ts = 0
     highestinsta_dt = datetime.fromtimestamp(0)
@@ -1995,7 +2152,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             sys.exit(1)
 
         try:
-            # below won't work until Instaloader updates query hashes in new release
+            # Below won't work until Instaloader updates query hashes in new release
             if not skip_session and get_more_post_details and last_post:
                 likes_list = last_post.get_likes()
                 for like in likes_list:
@@ -2068,7 +2225,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     email_sent = False
 
-    # main loop
+    # Primary loop
     while True:
         last_output = []
         try:
@@ -2309,7 +2466,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
             print_cur_ts("Timestamp:\t\t")
 
-        # profile pic
+        # Profile pic
 
         if DETECT_CHANGED_PROFILE_PIC:
 
@@ -2590,7 +2747,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                         for label, new, old in metrics:
                             if new != old:
-                                # use csv_dt when it is an increase, now_local_naive() when it is a decrease
+                                # Use csv_dt when it is an increase, now_local_naive() when it is a decrease
                                 dt = csv_dt if new > old else now_local_naive()
                                 write_csv_entry(csv_file_name, dt, label, old, new)
 
@@ -2751,11 +2908,20 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             alive_counter = 0
 
         r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
+
+        # Be human please
+        try:
+            if BE_HUMAN:
+                simulate_human_actions(bot, r_sleep_time)
+        except Exception as e:
+            print(f"* Warning: It is not easy to be a human, our simulation failed: {e}")
+            print_cur_ts("\nTimestamp:\t\t")
+
         time.sleep(r_sleep_time)
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -2944,6 +3110,20 @@ def main():
         type=str,
         help="Specify a custom mobile user agent for Instagram API requests; leave empty to auto-generate it"
     )
+    session_opts.add_argument(
+        "--be-human",
+        dest="be_human",
+        action="store_true",
+        default=None,
+        help="Make the tool behave more like a human by performing random feed / profile / hashtag / followee actions"
+    )
+    session_opts.add_argument(
+        "--enable-jitter",
+        dest="enable_jitter",
+        action="store_true",
+        default=None,
+        help="Enable human-like HTTP jitter and back-off wrapper"
+    )
 
     # Features & output
     opts = parser.add_argument_group("Features & output")
@@ -3124,6 +3304,12 @@ def main():
     if args.get_more_post_details is True:
         GET_MORE_POST_DETAILS = True
 
+    if args.be_human is True:
+        BE_HUMAN = True
+
+    if args.enable_jitter is True:
+        ENABLE_JITTER = True
+
     if args.check_interval:
         INSTA_CHECK_INTERVAL = args.check_interval
         LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / INSTA_CHECK_INTERVAL
@@ -3148,6 +3334,7 @@ def main():
         SKIP_FOLLOWINGS = True
         GET_MORE_POST_DETAILS = False
         SKIP_GETTING_STORY_DETAILS = True
+        BE_HUMAN = False
         mode_of_the_tool = "1 (no session login)"
     else:
         mode_of_the_tool = "2 (session login)"
@@ -3222,6 +3409,7 @@ def main():
     print(f"* Instagram polling interval:\t\t[ {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)} ]")
     print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
     print(f"* Mode of the tool:\t\t\t{mode_of_the_tool}")
+    print(f"* Human mode:\t\t\t\t{BE_HUMAN}")
     print(f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}")
     print(f"* Skip session login:\t\t\t{SKIP_SESSION}")
     print(f"* Skip fetching followers:\t\t{SKIP_FOLLOWERS}")
@@ -3232,6 +3420,7 @@ def main():
     print("* Hours for checking posts/reels:\t" + (f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59, {MIN_H2:02d}:00 - {MAX_H2:02d}:59" if CHECK_POSTS_IN_HOURS_RANGE else "00:00 - 23:59"))
     print(f"* Browser user agent:\t\t\t{USER_AGENT}")
     print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
+    print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
     print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
