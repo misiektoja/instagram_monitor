@@ -18,7 +18,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of Instagram users' 
 - Saving all user activities and profile changes with timestamps to a CSV file
 - Support for both public and private profiles
 - Two modes of operation: with or without a logged-in Instagram account
-- Various mechanisms to prevent CAPTCHA and detection of automated tools
+- Various mechanisms to prevent captcha and detection of automated tools
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
@@ -49,7 +49,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of Instagram users' 
    * [Check Intervals](#check-intervals)
    * [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix)
    * [Coloring Log Output with GRC](#coloring-log-output-with-grc)
-6. [Limitations](#limitations)
+6. [How to Prevent Getting Challenged and Account Suspension](#how-to-prevent-getting-challenged-and-account-suspension)
 7. [Change Log](#change-log)
 8. [License](#license)
 
@@ -154,7 +154,7 @@ This mode requires no setup, is easy to use and is resistant to Instagram's anti
 
 In this mode, the tool uses an Instagram session login to access additional data. This includes detailed insights into new posts, reels and stories, also about added or removed followers/followings.
 
-Recommendation: use a dedicated Instagram account for monitoring. While the risk of a ban is low (in my experience accounts have remained active long-term), Instagram may occasionally show warnings for suspicious activity.
+**Important**: It is highly recommended to use a dedicated Instagram account when using this tool in session login mode. While the risk of account suspension is generally low (in practice, accounts often stay active long-term), Instagram may still flag it as an automated tool. This can lead to challenges presented by Instagram that must be dismissed manually. To minimize any chance of detection, make sure to follow the best practices outlined [here](#how-to-prevent-getting-challenged-and-account-suspension). 
 
 <a id="option-1-basic-session-login-not-recommended"></a>
 #### Option 1: Basic Session Login (not recommended)
@@ -179,7 +179,7 @@ This saves the session locally. However, frequent follower/following/stories cha
 <a id="option-3-session-login-using-firefox-cookies-recommended"></a>
 #### Option 3: Session Login Using Firefox Cookies (recommended)
 
-The most reliable method is to reuse an existing Instagram session from your Firefox web browser. 
+The most reliable method is to reuse an existing Instagram session from your Firefox web browser, along with manually specifying the user agent.
 
 Log in to your account (`your_insta_user`) in Firefox, then run:
 
@@ -197,7 +197,15 @@ instagram_monitor --import-firefox-session --cookie-file "/path/cookies.sqlite"
 
 You can adjust the default Firefox cookie directory permanently via `FIREFOX_*_COOKIE` configuration options.
 
-This method has the added benefit of blending tool activity with regular user behavior. Interacting with Instagram via Firefox every few days (scrolling, liking posts etc.) helps maintain session trust. Occasionally, Instagram might show warnings in the browser which can be dismissed manually.
+The session login method using Firefox cookies has the added benefit of blending tool activity with regular user behavior. Interacting with Instagram via Firefox every few days (scrolling, liking posts etc.) helps maintain session trust. However, avoid overlapping browser activity with tool activity, as simultaneous actions can trigger suspicious behavior flags.
+
+<a id="user-agent"></a>
+##### User Agent
+
+It is also recommended to use the exact user agent string from your Firefox web browser:
+- open Firefox and type `about:support` in the address bar
+- find the `User Agent` value under the `Application Basics` section and copy it
+- set this value via the `USER_AGENT` configuration option or by using the `--user-agent` flag
 
 <a id="time-zone"></a>
 ### Time Zone
@@ -475,10 +483,88 @@ Example:
 grc tail -F -n 100 instagram_monitor_<username>.log
 ```
 
-<a id="limitations"></a>
-## Limitations
+<a id="how-to-prevent-getting-challenged-and-account-suspension"></a>
+## How to Prevent Getting Challenged and Account Suspension
 
-The operation of the tool might flag the Instagram account and/or IP as being an automated tool (as described earlier).
+As mentioned earlier it is highly recommended to use a dedicated Instagram account when using this tool in session login mode. While the risk of account suspension is generally low (in practice, accounts often stay active long-term), Instagram may still flag it as an automated tool. This can lead to challenges presented by Instagram that must be dismissed manually.
+
+To minimize any chance of detection, make sure to follow the best practices outlined below. 
+
+<a id="sign-in-using-session-mode-with-firefox-cookies"></a>
+### Sign In Using Session Mode with Firefox Cookies
+
+Use your Firefox web browser to log in, ensuring the session looks natural and consistent to Instagram. Follow instructions described [here](#option-3-session-login-using-firefox-cookies-recommended)
+
+<a id="set-the-correct-user-agent"></a>
+### Set the Correct User-Agent
+
+Always pass the exact web browser user agent string from your Firefox web browser by using `USER_AGENT` configuration option or the `--user-agent` flag. This helps maintain device consistency during automated actions. Follow instructions described [here](#user-agent)
+
+<a id="use-the-human-mode"></a>
+### Use the Human Mode
+
+Since v1.7, the tool includes a new experimental **Be Human** mode that makes it behave more like a real user to reduce bot detection. 
+
+It is disabled by default, but you can enable it via `BE_HUMAN` configuration option or `--be-human` flag.
+
+It is used only with session login (mode 2).
+
+After each check cycle, the tool will randomly do one or more of these harmless actions:
+- View your explore feed: pulls a single post from Instagram's explore feed
+- Open your own profile, as if tapping your avatar
+- Browse a hashtag: fetches one post from a random tag listed in `MY_HASHTAGS` configuration option
+- Look at a profile of someone you follow
+
+By default it does around 5 of these actions spread over 24 hours, but you can adjust it via `DAILY_HUMAN_HITS` option. 
+
+If you are interested in your human actions set `BE_HUMAN_VERBOSE` option to `True`.
+
+<a id="use-the-jitter-mode"></a>
+### Use the Jitter Mode
+
+Since v.1.7, the tools allows to force every HTTP call made by Instaloader to go through a built-in jitter/back-off layer to look more human. 
+
+This adds random delay (0.8-3 s) before each request and automatically retries on Instagram's 429 "too many requests" or checkpoint challenges, with exponential back-off (60 s → 120 s → 240 s) and a little extra jitter. 
+
+This significantly reduces detection risk, but also makes the tool slower. 
+
+You can enable this feature via `ENABLE_JITTER` configuration option or `--enable-jitter` flag.
+
+If you want to see verbose output for HTTP jitter/back-off wrappers set `JITTER_VERBOSE` option to `True`.
+
+<a id="keep-the-polling-interval-reasonable"></a>
+### Keep the Polling Interval Reasonable
+
+Avoid setting the polling interval (`INSTA_CHECK_INTERVAL` option or `-c` flag) too aggressively. Use a minimum of 1 hour - longer is better. For example, I set it to 12 hours on test accounts, resulting in only 2 checks per day.
+
+Also consider to randomize the check interval, as explained [here](#check-intervals).
+
+<a id="do-not-monitor-too-many-users"></a>
+### Do Not Monitor Too Many Users
+
+It is recommended to limit the number of users monitored by a single account, especially if they post frequent updates. In some cases, it may be best to create a separate account for additional users and even run it from a different IP address to reduce the risk of detection.
+
+<a id="use-only-needed-functionality"></a>
+### Use Only Needed Functionality
+
+Frequent updates to certain data types, such as new stories or changes in followers/followings, are more likely to flag the account as an automated tool. If certain data isn't essential for your use case, consider disabling its retrieval. The tool provides fine-grained control, for example you can skip fetching the list of followings (`-g` flag), followers (`-f`), stories details (`-r`) or posts/reels details (`-w`). 
+
+<a id="use-two-factor-authentication-2fa"></a>
+### Use Two-Factor Authentication (2FA)
+
+Activate 2FA on the account used for monitoring. It adds credibility to your account and reduces the likelihood of security flags.
+
+<a id="avoid-using-vpns"></a>
+### Avoid Using VPNs
+
+Refrain from logging in via VPNs, especially with IPs in different regions. Sudden location changes can trigger Instagram's security systems.
+
+<a id="use-the-account-for-normal-activities"></a>
+### Use the Account for Normal Activities
+
+If you have created a new account for monitoring and you are using [Session Login Using Firefox](#option-3-session-login-using-firefox-cookies-recommended), make sure to behave like a regular user for several days. New accounts are more closely monitored by Instagram's bot detection systems. Watch content, post stories or reels and leave comments - this helps establish a natural activity pattern.
+
+Once you start using the tool, try to blend its actions with normal usage. However, avoid overlapping browser activity with tool activity, as simultaneous actions can trigger suspicious behavior flags.
 
 <a id="change-log"></a>
 ## Change Log
