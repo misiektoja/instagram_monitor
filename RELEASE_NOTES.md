@@ -2,6 +2,19 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 1.7 (13 Jun 2025)
+
+**Features and Improvements**:
+
+- **NEW:** Introduced new experimental **Be Human** mode that makes the tool behave more like a real user to reduce bot detection by performing random feed / profile / hashtag / followee actions. It is disabled by default, check the [Human Mode](https://github.com/misiektoja/instagram_monitor/blob/main/README.md#use-the-human-mode) for more info.
+- **NEW:** Added new **Jitter** mode which allows to force every HTTP call made by Instaloader to go through a built-in jitter/back-off layer to look more human. It is disabled by default, check the [Jitter Mode](https://github.com/misiektoja/instagram_monitor/blob/main/README.md#use-the-jitter-mode) for more info.
+- **NEW:** Added config options and flags to set desktop and mobile Instagram user agent strings. Check [User Agent](https://github.com/misiektoja/instagram_monitor/blob/main/README.md#user-agent) for more info.
+- **NEW:** Ensured all Instagram requests now include the appropriate user agent, if not specified - they are randomly generated per session
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed config file generation to work reliably on Windows systems
+
 # Changes in 1.6.2 (22 May 2025)
 
 **Bug fixes**:
