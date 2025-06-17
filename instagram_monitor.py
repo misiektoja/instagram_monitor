@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.7
+v1.7.1
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -16,7 +16,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "1.7"
+VERSION = "1.7.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -1829,8 +1829,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         print("\n* Getting followers ...")
         followers_followings_fetched = True
 
-        followers = [follower.username for follower in profile.get_followers()]
-        followers_count = profile.followers
+        try:
+            followers = [follower.username for follower in profile.get_followers()]
+            followers_count = profile.followers
+        except Exception as e:
+            print(f"* Error while getting followers: {type(e).__name__}: {e}")
+            sys.exit(1)
 
         if not followers and followers_count > 0:
             print("* Empty followers list returned, not saved to file")
@@ -1912,8 +1916,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         print("\n* Getting followings ...")
         followers_followings_fetched = True
 
-        followings = [followee.username for followee in profile.get_followees()]
-        followings_count = profile.followees
+        try:
+            followings = [followee.username for followee in profile.get_followees()]
+            followings_count = profile.followees
+        except Exception as e:
+            print(f"* Error while getting followings: {type(e).__name__}: {e}")
+            sys.exit(1)
 
         if not followings and followings_count > 0:
             print("* Empty followings list returned, not saved to file")
@@ -2090,7 +2098,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 stories_old_count = stories_count
 
             except Exception as e:
-                print(f"* Error: {e}")
+                print(f"* Error while processing story items: {type(e).__name__}: {e}")
                 sys.exit(1)
 
     # Post details
@@ -2148,7 +2156,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 print(f"* Error: Failed to get last post/reel details")
 
         except Exception as e:
-            print(f"* Error: {e}")
+            print(f"* Error while processing stories/reels: {type(e).__name__}: {e}")
             sys.exit(1)
 
         try:
@@ -2163,7 +2171,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     if comment_created_at:
                         post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
         except Exception as e:
-            print(f"* Error: Failed to get post's likes list / comments list: {e}")
+            print(f"* Error while getting post's likes list / comments list: {type(e).__name__}: {e}")
 
         post_url = f"https://www.instagram.com/{'reel' if last_source == 'reel' else 'p'}/{shortcode}/"
         print(f"* Newest {last_source.lower()} for user {user}:\n")
@@ -2254,7 +2262,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             email_sent = False
         except Exception as e:
             r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
-            print(f"* Error, retrying in {display_time(r_sleep_time)}: {e}")
+            print(f"* Error, retrying in {display_time(r_sleep_time)}: {type(e).__name__}: {e}")
             if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                 print("* Session might not be valid anymore!")
                 if ERROR_NOTIFICATION and not email_sent:
@@ -2318,7 +2326,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             json.dump(followings_to_save, f, indent=2)
                 except Exception as e:
                     followings = followings_old
-                    print(f"* Error while processing followings list: {e}")
+                    print(f"* Error while processing followings: {type(e).__name__}: {e}")
 
                 if not followings and followings_count > 0:
                     followings = followings_old
@@ -2411,7 +2419,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             json.dump(followers_to_save, f, indent=2)
                 except Exception as e:
                     followers = followers_old
-                    print(f"* Error while processing followers list: {e}")
+                    print(f"* Error while processing followers: {type(e).__name__}: {e}")
 
                 if not followers and followers_count > 0:
                     followers = followers_old
@@ -2698,7 +2706,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 stories_old_count = stories_count
 
             except Exception as e:
-                print(f"* Error while processing story items: {e}")
+                print(f"* Error while processing story items: {type(e).__name__}: {e}")
                 print_cur_ts("\nTimestamp:\t\t")
 
         new_post = False
@@ -2772,7 +2780,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 except Exception as e:
                     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
-                    print(f"* Error, retrying in {display_time(r_sleep_time)}: {e}")
+                    print(f"* Error, retrying in {display_time(r_sleep_time)}: {type(e).__name__}: {e}")
                     if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                         print("* Session might not be valid anymore!")
                         if ERROR_NOTIFICATION and not email_sent:
@@ -2799,7 +2807,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             if comment_created_at:
                                 post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
                 except Exception as e:
-                    print(f"* Error while getting post's likes list / comments list: {e}")
+                    print(f"* Error while getting post's likes list / comments list: {type(e).__name__}: {e}")
 
                 if new_post:
 
