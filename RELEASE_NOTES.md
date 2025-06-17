@@ -2,6 +2,12 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 1.7.1 (17 Jun 2025)
+
+**Features and Improvements**:
+
+- **IMPROVE:** Added missing exception handling in several areas and included display of exception types for better debugging
+
 # Changes in 1.7 (13 Jun 2025)
 
 **Features and Improvements**:
