@@ -2125,7 +2125,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     thumbnail_url = ""
     video_url = ""
 
-    if int(posts_count + reels_count) >= 1 and can_view and not skip_getting_posts_details:
+    if bot.context.is_logged_in and int(posts_count + reels_count) >= 1 and can_view and not skip_getting_posts_details:
         print("Fetching user's latest post/reel ...\n")
         try:
 
@@ -2724,7 +2724,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         hours_to_check = list(range(MIN_H1, MAX_H1 + 1)) + list(range(MIN_H2, MAX_H2 + 1))
 
         if (CHECK_POSTS_IN_HOURS_RANGE and (int(cur_h) in hours_to_check)) or not CHECK_POSTS_IN_HOURS_RANGE:
-            if (posts_count != posts_count_old or reels_count != reels_count_old) and can_view and not skip_getting_posts_details:
+            if (posts_count != posts_count_old or reels_count != reels_count_old) and can_view and not skip_getting_posts_details and bot.context.is_logged_in:
                 likes = 0
                 comments = 0
                 caption = ""
@@ -2910,7 +2910,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     if check_reels_counts(user, reels_count, reels_count_old, r_sleep_time):
                         reels_count_old = reels_count
 
-            elif (posts_count != posts_count_old or reels_count != reels_count_old) and (not can_view or skip_getting_posts_details):
+            elif (posts_count != posts_count_old or reels_count != reels_count_old) and (not can_view or skip_getting_posts_details or not bot.context.is_logged_in):
 
                 if check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
                     posts_count_old = posts_count
