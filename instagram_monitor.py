@@ -373,6 +373,7 @@ import sqlite3
 from sqlite3 import OperationalError, connect
 from pathlib import Path
 from functools import wraps
+import traceback
 
 
 # Logger class to output messages to stdout and log file
@@ -1732,7 +1733,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             reels_count = get_total_reels_count(user, bot, skip_session)
 
         if not is_private:
-            has_story = profile.has_public_story
+            if bot.context.is_logged_in:
+                has_story = profile.has_public_story
+            else:
+                has_story = False
         elif bot.context.is_logged_in and followed_by_viewer:
             story = next(bot.get_stories(userids=[insta_userid]), None)
             has_story = bool(story and story.itemcount)
@@ -1749,6 +1753,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     except Exception as e:
         print(f"* Error: {type(e).__name__}: {e}")
+        # traceback.print_exc()
         sys.exit(1)
 
     story_flag = False
@@ -1777,7 +1782,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     print(f"\nFollowers:\t\t{followers_count}")
     print(f"Followings:\t\t{followings_count}")
 
-    print(f"\nStory available:\t{has_story}")
+    if bot.context.is_logged_in:
+        print(f"\nStory available:\t{has_story}")
 
     print(f"\nBio:\n\n{bio}\n")
     print_cur_ts("Timestamp:\t\t")
@@ -2156,7 +2162,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 print(f"* Error: Failed to get last post/reel details")
 
         except Exception as e:
-            print(f"* Error while processing stories/reels: {type(e).__name__}: {e}")
+            print(f"* Error while processing posts/reels: {type(e).__name__}: {e}")
             sys.exit(1)
 
         try:
@@ -2251,7 +2257,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 reels_count = get_total_reels_count(user, bot, skip_session)
 
             if not is_private:
-                has_story = profile.has_public_story
+                if bot.context.is_logged_in:
+                    has_story = profile.has_public_story
+                else:
+                    has_story = False
             elif bot.context.is_logged_in and followed_by_viewer:
                 story = next(bot.get_stories(userids=[insta_userid]), None)
                 has_story = bool(story and story.itemcount)
