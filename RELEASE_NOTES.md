@@ -2,11 +2,16 @@
 
 This is a high-level summary of the most important changes. 
 
-# Changes in 1.7.1 (17 Jun 2025)
+# Changes in 1.8 (18 Jun 2025)
 
 **Features and Improvements**:
 
+- **NEW:** Added mobile-web JSON fallback to restore post details fetching in mode 1 (no session); reel details still require mode 2 (session login)
 - **IMPROVE:** Added missing exception handling in several areas and included display of exception types for better debugging
+
+**Bug fixes**:
+
+- **BUGFIX:** Guarded has_public_story behind login check due to recent Instagram API anonymous session changes
 
 # Changes in 1.7 (13 Jun 2025)
 
