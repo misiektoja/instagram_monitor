@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.7.1
+v1.8
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -16,7 +16,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "1.7.1"
+VERSION = "1.8"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -367,7 +367,7 @@ except ModuleNotFoundError:
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape
 from itertools import islice
-from typing import Optional, Tuple, Any, Callable
+from typing import Optional, Tuple, Any, Callable, List
 from glob import glob
 import sqlite3
 from sqlite3 import OperationalError, connect
@@ -1150,7 +1150,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
             print_cur_ts("\nTimestamp:\t\t")
 
 
-# Return the most recent post and/or reel for the user
+# Return the most recent post and/or reel for the user (GraphQL helper when logged in)
 def latest_post_reel(user: str, bot: instaloader.Instaloader) -> Optional[Tuple[instaloader.Post, str]]:
     profile = instaloader.Profile.from_username(bot.context, user)
 
@@ -1167,6 +1167,43 @@ def latest_post_reel(user: str, bot: instaloader.Instaloader) -> Optional[Tuple[
     latest, source = max(candidates, key=lambda pair: pair[0].date_utc)
 
     return latest, source
+
+
+# Return the most recent post for the user (fallback to mobile helper when anonymous, reels cannot be fetched)
+def latest_post_mobile(user: str, bot: instaloader.Instaloader):
+    class P:
+        date_utc: datetime
+        likes: int
+        comments: int
+        caption: str
+        pcaption: str
+        tagged_users: List[Any]
+        shortcode: str
+        url: str
+        video_url: Optional[str]
+        mediaid: str
+
+    data = bot.context.get_iphone_json(f"api/v1/users/web_profile_info/?username={user}", {})
+    edges = data["data"]["user"].get("edge_owner_to_timeline_media", {}).get("edges", [])
+
+    if not edges:
+        return None
+
+    node = edges[0]["node"]
+
+    p = P()
+    p.mediaid = node.get("id", "")
+    p.date_utc = datetime.fromtimestamp(node["taken_at_timestamp"], timezone.utc)
+    p.likes = node["edge_liked_by"]["count"]
+    p.comments = node["edge_media_to_comment"]["count"]
+    p.caption = node.get("edge_media_to_caption", {}).get("edges", [{}])[0].get("node", {}).get("text", "")
+    p.pcaption = ""
+    p.tagged_users = []
+    p.shortcode = node["shortcode"]
+    p.url = node.get("display_url", "")
+    p.video_url = node.get("video_url")
+
+    return p, "post"
 
 
 # Returns reels count by using Instaloader's iPhone API (requires session login)
@@ -1250,6 +1287,9 @@ def check_reels_counts(user, reels_count, reels_count_old, r_sleep_time):
 
 # Returns the tagged location name of the post, we use mobile API JSON call since last_post.location does not work anymore
 def get_post_location_mobile(last_post: instaloader.Post, bot: instaloader.Instaloader) -> Optional[str]:
+
+    if not bot.context.is_logged_in:
+        return None
 
     media_id = getattr(last_post, "mediaid", None)
     if media_id is None:
@@ -2125,12 +2165,18 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     thumbnail_url = ""
     video_url = ""
 
-    if bot.context.is_logged_in and int(posts_count + reels_count) >= 1 and can_view and not skip_getting_posts_details:
-        print("Fetching user's latest post/reel ...\n")
+    if int(posts_count + reels_count) >= 1 and can_view and not skip_getting_posts_details:
+        if bot.context.is_logged_in:
+            print("Fetching user's latest post/reel ...\n")
+        else:
+            print("Fetching user's latest post ...\n")
         try:
 
             time.sleep(NEXT_OPERATION_DELAY)
-            last_post_reel = latest_post_reel(user, bot)
+            if bot.context.is_logged_in:  # GraphQL helper when logged in
+                last_post_reel = latest_post_reel(user, bot)
+            else:  # fallback to mobile helper when anonymous
+                last_post_reel = latest_post_mobile(user, bot)
 
             if last_post_reel:
                 last_post, last_source = last_post_reel
@@ -2724,7 +2770,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         hours_to_check = list(range(MIN_H1, MAX_H1 + 1)) + list(range(MIN_H2, MAX_H2 + 1))
 
         if (CHECK_POSTS_IN_HOURS_RANGE and (int(cur_h) in hours_to_check)) or not CHECK_POSTS_IN_HOURS_RANGE:
-            if (posts_count != posts_count_old or reels_count != reels_count_old) and can_view and not skip_getting_posts_details and bot.context.is_logged_in:
+            if (posts_count != posts_count_old or reels_count != reels_count_old) and can_view and not skip_getting_posts_details:
                 likes = 0
                 comments = 0
                 caption = ""
@@ -2740,7 +2786,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 video_url = ""
 
                 try:
-                    last_post_reel = latest_post_reel(user, bot)
+                    if bot.context.is_logged_in:  # GraphQL helper when logged in
+                        last_post_reel = latest_post_reel(user, bot)
+                    else:  # fallback to mobile helper when anonymous
+                        last_post_reel = latest_post_mobile(user, bot)
 
                     if last_post_reel:
                         last_post, last_source = last_post_reel
@@ -2910,7 +2959,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     if check_reels_counts(user, reels_count, reels_count_old, r_sleep_time):
                         reels_count_old = reels_count
 
-            elif (posts_count != posts_count_old or reels_count != reels_count_old) and (not can_view or skip_getting_posts_details or not bot.context.is_logged_in):
+            elif (posts_count != posts_count_old or reels_count != reels_count_old) and (not can_view or skip_getting_posts_details):
 
                 if check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
                     posts_count_old = posts_count
