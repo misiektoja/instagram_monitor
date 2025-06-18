@@ -145,7 +145,7 @@ Edit the `instagram_monitor.conf` file and change any desired configuration opti
 
 In this mode, the tool operates without logging in to an Instagram account. 
 
-You can still monitor basic user activity such as post, reel and story counts (without details due to Instagram API limits), bio changes and changes in follower/following counts. However, you won't see which specific followers/followings were added or removed and you won't get any details about posts, reels and stories.
+You can still monitor basic user activity such as new or deleted posts (excluding reels and stories due to Instagram API limitations), bio changes and changes in follower/following counts. However, you won't see which specific followers/followings were added or removed.
 
 This mode requires no setup, is easy to use and is resistant to Instagram's anti-bot mechanisms and CAPTCHA challenges.
 
@@ -238,7 +238,7 @@ instagram_monitor --send-test-email
 
 It is recommended to store secrets like `SESSION_PASSWORD` or `SMTP_PASSWORD` as either an environment variable or in a dotenv file.
 
-Set environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
+Set the needed environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
 
 ```sh
 export SESSION_PASSWORD="your_instagram_session_password"
