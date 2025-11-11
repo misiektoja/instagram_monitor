@@ -5,22 +5,22 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
 <a id="features"></a>
 ## Features
 
-- Real-time tracking of Instagram users' activities and profile changes:
-  - new posts, reels and stories
-  - changes in followings, followers and bio
-  - changes in profile pictures
-  - changes in profile visibility (public to private and vice versa)
-- Anonymous download of users' story images and videos; the user won't know you watched their stories 😉
-- Download of users' post images and post / reel videos
-- Email notifications for different events (new posts, reels, stories, changes in followings, followers, bio, profile pictures, visibility and errors)
-- Attachment of changed profile pictures and stories/posts/reels images directly in email notifications
-- Displaying of profile pictures and stories/posts/reels images right in your terminal (if you have `imgcat` installed)
-- Saving all user activities and profile changes with timestamps to a CSV file
-- Support for both public and private profiles
-- Two modes of operation: with or without a logged-in Instagram account
-- Various mechanisms to prevent captcha and detection of automated tools
-- Possibility to control the running copy of the script via signals
-- Functional, procedural Python (minimal OOP)
+- **Real-time tracking** of Instagram users' activities and profile changes:
+  - **new posts, reels** and **stories**
+  - changes in **followings, followers** and **bio**
+  - changes in **profile pictures**
+  - changes in **profile visibility** (public to private and vice versa)
+- **Anonymous download** of users' **story images and videos**; the user won't know you watched their stories 😉
+- **Download** of users' **post images and post / reel videos**
+- **Email notifications** for different events (new posts, reels, stories, changes in followings, followers, bio, profile pictures, visibility and errors)
+- **Attaching changed profile pictures** and **stories/posts/reels images** directly in email notifications
+- **Displaying the profile picture** and **stories/posts/reels images** right in your terminal (if you have `imgcat` installed)
+- **Saving all user activities and profile changes** with timestamps to a **CSV file**
+- Support for both **public and private profiles**
+- **Two modes of operation**: with or without a logged-in Instagram account
+- Various mechanisms to **prevent captcha and detection of automated tools**
+- Possibility to **control the running copy** of the script via signals
+- **Functional, procedural Python** (minimal OOP)
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor.png" alt="instagram_monitor_screenshot" width="90%"/>
