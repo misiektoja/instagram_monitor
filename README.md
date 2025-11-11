@@ -1,6 +1,6 @@
 # instagram_monitor
 
-instagram_monitor is an OSINT tool for real-time monitoring of Instagram users' activities and profile changes.
+instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users' activities and profile changes**.
 
 <a id="features"></a>
 ## Features
@@ -9,7 +9,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of Instagram users' 
   - new posts, reels and stories
   - changes in followings, followers and bio
   - changes in profile pictures
-  - changes in profile visibility (from private to public and vice versa)
+  - changes in profile visibility (public to private and vice versa)
 - Anonymous download of users' story images and videos; the user won't know you watched their stories 😉
 - Download of users' post images and post / reel videos
 - Email notifications for different events (new posts, reels, stories, changes in followings, followers, bio, profile pictures, visibility and errors)
@@ -20,6 +20,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of Instagram users' 
 - Two modes of operation: with or without a logged-in Instagram account
 - Various mechanisms to prevent captcha and detection of automated tools
 - Possibility to control the running copy of the script via signals
+- Functional, procedural Python (minimal OOP)
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor.png" alt="instagram_monitor_screenshot" width="90%"/>
@@ -61,8 +62,8 @@ instagram_monitor is an OSINT tool for real-time monitoring of Instagram users' 
 
 Tested on:
 
-* **macOS**: Ventura, Sonoma, Sequoia
-* **Linux**: Raspberry Pi OS (Bullseye, Bookworm), Ubuntu 24, Rocky Linux 8.x/9.x, Kali Linux 2024/2025
+* **macOS**: Ventura, Sonoma, Sequoia, Tahoe
+* **Linux**: Raspberry Pi OS (Bullseye, Bookworm, Trixie), Ubuntu 24/25, Rocky Linux 8.x/9.x, Kali Linux 2024/2025
 * **Windows**: 10, 11
 
 It should work on other versions of macOS, Linux, Unix and Windows as well.
@@ -522,7 +523,7 @@ If you are interested in your human actions set `BE_HUMAN_VERBOSE` option to `Tr
 <a id="use-the-jitter-mode"></a>
 ### Use the Jitter Mode
 
-Since v.1.7, the tools allows to force every HTTP call made by Instaloader to go through a built-in jitter/back-off layer to look more human. 
+Since v1.7, the tool allows to force every HTTP call made by Instaloader to go through a built-in jitter/back-off layer to look more human. 
 
 This adds random delay (0.8-3 s) before each request and automatically retries on Instagram's 429 "too many requests" or checkpoint challenges, with exponential back-off (60 s → 120 s → 240 s) and a little extra jitter. 
 
