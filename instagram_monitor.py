@@ -968,7 +968,7 @@ def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0):
 
 # Compares two image files
 def compare_images(file1, file2):
-    if not os.path.isfile(file1) or not os.path.isfile(file1):
+    if not os.path.isfile(file1) or not os.path.isfile(file2):
         return False
     try:
         with open(file1, 'rb') as f1, open(file2, 'rb') as f2:
