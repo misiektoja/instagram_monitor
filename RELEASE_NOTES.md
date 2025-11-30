@@ -1,6 +1,16 @@
 # instagram_monitor release notes
 
-This is a high-level summary of the most important changes. 
+This is a high-level summary of the most important changes.
+
+# Changes in 1.8.1 (30 Nov 2025)
+
+**Features and Improvements**:
+
+- **IMPROVE:** Improved error handling for check intervals
+
+**Bug fixes**:
+
+- **BUGFIX:** Corrected bug in compare_images() function
 
 # Changes in 1.8 (18 Jun 2025)
 
