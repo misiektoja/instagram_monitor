@@ -10,7 +10,7 @@ This is a high-level summary of the most important changes.
 
 **Bug fixes**:
 
-- **BUGFIX:** Corrected bug in compare_images() function
+- **BUGFIX:** Corrected bug in compare_images() function (thanks [@jl-nr](https://github.com/jl-nr))
 
 # Changes in 1.8 (18 Jun 2025)
 
