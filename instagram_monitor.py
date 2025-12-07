@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.8
+v1.8.1
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -16,7 +16,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "1.8"
+VERSION = "1.8.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -302,7 +302,7 @@ SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD")
 # Default value for network-related timeouts in functions
 FUNCTION_TIMEOUT = 15
 
-LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / INSTA_CHECK_INTERVAL
+LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / INSTA_CHECK_INTERVAL if INSTA_CHECK_INTERVAL > 0 else 0
 
 stdout_bck = None
 last_output = []
@@ -698,7 +698,7 @@ def convert_utc_str_to_tz_datetime(dt_str):
 
 # Returns the current date/time in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
-    return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]}, {now_local_naive().strftime("%d %b %Y, %H:%M:%S")}')
+    return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]} {now_local_naive().strftime("%d %b %Y, %H:%M:%S")}')
 
 
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
@@ -968,7 +968,7 @@ def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0):
 
 # Compares two image files
 def compare_images(file1, file2):
-    if not os.path.isfile(file1) or not os.path.isfile(file1):
+    if not os.path.isfile(file1) or not os.path.isfile(file2):
         return False
     try:
         with open(file1, 'rb') as f1, open(file2, 'rb') as f2:
@@ -3377,8 +3377,11 @@ def main():
         ENABLE_JITTER = True
 
     if args.check_interval:
+        if args.check_interval <= 0:
+            print("* Error: Check interval must be greater than 0")
+            sys.exit(1)
         INSTA_CHECK_INTERVAL = args.check_interval
-        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / INSTA_CHECK_INTERVAL
+        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / INSTA_CHECK_INTERVAL if INSTA_CHECK_INTERVAL > 0 else 0
 
     if args.check_interval_random_diff_low:
         RANDOM_SLEEP_DIFF_LOW = args.check_interval_random_diff_low
@@ -3394,6 +3397,11 @@ def main():
 
     if not SESSION_USERNAME:
         SKIP_SESSION = True
+
+    # Validate INSTA_CHECK_INTERVAL to prevent division by zero
+    if INSTA_CHECK_INTERVAL <= 0:
+        print("* Error: INSTA_CHECK_INTERVAL must be greater than 0. Please set it in config file or via -c flag")
+        sys.exit(1)
 
     if SKIP_SESSION is True:
         SKIP_FOLLOWERS = True
