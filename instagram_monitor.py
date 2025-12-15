@@ -2295,6 +2295,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     # Primary loop
     while True:
         last_output = []
+
+        cur_h = datetime.now().strftime("%H")
+
         if (CHECK_POSTS_IN_HOURS_RANGE and (int(cur_h) in hours_to_check())) or not CHECK_POSTS_IN_HOURS_RANGE:
             if HOURS_VERBOSE:
                 print(f"*** Fetching Updates. Current Hour: {int(cur_h)}. Allowed hours: {hours_to_check()}")
