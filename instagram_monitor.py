@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.8.1
+v1.9
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -16,7 +16,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "1.8.1"
+VERSION = "1.9"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -311,7 +311,8 @@ SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD")
 # Default value for network-related timeouts in functions
 FUNCTION_TIMEOUT = 15
 
-LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / INSTA_CHECK_INTERVAL if INSTA_CHECK_INTERVAL > 0 else 0
+# Computed later once final INSTA_CHECK_INTERVAL is known (config/env/CLI) and updated on SIGTRAP/SIGABRT
+LIVENESS_CHECK_COUNTER = 0
 
 stdout_bck = None
 last_output = []
@@ -651,7 +652,7 @@ def randomize_number(number, diff_low, diff_high):
 
 
 # Converts a datetime to local timezone and removes timezone info (naive)
-def convert_to_local_naive(dt: datetime | None = None):
+def convert_to_local_naive(dt: Optional[datetime] = None):
     tz = pytz.timezone(LOCAL_TIMEZONE)
 
     if dt is not None:
@@ -714,6 +715,15 @@ def get_cur_ts(ts_str=""):
 def print_cur_ts(ts_str=""):
     print(get_cur_ts(str(ts_str)))
     print("─" * HORIZONTAL_LINE)
+
+
+# Recomputes cycle-based liveness counter after INSTA_CHECK_INTERVAL changes
+def recompute_liveness_check_counter() -> None:
+    global LIVENESS_CHECK_COUNTER
+    if LIVENESS_CHECK_INTERVAL and INSTA_CHECK_INTERVAL > 0:
+        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / INSTA_CHECK_INTERVAL
+    else:
+        LIVENESS_CHECK_COUNTER = 0
 
 
 # Returns the timestamp/datetime object in human readable format (long version); eg. Sun 21 Apr 2024, 15:08:45
@@ -888,6 +898,7 @@ def toggle_followers_notifications_signal_handler(sig, frame):
 def increase_check_signal_handler(sig, frame):
     global INSTA_CHECK_INTERVAL
     INSTA_CHECK_INTERVAL = INSTA_CHECK_INTERVAL + INSTA_CHECK_SIGNAL_VALUE
+    recompute_liveness_check_counter()
     if INSTA_CHECK_INTERVAL <= RANDOM_SLEEP_DIFF_LOW:
         check_interval_low = INSTA_CHECK_INTERVAL
     else:
@@ -903,6 +914,7 @@ def decrease_check_signal_handler(sig, frame):
     global INSTA_CHECK_INTERVAL
     if (INSTA_CHECK_INTERVAL - RANDOM_SLEEP_DIFF_LOW - INSTA_CHECK_SIGNAL_VALUE) > 0:
         INSTA_CHECK_INTERVAL = INSTA_CHECK_INTERVAL - INSTA_CHECK_SIGNAL_VALUE
+    recompute_liveness_check_counter()
     if INSTA_CHECK_INTERVAL <= RANDOM_SLEEP_DIFF_LOW:
         check_interval_low = INSTA_CHECK_INTERVAL
     else:
@@ -1345,7 +1357,7 @@ def get_firefox_cookiefile():
     cookiefiles = glob(expanduser(default_cookiefile))
 
     if not cookiefiles:
-        raise SystemExit("No Firefox cookies.sqlite file found, use -c COOKIEFILE flag")
+        raise SystemExit("No Firefox cookies.sqlite file found, use --cookie-file COOKIEFILE flag")
 
     if len(cookiefiles) == 1:
         return cookiefiles[0]
@@ -1371,18 +1383,17 @@ def import_session(cookiefile, sessionfile):
     print(f"Using cookies from '{cookiefile}' file\n")
 
     try:
-        conn = connect(f"file:{cookiefile}?immutable=1", uri=True)
+        with connect(f"file:{cookiefile}?immutable=1", uri=True) as conn:
+            try:
+                cookie_iter = conn.execute(
+                    "SELECT name, value FROM moz_cookies WHERE baseDomain='instagram.com'"
+                )
+            except OperationalError:
+                cookie_iter = conn.execute(
+                    "SELECT name, value FROM moz_cookies WHERE host LIKE '%instagram.com'"
+                )
 
-        try:
-            cookie_iter = conn.execute(
-                "SELECT name, value FROM moz_cookies WHERE baseDomain='instagram.com'"
-            )
-        except OperationalError:
-            cookie_iter = conn.execute(
-                "SELECT name, value FROM moz_cookies WHERE host LIKE '%instagram.com'"
-            )
-
-        cookie_dict = dict(cookie_iter)
+            cookie_dict = dict(cookie_iter)
 
     except sqlite3.DatabaseError:
         raise SystemExit(
@@ -3326,6 +3337,7 @@ def main():
 
     if args.import_firefox_session:
 
+        session_path = None
         if args.session_file:
             session_path = os.path.expanduser(args.session_file)
             session_dir = os.path.dirname(session_path) or "."
@@ -3337,7 +3349,7 @@ def main():
         if not os.path.isfile(cookie_path):
             raise SystemExit(f"Error: Cookie file '{cookie_path}' not found !")
 
-        import_session(cookie_path, args.session_file)
+        import_session(cookie_path, session_path)
         sys.exit(0)
 
     local_tz = None
@@ -3414,7 +3426,6 @@ def main():
             print("* Error: Check interval must be greater than 0")
             sys.exit(1)
         INSTA_CHECK_INTERVAL = args.check_interval
-        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / INSTA_CHECK_INTERVAL if INSTA_CHECK_INTERVAL > 0 else 0
 
     if args.check_interval_random_diff_low:
         RANDOM_SLEEP_DIFF_LOW = args.check_interval_random_diff_low
@@ -3435,6 +3446,9 @@ def main():
     if INSTA_CHECK_INTERVAL <= 0:
         print("* Error: INSTA_CHECK_INTERVAL must be greater than 0. Please set it in config file or via -c flag")
         sys.exit(1)
+
+    # Finalize liveness cadence after config/env/CLI have been applied
+    recompute_liveness_check_counter()
 
     if SKIP_SESSION is True:
         SKIP_FOLLOWERS = True
