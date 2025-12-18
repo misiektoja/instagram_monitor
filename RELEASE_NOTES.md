@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 1.9 (18 Dec 2025)
+# Changes in 1.9.1 (18 Dec 2025)
 
 **Features and Improvements**:
 
@@ -10,8 +10,10 @@ This is a high-level summary of the most important changes.
 - **NEW:** Added `HOURS_VERBOSE` for debugging hour-based update gating (prints whether updates are **fetched** or **skipped**) (thanks [@tomballgithub](https://github.com/tomballgithub))
 - **IMPROVE:** Refactored **hour-range calculations**: de-duplicate overlapping ranges, ignore invalid hours and prevent crashes on misconfiguration
 - **IMPROVE:** Improved **Be Human** action probability when **hour-range mode** is enabled (scales to the configured **active-hour window**) (thanks [@tomballgithub](https://github.com/tomballgithub))
+- **IMPROVE:** Added **messaging for sleep time** if HOURS_VERBOSE to give insight into when next check will be (thanks [@tomballgithub](https://github.com/tomballgithub))
 - **IMPROVE:** **Liveness check** logic is now recomputed after config/env/CLI overrides are applied and after check-interval changes via **signals**
 - **IMPROVE:** Improved **Firefox session import** handling (safer **SQLite connection** usage; clarified error message; consistent session path handling)
+- **IMPROVE:** Enhanced **sleep message output** and refined **hour range checks for updates**
 
 **Bug fixes**:
 
