@@ -1624,6 +1624,9 @@ def instagram_wrap_send(orig_send):
     return wrapper
 
 
+def sleep_message(sleeptime):
+    print(f"*** Sleeping for: {sleeptime/3600:.1f} hours @ {now_local_naive().strftime('%H:%M:%S')}")
+
 # Returns unique, validated hours (0-23) from the configured ranges
 def hours_to_check():
     # Notes:
@@ -2318,6 +2321,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         highestinsta_dt_old = now_local()
 
     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
+    if HOURS_VERBOSE:
+        sleep_message(r_sleep_time)
     time.sleep(r_sleep_time)
 
     alive_counter = 0
@@ -3026,6 +3031,17 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             alive_counter = 0
 
         r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
+
+        # Be human please
+        try:
+            if BE_HUMAN:
+                simulate_human_actions(bot, r_sleep_time)
+        except Exception as e:
+            print(f"* Warning: It is not easy to be a human, our simulation failed: {e}")
+            print_cur_ts("\nTimestamp:\t\t")
+
+        if HOURS_VERBOSE:
+            sleep_message(r_sleep_time)
 
         time.sleep(r_sleep_time)
 
