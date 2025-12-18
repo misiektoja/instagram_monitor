@@ -182,8 +182,13 @@ CHECK_INTERNET_URL = 'https://www.instagram.com/'
 # Timeout used when checking initial internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
 
-# Limit checking for new posts/reels to specific hours of the day?
-# If True, the tool will only check within the defined hour ranges below
+# Limit fetching updates to specific hours of the day?
+# If True, the tool will only fetch updates within the defined hour ranges below
+#
+# Notes:
+# - The configured ranges are treated as hour buckets (HH:00..HH:59)
+# - Overlapping ranges are allowed
+# - Invalid hours (outside 0-23) are ignored
 CHECK_POSTS_IN_HOURS_RANGE = False
 
 # Set to True to enable verbose output for performing updates during certain hours
@@ -1608,13 +1613,29 @@ def instagram_wrap_send(orig_send):
     return wrapper
 
 
+# Returns unique, validated hours (0-23) from the configured ranges
 def hours_to_check():
-    return list(range(MIN_H1, MAX_H1 + 1)) + list(range(MIN_H2, MAX_H2 + 1))
+    # Notes:
+    # - Ranges can overlap; we de-duplicate
+    # - Misconfigured ranges (e.g., MAX < MIN) will produce an empty list
+    # - Invalid hours (outside 0-23) are ignored
+    hours = set()
+    hours.update(h for h in range(MIN_H1, MAX_H1 + 1) if 0 <= h <= 23)
+    hours.update(h for h in range(MIN_H2, MAX_H2 + 1) if 0 <= h <= 23)
+    return sorted(hours)
 
 
 # Returns probability of executing one human action for cycle
 def probability_for_cycle(sleep_seconds: int) -> float:
-    return min(1.0, DAILY_HUMAN_HITS * sleep_seconds / (3600 * (len(hours_to_check()) if CHECK_POSTS_IN_HOURS_RANGE else 24)))
+    if CHECK_POSTS_IN_HOURS_RANGE:
+        allowed_hours = len(hours_to_check())
+        if allowed_hours <= 0:
+            return 0.0
+        day_seconds = 3600 * allowed_hours
+    else:
+        day_seconds = 86400  # 1 day
+
+    return min(1.0, DAILY_HUMAN_HITS * sleep_seconds / day_seconds)
 
 # Performs random feed / profile / hashtag / followee actions to look more like a human being
 def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> None:
@@ -3503,7 +3524,7 @@ def main():
     print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
     print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
     print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
-    print("* Hours for checking posts/reels:\t" + (f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59, {MIN_H2:02d}:00 - {MAX_H2:02d}:59" if CHECK_POSTS_IN_HOURS_RANGE else "00:00 - 23:59"))
+    print("* Hours for fetching updates:\t\t" + (f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59, {MIN_H2:02d}:00 - {MAX_H2:02d}:59" if CHECK_POSTS_IN_HOURS_RANGE else "00:00 - 23:59"))
     print(f"* Browser user agent:\t\t\t{USER_AGENT}")
     print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
     print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
