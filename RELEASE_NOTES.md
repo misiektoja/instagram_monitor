@@ -2,21 +2,37 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 1.9 (18 Dec 2025)
+
+**Features and Improvements**:
+
+- **IMPROVE:** Enhanced `CHECK_POSTS_IN_HOURS_RANGE` logic: hour ranges now gate **fetching updates** (not just posts/reels), covering additional monitored activity (thanks [@tomballgithub](https://github.com/tomballgithub))
+- **NEW:** Added `HOURS_VERBOSE` for debugging hour-based update gating (prints whether updates are **fetched** or **skipped**) (thanks [@tomballgithub](https://github.com/tomballgithub))
+- **IMPROVE:** Refactored **hour-range calculations**: de-duplicate overlapping ranges, ignore invalid hours and prevent crashes on misconfiguration
+- **IMPROVE:** Improved **Be Human** action probability when **hour-range mode** is enabled (scales to the configured **active-hour window**) (thanks [@tomballgithub](https://github.com/tomballgithub))
+- **IMPROVE:** **Liveness check** logic is now recomputed after config/env/CLI overrides are applied and after check-interval changes via **signals**
+- **IMPROVE:** Improved **Firefox session import** handling (safer **SQLite connection** usage; clarified error message; consistent session path handling)
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed missing current-hour (`cur_h`) assignment that could break hour-range gating
+- **BUGFIX:** Restored Python 3.9 compatibility in type hints (replaced `datetime | None` with `Optional[datetime]`)
+
 # Changes in 1.8.1 (30 Nov 2025)
 
 **Features and Improvements**:
 
-- **IMPROVE:** Improved error handling for check intervals
+- **IMPROVE:** Improved error handling for **check intervals**
 
 **Bug fixes**:
 
-- **BUGFIX:** Corrected bug in compare_images() function
+- **BUGFIX:** Corrected bug in `compare_images()` function (thanks [@jl-nr](https://github.com/jl-nr))
 
 # Changes in 1.8 (18 Jun 2025)
 
 **Features and Improvements**:
 
-- **NEW:** Added mobile-web JSON fallback to restore post details fetching in mode 1 (no session); reel details still require mode 2 (session login)
+- **NEW:** Added **mobile-web JSON fallback** to restore **post details fetching** in **mode 1 (no session)**; reel details still require **mode 2 (session login)**
 - **IMPROVE:** Added missing exception handling in several areas and included display of exception types for better debugging
 
 **Bug fixes**:
