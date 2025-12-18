@@ -156,7 +156,7 @@ Edit the `instagram_monitor.conf` file and change any desired configuration opti
 <a id="mode-1-without-logged-in-instagram-account-no-session-login"></a>
 ### Mode 1: Without Logged-In Instagram Account (No Session Login)
 
-In this mode, the tool operates without logging in to an Instagram account. 
+In this mode, the tool operates without logging in to an Instagram account.
 
 You can still monitor basic user activity such as new or deleted posts (excluding reels and stories due to Instagram API limitations), bio changes and changes in follower/following counts. However, you won't see which specific followers/followings were added or removed.
 
@@ -167,12 +167,12 @@ This mode requires no setup, is easy to use and is resistant to Instagram's anti
 
 In this mode, the tool uses an Instagram session login to access additional data. This includes detailed insights into new posts, reels and stories, also about added or removed followers/followings.
 
-**Important**: It is highly recommended to use a dedicated Instagram account when using this tool in session login mode. While the risk of account suspension is generally low (in practice, accounts often stay active long-term), Instagram may still flag it as an automated tool. This can lead to challenges presented by Instagram that must be dismissed manually. To minimize any chance of detection, make sure to follow the best practices outlined [here](#how-to-prevent-getting-challenged-and-account-suspension). 
+**Important**: It is highly recommended to use a dedicated Instagram account when using this tool in session login mode. While the risk of account suspension is generally low (in practice, accounts often stay active long-term), Instagram may still flag it as an automated tool. This can lead to challenges presented by Instagram that must be dismissed manually. To minimize any chance of detection, make sure to follow the best practices outlined [here](#how-to-prevent-getting-challenged-and-account-suspension).
 
 <a id="option-1-basic-session-login-not-recommended"></a>
 #### Option 1: Basic Session Login (not recommended)
 
-You can provide your Instagram username (`your_insta_user`) and password directly in the `instagram_monitor.conf` configuration file, [environment variable](#storing-secrets) or via the `-u` and `-p` flags. 
+You can provide your Instagram username (`your_insta_user`) and password directly in the `instagram_monitor.conf` configuration file, [environment variable](#storing-secrets) or via the `-u` and `-p` flags.
 
 However, this triggers a full login every time the tool runs, increasing the chance of detection and account lockouts.
 
@@ -238,7 +238,7 @@ python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 <a id="smtp-settings"></a>
 ### SMTP Settings
 
-If you want to use email notifications functionality, configure SMTP settings in the `instagram_monitor.conf` file. 
+If you want to use email notifications functionality, configure SMTP settings in the `instagram_monitor.conf` file.
 
 Verify your SMTP settings by using `--send-test-email` flag (the tool will try to send a test email notification):
 
@@ -267,7 +267,7 @@ SESSION_PASSWORD="your_instagram_session_password"
 SMTP_PASSWORD="your_smtp_password"
 ```
 
-By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it. 
+By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it.
 
 You can specify a custom file with `DOTENV_FILE` or `--env-file` flag:
 
@@ -302,9 +302,9 @@ instagram_monitor -u <your_insta_user> <target_insta_user>
 ```
 
 By default, the tool looks for a configuration file named `instagram_monitor.conf` in:
- - current directory 
+ - current directory
  - home directory (`~`)
- - script directory 
+ - script directory
 
  If you generated a configuration file as described in [Configuration](#configuration), but saved it under a different name or in a different directory, you can specify its location using the `--config-file` flag:
 
@@ -417,9 +417,9 @@ Without this file, the tool will treat an empty profile picture as a regular ima
 <a id="displaying-images-in-your-terminal"></a>
 ### Displaying Images in Your Terminal
 
-If you have `imgcat` installed, you can use the feature of displaying profile pictures and stories/reels/posts images right in your terminal. 
+If you have `imgcat` installed, you can use the feature of displaying profile pictures and stories/reels/posts images right in your terminal.
 
-To do this, set the path to your `imgcat` binary in the `IMGCAT_PATH` configuration option. 
+To do this, set the path to your `imgcat` binary in the `IMGCAT_PATH` configuration option.
 
 If you specify only the binary name, it will be auto-searched in your PATH.
 
@@ -436,12 +436,12 @@ instagram_monitor <target_insta_user> -c 3600
 
 It is generally not recommended to use values lower than 1 hour as it will be quickly picked up by Instagram automated tool detection mechanisms.
 
-In order to make the tool's behavior less suspicious for Instagram, by default the polling interval is randomly picked from the range: 
+In order to make the tool's behavior less suspicious for Instagram, by default the polling interval is randomly picked from the range:
 
 ```
-[ INSTA_CHECK_INTERVAL (-c) - RANDOM_SLEEP_DIFF_LOW (-i) ]  
-                         ⇄  
-[ INSTA_CHECK_INTERVAL (-c) + RANDOM_SLEEP_DIFF_HIGH (-j) ]  
+[ INSTA_CHECK_INTERVAL (-c) - RANDOM_SLEEP_DIFF_LOW (-i) ]
+                         ⇄
+[ INSTA_CHECK_INTERVAL (-c) + RANDOM_SLEEP_DIFF_HIGH (-j) ]
 ```
 
 This means each check will happen after a random delay centered around `INSTA_CHECK_INTERVAL` with some variation defined by `RANDOM_SLEEP_DIFF_LOW` and `RANDOM_SLEEP_DIFF_HIGH`.
@@ -450,7 +450,7 @@ So having the check interval set to 1 hour (-c 3600), `RANDOM_SLEEP_DIFF_LOW` se
 
 That's why the check interval information is printed in the console and email notifications as it is essentially a random number.
 
-On top of that you can also define that checks for new posts / reels should be done only in specific hour ranges by setting `CHECK_POSTS_IN_HOURS_RANGE` to `True` and then defining proper values for `MIN/MAX_H1/H2` configuration options (see the comments in the configuration file for more information).
+On top of that you can also define that fetching updates should be done only in specific hour ranges by setting `CHECK_POSTS_IN_HOURS_RANGE` to `True` and then defining proper values for `MIN/MAX_H1/H2` configuration options (see the comments in the configuration file for more information).
 
 <a id="signal-controls-macoslinuxunix"></a>
 ### Signal Controls (macOS/Linux/Unix)
@@ -501,7 +501,7 @@ grc tail -F -n 100 instagram_monitor_<username>.log
 
 As mentioned earlier it is highly recommended to use a dedicated Instagram account when using this tool in session login mode. While the risk of account suspension is generally low (in practice, accounts often stay active long-term), Instagram may still flag it as an automated tool. This can lead to challenges presented by Instagram that must be dismissed manually.
 
-To minimize any chance of detection, make sure to follow the best practices outlined below. 
+To minimize any chance of detection, make sure to follow the best practices outlined below.
 
 <a id="sign-in-using-session-mode-with-firefox-cookies"></a>
 ### Sign In Using Session Mode with Firefox Cookies
@@ -516,7 +516,7 @@ Always pass the exact web browser user agent string from your Firefox web browse
 <a id="use-the-human-mode"></a>
 ### Use the Human Mode
 
-Since v1.7, the tool includes a new experimental **Be Human** mode that makes it behave more like a real user to reduce bot detection. 
+Since v1.7, the tool includes a new experimental **Be Human** mode that makes it behave more like a real user to reduce bot detection.
 
 It is disabled by default, but you can enable it via `BE_HUMAN` configuration option or `--be-human` flag.
 
@@ -528,18 +528,18 @@ After each check cycle, the tool will randomly do one or more of these harmless 
 - Browse a hashtag: fetches one post from a random tag listed in `MY_HASHTAGS` configuration option
 - Look at a profile of someone you follow
 
-By default it does around 5 of these actions spread over 24 hours, but you can adjust it via `DAILY_HUMAN_HITS` option. 
+By default it does around 5 of these actions spread over 24 hours, but you can adjust it via `DAILY_HUMAN_HITS` option.
 
 If you are interested in your human actions set `BE_HUMAN_VERBOSE` option to `True`.
 
 <a id="use-the-jitter-mode"></a>
 ### Use the Jitter Mode
 
-Since v1.7, the tool allows to force every HTTP call made by Instaloader to go through a built-in jitter/back-off layer to look more human. 
+Since v1.7, the tool allows to force every HTTP call made by Instaloader to go through a built-in jitter/back-off layer to look more human.
 
-This adds random delay (0.8-3 s) before each request and automatically retries on Instagram's 429 "too many requests" or checkpoint challenges, with exponential back-off (60 s → 120 s → 240 s) and a little extra jitter. 
+This adds random delay (0.8-3 s) before each request and automatically retries on Instagram's 429 "too many requests" or checkpoint challenges, with exponential back-off (60 s → 120 s → 240 s) and a little extra jitter.
 
-This significantly reduces detection risk, but also makes the tool slower. 
+This significantly reduces detection risk, but also makes the tool slower.
 
 You can enable this feature via `ENABLE_JITTER` configuration option or `--enable-jitter` flag.
 
@@ -560,7 +560,7 @@ It is recommended to limit the number of users monitored by a single account, es
 <a id="use-only-needed-functionality"></a>
 ### Use Only Needed Functionality
 
-Frequent updates to certain data types, such as new stories or changes in followers/followings, are more likely to flag the account as an automated tool. If certain data isn't essential for your use case, consider disabling its retrieval. The tool provides fine-grained control, for example you can skip fetching the list of followings (`-g` flag), followers (`-f`), stories details (`-r`) or posts/reels details (`-w`). 
+Frequent updates to certain data types, such as new stories or changes in followers/followings, are more likely to flag the account as an automated tool. If certain data isn't essential for your use case, consider disabling its retrieval. The tool provides fine-grained control, for example you can skip fetching the list of followings (`-g` flag), followers (`-f`), stories details (`-r`) or posts/reels details (`-w`).
 
 <a id="use-two-factor-authentication-2fa"></a>
 ### Use Two-Factor Authentication (2FA)
