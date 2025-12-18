@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.9
+v1.9.1
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -16,7 +16,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "1.9"
+VERSION = "1.9.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -337,7 +337,7 @@ import string
 import json
 import os
 from os.path import expanduser, dirname, basename
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dateutil import relativedelta
 from dateutil.parser import isoparse, parse
 import calendar
@@ -1625,7 +1625,11 @@ def instagram_wrap_send(orig_send):
 
 
 def sleep_message(sleeptime):
-    print(f"*** Sleeping for: {sleeptime/3600:.1f} hours @ {now_local_naive().strftime('%H:%M:%S')}")
+    now = now_local_naive()
+    next_check = now + timedelta(seconds=sleeptime)
+    print(f"*** Sleeping for: {display_time(sleeptime)} (until ~{next_check.strftime('%H:%M:%S')}) @ {now.strftime('%H:%M:%S')}")
+    print("─" * HORIZONTAL_LINE)
+
 
 # Returns unique, validated hours (0-23) from the configured ranges
 def hours_to_check():
@@ -2321,8 +2325,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         highestinsta_dt_old = now_local()
 
     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
+
     if HOURS_VERBOSE:
         sleep_message(r_sleep_time)
+
     time.sleep(r_sleep_time)
 
     alive_counter = 0
@@ -2335,9 +2341,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         cur_h = datetime.now().strftime("%H")
 
-        if (CHECK_POSTS_IN_HOURS_RANGE and (int(cur_h) in hours_to_check())) or not CHECK_POSTS_IN_HOURS_RANGE:
+        in_allowed_hours = (CHECK_POSTS_IN_HOURS_RANGE and (int(cur_h) in hours_to_check())) or not CHECK_POSTS_IN_HOURS_RANGE
+
+        if in_allowed_hours:
             if HOURS_VERBOSE:
                 print(f"*** Fetching Updates. Current Hour: {int(cur_h)}. Allowed hours: {hours_to_check()}")
+                print("─" * HORIZONTAL_LINE)
             try:
                 profile = instaloader.Profile.from_username(bot.context, user)
                 time.sleep(NEXT_OPERATION_DELAY)
@@ -3013,16 +3022,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 if check_reels_counts(user, reels_count, reels_count_old, r_sleep_time):
                     reels_count_old = reels_count
 
-            # Be human please
-            try:
-                if BE_HUMAN:
-                    simulate_human_actions(bot, r_sleep_time)
-            except Exception as e:
-                print(f"* Warning: It is not easy to be a human, our simulation failed: {e}")
-                print_cur_ts("\nTimestamp:\t\t")
         else:
             if HOURS_VERBOSE:
                 print(f"*** Skipping Updates. Current Hour: {int(cur_h)}. Allowed hours: {hours_to_check()}")
+                print("─" * HORIZONTAL_LINE)
 
         alive_counter += 1
 
@@ -3034,7 +3037,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         # Be human please
         try:
-            if BE_HUMAN:
+            if BE_HUMAN and in_allowed_hours:
                 simulate_human_actions(bot, r_sleep_time)
         except Exception as e:
             print(f"* Warning: It is not easy to be a human, our simulation failed: {e}")
