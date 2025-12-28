@@ -18,6 +18,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
 - **Saving all user activities and profile changes** with timestamps to a **CSV file**
 - Support for both **public and private profiles**
 - **Two modes of operation**: with or without a logged-in Instagram account
+- **Monitor multiple users** in a single process with automatic request staggering to avoid detection
 - Various mechanisms to **prevent captcha and detection of automated tools**
 - Possibility to **control the running copy** of the script via signals
 - **Functional, procedural Python** (minimal OOP)
@@ -314,9 +315,22 @@ instagram_monitor <target_insta_user> --config-file /path/instagram_monitor_new.
 
 The tool runs until interrupted (`Ctrl+C`). Use `tmux` or `screen` for persistence.
 
-You can monitor multiple Instagram users by launching multiple instances of the script.
+You can monitor multiple Instagram users in **one process** by passing multiple target usernames:
 
-The tool automatically saves its output to `instagram_monitor_<username>.log` file. It can be changed in the settings via `INSTA_LOGFILE` configuration option or disabled completely via `DISABLE_LOGGING` / `-d` flag.
+```sh
+instagram_monitor target_user_1 target_user_2 target_user_3
+```
+
+To reduce the chance of triggering Instagram anti-bot mechanisms, the tool will **stagger** the start of each target's monitoring loop (auto-spread across your `INSTA_CHECK_INTERVAL` by default). You can override it with:
+
+```sh
+instagram_monitor target_user_1 target_user_2 --targets-stagger 300
+```
+
+The tool automatically saves its output to an `instagram_monitor_<suffix>.log` file. It can be changed in the settings via `INSTA_LOGFILE` configuration option or disabled completely via `DISABLE_LOGGING` / `-d` flag.
+
+- In single-target mode, `<suffix>` is the username.
+- In multi-target mode, `<suffix>` is the sorted list of target usernames joined with underscores.
 
 The tool in mode 2 (session login) also saves the list of followings & followers to these files:
 - `instagram_<username>_followings.json`
@@ -379,6 +393,11 @@ instagram_monitor <target_insta_user> -b instagram_username.csv
 ```
 
 The file will be automatically created if it does not exist.
+
+In **multi-target** mode, the tool writes **one CSV per user**. If you pass `-b instagram_data.csv`, it will create:
+- `instagram_data_<user1>.csv`
+- `instagram_data_<user2>.csv`
+... etc.
 
 <a id="detection-of-changed-profile-pictures"></a>
 ### Detection of Changed Profile Pictures
@@ -552,10 +571,12 @@ Avoid setting the polling interval (`INSTA_CHECK_INTERVAL` option or `-c` flag) 
 
 Also consider to randomize the check interval, as explained [here](#check-intervals).
 
+**Important**: When monitoring multiple users in a single process, the effective request rate is multiplied by the number of targets. For example, monitoring 5 users with a 1-hour interval means 5 requests per hour. To maintain the same per-account request rate, increase the check interval proportionally. If you normally use 1 hour for a single user, consider using 5 hours (or more) when monitoring 5 users. The tool automatically staggers requests between targets, but the overall request frequency should still be adjusted based on the total number of monitored users.
+
 <a id="do-not-monitor-too-many-users"></a>
 ### Do Not Monitor Too Many Users
 
-It is recommended to limit the number of users monitored by a single account, especially if they post frequent updates. In some cases, it may be best to create a separate account for additional users and even run it from a different IP address to reduce the risk of detection.
+It is recommended to limit the number of users monitored by a single account, especially if they post frequent updates. When using multi-user monitoring (monitoring multiple users in one process), keep in mind that the total request volume increases with each additional target. In some cases, it may be best to create a separate account for additional users and even run it from a different IP address to reduce the risk of detection.
 
 <a id="use-only-needed-functionality"></a>
 ### Use Only Needed Functionality
