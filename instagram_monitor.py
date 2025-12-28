@@ -1,3 +1,27 @@
+# 2025/10/25, reset name_count before fetching get_followers or get_followees
+# 2025/10/28, add begin-end on the name counts, like 0001-0012, rather than just 0012)
+# 2025/11/01, added before & after counts to ntfy messages about adding or removing the followers/followings
+# 2025/11/01, change name_count = 1 when reset, not 0
+# 2025/11/01, change priority to 4 for when followers or followees are 'added'
+# 2025/11/01, configurable priority levels for ntfy via NTFY_PRIORITY_*
+# 2025/11/01, added elapsed time when fetching followers or followings
+# 2025/11/01, added timestamps to debug messages for follower and following counts
+# 2025/11/02, fixed numbering issue when saying how many accounts were fetched. Ending # needed a -1
+# 2025/11/02, show actual count from JSON when loading at start (in addition to stored count)
+
+# if first X are new, and that matches # new, stop
+# Instagram stop after x mode or calculate once you've found Lal. Test this mode
+# add elapsed timne to debug messages for counts
+# # do some human things at startup rather than straight into fetching follows/followings
+# longer delays if finding usernames
+# option delay network traffic at startup if outside hours
+# configurable old way of handling hours vs new way (no activity)
+# force be human to always do at least one thing
+# need to ntfy/email when start getting any errors
+#
+# python instagram_monitor.py -u tomballrunner kara.elaine.long
+# python instagram_monitor.py -u thekugler2000 kara.elaine.long --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:142.0) Gecko/20100101 Firefox/142.0" --be-human --enable-jitter -b kara_elaine_long.csv
+
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
@@ -139,10 +163,10 @@ BE_HUMAN = False
 DAILY_HUMAN_HITS = 5
 
 # List of hashtags to browse
-MY_HASHTAGS = ["travel", "food", "nature"]
+MY_HASHTAGS = ["women", "soccer", "tech", "elon", "bikinis", "grwm"]
 
 # Set to True to enable verbose output during human simulation actions
-BE_HUMAN_VERBOSE = False
+BE_HUMAN_VERBOSE = True
 
 # Whether to enable human-like HTTP jitter and back-off wrapper
 ENABLE_JITTER = False
@@ -299,6 +323,19 @@ DISABLE_LOGGING = False
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 INSTA_CHECK_SIGNAL_VALUE = 0
+request_count = 0
+name_count = 1
+start_time = 0
+fetching_count_update = False
+
+# NTFY configuration
+NTFY_ALERTS = "jeoff_alerts"
+NTFY_STATUS = "jeoff_status"
+NTFY_PRIORITY_PASSED = 1
+NTFY_PRIORITY_FAILED = 4
+NTFY_PRIORITY_LAUNCHED = 1
+NTFY_PRIORITY_REMOVED  = 3
+NTFY_PRIORITY_ADDED    = 4
 
 exec(CONFIG_BLOCK, globals())
 
@@ -384,7 +421,25 @@ from sqlite3 import OperationalError, connect
 from pathlib import Path
 from functools import wraps
 import traceback
+import ntfy
 
+def get_follower_count(profile):
+    global name_count, fetching_count_update, start_time
+    name_count = 1
+    start_time = datetime.now()
+    fetching_count_update = True
+    tempcnt = profile.get_followers().count
+    fetching_count_update = False
+    return tempcnt
+    
+def get_following_count(profile):
+    global name_count, fetching_count_update, start_time
+    name_count = 1
+    start_time = datetime.now()
+    fetching_count_update = True
+    tempcnt = profile.get_followees().count
+    fetching_count_update = False
+    return tempcnt
 
 # Logger class to output messages to stdout and log file
 class Logger(object):
@@ -1579,21 +1634,99 @@ def get_random_mobile_user_agent() -> str:
 
     return (f"Instagram {app_major}.{app_minor}.{app_patch}.{app_revision} ({device}{model}; iOS {os_major}_{os_minor}; {language}; {locale}; scale={scale:.2f}; {width}x{height}; {device_id}) AppleWebKit/420+")
 
+def extract_usernames_safely(data_dict):
+    """
+    Extracts usernames from a JSON response, automatically detecting if the
+    data is for 'following' ('edge_follow') or 'followers' ('edge_followed_by').
+
+    Returns a list of usernames or an empty list if the expected format is not found.
+    """
+    usernames = []
+    
+    # Define the keys to look for in order of preference
+    # The value is the path segment needed to reach the 'edges' list
+    possible_keys = ['edge_followed_by', 'edge_follow']
+    
+    # 1. Safely access the 'user' dictionary
+    try:
+        user_data = data_dict['data']['user']
+    except KeyError as e:
+        # print(f"Format Check Failed: Missing essential key {e} in top level. Skipping.")
+        return []
+
+    # 2. Iterate through possible keys to find the correct list
+    edges = None
+    for key in possible_keys:
+        if key in user_data:
+            # We found the key (e.g., 'edge_followed_by')
+            try:
+                edges = user_data[key]['edges']
+                break # Exit the loop once the correct key is found
+            except KeyError:
+                # This handles the case where the key exists but 'edges' is missing
+                # print(f"Warning: Found '{key}' but 'edges' list is missing inside it. Trying next key.")
+                continue
+    
+    # 3. Check if any edges were found and if it's a list
+    if edges is None:
+        # print("Format Check Failed: Could not find 'edge_followed_by' or 'edge_follow' data.")
+        return []
+    
+    if not isinstance(edges, list):
+        # print("Format Check Failed: The 'edges' data is not a list.")
+        return []
+
+    # 4. Extract usernames from the list of edges
+    for edge in edges:
+        try:
+            # The node structure is consistent: edge -> 'node' -> 'username'
+            username = edge['node']['username']
+            usernames.append(username)
+        except KeyError:
+            # Handle a malformed single entry by skipping it
+            continue 
+            
+    return usernames
 
 # Monkey-patches Instagram request to add human-like jitter and back-off
 def instagram_wrap_request(orig_request):
     @wraps(orig_request)
     def wrapper(*args, **kwargs):
+        global request_count, name_count, fetching_count_update, start_time
         method = kwargs.get("method") or (args[1] if len(args) > 1 else None)
         url = kwargs.get("url") or (args[2] if len(args) > 2 else None)
         if JITTER_VERBOSE:
-            print(f"[WRAP-REQ] {method} {url}")
+            print(f"[WRAP-REQ] {method} {url[:120]}")
         time.sleep(random.uniform(0.8, 3.0))
 
         attempt = 0
         backoff = 60
         while True:
             resp = orig_request(*args, **kwargs)
+            request_count += 1
+            # print(f"- {resp.json()}\n")
+
+            try:
+                # 1. Extract the list of usernames
+                user_list = extract_usernames_safely(resp.json())
+
+                # 2. Use str.join() to combine the list elements with ", "
+                if user_list and not fetching_count_update:
+                    output_line = ", ".join(user_list)
+                    old_name_count = name_count
+                    name_count += len(user_list)
+                    new_name_count = name_count - 1 # correct numbering issue where end of one fetch and start of new both have the same #
+                    print(f"- ({request_count:04d}, {old_name_count:04d}-{new_name_count:04d}, {(datetime.now() - start_time).total_seconds() / 60:.1f} mins) {output_line}")
+                    # print(output_line)
+                else:
+                    name_count = 1
+                    pass
+                    # print("\nCould not extract any usernames.")
+                
+            except Exception as e:
+                print(f"[WRAP-REQ] exception: {e}")
+                pass
+                
             if resp.status_code in (429, 400) and "checkpoint" in resp.text:
                 attempt += 1
                 if attempt > 3:
@@ -1618,7 +1751,7 @@ def instagram_wrap_send(orig_send):
         method = getattr(req_obj, "method", None)
         url = getattr(req_obj, "url", None)
         if JITTER_VERBOSE:
-            print(f"[WRAP-SEND] {method} {url}")
+            print(f"[WRAP-SEND] {method} {url[:120]}\n")
         time.sleep(random.uniform(0.8, 3.0))
         return orig_send(*args, **kwargs)
     return wrapper
@@ -1642,6 +1775,11 @@ def hours_to_check():
     hours.update(h for h in range(MIN_H2, MAX_H2 + 1) if 0 <= h <= 23)
     return sorted(hours)
 
+def show_follow_info(followers1, followers2, followers_actual, followees1, followees2, followees_actual):
+    print(f"*** Followings ({followees1}) actual ({followees_actual}) *** Followers ({followers1}) actual ({followers_actual})")
+    # print(f"*** Followers: {followers1} (actual {followers_actual}), Followees: {followees1} (actual {followees_actual})")
+    # print(f"*** Followers: {followers1}. Actual Count: {followers_actual}.  {get_cur_ts()}")
+    # print(f"*** Followees: {followees1}. Actual Count: {followees_actual}.")
 
 # Returns probability of executing one human action for cycle
 def probability_for_cycle(sleep_seconds: int) -> float:
@@ -1688,7 +1826,8 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
                 print(f"* BeHuman #2 error: cannot view own profile: {e}")
 
     # Browse a random hashtag
-    if random.random() < prob / 2:
+    # if random.random() < prob / 2: #jmk
+    if random.random() < prob:
         tag = random.choice(MY_HASHTAGS)
         try:
             posts = bot.get_hashtag_posts(tag)
@@ -1747,13 +1886,22 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             req.Session.request = instagram_wrap_request(req.Session.request)
             req.Session.send = instagram_wrap_send(req.Session.send)
 
-        bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True, quiet=True)
+        # bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True, quiet=True)
+        bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True, quiet=True, download_videos=False, download_pictures=False, download_video_thumbnails=False, download_geotags=False, download_comments=False)
 
         ctx = bot.context
 
         orig_request = ctx._session.request
 
         session = ctx._session
+
+#jmkdebug per author
+        #try:
+            #session.headers.update({'Cache-Control': 'no-cache', 'Pragma': 'no-cache'})
+        #except Exception:
+            #print(f"debug error: session.headers.update({'Cache-Control': 'no-cache', 'Pragma': 'no-cache'})")
+            #pass
+#jmkdebug per author
 
         if not skip_session and SESSION_USERNAME:
             if SESSION_PASSWORD:
@@ -1804,10 +1952,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         print("Sneaking into Instagram like a ninja ... (be patient, secrets take time)")
 
+        print("- loading profile from username")
         profile = instaloader.Profile.from_username(bot.context, user)
+        #print(profile)
         time.sleep(NEXT_OPERATION_DELAY)
         insta_username = profile.username
         insta_userid = profile.userid
+        print(f"  - completed: {insta_username}")
         followers_count = profile.followers
         followings_count = profile.followees
         bio = profile.biography
@@ -1815,25 +1966,29 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         followed_by_viewer = profile.followed_by_viewer
         can_view = (not is_private) or followed_by_viewer
         posts_count = profile.mediacount
-        if not skip_session and can_view:
-            reels_count = get_total_reels_count(user, bot, skip_session)
-
-        if not is_private:
-            if bot.context.is_logged_in:
-                has_story = profile.has_public_story
-            else:
-                has_story = False
-        elif bot.context.is_logged_in and followed_by_viewer:
-            story = next(bot.get_stories(userids=[insta_userid]), None)
-            has_story = bool(story and story.itemcount)
-        else:
-            has_story = False
+        # if not skip_session and can_view:
+            # reels_count = get_total_reels_count(user, bot, skip_session)
+        reels_count = 0
+        
+        has_story = False
+        # if not is_private:
+            # if bot.context.is_logged_in:
+                # has_story = profile.has_public_story
+            # else:
+                # has_story = False
+        # elif bot.context.is_logged_in and followed_by_viewer:
+            # story = next(bot.get_stories(userids=[insta_userid]), None)
+            # has_story = bool(story and story.itemcount)
+        # else:
+            # has_story = False
 
         profile_image_url = profile.profile_pic_url_no_iphone
 
         if bot.context.is_logged_in:
+            print("- loading own profile")
             me = instaloader.Profile.own_profile(bot.context)
             session_username = me.username
+            print(f"  - completed: {session_username}")
         else:
             session_username = None
 
@@ -1898,7 +2053,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if followers_count == followers_old_count:
                 followers = followers_old
             followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file)), pytz.timezone(LOCAL_TIMEZONE))
-            print(f"* Followers ({followers_old_count}) loaded from file '{insta_followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
+            print(f"* Followers ({followers_old_count}) actual ({len(followers_old)}) loaded from file '{insta_followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
             followers_followings_fetched = True
 
     if followers_count != followers_old_count:
@@ -1916,13 +2071,18 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 write_csv_entry(csv_file_name, now_local_naive(), "Followers Count", followers_old_count, followers_count)
         except Exception as e:
             print(f"* Error: {e}")
-
+    # show_follow_info(profile.followers, get_follower_count(profile), len(followers), profile.followees, get_following_count(profile), len(followings))
     if ((followers_count != followers_old_count) or (followers_count > 0 and not followers)) and not skip_session and not skip_followers and can_view:
         print("\n* Getting followers ...")
         followers_followings_fetched = True
 
         try:
+            name_count = 0 #jmk, reset before fetching accounts
             followers = [follower.username for follower in profile.get_followers()]
+            profile = instaloader.Profile.from_username(bot.context, user)
+            if followers_count != profile.followers:
+                show_follow_info(profile.followers, get_follower_count(profile), len(followers), profile.followees, get_following_count(profile), len(followings))
+                print(f"debug: ***************************************************")
             followers_count = profile.followers
         except Exception as e:
             print(f"* Error while getting followers: {type(e).__name__}: {e}")
@@ -1961,6 +2121,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 except Exception as e:
                     print(f"* Error: {e}")
             print()
+            ntfy.send_ntfy(NTFY_STATUS, f"Removed Followers: ({followers_old_count}->{followers_count})", "\n" + removed_followers_list, NTFY_PRIORITY_REMOVED, tags="mailbox")
 
         if added_followers:
             print("Added followers:\n")
@@ -1973,6 +2134,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 except Exception as e:
                     print(f"* Error: {e}")
             print()
+            ntfy.send_ntfy(NTFY_STATUS, f"Added Followers: ({followers_old_count}->{followers_count})", "\n" + added_followers_list, NTFY_PRIORITY_ADDED, tags="mailbox")
 
     if os.path.isfile(insta_followings_file):
         try:
@@ -1986,8 +2148,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if followings_count == followings_old_count:
                 followings = followings_old
             following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file)), pytz.timezone(LOCAL_TIMEZONE))
-            print(f"\n* Followings ({followings_old_count}) loaded from file '{insta_followings_file}' ({get_short_date_from_ts(following_mdate, show_weekday=False, always_show_year=True)})")
+            print(f"* Followings ({followings_old_count}) actual ({len(followings_old)}) loaded from file '{insta_followings_file}' ({get_short_date_from_ts(following_mdate, show_weekday=False, always_show_year=True)})")
             followers_followings_fetched = True
+
+    show_follow_info(profile.followers, get_follower_count(profile), len(followers), profile.followees, get_following_count(profile), len(followings))
 
     if followings_count != followings_old_count:
         followings_diff = followings_count - followings_old_count
@@ -2009,7 +2173,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         followers_followings_fetched = True
 
         try:
+            name_count = 0 #jmk, reset before fetching accounts
             followings = [followee.username for followee in profile.get_followees()]
+            profile = instaloader.Profile.from_username(bot.context, user)
+            if followings_count != profile.followees:
+                show_follow_info(profile.followers, get_follower_count(profile), len(followers), profile.followees, get_following_count(profile), len(followings))
+                print(f"debug: ***************************************************")
             followings_count = profile.followees
         except Exception as e:
             print(f"* Error while getting followings: {type(e).__name__}: {e}")
@@ -2048,6 +2217,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 except Exception as e:
                     print(f"* Error: {e}")
             print()
+            ntfy.send_ntfy(NTFY_STATUS, f"Removed Followings: ({followings_old_count}->{followings_count})", "\n" + removed_followings_list, NTFY_PRIORITY_REMOVED, tags="mailbox")
 
         if added_followings:
             print("Added followings:\n")
@@ -2060,6 +2230,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 except Exception as e:
                     print(f"* Error: {e}")
             print()
+            ntfy.send_ntfy(NTFY_STATUS, f"Added Followings: ({followings_old_count}->{followings_count})", "\n" + added_followings_list, NTFY_PRIORITY_ADDED, tags="mailbox")
 
     if not skip_session and not skip_followers and can_view:
         followers_old = followers
@@ -2324,12 +2495,16 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         highestinsta_ts_old = int(time.time())
         highestinsta_dt_old = now_local()
 
+    # profile = instaloader.Profile.from_username(bot.context, user)
+    # show_follow_info(profile.followers, get_follower_count(profile), len(followers), profile.followees, get_following_count(profile), len(followings))
+
     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
 
-    if HOURS_VERBOSE:
-        sleep_message(r_sleep_time)
+    # JMK: skip sleep at first power-up
+    #if HOURS_VERBOSE:
+        #sleep_message(r_sleep_time)
+    #time.sleep(r_sleep_time)
 
-    time.sleep(r_sleep_time)
 
     alive_counter = 0
 
@@ -2341,14 +2516,17 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         cur_h = datetime.now().strftime("%H")
 
+        profile = instaloader.Profile.from_username(bot.context, user)
+        show_follow_info(profile.followers, get_follower_count(profile), len(followers), profile.followees, get_following_count(profile), len(followings))
+
         in_allowed_hours = (CHECK_POSTS_IN_HOURS_RANGE and (int(cur_h) in hours_to_check())) or not CHECK_POSTS_IN_HOURS_RANGE
 
         if in_allowed_hours:
             if HOURS_VERBOSE:
                 print(f"*** Fetching Updates. Current Hour: {int(cur_h)}. Allowed hours: {hours_to_check()}")
-                print("─" * HORIZONTAL_LINE)
+                #print("─" * HORIZONTAL_LINE)
             try:
-                profile = instaloader.Profile.from_username(bot.context, user)
+                # profile = instaloader.Profile.from_username(bot.context, user) #jmk duplicate above
                 time.sleep(NEXT_OPERATION_DELAY)
                 new_post = False
                 followers_count = profile.followers
@@ -2358,19 +2536,20 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 followed_by_viewer = profile.followed_by_viewer
                 can_view = (not is_private) or followed_by_viewer
                 posts_count = profile.mediacount
-                if not skip_session and can_view:
-                    reels_count = get_total_reels_count(user, bot, skip_session)
+                # if not skip_session and can_view:
+                    # reels_count = get_total_reels_count(user, bot, skip_session)
 
-                if not is_private:
-                    if bot.context.is_logged_in:
-                        has_story = profile.has_public_story
-                    else:
-                        has_story = False
-                elif bot.context.is_logged_in and followed_by_viewer:
-                    story = next(bot.get_stories(userids=[insta_userid]), None)
-                    has_story = bool(story and story.itemcount)
-                else:
-                    has_story = False
+                has_story = False
+                # if not is_private:
+                    # if bot.context.is_logged_in:
+                        # has_story = profile.has_public_story
+                    # else:
+                        # has_story = False
+                # elif bot.context.is_logged_in and followed_by_viewer:
+                    # story = next(bot.get_stories(userids=[insta_userid]), None)
+                    # has_story = bool(story and story.itemcount)
+                # else:
+                    # has_story = False
 
                 profile_image_url = profile.profile_pic_url_no_iphone
                 email_sent = False
@@ -2427,9 +2606,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 if not skip_session and not skip_followings and can_view:
                     try:
+                        name_count = 0 #jmk, reset before fetching accounts
                         followings = []
                         followings = [followee.username for followee in profile.get_followees()]
                         followings_to_save = []
+                        profile = instaloader.Profile.from_username(bot.context, user)
+                        show_follow_info(profile.followers, get_follower_count(profile), len(followers), profile.followees, get_following_count(profile), len(followings))
+                        if followings_count != profile.followees:
+                            print(f"debug: ***************************************************")
                         followings_count = profile.followees
                         if not followings and followings_count > 0:
                             print("* Empty followings list returned, not saved to file")
@@ -2465,6 +2649,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                     except Exception as e:
                                         print(f"* Error: {e}")
                                 print()
+                                ntfy.send_ntfy(NTFY_STATUS, f"Removed Followings: ({followings_old_count}->{followings_count})", "\n" + removed_followings_list, NTFY_PRIORITY_REMOVED, tags="mailbox")
 
                             if added_followings:
                                 print("Added followings:\n")
@@ -2478,6 +2663,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                     except Exception as e:
                                         print(f"* Error: {e}")
                                 print()
+                                ntfy.send_ntfy(NTFY_STATUS, f"Added Followings: ({followings_old_count}->{followings_count})", "\n" + added_followings_list, NTFY_PRIORITY_ADDED, tags="mailbox")
 
                         followings_old = followings
 
@@ -2520,15 +2706,21 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 if not skip_session and not skip_followers and can_view:
                     try:
+                        name_count = 0 #jmk, reset before fetching accounts
                         followers = []
                         followers = [follower.username for follower in profile.get_followers()]
                         followers_to_save = []
+                        profile = instaloader.Profile.from_username(bot.context, user)
+                        show_follow_info(profile.followers, get_follower_count(profile), len(followers), profile.followees, get_following_count(profile), len(followings))
+                        if followers_count != profile.followers:
+                            print(f"debug: ***************************************************")
                         followers_count = profile.followers
                         if not followers and followers_count > 0:
                             print("* Empty followers list returned, not saved to file")
                         else:
                             followers_to_save.append(followers_count)
                             followers_to_save.append(followers)
+                            print(f"debug: followers_to_save: {followers_to_save}")
                             with open(insta_followers_file, 'w', encoding="utf-8") as f:
                                 json.dump(followers_to_save, f, indent=2)
                     except Exception as e:
@@ -2537,11 +2729,16 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                     if not followers and followers_count > 0:
                         followers = followers_old
+                        print(f"debug: not followers and followers_count > 0")
                     else:
+                        print(f"debug: followers_old: {len(followers_old)}, followers_new: {len(followers)}")
+                        print(f"debug: followers_old: {followers_old}")
+                        print(f"debug: followers_new: {followers}")
                         a, b = set(followers_old), set(followers)
                         removed_followers = list(a - b)
                         added_followers = list(b - a)
-
+                        print(f"debug: removed_followers: {removed_followers}")
+                        print(f"debug: added_followers  : {added_followers}")
                         if followers != followers_old:
                             print()
 
@@ -2557,6 +2754,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                     except Exception as e:
                                         print(f"* Error: {e}")
                                 print()
+                                ntfy.send_ntfy(NTFY_STATUS, f"Removed Followers: ({followers_old_count}->{followers_count})", "\n" + removed_followers_list, NTFY_PRIORITY_REMOVED, tags="mailbox")
 
                             if added_followers:
                                 print("Added followers:\n")
@@ -2570,6 +2768,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                     except Exception as e:
                                         print(f"* Error: {e}")
                                 print()
+                                ntfy.send_ntfy(NTFY_STATUS, f"Added Followers: ({followers_old_count}->{followers_count})", "\n" + added_followers_list, NTFY_PRIORITY_ADDED, tags="mailbox")
 
                         followers_old = followers
 
@@ -3557,7 +3756,7 @@ def main():
     print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
     print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
     print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
-    print("* Hours for fetching updates:\t\t" + (f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59, {MIN_H2:02d}:00 - {MAX_H2:02d}:59" if CHECK_POSTS_IN_HOURS_RANGE else "00:00 - 23:59"))
+    print(f"* Hours for fetching updates:\t\t" + (f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59, {MIN_H2:02d}:00 - {MAX_H2:02d}:59" if CHECK_POSTS_IN_HOURS_RANGE else "00:00 - 23:59"))
     print(f"* Browser user agent:\t\t\t{USER_AGENT}")
     print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
     print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
@@ -3582,6 +3781,9 @@ def main():
         signal.signal(signal.SIGABRT, decrease_check_signal_handler)
         signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
 
+    ntfy.send_ntfy(NTFY_STATUS, "Launched instagram monitor", "Launched instagram monitor", NTFY_PRIORITY_LAUNCHED, tags="mailbox")
+    print("")
+    
     instagram_monitor_user(args.username, CSV_FILE, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS)
 
     sys.stdout = stdout_bck
