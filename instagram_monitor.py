@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.9.1
+v2.0
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -16,7 +16,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "1.9.1"
+VERSION = "2.0"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -238,6 +238,33 @@ CLEAR_SCREEN = True
 
 # Value used by signal handlers to increase/decrease user activity check interval (INSTA_CHECK_INTERVAL); in seconds
 INSTA_CHECK_SIGNAL_VALUE = 300  # 5 min
+
+# ----------------------------
+# Multi-target monitoring mode
+# ----------------------------
+# If you pass multiple targets on CLI (e.g. instagram_monitor user1 user2), the tool will run them in one process
+# You can optionally define defaults here too:
+#
+# TARGET_USERNAMES = ["user1", "user2"]
+#
+# CLI targets take precedence over TARGET_USERNAMES
+TARGET_USERNAMES = []
+
+#
+# When monitoring multiple targets in one process, this controls how long (in seconds) to wait between starting each
+# target's monitoring loop to spread requests in time
+#
+# - Set to 0 to auto-spread targets evenly across INSTA_CHECK_INTERVAL
+# - You can override via --targets-stagger flag
+MULTI_TARGET_STAGGER = 0
+
+#
+# Adds a small random jitter (seconds) to each target start time to avoid perfectly periodic patterns
+MULTI_TARGET_STAGGER_JITTER = 5
+
+#
+# If True, serializes all HTTP calls (via a global lock) across targets. Recommended for multi-target mode.
+MULTI_TARGET_SERIALIZE_HTTP = True
 """
 
 # -------------------------
@@ -299,6 +326,10 @@ DISABLE_LOGGING = False
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 INSTA_CHECK_SIGNAL_VALUE = 0
+TARGET_USERNAMES = []
+MULTI_TARGET_STAGGER = 0
+MULTI_TARGET_STAGGER_JITTER = 0
+MULTI_TARGET_SERIALIZE_HTTP = False
 
 exec(CONFIG_BLOCK, globals())
 
@@ -367,6 +398,8 @@ import re
 import ipaddress
 from itertools import zip_longest
 import subprocess
+import threading
+import hashlib
 
 try:
     import instaloader
@@ -386,6 +419,42 @@ from functools import wraps
 import traceback
 
 
+# Global lock to avoid interleaved output when using multi-target threading
+STDOUT_LOCK = threading.Lock()
+
+# Global lock for serializing HTTP calls (used by multi-target mode / optional)
+# Must be re-entrant because requests' request() calls send() internally and we may wrap both
+HTTP_SERIAL_LOCK = threading.RLock()
+
+# Global lock for session file load/save (Instaloader session file is shared across targets)
+SESSION_FILE_LOCK = threading.Lock()
+
+# Whether requests Session methods have already been monkey-patched
+REQUESTS_PATCHED = False
+
+# Per-thread output buffers for redirect/session detection (multi-target safe)
+LAST_OUTPUT_BY_THREAD = {}
+
+
+def _thread_key() -> int:
+    return threading.get_ident()
+
+
+def reset_thread_output() -> None:
+    with STDOUT_LOCK:
+        LAST_OUTPUT_BY_THREAD[_thread_key()] = []
+
+
+def get_thread_output() -> list:
+    with STDOUT_LOCK:
+        return list(LAST_OUTPUT_BY_THREAD.get(_thread_key(), []))
+
+
+def session_label() -> str:
+    # Session is shared across targets, include it in error notifications for clarity
+    return SESSION_USERNAME if SESSION_USERNAME else "<anonymous>"
+
+
 # Logger class to output messages to stdout and log file
 class Logger(object):
     def __init__(self, filename):
@@ -394,12 +463,17 @@ class Logger(object):
 
     def write(self, message):
         global last_output
-        if message != '\n':
-            last_output.append(message)
-        self.terminal.write(message)
-        self.logfile.write(message)
-        self.terminal.flush()
-        self.logfile.flush()
+        with STDOUT_LOCK:
+            if message != '\n':
+                last_output.append(message)
+                tid = _thread_key()
+                if tid not in LAST_OUTPUT_BY_THREAD:
+                    LAST_OUTPUT_BY_THREAD[tid] = []
+                LAST_OUTPUT_BY_THREAD[tid].append(message)
+            self.terminal.write(message)
+            self.logfile.write(message)
+            self.terminal.flush()
+            self.logfile.flush()
 
     def flush(self):
         pass
@@ -1588,25 +1662,36 @@ def instagram_wrap_request(orig_request):
         url = kwargs.get("url") or (args[2] if len(args) > 2 else None)
         if JITTER_VERBOSE:
             print(f"[WRAP-REQ] {method} {url}")
-        time.sleep(random.uniform(0.8, 3.0))
 
-        attempt = 0
-        backoff = 60
-        while True:
-            resp = orig_request(*args, **kwargs)
-            if resp.status_code in (429, 400) and "checkpoint" in resp.text:
-                attempt += 1
-                if attempt > 3:
-                    raise instaloader.exceptions.QueryReturnedNotFoundException(
-                        "Giving up after multiple 429/checkpoint"
-                    )
-                wait = backoff + random.uniform(0, 30)
-                if JITTER_VERBOSE:
-                    print(f"* Back-off {wait:.0f}s after {resp.status_code}")
-                time.sleep(wait)
-                backoff *= 2
-                continue
-            return resp
+        def _do_request():
+            # If jitter is disabled, just perform the request (but still optionally serialized by the outer lock)
+            if not ENABLE_JITTER:
+                return orig_request(*args, **kwargs)
+
+            # Human-like jitter + back-off on checkpoint/429
+            time.sleep(random.uniform(0.8, 3.0))
+            attempt = 0
+            backoff = 60
+            while True:
+                resp = orig_request(*args, **kwargs)
+                if resp.status_code in (429, 400) and "checkpoint" in resp.text:
+                    attempt += 1
+                    if attempt > 3:
+                        raise instaloader.exceptions.QueryReturnedNotFoundException(
+                            "Giving up after multiple 429/checkpoint"
+                        )
+                    wait = backoff + random.uniform(0, 30)
+                    if JITTER_VERBOSE:
+                        print(f"* Back-off {wait:.0f}s after {resp.status_code}")
+                    time.sleep(wait)
+                    backoff *= 2
+                    continue
+                return resp
+
+        if MULTI_TARGET_SERIALIZE_HTTP:
+            with HTTP_SERIAL_LOCK:
+                return _do_request()
+        return _do_request()
     return wrapper
 
 
@@ -1619,8 +1704,15 @@ def instagram_wrap_send(orig_send):
         url = getattr(req_obj, "url", None)
         if JITTER_VERBOSE:
             print(f"[WRAP-SEND] {method} {url}")
-        time.sleep(random.uniform(0.8, 3.0))
-        return orig_send(*args, **kwargs)
+        def _do_send():
+            if ENABLE_JITTER:
+                time.sleep(random.uniform(0.8, 3.0))
+            return orig_send(*args, **kwargs)
+
+        if MULTI_TARGET_SERIALIZE_HTTP:
+            with HTTP_SERIAL_LOCK:
+                return _do_send()
+        return _do_send()
     return wrapper
 
 
@@ -1743,9 +1835,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     reels_count = 0
 
     try:
-        if ENABLE_JITTER:
+        global REQUESTS_PATCHED
+        # Monkey-patch requests only once (it is global), even if we run multi-target threads
+        if (ENABLE_JITTER or MULTI_TARGET_SERIALIZE_HTTP) and not REQUESTS_PATCHED:
             req.Session.request = instagram_wrap_request(req.Session.request)
             req.Session.send = instagram_wrap_send(req.Session.send)
+            REQUESTS_PATCHED = True
 
         bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True, quiet=True)
 
@@ -1756,21 +1851,23 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         session = ctx._session
 
         if not skip_session and SESSION_USERNAME:
-            if SESSION_PASSWORD:
-                try:
-                    bot.load_session_from_file(SESSION_USERNAME)
-                except FileNotFoundError:
-                    bot.login(SESSION_USERNAME, SESSION_PASSWORD)
-                    bot.save_session_to_file()
-                except instaloader.exceptions.BadCredentialsException:
-                    bot.login(SESSION_USERNAME, SESSION_PASSWORD)
-                    bot.save_session_to_file()
-            else:
-                try:
-                    bot.load_session_from_file(SESSION_USERNAME)
-                except FileNotFoundError:
-                    print("* Error: No Instagram session file found, please run 'instaloader -l SESSION_USERNAME' to create one")
-                    sys.exit(1)
+            # Session file is shared - avoid concurrent load/login/save in multi-target mode
+            with SESSION_FILE_LOCK:
+                if SESSION_PASSWORD:
+                    try:
+                        bot.load_session_from_file(SESSION_USERNAME)
+                    except FileNotFoundError:
+                        bot.login(SESSION_USERNAME, SESSION_PASSWORD)
+                        bot.save_session_to_file()
+                    except instaloader.exceptions.BadCredentialsException:
+                        bot.login(SESSION_USERNAME, SESSION_PASSWORD)
+                        bot.save_session_to_file()
+                else:
+                    try:
+                        bot.load_session_from_file(SESSION_USERNAME)
+                    except FileNotFoundError:
+                        print("* Error: No Instagram session file found, please run 'instaloader -l SESSION_USERNAME' to create one")
+                        sys.exit(1)
 
         patched = False
 
@@ -1802,9 +1899,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"* Warning: Could not apply custom mobile user-agent patch due to an unexpected error: {e}")
             print("* Proceeding with the default Instaloader mobile user-agent")
 
-        print("Sneaking into Instagram like a ninja ... (be patient, secrets take time)")
-
         profile = instaloader.Profile.from_username(bot.context, user)
+
         time.sleep(NEXT_OPERATION_DELAY)
         insta_username = profile.username
         insta_userid = profile.userid
@@ -1852,7 +1948,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     is_private_old = is_private
     followed_by_viewer_old = followed_by_viewer
 
-    print(f"\nSession user:\t\t{session_username or '<anonymous>'}")
+    print(f"Session user:\t\t{session_username or '<anonymous>'}")
 
     print(f"\nUsername:\t\t{insta_username}")
     print(f"User ID:\t\t{insta_userid}")
@@ -2337,7 +2433,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     # Primary loop
     while True:
-        last_output = []
+        reset_thread_output()
 
         cur_h = datetime.now().strftime("%H")
 
@@ -2380,9 +2476,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                     print("* Session might not be valid anymore!")
                     if ERROR_NOTIFICATION and not email_sent:
-                        m_subject = f"instagram_monitor: session error! (user: {user})"
+                        m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
 
-                        m_body = f"Session might not be valid anymore: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                        m_body = f"Session might not be valid anymore.\n\nSession: {session_label()}\nTarget: {user}\n\nError: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                         print(f"Sending email notification to {RECEIVER_EMAIL}")
                         send_email(m_subject, m_body, "", SMTP_SSL)
                         email_sent = True
@@ -2391,14 +2487,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 time.sleep(r_sleep_time)
                 continue
 
-            if (next((s for s in last_output if "HTTP redirect from" in s), None)):
+            if (next((s for s in get_thread_output() if "HTTP redirect from" in s), None)):
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
                 print("* Session might not be valid anymore!")
                 print(f"Retrying in {display_time(r_sleep_time)}")
                 if ERROR_NOTIFICATION and not email_sent:
-                    m_subject = f"instagram_monitor: session error! (user: {user})"
+                    m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
 
-                    m_body = f"Session might not be valid anymore: {last_output}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    m_body = f"Session might not be valid anymore.\n\nSession: {session_label()}\nTarget: {user}\n\nOutput: {get_thread_output()}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
                     email_sent = True
@@ -2897,9 +2993,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                         print("* Session might not be valid anymore!")
                         if ERROR_NOTIFICATION and not email_sent:
-                            m_subject = f"instagram_monitor: session error! (user: {user})"
+                            m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
 
-                            m_body = f"Session might not be valid anymore: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                            m_body = f"Session might not be valid anymore.\n\nSession: {session_label()}\nTarget: {user}\n\nError: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                             print(f"Sending email notification to {RECEIVER_EMAIL}")
                             send_email(m_subject, m_body, "", SMTP_SSL)
                             email_sent = True
@@ -3074,12 +3170,12 @@ def main():
         description=("Monitor an Instagram user's activity and send customizable email alerts [ https://github.com/misiektoja/instagram_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
     )
 
-    # Positional
+    # Positional targets (one or more)
     parser.add_argument(
-        "username",
-        nargs="?",
+        "usernames",
+        nargs="*",
         metavar="TARGET_USERNAME",
-        help="Instagram username to monitor",
+        help="Instagram username(s) to monitor (one or more)",
         type=str
     )
 
@@ -3179,6 +3275,32 @@ def main():
         metavar="SECONDS",
         type=int,
         help="Add up to this value to check-interval"
+    )
+
+    # Multi-target monitoring
+    multi = parser.add_argument_group("Multi-target monitoring")
+    multi.add_argument(
+        "--targets",
+        dest="targets",
+        metavar="USER[,USER...]",
+        type=str,
+        help="Comma-separated list of target usernames to monitor (alternative to passing multiple positional usernames)"
+    )
+    multi.add_argument(
+        "--targets-stagger",
+        dest="targets_stagger",
+        metavar="SECONDS",
+        type=int,
+        default=None,
+        help="Seconds to wait between starting each target monitor loop (0 = auto-spread across check-interval)"
+    )
+    multi.add_argument(
+        "--targets-stagger-jitter",
+        dest="targets_stagger_jitter",
+        metavar="SECONDS",
+        type=int,
+        default=None,
+        help="Random jitter (seconds) added to each target start time"
     )
 
     # Session‐related options
@@ -3411,8 +3533,33 @@ def main():
             sys.exit(1)
         sys.exit(0)
 
-    if not args.username:
-        print("* Error: TARGET_USERNAME argument is required !")
+    # Resolve targets: CLI (positional + --targets) > config TARGET_USERNAMES
+    targets: List[str] = []
+    if getattr(args, "targets", None):
+        # Allow commas and whitespace
+        for part in re.split(r"[,\s]+", args.targets.strip()):
+            if part:
+                targets.append(part)
+    if getattr(args, "usernames", None):
+        targets.extend([u for u in args.usernames if u])
+
+    if not targets and TARGET_USERNAMES:
+        targets = list(TARGET_USERNAMES)
+
+    # Normalize + de-duplicate while preserving order
+    seen = set()
+    normalized: List[str] = []
+    for u in targets:
+        u = u.strip()
+        if not u:
+            continue
+        if u not in seen:
+            seen.add(u)
+            normalized.append(u)
+    targets = normalized
+
+    if not targets:
+        print("* Error: At least one TARGET_USERNAME argument is required !")
         parser.print_help()
         sys.exit(1)
 
@@ -3504,25 +3651,55 @@ def main():
         if CSV_FILE:
             CSV_FILE = os.path.expanduser(CSV_FILE)
 
-    if CSV_FILE:
+    # CSV per-user handling:
+    # - single target: keep existing behavior (use CSV_FILE as-is)
+    # - multi target: create one CSV per user based on CSV_FILE prefix, e.g. instagram_data.csv -> instagram_data_user.csv
+    csv_files_by_user: dict = {}
+    if CSV_FILE and len(targets) == 1:
         try:
             with open(CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
                 pass
         except Exception as e:
             print(f"* Error, CSV file cannot be opened for writing: {e}")
             sys.exit(1)
+        csv_files_by_user[targets[0]] = CSV_FILE
+    elif CSV_FILE and len(targets) > 1:
+        base_path = Path(CSV_FILE)
+        base_suffix = base_path.suffix if base_path.suffix else ".csv"
+        for u in targets:
+            per_user = str(base_path.with_name(f"{base_path.stem}_{u}{base_suffix}"))
+            try:
+                with open(per_user, 'a', newline='', buffering=1, encoding="utf-8") as _:
+                    pass
+            except Exception as e:
+                print(f"* Error, CSV file cannot be opened for writing ({u}): {e}")
+                sys.exit(1)
+            csv_files_by_user[u] = per_user
 
     if args.disable_logging is True:
         DISABLE_LOGGING = True
+
+    # Decide output log suffix
+    if len(targets) == 1:
+        log_suffix = targets[0]
+    else:
+        # Join sorted usernames (human readable, deterministic)
+        joined = "_".join(sorted(targets))
+        joined = joined.replace(os.sep, "_").replace(" ", "_")
+        # Keep filenames at a reasonable length, add a short hash only if we had to truncate
+        if len(joined) > 140:
+            h = hashlib.md5(joined.encode("utf-8")).hexdigest()[:8]
+            joined = joined[:140] + "_" + h
+        log_suffix = joined
 
     if not DISABLE_LOGGING:
         log_path = Path(os.path.expanduser(INSTA_LOGFILE))
         if log_path.parent != Path('.'):
             if log_path.suffix == "":
-                log_path = log_path.parent / f"{log_path.name}_{args.username}.log"
+                log_path = log_path.parent / f"{log_path.name}_{log_suffix}.log"
         else:
             if log_path.suffix == "":
-                log_path = Path(f"{log_path.name}_{args.username}.log")
+                log_path = Path(f"{log_path.name}_{log_suffix}.log")
         log_path.parent.mkdir(parents=True, exist_ok=True)
         FINAL_LOG_PATH = str(log_path)
         sys.stdout = Logger(FINAL_LOG_PATH)
@@ -3562,7 +3739,13 @@ def main():
     print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
     print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
     print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
-    print(f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
+    if len(targets) == 1:
+        print(f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
+    else:
+        if CSV_FILE:
+            print(f"* CSV logging enabled:\t\t\tTrue (per-user files, base: {CSV_FILE})")
+        else:
+            print(f"* CSV logging enabled:\t\t\tFalse")
     print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
     print(f"* Empty profile pic template:\t\t{profile_pic_file_exists}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""))
     print(f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
@@ -3570,7 +3753,10 @@ def main():
     print(f"* Dotenv file:\t\t\t\t{env_path or 'None'}")
     print(f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}")
 
-    out = f"\nMonitoring Instagram user {args.username}"
+    if len(targets) == 1:
+        out = f"\nMonitoring Instagram user {targets[0]}"
+    else:
+        out = f"\nMonitoring Instagram users ({len(targets)}): {', '.join(targets)}"
     print(out)
     print("-" * len(out))
 
@@ -3582,7 +3768,65 @@ def main():
         signal.signal(signal.SIGABRT, decrease_check_signal_handler)
         signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
 
-    instagram_monitor_user(args.username, CSV_FILE, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS)
+    # Multi-target mode: run multiple monitors in one process, with configurable staggering
+    if len(targets) == 1:
+        print("Sneaking into Instagram like a ninja ... (be patient, secrets take time)")
+        print("─" * HORIZONTAL_LINE)
+        instagram_monitor_user(targets[0], csv_files_by_user.get(targets[0], CSV_FILE), SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS)
+    else:
+        stagger = args.targets_stagger if args.targets_stagger is not None else MULTI_TARGET_STAGGER
+        jitter = args.targets_stagger_jitter if args.targets_stagger_jitter is not None else MULTI_TARGET_STAGGER_JITTER
+
+        if stagger is None:
+            stagger = 0
+        if jitter is None:
+            jitter = 0
+
+        if stagger < 0 or jitter < 0:
+            print("* Error: --targets-stagger and --targets-stagger-jitter must be >= 0")
+            sys.exit(1)
+
+        # Auto-spread across the base interval
+        if stagger == 0:
+            stagger = max(1, int(INSTA_CHECK_INTERVAL / max(1, len(targets))))
+
+        now = now_local_naive()
+        print(f"* Multi-target staggering:\t\t{display_time(stagger)} between targets (jitter: {display_time(jitter)})")
+        print("* Planned first poll times:")
+        for idx, u in enumerate(targets):
+            base_delay = idx * stagger
+            add_jitter = int(random.uniform(0, jitter)) if jitter else 0
+            delay = base_delay + add_jitter
+            planned = now + timedelta(seconds=delay)
+            print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
+
+        print("─" * HORIZONTAL_LINE)
+        print("Sneaking into Instagram like a ninja ... (be patient, secrets take time)")
+        print("─" * HORIZONTAL_LINE)
+
+        def _runner(u: str, delay_s: int):
+            try:
+                if delay_s > 0:
+                    time.sleep(delay_s)
+                print(f"Target:\t\t\t{u}")
+                print("─" * HORIZONTAL_LINE)
+                instagram_monitor_user(u, csv_files_by_user.get(u, ""), SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS)
+            except Exception as e:
+                # Surface thread exceptions so the user sees them
+                print(f"* Error in target '{u}': {type(e).__name__}: {e}")
+                traceback.print_exc()
+
+        threads = []
+        for idx, u in enumerate(targets):
+            base_delay = idx * stagger
+            add_jitter = int(random.uniform(0, jitter)) if jitter else 0
+            delay = base_delay + add_jitter
+            t = threading.Thread(target=_runner, args=(u, delay), name=f"instagram_monitor:{u}", daemon=True)
+            t.start()
+            threads.append(t)
+
+        for t in threads:
+            t.join()
 
     sys.stdout = stdout_bck
     sys.exit(0)
