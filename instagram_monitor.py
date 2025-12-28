@@ -8,6 +8,7 @@
 # 2025/11/01, added timestamps to debug messages for follower and following counts
 # 2025/11/02, fixed numbering issue when saying how many accounts were fetched. Ending # needed a -1
 # 2025/11/02, show actual count from JSON when loading at start (in addition to stored count)
+# 2025/12/28, upgraded to latest code base
 
 # if first X are new, and that matches # new, stop
 # Instagram stop after x mode or calculate once you've found Lal. Test this mode
