@@ -1723,6 +1723,18 @@ def sleep_message(sleeptime):
     print("─" * HORIZONTAL_LINE)
 
 
+# Formats error messages to be more informative, especially for Instagram detection/challenge errors
+def format_error_message(e: Exception) -> str:
+    error_str = str(e)
+    error_type = type(e).__name__
+
+    # Check for KeyError related to 'data' key - indicates Instagram challenge/shadow ban
+    if error_type == "KeyError" and ("'data'" in error_str or '"data"' in error_str or error_str == "data"):
+        return "Instagram may have detected automated checks and requires a challenge or re-login (if session is used) or has temporarily shadow banned the IP. The API response is missing expected data."
+
+    return f"{error_type}: {error_str}"
+
+
 # Returns unique, validated hours (0-23) from the configured ranges
 def hours_to_check():
     # Notes:
@@ -2350,7 +2362,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 print(f"* Error: Failed to get last post/reel details")
 
         except Exception as e:
-            print(f"* Error while processing posts/reels: {type(e).__name__}: {e}")
+            error_msg = format_error_message(e)
+            print(f"* Error while processing posts/reels: {error_msg}")
             sys.exit(1)
 
         try:
@@ -2472,7 +2485,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 email_sent = False
             except Exception as e:
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
-                print(f"* Error, retrying in {display_time(r_sleep_time)}: {type(e).__name__}: {e}")
+                error_msg = format_error_message(e)
+                print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
                 if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                     print("* Session might not be valid anymore!")
                     if ERROR_NOTIFICATION and not email_sent:
@@ -2989,7 +3003,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 except Exception as e:
                     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
-                    print(f"* Error, retrying in {display_time(r_sleep_time)}: {type(e).__name__}: {e}")
+                    error_msg = format_error_message(e)
+                    print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
                     if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                         print("* Session might not be valid anymore!")
                         if ERROR_NOTIFICATION and not email_sent:
@@ -3016,7 +3031,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             if comment_created_at:
                                 post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
                 except Exception as e:
-                    print(f"* Error while getting post's likes list / comments list: {type(e).__name__}: {e}")
+                    error_msg = format_error_message(e)
+                    print(f"* Error while getting post's likes list / comments list: {error_msg}")
 
                 if new_post:
 
