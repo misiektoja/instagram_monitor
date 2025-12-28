@@ -2263,7 +2263,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 story_video_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
                             if not os.path.isfile(story_video_filename):
                                 if save_pic_video(story_video_url, story_video_filename, local_ts):
-                                    print(f"Story video saved to '{story_video_filename}'")
+                                    print(f"Story video saved for {user} to '{story_video_filename}'")
 
                         if story_thumbnail_url:
                             if local_dt:
@@ -2272,7 +2272,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 story_image_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
                             if not os.path.isfile(story_image_filename):
                                 if save_pic_video(story_thumbnail_url, story_image_filename, local_ts):
-                                    print(f"Story thumbnail image saved to '{story_image_filename}'")
+                                    print(f"Story thumbnail image saved for {user} to '{story_image_filename}'")
                             if os.path.isfile(story_image_filename):
                                 try:
                                     if imgcat_exe:
@@ -2407,7 +2407,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 video_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
             if not os.path.isfile(video_filename):
                 if save_pic_video(video_url, video_filename, highestinsta_ts):
-                    print(f"{last_source.capitalize()} video saved to '{video_filename}'")
+                    print(f"{last_source.capitalize()} video saved for {user} to '{video_filename}'")
 
         if thumbnail_url:
             if highestinsta_dt:
@@ -2416,7 +2416,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 image_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
             if not os.path.isfile(image_filename):
                 if save_pic_video(thumbnail_url, image_filename, highestinsta_ts):
-                    print(f"{last_source.capitalize()} thumbnail image saved to '{image_filename}'")
+                    print(f"{last_source.capitalize()} thumbnail image saved for {user} to '{image_filename}'")
             if os.path.isfile(image_filename):
                 try:
                     if imgcat_exe:
@@ -2884,7 +2884,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                     story_video_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
                                 if not os.path.isfile(story_video_filename):
                                     if save_pic_video(story_video_url, story_video_filename, local_ts):
-                                        print(f"Story video saved to '{story_video_filename}'")
+                                        print(f"Story video saved for {user} to '{story_video_filename}'")
 
                             m_body_html_pic_saved_text = ""
                             if local_dt:
@@ -2895,7 +2895,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 if not os.path.isfile(story_image_filename):
                                     if save_pic_video(story_thumbnail_url, story_image_filename, local_ts):
                                         m_body_html_pic_saved_text = f'<br><br><img src="cid:story_pic" width="50%">'
-                                        print(f"Story thumbnail image saved to '{story_image_filename}'")
+                                        print(f"Story thumbnail image saved for {user} to '{story_image_filename}'")
                                         try:
                                             if imgcat_exe:
                                                 subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {story_image_filename}", shell=True, check=True)
@@ -3073,7 +3073,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             video_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
                         if not os.path.isfile(video_filename):
                             if save_pic_video(video_url, video_filename, highestinsta_ts):
-                                print(f"{last_source.capitalize()} video saved to '{video_filename}'")
+                                print(f"{last_source.capitalize()} video saved for {user} to '{video_filename}'")
 
                     m_body_html_pic_saved_text = ""
                     if highestinsta_dt:
@@ -3084,7 +3084,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         if not os.path.isfile(image_filename):
                             if save_pic_video(thumbnail_url, image_filename, highestinsta_ts):
                                 m_body_html_pic_saved_text = f'<br><br><img src="cid:{last_source.lower()}_pic" width="50%">'
-                                print(f"{last_source.capitalize()} thumbnail image saved to '{image_filename}'")
+                                print(f"{last_source.capitalize()} thumbnail image saved for {user} to '{image_filename}'")
                                 try:
                                     if imgcat_exe:
                                         subprocess.run(f"{imgcat_exe} {image_filename}", shell=True, check=True)
@@ -3774,7 +3774,7 @@ def main():
     else:
         out = f"\nMonitoring Instagram users ({len(targets)}): {', '.join(targets)}"
     print(out)
-    print("-" * len(out))
+    print("─" * len(out))
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
     if platform.system() != 'Windows':
