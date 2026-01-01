@@ -2161,7 +2161,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"* Error: {e}")
 
     if ((followers_count != followers_old_count) or (followers_count > 0 and not followers)) and not skip_session and not skip_followers and can_view:
-        print("\n* Getting followers ...")
+        # print("\n* Getting followers ...")
         followers_followings_fetched = True
 
         try:
@@ -2253,7 +2253,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"* Error: {e}")
 
     if ((followings_count != followings_old_count) or (followings_count > 0 and not followings)) and not skip_session and not skip_followings and can_view:
-        print("\n* Getting followings ...")
+        # print("\n* Getting followings ...")
         followers_followings_fetched = True
 
         try:
