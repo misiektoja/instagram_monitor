@@ -2099,11 +2099,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"* Warning: Could not apply custom mobile user-agent patch due to an unexpected error: {e}")
             print("* Proceeding with the default Instaloader mobile user-agent")
 
+        print("Sneaking into Instagram like a ninja ... (be patient, secrets take time)")
+
+        print("- loading profile from username...", end=" ", flush=True)
         profile = instaloader.Profile.from_username(bot.context, user)
 
         time.sleep(NEXT_OPERATION_DELAY)
         insta_username = profile.username
         insta_userid = profile.userid
+        print(f" completed: {insta_username}")
         followers_count = profile.followers
         followings_count = profile.followees
         bio = profile.biography
@@ -2128,8 +2132,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         profile_image_url = profile.profile_pic_url_no_iphone
 
         if bot.context.is_logged_in:
+            print("- loading own profile...", end=" ", flush=True)
             me = instaloader.Profile.own_profile(bot.context)
             session_username = me.username
+            print(f" completed: {session_username}")
         else:
             session_username = None
 
