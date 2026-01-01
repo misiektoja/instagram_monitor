@@ -464,6 +464,16 @@ def session_label() -> str:
     # Session is shared across targets, include it in error notifications for clarity
     return SESSION_USERNAME if SESSION_USERNAME else "<anonymous>"
 
+def get_follower_count(profile):
+    tempcnt = profile.get_followers().count
+    return tempcnt
+    
+def get_following_count(profile):
+    tempcnt = profile.get_followees().count
+    return tempcnt
+
+def show_follow_info(followers1, followers2, followers_actual, followees1, followees2, followees_actual):
+    print(f"*** Followings ({followees1}) actual ({followees_actual}) *** Followers ({followers1}) actual ({followers_actual})")
 
 # Logger class to output messages to stdout and log file
 class Logger(object):
@@ -2189,7 +2199,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if followers_count == followers_old_count:
                 followers = followers_old
             followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file)), pytz.timezone(LOCAL_TIMEZONE))
-            print(f"* Followers ({followers_old_count}) loaded from file '{insta_followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
+            print(f"* Followers ({followers_old_count}) actual ({len(followers_old)}) loaded from file '{insta_followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
             followers_followings_fetched = True
 
     if followers_count != followers_old_count:
@@ -2231,7 +2241,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             try:
                 with open(insta_followers_file, 'w', encoding="utf-8") as f:
                     json.dump(followers_to_save, f, indent=2)
-                    print(f"* Followers saved to file '{insta_followers_file}'")
+                    print(f"* Followers ({followers_count}) actual ({len(followers)}) saved to file '{insta_followers_file}'")
             except Exception as e:
                 print(f"* Cannot save list of followers to '{insta_followers_file}' file: {e}")
 
@@ -2280,7 +2290,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if followings_count == followings_old_count:
                 followings = followings_old
             following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file)), pytz.timezone(LOCAL_TIMEZONE))
-            print(f"\n* Followings ({followings_old_count}) loaded from file '{insta_followings_file}' ({get_short_date_from_ts(following_mdate, show_weekday=False, always_show_year=True)})")
+            print(f"\n* Followings ({followings_old_count}) actual ({len(followings_old)}) loaded from file '{insta_followings_file}' ({get_short_date_from_ts(following_mdate, show_weekday=False, always_show_year=True)})")
             followers_followings_fetched = True
 
     if followings_count != followings_old_count:
@@ -2321,7 +2331,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             try:
                 with open(insta_followings_file, 'w', encoding="utf-8") as f:
                     json.dump(followings_to_save, f, indent=2)
-                    print(f"* Followings saved to file '{insta_followings_file}'")
+                    print(f"* Followings ({followings_count}) actual ({len(followings)}) saved to file '{insta_followings_file}'")
             except Exception as e:
                 print(f"* Cannot save list of followings to '{insta_followings_file}' file: {e}")
 
@@ -2730,6 +2740,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         followings = []
                         followings = [followee.username for followee in profile.get_followees()]
                         followings_to_save = []
+                        profile = instaloader.Profile.from_username(bot.context, user)
+                        show_follow_info(profile.followers, get_follower_count(profile), len(followers), profile.followees, get_following_count(profile), len(followings))
                         followings_count = profile.followees
                         if not followings and followings_count > 0:
                             print("* Empty followings list returned, not saved to file")
@@ -2826,6 +2838,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         followers = []
                         followers = [follower.username for follower in profile.get_followers()]
                         followers_to_save = []
+                        profile = instaloader.Profile.from_username(bot.context, user)
+                        show_follow_info(profile.followers, get_follower_count(profile), len(followers), profile.followees, get_following_count(profile), len(followings))
                         followers_count = profile.followers
                         if not followers and followers_count > 0:
                             print("* Empty followers list returned, not saved to file")
