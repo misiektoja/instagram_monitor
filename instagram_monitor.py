@@ -473,7 +473,7 @@ def get_following_count(profile):
     return tempcnt
 
 def show_follow_info(followers1, followers2, followers_actual, followees1, followees2, followees_actual):
-    print(f"*** Followings ({followees1}) actual ({followees_actual}) *** Followers ({followers1}) actual ({followers_actual})")
+    print(f"* Followings ({followees1}) actual ({followees_actual}). Followers ({followers1}) actual ({followers_actual})")
 
 # Logger class to output messages to stdout and log file
 class Logger(object):
@@ -2750,6 +2750,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             followings_to_save.append(followings)
                             with open(insta_followings_file, 'w', encoding="utf-8") as f:
                                 json.dump(followings_to_save, f, indent=2)
+                                print(f"* Followings ({followings_count}) actual ({len(followings)}) saved to file '{insta_followings_file}'")
                     except Exception as e:
                         followings = followings_old
                         print(f"* Error while processing followings: {type(e).__name__}: {e}")
@@ -2848,6 +2849,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             followers_to_save.append(followers)
                             with open(insta_followers_file, 'w', encoding="utf-8") as f:
                                 json.dump(followers_to_save, f, indent=2)
+                                print(f"* Followers ({followers_count}) actual ({len(followers)}) saved to file '{insta_followers_file}'")
                     except Exception as e:
                         followers = followers_old
                         print(f"* Error while processing followers: {type(e).__name__}: {e}")
