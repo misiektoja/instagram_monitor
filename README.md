@@ -60,7 +60,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
 ## Requirements
 
 * Python 3.9 or higher
-* Libraries: [instaloader](https://github.com/instaloader/instaloader), `requests`, `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`
+* Libraries: [instaloader](https://github.com/instaloader/instaloader), `requests`, `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`
 
 Tested on:
 
@@ -88,7 +88,7 @@ Download the *[instagram_monitor.py](https://raw.githubusercontent.com/misiektoj
 Install dependencies via pip:
 
 ```sh
-pip install instaloader requests python-dateutil pytz tzlocal python-dotenv
+pip install instaloader requests python-dateutil pytz tzlocal python-dotenv tqdm
 ```
 
 Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt)*:
@@ -337,6 +337,8 @@ The tool in mode 2 (session login) also saves the list of followings & followers
 - `instagram_<username>_followers.json`
 
 Thanks to this we do not need to re-fetch it every time the tool is restarted and we can also detect changes since the last usage of the tool.
+
+When downloading lists of followers or followings, a **progress bar** is displayed showing real-time download progress, including statistics such as names per request, total requests, elapsed time and estimated remaining time. Progress updates are shown in the terminal only (to avoid cluttering log files), with the final completion state written to the log file for reference.
 
 The tool also saves the user profile picture to `instagram_<username>_profile_pic*.jpeg` files.
 
