@@ -14,6 +14,7 @@ python-dateutil
 pytz
 tzlocal (optional)
 python-dotenv (optional)
+tqdm
 """
 
 VERSION = "2.0"
@@ -356,6 +357,11 @@ CLI_CONFIG_PATH = None
 # To solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
 
+# Progress Bar control items
+START_TIME = 0
+NAME_COUNT = 1
+WRAPPER_COUNT = 0
+pbar = None
 
 import sys
 
@@ -417,6 +423,7 @@ from sqlite3 import OperationalError, connect
 from pathlib import Path
 from functools import wraps
 import traceback
+from tqdm import tqdm
 
 
 # Global lock to avoid interleaved output when using multi-target threading
@@ -440,16 +447,19 @@ def _thread_key() -> int:
     return threading.get_ident()
 
 
+# Resets the thread-specific output buffer for redirect/session detection
 def reset_thread_output() -> None:
     with STDOUT_LOCK:
         LAST_OUTPUT_BY_THREAD[_thread_key()] = []
 
 
+# Returns the thread-specific output buffer for redirect/session detection
 def get_thread_output() -> list:
     with STDOUT_LOCK:
         return list(LAST_OUTPUT_BY_THREAD.get(_thread_key(), []))
 
 
+# Returns a label for the current session (username or anonymous)
 def session_label() -> str:
     # Session is shared across targets, include it in error notifications for clarity
     return SESSION_USERNAME if SESSION_USERNAME else "<anonymous>"
@@ -1654,10 +1664,120 @@ def get_random_mobile_user_agent() -> str:
     return (f"Instagram {app_major}.{app_minor}.{app_patch}.{app_revision} ({device}{model}; iOS {os_major}_{os_minor}; {language}; {locale}; scale={scale:.2f}; {width}x{height}; {device_id}) AppleWebKit/420+")
 
 
+# Extracts usernames from a JSON response, automatically detecting if the data is for 'following' or 'followers'
+def extract_usernames_safely(data_dict):
+    usernames = []
+
+    # Define the keys to look for in order of preference
+    # The value is the path segment needed to reach the 'edges' list
+    possible_keys = ['edge_followed_by', 'edge_follow']
+
+    # 1. Safely access the 'user' dictionary
+    try:
+        user_data = data_dict['data']['user']
+    except KeyError as e:
+        # print(f"Format Check Failed: Missing essential key {e} in top level. Skipping.")
+        return []
+
+    # 2. Iterate through possible keys to find the correct list
+    edges = None
+    for key in possible_keys:
+        if key in user_data:
+            # We found the key (e.g., 'edge_followed_by')
+            try:
+                edges = user_data[key]['edges']
+                break  # Exit the loop once the correct key is found
+            except KeyError:
+                # This handles the case where the key exists but 'edges' is missing
+                # print(f"Warning: Found '{key}' but 'edges' list is missing inside it. Trying next key.")
+                continue
+
+    # 3. Check if any edges were found and if it's a list
+    if edges is None:
+        # print("Format Check Failed: Could not find 'edge_followed_by' or 'edge_follow' data.")
+        return []
+
+    if not isinstance(edges, list):
+        # print("Format Check Failed: The 'edges' data is not a list.")
+        return []
+
+    # 4. Extract usernames from the list of edges
+    for edge in edges:
+        try:
+            # The node structure is consistent: edge -> 'node' -> 'username'
+            username = edge['node']['username']
+            usernames.append(username)
+        except KeyError:
+            # Handle a malformed single entry by skipping it
+            continue
+
+    return usernames
+
+
+# Initializes and sets up a progress bar for displaying download progress
+def setup_pbar(total_expected, title):
+    global START_TIME, NAME_COUNT, WRAPPER_COUNT, pbar
+
+    START_TIME = datetime.now()
+    NAME_COUNT = 0
+    WRAPPER_COUNT = 0
+
+    # If a bar exists, close it first
+    if pbar is not None:
+        close_pbar()
+
+    custom_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
+    # Write progress bar updates to terminal only (not log file) to avoid cluttering logs
+    terminal_out = stdout_bck if stdout_bck is not None else sys.stdout
+    pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=terminal_out)
+
+
+# Closes progress bar and write final state to log file if logging is enabled
+def close_pbar():
+    global pbar
+    if pbar is not None:
+        # Get the final progress bar string before closing
+        # Use format_dict to get current values and format the progress bar string
+        d = pbar.format_dict
+        desc = pbar.desc if pbar.desc else ""
+        unit = pbar.unit if pbar.unit else ""
+
+        # Format the progress bar string to match the custom_bar_format: "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
+        n = d.get('n', 0)
+        total = d.get('total', 0)
+        n_fmt = f"{n:,}" if n >= 1000 else str(n)
+        total_fmt = f"{total:,}" if total >= 1000 else str(total)
+
+        # Calculate bar visualization
+        if total > 0:
+            bar_length = 40
+            filled = int(bar_length * n / total)
+            bar = '█' * filled + '░' * (bar_length - filled)
+        else:
+            bar = '░' * 40
+
+        # Build final string matching the format: "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
+        if desc:
+            final_str = f"{desc}: {bar}| {n_fmt}/{total_fmt} [{unit}]"
+        else:
+            final_str = f"{bar}| {n_fmt}/{total_fmt} [{unit}]"
+
+        # Close the progress bar (writes to terminal)
+        pbar.close()
+
+        # Write final state to log file if logging is enabled
+        if stdout_bck is not None and isinstance(sys.stdout, Logger):
+            sys.stdout.logfile.write(final_str + "\n")
+            sys.stdout.logfile.flush()
+
+        pbar = None
+
+
 # Monkey-patches Instagram request to add human-like jitter and back-off
 def instagram_wrap_request(orig_request):
     @wraps(orig_request)
     def wrapper(*args, **kwargs):
+        global NAME_COUNT, START_TIME, WRAPPER_COUNT, pbar
         method = kwargs.get("method") or (args[1] if len(args) > 1 else None)
         url = kwargs.get("url") or (args[2] if len(args) > 2 else None)
         if JITTER_VERBOSE:
@@ -1666,7 +1786,10 @@ def instagram_wrap_request(orig_request):
         def _do_request():
             # If jitter is disabled, just perform the request (but still optionally serialized by the outer lock)
             if not ENABLE_JITTER:
-                return orig_request(*args, **kwargs)
+                resp = orig_request(*args, **kwargs)
+                # Still process progress bar even if jitter is disabled
+                _update_progress_bar(resp)
+                return resp
 
             # Human-like jitter + back-off on checkpoint/429
             time.sleep(random.uniform(0.8, 3.0))
@@ -1674,19 +1797,76 @@ def instagram_wrap_request(orig_request):
             backoff = 60
             while True:
                 resp = orig_request(*args, **kwargs)
+
+                # Update progress bar for follower/following requests
+                _update_progress_bar(resp)
+
                 if resp.status_code in (429, 400) and "checkpoint" in resp.text:
                     attempt += 1
                     if attempt > 3:
+                        if pbar is not None:
+                            close_pbar()
                         raise instaloader.exceptions.QueryReturnedNotFoundException(
                             "Giving up after multiple 429/checkpoint"
                         )
                     wait = backoff + random.uniform(0, 30)
                     if JITTER_VERBOSE:
-                        print(f"* Back-off {wait:.0f}s after {resp.status_code}")
+                        if pbar:
+                            tqdm.write(f"* Back-off {wait:.0f}s after {resp.status_code}")
+                        else:
+                            print(f"* Back-off {wait:.0f}s after {resp.status_code}")
                     time.sleep(wait)
                     backoff *= 2
                     continue
                 return resp
+
+        def _update_progress_bar(resp):
+            """Helper function to update progress bar based on response content."""
+            global NAME_COUNT, WRAPPER_COUNT, pbar
+            # Only process and count requests that are likely follower/following related
+            # Check if response is successful and JSON before processing
+            user_list = []
+            if resp.status_code == 200 and resp.headers.get('content-type', '').startswith('application/json'):
+                try:
+                    # Extract usernames from JSON response
+                    user_list = extract_usernames_safely(resp.json())
+
+                    # Only count requests that actually returned follower/following data
+                    if user_list:
+                        WRAPPER_COUNT += 1
+                except (ValueError, KeyError) as e:
+                    # JSON decode error or missing keys - not a follower/following request
+                    # Silently skip, this is expected for non-follower/following requests
+                    pass
+                except Exception as e:
+                    # Other exceptions - log but don't count
+                    if pbar:
+                        tqdm.write(f"[WRAP-REQ] exception: {e}")
+                    else:
+                        print(f"[WRAP-REQ] exception: {e}")
+
+            # Update progress bar only if we extracted usernames
+            if user_list and pbar is not None:
+                increment = len(user_list)
+                NAME_COUNT += increment
+                pbar.update(increment)
+
+                # Calculate Remaining Minutes
+                d = pbar.format_dict
+                rate = d['rate'] if d['rate'] else 0
+                remaining_items = d['total'] - d['n']
+
+                # Calculate remaining seconds, then minutes
+                rem_s = remaining_items / rate if rate > 0 else 0
+                rem_m = rem_s / 60
+
+                elapsed_m = d['elapsed'] / 60
+
+                # Update Stats - use float division for precision
+                names_per_req = d['n'] / WRAPPER_COUNT if WRAPPER_COUNT > 0 else 0
+                stats_string = f"{names_per_req:.1f} names/req, reqs={WRAPPER_COUNT:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}"
+                pbar.unit = stats_string
+                pbar.refresh()
 
         if MULTI_TARGET_SERIALIZE_HTTP:
             with HTTP_SERIAL_LOCK:
@@ -1704,6 +1884,7 @@ def instagram_wrap_send(orig_send):
         url = getattr(req_obj, "url", None)
         if JITTER_VERBOSE:
             print(f"[WRAP-SEND] {method} {url}")
+
         def _do_send():
             if ENABLE_JITTER:
                 time.sleep(random.uniform(0.8, 3.0))
@@ -1758,6 +1939,7 @@ def probability_for_cycle(sleep_seconds: int) -> float:
         day_seconds = 86400  # 1 day
 
     return min(1.0, DAILY_HUMAN_HITS * sleep_seconds / day_seconds)
+
 
 # Performs random feed / profile / hashtag / followee actions to look more like a human being
 def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> None:
@@ -1831,6 +2013,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
 
 # Monitors activity of the specified Instagram user
 def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details):
+    global pbar
 
     try:
         if csv_file_name:
@@ -2026,15 +2209,18 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"* Error: {e}")
 
     if ((followers_count != followers_old_count) or (followers_count > 0 and not followers)) and not skip_session and not skip_followers and can_view:
-        print("\n* Getting followers ...")
+        # print("\n* Getting followers ...")
         followers_followings_fetched = True
 
         try:
+            setup_pbar(total_expected=followers_count, title="* Downloading Followers")
             followers = [follower.username for follower in profile.get_followers()]
             followers_count = profile.followers
         except Exception as e:
             print(f"* Error while getting followers: {type(e).__name__}: {e}")
             sys.exit(1)
+        finally:
+            close_pbar()
 
         if not followers and followers_count > 0:
             print("* Empty followers list returned, not saved to file")
@@ -2113,15 +2299,18 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"* Error: {e}")
 
     if ((followings_count != followings_old_count) or (followings_count > 0 and not followings)) and not skip_session and not skip_followings and can_view:
-        print("\n* Getting followings ...")
+        # print("\n* Getting followings ...")
         followers_followings_fetched = True
 
         try:
+            setup_pbar(total_expected=followings_count, title="* Downloading Followings")
             followings = [followee.username for followee in profile.get_followees()]
             followings_count = profile.followees
         except Exception as e:
             print(f"* Error while getting followings: {type(e).__name__}: {e}")
             sys.exit(1)
+        finally:
+            close_pbar()
 
         if not followings and followings_count > 0:
             print("* Empty followings list returned, not saved to file")
@@ -2537,6 +2726,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 if not skip_session and not skip_followings and can_view:
                     try:
+                        setup_pbar(total_expected=followings_count, title="* Downloading Followings")
                         followings = []
                         followings = [followee.username for followee in profile.get_followees()]
                         followings_to_save = []
@@ -2551,6 +2741,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     except Exception as e:
                         followings = followings_old
                         print(f"* Error while processing followings: {type(e).__name__}: {e}")
+                    finally:
+                        close_pbar()
 
                     if not followings and followings_count > 0:
                         followings = followings_old
@@ -2630,6 +2822,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 if not skip_session and not skip_followers and can_view:
                     try:
+                        setup_pbar(total_expected=followers_count, title="* Downloading Followers")
                         followers = []
                         followers = [follower.username for follower in profile.get_followers()]
                         followers_to_save = []
@@ -2644,6 +2837,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     except Exception as e:
                         followers = followers_old
                         print(f"* Error while processing followers: {type(e).__name__}: {e}")
+                    finally:
+                        close_pbar()
 
                     if not followers and followers_count > 0:
                         followers = followers_old
