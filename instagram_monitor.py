@@ -2735,8 +2735,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         followings = []
                         followings = [followee.username for followee in profile.get_followees()]
                         followings_to_save = []
+                        # Refresh profile to get current reported counts for comparison
+                        profile = instaloader.Profile.from_username(bot.context, user)
                         followings_count = profile.followees
-                        show_follow_info(followers_count, len(followers), followings_count, len(followings))
+                        followers_count_reported = profile.followers
+                        show_follow_info(followers_count_reported, len(followers), followings_count, len(followings))
                         if not followings and followings_count > 0:
                             print("* Empty followings list returned, not saved to file")
                         else:
@@ -2833,8 +2836,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         followers = []
                         followers = [follower.username for follower in profile.get_followers()]
                         followers_to_save = []
+                        # Refresh profile to get current reported counts for comparison
+                        profile = instaloader.Profile.from_username(bot.context, user)
                         followers_count = profile.followers
-                        show_follow_info(followers_count, len(followers), followings_count, len(followings))
+                        followings_count_reported = profile.followees
+                        show_follow_info(followers_count, len(followers), followings_count_reported, len(followings))
                         if not followers and followers_count > 0:
                             print("* Empty followers list returned, not saved to file")
                         else:
