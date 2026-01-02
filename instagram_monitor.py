@@ -2042,8 +2042,15 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
 
 
 # Monitors activity of the specified Instagram user
-def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details):
+def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None):
     global pbar
+
+    # Wait for previous user's initial loading to complete (to avoid progress bar overlap)
+    if wait_for_prev_user is not None:
+        wait_for_prev_user.wait()
+
+    print(f"Target:\t\t\t{user}")
+    print("─" * HORIZONTAL_LINE)
 
     try:
         if csv_file_name:
@@ -2662,6 +2669,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     else:
         highestinsta_ts_old = int(time.time())
         highestinsta_dt_old = now_local()
+
+    # Signal that full initial loading (followers, followings, profile pic, stories, latest post/reel) is complete
+    # so the next user can start without interleaving output
+    if signal_loading_complete is not None:
+        signal_loading_complete.set()
 
     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
 
@@ -4066,24 +4078,45 @@ def main():
         print("Sneaking into Instagram like a ninja ... (be patient, secrets take time)")
         print("─" * HORIZONTAL_LINE)
 
-        def _runner(u: str, delay_s: int):
+        # Create events to coordinate initial loading between users.
+        # We create N+1 events: event[i] means "user i finished initial load".
+        # User i waits on event[i] and signals event[i+1].
+        loading_events = [threading.Event() for _ in range(len(targets) + 1)]
+        loading_events[0].set()  # allow the first user to start immediately
+
+        def _runner(u: str, delay_s: int, idx: int):
             try:
                 if delay_s > 0:
                     time.sleep(delay_s)
-                print(f"Target:\t\t\t{u}")
-                print("─" * HORIZONTAL_LINE)
-                instagram_monitor_user(u, csv_files_by_user.get(u, ""), SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS)
+                # Wait for previous user's loading to complete
+                wait_event = loading_events[idx]
+                # Signal when this user's loading is complete
+                signal_event = loading_events[idx + 1]
+                instagram_monitor_user(
+                    u,
+                    csv_files_by_user.get(u, ""),
+                    SKIP_SESSION,
+                    SKIP_FOLLOWERS,
+                    SKIP_FOLLOWINGS,
+                    SKIP_GETTING_STORY_DETAILS,
+                    SKIP_GETTING_POSTS_DETAILS,
+                    GET_MORE_POST_DETAILS,
+                    wait_for_prev_user=wait_event,
+                    signal_loading_complete=signal_event,
+                )
             except Exception as e:
                 # Surface thread exceptions so the user sees them
                 print(f"* Error in target '{u}': {type(e).__name__}: {e}")
                 traceback.print_exc()
+                # Still signal completion even on error, so next user can proceed
+                loading_events[idx + 1].set()
 
         threads = []
         for idx, u in enumerate(targets):
             base_delay = idx * stagger
             add_jitter = int(random.uniform(0, jitter)) if jitter else 0
             delay = base_delay + add_jitter
-            t = threading.Thread(target=_runner, args=(u, delay), name=f"instagram_monitor:{u}", daemon=True)
+            t = threading.Thread(target=_runner, args=(u, delay, idx), name=f"instagram_monitor:{u}", daemon=True)
             t.start()
             threads.append(t)
 
