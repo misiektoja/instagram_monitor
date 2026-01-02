@@ -14,6 +14,7 @@ python-dateutil
 pytz
 tzlocal (optional)
 python-dotenv (optional)
+tqdm
 """
 
 VERSION = "2.0"
@@ -1659,13 +1660,9 @@ def get_random_mobile_user_agent() -> str:
 
     return (f"Instagram {app_major}.{app_minor}.{app_patch}.{app_revision} ({device}{model}; iOS {os_major}_{os_minor}; {language}; {locale}; scale={scale:.2f}; {width}x{height}; {device_id}) AppleWebKit/420+")
 
-def extract_usernames_safely(data_dict):
-    """
-    Extracts usernames from a JSON response, automatically detecting if the
-    data is for 'following' ('edge_follow') or 'followers' ('edge_followed_by').
 
-    Returns a list of usernames or an empty list if the expected format is not found.
-    """
+# Extracts usernames from a JSON response, automatically detecting if the data is for 'following' or 'followers'
+def extract_usernames_safely(data_dict):
     usernames = []
 
     # Define the keys to look for in order of preference
