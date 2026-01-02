@@ -2099,8 +2099,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"* Warning: Could not apply custom mobile user-agent patch due to an unexpected error: {e}")
             print("* Proceeding with the default Instaloader mobile user-agent")
 
-        print("Sneaking into Instagram like a ninja ... (be patient, secrets take time)")
-
         print("- loading profile from username...", end=" ", flush=True)
         profile = instaloader.Profile.from_username(bot.context, user)
 
@@ -2116,7 +2114,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         can_view = (not is_private) or followed_by_viewer
         posts_count = profile.mediacount
         if not skip_session and can_view:
+            print("- fetching reels count...", end=" ", flush=True)
             reels_count = get_total_reels_count(user, bot, skip_session)
+            print("completed")
 
         if not is_private:
             if bot.context.is_logged_in:
@@ -2124,8 +2124,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             else:
                 has_story = False
         elif bot.context.is_logged_in and followed_by_viewer:
+            print("- checking for stories...", end=" ", flush=True)
             story = next(bot.get_stories(userids=[insta_userid]), None)
             has_story = bool(story and story.itemcount)
+            print("completed")
         else:
             has_story = False
 
@@ -2136,7 +2138,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             me = instaloader.Profile.own_profile(bot.context)
             session_username = me.username
             print(f" completed: {session_username}")
-        else:
+
+        print("─" * HORIZONTAL_LINE)
+
+        if not bot.context.is_logged_in:
             session_username = None
 
     except Exception as e:
