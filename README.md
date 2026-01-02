@@ -10,7 +10,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
   - changes in **followings, followers** and **bio**
   - changes in **profile pictures**
   - changes in **profile visibility** (public to private and vice versa)
-- **Anonymous download** of users' **story images and videos**; the user won't know you watched their stories 😉
+- **Anonymous download** of users' **story images and videos** without leaving view traces
 - **Download** of users' **post images and post / reel videos**
 - **Email notifications** for different events (new posts, reels, stories, changes in followings, followers, bio, profile pictures, visibility and errors)
 - **Attaching changed profile pictures** and **stories/posts/reels images** directly in email notifications
@@ -19,7 +19,8 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
 - Support for both **public and private profiles**
 - **Two modes of operation**: with or without a logged-in Instagram account
 - **Monitor multiple users** in a single process with automatic request staggering to avoid detection
-- Various mechanisms to **prevent captcha and detection of automated tools**
+- Various mechanisms to **prevent captcha and detection of automated tools**, including **Be Human mode** (simulates random user actions), **Jitter mode** (adds human-like delays and back-off to HTTP requests) and **hour-range checking** (limits fetching updates to specific hours of the day)
+- **Flexible configuration** - support for config files, dotenv files, environment variables and command-line arguments
 - Possibility to **control the running copy** of the script via signals
 - **Functional, procedural Python** (minimal OOP)
 
