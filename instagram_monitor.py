@@ -447,16 +447,19 @@ def _thread_key() -> int:
     return threading.get_ident()
 
 
+# Resets the thread-specific output buffer for redirect/session detection
 def reset_thread_output() -> None:
     with STDOUT_LOCK:
         LAST_OUTPUT_BY_THREAD[_thread_key()] = []
 
 
+# Returns the thread-specific output buffer for redirect/session detection
 def get_thread_output() -> list:
     with STDOUT_LOCK:
         return list(LAST_OUTPUT_BY_THREAD.get(_thread_key(), []))
 
 
+# Returns a label for the current session (username or anonymous)
 def session_label() -> str:
     # Session is shared across targets, include it in error notifications for clarity
     return SESSION_USERNAME if SESSION_USERNAME else "<anonymous>"
@@ -1683,7 +1686,7 @@ def extract_usernames_safely(data_dict):
             # We found the key (e.g., 'edge_followed_by')
             try:
                 edges = user_data[key]['edges']
-                break # Exit the loop once the correct key is found
+                break  # Exit the loop once the correct key is found
             except KeyError:
                 # This handles the case where the key exists but 'edges' is missing
                 # print(f"Warning: Found '{key}' but 'edges' list is missing inside it. Trying next key.")
@@ -1710,6 +1713,8 @@ def extract_usernames_safely(data_dict):
 
     return usernames
 
+
+# Initializes and sets up a progress bar for displaying download progress
 def setup_pbar(total_expected, title):
     global START_TIME, NAME_COUNT, WRAPPER_COUNT, pbar
 
@@ -1719,10 +1724,54 @@ def setup_pbar(total_expected, title):
 
     # If a bar exists, close it first
     if pbar is not None:
-        pbar.close()
+        close_pbar()
 
     custom_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
-    pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title)
+    # Write progress bar updates to terminal only (not log file) to avoid cluttering logs
+    terminal_out = stdout_bck if stdout_bck is not None else sys.stdout
+    pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=terminal_out)
+
+
+# Closes progress bar and write final state to log file if logging is enabled
+def close_pbar():
+    global pbar
+    if pbar is not None:
+        # Get the final progress bar string before closing
+        # Use format_dict to get current values and format the progress bar string
+        d = pbar.format_dict
+        desc = pbar.desc if pbar.desc else ""
+        unit = pbar.unit if pbar.unit else ""
+
+        # Format the progress bar string to match the custom_bar_format: "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
+        n = d.get('n', 0)
+        total = d.get('total', 0)
+        n_fmt = f"{n:,}" if n >= 1000 else str(n)
+        total_fmt = f"{total:,}" if total >= 1000 else str(total)
+
+        # Calculate bar visualization
+        if total > 0:
+            bar_length = 40
+            filled = int(bar_length * n / total)
+            bar = '█' * filled + '░' * (bar_length - filled)
+        else:
+            bar = '░' * 40
+
+        # Build final string matching the format: "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
+        if desc:
+            final_str = f"{desc}: {bar}| {n_fmt}/{total_fmt} [{unit}]"
+        else:
+            final_str = f"{bar}| {n_fmt}/{total_fmt} [{unit}]"
+
+        # Close the progress bar (writes to terminal)
+        pbar.close()
+
+        # Write final state to log file if logging is enabled
+        if stdout_bck is not None and isinstance(sys.stdout, Logger):
+            sys.stdout.logfile.write(final_str + "\n")
+            sys.stdout.logfile.flush()
+
+        pbar = None
+
 
 # Monkey-patches Instagram request to add human-like jitter and back-off
 def instagram_wrap_request(orig_request):
@@ -1756,8 +1805,7 @@ def instagram_wrap_request(orig_request):
                     attempt += 1
                     if attempt > 3:
                         if pbar is not None:
-                            pbar.close()
-                            pbar = None
+                            close_pbar()
                         raise instaloader.exceptions.QueryReturnedNotFoundException(
                             "Giving up after multiple 429/checkpoint"
                         )
@@ -1774,6 +1822,7 @@ def instagram_wrap_request(orig_request):
 
         def _update_progress_bar(resp):
             """Helper function to update progress bar based on response content."""
+            global NAME_COUNT, WRAPPER_COUNT, pbar
             # Only process and count requests that are likely follower/following related
             # Check if response is successful and JSON before processing
             user_list = []
@@ -1835,6 +1884,7 @@ def instagram_wrap_send(orig_send):
         url = getattr(req_obj, "url", None)
         if JITTER_VERBOSE:
             print(f"[WRAP-SEND] {method} {url}")
+
         def _do_send():
             if ENABLE_JITTER:
                 time.sleep(random.uniform(0.8, 3.0))
@@ -1889,6 +1939,7 @@ def probability_for_cycle(sleep_seconds: int) -> float:
         day_seconds = 86400  # 1 day
 
     return min(1.0, DAILY_HUMAN_HITS * sleep_seconds / day_seconds)
+
 
 # Performs random feed / profile / hashtag / followee actions to look more like a human being
 def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> None:
@@ -2169,9 +2220,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"* Error while getting followers: {type(e).__name__}: {e}")
             sys.exit(1)
         finally:
-            if pbar is not None:
-                pbar.close()
-                pbar = None
+            close_pbar()
 
         if not followers and followers_count > 0:
             print("* Empty followers list returned, not saved to file")
@@ -2261,9 +2310,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"* Error while getting followings: {type(e).__name__}: {e}")
             sys.exit(1)
         finally:
-            if pbar is not None:
-                pbar.close()
-                pbar = None
+            close_pbar()
 
         if not followings and followings_count > 0:
             print("* Empty followings list returned, not saved to file")
@@ -2695,9 +2742,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         followings = followings_old
                         print(f"* Error while processing followings: {type(e).__name__}: {e}")
                     finally:
-                        if pbar is not None:
-                            pbar.close()
-                            pbar = None
+                        close_pbar()
 
                     if not followings and followings_count > 0:
                         followings = followings_old
@@ -2793,9 +2838,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         followers = followers_old
                         print(f"* Error while processing followers: {type(e).__name__}: {e}")
                     finally:
-                        if pbar is not None:
-                            pbar.close()
-                            pbar = None
+                        close_pbar()
 
                     if not followers and followers_count > 0:
                         followers = followers_old
