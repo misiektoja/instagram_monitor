@@ -499,6 +499,8 @@ class Logger(object):
 
 # Signal handler when user presses Ctrl+C
 def signal_handler(sig, frame):
+    if _thread_local.pbar is not None:
+        close_pbar()
     sys.stdout = stdout_bck
     print('\n* You pressed Ctrl+C, tool is terminated.')
     sys.exit(0)
@@ -1848,6 +1850,9 @@ def instagram_wrap_request(orig_request):
             """Helper function to update progress bar based on response content."""
             # Use thread-local storage for multi-target safety
             thread_pbar = getattr(_thread_local, 'pbar', None)
+            if thread_pbar is None: # this is not evaluated for each call to _update_progress_bar
+                return
+
             thread_name_count = getattr(_thread_local, 'NAME_COUNT', 0)
             thread_wrapper_count = getattr(_thread_local, 'WRAPPER_COUNT', 0)
 
@@ -1875,11 +1880,12 @@ def instagram_wrap_request(orig_request):
                         print(f"[WRAP-REQ] exception: {e}")
 
             # Update progress bar only if we extracted usernames
-            if user_list and thread_pbar is not None:
+            if user_list:
                 increment = len(user_list)
                 _thread_local.NAME_COUNT = thread_name_count + increment
                 thread_name_count = _thread_local.NAME_COUNT
-                thread_pbar.update(increment)
+                if (thread_pbar.n + increment) > thread_pbar.total: # if actual total exceeds total, TQDM will reset the total and switch to ?
+                    thread_pbar.total = thread_pbar.n + increment
 
                 # Calculate Remaining Minutes
                 d = thread_pbar.format_dict
@@ -1896,7 +1902,7 @@ def instagram_wrap_request(orig_request):
                 names_per_req = d['n'] / thread_wrapper_count if thread_wrapper_count > 0 else 0
                 stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}"
                 thread_pbar.unit = stats_string
-                thread_pbar.refresh()
+                thread_pbar.update(increment) # automatically does a refresh
 
         if MULTI_TARGET_SERIALIZE_HTTP:
             with HTTP_SERIAL_LOCK:
@@ -2137,7 +2143,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         time.sleep(NEXT_OPERATION_DELAY)
         insta_username = profile.username
         insta_userid = profile.userid
-        print(f" completed: {insta_username}")
+        print(f"completed: {insta_username}")
         followers_count = profile.followers
         followings_count = profile.followees
         bio = profile.biography
@@ -2148,7 +2154,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         if not skip_session and can_view:
             print("- fetching reels count...", end=" ", flush=True)
             reels_count = get_total_reels_count(user, bot, skip_session)
-            print("completed")
+            print("         completed")
 
         if not is_private:
             if bot.context.is_logged_in:
@@ -2159,7 +2165,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print("- checking for stories...", end=" ", flush=True)
             story = next(bot.get_stories(userids=[insta_userid]), None)
             has_story = bool(story and story.itemcount)
-            print("completed")
+            print("         completed")
         else:
             has_story = False
 
@@ -2169,7 +2175,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print("- loading own profile...", end=" ", flush=True)
             me = instaloader.Profile.own_profile(bot.context)
             session_username = me.username
-            print(f" completed: {session_username}")
+            print(f"          completed: {session_username}")
 
         print("─" * HORIZONTAL_LINE)
 
