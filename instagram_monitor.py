@@ -442,6 +442,9 @@ REQUESTS_PATCHED = False
 # Per-thread output buffers for redirect/session detection (multi-target safe)
 LAST_OUTPUT_BY_THREAD = {}
 
+# Thread-local storage for progress bar state (multi-target safe)
+_thread_local = threading.local()
+
 
 def _thread_key() -> int:
     return threading.get_ident()
@@ -1723,29 +1726,41 @@ def extract_usernames_safely(data_dict):
 def setup_pbar(total_expected, title):
     global START_TIME, NAME_COUNT, WRAPPER_COUNT, pbar
 
-    START_TIME = datetime.now()
-    NAME_COUNT = 0
-    WRAPPER_COUNT = 0
+    # Use thread-local storage for multi-target safety
+    if not hasattr(_thread_local, 'pbar'):
+        _thread_local.pbar = None
+        _thread_local.START_TIME = 0
+        _thread_local.NAME_COUNT = 0
+        _thread_local.WRAPPER_COUNT = 0
 
-    # If a bar exists, close it first
-    if pbar is not None:
+    _thread_local.START_TIME = datetime.now()
+    _thread_local.NAME_COUNT = 0
+    _thread_local.WRAPPER_COUNT = 0
+
+    # If a bar exists for this thread, close it first
+    if _thread_local.pbar is not None:
         close_pbar()
 
     custom_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
     # Write progress bar updates to terminal only (not log file) to avoid cluttering logs
     terminal_out = stdout_bck if stdout_bck is not None else sys.stdout
-    pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=terminal_out)
+    _thread_local.pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=terminal_out)
+
+    # Also set global for backward compatibility (single-threaded mode)
+    pbar = _thread_local.pbar
 
 
 # Closes progress bar and write final state to log file if logging is enabled
 def close_pbar():
     global pbar
-    if pbar is not None:
+    # Use thread-local storage for multi-target safety
+    thread_pbar = getattr(_thread_local, 'pbar', None)
+    if thread_pbar is not None:
         # Get the final progress bar string before closing
         # Use format_dict to get current values and format the progress bar string
-        d = pbar.format_dict
-        desc = pbar.desc if pbar.desc else ""
-        unit = pbar.unit if pbar.unit else ""
+        d = thread_pbar.format_dict
+        desc = thread_pbar.desc if thread_pbar.desc else ""
+        unit = thread_pbar.unit if thread_pbar.unit else ""
 
         # Format the progress bar string to match the custom_bar_format: "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
         n = d.get('n', 0)
@@ -1768,13 +1783,15 @@ def close_pbar():
             final_str = f"{bar}| {n_fmt}/{total_fmt} [{unit}]"
 
         # Close the progress bar (writes to terminal)
-        pbar.close()
+        thread_pbar.close()
 
         # Write final state to log file if logging is enabled
         if stdout_bck is not None and isinstance(sys.stdout, Logger):
             sys.stdout.logfile.write(final_str + "\n")
             sys.stdout.logfile.flush()
 
+        _thread_local.pbar = None
+        # Also clear global for backward compatibility
         pbar = None
 
 
@@ -1809,14 +1826,16 @@ def instagram_wrap_request(orig_request):
                 if resp.status_code in (429, 400) and "checkpoint" in resp.text:
                     attempt += 1
                     if attempt > 3:
-                        if pbar is not None:
+                        thread_pbar = getattr(_thread_local, 'pbar', None)
+                        if thread_pbar is not None:
                             close_pbar()
                         raise instaloader.exceptions.QueryReturnedNotFoundException(
                             "Giving up after multiple 429/checkpoint"
                         )
                     wait = backoff + random.uniform(0, 30)
                     if JITTER_VERBOSE:
-                        if pbar:
+                        thread_pbar = getattr(_thread_local, 'pbar', None)
+                        if thread_pbar:
                             tqdm.write(f"* Back-off {wait:.0f}s after {resp.status_code}")
                         else:
                             print(f"* Back-off {wait:.0f}s after {resp.status_code}")
@@ -1827,7 +1846,11 @@ def instagram_wrap_request(orig_request):
 
         def _update_progress_bar(resp):
             """Helper function to update progress bar based on response content."""
-            global NAME_COUNT, WRAPPER_COUNT, pbar
+            # Use thread-local storage for multi-target safety
+            thread_pbar = getattr(_thread_local, 'pbar', None)
+            thread_name_count = getattr(_thread_local, 'NAME_COUNT', 0)
+            thread_wrapper_count = getattr(_thread_local, 'WRAPPER_COUNT', 0)
+
             # Only process and count requests that are likely follower/following related
             # Check if response is successful and JSON before processing
             user_list = []
@@ -1838,26 +1861,28 @@ def instagram_wrap_request(orig_request):
 
                     # Only count requests that actually returned follower/following data
                     if user_list:
-                        WRAPPER_COUNT += 1
+                        _thread_local.WRAPPER_COUNT = thread_wrapper_count + 1
+                        thread_wrapper_count = _thread_local.WRAPPER_COUNT
                 except (ValueError, KeyError) as e:
                     # JSON decode error or missing keys - not a follower/following request
                     # Silently skip, this is expected for non-follower/following requests
                     pass
                 except Exception as e:
                     # Other exceptions - log but don't count
-                    if pbar:
+                    if thread_pbar:
                         tqdm.write(f"[WRAP-REQ] exception: {e}")
                     else:
                         print(f"[WRAP-REQ] exception: {e}")
 
             # Update progress bar only if we extracted usernames
-            if user_list and pbar is not None:
+            if user_list and thread_pbar is not None:
                 increment = len(user_list)
-                NAME_COUNT += increment
-                pbar.update(increment)
+                _thread_local.NAME_COUNT = thread_name_count + increment
+                thread_name_count = _thread_local.NAME_COUNT
+                thread_pbar.update(increment)
 
                 # Calculate Remaining Minutes
-                d = pbar.format_dict
+                d = thread_pbar.format_dict
                 rate = d['rate'] if d['rate'] else 0
                 remaining_items = d['total'] - d['n']
 
@@ -1868,10 +1893,10 @@ def instagram_wrap_request(orig_request):
                 elapsed_m = d['elapsed'] / 60
 
                 # Update Stats - use float division for precision
-                names_per_req = d['n'] / WRAPPER_COUNT if WRAPPER_COUNT > 0 else 0
-                stats_string = f"{names_per_req:.1f} names/req, reqs={WRAPPER_COUNT:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}"
-                pbar.unit = stats_string
-                pbar.refresh()
+                names_per_req = d['n'] / thread_wrapper_count if thread_wrapper_count > 0 else 0
+                stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}"
+                thread_pbar.unit = stats_string
+                thread_pbar.refresh()
 
         if MULTI_TARGET_SERIALIZE_HTTP:
             with HTTP_SERIAL_LOCK:
