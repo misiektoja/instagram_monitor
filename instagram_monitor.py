@@ -464,16 +464,11 @@ def session_label() -> str:
     # Session is shared across targets, include it in error notifications for clarity
     return SESSION_USERNAME if SESSION_USERNAME else "<anonymous>"
 
-def get_follower_count(profile):
-    tempcnt = profile.get_followers().count
-    return tempcnt
-    
-def get_following_count(profile):
-    tempcnt = profile.get_followees().count
-    return tempcnt
 
-def show_follow_info(followers1, followers2, followers_actual, followees1, followees2, followees_actual):
-    print(f"* Followings ({followees1}) actual ({followees_actual}). Followers ({followers1}) actual ({followers_actual})")
+# Displays comparison between reported and actual follower/following counts
+def show_follow_info(followers_reported: int, followers_actual: int, followings_reported: int, followings_actual: int) -> None:
+    print(f"* Followers: reported ({followers_reported}) actual ({followers_actual}). Followings: reported ({followings_reported}) actual ({followings_actual})")
+
 
 # Logger class to output messages to stdout and log file
 class Logger(object):
@@ -2740,9 +2735,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         followings = []
                         followings = [followee.username for followee in profile.get_followees()]
                         followings_to_save = []
-                        profile = instaloader.Profile.from_username(bot.context, user)
-                        show_follow_info(profile.followers, get_follower_count(profile), len(followers), profile.followees, get_following_count(profile), len(followings))
                         followings_count = profile.followees
+                        show_follow_info(followers_count, len(followers), followings_count, len(followings))
                         if not followings and followings_count > 0:
                             print("* Empty followings list returned, not saved to file")
                         else:
@@ -2839,9 +2833,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         followers = []
                         followers = [follower.username for follower in profile.get_followers()]
                         followers_to_save = []
-                        profile = instaloader.Profile.from_username(bot.context, user)
-                        show_follow_info(profile.followers, get_follower_count(profile), len(followers), profile.followees, get_following_count(profile), len(followings))
                         followers_count = profile.followers
+                        show_follow_info(followers_count, len(followers), followings_count, len(followings))
                         if not followers and followers_count > 0:
                             print("* Empty followers list returned, not saved to file")
                         else:
