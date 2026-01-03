@@ -576,6 +576,29 @@ Also consider to randomize the check interval, as explained [here](#check-interv
 
 **Important**: When monitoring multiple users in a single process, the effective request rate is multiplied by the number of targets. For example, monitoring 5 users with a 1-hour interval means 5 requests per hour. To maintain the same per-account request rate, increase the check interval proportionally. If you normally use 1 hour for a single user, consider using 5 hours (or more) when monitoring 5 users. The tool automatically staggers requests between targets, but the overall request frequency should still be adjusted based on the total number of monitored users.
 
+<a id="use-hour-range-checking"></a>
+### Use Hour-Range Checking
+
+The tool supports limiting fetching updates to specific hours of the day, which helps reduce detection by avoiding requests during times when automated activity might be more suspicious.
+
+When hour-range checking is enabled, the tool will only fetch updates (posts, reels, stories, profile changes, followers/followings) during the configured time windows. Outside these hours, the tool will skip fetching updates but will continue running and wait for the next allowed time window.
+
+To enable this feature, set `CHECK_POSTS_IN_HOURS_RANGE` to `True` and configure the allowed hour ranges using:
+- `MIN_H1` and `MAX_H1` - first range of hours (default: 0-4, i.e., midnight to 4:59 AM)
+- `MIN_H2` and `MAX_H2` - second range of hours (default: 11-23, i.e., 11:00 AM to 11:59 PM / 23:59)
+
+You can define up to two non-overlapping or overlapping ranges. For example, to only allow checks during business hours (9 AM to 5 PM), you could set:
+- `MIN_H1 = 9`
+- `MAX_H1 = 17`
+- `MIN_H2 = 0`
+- `MAX_H2 = 0`
+
+Hours are specified in 24-hour format (0-23) and are evaluated in your configured time zone (see [Time Zone](#time-zone)).
+
+If you want to see verbose output about when updates are being fetched or skipped, set `HOURS_VERBOSE` to `True`. This is useful for debugging and understanding when the tool is active.
+
+This feature works particularly well when combined with reasonable polling intervals, as it ensures that even if your check interval triggers, requests will only be made during the configured time windows, making your activity pattern look more natural.
+
 <a id="do-not-monitor-too-many-users"></a>
 ### Do Not Monitor Too Many Users
 
