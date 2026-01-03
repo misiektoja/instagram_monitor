@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 2.0 (TBD)
+# Changes in 2.0 (03 Jan 2026)
 
 **Features and Improvements**:
 
