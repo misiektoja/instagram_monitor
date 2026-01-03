@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.0
+v2.0.2
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -17,7 +17,7 @@ python-dotenv (optional)
 tqdm
 """
 
-VERSION = "2.0"
+VERSION = "2.0.2"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -423,7 +423,10 @@ from sqlite3 import OperationalError, connect
 from pathlib import Path
 from functools import wraps
 import traceback
-from tqdm import tqdm
+try:
+    from tqdm import tqdm
+except ModuleNotFoundError:
+    raise SystemExit("Error: Couldn't find the tqdm library !\n\nTo install it, run:\n    pip3 install tqdm\n\nOnce installed, re-run this tool")
 
 
 # Global lock to avoid interleaved output when using multi-target threading
