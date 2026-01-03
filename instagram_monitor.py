@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.0.2
+v2.0.3
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -17,7 +17,7 @@ python-dotenv (optional)
 tqdm
 """
 
-VERSION = "2.0.2"
+VERSION = "2.0.3"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -978,7 +978,7 @@ def toggle_status_changes_notifications_signal_handler(sig, frame):
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
     print(f"* Email notifications: [new posts/reels/stories/followings/bio/profile picture = {STATUS_NOTIFICATION}]")
-    print_cur_ts("Timestamp:\t\t")
+    print_cur_ts("Timestamp:\t\t\t\t")
 
 
 # Signal handler for SIGUSR2 allowing to switch email notifications for new followers
@@ -988,7 +988,7 @@ def toggle_followers_notifications_signal_handler(sig, frame):
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
     print(f"* Email notifications: [followers = {FOLLOWERS_NOTIFICATION}]")
-    print_cur_ts("Timestamp:\t\t")
+    print_cur_ts("Timestamp:\t\t\t\t")
 
 
 # Signal handler for SIGTRAP allowing to increase check timer by INSTA_CHECK_SIGNAL_VALUE seconds
@@ -1003,7 +1003,7 @@ def increase_check_signal_handler(sig, frame):
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
     print(f"* Instagram timers: [check interval: {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)}]")
-    print_cur_ts("Timestamp:\t\t")
+    print_cur_ts("Timestamp:\t\t\t\t")
 
 
 # Signal handler for SIGABRT allowing to decrease check timer by INSTA_CHECK_SIGNAL_VALUE seconds
@@ -1019,7 +1019,7 @@ def decrease_check_signal_handler(sig, frame):
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
     print(f"* Instagram timers: [check interval: {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)}]")
-    print_cur_ts("Timestamp:\t\t")
+    print_cur_ts("Timestamp:\t\t\t\t")
 
 
 # Signal handler for SIGHUP allowing to reload secrets from .env
@@ -1054,7 +1054,7 @@ def reload_secrets_signal_handler(sig, frame):
                 globals()[secret] = val
                 print(f"* Reloaded {secret} from {env_path}")
 
-    print_cur_ts("Timestamp:\t\t")
+    print_cur_ts("Timestamp:\t\t\t\t")
 
 
 # Saves user's image / video to selected file name
@@ -1144,10 +1144,10 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
             print(f"* Error saving profile picture !{new_line}")
 
         if func_ver == 2:
-            print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-            print_cur_ts("Timestamp:\t\t")
+            print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+            print_cur_ts("Timestamp:\t\t\t\t")
         else:
-            print_cur_ts("\nTimestamp:\t\t")
+            print_cur_ts("\nTimestamp:\t\t\t\t")
 
     # Profile pic exists in the filesystem, we check if it has not changed
     elif os.path.isfile(profile_pic_file):
@@ -1240,8 +1240,8 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                             send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
                 if func_ver == 2:
-                    print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-                    print_cur_ts("Timestamp:\t\t")
+                    print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                    print_cur_ts("Timestamp:\t\t\t\t")
 
             else:
                 if func_ver == 1:
@@ -1262,10 +1262,10 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
         else:
             print(f"* Error while checking if the profile picture has changed !")
             if func_ver == 2:
-                print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-                print_cur_ts("Timestamp:\t\t")
+                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print_cur_ts("Timestamp:\t\t\t\t")
         if func_ver == 1:
-            print_cur_ts("\nTimestamp:\t\t")
+            print_cur_ts("\nTimestamp:\t\t\t\t")
 
 
 # Return the most recent post and/or reel for the user (GraphQL helper when logged in)
@@ -1376,8 +1376,8 @@ def check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
             print(f"Sending email notification to {RECEIVER_EMAIL}\n")
             send_email(m_subject, m_body, "", SMTP_SSL)
 
-        print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-        print_cur_ts("Timestamp:\t\t")
+        print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+        print_cur_ts("Timestamp:\t\t\t\t")
         return 1
     else:
         return 0
@@ -1396,8 +1396,8 @@ def check_reels_counts(user, reels_count, reels_count_old, r_sleep_time):
             print(f"Sending email notification to {RECEIVER_EMAIL}\n")
             send_email(m_subject, m_body, "", SMTP_SSL)
 
-        print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-        print_cur_ts("Timestamp:\t\t")
+        print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+        print_cur_ts("Timestamp:\t\t\t\t")
         return 1
     else:
         return 0
@@ -2047,7 +2047,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
 
     if BE_HUMAN_VERBOSE:
         print("* BeHuman: simulation stop")
-        print_cur_ts("\nTimestamp:\t\t")
+        print_cur_ts("\nTimestamp:\t\t\t\t")
 
 
 # Monitors activity of the specified Instagram user
@@ -2058,7 +2058,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     if wait_for_prev_user is not None:
         wait_for_prev_user.wait()
 
-    print(f"Target:\t\t\t{user}")
+    print(f"Target:\t\t\t\t\t{user}")
     print("─" * HORIZONTAL_LINE)
 
     try:
@@ -2146,7 +2146,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         time.sleep(NEXT_OPERATION_DELAY)
         insta_username = profile.username
         insta_userid = profile.userid
-        print(f"completed: {insta_username}")
+        print(f"     completed: {insta_username}")
         followers_count = profile.followers
         followings_count = profile.followees
         bio = profile.biography
@@ -2157,7 +2157,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         if not skip_session and can_view:
             print("- fetching reels count...", end=" ", flush=True)
             reels_count = get_total_reels_count(user, bot, skip_session)
-            print("         completed")
+            print("              completed")
 
         if not is_private:
             if bot.context.is_logged_in:
@@ -2168,7 +2168,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print("- checking for stories...", end=" ", flush=True)
             story = next(bot.get_stories(userids=[insta_userid]), None)
             has_story = bool(story and story.itemcount)
-            print("         completed")
+            print("              completed")
         else:
             has_story = False
 
@@ -2178,7 +2178,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print("- loading own profile...", end=" ", flush=True)
             me = instaloader.Profile.own_profile(bot.context)
             session_username = me.username
-            print(f"          completed: {session_username}")
+            print(f"               completed: {session_username}")
 
         print("─" * HORIZONTAL_LINE)
 
@@ -2200,27 +2200,27 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     is_private_old = is_private
     followed_by_viewer_old = followed_by_viewer
 
-    print(f"Session user:\t\t{session_username or '<anonymous>'}")
+    print(f"Session user:\t\t\t\t{session_username or '<anonymous>'}")
 
-    print(f"\nUsername:\t\t{insta_username}")
-    print(f"User ID:\t\t{insta_userid}")
-    print(f"URL:\t\t\thttps://www.instagram.com/{insta_username}/")
+    print(f"\nUsername:\t\t\t\t{insta_username}")
+    print(f"User ID:\t\t\t\t{insta_userid}")
+    print(f"URL:\t\t\t\t\thttps://www.instagram.com/{insta_username}/")
 
-    print(f"\nProfile:\t\t{'public' if not is_private else 'private'}")
-    print(f"Can view all contents:\t{'Yes' if can_view else 'No'}")
+    print(f"\nProfile:\t\t\t\t{'public' if not is_private else 'private'}")
+    print(f"Can view all contents:\t\t\t{'Yes' if can_view else 'No'}")
 
-    print(f"\nPosts:\t\t\t{posts_count}")
+    print(f"\nPosts:\t\t\t\t\t{posts_count}")
     if not skip_session and can_view:
-        print(f"Reels:\t\t\t{reels_count}")
+        print(f"Reels:\t\t\t\t\t{reels_count}")
 
-    print(f"\nFollowers:\t\t{followers_count}")
-    print(f"Followings:\t\t{followings_count}")
+    print(f"\nFollowers:\t\t\t\t{followers_count}")
+    print(f"Followings:\t\t\t\t{followings_count}")
 
     if bot.context.is_logged_in:
-        print(f"\nStory available:\t{has_story}")
+        print(f"\nStory available:\t\t\t{has_story}")
 
     print(f"\nBio:\n\n{bio}\n")
-    print_cur_ts("Timestamp:\t\t")
+    print_cur_ts("Timestamp:\t\t\t\t")
 
     insta_followers_file = f"instagram_{user}_followers.json"
     insta_followings_file = f"instagram_{user}_followings.json"
@@ -2429,7 +2429,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     followings_old_count = followings_count
 
     if followers_followings_fetched:
-        print_cur_ts("\nTimestamp:\t\t")
+        print_cur_ts("\nTimestamp:\t\t\t\t")
 
     # Profile pic
 
@@ -2476,22 +2476,22 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         else:
                             expire_ts = 0
 
-                        print(f"Date:\t\t\t{get_date_from_ts(local_dt)}")
-                        print(f"Expiry:\t\t\t{get_date_from_ts(expire_local_dt)}")
+                        print(f"Date:\t\t\t\t\t{get_date_from_ts(local_dt)}")
+                        print(f"Expiry:\t\t\t\t\t{get_date_from_ts(expire_local_dt)}")
                         if story_item.typename == "GraphStoryImage":
                             story_type = "Image"
                         else:
                             story_type = "Video"
-                        print(f"Type:\t\t\t{story_type}")
+                        print(f"Type:\t\t\t\t\t{story_type}")
 
                         story_mentions = story_item.caption_mentions
                         story_hashtags = story_item.caption_hashtags
 
                         if story_mentions:
-                            print(f"Mentions:\t\t{story_mentions}")
+                            print(f"Mentions:\t\t\t\t{story_mentions}")
 
                         if story_hashtags:
-                            print(f"Hashtags:\t\t{story_hashtags}")
+                            print(f"Hashtags:\t\t\t\t{story_hashtags}")
 
                         story_caption = story_item.caption
                         if story_caption:
@@ -2535,7 +2535,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             print(f"* Error: {e}")
 
                         if i == stories_count:
-                            print_cur_ts("\nTimestamp:\t\t")
+                            print_cur_ts("\nTimestamp:\t\t\t\t")
                         else:
                             print("─" * HORIZONTAL_LINE)
 
@@ -2628,15 +2628,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         post_url = f"https://www.instagram.com/{'reel' if last_source == 'reel' else 'p'}/{shortcode}/"
         print(f"* Newest {last_source.lower()} for user {user}:\n")
-        print(f"Date:\t\t\t{get_date_from_ts(highestinsta_dt)} ({calculate_timespan(now_local(), highestinsta_dt)} ago)")
-        print(f"{last_source.capitalize()} URL:\t\t{post_url}")
-        print(f"Profile URL:\t\thttps://www.instagram.com/{insta_username}/")
-        print(f"Likes:\t\t\t{likes}")
-        print(f"Comments:\t\t{comments}")
-        print(f"Tagged users:\t\t{tagged_users}")
+        print(f"Date:\t\t\t\t\t{get_date_from_ts(highestinsta_dt)} ({calculate_timespan(now_local(), highestinsta_dt)} ago)")
+        print(f"{last_source.capitalize()} URL:\t\t\t\t{post_url}")
+        print(f"Profile URL:\t\t\t\thttps://www.instagram.com/{insta_username}/")
+        print(f"Likes:\t\t\t\t\t{likes}")
+        print(f"Comments:\t\t\t\t{comments}")
+        print(f"Tagged users:\t\t\t\t{tagged_users}")
 
         if location:
-            print(f"Location:\t\t{location}")
+            print(f"Location:\t\t\t\t{location}")
 
         print(f"Description:\n\n{caption}\n")
 
@@ -2670,7 +2670,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 except Exception:
                     pass
 
-        print_cur_ts("\nTimestamp:\t\t")
+        print_cur_ts("\nTimestamp:\t\t\t\t")
 
         highestinsta_ts_old = highestinsta_ts
         highestinsta_dt_old = highestinsta_dt
@@ -2748,7 +2748,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         send_email(m_subject, m_body, "", SMTP_SSL)
                         email_sent = True
 
-                print_cur_ts("Timestamp:\t\t")
+                print_cur_ts("Timestamp:\t\t\t\t")
                 time.sleep(r_sleep_time)
                 continue
 
@@ -2763,7 +2763,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
                     email_sent = True
-                print_cur_ts("Timestamp:\t\t")
+                print_cur_ts("Timestamp:\t\t\t\t")
                 time.sleep(r_sleep_time)
                 continue
 
@@ -2864,8 +2864,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 followings_old_count = followings_count
 
-                print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-                print_cur_ts("Timestamp:\t\t")
+                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print_cur_ts("Timestamp:\t\t\t\t")
 
             if followers_count != followers_old_count:
                 followers_diff = followers_count - followers_old_count
@@ -2962,8 +2962,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 followers_old_count = followers_count
 
-                print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-                print_cur_ts("Timestamp:\t\t")
+                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print_cur_ts("Timestamp:\t\t\t\t")
 
             # Profile pic
 
@@ -2993,8 +2993,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
                 bio_old = bio
-                print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-                print_cur_ts("Timestamp:\t\t")
+                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print_cur_ts("Timestamp:\t\t\t\t")
 
             if is_private != is_private_old:
 
@@ -3021,8 +3021,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
                 is_private_old = is_private
-                print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-                print_cur_ts("Timestamp:\t\t")
+                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print_cur_ts("Timestamp:\t\t\t\t")
 
             if followed_by_viewer != followed_by_viewer_old:
 
@@ -3042,8 +3042,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
                 followed_by_viewer_old = followed_by_viewer
-                print(f"Check interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-                print_cur_ts("Timestamp:\t\t")
+                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print_cur_ts("Timestamp:\t\t\t\t")
 
             if has_story and not story_flag:
                 print(f"* New story for user {user} !\n")
@@ -3063,15 +3063,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
-                print(f"\nCheck interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-                print_cur_ts("Timestamp:\t\t")
+                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print_cur_ts("Timestamp:\t\t\t\t")
 
             if not has_story and story_flag:
                 processed_stories_list = []
                 stories_count = 0
                 print(f"* Story for user {user} disappeared !")
-                print(f"\nCheck interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-                print_cur_ts("Timestamp:\t\t")
+                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print_cur_ts("Timestamp:\t\t\t\t")
                 story_flag = False
 
             if has_story and not skip_session and can_view and not skip_getting_story_details:
@@ -3122,14 +3122,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             if story_mentions:
                                 story_mentions_m_body = f"\nMentions: {story_mentions}"
                                 story_mentions_m_body_html = f"<br>Mentions: {story_mentions}"
-                                print(f"Mentions:\t\t{story_mentions}")
+                                print(f"Mentions:\t\t\t\t{story_mentions}")
 
                             story_hashtags_m_body = ""
                             story_hashtags_m_body_html = ""
                             if story_hashtags:
                                 story_hashtags_m_body = f"\nHashtags: {story_hashtags}"
                                 story_hashtags_m_body_html = f"<br>Hashtags: {story_hashtags}"
-                                print(f"Hashtags:\t\t{story_hashtags}")
+                                print(f"Hashtags:\t\t\t\t{story_hashtags}")
 
                             story_caption_m_body = ""
                             story_caption_m_body_html = ""
@@ -3189,8 +3189,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 else:
                                     send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
-                            print(f"\nCheck interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-                            print_cur_ts("Timestamp:\t\t")
+                            print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                            print_cur_ts("Timestamp:\t\t\t\t")
 
                         break
 
@@ -3198,7 +3198,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 except Exception as e:
                     print(f"* Error while processing story items: {type(e).__name__}: {e}")
-                    print_cur_ts("\nTimestamp:\t\t")
+                    print_cur_ts("\nTimestamp:\t\t\t\t")
 
             new_post = False
 
@@ -3282,7 +3282,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             send_email(m_subject, m_body, "", SMTP_SSL)
                             email_sent = True
 
-                    print_cur_ts("Timestamp:\t\t")
+                    print_cur_ts("Timestamp:\t\t\t\t")
 
                     time.sleep(r_sleep_time)
                     continue
@@ -3306,19 +3306,19 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     post_url = f"https://www.instagram.com/{'reel' if last_source == 'reel' else 'p'}/{shortcode}/"
 
                     print(f"* New {last_source.lower()} for user {user} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n")
-                    print(f"Date:\t\t\t{get_date_from_ts(highestinsta_dt)}")
-                    print(f"{last_source.capitalize()} URL:\t\t{post_url}")
-                    print(f"Profile URL:\t\thttps://www.instagram.com/{insta_username}/")
-                    print(f"Likes:\t\t\t{likes}")
-                    print(f"Comments:\t\t{comments}")
-                    print(f"Tagged users:\t\t{tagged_users}")
+                    print(f"Date:\t\t\t\t\t{get_date_from_ts(highestinsta_dt)}")
+                    print(f"{last_source.capitalize()} URL:\t\t\t\t{post_url}")
+                    print(f"Profile URL:\t\t\t\thttps://www.instagram.com/{insta_username}/")
+                    print(f"Likes:\t\t\t\t\t{likes}")
+                    print(f"Comments:\t\t\t\t{comments}")
+                    print(f"Tagged users:\t\t\t\t{tagged_users}")
 
                     location_mbody = ""
                     location_mbody_str = ""
                     if location:
                         location_mbody = "\nLocation: "
                         location_mbody_str = location
-                        print(f"Location:\t\t{location}")
+                        print(f"Location:\t\t\t\t{location}")
 
                     print(f"Description:\n\n{caption}\n")
 
@@ -3382,8 +3382,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     highestinsta_ts_old = highestinsta_ts
                     highestinsta_dt_old = highestinsta_dt
 
-                    print(f"\nCheck interval:\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-                    print_cur_ts("Timestamp:\t\t")
+                    print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                    print_cur_ts("Timestamp:\t\t\t\t")
 
                 elif not new_post and (posts_count != posts_count_old or reels_count != reels_count_old):
 
@@ -3420,7 +3420,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 simulate_human_actions(bot, r_sleep_time)
         except Exception as e:
             print(f"* Warning: It is not easy to be a human, our simulation failed: {e}")
-            print_cur_ts("\nTimestamp:\t\t")
+            print_cur_ts("\nTimestamp:\t\t\t\t")
 
         if HOURS_VERBOSE:
             sleep_message(r_sleep_time)
