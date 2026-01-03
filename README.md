@@ -584,7 +584,9 @@ It is recommended to limit the number of users monitored by a single account, es
 <a id="use-only-needed-functionality"></a>
 ### Use Only Needed Functionality
 
-Frequent updates to certain data types, such as new stories or changes in followers/followings, are more likely to flag the account as an automated tool. If certain data isn't essential for your use case, consider disabling its retrieval. The tool provides fine-grained control, for example you can skip fetching the list of followings (`-g` flag), followers (`-f`), stories details (`-r`) or posts/reels details (`-w`).
+Frequent updates to certain data types, such as new stories or posts/reels, are more likely to flag the account as an automated tool compared to profile changes or lists of followers/followings.
+
+If certain data isn't essential for your use case, consider disabling its retrieval. The tool provides fine-grained control, for example you can skip fetching stories details (`-r`), posts/reels details (`-w`), the list of followings (`-g` flag) and followers (`-f`).
 
 <a id="use-two-factor-authentication-2fa"></a>
 ### Use Two-Factor Authentication (2FA)
