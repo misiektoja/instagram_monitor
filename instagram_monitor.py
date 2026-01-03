@@ -502,7 +502,7 @@ class Logger(object):
 
 # Signal handler when user presses Ctrl+C
 def signal_handler(sig, frame):
-    if _thread_local.pbar is not None:
+    if getattr(_thread_local, 'pbar', None) is not None:
         close_pbar()
     sys.stdout = stdout_bck
     print('\n* You pressed Ctrl+C, tool is terminated.')
