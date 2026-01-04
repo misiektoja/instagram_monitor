@@ -2,6 +2,12 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 2.0.4 (04 Jan 2026)
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed **progress bar display issues** - Ensured `close_pbar()` is called before any print statements in the `try` block to prevent interleaved output and duplicate progress bars (thanks [@tomballgithub](https://github.com/tomballgithub))
+
 # Changes in 2.0.3 (03 Jan 2026)
 
 **Features and Improvements**:
