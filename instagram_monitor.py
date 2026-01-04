@@ -1749,7 +1749,8 @@ def setup_pbar(total_expected, title):
     custom_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
     # Write progress bar updates to terminal only (not log file) to avoid cluttering logs
     terminal_out = stdout_bck if stdout_bck is not None else sys.stdout
-    _thread_local.pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=terminal_out)
+    # Use HORIZONTAL_LINE (default 113) as the fixed width for consistent behavior across environments
+    _thread_local.pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=terminal_out, ncols=HORIZONTAL_LINE)
 
     # Also set global for backward compatibility (single-threaded mode)
     pbar = _thread_local.pbar
@@ -1775,7 +1776,25 @@ def close_pbar():
 
         # Calculate bar visualization
         if total > 0:
-            bar_length = 40
+            # Calculate available space for bar:
+            # Total width (HORIZONTAL_LINE) - desc - stats - separators
+
+            overhead = 0
+            if desc:
+                overhead += len(desc) + 2  # ": "
+
+            overhead += 1  # "|"
+            overhead += 1  # " "
+            overhead += len(n_fmt)
+            overhead += 1  # "/"
+            overhead += len(total_fmt)
+            overhead += 2  # " ["
+            overhead += len(unit)
+            overhead += 1  # "]"
+
+            avail_for_bar = HORIZONTAL_LINE - overhead
+            bar_length = max(10, avail_for_bar)  # Ensure at least 10 chars
+
             filled = int(bar_length * n / total)
             bar = '█' * filled + '░' * (bar_length - filled)
         else:
