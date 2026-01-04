@@ -4,6 +4,10 @@ This is a high-level summary of the most important changes.
 
 # Changes in 2.0.4 (04 Jan 2026)
 
+**Features and Improvements**:
+
+- **IMPROVE:** standardized **visual appearance** of **progress bar** to unify its width in both terminal and log files
+
 **Bug fixes**:
 
 - **BUGFIX:** Fixed **progress bar display issues** - Ensured `close_pbar()` is called before any print statements in the `try` block to prevent interleaved output and duplicate progress bars (thanks [@tomballgithub](https://github.com/tomballgithub))
