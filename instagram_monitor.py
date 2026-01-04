@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.0.3
+v2.0.4
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -17,7 +17,7 @@ python-dotenv (optional)
 tqdm
 """
 
-VERSION = "2.0.3"
+VERSION = "2.0.4"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -2272,12 +2272,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         try:
             setup_pbar(total_expected=followers_count, title="* Downloading Followers")
             followers = [follower.username for follower in profile.get_followers()]
+            close_pbar()
             followers_count = profile.followers
         except Exception as e:
+            close_pbar()
             print(f"* Error while getting followers: {type(e).__name__}: {e}")
             sys.exit(1)
-        finally:
-            close_pbar()
 
         if not followers and followers_count > 0:
             print("* Empty followers list returned, not saved to file")
@@ -2362,12 +2362,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         try:
             setup_pbar(total_expected=followings_count, title="* Downloading Followings")
             followings = [followee.username for followee in profile.get_followees()]
+            close_pbar()
             followings_count = profile.followees
         except Exception as e:
+            close_pbar()
             print(f"* Error while getting followings: {type(e).__name__}: {e}")
             sys.exit(1)
-        finally:
-            close_pbar()
 
         if not followings and followings_count > 0:
             print("* Empty followings list returned, not saved to file")
@@ -2792,6 +2792,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         followings = []
                         followings = [followee.username for followee in profile.get_followees()]
                         followings_to_save = []
+                        close_pbar()
                         # Refresh profile to get current reported counts for comparison
                         profile = instaloader.Profile.from_username(bot.context, user)
                         followings_count = profile.followees
@@ -2806,10 +2807,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 json.dump(followings_to_save, f, indent=2)
                                 print(f"* Followings ({followings_count}) actual ({len(followings)}) saved to file '{insta_followings_file}'")
                     except Exception as e:
+                        close_pbar()
                         followings = followings_old
                         print(f"* Error while processing followings: {type(e).__name__}: {e}")
-                    finally:
-                        close_pbar()
 
                     if not followings and followings_count > 0:
                         followings = followings_old
@@ -2893,6 +2893,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         followers = []
                         followers = [follower.username for follower in profile.get_followers()]
                         followers_to_save = []
+                        close_pbar()
                         # Refresh profile to get current reported counts for comparison
                         profile = instaloader.Profile.from_username(bot.context, user)
                         followers_count = profile.followers
@@ -2907,10 +2908,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 json.dump(followers_to_save, f, indent=2)
                                 print(f"* Followers ({followers_count}) actual ({len(followers)}) saved to file '{insta_followers_file}'")
                     except Exception as e:
+                        close_pbar()
                         followers = followers_old
                         print(f"* Error while processing followers: {type(e).__name__}: {e}")
-                    finally:
-                        close_pbar()
 
                     if not followers and followers_count > 0:
                         followers = followers_old
