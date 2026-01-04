@@ -2,6 +2,45 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 2.0.4 (04 Jan 2026)
+
+**Features and Improvements**:
+
+- **IMPROVE:** standardized **visual appearance** of **progress bar** to unify its width in both terminal and log files
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed **progress bar display issues** - Ensured `close_pbar()` is called before any print statements in the `try` block to prevent interleaved output and duplicate progress bars (thanks [@tomballgithub](https://github.com/tomballgithub))
+
+# Changes in 2.0.3 (03 Jan 2026)
+
+**Features and Improvements**:
+
+- **NEW:** **Multi-user monitoring in a single process** - Monitor multiple Instagram users simultaneously without spawning separate processes. Simply pass multiple usernames as arguments or use the `--targets` flag with comma-separated values
+- **NEW:** **Automatic request staggering** - When monitoring multiple users, requests are automatically spread across the **check interval** to avoid triggering **Instagram's anti-bot mechanisms**. Configurable via `MULTI_TARGET_STAGGER` or `--targets-stagger` flag
+- **NEW:** **Progress bar for downloading followers/followings** - When fetching lists of followers or followings, a real-time progress bar is displayed showing download progress, statistics (names per request, total requests, elapsed time, estimated remaining time) and completion status. Progress updates are shown in the terminal only (to avoid log file clutter), with the final state written to the log file for reference (thanks [@tomballgithub](https://github.com/tomballgithub))
+- **NEW:** **Per-user CSV files in multi-target mode** - When monitoring multiple users, each user gets their own **CSV file** (e.g., `instagram_data_user1.csv`, `instagram_data_user2.csv`) using the configured CSV filename as a prefix. **Single-user mode** continues to use the exact filename specified
+- **NEW:** **Improved log file naming** - **Multi-target log files** now use **sorted usernames** joined with underscores (e.g., `instagram_monitor_user1_user2_user3.log`), preventing **filename collisions** when monitoring different user sets
+- **NEW:** **Per-thread output buffer** - Enhanced **redirect detection** to use **thread-specific output buffers**, ensuring accurate **session error detection** in **multi-target mode**
+- **IMPROVE:** **Enhanced session error notifications** - **Session error emails** now include both the **session account** (logged-in user or anonymous) and the **target user** that triggered the error, providing better context for debugging
+- **NEW:** Added `MULTI_TARGET_STAGGER`, `MULTI_TARGET_STAGGER_JITTER`, and `MULTI_TARGET_SERIALIZE_HTTP` configuration options for fine-tuning **multi-target behavior**
+- **NEW:** Added `TARGET_USERNAMES` configuration option to specify multiple targets in **config file** (**CLI arguments** take precedence)
+- **IMPROVE:** **Thread-safe logging** with lock protection to prevent **interleaved output** when multiple targets write simultaneously
+- **IMPROVE:** **File save messages** now include the **username** (e.g., *"Story video saved for {user} to '{filename}'"*) for better clarity when monitoring **multiple users**
+- **IMPROVE:** Enhanced **error messages** for **Instagram challenge/shadow ban detection** - when Instagram requires a challenge/re-login or temporarily shadow bans the IP, error messages now provide clear, informative explanations instead of cryptic **KeyError 'data'** messages
+- **IMPROVE:** **Follower/following count comparison** - Enhanced display of reported vs actual follower/following counts with improved accuracy by refreshing profile data after fetching lists to ensure current reported counts are compared with actual fetched counts (thanks [@tomballgithub](https://github.com/tomballgithub))
+- **IMPROVE:** **Enhanced initialization progress messages** - During script initialization, progress messages now show what's happening during profile loading, including loading profile from username, fetching reels count (when applicable), checking for stories (when applicable) and loading own profile (when logged in). This provides better visibility into the initialization process and helps with debugging account ban issues (thanks [@tomballgithub](https://github.com/tomballgithub))
+- **IMPROVE:** **Standardized formatting** in print statements
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed **redirect detection buffer** that was using broken shared/local variable logic, now properly uses **per-thread output tracking**
+- **BUGFIX:** Fixed **follower/following count comparison logic** - Removed inefficient helper functions that were fetching full lists just to get counts, simplified comparison function with proper type hints and fixed order of operations to ensure accurate reported vs actual count comparisons
+
+**Dependencies**:
+
+- **NEW:** Added **tqdm** dependency for **progress bar** functionality
+
 # Changes in 1.9.1 (18 Dec 2025)
 
 **Features and Improvements**:
@@ -10,7 +49,7 @@ This is a high-level summary of the most important changes.
 - **NEW:** Added `HOURS_VERBOSE` for debugging hour-based update gating (prints whether updates are **fetched** or **skipped**) (thanks [@tomballgithub](https://github.com/tomballgithub))
 - **IMPROVE:** Refactored **hour-range calculations**: de-duplicate overlapping ranges, ignore invalid hours and prevent crashes on misconfiguration
 - **IMPROVE:** Improved **Be Human** action probability when **hour-range mode** is enabled (scales to the configured **active-hour window**) (thanks [@tomballgithub](https://github.com/tomballgithub))
-- **IMPROVE:** Added **messaging for sleep time** if HOURS_VERBOSE to give insight into when next check will be (thanks [@tomballgithub](https://github.com/tomballgithub))
+- **IMPROVE:** Added **messaging for sleep time** if HOURS_VERBOSE is enabled to give insight into when next check will be (thanks [@tomballgithub](https://github.com/tomballgithub))
 - **IMPROVE:** **Liveness check** logic is now recomputed after config/env/CLI overrides are applied and after check-interval changes via **signals**
 - **IMPROVE:** Improved **Firefox session import** handling (safer **SQLite connection** usage; clarified error message; consistent session path handling)
 - **IMPROVE:** Enhanced **sleep message output** and refined **hour range checks for updates**

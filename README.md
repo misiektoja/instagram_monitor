@@ -10,7 +10,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
   - changes in **followings, followers** and **bio**
   - changes in **profile pictures**
   - changes in **profile visibility** (public to private and vice versa)
-- **Anonymous download** of users' **story images and videos**; the user won't know you watched their stories 😉
+- **Anonymous download** of users' **story images and videos** without leaving view traces
 - **Download** of users' **post images and post / reel videos**
 - **Email notifications** for different events (new posts, reels, stories, changes in followings, followers, bio, profile pictures, visibility and errors)
 - **Attaching changed profile pictures** and **stories/posts/reels images** directly in email notifications
@@ -18,7 +18,9 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
 - **Saving all user activities and profile changes** with timestamps to a **CSV file**
 - Support for both **public and private profiles**
 - **Two modes of operation**: with or without a logged-in Instagram account
-- Various mechanisms to **prevent captcha and detection of automated tools**
+- **Monitor multiple users** in a single process with automatic request staggering to avoid detection
+- Various mechanisms to **prevent captcha and detection of automated tools**, including **Be Human mode** (simulates random user actions), **Jitter mode** (adds human-like delays and back-off to HTTP requests) and **hour-range checking** (limits fetching updates to specific hours of the day)
+- **Flexible configuration** - support for config files, dotenv files, environment variables and command-line arguments
 - Possibility to **control the running copy** of the script via signals
 - **Functional, procedural Python** (minimal OOP)
 
@@ -59,7 +61,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
 ## Requirements
 
 * Python 3.9 or higher
-* Libraries: [instaloader](https://github.com/instaloader/instaloader), `requests`, `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`
+* Libraries: [instaloader](https://github.com/instaloader/instaloader), `requests`, `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`
 
 Tested on:
 
@@ -87,7 +89,7 @@ Download the *[instagram_monitor.py](https://raw.githubusercontent.com/misiektoj
 Install dependencies via pip:
 
 ```sh
-pip install instaloader requests python-dateutil pytz tzlocal python-dotenv
+pip install instaloader requests python-dateutil pytz tzlocal python-dotenv tqdm
 ```
 
 Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt)*:
@@ -314,15 +316,30 @@ instagram_monitor <target_insta_user> --config-file /path/instagram_monitor_new.
 
 The tool runs until interrupted (`Ctrl+C`). Use `tmux` or `screen` for persistence.
 
-You can monitor multiple Instagram users by launching multiple instances of the script.
+You can monitor multiple Instagram users in **one process** by passing multiple target usernames:
 
-The tool automatically saves its output to `instagram_monitor_<username>.log` file. It can be changed in the settings via `INSTA_LOGFILE` configuration option or disabled completely via `DISABLE_LOGGING` / `-d` flag.
+```sh
+instagram_monitor target_user_1 target_user_2 target_user_3
+```
+
+To reduce the chance of triggering Instagram anti-bot mechanisms, the tool will **stagger** the start of each target's monitoring loop (auto-spread across your `INSTA_CHECK_INTERVAL` by default). You can override it with:
+
+```sh
+instagram_monitor target_user_1 target_user_2 --targets-stagger 300
+```
+
+The tool automatically saves its output to an `instagram_monitor_<suffix>.log` file. It can be changed in the settings via `INSTA_LOGFILE` configuration option or disabled completely via `DISABLE_LOGGING` / `-d` flag.
+
+- In single-target mode, `<suffix>` is the username.
+- In multi-target mode, `<suffix>` is the sorted list of target usernames joined with underscores.
 
 The tool in mode 2 (session login) also saves the list of followings & followers to these files:
 - `instagram_<username>_followings.json`
 - `instagram_<username>_followers.json`
 
 Thanks to this we do not need to re-fetch it every time the tool is restarted and we can also detect changes since the last usage of the tool.
+
+When downloading lists of followers or followings, a **progress bar** is displayed showing real-time download progress, including statistics such as names per request, total requests, elapsed time and estimated remaining time. Progress updates are shown in the terminal only (to avoid cluttering log files), with the final completion state written to the log file for reference.
 
 The tool also saves the user profile picture to `instagram_<username>_profile_pic*.jpeg` files.
 
@@ -379,6 +396,11 @@ instagram_monitor <target_insta_user> -b instagram_username.csv
 ```
 
 The file will be automatically created if it does not exist.
+
+In **multi-target** mode, the tool writes **one CSV per user**. If you pass `-b instagram_data.csv`, it will create:
+- `instagram_data_<user1>.csv`
+- `instagram_data_<user2>.csv`
+... etc.
 
 <a id="detection-of-changed-profile-pictures"></a>
 ### Detection of Changed Profile Pictures
@@ -552,15 +574,42 @@ Avoid setting the polling interval (`INSTA_CHECK_INTERVAL` option or `-c` flag) 
 
 Also consider to randomize the check interval, as explained [here](#check-intervals).
 
+**Important**: When monitoring multiple users in a single process, the effective request rate is multiplied by the number of targets. For example, monitoring 5 users with a 1-hour interval means 5 requests per hour. To maintain the same per-account request rate, increase the check interval proportionally. If you normally use 1 hour for a single user, consider using 5 hours (or more) when monitoring 5 users. The tool automatically staggers requests between targets, but the overall request frequency should still be adjusted based on the total number of monitored users.
+
+<a id="use-hour-range-checking"></a>
+### Use Hour-Range Checking
+
+The tool supports limiting fetching updates to specific hours of the day, which helps reduce detection by avoiding requests during times when automated activity might be more suspicious.
+
+When hour-range checking is enabled, the tool will only fetch updates (posts, reels, stories, profile changes, followers/followings) during the configured time windows. Outside these hours, the tool will skip fetching updates but will continue running and wait for the next allowed time window.
+
+To enable this feature, set `CHECK_POSTS_IN_HOURS_RANGE` to `True` and configure the allowed hour ranges using:
+- `MIN_H1` and `MAX_H1` - first range of hours (default: 0-4, i.e., midnight to 4:59 AM)
+- `MIN_H2` and `MAX_H2` - second range of hours (default: 11-23, i.e., 11:00 AM to 11:59 PM / 23:59)
+
+You can define up to two non-overlapping or overlapping ranges. For example, to only allow checks during business hours (9 AM to 5 PM), you could set:
+- `MIN_H1 = 9`
+- `MAX_H1 = 17`
+- `MIN_H2 = 0`
+- `MAX_H2 = 0`
+
+Hours are specified in 24-hour format (0-23) and are evaluated in your configured time zone (see [Time Zone](#time-zone)).
+
+If you want to see verbose output about when updates are being fetched or skipped, set `HOURS_VERBOSE` to `True`. This is useful for debugging and understanding when the tool is active.
+
+This feature works particularly well when combined with reasonable polling intervals, as it ensures that even if your check interval triggers, requests will only be made during the configured time windows, making your activity pattern look more natural.
+
 <a id="do-not-monitor-too-many-users"></a>
 ### Do Not Monitor Too Many Users
 
-It is recommended to limit the number of users monitored by a single account, especially if they post frequent updates. In some cases, it may be best to create a separate account for additional users and even run it from a different IP address to reduce the risk of detection.
+It is recommended to limit the number of users monitored by a single account, especially if they post frequent updates. When using multi-user monitoring (monitoring multiple users in one process), keep in mind that the total request volume increases with each additional target. In some cases, it may be best to create a separate account for additional users and even run it from a different IP address to reduce the risk of detection.
 
 <a id="use-only-needed-functionality"></a>
 ### Use Only Needed Functionality
 
-Frequent updates to certain data types, such as new stories or changes in followers/followings, are more likely to flag the account as an automated tool. If certain data isn't essential for your use case, consider disabling its retrieval. The tool provides fine-grained control, for example you can skip fetching the list of followings (`-g` flag), followers (`-f`), stories details (`-r`) or posts/reels details (`-w`).
+Frequent updates to certain data types, such as new stories or posts/reels, are more likely to flag the account as an automated tool compared to profile changes or lists of followers/followings.
+
+If certain data isn't essential for your use case, consider disabling its retrieval. The tool provides fine-grained control, for example you can skip fetching stories details (`-r`), posts/reels details (`-w`), the list of followings (`-g` flag) and followers (`-f`).
 
 <a id="use-two-factor-authentication-2fa"></a>
 ### Use Two-Factor Authentication (2FA)
