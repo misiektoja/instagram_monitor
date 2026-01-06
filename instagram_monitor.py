@@ -1333,19 +1333,33 @@ def latest_post_mobile(user: str, bot: instaloader.Instaloader):
     if not edges:
         return None
 
-    node = edges[0]["node"]
+    best_node = None
+    best_ts = -1
+
+    # Iterate through the entire initial batch (usually 12 edges) and select the one with the latest timestamp
+    for edge in edges:
+        node = edge.get("node")
+        if not node:
+            continue
+        ts = node.get("taken_at_timestamp", 0)
+        if ts > best_ts:
+            best_ts = ts
+            best_node = node
+
+    if not best_node:
+        return None
 
     p = P()
-    p.mediaid = node.get("id", "")
-    p.date_utc = datetime.fromtimestamp(node["taken_at_timestamp"], timezone.utc)
-    p.likes = node["edge_liked_by"]["count"]
-    p.comments = node["edge_media_to_comment"]["count"]
-    p.caption = node.get("edge_media_to_caption", {}).get("edges", [{}])[0].get("node", {}).get("text", "")
+    p.mediaid = best_node.get("id", "")
+    p.date_utc = datetime.fromtimestamp(best_node["taken_at_timestamp"], timezone.utc)
+    p.likes = best_node["edge_liked_by"]["count"]
+    p.comments = best_node["edge_media_to_comment"]["count"]
+    p.caption = best_node.get("edge_media_to_caption", {}).get("edges", [{}])[0].get("node", {}).get("text", "")
     p.pcaption = ""
     p.tagged_users = []
-    p.shortcode = node["shortcode"]
-    p.url = node.get("display_url", "")
-    p.video_url = node.get("video_url")
+    p.shortcode = best_node["shortcode"]
+    p.url = best_node.get("display_url", "")
+    p.video_url = best_node.get("video_url")
 
     return p, "post"
 
