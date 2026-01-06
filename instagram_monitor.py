@@ -197,11 +197,13 @@ HOURS_VERBOSE = False
 
 # First range of hours to check (if CHECK_POSTS_IN_HOURS_RANGE is True)
 # Example: check from 00:00 to 04:59
+# To disable this range, set both MIN and MAX to 0
 MIN_H1 = 0
 MAX_H1 = 4
 
 # Second range of hours to check
 # Example: check from 11:00 to 23:59
+# To disable this range, set both MIN and MAX to 0
 MIN_H2 = 11
 MAX_H2 = 23
 
@@ -1981,8 +1983,14 @@ def hours_to_check():
     # - Misconfigured ranges (e.g., MAX < MIN) will produce an empty list
     # - Invalid hours (outside 0-23) are ignored
     hours = set()
-    hours.update(h for h in range(MIN_H1, MAX_H1 + 1) if 0 <= h <= 23)
-    hours.update(h for h in range(MIN_H2, MAX_H2 + 1) if 0 <= h <= 23)
+
+    # If MIN and MAX are both 0, we consider the range disabled
+    if not (MIN_H1 == 0 and MAX_H1 == 0):
+        hours.update(h for h in range(MIN_H1, MAX_H1 + 1) if 0 <= h <= 23)
+
+    if not (MIN_H2 == 0 and MAX_H2 == 0):
+        hours.update(h for h in range(MIN_H2, MAX_H2 + 1) if 0 <= h <= 23)
+
     return sorted(hours)
 
 
@@ -4047,7 +4055,23 @@ def main():
     print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
     print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
     print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
-    print("* Hours for fetching updates:\t\t" + (f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59, {MIN_H2:02d}:00 - {MAX_H2:02d}:59" if CHECK_POSTS_IN_HOURS_RANGE else "00:00 - 23:59"))
+
+    hours_ranges_str = ""
+    if CHECK_POSTS_IN_HOURS_RANGE:
+        ranges = []
+        if not (MIN_H1 == 0 and MAX_H1 == 0):
+            ranges.append(f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59")
+        if not (MIN_H2 == 0 and MAX_H2 == 0):
+            ranges.append(f"{MIN_H2:02d}:00 - {MAX_H2:02d}:59")
+
+        if ranges:
+            hours_ranges_str = ", ".join(ranges)
+        else:
+            hours_ranges_str = "None (both ranges disabled)"
+    else:
+        hours_ranges_str = "00:00 - 23:59"
+    print("* Hours for fetching updates:\t\t" + hours_ranges_str)
+
     print(f"* Browser user agent:\t\t\t{USER_AGENT}")
     print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
     print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
