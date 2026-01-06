@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.0.4
+v2.1
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -17,7 +17,7 @@ python-dotenv (optional)
 tqdm
 """
 
-VERSION = "2.0.4"
+VERSION = "2.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -2165,7 +2165,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         time.sleep(NEXT_OPERATION_DELAY)
         insta_username = profile.username
         insta_userid = profile.userid
-        print(f"     completed: {insta_username}")
+        print(f"     OK: {insta_username}")
         followers_count = profile.followers
         followings_count = profile.followees
         bio = profile.biography
@@ -2176,7 +2176,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         if not skip_session and can_view:
             print("- fetching reels count...", end=" ", flush=True)
             reels_count = get_total_reels_count(user, bot, skip_session)
-            print("              completed")
+            print("              OK")
 
         if not is_private:
             if bot.context.is_logged_in:
@@ -2187,7 +2187,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print("- checking for stories...", end=" ", flush=True)
             story = next(bot.get_stories(userids=[insta_userid]), None)
             has_story = bool(story and story.itemcount)
-            print("              completed")
+            print("              OK")
         else:
             has_story = False
 
@@ -2197,7 +2197,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print("- loading own profile...", end=" ", flush=True)
             me = instaloader.Profile.own_profile(bot.context)
             session_username = me.username
-            print(f"               completed: {session_username}")
+            print(f"               OK: {session_username}")
 
         print("─" * HORIZONTAL_LINE)
 
@@ -2707,6 +2707,17 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     if HOURS_VERBOSE:
         sleep_message(r_sleep_time)
+
+    # Monitoring active message
+    now = now_local_naive()
+    next_check = now + timedelta(seconds=r_sleep_time)
+
+    if threading.current_thread() is not threading.main_thread():
+        print(f"* Tracking {user} (and others)... next check for {user} planned at ~{next_check.strftime('%H:%M:%S')} (in {display_time(r_sleep_time)})\n")
+    else:
+        print(f"* Tracking {user}... next check planned at ~{next_check.strftime('%H:%M:%S')} (in {display_time(r_sleep_time)})\n")
+
+    print_cur_ts("Timestamp:\t\t\t\t")
 
     time.sleep(r_sleep_time)
 
@@ -4072,8 +4083,6 @@ def main():
 
     # Multi-target mode: run multiple monitors in one process, with configurable staggering
     if len(targets) == 1:
-        print("Sneaking into Instagram like a ninja ... (be patient, secrets take time)")
-        print("─" * HORIZONTAL_LINE)
         instagram_monitor_user(targets[0], csv_files_by_user.get(targets[0], CSV_FILE), SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS)
     else:
         stagger = args.targets_stagger if args.targets_stagger is not None else MULTI_TARGET_STAGGER
@@ -4102,8 +4111,6 @@ def main():
             planned = now + timedelta(seconds=delay)
             print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
 
-        print("─" * HORIZONTAL_LINE)
-        print("Sneaking into Instagram like a ninja ... (be patient, secrets take time)")
         print("─" * HORIZONTAL_LINE)
 
         # Create events to coordinate initial loading between users.
