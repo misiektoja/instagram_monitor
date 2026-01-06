@@ -5,3 +5,4 @@ pytz
 tzlocal
 python-dotenv
 tqdm
+richflask

@@ -291,6 +291,71 @@ MULTI_TARGET_STAGGER_JITTER = 5
 #
 # If True, serializes all HTTP calls (via a global lock) across targets. Recommended for multi-target mode.
 MULTI_TARGET_SERIALIZE_HTTP = True
+
+# ----------------------------
+# Webhook Integration
+# ----------------------------
+# Enable webhook notifications (Discord-compatible)
+WEBHOOK_ENABLED = False
+
+# Webhook URL (Discord webhook URL or compatible endpoint)
+# For Discord: Right-click channel -> Edit Channel -> Integrations -> Webhooks -> Copy Webhook URL
+WEBHOOK_URL = ""
+
+# Webhook username to display (leave empty for default)
+WEBHOOK_USERNAME = "Instagram Monitor"
+
+# Webhook avatar URL (leave empty for default)
+WEBHOOK_AVATAR_URL = ""
+
+# Send webhook on status changes (new posts/reels/stories, bio, profile pic, visibility)
+WEBHOOK_STATUS_NOTIFICATION = True
+
+# Send webhook on follower changes
+WEBHOOK_FOLLOWERS_NOTIFICATION = True
+
+# Send webhook on errors
+WEBHOOK_ERROR_NOTIFICATION = False
+
+# ----------------------------
+# Debug Mode
+# ----------------------------
+# Enable debug mode for verbose output (can also be enabled via --debug flag)
+# Shows detailed information for every check, API responses, timing info
+DEBUG_MODE = False
+
+# ----------------------------
+# UI Mode
+# ----------------------------
+# UI mode: 'user' for simple/minimal display, 'config' for detailed/complex display with settings
+# Can also be set via --ui-mode flag
+UI_MODE = 'user'
+
+# Enable Rich terminal UI (live dashboard)
+# Set to False to use traditional text output
+UI_ENABLED = True
+
+# ----------------------------
+# Web UI Settings
+# ----------------------------
+# Enable web-based UI instead of terminal UI (runs on localhost)
+WEB_UI_ENABLED = True
+
+# Port for the web UI server
+WEB_UI_PORT = 5000
+
+# Host for the web UI server (use '0.0.0.0' to allow external access)
+WEB_UI_HOST = '127.0.0.1'
+
+# ----------------------------
+# Detailed Follower Logging
+# ----------------------------
+# When enabled, fetches the full list of followers and followings every check
+# (not just when the count changes) and compares usernames to detect who
+# followed/unfollowed even when counts remain the same
+# This is useful for detecting when someone unfollows and someone else follows
+# in the same interval, keeping the count unchanged
+DETAILED_FOLLOWER_LOGGING = False
 """
 
 # -------------------------
@@ -357,6 +422,20 @@ TARGET_USERNAMES = []
 MULTI_TARGET_STAGGER = 0
 MULTI_TARGET_STAGGER_JITTER = 0
 MULTI_TARGET_SERIALIZE_HTTP = False
+WEBHOOK_ENABLED = False
+WEBHOOK_URL = ""
+WEBHOOK_USERNAME = "Instagram Monitor"
+WEBHOOK_AVATAR_URL = ""
+WEBHOOK_STATUS_NOTIFICATION = True
+WEBHOOK_FOLLOWERS_NOTIFICATION = True
+WEBHOOK_ERROR_NOTIFICATION = False
+DEBUG_MODE = False
+UI_MODE = 'user'
+UI_ENABLED = True
+WEB_UI_ENABLED = True
+WEB_UI_PORT = 5000
+WEB_UI_HOST = '127.0.0.1'
+DETAILED_FOLLOWER_LOGGING = False
 
 exec(CONFIG_BLOCK, globals())
 
@@ -388,6 +467,41 @@ START_TIME = 0
 NAME_COUNT = 1
 WRAPPER_COUNT = 0
 pbar = None
+
+# Global tracking for last/next check times
+LAST_CHECK_TIME = None
+NEXT_CHECK_TIME = None
+CHECK_COUNT = 0
+
+# Global state for debug mode manual check trigger
+MANUAL_CHECK_TRIGGERED = False
+DEBUG_INPUT_THREAD = None
+
+# Rich UI components (initialized later)
+RICH_CONSOLE = None
+RICH_LIVE = None
+UI_DATA = {}
+
+# Web UI global state
+WEB_UI_APP = None
+WEB_UI_THREAD = None
+WEB_UI_DATA = {
+    'targets': {},
+    'config': {},
+    'check_count': 0,
+    'last_check': None,
+    'next_check': None,
+    'ui_mode': 'user',
+    'uptime': None,
+    'start_time': None,
+    'activities': [],
+    'is_monitoring': False,
+    'session': {'username': None, 'active': False}
+}
+WEB_UI_DATA_LOCK = None  # Will be initialized as threading.Lock() after imports
+WEB_UI_STANDALONE_MODE = False  # Set True when running with --webui flag
+WEB_UI_MONITOR_THREADS = {}  # Active monitoring threads by username
+WEB_UI_STOP_EVENTS = {}  # Stop events for each monitoring thread
 
 import sys
 
@@ -433,6 +547,9 @@ import subprocess
 import threading
 import hashlib
 
+# Initialize the web UI data lock now that threading is imported
+WEB_UI_DATA_LOCK = threading.Lock()
+
 try:
     import instaloader
     from instaloader import ConnectionException, Instaloader
@@ -454,6 +571,24 @@ try:
 except ModuleNotFoundError:
     raise SystemExit("Error: Couldn't find the tqdm library !\n\nTo install it, run:\n    pip3 install tqdm\n\nOnce installed, re-run this tool")
 
+try:
+    from rich.console import Console
+    from rich.live import Live
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.layout import Layout
+    from rich.text import Text
+    from rich import box
+    RICH_AVAILABLE = True
+except ImportError:
+    RICH_AVAILABLE = False
+
+try:
+    from flask import Flask, render_template, jsonify, request as flask_request
+    FLASK_AVAILABLE = True
+except ImportError:
+    FLASK_AVAILABLE = False
+
 
 # Global lock to avoid interleaved output when using multi-target threading
 STDOUT_LOCK = threading.Lock()
@@ -473,6 +608,437 @@ LAST_OUTPUT_BY_THREAD = {}
 
 # Thread-local storage for progress bar state (multi-target safe)
 _thread_local = threading.local()
+
+
+# ===========================
+# Web UI Flask Server
+# ===========================
+
+def create_web_app():
+    """Create and configure the Flask web application."""
+    if not FLASK_AVAILABLE:
+        return None
+
+    import logging
+    log = logging.getLogger('werkzeug')
+    log.setLevel(logging.ERROR)  # Suppress Flask request logs
+
+    # Get the directory where the script is located for templates
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    template_dir = os.path.join(script_dir, 'templates')
+
+    app = Flask(__name__, template_folder=template_dir)
+
+    @app.route('/')
+    def index():
+        return render_template('index.html')
+
+    @app.route('/api/status')
+    def api_status():
+        with WEB_UI_DATA_LOCK:
+            data = WEB_UI_DATA.copy()
+            # Calculate uptime
+            if data.get('start_time'):
+                uptime_delta = datetime.now() - data['start_time']
+                hours, remainder = divmod(int(uptime_delta.total_seconds()), 3600)
+                minutes, seconds = divmod(remainder, 60)
+                data['uptime'] = f"{hours}h {minutes}m {seconds}s"
+            return jsonify(data)
+
+    @app.route('/api/mode', methods=['POST'])
+    def api_set_mode():
+        global UI_MODE
+        data = flask_request.get_json()
+        if data and 'mode' in data:
+            UI_MODE = data['mode']
+            with WEB_UI_DATA_LOCK:
+                WEB_UI_DATA['ui_mode'] = UI_MODE
+            return jsonify({'success': True, 'mode': UI_MODE})
+        return jsonify({'success': False}), 400
+
+    @app.route('/api/trigger-check', methods=['POST'])
+    def api_trigger_check():
+        global MANUAL_CHECK_TRIGGERED
+        data = flask_request.get_json() or {}
+        target = data.get('target')
+        MANUAL_CHECK_TRIGGERED = True
+        msg = f"Manual check triggered for {target}" if target else "Manual check triggered"
+        add_web_activity(msg)
+        return jsonify({'success': True, 'message': 'Check triggered'})
+
+    @app.route('/api/targets', methods=['GET', 'POST'])
+    def api_targets():
+        global WEB_UI_DATA
+        if flask_request.method == 'GET':
+            with WEB_UI_DATA_LOCK:
+                return jsonify({'targets': WEB_UI_DATA.get('targets', {})})
+        elif flask_request.method == 'POST':
+            data = flask_request.get_json()
+            if not data or 'username' not in data:
+                return jsonify({'success': False, 'error': 'Username required'}), 400
+            username = data['username'].strip().lower()
+            if not username:
+                return jsonify({'success': False, 'error': 'Username required'}), 400
+            start_now = data.get('start', False)
+
+            with WEB_UI_DATA_LOCK:
+                if username in WEB_UI_DATA['targets']:
+                    return jsonify({'success': False, 'error': 'Target already exists'}), 400
+                WEB_UI_DATA['targets'][username] = {
+                    'followers': None,
+                    'following': None,
+                    'posts': None,
+                    'status': 'Idle',
+                    'added': datetime.now().strftime('%Y-%m-%d %H:%M'),
+                    'last_checked': None
+                }
+
+            add_web_activity(f"Added target: {username}")
+
+            # Start monitoring if requested and in standalone mode
+            if start_now and WEB_UI_STANDALONE_MODE:
+                start_monitoring_for_target(username)
+
+            return jsonify({'success': True, 'username': username})
+
+    @app.route('/api/targets/<username>', methods=['DELETE'])
+    def api_delete_target(username):
+        global WEB_UI_DATA
+        username = username.strip().lower()
+
+        # Stop monitoring if running
+        stop_monitoring_for_target(username)
+
+        with WEB_UI_DATA_LOCK:
+            if username in WEB_UI_DATA['targets']:
+                del WEB_UI_DATA['targets'][username]
+                add_web_activity(f"Removed target: {username}")
+                return jsonify({'success': True})
+            return jsonify({'success': False, 'error': 'Target not found'}), 404
+
+    @app.route('/api/monitoring/start', methods=['POST'])
+    def api_start_monitoring():
+        data = flask_request.get_json() or {}
+        target = data.get('target')
+
+        if WEB_UI_STANDALONE_MODE:
+            if target:
+                success = start_monitoring_for_target(target)
+            else:
+                # Start all targets
+                with WEB_UI_DATA_LOCK:
+                    targets_to_start = list(WEB_UI_DATA['targets'].keys())
+                for t in targets_to_start:
+                    start_monitoring_for_target(t)
+                success = True
+
+            with WEB_UI_DATA_LOCK:
+                WEB_UI_DATA['is_monitoring'] = True
+            return jsonify({'success': success})
+        else:
+            # Not in standalone mode - monitoring controlled by CLI
+            return jsonify({'success': False, 'error': 'Monitoring controlled by CLI in this mode'})
+
+    @app.route('/api/monitoring/stop', methods=['POST'])
+    def api_stop_monitoring():
+        data = flask_request.get_json() or {}
+        target = data.get('target')
+
+        if WEB_UI_STANDALONE_MODE:
+            if target:
+                stop_monitoring_for_target(target)
+            else:
+                # Stop all targets
+                with WEB_UI_DATA_LOCK:
+                    targets_to_stop = list(WEB_UI_DATA['targets'].keys())
+                for t in targets_to_stop:
+                    stop_monitoring_for_target(t)
+
+            with WEB_UI_DATA_LOCK:
+                # Check if any monitors still running
+                active = any(t.is_alive() for t in WEB_UI_MONITOR_THREADS.values())
+                WEB_UI_DATA['is_monitoring'] = active
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': 'Monitoring controlled by CLI in this mode'})
+
+    @app.route('/api/settings', methods=['GET', 'POST'])
+    def api_settings():
+        global INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
+        global STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_URL
+        global DETAILED_FOLLOWER_LOGGING, DEBUG_MODE, SESSION_USERNAME
+
+        if flask_request.method == 'GET':
+            return jsonify({
+                'check_interval': INSTA_CHECK_INTERVAL,
+                'random_low': RANDOM_SLEEP_DIFF_LOW,
+                'random_high': RANDOM_SLEEP_DIFF_HIGH,
+                'email_notifications': STATUS_NOTIFICATION,
+                'follower_notifications': FOLLOWERS_NOTIFICATION,
+                'webhook_enabled': WEBHOOK_ENABLED,
+                'webhook_url': WEBHOOK_URL,
+                'detailed_logging': DETAILED_FOLLOWER_LOGGING,
+                'debug_mode': DEBUG_MODE,
+                'session_username': SESSION_USERNAME
+            })
+        elif flask_request.method == 'POST':
+            data = flask_request.get_json()
+            if not data:
+                return jsonify({'success': False, 'error': 'No data provided'}), 400
+
+            if 'check_interval' in data:
+                INSTA_CHECK_INTERVAL = max(300, int(data['check_interval']))
+            if 'random_low' in data:
+                RANDOM_SLEEP_DIFF_LOW = max(0, int(data['random_low']))
+            if 'random_high' in data:
+                RANDOM_SLEEP_DIFF_HIGH = max(0, int(data['random_high']))
+            if 'email_notifications' in data:
+                STATUS_NOTIFICATION = bool(data['email_notifications'])
+            if 'follower_notifications' in data:
+                FOLLOWERS_NOTIFICATION = bool(data['follower_notifications'])
+            if 'webhook_enabled' in data:
+                WEBHOOK_ENABLED = bool(data['webhook_enabled'])
+            if 'webhook_url' in data:
+                WEBHOOK_URL = data['webhook_url']
+            if 'detailed_logging' in data:
+                DETAILED_FOLLOWER_LOGGING = bool(data['detailed_logging'])
+            if 'debug_mode' in data:
+                DEBUG_MODE = bool(data['debug_mode'])
+
+            add_web_activity("Settings updated from web UI")
+            return jsonify({'success': True})
+
+    @app.route('/api/session', methods=['GET', 'POST'])
+    def api_session():
+        global SESSION_USERNAME, SKIP_SESSION
+
+        if flask_request.method == 'GET':
+            with WEB_UI_DATA_LOCK:
+                return jsonify(WEB_UI_DATA.get('session', {}))
+        elif flask_request.method == 'POST':
+            data = flask_request.get_json()
+            if not data:
+                return jsonify({'success': False, 'error': 'No data provided'}), 400
+
+            username = data.get('username', '').strip()
+            method = data.get('method', 'firefox')
+
+            if username:
+                SESSION_USERNAME = username
+                SKIP_SESSION = False
+                with WEB_UI_DATA_LOCK:
+                    WEB_UI_DATA['session'] = {'username': username, 'active': False, 'method': method}
+                add_web_activity(f"Session configured for: {username}")
+                return jsonify({'success': True, 'message': f'Session set for {username}'})
+            return jsonify({'success': False, 'error': 'Username required'}), 400
+
+    @app.route('/api/session/test', methods=['POST'])
+    def api_test_session():
+        if not SESSION_USERNAME:
+            return jsonify({'success': False, 'error': 'No session configured'})
+
+        try:
+            L = Instaloader()
+            L.load_session_from_file(SESSION_USERNAME)
+            with WEB_UI_DATA_LOCK:
+                WEB_UI_DATA['session']['active'] = True
+            add_web_activity(f"Session test successful: {SESSION_USERNAME}")
+            return jsonify({'success': True, 'username': SESSION_USERNAME})
+        except Exception as e:
+            with WEB_UI_DATA_LOCK:
+                WEB_UI_DATA['session']['active'] = False
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/activity/clear', methods=['POST'])
+    def api_clear_activity():
+        with WEB_UI_DATA_LOCK:
+            WEB_UI_DATA['activities'] = []
+        return jsonify({'success': True})
+
+    return app
+
+
+def start_monitoring_for_target(username):
+    """Start monitoring for a specific target in standalone mode."""
+    global WEB_UI_MONITOR_THREADS, WEB_UI_STOP_EVENTS
+
+    if username in WEB_UI_MONITOR_THREADS and WEB_UI_MONITOR_THREADS[username].is_alive():
+        return False  # Already monitoring
+
+    stop_event = threading.Event()
+    WEB_UI_STOP_EVENTS[username] = stop_event
+
+    def _monitor_runner(user, stop_evt):
+        try:
+            add_web_activity(f"Started monitoring: {user}")
+            with WEB_UI_DATA_LOCK:
+                if user in WEB_UI_DATA['targets']:
+                    WEB_UI_DATA['targets'][user]['status'] = 'Starting'
+
+            # Run the actual monitoring (with stop event check)
+            instagram_monitor_user(
+                user,
+                "",  # No CSV file
+                SKIP_SESSION,
+                SKIP_FOLLOWERS,
+                SKIP_FOLLOWINGS,
+                SKIP_GETTING_STORY_DETAILS,
+                SKIP_GETTING_POSTS_DETAILS,
+                GET_MORE_POST_DETAILS,
+                stop_event=stop_evt
+            )
+        except Exception as e:
+            add_web_activity(f"Error monitoring {user}: {str(e)}")
+            with WEB_UI_DATA_LOCK:
+                if user in WEB_UI_DATA['targets']:
+                    WEB_UI_DATA['targets'][user]['status'] = 'Error'
+
+    t = threading.Thread(target=_monitor_runner, args=(username, stop_event), daemon=True, name=f"monitor:{username}")
+    WEB_UI_MONITOR_THREADS[username] = t
+    t.start()
+    return True
+
+
+def stop_monitoring_for_target(username):
+    """Stop monitoring for a specific target."""
+    global WEB_UI_STOP_EVENTS, WEB_UI_MONITOR_THREADS
+
+    if username in WEB_UI_STOP_EVENTS:
+        WEB_UI_STOP_EVENTS[username].set()
+        add_web_activity(f"Stopping monitoring: {username}")
+        with WEB_UI_DATA_LOCK:
+            if username in WEB_UI_DATA['targets']:
+                WEB_UI_DATA['targets'][username]['status'] = 'Stopped'
+
+    # Clean up thread reference
+    if username in WEB_UI_MONITOR_THREADS:
+        del WEB_UI_MONITOR_THREADS[username]
+    if username in WEB_UI_STOP_EVENTS:
+        del WEB_UI_STOP_EVENTS[username]
+
+
+def start_web_server():
+    """Start the Flask web server in a background thread."""
+    global WEB_UI_APP, WEB_UI_THREAD
+
+    if not FLASK_AVAILABLE:
+        print("* Warning: Flask not available, web UI disabled. Install with: pip install flask")
+        return False
+
+    if not WEB_UI_ENABLED:
+        return False
+
+    WEB_UI_APP = create_web_app()
+    if WEB_UI_APP is None:
+        return False
+
+    def run_server():
+        WEB_UI_APP.run(host=WEB_UI_HOST, port=WEB_UI_PORT, debug=False, use_reloader=False, threaded=True)
+
+    WEB_UI_THREAD = threading.Thread(target=run_server, daemon=True, name="web_ui_server")
+    WEB_UI_THREAD.start()
+
+    print(f"* Web UI available at: http://{WEB_UI_HOST}:{WEB_UI_PORT}/")
+    return True
+
+
+def run_standalone_webui(args):
+    """Run the web UI in standalone mode - no CLI targets needed."""
+    global WEB_UI_STANDALONE_MODE, WEB_UI_ENABLED, WEB_UI_PORT, WEB_UI_HOST
+    global SESSION_USERNAME, DEBUG_MODE, INSTA_CHECK_INTERVAL
+    global RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
+
+    WEB_UI_STANDALONE_MODE = True
+    WEB_UI_ENABLED = True
+
+    # Apply any CLI overrides
+    if args.web_port:
+        WEB_UI_PORT = args.web_port
+
+    if args.session_username:
+        SESSION_USERNAME = args.session_username
+
+    if args.debug_mode:
+        DEBUG_MODE = True
+
+    if args.check_interval:
+        INSTA_CHECK_INTERVAL = args.check_interval
+
+    if args.check_interval_random_diff_low:
+        RANDOM_SLEEP_DIFF_LOW = args.check_interval_random_diff_low
+
+    if args.check_interval_random_diff_high:
+        RANDOM_SLEEP_DIFF_HIGH = args.check_interval_random_diff_high
+
+    if not FLASK_AVAILABLE:
+        print("* Error: Flask is required for web UI. Install with: pip install flask")
+        sys.exit(1)
+
+    print(f"Instagram Monitor v{VERSION} - Web UI Control Panel\n")
+    print("=" * 50)
+    print("Starting standalone web UI mode...")
+    print(f"* Web UI Port:\t\t\t\t{WEB_UI_PORT}")
+    print(f"* Session Username:\t\t\t{SESSION_USERNAME or 'Not configured'}")
+    print(f"* Check Interval:\t\t\t{INSTA_CHECK_INTERVAL}s")
+    print(f"* Debug Mode:\t\t\t\t{DEBUG_MODE}")
+    print("=" * 50)
+
+    # Initialize web UI data
+    WEB_UI_DATA['start_time'] = datetime.now()
+    WEB_UI_DATA['config'] = {
+        'check_interval': INSTA_CHECK_INTERVAL,
+        'random_low': RANDOM_SLEEP_DIFF_LOW,
+        'random_high': RANDOM_SLEEP_DIFF_HIGH
+    }
+    if SESSION_USERNAME:
+        WEB_UI_DATA['session'] = {'username': SESSION_USERNAME, 'active': False}
+
+    # Create and start the Flask app in the main thread (blocking)
+    app = create_web_app()
+    if app is None:
+        print("* Error: Failed to create web application")
+        sys.exit(1)
+
+    print(f"\n🚀 Web UI running at: http://{WEB_UI_HOST}:{WEB_UI_PORT}/")
+    print("   Open this URL in your browser to control Instagram Monitor")
+    print("   Press Ctrl+C to stop\n")
+
+    add_web_activity("Web UI control panel started")
+
+    try:
+        # Run Flask in the main thread (blocking)
+        app.run(host=WEB_UI_HOST, port=WEB_UI_PORT, debug=False, use_reloader=False, threaded=True)
+    except KeyboardInterrupt:
+        print("\n* Shutting down web UI...")
+        # Stop all monitoring threads
+        for username in list(WEB_UI_STOP_EVENTS.keys()):
+            stop_monitoring_for_target(username)
+        print("* Goodbye!")
+
+
+def update_web_ui_data(targets=None, config=None, check_count=None, last_check=None, next_check=None):
+    """Update the web UI data store."""
+    with WEB_UI_DATA_LOCK:
+        if targets is not None:
+            WEB_UI_DATA['targets'] = targets
+        if config is not None:
+            WEB_UI_DATA['config'] = config
+        if check_count is not None:
+            WEB_UI_DATA['check_count'] = check_count
+        if last_check is not None:
+            WEB_UI_DATA['last_check'] = last_check
+        if next_check is not None:
+            WEB_UI_DATA['next_check'] = next_check
+        WEB_UI_DATA['ui_mode'] = UI_MODE
+
+
+def add_web_activity(message):
+    """Add an activity to the web UI activity feed."""
+    with WEB_UI_DATA_LOCK:
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        WEB_UI_DATA['activities'].insert(0, {'time': timestamp, 'message': message})
+        # Keep only last 100 activities
+        WEB_UI_DATA['activities'] = WEB_UI_DATA['activities'][:100]
 
 
 def _thread_key() -> int:
@@ -741,6 +1307,91 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         print(f"Error sending email: {e}")
         return 1
     return 0
+
+
+# Sends webhook notification (Discord-compatible)
+def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, notification_type="status"):
+    """
+    Send a webhook notification to Discord or compatible endpoint.
+
+    Args:
+        title: Title of the embed
+        description: Main description text
+        color: Embed color (hex integer, default Discord blurple)
+        fields: List of dicts with 'name' and 'value' keys for embed fields
+        image_url: Optional image URL to include in embed
+        notification_type: 'status', 'followers', or 'error' to check notification settings
+    """
+    if not WEBHOOK_ENABLED or not WEBHOOK_URL:
+        return 1
+
+    # Check if this notification type is enabled
+    if notification_type == "status" and not WEBHOOK_STATUS_NOTIFICATION:
+        return 1
+    elif notification_type == "followers" and not WEBHOOK_FOLLOWERS_NOTIFICATION:
+        return 1
+    elif notification_type == "error" and not WEBHOOK_ERROR_NOTIFICATION:
+        return 1
+
+    try:
+        embed = {
+            "title": title[:256] if title else "Instagram Monitor",
+            "description": description[:4096] if description else "",
+            "color": color,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "footer": {
+                "text": f"Instagram Monitor v{VERSION}"
+            }
+        }
+
+        if fields:
+            embed["fields"] = []
+            for field in fields[:25]:  # Discord limit: 25 fields
+                embed["fields"].append({
+                    "name": str(field.get("name", ""))[:256],
+                    "value": str(field.get("value", ""))[:1024],
+                    "inline": field.get("inline", False)
+                })
+
+        if image_url:
+            embed["image"] = {"url": image_url}
+
+        payload = {
+            "embeds": [embed]
+        }
+
+        if WEBHOOK_USERNAME:
+            payload["username"] = WEBHOOK_USERNAME
+
+        if WEBHOOK_AVATAR_URL:
+            payload["avatar_url"] = WEBHOOK_AVATAR_URL
+
+        response = req.post(
+            WEBHOOK_URL,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=10
+        )
+
+        if response.status_code in (200, 204):
+            if DEBUG_MODE:
+                print(f"* Webhook notification sent successfully")
+            return 0
+        else:
+            print(f"* Webhook error: HTTP {response.status_code} - {response.text[:200]}")
+            return 1
+
+    except Exception as e:
+        print(f"* Error sending webhook: {e}")
+        return 1
+
+
+# Debug print helper - only prints if DEBUG_MODE is enabled
+def debug_print(message):
+    """Print debug information only if DEBUG_MODE is enabled."""
+    if DEBUG_MODE:
+        timestamp = now_local_naive().strftime("%H:%M:%S.%f")[:-3]
+        print(f"[DEBUG {timestamp}] {message}")
 
 
 # Initializes the CSV file
@@ -1767,6 +2418,375 @@ def extract_usernames_safely(data_dict):
     return usernames
 
 
+# Extracts detailed user info from a JSON response for detailed follower logging
+def extract_detailed_users_safely(data_dict):
+    """Extract detailed user information including user_id, full_name, and profile_pic_url."""
+    users = []
+
+    possible_keys = ['edge_followed_by', 'edge_follow']
+
+    try:
+        user_data = data_dict['data']['user']
+    except KeyError:
+        return []
+
+    edges = None
+    for key in possible_keys:
+        if key in user_data:
+            try:
+                edges = user_data[key]['edges']
+                break
+            except KeyError:
+                continue
+
+    if edges is None or not isinstance(edges, list):
+        return []
+
+    for edge in edges:
+        try:
+            node = edge['node']
+            user_info = {
+                'username': node.get('username', ''),
+                'user_id': node.get('id', ''),
+                'full_name': node.get('full_name', ''),
+                'profile_pic_url': node.get('profile_pic_url', ''),
+                'is_verified': node.get('is_verified', False),
+                'is_private': node.get('is_private', False)
+            }
+            if user_info['username']:
+                users.append(user_info)
+        except (KeyError, TypeError):
+            continue
+
+    return users
+
+
+# Save detailed followers/followings to JSON file
+def save_detailed_followers(filename, count, users_list, detailed=False):
+    """Save followers/followings with optional detailed information."""
+    if detailed and DETAILED_FOLLOWER_LOGGING:
+        # Save detailed format: [count, [{username, user_id, full_name, ...}, ...]]
+        data_to_save = [count, users_list]
+    else:
+        # Save simple format: [count, [username1, username2, ...]]
+        if users_list and isinstance(users_list[0], dict):
+            usernames = [u['username'] for u in users_list]
+        else:
+            usernames = users_list
+        data_to_save = [count, usernames]
+
+    try:
+        with open(filename, 'w', encoding="utf-8") as f:
+            json.dump(data_to_save, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"* Error saving to '{filename}': {e}")
+        return False
+
+
+# Load detailed followers/followings from JSON file
+def load_detailed_followers(filename):
+    """Load followers/followings, handling both simple and detailed formats."""
+    try:
+        with open(filename, 'r', encoding="utf-8") as f:
+            data = json.load(f)
+
+        if not data or len(data) < 2:
+            return None, []
+
+        count = data[0]
+        users = data[1]
+
+        # Check if it's detailed format (list of dicts) or simple (list of strings)
+        if users and isinstance(users[0], dict):
+            # Detailed format - extract usernames for comparison
+            usernames = [u.get('username', '') for u in users]
+            return count, usernames, users  # Return both usernames and full data
+        else:
+            # Simple format
+            return count, users, None
+
+    except Exception as e:
+        debug_print(f"Error loading '{filename}': {e}")
+        return None, [], None
+
+
+# UI input handler thread function - handles mode toggle and debug commands
+def ui_input_handler():
+    """Background thread to handle keyboard input for UI mode toggle and debug commands."""
+    global MANUAL_CHECK_TRIGGERED, UI_MODE
+
+    while True:
+        try:
+            user_input = input().strip().lower()
+
+            # Mode toggle shortcuts: 'm', 'mode'
+            if user_input in ('m', 'mode'):
+                UI_MODE = 'config' if UI_MODE == 'user' else 'user'
+                # Don't print in UI mode - the UI will update automatically
+                if not UI_ENABLED or not RICH_AVAILABLE:
+                    print(f"* UI mode: {UI_MODE}")
+
+            # Debug commands (only work in debug mode)
+            elif user_input == 'check' and DEBUG_MODE:
+                MANUAL_CHECK_TRIGGERED = True
+                print("* Manual check triggered!")
+            elif user_input == 'status' and DEBUG_MODE:
+                print_status_summary()
+            elif user_input == 'help':
+                print("\nCommands:")
+                print("  m, mode  - Toggle UI view (user/config)")
+                if DEBUG_MODE:
+                    print("  check    - Trigger immediate check")
+                    print("  status   - Show status summary")
+                print("  help     - Show this help\n")
+        except EOFError:
+            break
+        except Exception:
+            pass
+
+
+# Start UI input handler thread
+def start_ui_input_handler():
+    """Start the background input handler thread for UI mode toggle and debug commands."""
+    global DEBUG_INPUT_THREAD
+
+    # Start if UI is enabled OR debug mode is on
+    if DEBUG_INPUT_THREAD is None and (UI_ENABLED or DEBUG_MODE):
+        DEBUG_INPUT_THREAD = threading.Thread(target=ui_input_handler, daemon=True, name="ui_input_handler")
+        DEBUG_INPUT_THREAD.start()
+        if DEBUG_MODE:
+            print("* Commands: 'm' toggle UI, 'check' manual check, 'status', 'help'")
+
+
+# Print status summary (for debug mode)
+def print_status_summary():
+    """Print current monitoring status."""
+    print("─" * HORIZONTAL_LINE)
+    print("Current Monitoring Status:")
+    print(f"  Last check: {get_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else 'Not yet'}")
+    print(f"  Next check: {get_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else 'Calculating...'}")
+    print(f"  Total checks: {CHECK_COUNT}")
+    print(f"  Debug mode: {DEBUG_MODE}")
+    print(f"  UI mode: {UI_MODE}")
+    print("─" * HORIZONTAL_LINE)
+
+
+# Update global tracking for last/next check times
+def update_check_times(last_time=None, next_time=None):
+    """Update global tracking variables for check times."""
+    global LAST_CHECK_TIME, NEXT_CHECK_TIME, CHECK_COUNT
+
+    if last_time is not None:
+        LAST_CHECK_TIME = last_time
+        CHECK_COUNT += 1
+
+    if next_time is not None:
+        NEXT_CHECK_TIME = next_time
+
+    # Update web UI data
+    if WEB_UI_ENABLED:
+        last_str = get_short_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else None
+        next_str = get_short_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else None
+        update_web_ui_data(check_count=CHECK_COUNT, last_check=last_str, next_check=next_str)
+
+
+# Generate Rich UI layout for user mode (simple/minimal)
+def generate_user_ui(target_data):
+    """Generate a simple, minimal UI for user mode."""
+    if not RICH_AVAILABLE:
+        return None
+
+    table = Table(title="Instagram Monitor", box=box.ROUNDED, show_header=True, header_style="bold cyan")
+    table.add_column("Target", style="green", width=20)
+    table.add_column("Followers", justify="right", width=12)
+    table.add_column("Following", justify="right", width=12)
+    table.add_column("Posts", justify="right", width=10)
+    table.add_column("Status", width=15)
+
+    for target, data in target_data.items():
+        status_style = "green" if data.get('status') == 'OK' else "yellow"
+        table.add_row(
+            target,
+            str(data.get('followers', '-')),
+            str(data.get('following', '-')),
+            str(data.get('posts', '-')),
+            Text(data.get('status', 'Unknown'), style=status_style)
+        )
+
+    # Timing info panel
+    timing_text = Text()
+    if LAST_CHECK_TIME:
+        timing_text.append(f"Last check: {get_short_date_from_ts(LAST_CHECK_TIME)}\n", style="dim")
+    if NEXT_CHECK_TIME:
+        timing_text.append(f"Next check: {get_short_date_from_ts(NEXT_CHECK_TIME)}\n", style="dim")
+    timing_text.append(f"Total checks: {CHECK_COUNT}", style="dim")
+
+    timing_panel = Panel(timing_text, title="Timing", box=box.ROUNDED, border_style="blue")
+
+    # Mode toggle button - visual button style
+    mode_btn_text = Text()
+    mode_btn_text.append("  [ ", style="dim")
+    mode_btn_text.append("USER", style="bold green reverse")
+    mode_btn_text.append(" | ", style="dim")
+    mode_btn_text.append("CONFIG", style="dim")
+    mode_btn_text.append(" ]  ", style="dim")
+    mode_btn_text.append("\n\nType ", style="dim")
+    mode_btn_text.append("m", style="bold cyan")
+    mode_btn_text.append("+Enter to switch", style="dim")
+
+    mode_panel = Panel(mode_btn_text, title="View Mode", box=box.ROUNDED, border_style="cyan", padding=(0, 1))
+
+    layout = Layout()
+    layout.split_column(
+        Layout(table, name="main", ratio=3),
+        Layout(name="bottom", size=6)
+    )
+    layout["bottom"].split_row(
+        Layout(timing_panel, name="timing", ratio=2),
+        Layout(mode_panel, name="mode", ratio=1)
+    )
+
+    return layout
+
+
+# Generate Rich UI layout for config mode (detailed/complex)
+def generate_config_ui(target_data, config_data):
+    """Generate a detailed, complex UI for config mode showing all settings."""
+    if not RICH_AVAILABLE:
+        return None
+
+    # Main targets table
+    targets_table = Table(title="Monitored Targets", box=box.ROUNDED, show_header=True, header_style="bold cyan")
+    targets_table.add_column("Target", style="green")
+    targets_table.add_column("Followers", justify="right")
+    targets_table.add_column("Following", justify="right")
+    targets_table.add_column("Posts", justify="right")
+    targets_table.add_column("Reels", justify="right")
+    targets_table.add_column("Stories", justify="center")
+    targets_table.add_column("Bio Changed", justify="center")
+    targets_table.add_column("Status")
+
+    for target, data in target_data.items():
+        status_style = "green" if data.get('status') == 'OK' else "yellow" if data.get('status') == 'Checking' else "red"
+        story_indicator = "✓" if data.get('has_story') else "✗"
+        bio_indicator = "✓" if data.get('bio_changed') else "—"
+
+        targets_table.add_row(
+            target,
+            str(data.get('followers', '-')),
+            str(data.get('following', '-')),
+            str(data.get('posts', '-')),
+            str(data.get('reels', '-')),
+            Text(story_indicator, style="green" if data.get('has_story') else "dim"),
+            Text(bio_indicator, style="yellow" if data.get('bio_changed') else "dim"),
+            Text(data.get('status', 'Unknown'), style=status_style)
+        )
+
+    # Configuration table
+    config_table = Table(title="Configuration", box=box.ROUNDED, show_header=True, header_style="bold magenta")
+    config_table.add_column("Setting", style="cyan", width=30)
+    config_table.add_column("Value", width=50)
+
+    config_items = [
+        ("Check Interval", f"{display_time(config_data.get('check_interval', INSTA_CHECK_INTERVAL))}"),
+        ("Random Diff", f"-{config_data.get('random_low', RANDOM_SLEEP_DIFF_LOW)}s / +{config_data.get('random_high', RANDOM_SLEEP_DIFF_HIGH)}s"),
+        ("Session User", config_data.get('session_user', SESSION_USERNAME or '<anonymous>')),
+        ("Skip Session", str(config_data.get('skip_session', SKIP_SESSION))),
+        ("Skip Followers", str(config_data.get('skip_followers', SKIP_FOLLOWERS))),
+        ("Skip Followings", str(config_data.get('skip_followings', SKIP_FOLLOWINGS))),
+        ("Status Notifications", str(config_data.get('status_notif', STATUS_NOTIFICATION))),
+        ("Follower Notifications", str(config_data.get('follower_notif', FOLLOWERS_NOTIFICATION))),
+        ("Webhook Enabled", str(config_data.get('webhook_enabled', WEBHOOK_ENABLED))),
+        ("Debug Mode", str(config_data.get('debug_mode', DEBUG_MODE))),
+        ("Detailed Logging", str(config_data.get('detailed_logging', DETAILED_FOLLOWER_LOGGING))),
+        ("Human Mode", str(config_data.get('human_mode', BE_HUMAN))),
+    ]
+
+    for setting, value in config_items:
+        config_table.add_row(setting, value)
+
+    # Timing and statistics panel
+    stats_text = Text()
+    stats_text.append("Timing Information\n", style="bold underline")
+    stats_text.append(f"Last check: {get_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else 'Not yet'}\n")
+    stats_text.append(f"Next check: {get_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else 'Calculating...'}\n")
+    stats_text.append(f"Total checks: {CHECK_COUNT}\n\n")
+    stats_text.append("Statistics\n", style="bold underline")
+    stats_text.append(f"Uptime: {calculate_timespan(datetime.now(), config_data.get('start_time', datetime.now())) if config_data.get('start_time') else 'N/A'}\n")
+
+    stats_panel = Panel(stats_text, title="Status", box=box.ROUNDED, border_style="green")
+
+    # Mode toggle button - visual button style
+    mode_btn_text = Text()
+    mode_btn_text.append("  [ ", style="dim")
+    mode_btn_text.append("USER", style="dim")
+    mode_btn_text.append(" | ", style="dim")
+    mode_btn_text.append("CONFIG", style="bold magenta reverse")
+    mode_btn_text.append(" ]  ", style="dim")
+    mode_btn_text.append("\n\nType ", style="dim")
+    mode_btn_text.append("m", style="bold cyan")
+    mode_btn_text.append("+Enter to switch", style="dim")
+
+    mode_panel = Panel(mode_btn_text, title="View Mode", box=box.ROUNDED, border_style="cyan", padding=(0, 1))
+
+    # Debug commands panel (if debug mode)
+    if DEBUG_MODE:
+        debug_text = Text()
+        debug_text.append("Commands:\n", style="bold")
+        debug_text.append("  check  - Trigger check\n", style="dim")
+        debug_text.append("  status - Show status\n", style="dim")
+        debug_panel = Panel(debug_text, title="Debug", box=box.ROUNDED, border_style="yellow")
+
+    # Build layout
+    layout = Layout()
+    layout.split_column(
+        Layout(targets_table, name="targets", ratio=2),
+        Layout(name="bottom", ratio=1)
+    )
+
+    if DEBUG_MODE:
+        layout["bottom"].split_row(
+            Layout(config_table, name="config", ratio=2),
+            Layout(name="right", ratio=1)
+        )
+        layout["bottom"]["right"].split_column(
+            Layout(stats_panel, name="stats"),
+            Layout(name="controls", size=6)
+        )
+        layout["bottom"]["right"]["controls"].split_row(
+            Layout(mode_panel, name="mode"),
+            Layout(debug_panel, name="debug")
+        )
+    else:
+        layout["bottom"].split_row(
+            Layout(config_table, name="config", ratio=2),
+            Layout(name="right", ratio=1)
+        )
+        layout["bottom"]["right"].split_column(
+            Layout(stats_panel, name="stats"),
+            Layout(mode_panel, name="mode", size=6)
+        )
+
+    return layout
+
+
+# Print check timing information
+def print_check_timing(r_sleep_time, prefix=""):
+    """Print last check and next check timing information."""
+    global NEXT_CHECK_TIME
+
+    now = now_local_naive()
+    next_check = now + timedelta(seconds=r_sleep_time)
+    NEXT_CHECK_TIME = next_check
+
+    if DEBUG_MODE:
+        print(f"{prefix}Last check:\t\t\t\t{get_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else 'N/A'}")
+        print(f"{prefix}Next check:\t\t\t\t{get_date_from_ts(next_check)} (in {display_time(r_sleep_time)})")
+
+    print(f"{prefix}Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+
+
 # Initializes and sets up a progress bar for displaying download progress
 def setup_pbar(total_expected, title):
     global START_TIME, NAME_COUNT, WRAPPER_COUNT, pbar
@@ -2116,7 +3136,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
 
 
 # Monitors activity of the specified Instagram user
-def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, user_root_path=None):
+def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None):
     global pbar
 
     # Wait for previous user's initial loading to complete (to avoid progress bar overlap)
@@ -2359,8 +3379,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         except Exception as e:
             print(f"* Error: {e}")
 
-    if ((followers_count != followers_old_count) or (followers_count > 0 and not followers)) and not skip_session and not skip_followers and can_view:
-        # print("\n* Getting followers ...")
+    if ((followers_count != followers_old_count) or (followers_count > 0 and not followers) or DETAILED_FOLLOWER_LOGGING) and not skip_session and not skip_followers and can_view:
+        # Fetch followers if count changed, list is empty, or detailed logging is enabled
+        if DETAILED_FOLLOWER_LOGGING:
+            debug_print(f"Detailed follower logging: Fetching followers for {user}...")
         followers_followings_fetched = True
 
         try:
@@ -2386,7 +3408,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             except Exception as e:
                 print(f"* Cannot save list of followers to '{insta_followers_file}' file: {e}")
 
-    if ((followers_count != followers_old_count) and (followers != followers_old)) and not skip_session and not skip_followers and can_view and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
+    # Compare followers: either count changed OR detailed logging detected a difference
+    should_compare_followers = ((followers_count != followers_old_count) or (DETAILED_FOLLOWER_LOGGING and followers != followers_old))
+    if should_compare_followers and (followers != followers_old) and not skip_session and not skip_followers and can_view and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
         a, b = set(followers_old), set(followers)
         removed_followers = list(a - b)
         added_followers = list(b - a)
@@ -2449,8 +3473,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         except Exception as e:
             print(f"* Error: {e}")
 
-    if ((followings_count != followings_old_count) or (followings_count > 0 and not followings)) and not skip_session and not skip_followings and can_view:
-        # print("\n* Getting followings ...")
+    if ((followings_count != followings_old_count) or (followings_count > 0 and not followings) or DETAILED_FOLLOWER_LOGGING) and not skip_session and not skip_followings and can_view:
+        # Fetch followings if count changed, list is empty, or detailed logging is enabled
+        if DETAILED_FOLLOWER_LOGGING:
+            debug_print(f"Detailed follower logging: Fetching followings for {user}...")
         followers_followings_fetched = True
 
         try:
@@ -2476,7 +3502,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             except Exception as e:
                 print(f"* Cannot save list of followings to '{insta_followings_file}' file: {e}")
 
-    if ((followings_count != followings_old_count) and (followings != followings_old)) and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
+    # Compare followings: either count changed OR detailed logging detected a difference
+    should_compare_followings = ((followings_count != followings_old_count) or (DETAILED_FOLLOWER_LOGGING and followings != followings_old))
+    if should_compare_followings and (followings != followings_old) and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
         a, b = set(followings_old), set(followings)
         removed_followings = list(a - b)
         added_followings = list(b - a)
@@ -2747,13 +3775,20 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"Comments list:{post_comments_list}")
 
         if video_url:
-            if highestinsta_dt:
+            if highestinsta_dt and highestinsta_dt.timestamp() > 0:
                 video_filename = f'instagram_{user}_{last_source.lower()}_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
             else:
                 video_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
+
+            if (user_root_path or OUTPUT_DIR) and 'videos_dir' in locals():
+                if not os.path.dirname(video_filename) == videos_dir:
+                    video_filename = os.path.join(videos_dir, video_filename)
+
             if not os.path.isfile(video_filename):
                 if save_pic_video(video_url, video_filename, highestinsta_ts):
                     print(f"{last_source.capitalize()} video saved for {user} to '{video_filename}'")
+                else:
+                    print(f"Error saving {last_source.lower()} video !")
 
         if thumbnail_url:
             if highestinsta_dt:
@@ -2786,8 +3821,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
 
-    if HOURS_VERBOSE:
-        sleep_message(r_sleep_time)
+    # Initialize check timing
+    update_check_times(next_time=now_local_naive() + timedelta(seconds=r_sleep_time))
 
     # Monitoring active message
     now = now_local_naive()
@@ -2800,7 +3835,19 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     print_cur_ts("Timestamp:\t\t\t\t")
 
-    time.sleep(r_sleep_time)
+    if HOURS_VERBOSE or DEBUG_MODE:
+        sleep_message(r_sleep_time)
+        if DEBUG_MODE:
+            print(f"[DEBUG] Next check scheduled: {get_date_from_ts(NEXT_CHECK_TIME)}")
+
+    # Use interruptible sleep if stop_event is provided
+    if stop_event:
+        stop_event.wait(r_sleep_time)
+        if stop_event.is_set():
+            print(f"* Monitoring stopped for {user}")
+            return
+    else:
+        time.sleep(r_sleep_time)
 
     alive_counter = 0
 
@@ -2808,7 +3855,20 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     # Primary loop
     while True:
+        # Check stop event at the start of each loop iteration
+        if stop_event and stop_event.is_set():
+            print(f"* Monitoring stopped for {user}")
+            return
+
+        global MANUAL_CHECK_TRIGGERED
+
         reset_thread_output()
+
+        # Update last check time
+        update_check_times(last_time=now_local_naive())
+
+        # Debug: show check start
+        debug_print(f"Starting check #{CHECK_COUNT} for user {user}")
 
         cur_h = datetime.now().strftime("%H")
 
@@ -2818,6 +3878,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if HOURS_VERBOSE:
                 print(f"*** Fetching Updates. Current Hour: {int(cur_h)}. Allowed hours: {hours_to_check()}")
                 print("─" * HORIZONTAL_LINE)
+
+            debug_print(f"Fetching profile data from Instagram API...")
+
             try:
                 profile = instaloader.Profile.from_username(bot.context, user)
                 time.sleep(NEXT_OPERATION_DELAY)
@@ -2829,8 +3892,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 followed_by_viewer = profile.followed_by_viewer
                 can_view = (not is_private) or followed_by_viewer
                 posts_count = profile.mediacount
+
+                debug_print(f"Profile loaded: followers={followers_count}, following={followings_count}, posts={posts_count}")
+
                 if not skip_session and can_view:
                     reels_count = get_total_reels_count(user, bot, skip_session)
+                    debug_print(f"Reels count: {reels_count}")
 
                 if not is_private:
                     if bot.context.is_logged_in:
@@ -2843,12 +3910,43 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 else:
                     has_story = False
 
+                debug_print(f"Story available: {has_story}")
+
                 profile_image_url = profile.profile_pic_url_no_iphone
                 email_sent = False
+
+                # Update web UI with target data
+                if WEB_UI_ENABLED:
+                    target_data = {
+                        user: {
+                            'followers': followers_count,
+                            'following': followings_count,
+                            'posts': posts_count,
+                            'reels': reels_count if 'reels_count' in dir() else 0,
+                            'has_story': has_story,
+                            'status': 'OK',
+                            'bio_changed': False
+                        }
+                    }
+                    config_data = {
+                        'Check Interval': display_time(INSTA_CHECK_INTERVAL),
+                        'Session User': SESSION_USERNAME or '<anonymous>',
+                        'Skip Session': SKIP_SESSION,
+                        'Skip Followers': SKIP_FOLLOWERS,
+                        'Skip Followings': SKIP_FOLLOWINGS,
+                        'Status Notifications': STATUS_NOTIFICATION,
+                        'Follower Notifications': FOLLOWERS_NOTIFICATION,
+                        'Webhook Enabled': WEBHOOK_ENABLED,
+                        'Debug Mode': DEBUG_MODE,
+                        'Detailed Logging': DETAILED_FOLLOWER_LOGGING
+                    }
+                    update_web_ui_data(targets=target_data, config=config_data)
             except Exception as e:
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
                 error_msg = format_error_message(e)
                 print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
+                debug_print(f"Full exception: {type(e).__name__}: {e}")
+
                 if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                     print("* Session might not be valid anymore!")
                     if ERROR_NOTIFICATION and not email_sent:
@@ -2973,6 +4071,25 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     print(f"Sending email notification to {RECEIVER_EMAIL}\n")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
+                # Send webhook notification for followings change
+                webhook_fields = [
+                    {"name": "Old Count", "value": str(followings_old_count), "inline": True},
+                    {"name": "New Count", "value": str(followings_count), "inline": True},
+                    {"name": "Change", "value": followings_diff_str, "inline": True},
+                ]
+                if added_followings_list:
+                    webhook_fields.append({"name": "Added", "value": added_followings_list[:1024]})
+                if removed_followings_list:
+                    webhook_fields.append({"name": "Removed", "value": removed_followings_list[:1024]})
+
+                send_webhook(
+                    f"📊 {user} Followings Changed",
+                    f"User **{user}** followings changed from {followings_old_count} to {followings_count}",
+                    color=0x3498db,  # Blue
+                    fields=webhook_fields,
+                    notification_type="status"
+                )
+
                 followings_old_count = followings_count
 
                 print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
@@ -3071,6 +4188,26 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     print(f"Sending email notification to {RECEIVER_EMAIL}\n")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
+                # Send webhook notification for followers change
+                webhook_fields = [
+                    {"name": "Old Count", "value": str(followers_old_count), "inline": True},
+                    {"name": "New Count", "value": str(followers_count), "inline": True},
+                    {"name": "Change", "value": followers_diff_str, "inline": True},
+                ]
+                if added_followers_list:
+                    webhook_fields.append({"name": "New Followers", "value": added_followers_list[:1024]})
+                if removed_followers_list:
+                    webhook_fields.append({"name": "Lost Followers", "value": removed_followers_list[:1024]})
+
+                color = 0x2ecc71 if followers_diff > 0 else 0xe74c3c  # Green if gained, red if lost
+                send_webhook(
+                    f"{'📈' if followers_diff > 0 else '📉'} {user} Followers Changed",
+                    f"User **{user}** followers changed from {followers_old_count} to {followers_count}",
+                    color=color,
+                    fields=webhook_fields,
+                    notification_type="followers"
+                )
+
                 followers_old_count = followers_count
 
                 print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
@@ -3103,6 +4240,18 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     print(f"Sending email notification to {RECEIVER_EMAIL}\n")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
+                # Send webhook notification for bio change
+                send_webhook(
+                    f"📝 {user} Bio Changed",
+                    f"User **{user}** has updated their bio",
+                    color=0x9b59b6,  # Purple
+                    fields=[
+                        {"name": "Old Bio", "value": (bio_old[:1020] + "...") if len(bio_old) > 1024 else bio_old or "(empty)"},
+                        {"name": "New Bio", "value": (bio[:1020] + "...") if len(bio) > 1024 else bio or "(empty)"},
+                    ],
+                    notification_type="status"
+                )
+
                 bio_old = bio
                 print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
@@ -3130,6 +4279,19 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     m_body = f"Instagram user {user} profile visibility has changed to {profile_visibility}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                     print(f"Sending email notification to {RECEIVER_EMAIL}\n")
                     send_email(m_subject, m_body, "", SMTP_SSL)
+
+                # Send webhook notification for visibility change
+                emoji = "🔒" if is_private else "🔓"
+                send_webhook(
+                    f"{emoji} {user} Profile Visibility Changed",
+                    f"User **{user}** profile is now **{profile_visibility}**",
+                    color=0xe67e22,  # Orange
+                    fields=[
+                        {"name": "Old", "value": profile_visibility_old, "inline": True},
+                        {"name": "New", "value": profile_visibility, "inline": True},
+                    ],
+                    notification_type="status"
+                )
 
                 is_private_old = is_private
                 print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
@@ -3173,6 +4335,17 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     m_body = f"Instagram user {user} has a new story\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
+
+                # Send webhook notification for new story
+                send_webhook(
+                    f"📖 {user} New Story",
+                    f"User **{user}** has posted a new story!",
+                    color=0xe91e63,  # Pink
+                    fields=[
+                        {"name": "Profile", "value": f"https://www.instagram.com/{user}/", "inline": True},
+                    ],
+                    notification_type="status"
+                )
 
                 print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
@@ -3260,6 +4433,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                     story_video_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
                                 else:
                                     story_video_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
+
+                                if user_root_path or OUTPUT_DIR:
+                                    story_video_filename = os.path.join(videos_dir, story_video_filename)
                                 if not os.path.isfile(story_video_filename):
                                     if save_pic_video(story_video_url, story_video_filename, local_ts):
                                         print(f"Story video saved for {user} to '{story_video_filename}'")
@@ -3269,6 +4445,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 story_image_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
                             else:
                                 story_image_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
+
+                            if user_root_path or OUTPUT_DIR:
+                                story_image_filename = os.path.join(images_dir, story_image_filename)
                             if story_thumbnail_url:
                                 if not os.path.isfile(story_image_filename):
                                     if save_pic_video(story_thumbnail_url, story_image_filename, local_ts):
@@ -3494,6 +4673,28 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         else:
                             send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
+                    # Send webhook notification for new post/reel
+                    emoji = "🎬" if last_source == "reel" else "📸"
+                    webhook_fields = [
+                        {"name": "Date", "value": get_date_from_ts(highestinsta_dt), "inline": True},
+                        {"name": "Likes", "value": str(likes), "inline": True},
+                        {"name": "Comments", "value": str(comments), "inline": True},
+                        {"name": f"{last_source.capitalize()} URL", "value": post_url},
+                    ]
+                    if location:
+                        webhook_fields.append({"name": "Location", "value": location, "inline": True})
+                    if caption:
+                        webhook_fields.append({"name": "Description", "value": (caption[:1020] + "...") if len(caption) > 1024 else caption})
+
+                    send_webhook(
+                        f"{emoji} {user} New {last_source.capitalize()}",
+                        f"User **{user}** posted a new {last_source.lower()}!",
+                        color=0x1da1f2 if last_source == "post" else 0xff6b6b,  # Blue for post, coral for reel
+                        fields=webhook_fields,
+                        image_url=thumbnail_url if thumbnail_url else None,
+                        notification_type="status"
+                    )
+
                     posts_count_old = posts_count
                     reels_count_old = reels_count
 
@@ -3532,6 +4733,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
 
+        # Update next check time tracking
+        update_check_times(next_time=now_local_naive() + timedelta(seconds=r_sleep_time))
+
+        # Print timing information (includes last check and next check in debug mode)
+        if DEBUG_MODE:
+            print_check_timing(r_sleep_time)
+            debug_print(f"Check #{CHECK_COUNT} completed for user {user}")
+
         # Be human please
         try:
             if BE_HUMAN and in_allowed_hours:
@@ -3543,11 +4752,34 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         if HOURS_VERBOSE:
             sleep_message(r_sleep_time)
 
-        time.sleep(r_sleep_time)
+        # Sleep with manual check support in debug mode (or stop event support in webui mode)
+        if DEBUG_MODE or stop_event:
+            # Sleep in smaller increments to allow manual check trigger or stop event
+            sleep_remaining = r_sleep_time
+            while sleep_remaining > 0:
+                # Check for stop event (webui mode)
+                if stop_event and stop_event.is_set():
+                    print(f"* Monitoring stopped for {user}")
+                    return
+
+                # Check for manual trigger
+                if MANUAL_CHECK_TRIGGERED:
+                    MANUAL_CHECK_TRIGGERED = False
+                    print(f"* Manual check triggered! Breaking sleep early...")
+                    debug_print(f"Manual check triggered, {sleep_remaining}s remaining in sleep")
+                    break
+
+                # Sleep in 1-second increments for responsiveness
+                sleep_chunk = min(1, sleep_remaining)
+                time.sleep(sleep_chunk)
+                sleep_remaining -= sleep_chunk
+        else:
+            time.sleep(r_sleep_time)
 
 
 def main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
+    global DEBUG_MODE, UI_MODE, UI_ENABLED, DETAILED_FOLLOWER_LOGGING, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, RICH_CONSOLE
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -3807,6 +5039,97 @@ def main():
         help="Disable logging to instagram_monitor_<username>.log"
     )
 
+    # Debug & UI options
+    debug_ui = parser.add_argument_group("Debug & UI options")
+    debug_ui.add_argument(
+        "--debug",
+        dest="debug_mode",
+        action="store_true",
+        default=None,
+        help="Enable debug mode (verbose output, manual 'check' command support)"
+    )
+    debug_ui.add_argument(
+        "--ui-mode",
+        dest="ui_mode",
+        metavar="MODE",
+        type=str,
+        choices=['user', 'config'],
+        help="UI display mode: 'user' (simple/minimal) or 'config' (detailed with settings)"
+    )
+    debug_ui.add_argument(
+        "--no-ui",
+        dest="disable_ui",
+        action="store_true",
+        default=None,
+        help="Disable Rich terminal UI (use traditional text output)"
+    )
+    debug_ui.add_argument(
+        "--webui",
+        dest="webui_standalone",
+        action="store_true",
+        default=None,
+        help="Start standalone web UI control panel (no CLI targets needed)"
+    )
+    debug_ui.add_argument(
+        "--web-ui",
+        dest="web_ui",
+        action="store_true",
+        default=None,
+        help="Enable web-based UI on localhost (default: enabled)"
+    )
+    debug_ui.add_argument(
+        "--no-web-ui",
+        dest="no_web_ui",
+        action="store_true",
+        default=None,
+        help="Disable web-based UI"
+    )
+    debug_ui.add_argument(
+        "--web-port",
+        dest="web_port",
+        metavar="PORT",
+        type=int,
+        help="Port for web UI server (default: 5000)"
+    )
+    debug_ui.add_argument(
+        "--detailed-followers",
+        dest="detailed_follower_logging",
+        action="store_true",
+        default=None,
+        help="Store detailed follower info (user_id, full_name, profile_pic_url) in JSON files"
+    )
+
+    # Webhook options
+    webhook_grp = parser.add_argument_group("Webhook notifications")
+    webhook_grp.add_argument(
+        "--webhook-url",
+        dest="webhook_url",
+        metavar="URL",
+        type=str,
+        help="Discord-compatible webhook URL for notifications"
+    )
+    webhook_grp.add_argument(
+        "--webhook-status",
+        dest="webhook_status",
+        action="store_true",
+        default=None,
+        help="Send webhook on status changes (posts/reels/stories/bio/profile pic)"
+    )
+    webhook_grp.add_argument(
+        "--webhook-followers",
+        dest="webhook_followers",
+        action="store_true",
+        default=None,
+        help="Send webhook on follower changes"
+    )
+    webhook_grp.add_argument(
+        "--webhook-errors",
+        dest="webhook_errors",
+        action="store_true",
+        default=None,
+        help="Send webhook on errors"
+    )
+
     # Firefox session import options
     import_grp = parser.add_argument_group("Firefox session import")
     import_grp.add_argument(
@@ -3968,6 +5291,11 @@ def main():
             normalized.append(u)
     targets = normalized
 
+    # Handle standalone web UI mode BEFORE checking targets
+    if args.webui_standalone is True:
+        run_standalone_webui(args)
+        sys.exit(0)
+
     if not targets:
         print("* Error: At least one TARGET_USERNAME argument is required !")
         parser.print_help()
@@ -3996,6 +5324,42 @@ def main():
 
     if args.enable_jitter is True:
         ENABLE_JITTER = True
+
+    # Handle new debug, UI, and webhook arguments
+    if args.debug_mode is True:
+        DEBUG_MODE = True
+
+    if args.ui_mode:
+        UI_MODE = args.ui_mode
+
+    if args.disable_ui is True:
+        UI_ENABLED = False
+
+    if args.web_ui is True:
+        WEB_UI_ENABLED = True
+
+    if args.no_web_ui is True:
+        WEB_UI_ENABLED = False
+
+    if args.web_port:
+        WEB_UI_PORT = args.web_port
+
+    if args.detailed_follower_logging is True:
+        DETAILED_FOLLOWER_LOGGING = True
+
+    # Webhook configuration
+    if args.webhook_url:
+        WEBHOOK_URL = args.webhook_url
+        WEBHOOK_ENABLED = True
+
+    if args.webhook_status is True:
+        WEBHOOK_STATUS_NOTIFICATION = True
+
+    if args.webhook_followers is True:
+        WEBHOOK_FOLLOWERS_NOTIFICATION = True
+
+    if args.webhook_errors is True:
+        WEBHOOK_ERROR_NOTIFICATION = True
 
     if args.check_interval:
         if args.check_interval <= 0:
@@ -4206,12 +5570,35 @@ def main():
         print(f"* Output directory:\t\t\t{OUTPUT_DIR} {output_dir_desc}")
     print(f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}")
 
+    # New feature status
+    print(f"* Debug mode:\t\t\t\t{DEBUG_MODE}")
+    print(f"* UI mode:\t\t\t\t{UI_MODE} ({'enabled' if UI_ENABLED and RICH_AVAILABLE else 'disabled'})")
+    print(f"* Detailed follower logging:\t\t{DETAILED_FOLLOWER_LOGGING}")
+    print(f"* Webhook notifications:\t\t{WEBHOOK_ENABLED}" + (f" ({WEBHOOK_URL[:50]}...)" if WEBHOOK_ENABLED and WEBHOOK_URL and len(WEBHOOK_URL) > 50 else (f" ({WEBHOOK_URL})" if WEBHOOK_ENABLED and WEBHOOK_URL else "")))
+    if WEBHOOK_ENABLED:
+        print(f"*   Webhook status:\t\t\t{WEBHOOK_STATUS_NOTIFICATION}")
+        print(f"*   Webhook followers:\t\t\t{WEBHOOK_FOLLOWERS_NOTIFICATION}")
+        print(f"*   Webhook errors:\t\t\t{WEBHOOK_ERROR_NOTIFICATION}")
+
     if len(targets) == 1:
         out = f"\nMonitoring Instagram user {targets[0]}"
     else:
         out = f"\nMonitoring Instagram users ({len(targets)}): {', '.join(targets)}"
     print(out)
     print("─" * len(out))
+
+    # Initialize Rich console if available and enabled
+    if RICH_AVAILABLE and UI_ENABLED and not WEB_UI_ENABLED:
+        RICH_CONSOLE = Console()
+
+    # Start web UI server if enabled
+    if WEB_UI_ENABLED:
+        WEB_UI_DATA['start_time'] = datetime.now()
+        start_web_server()
+
+    # Start UI input handler for mode toggle (and debug commands if debug mode)
+    if not WEB_UI_ENABLED:
+        start_ui_input_handler()
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
     if platform.system() != 'Windows':

@@ -13,6 +13,12 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
 - **Anonymous download** of users' **story images and videos** without leaving view traces
 - **Download** of users' **post images and post / reel videos**
 - **Email notifications** for different events (new posts, reels, stories, changes in followings, followers, bio, profile pictures, visibility and errors)
+- **Webhook notifications** (Discord-compatible) for all monitored events
+- **Web-based dashboard** - modern, real-time UI on localhost with stats, mode toggle, manual check trigger, and activity feed
+- **Detailed follower logging** - fetches followers/followings every check to detect changes even when counts remain the same
+- **Dual UI modes**: 'user' mode (simple/minimal display) or 'config' mode (detailed with all settings and variables)
+- **Debug mode** with verbose output, shows every check, supports manual 'check' command to trigger immediate checks
+- **Last/Next check display** - always shows when the last check occurred and when the next one is scheduled
 - **Attaching changed profile pictures** and **stories/posts/reels images** directly in email notifications
 - **Displaying the profile picture** and **stories/posts/reels images** right in your terminal (if you have `imgcat` installed)
 - **Saving all user activities and profile changes** with timestamps to a **CSV file**
@@ -47,6 +53,11 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
 5. [Usage](#usage)
    * [Monitoring Mode](#monitoring-mode)
    * [Email Notifications](#email-notifications)
+   * [Webhook Notifications](#webhook-notifications)
+   * [Debug Mode](#debug-mode)
+   * [Web UI](#web-ui)
+   * [UI Modes](#ui-modes)
+   * [Detailed Follower Logging](#detailed-follower-logging)
    * [CSV Export](#csv-export)
    * [Output Directory](#output-directory)
    * [Detection of Changed Profile Pictures](#detection-of-changed-profile-pictures)
@@ -62,7 +73,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
 ## Requirements
 
 * Python 3.9 or higher
-* Libraries: [instaloader](https://github.com/instaloader/instaloader), `requests`, `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`
+* Libraries: [instaloader](https://github.com/instaloader/instaloader), `requests`, `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich`, `flask`
 
 Tested on:
 
@@ -386,6 +397,142 @@ Example email:
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_email_notifications.png" alt="instagram_monitor_email_notifications" width="80%"/>
 </p>
+
+<a id="webhook-notifications"></a>
+### Webhook Notifications
+
+The tool supports webhook notifications (compatible with Discord and other webhook services) for all monitored events.
+
+To enable webhook notifications:
+- set `WEBHOOK_ENABLED` to `True` and `WEBHOOK_URL` to your webhook URL
+- or use the `--webhook-url` flag
+
+```sh
+instagram_monitor <target_insta_user> --webhook-url "https://discord.com/api/webhooks/your_webhook_id/your_webhook_token"
+```
+
+By default, when a webhook URL is provided, status notifications (new posts, stories, bio changes, etc.) are enabled. To control which notifications are sent via webhook:
+
+- Use `--webhook-status` to enable/disable status notifications (new posts, reels, stories, bio changes, visibility changes, etc.)
+- Use `--webhook-followers` to enable/disable follower change notifications
+- Use `--webhook-errors` to enable/disable error notifications
+
+Example with all notification types:
+
+```sh
+instagram_monitor <target_insta_user> --webhook-url "https://discord.com/api/webhooks/..." --webhook-status --webhook-followers --webhook-errors
+```
+
+You can also configure webhook settings in the configuration file:
+
+```
+WEBHOOK_ENABLED = True
+WEBHOOK_URL = "https://discord.com/api/webhooks/..."
+WEBHOOK_USERNAME = "Instagram Monitor"
+WEBHOOK_AVATAR_URL = ""
+WEBHOOK_STATUS_NOTIFICATION = True
+WEBHOOK_FOLLOWERS_NOTIFICATION = True
+WEBHOOK_ERROR_NOTIFICATION = True
+```
+
+<a id="debug-mode"></a>
+### Debug Mode
+
+Debug mode provides verbose terminal output showing detailed information about each check cycle, API calls, and internal operations. It also allows you to manually trigger checks by typing `check` in the terminal.
+
+To enable debug mode:
+- set `DEBUG_MODE` to `True`
+- or use the `--debug` flag
+
+```sh
+instagram_monitor <target_insta_user> --debug
+```
+
+In debug mode:
+- Detailed timestamps and operation logs are printed to the terminal
+- Type `check` and press Enter to manually trigger an immediate check
+- All API responses and state changes are logged
+
+The tool features a **web-based dashboard** that runs on localhost, providing a modern interface to monitor Instagram activity.
+
+<a id="web-ui"></a>
+### Web UI
+
+By default, the tool starts a web server on `http://127.0.0.1:5000/` with a beautiful dashboard showing:
+
+- **Real-time monitoring stats** - follower/following counts, posts, stories
+- **Check timing** - last check time, next scheduled check, total checks
+- **Mode toggle** - switch between User and Config views with a button click
+- **Manual check trigger** - force an immediate check from the UI
+- **Configuration overview** - all current settings at a glance
+- **Activity feed** - recent events and changes (in Config mode)
+
+The web UI automatically refreshes every 2 seconds to show the latest data.
+
+To change the web UI port:
+```sh
+instagram_monitor <target_insta_user> --web-port 8080
+```
+
+To disable the web UI and use terminal output only:
+```sh
+instagram_monitor <target_insta_user> --no-web-ui
+```
+
+<a id="ui-modes"></a>
+### UI Modes
+
+The dashboard supports two view modes:
+
+**User Mode** (`user`) - A simple, minimal interface showing:
+- Target username and monitoring status
+- Last and next check times
+- Total check count
+
+**Config Mode** (`config`) - A comprehensive interface showing:
+- All information from user mode
+- Current configuration settings
+- Active notification settings (email/webhook)
+- Follower/following counts
+- Session status
+- Recent activity feed
+
+Click the **User/Config toggle buttons** in the web UI header to switch between modes.
+
+To set the initial UI mode:
+- set `UI_MODE` to `"user"` or `"config"` in the configuration file
+- or use the `--ui-mode` flag
+
+```sh
+instagram_monitor <target_insta_user> --ui-mode config
+```
+
+For terminal-only mode (disables web UI), use traditional console output:
+- set `UI_ENABLED` to `False`
+- or use the `--no-ui` flag
+
+```sh
+instagram_monitor <target_insta_user> --no-ui
+```
+
+<a id="detailed-follower-logging"></a>
+### Detailed Follower Logging
+
+When enabled, the tool fetches the full list of followers and followings on **every check** (not just when counts change) and compares usernames to detect changes. This is useful for scenarios where:
+
+- Someone unfollows and someone else follows at the same time (count stays the same)
+- You want to track exactly who followed/unfollowed even without count changes
+- You need comprehensive logging of all follower/following activity
+
+To enable detailed follower logging:
+- set `DETAILED_FOLLOWER_LOGGING` to `True`
+- or use the `--detailed-followers` flag
+
+```sh
+instagram_monitor <target_insta_user> --detailed-followers
+```
+
+**Note**: This feature requires [Mode 2](#mode-2-with-logged-in-instagram-account-session-login) (session login) to access the Instagram API. It will increase API calls since it fetches the full follower/following lists every check interval.
 
 <a id="csv-export"></a>
 ### CSV Export
