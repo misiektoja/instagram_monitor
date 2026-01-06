@@ -1,6 +1,18 @@
 # instagram_monitor release notes
 
-This is a high-level summary of the most important changes.
+# Changes in 2.1 (TBD)
+
+**Features and Improvements**:
+
+- **NEW:** Added **custom output directory feature** (`OUTPUT_DIR` config option and `-o` / `--output-dir` flag) to organize all downloaded files into user-specific subdirectories for **images**, **videos**, **logs** and **JSON**; this significantly improves file organization, especially when monitoring multiple users; see [Output Directory](https://github.com/misiektoja/instagram_monitor#output-directory) for more info (closes [#35](https://github.com/misiektoja/instagram_monitor/issues/35))
+- **IMPROVE:** Enhanced startup summary to display the configured **Output directory** and its role (root for user data vs container for per-user subdirectories)
+- **IMPROVE:** Enhanced `CHECK_POSTS_IN_HOURS_RANGE` logic to support **disabling hour ranges** and updated status message (to disable any range, set both MIN and MAX to 0)
+- **IMPROVE:** Added display of next user check time after the initial processing is finished
+- **IMPROVE:** Simplified status messages to 'OK'
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed latest post detection logic in anonymous mode (fixes [#34](https://github.com/misiektoja/instagram_monitor/issues/34))
 
 # Changes in 2.0.4 (04 Jan 2026)
 
