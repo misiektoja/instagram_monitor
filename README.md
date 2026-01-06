@@ -48,6 +48,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
    * [Monitoring Mode](#monitoring-mode)
    * [Email Notifications](#email-notifications)
    * [CSV Export](#csv-export)
+   * [Output Directory](#output-directory)
    * [Detection of Changed Profile Pictures](#detection-of-changed-profile-pictures)
    * [Displaying Images in Your Terminal](#displaying-images-in-your-terminal)
    * [Check Intervals](#check-intervals)
@@ -112,7 +113,7 @@ If you installed manually, download the newest *[instagram_monitor.py](https://r
 <a id="quick-start"></a>
 ## Quick Start
 
-- Track the `target_insta_user` in [mode 1](#mode-1-without-logged-in-instagram-account-no-session-login) (no session login):
+- Track the `target_insta_user` in [mode 1](#mode-1-without-logged-in-instagram-account-no-session-login) (no session login - anonymous):
 
 ```sh
 instagram_monitor <target_insta_user>
@@ -158,7 +159,7 @@ Edit the `instagram_monitor.conf` file and change any desired configuration opti
 <a id="mode-1-without-logged-in-instagram-account-no-session-login"></a>
 ### Mode 1: Without Logged-In Instagram Account (No Session Login)
 
-In this mode, the tool operates without logging in to an Instagram account.
+In this mode, the tool operates without logging in to an Instagram account (anonymous).
 
 You can still monitor basic user activity such as new or deleted posts (excluding reels and stories due to Instagram API limitations), bio changes and changes in follower/following counts. However, you won't see which specific followers/followings were added or removed.
 
@@ -291,7 +292,7 @@ As a fallback, you can also store secrets in the configuration file or source co
 <a id="monitoring-mode"></a>
 ### Monitoring Mode
 
-To monitor specific user activity in [mode 1](#mode-1-without-logged-in-instagram-account-no-session-login) (no session login), just type Instagram username as a command-line argument (`target_insta_user` in the example below):
+To monitor specific user activity in [mode 1](#mode-1-without-logged-in-instagram-account-no-session-login) (no session login - anonymous), just type Instagram username as a command-line argument (`target_insta_user` in the example below):
 
 ```sh
 instagram_monitor <target_insta_user>
@@ -402,6 +403,33 @@ In **multi-target** mode, the tool writes **one CSV per user**. If you pass `-b 
 - `instagram_data_<user2>.csv`
 ... etc.
 
+<a id="output-directory"></a>
+### Output Directory
+
+By default, the tool saves all generated files (JSON, images, videos, logs) in the current working directory.
+
+You can specify a custom root directory for all output files using the `-o` / `--output-dir` flag or `OUTPUT_DIR` configuration option:
+
+```sh
+instagram_monitor <target_insta_user> -o /path/to/downloads
+```
+
+The tool will organize files into subdirectories:
+
+- **Single-target mode**: Files are saved directly into subdirectories of the output folder:
+  - `OUTPUT_DIR/images/`
+  - `OUTPUT_DIR/videos/`
+  - `OUTPUT_DIR/json/`
+  - `OUTPUT_DIR/logs/`
+
+- **Multi-target mode**: Each user gets their own subdirectory:
+  - `OUTPUT_DIR/<username>/images/`
+  - `OUTPUT_DIR/<username>/videos/`
+  - `OUTPUT_DIR/<username>/json/`
+  - `OUTPUT_DIR/logs/` (shared logs)
+
+This helps keep your files organized, especially when monitoring multiple users.
+
 <a id="detection-of-changed-profile-pictures"></a>
 ### Detection of Changed Profile Pictures
 
@@ -472,7 +500,7 @@ So having the check interval set to 1 hour (-c 3600), `RANDOM_SLEEP_DIFF_LOW` se
 
 That's why the check interval information is printed in the console and email notifications as it is essentially a random number.
 
-On top of that you can also define that fetching updates should be done only in specific hour ranges by setting `CHECK_POSTS_IN_HOURS_RANGE` to `True` and then defining proper values for `MIN/MAX_H1/H2` configuration options (see the comments in the configuration file for more information).
+On top of that you can also define that fetching updates should be done only in specific hour ranges by setting `CHECK_POSTS_IN_HOURS_RANGE` to `True` and then defining proper values for `MIN/MAX_H1/H2` configuration options (see [Use Hour-Range Checking](#use-hour-range-checking) for more information).
 
 <a id="signal-controls-macoslinuxunix"></a>
 ### Signal Controls (macOS/Linux/Unix)
@@ -587,7 +615,9 @@ To enable this feature, set `CHECK_POSTS_IN_HOURS_RANGE` to `True` and configure
 - `MIN_H1` and `MAX_H1` - first range of hours (default: 0-4, i.e., midnight to 4:59 AM)
 - `MIN_H2` and `MAX_H2` - second range of hours (default: 11-23, i.e., 11:00 AM to 11:59 PM / 23:59)
 
-You can define up to two non-overlapping or overlapping ranges. For example, to only allow checks during business hours (9 AM to 5 PM), you could set:
+You can define up to two non-overlapping or overlapping ranges. To disable any range, set both MIN and MAX to 0.
+
+For example, to only allow checks during business hours (9 AM to 5 PM / 17:00), you could set:
 - `MIN_H1 = 9`
 - `MAX_H1 = 17`
 - `MIN_H2 = 0`
