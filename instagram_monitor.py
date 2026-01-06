@@ -229,6 +229,29 @@ FIREFOX_LINUX_COOKIE = "~/.mozilla/firefox/*/cookies.sqlite"
 # Can include a directory path to specify the location, e.g. ~/some_dir/instagram_monitor
 INSTA_LOGFILE = "instagram_monitor"
 
+# Optional: specify directory layout for generated files
+# If set, all downloaded files (images, videos, json, logs) will be saved under this directory
+#
+# Structure (single-target example):
+#   OUTPUT_DIR/
+#     logs/
+#     images/
+#     videos/
+#     json/
+#
+# Structure (multi-target example):
+#   OUTPUT_DIR/
+#     logs/           (Shared logs)
+#     username1/
+#       images/
+#       videos/
+#       json/
+#     username2/
+#     ...
+#
+# Can also be set via the --output-dir flag
+OUTPUT_DIR = ""
+
 # Whether to disable logging to instagram_monitor_<username>.log
 # Can also be disabled via the -d flag
 DISABLE_LOGGING = False
@@ -325,6 +348,7 @@ FIREFOX_MACOS_COOKIE = ""
 FIREFOX_WINDOWS_COOKIE = ""
 FIREFOX_LINUX_COOKIE = ""
 INSTA_LOGFILE = ""
+OUTPUT_DIR = ""
 DISABLE_LOGGING = False
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
@@ -1874,7 +1898,7 @@ def instagram_wrap_request(orig_request):
             """Helper function to update progress bar based on response content."""
             # Use thread-local storage for multi-target safety
             thread_pbar = getattr(_thread_local, 'pbar', None)
-            if thread_pbar is None: # this is not evaluated for each call to _update_progress_bar
+            if thread_pbar is None:
                 return
 
             thread_name_count = getattr(_thread_local, 'NAME_COUNT', 0)
@@ -1908,7 +1932,7 @@ def instagram_wrap_request(orig_request):
                 increment = len(user_list)
                 _thread_local.NAME_COUNT = thread_name_count + increment
                 thread_name_count = _thread_local.NAME_COUNT
-                if (thread_pbar.n + increment) > thread_pbar.total: # if actual total exceeds total, TQDM will reset the total and switch to ?
+                if (thread_pbar.n + increment) > thread_pbar.total:
                     thread_pbar.total = thread_pbar.n + increment
 
                 # Calculate Remaining Minutes
@@ -1926,7 +1950,7 @@ def instagram_wrap_request(orig_request):
                 names_per_req = d['n'] / thread_wrapper_count if thread_wrapper_count > 0 else 0
                 stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}"
                 thread_pbar.unit = stats_string
-                thread_pbar.update(increment) # automatically does a refresh
+                thread_pbar.update(increment)
 
         if MULTI_TARGET_SERIALIZE_HTTP:
             with HTTP_SERIAL_LOCK:
@@ -2078,7 +2102,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
 
 
 # Monitors activity of the specified Instagram user
-def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None):
+def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, user_root_path=None):
     global pbar
 
     # Wait for previous user's initial loading to complete (to avoid progress bar overlap)
@@ -2087,6 +2111,27 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     print(f"Target:\t\t\t\t\t{user}")
     print("─" * HORIZONTAL_LINE)
+
+    # Resolve output directory for this user
+    user_root_dir = ""
+    json_dir = ""
+    images_dir = ""
+    videos_dir = ""
+
+    if user_root_path:
+        user_root_dir = user_root_path
+        json_dir = os.path.join(user_root_dir, "json")
+        images_dir = os.path.join(user_root_dir, "images")
+        videos_dir = os.path.join(user_root_dir, "videos")
+        for d in [user_root_dir, json_dir, images_dir, videos_dir]:
+            os.makedirs(d, exist_ok=True)
+    elif OUTPUT_DIR:
+        user_root_dir = os.path.join(OUTPUT_DIR, user)
+        json_dir = os.path.join(user_root_dir, "json")
+        images_dir = os.path.join(user_root_dir, "images")
+        videos_dir = os.path.join(user_root_dir, "videos")
+        for d in [user_root_dir, json_dir, images_dir, videos_dir]:
+            os.makedirs(d, exist_ok=True)
 
     try:
         if csv_file_name:
@@ -2249,11 +2294,19 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     print(f"\nBio:\n\n{bio}\n")
     print_cur_ts("Timestamp:\t\t\t\t")
 
-    insta_followers_file = f"instagram_{user}_followers.json"
-    insta_followings_file = f"instagram_{user}_followings.json"
-    profile_pic_file = f"instagram_{user}_profile_pic.jpeg"
-    profile_pic_file_old = f"instagram_{user}_profile_pic_old.jpeg"
-    profile_pic_file_tmp = f"instagram_{user}_profile_pic_tmp.jpeg"
+    if user_root_path or OUTPUT_DIR:
+        insta_followers_file = os.path.join(json_dir, f"instagram_{user}_followers.json")
+        insta_followings_file = os.path.join(json_dir, f"instagram_{user}_followings.json")
+        profile_pic_file = os.path.join(images_dir, f"instagram_{user}_profile_pic.jpeg")
+        profile_pic_file_old = os.path.join(images_dir, f"instagram_{user}_profile_pic_old.jpeg")
+        profile_pic_file_tmp = os.path.join(images_dir, f"instagram_{user}_profile_pic_tmp.jpeg")
+    else:
+        insta_followers_file = f"instagram_{user}_followers.json"
+        insta_followings_file = f"instagram_{user}_followings.json"
+        profile_pic_file = f"instagram_{user}_profile_pic.jpeg"
+        profile_pic_file_old = f"instagram_{user}_profile_pic_old.jpeg"
+        profile_pic_file_tmp = f"instagram_{user}_profile_pic_tmp.jpeg"
+
     followers = []
     followings = []
     followers_old = followers
@@ -2534,6 +2587,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 story_video_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
                             else:
                                 story_video_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
+
+                            if user_root_path or OUTPUT_DIR:
+                                story_video_filename = os.path.join(videos_dir, story_video_filename)
                             if not os.path.isfile(story_video_filename):
                                 if save_pic_video(story_video_url, story_video_filename, local_ts):
                                     print(f"Story video saved for {user} to '{story_video_filename}'")
@@ -2543,6 +2599,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 story_image_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
                             else:
                                 story_image_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
+
+                            if user_root_path or OUTPUT_DIR:
+                                story_image_filename = os.path.join(images_dir, story_image_filename)
                             if not os.path.isfile(story_image_filename):
                                 if save_pic_video(story_thumbnail_url, story_image_filename, local_ts):
                                     print(f"Story thumbnail image saved for {user} to '{story_image_filename}'")
@@ -3372,13 +3431,20 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         print(f"Comments list:{post_comments_list}")
 
                     if video_url:
-                        if highestinsta_dt:
+                        if highestinsta_dt and highestinsta_dt.timestamp() > 0:
                             video_filename = f'instagram_{user}_{last_source.lower()}_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
                         else:
                             video_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
+
+                        if (user_root_path or OUTPUT_DIR) and 'videos_dir' in locals():
+                            if not os.path.dirname(video_filename) == videos_dir:
+                                video_filename = os.path.join(videos_dir, video_filename)
+
                         if not os.path.isfile(video_filename):
                             if save_pic_video(video_url, video_filename, highestinsta_ts):
                                 print(f"{last_source.capitalize()} video saved for {user} to '{video_filename}'")
+                            else:
+                                print(f"Error saving {last_source.lower()} video !")
 
                     m_body_html_pic_saved_text = ""
                     if highestinsta_dt:
@@ -3467,7 +3533,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -3714,6 +3780,12 @@ def main():
         help="Write all activities and profile changes to CSV file"
     )
     opts.add_argument(
+        "-o", "--output-dir",
+        dest="output_dir",
+        metavar="PATH",
+        help="Root directory for saving all generated files (logs, images, videos, json)",
+    )
+    opts.add_argument(
         "-d", "--disable-logging",
         dest="disable_logging",
         action="store_true",
@@ -3763,6 +3835,9 @@ def main():
         except Exception as e:
             print(f"* Error loading config file '{cfg_path}': {e}")
             sys.exit(1)
+
+    if args.output_dir:
+        OUTPUT_DIR = os.path.expanduser(args.output_dir)
 
     if args.env_file:
         DOTENV_FILE = os.path.expanduser(args.env_file)
@@ -3943,7 +4018,7 @@ def main():
         GET_MORE_POST_DETAILS = False
         SKIP_GETTING_STORY_DETAILS = True
         BE_HUMAN = False
-        mode_of_the_tool = "1 (no session login)"
+        mode_of_the_tool = "1 (no session login - anonymous)"
     else:
         mode_of_the_tool = "2 (session login)"
 
@@ -4015,12 +4090,36 @@ def main():
 
     if not DISABLE_LOGGING:
         log_path = Path(os.path.expanduser(INSTA_LOGFILE))
-        if log_path.parent != Path('.'):
+
+        if OUTPUT_DIR:
+            out_path = Path(os.path.expanduser(OUTPUT_DIR))
+            logs_dir = out_path / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+
+            # Construct log filename
+            if log_path.name:
+                log_filename = log_path.name
+            else:
+                log_filename = "instagram_monitor"
+
+            if not log_filename.endswith(".log"):
+                log_filename += ".log"
+
+            # Append suffix if needed
             if log_path.suffix == "":
-                log_path = log_path.parent / f"{log_path.name}_{log_suffix}.log"
+                log_path = logs_dir / f"{Path(log_filename).stem}_{log_suffix}.log"
+            else:
+                log_path = logs_dir / f"{Path(log_filename).stem}_{log_suffix}{log_path.suffix}"
+
         else:
-            if log_path.suffix == "":
-                log_path = Path(f"{log_path.name}_{log_suffix}.log")
+            # Default behavior
+            if log_path.parent != Path('.'):
+                if log_path.suffix == "":
+                    log_path = log_path.parent / f"{log_path.name}_{log_suffix}.log"
+            else:
+                if log_path.suffix == "":
+                    log_path = Path(f"{log_path.name}_{log_suffix}.log")
+
         log_path.parent.mkdir(parents=True, exist_ok=True)
         FINAL_LOG_PATH = str(log_path)
         sys.stdout = Logger(FINAL_LOG_PATH)
@@ -4088,6 +4187,9 @@ def main():
     print(f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
     print(f"* Configuration file:\t\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t\t{env_path or 'None'}")
+    if OUTPUT_DIR:
+        output_dir_desc = "(root for user data & logs)" if len(targets) == 1 else "(container for per-user subdirectories & logs)"
+        print(f"* Output directory:\t\t\t{OUTPUT_DIR} {output_dir_desc}")
     print(f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}")
 
     if len(targets) == 1:
@@ -4107,7 +4209,7 @@ def main():
 
     # Multi-target mode: run multiple monitors in one process, with configurable staggering
     if len(targets) == 1:
-        instagram_monitor_user(targets[0], csv_files_by_user.get(targets[0], CSV_FILE), SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS)
+        instagram_monitor_user(targets[0], csv_files_by_user.get(targets[0], CSV_FILE), SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, user_root_path=OUTPUT_DIR)
     else:
         stagger = args.targets_stagger if args.targets_stagger is not None else MULTI_TARGET_STAGGER
         jitter = args.targets_stagger_jitter if args.targets_stagger_jitter is not None else MULTI_TARGET_STAGGER_JITTER
@@ -4151,6 +4253,14 @@ def main():
                 wait_event = loading_events[idx]
                 # Signal when this user's loading is complete
                 signal_event = loading_events[idx + 1]
+
+                user_root = None
+                if OUTPUT_DIR:
+                    if len(targets) == 1:
+                        user_root = OUTPUT_DIR
+                    else:
+                        user_root = os.path.join(OUTPUT_DIR, u)
+
                 instagram_monitor_user(
                     u,
                     csv_files_by_user.get(u, ""),
@@ -4162,6 +4272,7 @@ def main():
                     GET_MORE_POST_DETAILS,
                     wait_for_prev_user=wait_event,
                     signal_loading_complete=signal_event,
+                    user_root_path=user_root
                 )
             except Exception as e:
                 # Surface thread exceptions so the user sees them
