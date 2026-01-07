@@ -14,9 +14,10 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
 - **Download** of users' **post images and post / reel videos**
 - **Email notifications** for different events (new posts, reels, stories, changes in followings, followers, bio, profile pictures, visibility and errors)
 - **Webhook notifications** (Discord-compatible) for all monitored events
-- **Web-based dashboard** - modern, real-time UI on localhost with stats, mode toggle, manual check trigger, and activity feed
+- **Terminal Dashboard** - beautiful, live-updating terminal dashboard with real-time stats and mode toggle (press 'm' to switch views)
+- **Web Dashboard** - modern, real-time UI on localhost with stats, mode toggle, manual check trigger, and activity feed
+- **Dual Dashboard modes**: 'user' mode (simple/minimal display) or 'config' mode (detailed with all settings and variables). Applies to both terminal and Web Dashboard. Toggle with 'm' key or web dashboard button.
 - **Detailed follower logging** - fetches followers/followings every check to detect changes even when counts remain the same
-- **Dual UI modes**: 'user' mode (simple/minimal display) or 'config' mode (detailed with all settings and variables)
 - **Debug mode** with verbose output, shows every check, supports manual 'check' command to trigger immediate checks
 - **Last/Next check display** - always shows when the last check occurred and when the next one is scheduled
 - **Attaching changed profile pictures** and **stories/posts/reels images** directly in email notifications
@@ -50,13 +51,16 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
    * [Time Zone](#time-zone)
    * [SMTP Settings](#smtp-settings)
    * [Storing Secrets](#storing-secrets)
-5. [Usage](#usage)
+5. [View Modes](#view-modes)
+   * [Traditional Text Mode](#traditional-text-mode)
+   * [Terminal Dashboard](#terminal-dashboard-mode)
+   * [Web Dashboard](#web-dashboard-mode)
+   * [Dashboard View Modes](#dashboard-view-modes)
+6. [Usage](#usage)
    * [Monitoring Mode](#monitoring-mode)
    * [Email Notifications](#email-notifications)
    * [Webhook Notifications](#webhook-notifications)
    * [Debug Mode](#debug-mode)
-   * [Web UI](#web-ui)
-   * [UI Modes](#ui-modes)
    * [Detailed Follower Logging](#detailed-follower-logging)
    * [CSV Export](#csv-export)
    * [Output Directory](#output-directory)
@@ -73,7 +77,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
 ## Requirements
 
 * Python 3.9 or higher
-* Libraries: [instaloader](https://github.com/instaloader/instaloader), `requests`, `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich`, `flask`
+* Libraries: [instaloader](https://github.com/instaloader/instaloader), `requests`, `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich` (for Terminal Dashboard), `flask` (for Web Dashboard)
 
 Tested on:
 
@@ -101,8 +105,10 @@ Download the *[instagram_monitor.py](https://raw.githubusercontent.com/misiektoj
 Install dependencies via pip:
 
 ```sh
-pip install instaloader requests python-dateutil pytz tzlocal python-dotenv tqdm
+pip install instaloader requests python-dateutil pytz tzlocal python-dotenv tqdm rich flask
 ```
+
+**Note:** `rich` is required for the Terminal Dashboard, `flask` is required for the Web Dashboard. If Rich or Flask is not installed, the corresponding dashboard is disabled automatically.
 
 Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt)*:
 
@@ -297,6 +303,79 @@ instagram_monitor <target_insta_user> --env-file none
 
 As a fallback, you can also store secrets in the configuration file or source code.
 
+
+<a id="view-modes"></a>
+## View Modes
+
+The tool provides three distinct ways to visualize monitoring activity:
+
+1. **Traditional Text Mode**: Standard CLI output, best for logging and background processes.
+2. **Terminal Dashboard**: A rich, interactive terminal interface with real-time stats.
+3. **Web Dashboard**: A modern web interface accessible via your browser.
+
+---
+
+<a id="traditional-text-mode"></a>
+### Traditional Text Mode
+
+This is the classic command-line output. It is characterized by:
+- **Clean, sequential logging**: Every event is printed as it happens with a timestamp.
+- **Persistence**: Ideal for running in the background (e.g., via `nohup` or `tmux`) where you want a full history of events in your terminal scrollback or log files.
+- **Low Overhead**: Minimal resource usage and compatible with any terminal.
+
+To use traditional text mode even if `rich` is installed:
+- Set `DASHBOARD_ENABLED = False` in your config.
+- Or use the `--no-dashboard` flag.
+
+---
+
+<a id="terminal-dashboard-mode"></a>
+### Terminal Dashboard
+
+The Terminal Dashboard provides a beautiful, live-updating interface directly in your terminal. It requires the `rich` library.
+
+**Key Features:**
+- **Real-time Stats Table**: Shows followers, followings, posts, reels and story status for all targets at once.
+- **Live Activity Log**: A scrolling view of the last few events.
+- **Interactive Toggles**: Press **'m'** to switch between 'User' and 'Config' views instantly.
+- **Uptime & Status**: Clean header showing tool version, status and total runtime.
+
+To toggle mode: Press **'m'**. To exit: Press **'q'**.
+
+---
+
+<a id="web-dashboard-mode"></a>
+### Web Dashboard
+
+A modern, real-time web interface running on your local machine (default: `http://127.0.0.1:5000/`).
+
+**Key Features:**
+- **Visual Analytics**: Interactive display of monitoring data.
+- **Manual Trigger**: A "Trigger Check" button to force an immediate update for all users.
+- **Synchronization**: Changes made in the web dashboard (like mode toggles) are reflected in the terminal dashboard.
+- **Accessibility**: Monitor from another window while the terminal stays clean.
+
+The web dashboard requires `flask`. If flask is missing, it will be disabled while the terminal dashboard remains active.
+
+---
+
+<a id="dashboard-view-modes"></a>
+### Dashboard View Modes
+
+Both the Terminal and Web dashboards support two levels of information density:
+
+1. **User Mode** (`user`):
+   - Simple, minimal interface.
+   - Focuses on core stats and latest activity.
+   - Ideal for "always-on" monitoring.
+
+2. **Config Mode** (`config`):
+   - Detailed view showing all internal settings.
+   - Displays User Agent strings, Hour Ranges, Jitter status, and more.
+   - Useful for auditing your setup and verifying configuration.
+
+Toggle seamlessly between modes using the **'m'** key or the web dashboard toggle button.
+
 <a id="usage"></a>
 ## Usage
 
@@ -362,6 +441,7 @@ It also saves downloaded posts/reels images & videos to:
 And downloaded stories images & videos to:
 - `instagram_<username>_story_YYYYmmdd_HHMMSS.jpeg`
 - `instagram_<username>_story_YYYYmmdd_HHMMSS.mp4`
+
 
 <a id="email-notifications"></a>
 ### Email Notifications
@@ -453,69 +533,6 @@ In debug mode:
 - Type `check` and press Enter to manually trigger an immediate check
 - All API responses and state changes are logged
 
-The tool features a **web-based dashboard** that runs on localhost, providing a modern interface to monitor Instagram activity.
-
-<a id="web-ui"></a>
-### Web UI
-
-By default, the tool starts a web server on `http://127.0.0.1:5000/` with a beautiful dashboard showing:
-
-- **Real-time monitoring stats** - follower/following counts, posts, stories
-- **Check timing** - last check time, next scheduled check, total checks
-- **Mode toggle** - switch between User and Config views with a button click
-- **Manual check trigger** - force an immediate check from the UI
-- **Configuration overview** - all current settings at a glance
-- **Activity feed** - recent events and changes (in Config mode)
-
-The web UI automatically refreshes every 2 seconds to show the latest data.
-
-**Security Note:** The web UI is intended for localhost use only. Never expose it to an untrusted network.
-
-To change the web UI port:
-```sh
-instagram_monitor <target_insta_user> --web-port 8080
-```
-
-To disable the web UI and use terminal output only:
-```sh
-instagram_monitor <target_insta_user> --no-web-ui
-```
-
-<a id="ui-modes"></a>
-### UI Modes
-
-The dashboard supports two view modes:
-
-**User Mode** (`user`) - A simple, minimal interface showing:
-- Target username and monitoring status
-- Last and next check times
-- Total check count
-
-**Config Mode** (`config`) - A comprehensive interface showing:
-- All information from user mode
-- Current configuration settings
-- Active notification settings (email/webhook)
-- Follower/following counts
-- Session status
-- Recent activity feed
-
-Click the **User/Config toggle buttons** in the web UI header to switch between modes.
-
-To set the initial UI mode:
-- set `UI_MODE` to `"user"` or `"config"` in the configuration file
-- or use the `--ui-mode` flag
-
-```sh
-instagram_monitor <target_insta_user> --ui-mode config
-```
-
-For terminal-only mode (disables web UI), use traditional console output:
-- set `UI_ENABLED` to `False`
-- or use the `--no-ui` flag
-
-```sh
-instagram_monitor <target_insta_user> --no-ui
-```
 
 <a id="detailed-follower-logging"></a>
 ### Detailed Follower Logging
