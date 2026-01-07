@@ -295,6 +295,13 @@ MULTI_TARGET_SERIALIZE_HTTP = True
 # ----------------------------
 # Webhook Integration
 # ----------------------------
+# Discord API limits (for reference and validation)
+DISCORD_FIELD_VALUE_LIMIT = 1024
+DISCORD_FIELD_NAME_LIMIT = 256
+DISCORD_EMBED_DESCRIPTION_LIMIT = 4096
+DISCORD_EMBED_TITLE_LIMIT = 256
+DISCORD_MAX_FIELDS = 25
+
 # Enable webhook notifications (Discord-compatible)
 WEBHOOK_ENABLED = False
 
@@ -473,8 +480,9 @@ LAST_CHECK_TIME = None
 NEXT_CHECK_TIME = None
 CHECK_COUNT = 0
 
-# Global state for debug mode manual check trigger
-MANUAL_CHECK_TRIGGERED = False
+# Global state for debug mode manual check trigger (thread-safe Event)
+# Will be initialized after threading is imported
+MANUAL_CHECK_TRIGGERED = None  # type: ignore[assignment]
 DEBUG_INPUT_THREAD = None
 
 # Rich UI components (initialized later)
@@ -550,6 +558,9 @@ import hashlib
 # Initialize the web UI data lock now that threading is imported
 WEB_UI_DATA_LOCK = threading.Lock()
 
+# Initialize manual check trigger event (thread-safe)
+MANUAL_CHECK_TRIGGERED: threading.Event = threading.Event()
+
 try:
     import instaloader
     from instaloader import ConnectionException, Instaloader
@@ -572,21 +583,30 @@ except ModuleNotFoundError:
     raise SystemExit("Error: Couldn't find the tqdm library !\n\nTo install it, run:\n    pip3 install tqdm\n\nOnce installed, re-run this tool")
 
 try:
-    from rich.console import Console
-    from rich.live import Live
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich.layout import Layout
-    from rich.text import Text
-    from rich import box
+    from rich.console import Console  # type: ignore
+    from rich.table import Table  # type: ignore
+    from rich.panel import Panel  # type: ignore
+    from rich.layout import Layout  # type: ignore
+    from rich.text import Text  # type: ignore
+    from rich import box  # type: ignore
     RICH_AVAILABLE = True
 except ImportError:
+    Console = None  # type: ignore
+    Table = None  # type: ignore
+    Panel = None  # type: ignore
+    Layout = None  # type: ignore
+    Text = None  # type: ignore
+    box = None  # type: ignore
     RICH_AVAILABLE = False
 
 try:
-    from flask import Flask, render_template, jsonify, request as flask_request
+    from flask import Flask, render_template, jsonify, request as flask_request  # type: ignore
     FLASK_AVAILABLE = True
 except ImportError:
+    Flask = None  # type: ignore
+    render_template = None  # type: ignore
+    jsonify = None  # type: ignore
+    flask_request = None  # type: ignore
     FLASK_AVAILABLE = False
 
 
@@ -614,14 +634,24 @@ _thread_local = threading.local()
 # Web UI Flask Server
 # ===========================
 
+# Creates and configures the Flask web application
 def create_web_app():
-    """Create and configure the Flask web application."""
+    """
+    Note: Web UI is intended for localhost use only. For production deployments,
+    consider adding CSRF protection (e.g. Flask-WTF) or authentication
+    """
     if not FLASK_AVAILABLE:
         return None
 
+    # Type guard: Flask is available at this point
+    assert Flask is not None
+    assert render_template is not None
+    assert jsonify is not None
+    assert flask_request is not None
+
     import logging
     log = logging.getLogger('werkzeug')
-    log.setLevel(logging.ERROR)  # Suppress Flask request logs
+    log.setLevel(logging.WARNING)  # Suppress Flask info/debug request logs, but keep warnings/errors
 
     # Get the directory where the script is located for templates
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -630,12 +660,12 @@ def create_web_app():
     app = Flask(__name__, template_folder=template_dir)
 
     @app.route('/')
-    def index():
-        return render_template('index.html')
+    def index():  # type: ignore
+        return render_template('index.html')  # type: ignore[misc]
 
     @app.route('/api/status')
-    def api_status():
-        with WEB_UI_DATA_LOCK:
+    def api_status():  # type: ignore
+        with WEB_UI_DATA_LOCK:  # type: ignore
             data = WEB_UI_DATA.copy()
             # Calculate uptime
             if data.get('start_time'):
@@ -643,47 +673,47 @@ def create_web_app():
                 hours, remainder = divmod(int(uptime_delta.total_seconds()), 3600)
                 minutes, seconds = divmod(remainder, 60)
                 data['uptime'] = f"{hours}h {minutes}m {seconds}s"
-            return jsonify(data)
+            return jsonify(data)  # type: ignore
 
     @app.route('/api/mode', methods=['POST'])
-    def api_set_mode():
+    def api_set_mode():  # type: ignore
         global UI_MODE
-        data = flask_request.get_json()
+        data = flask_request.get_json()  # type: ignore
         if data and 'mode' in data:
             UI_MODE = data['mode']
-            with WEB_UI_DATA_LOCK:
+            with WEB_UI_DATA_LOCK:  # type: ignore
                 WEB_UI_DATA['ui_mode'] = UI_MODE
-            return jsonify({'success': True, 'mode': UI_MODE})
-        return jsonify({'success': False}), 400
+            return jsonify({'success': True, 'mode': UI_MODE})  # type: ignore
+        return jsonify({'success': False}), 400  # type: ignore
 
     @app.route('/api/trigger-check', methods=['POST'])
-    def api_trigger_check():
+    def api_trigger_check():  # type: ignore
         global MANUAL_CHECK_TRIGGERED
-        data = flask_request.get_json() or {}
+        data = flask_request.get_json() or {}  # type: ignore
         target = data.get('target')
-        MANUAL_CHECK_TRIGGERED = True
+        MANUAL_CHECK_TRIGGERED.set()  # type: ignore
         msg = f"Manual check triggered for {target}" if target else "Manual check triggered"
         add_web_activity(msg)
-        return jsonify({'success': True, 'message': 'Check triggered'})
+        return jsonify({'success': True, 'message': 'Check triggered'})  # type: ignore
 
-    @app.route('/api/targets', methods=['GET', 'POST'])
-    def api_targets():
+    @app.route('/api/targets', methods=['GET', 'POST'])  # type: ignore[misc]
+    def api_targets():  # type: ignore[return]
         global WEB_UI_DATA
-        if flask_request.method == 'GET':
-            with WEB_UI_DATA_LOCK:
-                return jsonify({'targets': WEB_UI_DATA.get('targets', {})})
-        elif flask_request.method == 'POST':
-            data = flask_request.get_json()
+        if flask_request.method == 'GET':  # type: ignore
+            with WEB_UI_DATA_LOCK:  # type: ignore
+                return jsonify({'targets': WEB_UI_DATA.get('targets', {})})  # type: ignore
+        elif flask_request.method == 'POST':  # type: ignore
+            data = flask_request.get_json()  # type: ignore
             if not data or 'username' not in data:
-                return jsonify({'success': False, 'error': 'Username required'}), 400
+                return jsonify({'success': False, 'error': 'Username required'}), 400  # type: ignore
             username = data['username'].strip().lower()
             if not username:
-                return jsonify({'success': False, 'error': 'Username required'}), 400
+                return jsonify({'success': False, 'error': 'Username required'}), 400  # type: ignore
             start_now = data.get('start', False)
 
-            with WEB_UI_DATA_LOCK:
+            with WEB_UI_DATA_LOCK:  # type: ignore
                 if username in WEB_UI_DATA['targets']:
-                    return jsonify({'success': False, 'error': 'Target already exists'}), 400
+                    return jsonify({'success': False, 'error': 'Target already exists'}), 400  # type: ignore
                 WEB_UI_DATA['targets'][username] = {
                     'followers': None,
                     'following': None,
@@ -699,26 +729,26 @@ def create_web_app():
             if start_now and WEB_UI_STANDALONE_MODE:
                 start_monitoring_for_target(username)
 
-            return jsonify({'success': True, 'username': username})
+            return jsonify({'success': True, 'username': username})  # type: ignore
 
     @app.route('/api/targets/<username>', methods=['DELETE'])
-    def api_delete_target(username):
+    def api_delete_target(username):  # type: ignore
         global WEB_UI_DATA
         username = username.strip().lower()
 
         # Stop monitoring if running
         stop_monitoring_for_target(username)
 
-        with WEB_UI_DATA_LOCK:
+        with WEB_UI_DATA_LOCK:  # type: ignore
             if username in WEB_UI_DATA['targets']:
                 del WEB_UI_DATA['targets'][username]
                 add_web_activity(f"Removed target: {username}")
-                return jsonify({'success': True})
-            return jsonify({'success': False, 'error': 'Target not found'}), 404
+                return jsonify({'success': True})  # type: ignore
+            return jsonify({'success': False, 'error': 'Target not found'}), 404  # type: ignore
 
     @app.route('/api/monitoring/start', methods=['POST'])
-    def api_start_monitoring():
-        data = flask_request.get_json() or {}
+    def api_start_monitoring():  # type: ignore
+        data = flask_request.get_json() or {}  # type: ignore
         target = data.get('target')
 
         if WEB_UI_STANDALONE_MODE:
@@ -726,22 +756,22 @@ def create_web_app():
                 success = start_monitoring_for_target(target)
             else:
                 # Start all targets
-                with WEB_UI_DATA_LOCK:
+                with WEB_UI_DATA_LOCK:  # type: ignore
                     targets_to_start = list(WEB_UI_DATA['targets'].keys())
                 for t in targets_to_start:
                     start_monitoring_for_target(t)
                 success = True
 
-            with WEB_UI_DATA_LOCK:
+            with WEB_UI_DATA_LOCK:  # type: ignore
                 WEB_UI_DATA['is_monitoring'] = True
-            return jsonify({'success': success})
+            return jsonify({'success': success})  # type: ignore
         else:
             # Not in standalone mode - monitoring controlled by CLI
-            return jsonify({'success': False, 'error': 'Monitoring controlled by CLI in this mode'})
+            return jsonify({'success': False, 'error': 'Monitoring controlled by CLI in this mode'})  # type: ignore
 
     @app.route('/api/monitoring/stop', methods=['POST'])
-    def api_stop_monitoring():
-        data = flask_request.get_json() or {}
+    def api_stop_monitoring():  # type: ignore
+        data = flask_request.get_json() or {}  # type: ignore[union-attr]
         target = data.get('target')
 
         if WEB_UI_STANDALONE_MODE:
@@ -749,27 +779,27 @@ def create_web_app():
                 stop_monitoring_for_target(target)
             else:
                 # Stop all targets
-                with WEB_UI_DATA_LOCK:
+                with WEB_UI_DATA_LOCK:  # type: ignore[union-attr]
                     targets_to_stop = list(WEB_UI_DATA['targets'].keys())
                 for t in targets_to_stop:
                     stop_monitoring_for_target(t)
 
-            with WEB_UI_DATA_LOCK:
+            with WEB_UI_DATA_LOCK:  # type: ignore
                 # Check if any monitors still running
                 active = any(t.is_alive() for t in WEB_UI_MONITOR_THREADS.values())
                 WEB_UI_DATA['is_monitoring'] = active
-            return jsonify({'success': True})
+            return jsonify({'success': True})  # type: ignore
         else:
-            return jsonify({'success': False, 'error': 'Monitoring controlled by CLI in this mode'})
+            return jsonify({'success': False, 'error': 'Monitoring controlled by CLI in this mode'})  # type: ignore
 
-    @app.route('/api/settings', methods=['GET', 'POST'])
-    def api_settings():
+    @app.route('/api/settings', methods=['GET', 'POST'])  # type: ignore[misc]
+    def api_settings():  # type: ignore[return]
         global INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
         global STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_URL
         global DETAILED_FOLLOWER_LOGGING, DEBUG_MODE, SESSION_USERNAME
 
-        if flask_request.method == 'GET':
-            return jsonify({
+        if flask_request.method == 'GET':  # type: ignore
+            return jsonify({  # type: ignore
                 'check_interval': INSTA_CHECK_INTERVAL,
                 'random_low': RANDOM_SLEEP_DIFF_LOW,
                 'random_high': RANDOM_SLEEP_DIFF_HIGH,
@@ -781,10 +811,10 @@ def create_web_app():
                 'debug_mode': DEBUG_MODE,
                 'session_username': SESSION_USERNAME
             })
-        elif flask_request.method == 'POST':
-            data = flask_request.get_json()
+        elif flask_request.method == 'POST':  # type: ignore
+            data = flask_request.get_json()  # type: ignore
             if not data:
-                return jsonify({'success': False, 'error': 'No data provided'}), 400
+                return jsonify({'success': False, 'error': 'No data provided'}), 400  # type: ignore
 
             if 'check_interval' in data:
                 INSTA_CHECK_INTERVAL = max(300, int(data['check_interval']))
@@ -799,26 +829,29 @@ def create_web_app():
             if 'webhook_enabled' in data:
                 WEBHOOK_ENABLED = bool(data['webhook_enabled'])
             if 'webhook_url' in data:
-                WEBHOOK_URL = data['webhook_url']
+                webhook_url = data['webhook_url']
+                if webhook_url and not validate_webhook_url(webhook_url):
+                    return jsonify({'success': False, 'error': 'Invalid webhook URL format. Must be HTTPS URL.'}), 400  # type: ignore
+                WEBHOOK_URL = webhook_url
             if 'detailed_logging' in data:
                 DETAILED_FOLLOWER_LOGGING = bool(data['detailed_logging'])
             if 'debug_mode' in data:
                 DEBUG_MODE = bool(data['debug_mode'])
 
             add_web_activity("Settings updated from web UI")
-            return jsonify({'success': True})
+            return jsonify({'success': True})  # type: ignore
 
-    @app.route('/api/session', methods=['GET', 'POST'])
-    def api_session():
+    @app.route('/api/session', methods=['GET', 'POST'])  # type: ignore[misc]
+    def api_session():  # type: ignore[return]
         global SESSION_USERNAME, SKIP_SESSION
 
-        if flask_request.method == 'GET':
-            with WEB_UI_DATA_LOCK:
-                return jsonify(WEB_UI_DATA.get('session', {}))
-        elif flask_request.method == 'POST':
-            data = flask_request.get_json()
+        if flask_request.method == 'GET':  # type: ignore
+            with WEB_UI_DATA_LOCK:  # type: ignore
+                return jsonify(WEB_UI_DATA.get('session', {}))  # type: ignore
+        elif flask_request.method == 'POST':  # type: ignore
+            data = flask_request.get_json()  # type: ignore
             if not data:
-                return jsonify({'success': False, 'error': 'No data provided'}), 400
+                return jsonify({'success': False, 'error': 'No data provided'}), 400  # type: ignore
 
             username = data.get('username', '').strip()
             method = data.get('method', 'firefox')
@@ -826,34 +859,34 @@ def create_web_app():
             if username:
                 SESSION_USERNAME = username
                 SKIP_SESSION = False
-                with WEB_UI_DATA_LOCK:
+                with WEB_UI_DATA_LOCK:  # type: ignore
                     WEB_UI_DATA['session'] = {'username': username, 'active': False, 'method': method}
                 add_web_activity(f"Session configured for: {username}")
-                return jsonify({'success': True, 'message': f'Session set for {username}'})
-            return jsonify({'success': False, 'error': 'Username required'}), 400
+                return jsonify({'success': True, 'message': f'Session set for {username}'})  # type: ignore
+            return jsonify({'success': False, 'error': 'Username required'}), 400  # type: ignore
 
     @app.route('/api/session/test', methods=['POST'])
-    def api_test_session():
+    def api_test_session():  # type: ignore
         if not SESSION_USERNAME:
-            return jsonify({'success': False, 'error': 'No session configured'})
+            return jsonify({'success': False, 'error': 'No session configured'})  # type: ignore
 
         try:
             L = Instaloader()
             L.load_session_from_file(SESSION_USERNAME)
-            with WEB_UI_DATA_LOCK:
+            with WEB_UI_DATA_LOCK:  # type: ignore
                 WEB_UI_DATA['session']['active'] = True
             add_web_activity(f"Session test successful: {SESSION_USERNAME}")
-            return jsonify({'success': True, 'username': SESSION_USERNAME})
+            return jsonify({'success': True, 'username': SESSION_USERNAME})  # type: ignore
         except Exception as e:
-            with WEB_UI_DATA_LOCK:
+            with WEB_UI_DATA_LOCK:  # type: ignore
                 WEB_UI_DATA['session']['active'] = False
-            return jsonify({'success': False, 'error': str(e)})
+            return jsonify({'success': False, 'error': str(e)})  # type: ignore
 
     @app.route('/api/activity/clear', methods=['POST'])
-    def api_clear_activity():
-        with WEB_UI_DATA_LOCK:
+    def api_clear_activity():  # type: ignore
+        with WEB_UI_DATA_LOCK:  # type: ignore
             WEB_UI_DATA['activities'] = []
-        return jsonify({'success': True})
+        return jsonify({'success': True})  # type: ignore
 
     return app
 
@@ -871,7 +904,7 @@ def start_monitoring_for_target(username):
     def _monitor_runner(user, stop_evt):
         try:
             add_web_activity(f"Started monitoring: {user}")
-            with WEB_UI_DATA_LOCK:
+            with WEB_UI_DATA_LOCK:  # type: ignore[union-attr]
                 if user in WEB_UI_DATA['targets']:
                     WEB_UI_DATA['targets'][user]['status'] = 'Starting'
 
@@ -889,7 +922,7 @@ def start_monitoring_for_target(username):
             )
         except Exception as e:
             add_web_activity(f"Error monitoring {user}: {str(e)}")
-            with WEB_UI_DATA_LOCK:
+            with WEB_UI_DATA_LOCK:  # type: ignore
                 if user in WEB_UI_DATA['targets']:
                     WEB_UI_DATA['targets'][user]['status'] = 'Error'
 
@@ -906,7 +939,7 @@ def stop_monitoring_for_target(username):
     if username in WEB_UI_STOP_EVENTS:
         WEB_UI_STOP_EVENTS[username].set()
         add_web_activity(f"Stopping monitoring: {username}")
-        with WEB_UI_DATA_LOCK:
+        with WEB_UI_DATA_LOCK:  # type: ignore
             if username in WEB_UI_DATA['targets']:
                 WEB_UI_DATA['targets'][username]['status'] = 'Stopped'
 
@@ -933,6 +966,7 @@ def start_web_server():
         return False
 
     def run_server():
+        assert WEB_UI_APP is not None  # Type guard
         WEB_UI_APP.run(host=WEB_UI_HOST, port=WEB_UI_PORT, debug=False, use_reloader=False, threaded=True)
 
     WEB_UI_THREAD = threading.Thread(target=run_server, daemon=True, name="web_ui_server")
@@ -1018,7 +1052,7 @@ def run_standalone_webui(args):
 
 def update_web_ui_data(targets=None, config=None, check_count=None, last_check=None, next_check=None):
     """Update the web UI data store."""
-    with WEB_UI_DATA_LOCK:
+    with WEB_UI_DATA_LOCK:  # type: ignore
         if targets is not None:
             WEB_UI_DATA['targets'] = targets
         if config is not None:
@@ -1034,7 +1068,7 @@ def update_web_ui_data(targets=None, config=None, check_count=None, last_check=N
 
 def add_web_activity(message):
     """Add an activity to the web UI activity feed."""
-    with WEB_UI_DATA_LOCK:
+    with WEB_UI_DATA_LOCK:  # type: ignore
         timestamp = datetime.now().strftime("%H:%M:%S")
         WEB_UI_DATA['activities'].insert(0, {'time': timestamp, 'message': message})
         # Keep only last 100 activities
@@ -1309,20 +1343,77 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     return 0
 
 
+# Validates webhook URL format
+def validate_webhook_url(url):
+    if not url:
+        return False
+    if not url.startswith('https://'):
+        return False
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        if not parsed.netloc or not parsed.scheme == 'https':
+            return False
+        return True
+    except Exception:
+        return False
+
+
+# Helper function to send follower/following change webhooks
+def send_follower_change_webhook(user, change_type, old_count, new_count, added_list, removed_list):
+    diff = new_count - old_count
+    diff_str = f"+{diff}" if diff > 0 else str(diff)
+
+    webhook_fields = [
+        {"name": "Old Count", "value": str(old_count), "inline": True},
+        {"name": "New Count", "value": str(new_count), "inline": True},
+        {"name": "Change", "value": diff_str, "inline": True},
+    ]
+
+    if added_list:
+        field_name = "New Followers" if change_type == "followers" else "Added"
+        webhook_fields.append({
+            "name": field_name,
+            "value": added_list[:DISCORD_FIELD_VALUE_LIMIT]  # type: ignore
+        })
+
+    if removed_list:
+        field_name = "Lost Followers" if change_type == "followers" else "Removed"
+        webhook_fields.append({
+            "name": field_name,
+            "value": removed_list[:DISCORD_FIELD_VALUE_LIMIT]  # type: ignore
+        })
+
+    # Use different emojis/colors for followers vs followings
+    if change_type == "followers":
+        emoji = "📈" if diff > 0 else "📉"
+        color = 0x2ecc71 if diff > 0 else 0xe74c3c  # Green if gained, red if lost
+    else:  # followings
+        emoji = "📊"
+        color = 0x3498db  # Blue
+
+    title = f"{emoji} {user} {change_type.capitalize()} Changed"
+    description = f"User **{user}** {change_type} changed from {old_count} to {new_count}"
+    notification_type = "followers" if change_type == "followers" else "status"
+
+    return send_webhook(
+        title,
+        description,
+        color=color,
+        fields=webhook_fields,
+        notification_type=notification_type
+    )
+
+
 # Sends webhook notification (Discord-compatible)
 def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, notification_type="status"):
-    """
-    Send a webhook notification to Discord or compatible endpoint.
-
-    Args:
-        title: Title of the embed
-        description: Main description text
-        color: Embed color (hex integer, default Discord blurple)
-        fields: List of dicts with 'name' and 'value' keys for embed fields
-        image_url: Optional image URL to include in embed
-        notification_type: 'status', 'followers', or 'error' to check notification settings
-    """
     if not WEBHOOK_ENABLED or not WEBHOOK_URL:
+        return 1
+
+    # Validate webhook URL
+    if not validate_webhook_url(WEBHOOK_URL):
+        if DEBUG_MODE:
+            print(f"* Webhook error: Invalid webhook URL format")
         return 1
 
     # Check if this notification type is enabled
@@ -1335,8 +1426,8 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
 
     try:
         embed = {
-            "title": title[:256] if title else "Instagram Monitor",
-            "description": description[:4096] if description else "",
+            "title": title[:DISCORD_EMBED_TITLE_LIMIT] if title else "Instagram Monitor",  # type: ignore
+            "description": description[:DISCORD_EMBED_DESCRIPTION_LIMIT] if description else "",  # type: ignore
             "color": color,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "footer": {
@@ -1346,17 +1437,17 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
 
         if fields:
             embed["fields"] = []
-            for field in fields[:25]:  # Discord limit: 25 fields
+            for field in fields[:DISCORD_MAX_FIELDS]:  # type: ignore
                 embed["fields"].append({
-                    "name": str(field.get("name", ""))[:256],
-                    "value": str(field.get("value", ""))[:1024],
+                    "name": str(field.get("name", ""))[:DISCORD_FIELD_NAME_LIMIT],  # type: ignore
+                    "value": str(field.get("value", ""))[:DISCORD_FIELD_VALUE_LIMIT],  # type: ignore
                     "inline": field.get("inline", False)
                 })
 
         if image_url:
             embed["image"] = {"url": image_url}
 
-        payload = {
+        payload: dict = {
             "embeds": [embed]
         }
 
@@ -1601,7 +1692,7 @@ def get_hour_min_from_ts(ts, show_seconds=False):
         return ""
 
     out_strf = "%H:%M:%S" if show_seconds else "%H:%M"
-    return ts_new.strftime(out_strf)
+    return ts_new.strftime(out_strf)  # type: ignore[arg-type]
 
 
 # Returns the range between two timestamps/datetime objects; eg. Sun 21 Apr 14:09 - 14:15
@@ -2219,9 +2310,10 @@ def find_config_file(cli_path=None):
         p = Path(os.path.expanduser(cli_path))
         return str(p) if p.is_file() else None
 
+    config_filename = f".{DEFAULT_CONFIG_FILENAME}"
     candidates = [
         Path.cwd() / DEFAULT_CONFIG_FILENAME,
-        Path.home() / f".{DEFAULT_CONFIG_FILENAME}",
+        Path.home() / config_filename,
         Path(__file__).parent / DEFAULT_CONFIG_FILENAME,
     ]
 
@@ -2529,7 +2621,7 @@ def ui_input_handler():
 
             # Debug commands (only work in debug mode)
             elif user_input == 'check' and DEBUG_MODE:
-                MANUAL_CHECK_TRIGGERED = True
+                MANUAL_CHECK_TRIGGERED.set()  # type: ignore
                 print("* Manual check triggered!")
             elif user_input == 'status' and DEBUG_MODE:
                 print_status_summary()
@@ -2597,6 +2689,13 @@ def generate_user_ui(target_data):
     if not RICH_AVAILABLE:
         return None
 
+    # Type guard: Rich is available at this point
+    assert Table is not None
+    assert box is not None
+    assert Text is not None
+    assert Panel is not None
+    assert Layout is not None
+
     table = Table(title="Instagram Monitor", box=box.ROUNDED, show_header=True, header_style="bold cyan")
     table.add_column("Target", style="green", width=20)
     table.add_column("Followers", justify="right", width=12)
@@ -2626,7 +2725,7 @@ def generate_user_ui(target_data):
 
     # Mode toggle button - visual button style
     mode_btn_text = Text()
-    mode_btn_text.append("  [ ", style="dim")
+    mode_btn_text.append("  [ ", style="dim")  # type: ignore[arg-type]
     mode_btn_text.append("USER", style="bold green reverse")
     mode_btn_text.append(" | ", style="dim")
     mode_btn_text.append("CONFIG", style="dim")
@@ -2655,6 +2754,13 @@ def generate_config_ui(target_data, config_data):
     """Generate a detailed, complex UI for config mode showing all settings."""
     if not RICH_AVAILABLE:
         return None
+
+    # Type guard: Rich is available at this point
+    assert Table is not None
+    assert box is not None
+    assert Text is not None
+    assert Panel is not None
+    assert Layout is not None
 
     # Main targets table
     targets_table = Table(title="Monitored Targets", box=box.ROUNDED, show_header=True, header_style="bold cyan")
@@ -2719,7 +2825,7 @@ def generate_config_ui(target_data, config_data):
 
     # Mode toggle button - visual button style
     mode_btn_text = Text()
-    mode_btn_text.append("  [ ", style="dim")
+    mode_btn_text.append("  [ ", style="dim")  # type: ignore[arg-type]
     mode_btn_text.append("USER", style="dim")
     mode_btn_text.append(" | ", style="dim")
     mode_btn_text.append("CONFIG", style="bold magenta reverse")
@@ -2731,6 +2837,7 @@ def generate_config_ui(target_data, config_data):
     mode_panel = Panel(mode_btn_text, title="View Mode", box=box.ROUNDED, border_style="cyan", padding=(0, 1))
 
     # Debug commands panel (if debug mode)
+    debug_panel = None
     if DEBUG_MODE:
         debug_text = Text()
         debug_text.append("Commands:\n", style="bold")
@@ -2745,7 +2852,7 @@ def generate_config_ui(target_data, config_data):
         Layout(name="bottom", ratio=1)
     )
 
-    if DEBUG_MODE:
+    if DEBUG_MODE and debug_panel is not None:
         layout["bottom"].split_row(
             Layout(config_table, name="config", ratio=2),
             Layout(name="right", ratio=1)
@@ -2793,24 +2900,24 @@ def setup_pbar(total_expected, title):
 
     # Use thread-local storage for multi-target safety
     if not hasattr(_thread_local, 'pbar'):
-        _thread_local.pbar = None
-        _thread_local.START_TIME = 0
-        _thread_local.NAME_COUNT = 0
-        _thread_local.WRAPPER_COUNT = 0
+        _thread_local.pbar = None  # type: ignore[misc]
+        _thread_local.START_TIME = 0  # type: ignore[misc]
+        _thread_local.NAME_COUNT = 0  # type: ignore[misc]
+        _thread_local.WRAPPER_COUNT = 0  # type: ignore[misc]
 
-    _thread_local.START_TIME = datetime.now()
-    _thread_local.NAME_COUNT = 0
-    _thread_local.WRAPPER_COUNT = 0
+    _thread_local.START_TIME = datetime.now()  # type: ignore[misc]
+    _thread_local.NAME_COUNT = 0  # type: ignore[misc]
+    _thread_local.WRAPPER_COUNT = 0  # type: ignore[misc]
 
     # If a bar exists for this thread, close it first
-    if _thread_local.pbar is not None:
+    if _thread_local.pbar is not None:  # type: ignore[misc]
         close_pbar()
 
     custom_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
     # Write progress bar updates to terminal only (not log file) to avoid cluttering logs
     terminal_out = stdout_bck if stdout_bck is not None else sys.stdout
     # Use HORIZONTAL_LINE (default 113) as the fixed width for consistent behavior across environments
-    _thread_local.pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=terminal_out, ncols=HORIZONTAL_LINE)
+    _thread_local.pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=terminal_out, ncols=HORIZONTAL_LINE)  # type: ignore[misc]
 
     # Also set global for backward compatibility (single-threaded mode)
     pbar = _thread_local.pbar
@@ -2874,7 +2981,7 @@ def close_pbar():
             sys.stdout.logfile.write(final_str + "\n")
             sys.stdout.logfile.flush()
 
-        _thread_local.pbar = None
+        _thread_local.pbar = None  # type: ignore[misc]
         # Also clear global for backward compatibility
         pbar = None
 
@@ -2948,8 +3055,8 @@ def instagram_wrap_request(orig_request):
 
                     # Only count requests that actually returned follower/following data
                     if user_list:
-                        _thread_local.WRAPPER_COUNT = thread_wrapper_count + 1
-                        thread_wrapper_count = _thread_local.WRAPPER_COUNT
+                        _thread_local.WRAPPER_COUNT = thread_wrapper_count + 1  # type: ignore[misc]
+                        thread_wrapper_count = _thread_local.WRAPPER_COUNT  # type: ignore[misc]
                 except (ValueError, KeyError) as e:
                     # JSON decode error or missing keys - not a follower/following request
                     # Silently skip, this is expected for non-follower/following requests
@@ -2964,8 +3071,8 @@ def instagram_wrap_request(orig_request):
             # Update progress bar only if we extracted usernames
             if user_list:
                 increment = len(user_list)
-                _thread_local.NAME_COUNT = thread_name_count + increment
-                thread_name_count = _thread_local.NAME_COUNT
+                _thread_local.NAME_COUNT = thread_name_count + increment  # type: ignore[misc]
+                thread_name_count = _thread_local.NAME_COUNT  # type: ignore[misc]
                 if (thread_pbar.n + increment) > thread_pbar.total:
                     thread_pbar.total = thread_pbar.n + increment
 
@@ -3136,7 +3243,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
 
 
 # Monitors activity of the specified Instagram user
-def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None):
+def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None):  # type: ignore[reportComplexity]
     global pbar
 
     # Wait for previous user's initial loading to complete (to avoid progress bar overlap)
@@ -3839,12 +3946,30 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         if DEBUG_MODE:
             print(f"[DEBUG] Next check scheduled: {get_date_from_ts(NEXT_CHECK_TIME)}")
 
-    # Use interruptible sleep if stop_event is provided
-    if stop_event:
-        stop_event.wait(r_sleep_time)
-        if stop_event.is_set():
-            print(f"* Monitoring stopped for {user}")
-            return
+    # Use interruptible sleep if stop_event is provided (allows immediate stop)
+    if stop_event or DEBUG_MODE:
+        # Sleep in smaller increments to allow stop event or manual check trigger
+        sleep_remaining = r_sleep_time
+        while sleep_remaining > 0:
+            # Check for stop event
+            if stop_event and stop_event.is_set():
+                print(f"* Monitoring stopped for {user}")
+                return
+
+            # Check for manual trigger (debug mode)
+            if DEBUG_MODE and MANUAL_CHECK_TRIGGERED.is_set():  # type: ignore
+                MANUAL_CHECK_TRIGGERED.clear()  # type: ignore
+                print(f"* Manual check triggered! Breaking sleep early...")
+                debug_print(f"Manual check triggered, {sleep_remaining}s remaining in sleep")
+                break
+
+            # Sleep in 1-second increments for responsiveness
+            sleep_chunk = min(1, sleep_remaining)
+            if stop_event:
+                stop_event.wait(sleep_chunk)
+            else:
+                time.sleep(sleep_chunk)
+            sleep_remaining -= sleep_chunk
     else:
         time.sleep(r_sleep_time)
 
@@ -3858,8 +3983,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         if stop_event and stop_event.is_set():
             print(f"* Monitoring stopped for {user}")
             return
-
-        global MANUAL_CHECK_TRIGGERED
 
         reset_thread_output()
 
@@ -4071,23 +4194,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
                 # Send webhook notification for followings change
-                webhook_fields = [
-                    {"name": "Old Count", "value": str(followings_old_count), "inline": True},
-                    {"name": "New Count", "value": str(followings_count), "inline": True},
-                    {"name": "Change", "value": followings_diff_str, "inline": True},
-                ]
-                if added_followings_list:
-                    webhook_fields.append({"name": "Added", "value": added_followings_list[:1024]})
-                if removed_followings_list:
-                    webhook_fields.append({"name": "Removed", "value": removed_followings_list[:1024]})
-
-                send_webhook(
-                    f"📊 {user} Followings Changed",
-                    f"User **{user}** followings changed from {followings_old_count} to {followings_count}",
-                    color=0x3498db,  # Blue
-                    fields=webhook_fields,
-                    notification_type="status"
+                webhook_result = send_follower_change_webhook(
+                    user, "followings", followings_old_count, followings_count,
+                    added_followings_list, removed_followings_list
                 )
+                if webhook_result != 0 and DEBUG_MODE:
+                    print(f"* Warning: Webhook notification for followings change failed")
 
                 followings_old_count = followings_count
 
@@ -4188,24 +4300,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
                 # Send webhook notification for followers change
-                webhook_fields = [
-                    {"name": "Old Count", "value": str(followers_old_count), "inline": True},
-                    {"name": "New Count", "value": str(followers_count), "inline": True},
-                    {"name": "Change", "value": followers_diff_str, "inline": True},
-                ]
-                if added_followers_list:
-                    webhook_fields.append({"name": "New Followers", "value": added_followers_list[:1024]})
-                if removed_followers_list:
-                    webhook_fields.append({"name": "Lost Followers", "value": removed_followers_list[:1024]})
-
-                color = 0x2ecc71 if followers_diff > 0 else 0xe74c3c  # Green if gained, red if lost
-                send_webhook(
-                    f"{'📈' if followers_diff > 0 else '📉'} {user} Followers Changed",
-                    f"User **{user}** followers changed from {followers_old_count} to {followers_count}",
-                    color=color,
-                    fields=webhook_fields,
-                    notification_type="followers"
+                webhook_result = send_follower_change_webhook(
+                    user, "followers", followers_old_count, followers_count,
+                    added_followers_list, removed_followers_list
                 )
+                if webhook_result != 0 and DEBUG_MODE:
+                    print(f"* Warning: Webhook notification for followers change failed")
 
                 followers_old_count = followers_count
 
@@ -4240,16 +4340,18 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
                 # Send webhook notification for bio change
-                send_webhook(
+                webhook_result = send_webhook(
                     f"📝 {user} Bio Changed",
                     f"User **{user}** has updated their bio",
                     color=0x9b59b6,  # Purple
                     fields=[
-                        {"name": "Old Bio", "value": (bio_old[:1020] + "...") if len(bio_old) > 1024 else bio_old or "(empty)"},
-                        {"name": "New Bio", "value": (bio[:1020] + "...") if len(bio) > 1024 else bio or "(empty)"},
+                        {"name": "Old Bio", "value": (bio_old[:DISCORD_FIELD_VALUE_LIMIT-4] + "...") if len(bio_old) > DISCORD_FIELD_VALUE_LIMIT else bio_old or "(empty)"},
+                        {"name": "New Bio", "value": (bio[:DISCORD_FIELD_VALUE_LIMIT-4] + "...") if len(bio) > DISCORD_FIELD_VALUE_LIMIT else bio or "(empty)"},
                     ],
                     notification_type="status"
                 )
+                if webhook_result != 0 and DEBUG_MODE:
+                    print(f"* Warning: Webhook notification for bio change failed")
 
                 bio_old = bio
                 print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
@@ -4281,7 +4383,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 # Send webhook notification for visibility change
                 emoji = "🔒" if is_private else "🔓"
-                send_webhook(
+                webhook_result = send_webhook(
                     f"{emoji} {user} Profile Visibility Changed",
                     f"User **{user}** profile is now **{profile_visibility}**",
                     color=0xe67e22,  # Orange
@@ -4291,6 +4393,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     ],
                     notification_type="status"
                 )
+                if webhook_result != 0 and DEBUG_MODE:
+                    print(f"* Warning: Webhook notification for visibility change failed")
 
                 is_private_old = is_private
                 print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
@@ -4336,7 +4440,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
                 # Send webhook notification for new story
-                send_webhook(
+                webhook_result = send_webhook(
                     f"📖 {user} New Story",
                     f"User **{user}** has posted a new story!",
                     color=0xe91e63,  # Pink
@@ -4345,6 +4449,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     ],
                     notification_type="status"
                 )
+                if webhook_result != 0 and DEBUG_MODE:
+                    print(f"* Warning: Webhook notification for new story failed")
 
                 print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
@@ -4683,9 +4789,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     if location:
                         webhook_fields.append({"name": "Location", "value": location, "inline": True})
                     if caption:
-                        webhook_fields.append({"name": "Description", "value": (caption[:1020] + "...") if len(caption) > 1024 else caption})
+                        webhook_fields.append({"name": "Description", "value": (caption[:DISCORD_FIELD_VALUE_LIMIT-4] + "...") if len(caption) > DISCORD_FIELD_VALUE_LIMIT else caption})
 
-                    send_webhook(
+                    webhook_result = send_webhook(
                         f"{emoji} {user} New {last_source.capitalize()}",
                         f"User **{user}** posted a new {last_source.lower()}!",
                         color=0x1da1f2 if last_source == "post" else 0xff6b6b,  # Blue for post, coral for reel
@@ -4693,6 +4799,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         image_url=thumbnail_url if thumbnail_url else None,
                         notification_type="status"
                     )
+                    if webhook_result != 0 and DEBUG_MODE:
+                        print(f"* Warning: Webhook notification for new {last_source} failed")
 
                     posts_count_old = posts_count
                     reels_count_old = reels_count
@@ -4762,8 +4870,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     return
 
                 # Check for manual trigger
-                if MANUAL_CHECK_TRIGGERED:
-                    MANUAL_CHECK_TRIGGERED = False
+                if MANUAL_CHECK_TRIGGERED.is_set():  # type: ignore
+                    MANUAL_CHECK_TRIGGERED.clear()  # type: ignore
                     print(f"* Manual check triggered! Breaking sleep early...")
                     debug_print(f"Manual check triggered, {sleep_remaining}s remaining in sleep")
                     break
@@ -5348,6 +5456,9 @@ def main():
 
     # Webhook configuration
     if args.webhook_url:
+        if not validate_webhook_url(args.webhook_url):
+            print(f"* Error: Invalid webhook URL format. Must be HTTPS URL.")
+            sys.exit(1)
         WEBHOOK_URL = args.webhook_url
         WEBHOOK_ENABLED = True
 
@@ -5585,16 +5696,17 @@ def main():
     print("─" * len(out))
 
     # Initialize Rich console if available and enabled
-    if RICH_AVAILABLE and UI_ENABLED and not WEB_UI_ENABLED:
+    if RICH_AVAILABLE and UI_ENABLED and not WEB_UI_ENABLED:  # type: ignore[name-defined]
+        assert Console is not None
         RICH_CONSOLE = Console()
 
     # Start web UI server if enabled
-    if WEB_UI_ENABLED:
+    if WEB_UI_ENABLED:  # type: ignore[name-defined]
         WEB_UI_DATA['start_time'] = datetime.now()
         start_web_server()
 
     # Start UI input handler for mode toggle (and debug commands if debug mode)
-    if not WEB_UI_ENABLED:
+    if not WEB_UI_ENABLED:  # type: ignore[name-defined]
         start_ui_input_handler()
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
