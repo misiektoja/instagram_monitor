@@ -4886,7 +4886,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
 def main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
-    global DEBUG_MODE, UI_MODE, UI_ENABLED, DETAILED_FOLLOWER_LOGGING, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, RICH_CONSOLE
+    global DEBUG_MODE, UI_MODE, UI_ENABLED, WEB_UI_ENABLED, DETAILED_FOLLOWER_LOGGING, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, RICH_CONSOLE
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -5688,21 +5688,15 @@ def main():
         print(f"*   Webhook followers:\t\t\t{WEBHOOK_FOLLOWERS_NOTIFICATION}")
         print(f"*   Webhook errors:\t\t\t{WEBHOOK_ERROR_NOTIFICATION}")
 
-    if len(targets) == 1:
-        out = f"\nMonitoring Instagram user {targets[0]}"
-    else:
-        out = f"\nMonitoring Instagram users ({len(targets)}): {', '.join(targets)}"
-    print(out)
-    print("─" * len(out))
-
     # Initialize Rich console if available and enabled
     if RICH_AVAILABLE and UI_ENABLED and not WEB_UI_ENABLED:  # type: ignore[name-defined]
         assert Console is not None
         RICH_CONSOLE = Console()
 
-    # Start web UI server if enabled
+    # Start web UI server if enabled (before monitoring starts to avoid message interleaving)
     if WEB_UI_ENABLED:  # type: ignore[name-defined]
         WEB_UI_DATA['start_time'] = datetime.now()
+        WEB_UI_DATA['ui_mode'] = UI_MODE
         start_web_server()
 
     # Start UI input handler for mode toggle (and debug commands if debug mode)
@@ -5716,6 +5710,14 @@ def main():
         signal.signal(signal.SIGTRAP, increase_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_check_signal_handler)
         signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
+
+    # Print monitoring message after all setup is complete
+    if len(targets) == 1:
+        out = f"\nMonitoring Instagram user {targets[0]}"
+    else:
+        out = f"\nMonitoring Instagram users ({len(targets)}): {', '.join(targets)}"
+    print(out)
+    print("─" * len(out))
 
     # Multi-target mode: run multiple monitors in one process, with configurable staggering
     if len(targets) == 1:
