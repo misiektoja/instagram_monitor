@@ -560,9 +560,19 @@
         <div id="page-dashboard" class="page active">
             <div class="page-header">
                 <h1 class="page-title">Dashboard</h1>
-                <div class="status-indicator">
-                    <div class="status-dot" id="global-status-dot"></div>
-                    <span id="global-status-text">Idle</span>
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <div style="display: flex; gap: 8px; background: rgba(255,255,255,0.05); padding: 4px; border-radius: 8px;">
+                        <button id="mode-user-btn" class="btn btn-secondary" style="padding: 8px 16px; font-size: 13px;" onclick="setUIMode('user')" title="User Mode - Simple view">
+                            👤 User
+                        </button>
+                        <button id="mode-config-btn" class="btn btn-secondary" style="padding: 8px 16px; font-size: 13px;" onclick="setUIMode('config')" title="Config Mode - Detailed view">
+                            ⚙️ Config
+                        </button>
+                    </div>
+                    <div class="status-indicator">
+                        <div class="status-dot" id="global-status-dot"></div>
+                        <span id="global-status-text">Idle</span>
+                    </div>
                 </div>
             </div>
 
@@ -597,38 +607,68 @@
                 </div>
             </div>
 
-            <div class="card">
-                <div class="card-title">Monitored Targets</div>
-                <table class="targets-table" id="dashboard-targets">
-                    <thead>
-                        <tr>
-                            <th>Target</th>
-                            <th>Followers</th>
-                            <th>Following</th>
-                            <th>Posts</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="dashboard-targets-body">
-                        <tr>
-                            <td colspan="6">
-                                <div class="empty-state">
-                                    <div class="empty-state-icon">👥</div>
-                                    <p>No targets added yet. Click "Add Target" to start monitoring.</p>
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+            <!-- User mode: Simple view -->
+            <div id="dashboard-user-mode" class="dashboard-mode">
+                <div class="card">
+                    <div class="card-title">Monitored Targets</div>
+                    <table class="targets-table" id="dashboard-targets-simple">
+                        <thead>
+                            <tr>
+                                <th>Target</th>
+                                <th>Status</th>
+                                <th>Last Check</th>
+                                <th>Next Check</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashboard-targets-simple-body">
+                            <tr>
+                                <td colspan="4">
+                                    <div class="empty-state">
+                                        <div class="empty-state-icon">👥</div>
+                                        <p>No targets added yet. Click "Add Target" to start monitoring.</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
-            <div class="card">
-                <div class="card-title">Recent Activity</div>
-                <div class="activity-feed" id="dashboard-activity">
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📜</div>
-                        <p>No activity yet</p>
+            <!-- Config mode: Detailed view -->
+            <div id="dashboard-config-mode" class="dashboard-mode" style="display: none;">
+                <div class="card">
+                    <div class="card-title">Monitored Targets</div>
+                    <table class="targets-table" id="dashboard-targets">
+                        <thead>
+                            <tr>
+                                <th>Target</th>
+                                <th>Followers</th>
+                                <th>Following</th>
+                                <th>Posts</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashboard-targets-body">
+                            <tr>
+                                <td colspan="6">
+                                    <div class="empty-state">
+                                        <div class="empty-state-icon">👥</div>
+                                        <p>No targets added yet. Click "Add Target" to start monitoring.</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Recent Activity</div>
+                    <div class="activity-feed" id="dashboard-activity">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📜</div>
+                            <p>No activity yet</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -881,6 +921,51 @@
         let activities = [];
         let settings = {};
         let isMonitoring = false;
+        let currentUIMode = 'user'; // Default to user mode
+
+        // UI Mode handling
+        async function setUIMode(mode) {
+            if (mode !== 'user' && mode !== 'config') return;
+
+            try {
+                const response = await fetch('/api/mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    currentUIMode = mode;
+                    updateUIModeDisplay();
+                    showToast(`Switched to ${mode} mode`);
+                }
+            } catch (err) {
+                console.error('Failed to set UI mode:', err);
+                showToast('Failed to switch mode', 'error');
+            }
+        }
+
+        function updateUIModeDisplay() {
+            // Update button states
+            const userBtn = document.getElementById('mode-user-btn');
+            const configBtn = document.getElementById('mode-config-btn');
+
+            if (currentUIMode === 'user') {
+                userBtn.classList.add('btn-primary');
+                userBtn.classList.remove('btn-secondary');
+                configBtn.classList.remove('btn-primary');
+                configBtn.classList.add('btn-secondary');
+                document.getElementById('dashboard-user-mode').style.display = 'block';
+                document.getElementById('dashboard-config-mode').style.display = 'none';
+            } else {
+                configBtn.classList.add('btn-primary');
+                configBtn.classList.remove('btn-secondary');
+                userBtn.classList.remove('btn-primary');
+                userBtn.classList.add('btn-secondary');
+                document.getElementById('dashboard-user-mode').style.display = 'none';
+                document.getElementById('dashboard-config-mode').style.display = 'block';
+            }
+        }
 
         // Navigation
         function showPage(pageName) {
@@ -939,6 +1024,7 @@
                 updateDashboard(data);
             } catch (err) {
                 console.error('Failed to fetch status:', err);
+                showToast('Failed to fetch status', 'error');
             }
         }
 
@@ -953,6 +1039,12 @@
         }
 
         function updateDashboard(data) {
+            // Update UI mode if changed
+            if (data.ui_mode && data.ui_mode !== currentUIMode) {
+                currentUIMode = data.ui_mode;
+                updateUIModeDisplay();
+            }
+
             // Update stats
             const targetCount = Object.keys(data.targets || {}).length;
             const monitoringCount = Object.values(data.targets || {}).filter(t =>
@@ -981,7 +1073,7 @@
 
             // Update targets table
             targets = data.targets || {};
-            renderTargetsTable();
+            renderTargetsTable(data.last_check, data.next_check);
 
             // Update session info
             if (data.session) {
@@ -1004,8 +1096,9 @@
             }
         }
 
-        function renderTargetsTable() {
+        function renderTargetsTable(globalLastCheck, globalNextCheck) {
             const tbody = document.getElementById('dashboard-targets-body');
+            const tbodySimple = document.getElementById('dashboard-targets-simple-body');
             const targetsList = document.getElementById('targets-list');
 
             if (Object.keys(targets).length === 0) {
@@ -1019,6 +1112,18 @@
                         </td>
                     </tr>
                 `;
+                if (tbodySimple) {
+                    tbodySimple.innerHTML = `
+                        <tr>
+                            <td colspan="4">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">👥</div>
+                                    <p>No targets added yet. Click "Add Target" to start monitoring.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }
                 targetsList.innerHTML = `
                     <tr>
                         <td colspan="5">
@@ -1030,6 +1135,29 @@
                     </tr>
                 `;
                 return;
+            }
+
+            // Render simple view for user mode
+            if (tbodySimple) {
+                const lastCheck = globalLastCheck || '-';
+                const nextCheck = globalNextCheck || '-';
+
+                tbodySimple.innerHTML = Object.entries(targets).map(([name, data]) => `
+                    <tr>
+                        <td>
+                            <div class="target-name">
+                                <div class="target-avatar">${name.charAt(0).toUpperCase()}</div>
+                                <div>
+                                    <div><a href="https://instagram.com/${encodeURIComponent(name)}" target="_blank" style="color: inherit; text-decoration: none;">${escapeHtml(name)}</a></div>
+                                    <div style="font-size: 12px; color: #666;">@${escapeHtml(name)}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td><span class="badge badge-${getStatusBadge(data.status)}">${data.status || 'Idle'}</span></td>
+                        <td>${escapeHtml(lastCheck)}</td>
+                        <td>${escapeHtml(nextCheck)}</td>
+                    </tr>
+                `).join('');
             }
 
             tbody.innerHTML = Object.entries(targets).map(([name, data]) => `
@@ -1381,9 +1509,12 @@
         }
 
         // Initial load and polling
-        fetchStatus();
+        (async () => {
+            await fetchStatus();
+            updateUIModeDisplay();
+        })();
         fetchSettings();
-        setInterval(fetchStatus, 2000);
+        setInterval(fetchStatus, 5000);
     </script>
 </body>
 </html>
