@@ -332,30 +332,30 @@ WEBHOOK_ERROR_NOTIFICATION = False
 DEBUG_MODE = False
 
 # ----------------------------
-# UI Display Mode
+# Dashboard Settings
 # ----------------------------
-# UI display mode: 'user' for simple/minimal display, 'config' for detailed/complex display with settings
-# This mode applies to both the Rich terminal UI and the Web-based dashboard
-# Can also be set via --ui-mode flag
-UI_DISPLAY_MODE = 'user'
+# Dashboard mode: 'user' for simple/minimal display, 'config' for detailed/complex display with settings
+# This mode applies to both the terminal dashboard and the web-based dashboard
+# Can also be set via --dashboard-mode flag
+DASHBOARD_MODE = 'user'
 
-# Enable Rich terminal UI (live dashboard)
+# Enable terminal dashboard (live view)
 # Set to False to use traditional text output
-# Can be enabled via --rich-text-ui flag
-RICH_UI_ENABLED = False
+# Can be enabled via --dashboard flag
+DASHBOARD_ENABLED = False
 
 # ----------------------------
-# Web UI Settings
+# Web Dashboard Settings
 # ----------------------------
-# Enable web-based UI (runs on localhost)
-# Can be enabled via --web-ui flag
-WEB_UI_ENABLED = False
+# Enable web-based dashboard (runs on localhost)
+# Can be enabled via --web-dashboard flag
+WEB_DASHBOARD_ENABLED = False
 
-# Port for the web UI server
-WEB_UI_PORT = 5000
+# Port for the web dashboard server
+WEB_DASHBOARD_PORT = 5000
 
-# Host for the web UI server (use '0.0.0.0' to allow external access)
-WEB_UI_HOST = '127.0.0.1'
+# Host for the web dashboard server (use '0.0.0.0' to allow external access)
+WEB_DASHBOARD_HOST = '127.0.0.1'
 
 # ----------------------------
 # Detailed Follower Logging
@@ -440,11 +440,11 @@ WEBHOOK_STATUS_NOTIFICATION = True
 WEBHOOK_FOLLOWERS_NOTIFICATION = True
 WEBHOOK_ERROR_NOTIFICATION = False
 DEBUG_MODE = False
-UI_DISPLAY_MODE = 'user'
-RICH_UI_ENABLED = True
-WEB_UI_ENABLED = True
-WEB_UI_PORT = 5000
-WEB_UI_HOST = '127.0.0.1'
+DASHBOARD_MODE = 'user'
+DASHBOARD_ENABLED = False
+WEB_DASHBOARD_ENABLED = False
+WEB_DASHBOARD_PORT = 5000
+WEB_DASHBOARD_HOST = '127.0.0.1'
 DETAILED_FOLLOWER_LOGGING = False
 
 exec(CONFIG_BLOCK, globals())
@@ -488,31 +488,31 @@ CHECK_COUNT = 0
 MANUAL_CHECK_TRIGGERED = None  # type: ignore[assignment]
 DEBUG_INPUT_THREAD = None
 
-# Rich UI components (initialized later)
-RICH_CONSOLE = None
-RICH_LIVE = None
-UI_DATA = {}
+# Dashboard components (initialized later)
+DASHBOARD_CONSOLE = None
+DASHBOARD_LIVE = None
+DASHBOARD_DATA = {}
 
-# Web UI global state
-WEB_UI_APP = None
-WEB_UI_THREAD = None
-WEB_UI_DATA = {
+# Web Dashboard global state
+WEB_DASHBOARD_APP = None
+WEB_DASHBOARD_THREAD = None
+WEB_DASHBOARD_DATA = {
     'targets': {},
     'config': {},
     'check_count': 0,
     'last_check': None,
     'next_check': None,
-    'ui_mode': 'user',
+    'dashboard_mode': 'user',
     'uptime': None,
     'start_time': None,
     'activities': [],
     'is_monitoring': False,
     'session': {'username': None, 'active': False}
 }
-WEB_UI_DATA_LOCK = None  # Will be initialized as threading.Lock() after imports
-WEB_UI_STANDALONE_MODE = False  # Set True when running with --webui flag
-WEB_UI_MONITOR_THREADS = {}  # Active monitoring threads by username
-WEB_UI_STOP_EVENTS = {}  # Stop events for each monitoring thread
+WEB_DASHBOARD_DATA_LOCK = None  # Will be initialized as threading.Lock() after imports
+WEB_DASHBOARD_STANDALONE_MODE = False  # Set True when running with --standalone-web-dashboard flag
+WEB_DASHBOARD_MONITOR_THREADS = {}  # Active monitoring threads by username
+WEB_DASHBOARD_STOP_EVENTS = {}  # Stop events for each monitoring thread
 
 import sys
 
@@ -558,8 +558,8 @@ import subprocess
 import threading
 import hashlib
 
-# Initialize the web UI data lock now that threading is imported
-WEB_UI_DATA_LOCK = threading.Lock()
+# Initialize the web dashboard data lock now that threading is imported
+WEB_DASHBOARD_DATA_LOCK = threading.Lock()
 
 # Initialize manual check trigger event (thread-safe)
 MANUAL_CHECK_TRIGGERED: threading.Event = threading.Event()
@@ -636,14 +636,14 @@ _thread_local = threading.local()
 
 
 # ===========================
-# Web UI Flask Server
+# Web Dashboard Flask Server
 # ===========================
 
 # Creates and configures the Flask web application
-def create_web_app():
+def create_web_dashboard_app():
     """
-    Note: Web UI is intended for localhost use only. For production deployments,
-    consider adding CSRF protection (e.g. Flask-WTF) or authentication
+    Note: Web Dashboard is intended for localhost use only as current implementation does not have CSRF protection
+    (like Flask-WTF) or authentication
     """
     if not FLASK_AVAILABLE:
         return None
@@ -670,8 +670,8 @@ def create_web_app():
 
     @app.route('/api/status')
     def api_status():  # type: ignore
-        with WEB_UI_DATA_LOCK:  # type: ignore
-            data = WEB_UI_DATA.copy()
+        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+            data = WEB_DASHBOARD_DATA.copy()
             # Calculate uptime
             if data.get('start_time'):
                 uptime_delta = datetime.now() - data['start_time']
@@ -682,13 +682,13 @@ def create_web_app():
 
     @app.route('/api/mode', methods=['POST'])
     def api_set_mode():  # type: ignore
-        global UI_DISPLAY_MODE
+        global DASHBOARD_MODE
         data = flask_request.get_json()  # type: ignore
         if data and 'mode' in data:
-            UI_DISPLAY_MODE = data['mode']
-            with WEB_UI_DATA_LOCK:  # type: ignore
-                WEB_UI_DATA['ui_mode'] = UI_DISPLAY_MODE
-            return jsonify({'success': True, 'mode': UI_DISPLAY_MODE})  # type: ignore
+            DASHBOARD_MODE = data['mode']
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                WEB_DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
+            return jsonify({'success': True, 'mode': DASHBOARD_MODE})  # type: ignore
         return jsonify({'success': False}), 400  # type: ignore
 
     @app.route('/api/trigger-check', methods=['POST'])
@@ -698,15 +698,15 @@ def create_web_app():
         target = data.get('target')
         MANUAL_CHECK_TRIGGERED.set()  # type: ignore
         msg = f"Manual check triggered for {target}" if target else "Manual check triggered"
-        add_web_activity(msg)
+        add_web_dashboard_activity(msg)
         return jsonify({'success': True, 'message': 'Check triggered'})  # type: ignore
 
     @app.route('/api/targets', methods=['GET', 'POST'])  # type: ignore[misc]
     def api_targets():  # type: ignore[return]
-        global WEB_UI_DATA
+        global WEB_DASHBOARD_DATA
         if flask_request.method == 'GET':  # type: ignore
-            with WEB_UI_DATA_LOCK:  # type: ignore
-                return jsonify({'targets': WEB_UI_DATA.get('targets', {})})  # type: ignore
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                return jsonify({'targets': WEB_DASHBOARD_DATA.get('targets', {})})  # type: ignore
         elif flask_request.method == 'POST':  # type: ignore
             data = flask_request.get_json()  # type: ignore
             if not data or 'username' not in data:
@@ -716,10 +716,10 @@ def create_web_app():
                 return jsonify({'success': False, 'error': 'Username required'}), 400  # type: ignore
             start_now = data.get('start', False)
 
-            with WEB_UI_DATA_LOCK:  # type: ignore
-                if username in WEB_UI_DATA['targets']:
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                if username in WEB_DASHBOARD_DATA['targets']:
                     return jsonify({'success': False, 'error': 'Target already exists'}), 400  # type: ignore
-                WEB_UI_DATA['targets'][username] = {
+                WEB_DASHBOARD_DATA['targets'][username] = {
                     'followers': None,
                     'following': None,
                     'posts': None,
@@ -728,26 +728,26 @@ def create_web_app():
                     'last_checked': None
                 }
 
-            add_web_activity(f"Added target: {username}")
+            add_web_dashboard_activity(f"Added target: {username}")
 
             # Start monitoring if requested and in standalone mode
-            if start_now and WEB_UI_STANDALONE_MODE:
+            if start_now and WEB_DASHBOARD_STANDALONE_MODE:
                 start_monitoring_for_target(username)
 
             return jsonify({'success': True, 'username': username})  # type: ignore
 
     @app.route('/api/targets/<username>', methods=['DELETE'])
     def api_delete_target(username):  # type: ignore
-        global WEB_UI_DATA
+        global WEB_DASHBOARD_DATA
         username = username.strip().lower()
 
         # Stop monitoring if running
         stop_monitoring_for_target(username)
 
-        with WEB_UI_DATA_LOCK:  # type: ignore
-            if username in WEB_UI_DATA['targets']:
-                del WEB_UI_DATA['targets'][username]
-                add_web_activity(f"Removed target: {username}")
+        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+            if username in WEB_DASHBOARD_DATA['targets']:
+                del WEB_DASHBOARD_DATA['targets'][username]
+                add_web_dashboard_activity(f"Removed target: {username}")
                 return jsonify({'success': True})  # type: ignore
             return jsonify({'success': False, 'error': 'Target not found'}), 404  # type: ignore
 
@@ -756,19 +756,19 @@ def create_web_app():
         data = flask_request.get_json() or {}  # type: ignore
         target = data.get('target')
 
-        if WEB_UI_STANDALONE_MODE:
+        if WEB_DASHBOARD_STANDALONE_MODE:
             if target:
                 success = start_monitoring_for_target(target)
             else:
                 # Start all targets
-                with WEB_UI_DATA_LOCK:  # type: ignore
-                    targets_to_start = list(WEB_UI_DATA['targets'].keys())
+                with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                    targets_to_start = list(WEB_DASHBOARD_DATA['targets'].keys())
                 for t in targets_to_start:
                     start_monitoring_for_target(t)
                 success = True
 
-            with WEB_UI_DATA_LOCK:  # type: ignore
-                WEB_UI_DATA['is_monitoring'] = True
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                WEB_DASHBOARD_DATA['is_monitoring'] = True
             return jsonify({'success': success})  # type: ignore
         else:
             # Not in standalone mode - monitoring controlled by CLI
@@ -779,20 +779,20 @@ def create_web_app():
         data = flask_request.get_json() or {}  # type: ignore[union-attr]
         target = data.get('target')
 
-        if WEB_UI_STANDALONE_MODE:
+        if WEB_DASHBOARD_STANDALONE_MODE:
             if target:
                 stop_monitoring_for_target(target)
             else:
                 # Stop all targets
-                with WEB_UI_DATA_LOCK:  # type: ignore[union-attr]
-                    targets_to_stop = list(WEB_UI_DATA['targets'].keys())
+                with WEB_DASHBOARD_DATA_LOCK:  # type: ignore[union-attr]
+                    targets_to_stop = list(WEB_DASHBOARD_DATA['targets'].keys())
                 for t in targets_to_stop:
                     stop_monitoring_for_target(t)
 
-            with WEB_UI_DATA_LOCK:  # type: ignore
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                 # Check if any monitors still running
-                active = any(t.is_alive() for t in WEB_UI_MONITOR_THREADS.values())
-                WEB_UI_DATA['is_monitoring'] = active
+                active = any(t.is_alive() for t in WEB_DASHBOARD_MONITOR_THREADS.values())
+                WEB_DASHBOARD_DATA['is_monitoring'] = active
             return jsonify({'success': True})  # type: ignore
         else:
             return jsonify({'success': False, 'error': 'Monitoring controlled by CLI in this mode'})  # type: ignore
@@ -843,7 +843,7 @@ def create_web_app():
             if 'debug_mode' in data:
                 DEBUG_MODE = bool(data['debug_mode'])
 
-            add_web_activity("Settings updated from web UI")
+            add_web_dashboard_activity("Settings updated from web dashboard")
             return jsonify({'success': True})  # type: ignore
 
     @app.route('/api/session', methods=['GET', 'POST'])  # type: ignore[misc]
@@ -851,8 +851,8 @@ def create_web_app():
         global SESSION_USERNAME, SKIP_SESSION
 
         if flask_request.method == 'GET':  # type: ignore
-            with WEB_UI_DATA_LOCK:  # type: ignore
-                return jsonify(WEB_UI_DATA.get('session', {}))  # type: ignore
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                return jsonify(WEB_DASHBOARD_DATA.get('session', {}))  # type: ignore
         elif flask_request.method == 'POST':  # type: ignore
             data = flask_request.get_json()  # type: ignore
             if not data:
@@ -864,9 +864,9 @@ def create_web_app():
             if username:
                 SESSION_USERNAME = username
                 SKIP_SESSION = False
-                with WEB_UI_DATA_LOCK:  # type: ignore
-                    WEB_UI_DATA['session'] = {'username': username, 'active': False, 'method': method}
-                add_web_activity(f"Session configured for: {username}")
+                with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                    WEB_DASHBOARD_DATA['session'] = {'username': username, 'active': False, 'method': method}
+                add_web_dashboard_activity(f"Session configured for: {username}")
                 return jsonify({'success': True, 'message': f'Session set for {username}'})  # type: ignore
             return jsonify({'success': False, 'error': 'Username required'}), 400  # type: ignore
 
@@ -878,40 +878,40 @@ def create_web_app():
         try:
             L = Instaloader()
             L.load_session_from_file(SESSION_USERNAME)
-            with WEB_UI_DATA_LOCK:  # type: ignore
-                WEB_UI_DATA['session']['active'] = True
-            add_web_activity(f"Session test successful: {SESSION_USERNAME}")
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                WEB_DASHBOARD_DATA['session']['active'] = True
+            add_web_dashboard_activity(f"Session test successful: {SESSION_USERNAME}")
             return jsonify({'success': True, 'username': SESSION_USERNAME})  # type: ignore
         except Exception as e:
-            with WEB_UI_DATA_LOCK:  # type: ignore
-                WEB_UI_DATA['session']['active'] = False
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                WEB_DASHBOARD_DATA['session']['active'] = False
             return jsonify({'success': False, 'error': str(e)})  # type: ignore
 
     @app.route('/api/activity/clear', methods=['POST'])
     def api_clear_activity():  # type: ignore
-        with WEB_UI_DATA_LOCK:  # type: ignore
-            WEB_UI_DATA['activities'] = []
+        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+            WEB_DASHBOARD_DATA['activities'] = []
         return jsonify({'success': True})  # type: ignore
 
     return app
 
 
+# Starts monitoring for a specific target in standalone mode
 def start_monitoring_for_target(username):
-    """Start monitoring for a specific target in standalone mode."""
-    global WEB_UI_MONITOR_THREADS, WEB_UI_STOP_EVENTS
+    global WEB_DASHBOARD_MONITOR_THREADS, WEB_DASHBOARD_STOP_EVENTS
 
-    if username in WEB_UI_MONITOR_THREADS and WEB_UI_MONITOR_THREADS[username].is_alive():
+    if username in WEB_DASHBOARD_MONITOR_THREADS and WEB_DASHBOARD_MONITOR_THREADS[username].is_alive():
         return False  # Already monitoring
 
     stop_event = threading.Event()
-    WEB_UI_STOP_EVENTS[username] = stop_event
+    WEB_DASHBOARD_STOP_EVENTS[username] = stop_event
 
     def _monitor_runner(user, stop_evt):
         try:
-            add_web_activity(f"Started monitoring: {user}")
-            with WEB_UI_DATA_LOCK:  # type: ignore[union-attr]
-                if user in WEB_UI_DATA['targets']:
-                    WEB_UI_DATA['targets'][user]['status'] = 'Starting'
+            add_web_dashboard_activity(f"Started monitoring: {user}")
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore[union-attr]
+                if user in WEB_DASHBOARD_DATA['targets']:
+                    WEB_DASHBOARD_DATA['targets'][user]['status'] = 'Starting'
 
             # Run the actual monitoring (with stop event check)
             instagram_monitor_user(
@@ -926,72 +926,72 @@ def start_monitoring_for_target(username):
                 stop_event=stop_evt
             )
         except Exception as e:
-            add_web_activity(f"Error monitoring {user}: {str(e)}")
-            with WEB_UI_DATA_LOCK:  # type: ignore
-                if user in WEB_UI_DATA['targets']:
-                    WEB_UI_DATA['targets'][user]['status'] = 'Error'
+            add_web_dashboard_activity(f"Error monitoring {user}: {str(e)}")
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                if user in WEB_DASHBOARD_DATA['targets']:
+                    WEB_DASHBOARD_DATA['targets'][user]['status'] = 'Error'
 
     t = threading.Thread(target=_monitor_runner, args=(username, stop_event), daemon=True, name=f"monitor:{username}")
-    WEB_UI_MONITOR_THREADS[username] = t
+    WEB_DASHBOARD_MONITOR_THREADS[username] = t
     t.start()
     return True
 
 
+# Stops monitoring for a specific target
 def stop_monitoring_for_target(username):
-    """Stop monitoring for a specific target."""
-    global WEB_UI_STOP_EVENTS, WEB_UI_MONITOR_THREADS
+    global WEB_DASHBOARD_STOP_EVENTS, WEB_DASHBOARD_MONITOR_THREADS
 
-    if username in WEB_UI_STOP_EVENTS:
-        WEB_UI_STOP_EVENTS[username].set()
-        add_web_activity(f"Stopping monitoring: {username}")
-        with WEB_UI_DATA_LOCK:  # type: ignore
-            if username in WEB_UI_DATA['targets']:
-                WEB_UI_DATA['targets'][username]['status'] = 'Stopped'
+    if username in WEB_DASHBOARD_STOP_EVENTS:
+        WEB_DASHBOARD_STOP_EVENTS[username].set()
+        add_web_dashboard_activity(f"Stopping monitoring: {username}")
+        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+            if username in WEB_DASHBOARD_DATA['targets']:
+                WEB_DASHBOARD_DATA['targets'][username]['status'] = 'Stopped'
 
     # Clean up thread reference
-    if username in WEB_UI_MONITOR_THREADS:
-        del WEB_UI_MONITOR_THREADS[username]
-    if username in WEB_UI_STOP_EVENTS:
-        del WEB_UI_STOP_EVENTS[username]
+    if username in WEB_DASHBOARD_MONITOR_THREADS:
+        del WEB_DASHBOARD_MONITOR_THREADS[username]
+    if username in WEB_DASHBOARD_STOP_EVENTS:
+        del WEB_DASHBOARD_STOP_EVENTS[username]
 
 
-def start_web_server():
-    """Start the Flask web server in a background thread."""
-    global WEB_UI_APP, WEB_UI_THREAD
+# Starts the Flask web server in a background thread
+def start_web_dashboard_server():
+    global WEB_DASHBOARD_APP, WEB_DASHBOARD_THREAD
 
     if not FLASK_AVAILABLE:
         return False
 
-    if not WEB_UI_ENABLED:
+    if not WEB_DASHBOARD_ENABLED:
         return False
 
-    WEB_UI_APP = create_web_app()
-    if WEB_UI_APP is None:
+    WEB_DASHBOARD_APP = create_web_dashboard_app()
+    if WEB_DASHBOARD_APP is None:
         return False
 
     def run_server():
-        assert WEB_UI_APP is not None  # Type guard
-        WEB_UI_APP.run(host=WEB_UI_HOST, port=WEB_UI_PORT, debug=False, use_reloader=False, threaded=True)
+        assert WEB_DASHBOARD_APP is not None  # Type guard
+        WEB_DASHBOARD_APP.run(host=WEB_DASHBOARD_HOST, port=WEB_DASHBOARD_PORT, debug=False, use_reloader=False, threaded=True)
 
-    WEB_UI_THREAD = threading.Thread(target=run_server, daemon=True, name="web_ui_server")
-    WEB_UI_THREAD.start()
+    WEB_DASHBOARD_THREAD = threading.Thread(target=run_server, daemon=True, name="web_ui_server")
+    WEB_DASHBOARD_THREAD.start()
 
-    print(f"* Web UI available at: http://{WEB_UI_HOST}:{WEB_UI_PORT}/")
+    print(f"* Web Dashboard available at: http://{WEB_DASHBOARD_HOST}:{WEB_DASHBOARD_PORT}/")
     return True
 
 
-def run_standalone_webui(args):
-    """Run the web UI in standalone mode - no CLI targets needed."""
-    global WEB_UI_STANDALONE_MODE, WEB_UI_ENABLED, WEB_UI_PORT, WEB_UI_HOST
+# Runs the web dashboard in standalone mode - no CLI targets needed
+def run_standalone_web_dashboard(args):
+    global WEB_DASHBOARD_STANDALONE_MODE, WEB_DASHBOARD_ENABLED, WEB_DASHBOARD_PORT, WEB_DASHBOARD_HOST
     global SESSION_USERNAME, DEBUG_MODE, INSTA_CHECK_INTERVAL
     global RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
 
-    WEB_UI_STANDALONE_MODE = True
-    WEB_UI_ENABLED = True
+    WEB_DASHBOARD_STANDALONE_MODE = True
+    WEB_DASHBOARD_ENABLED = True
 
     # Apply any CLI overrides
     if args.web_port:
-        WEB_UI_PORT = args.web_port
+        WEB_DASHBOARD_PORT = args.web_port
 
     if args.session_username:
         SESSION_USERNAME = args.session_username
@@ -1009,74 +1009,102 @@ def run_standalone_webui(args):
         RANDOM_SLEEP_DIFF_HIGH = args.check_interval_random_diff_high
 
     if not FLASK_AVAILABLE:
-        print("* Error: Flask is required for web UI. Install with: pip install flask")
+        print("* Error: Flask is required for web dashboard. Install with: pip install flask")
         sys.exit(1)
 
-    print(f"Instagram Monitor v{VERSION} - Web UI Control Panel\n")
+    print(f"Instagram Monitor v{VERSION} - Web Dashboard Control Panel\n")
     print("=" * 50)
-    print("Starting standalone web UI mode...")
-    print(f"* Web UI Port:\t\t\t\t{WEB_UI_PORT}")
+    print("Starting standalone web dashboard mode...")
+    print(f"* Web Dashboard Port:\t\t\t\t{WEB_DASHBOARD_PORT}")
     print(f"* Session Username:\t\t\t{SESSION_USERNAME or 'Not configured'}")
     print(f"* Check Interval:\t\t\t{INSTA_CHECK_INTERVAL}s")
     print(f"* Debug Mode:\t\t\t\t{DEBUG_MODE}")
     print("=" * 50)
 
-    # Initialize web UI data
-    WEB_UI_DATA['start_time'] = datetime.now()
-    WEB_UI_DATA['config'] = {
+    # Initialize web dashboard data
+    WEB_DASHBOARD_DATA['start_time'] = datetime.now()
+    WEB_DASHBOARD_DATA['config'] = {
         'check_interval': INSTA_CHECK_INTERVAL,
         'random_low': RANDOM_SLEEP_DIFF_LOW,
         'random_high': RANDOM_SLEEP_DIFF_HIGH
     }
     if SESSION_USERNAME:
-        WEB_UI_DATA['session'] = {'username': SESSION_USERNAME, 'active': False}
+        WEB_DASHBOARD_DATA['session'] = {'username': SESSION_USERNAME, 'active': False}
 
     # Create and start the Flask app in the main thread (blocking)
-    app = create_web_app()
+    app = create_web_dashboard_app()
     if app is None:
         print("* Error: Failed to create web application")
         sys.exit(1)
 
-    print(f"\n🚀 Web UI running at: http://{WEB_UI_HOST}:{WEB_UI_PORT}/")
+    print(f"\n🚀 Web Dashboard running at: http://{WEB_DASHBOARD_HOST}:{WEB_DASHBOARD_PORT}/")
     print("   Open this URL in your browser to control Instagram Monitor")
     print("   Press Ctrl+C to stop\n")
 
-    add_web_activity("Web UI control panel started")
+    add_web_dashboard_activity("Web Dashboard control panel started")
 
     try:
         # Run Flask in the main thread (blocking)
-        app.run(host=WEB_UI_HOST, port=WEB_UI_PORT, debug=False, use_reloader=False, threaded=True)
+        app.run(host=WEB_DASHBOARD_HOST, port=WEB_DASHBOARD_PORT, debug=False, use_reloader=False, threaded=True)
     except KeyboardInterrupt:
-        print("\n* Shutting down web UI...")
+        print("\n* Shutting down web dashboard...")
         # Stop all monitoring threads
-        for username in list(WEB_UI_STOP_EVENTS.keys()):
+        for username in list(WEB_DASHBOARD_STOP_EVENTS.keys()):
             stop_monitoring_for_target(username)
         print("* Goodbye!")
 
 
-def update_web_ui_data(targets=None, config=None, check_count=None, last_check=None, next_check=None):
-    """Update the web UI data store."""
-    with WEB_UI_DATA_LOCK:  # type: ignore
+# Updates the web dashboard data store
+def update_web_dashboard_data(targets=None, config=None, check_count=None, last_check=None, next_check=None):
+    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
         if targets is not None:
-            WEB_UI_DATA['targets'] = targets
+            WEB_DASHBOARD_DATA['targets'] = targets
         if config is not None:
-            WEB_UI_DATA['config'] = config
+            WEB_DASHBOARD_DATA['config'] = config
         if check_count is not None:
-            WEB_UI_DATA['check_count'] = check_count
+            WEB_DASHBOARD_DATA['check_count'] = check_count
         if last_check is not None:
-            WEB_UI_DATA['last_check'] = last_check
+            WEB_DASHBOARD_DATA['last_check'] = last_check
         if next_check is not None:
-            WEB_UI_DATA['next_check'] = next_check
-        WEB_UI_DATA['ui_mode'] = UI_DISPLAY_MODE
+            WEB_DASHBOARD_DATA['next_check'] = next_check
+        WEB_DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
 
 
-def add_web_activity(message):
-    """Add an activity to the web UI activity feed."""
-    with WEB_UI_DATA_LOCK:  # type: ignore
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        WEB_UI_DATA['activities'].insert(0, {'time': timestamp, 'message': message})
-        # Keep only last 100 activities
-        WEB_UI_DATA['activities'] = WEB_UI_DATA['activities'][:100]
+# Logs an activity to both Dashboard and Web Dashboard activity feeds
+def log_activity(message, user=None):
+    global DASHBOARD_DATA, WEB_DASHBOARD_DATA
+
+    timestamp_full = datetime.now()
+    timestamp_str = timestamp_full.strftime("%H:%M:%S")
+
+    # Format message with user if provided
+    display_message = f"[{user}] {message}" if user else message
+
+    activity_item_rich = {'time': timestamp_str, 'message': display_message, 'dt': timestamp_full}
+    activity_item_web = {'time': timestamp_str, 'message': display_message}
+
+    # Update Dashboard data
+    if 'activities' not in DASHBOARD_DATA:
+        DASHBOARD_DATA['activities'] = []
+    DASHBOARD_DATA['activities'].insert(0, activity_item_rich)
+    DASHBOARD_DATA['activities'] = DASHBOARD_DATA['activities'][:50]  # Last 50 for Rich
+
+    # Update Web Dashboard data (thread-safe)
+    if WEB_DASHBOARD_DATA_LOCK:
+        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore[union-attr]
+            if 'activities' not in WEB_DASHBOARD_DATA:
+                WEB_DASHBOARD_DATA['activities'] = []
+            WEB_DASHBOARD_DATA['activities'].insert(0, activity_item_web)
+            WEB_DASHBOARD_DATA['activities'] = WEB_DASHBOARD_DATA['activities'][:100]  # Last 100 for Web
+
+    # If Dashboard is live, trigger an update
+    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+        update_dashboard()
+
+
+# Legacy wrapper for add_web_dashboard_activity
+def add_web_dashboard_activity(message):
+    log_activity(message)
 
 
 def _thread_key() -> int:
@@ -1121,9 +1149,10 @@ class Logger(object):
                 if tid not in LAST_OUTPUT_BY_THREAD:
                     LAST_OUTPUT_BY_THREAD[tid] = []
                 LAST_OUTPUT_BY_THREAD[tid].append(message)
-            self.terminal.write(message)
+            if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                self.terminal.write(message)
+                self.terminal.flush()
             self.logfile.write(message)
-            self.terminal.flush()
             self.logfile.flush()
 
     def flush(self):
@@ -1134,9 +1163,13 @@ class Logger(object):
 def signal_handler(sig, frame):
     if getattr(_thread_local, 'pbar', None) is not None:
         close_pbar()
+
+    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+        stop_dashboard()
+
     sys.stdout = stdout_bck
     print('\n* You pressed Ctrl+C, tool is terminated.')
-    sys.exit(0)
+    os._exit(0)
 
 
 # Checks internet connectivity
@@ -1483,7 +1516,6 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
 
 # Debug print helper - only prints if DEBUG_MODE is enabled
 def debug_print(message):
-    """Print debug information only if DEBUG_MODE is enabled."""
     if DEBUG_MODE:
         timestamp = now_local_naive().strftime("%H:%M:%S.%f")[:-3]
         print(f"[DEBUG {timestamp}] {message}")
@@ -1582,6 +1614,8 @@ def get_cur_ts(ts_str=""):
 
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str=""):
+    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+        return
     print(get_cur_ts(str(ts_str)))
     print("─" * HORIZONTAL_LINE)
 
@@ -1896,6 +1930,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 print(f"* User {user} does not have profile picture set, empty template saved to '{profile_pic_file}'{new_line}")
             else:
                 print(f"* User {user} profile picture saved to '{profile_pic_file}'")
+                log_activity("Profile picture saved", user=user)
                 print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago){new_line}")
 
             try:
@@ -1942,6 +1977,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 # User has removed profile picture
                 if is_empty_profile_pic_tmp and not is_empty_profile_pic:
                     print(f"* User {user} has removed profile picture added on {profile_pic_mdate} ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)}){new_line}")
+                    log_activity("Profile picture removed", user=user)
                     csv_text = "Profile Picture Removed"
 
                     if send_email_notification:
@@ -1953,6 +1989,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 # User has set profile picture
                 elif is_empty_profile_pic and not is_empty_profile_pic_tmp:
                     print(f"* User {user} has set profile picture !")
+                    log_activity("Profile picture set", user=user)
                     print(f"* User profile picture saved to '{profile_pic_file}'")
                     print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago){new_line}")
                     csv_text = "Profile Picture Created"
@@ -1967,6 +2004,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 # User has changed profile picture
                 elif not is_empty_profile_pic_tmp and not is_empty_profile_pic:
                     print(f"* User {user} has changed profile picture ! (previous one added on {profile_pic_mdate} - {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)")
+                    log_activity("Profile picture changed", user=user)
                     print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago){new_line}")
                     csv_text = "Profile Picture Changed"
 
@@ -2012,18 +2050,25 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                             send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
                 if func_ver == 2:
-                    print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-                    print_cur_ts("Timestamp:\t\t\t\t")
+                    if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                        print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                        print_cur_ts("Timestamp:\t\t\t\t")
 
             else:
                 if func_ver == 1:
                     if is_empty_profile_pic:
-                        print(f"* User {user} does not have profile picture set")
+                        if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                            print(f"* User {user} does not have profile picture set")
+                        else:
+                            log_activity("No profile picture set", user=user)
                     else:
-                        print(f"* Profile picture '{profile_pic_file}' already exists")
-                        print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)")
+                        if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                            print(f"* Profile picture '{profile_pic_file}' already exists")
+                            print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)")
+                        else:
+                            log_activity(f"Profile picture already exists (added {get_short_date_from_ts(profile_pic_mdate_dt, True)})", user=user)
                         try:
-                            if imgcat_exe:
+                            if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
                                 subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file}", shell=True, check=True)
                         except Exception:
                             pass
@@ -2034,10 +2079,12 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
         else:
             print(f"* Error while checking if the profile picture has changed !")
             if func_ver == 2:
-                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
-                print_cur_ts("Timestamp:\t\t\t\t")
+                if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                    print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                    print_cur_ts("Timestamp:\t\t\t\t")
         if func_ver == 1:
-            print_cur_ts("\nTimestamp:\t\t\t\t")
+            if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                print_cur_ts("\nTimestamp:\t\t\t\t")
 
 
 # Return the most recent post and/or reel for the user (GraphQL helper when logged in)
@@ -2604,60 +2651,93 @@ def load_detailed_followers(filename):
         return None, [], None
 
 
-# UI input handler thread function - handles mode toggle and debug commands
-def ui_input_handler():
-    # This toggles the UI mode for both the Rich terminal UI and the Web-based dashboard
-    global MANUAL_CHECK_TRIGGERED, UI_DISPLAY_MODE
+# Dashboard input handler thread function - handles mode toggle and debug commands
+def dashboard_input_handler():
+    # This toggles the dashboard mode for both the Terminal Dashboard and the Web-based dashboard
+    global MANUAL_CHECK_TRIGGERED, DASHBOARD_MODE
 
-    while True:
-        try:
-            user_input = input().strip().lower()
+    import sys
+    import tty
+    import termios
 
-            # Mode toggle shortcuts: 'm', 'mode'
-            if user_input in ('m', 'mode'):
-                UI_DISPLAY_MODE = 'config' if UI_DISPLAY_MODE == 'user' else 'user'
-                # Update UI_DATA with new mode
-                global UI_DATA
-                UI_DATA['ui_mode'] = UI_DISPLAY_MODE
-                # Update web UI mode if enabled
-                if WEB_UI_ENABLED:
-                    WEB_UI_DATA['ui_mode'] = UI_DISPLAY_MODE
-                # Update Rich UI if enabled
-                if RICH_UI_ENABLED and RICH_AVAILABLE:
-                    update_rich_ui()
-                # Don't print in UI mode - the UI will update automatically
-                if not RICH_UI_ENABLED or not RICH_AVAILABLE:
-                    print(f"* UI mode: {UI_DISPLAY_MODE}")
+    # Save terminal settings
+    if sys.stdin.isatty():
+        old_settings = termios.tcgetattr(sys.stdin)
+    else:
+        old_settings = None
 
-            # Debug commands (only work in debug mode)
-            elif user_input == 'check' and DEBUG_MODE:
-                MANUAL_CHECK_TRIGGERED.set()  # type: ignore
-                print("* Manual check triggered!")
-            elif user_input == 'status' and DEBUG_MODE:
-                print_status_summary()
-            elif user_input == 'help':
-                print("\nCommands:")
-                print("  m, mode  - Toggle UI view (user/config)")
-                if DEBUG_MODE:
-                    print("  check    - Trigger immediate check")
-                    print("  status   - Show status summary")
-                print("  help     - Show this help\n")
-        except EOFError:
-            break
-        except Exception:
-            pass
+    try:
+        # Set terminal to raw mode for single-character input (no echo, no Enter needed)
+        if old_settings:
+            tty.setcbreak(sys.stdin.fileno())
+
+        while True:
+            try:
+                # Read single character without requiring Enter
+                char = sys.stdin.read(1).lower()
+
+                # Exit command: 'q' or 'Q'
+                if char in ('q', 'Q'):
+                    log_activity("User requested exit (pressed 'q')")
+                    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+                        stop_dashboard()
+                    # Use os._exit to immediately kill all threads
+                    os._exit(0)
+
+                # Mode toggle: just 'm' (no Enter needed)
+                elif char == 'm':
+                    DASHBOARD_MODE = 'config' if DASHBOARD_MODE == 'user' else 'user'
+                    # Update DASHBOARD_DATA with new mode
+                    global DASHBOARD_DATA
+                    DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
+                    log_activity(f"Dashboard Mode changed to: {DASHBOARD_MODE.upper()}")
+                    # Update web dashboard mode if enabled
+                    if WEB_DASHBOARD_ENABLED:
+                        WEB_DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
+                    # Update Dashboard if enabled
+                    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+                        update_dashboard()
+                    # Don't print in dashboard mode - the dashboard will update automatically
+                    if not DASHBOARD_ENABLED or not RICH_AVAILABLE:
+                        print(f"* dashboard mode: {DASHBOARD_MODE}")
+
+                # Debug commands (only work in debug mode)
+                elif char == 'c' and DEBUG_MODE:
+                    MANUAL_CHECK_TRIGGERED.set()  # type: ignore
+                    log_activity("Manual check triggered!")
+                elif char == 's' and DEBUG_MODE:
+                    print_status_summary()
+                elif char == 'h':
+                    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+                        log_activity("Commands: m=toggle mode | q=exit" + (" | c=check | s=status" if DEBUG_MODE else ""))
+                    else:
+                        print("\nCommands:")
+                        print("  m  - Toggle dashboard view (user/config)")
+                        print("  q  - Exit the tool")
+                        if DEBUG_MODE:
+                            print("  c  - Trigger immediate check")
+                            print("  s  - Show status summary")
+                        print("  h  - Show this help\n")
+            except (EOFError, OSError):
+                break
+            except Exception:
+                pass
+    finally:
+        # Restore terminal settings
+        if old_settings:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
 
-# Start UI input handler thread
-def start_ui_input_handler():
+# Start Dashboard input handler thread
+def start_dashboard_input_handler():
     global DEBUG_INPUT_THREAD
 
-    # Start if UI is enabled OR debug mode is on
-    if DEBUG_INPUT_THREAD is None and (RICH_UI_ENABLED or DEBUG_MODE):
-        DEBUG_INPUT_THREAD = threading.Thread(target=ui_input_handler, daemon=True, name="ui_input_handler")
+    # Start if Dashboard is enabled OR debug mode is on
+    if DEBUG_INPUT_THREAD is None and (DASHBOARD_ENABLED or DEBUG_MODE):
+        DEBUG_INPUT_THREAD = threading.Thread(target=dashboard_input_handler, daemon=True, name="dashboard_input_handler")
         DEBUG_INPUT_THREAD.start()
         if DEBUG_MODE:
-            print("* Commands: 'm' toggle UI, 'check' manual check, 'status', 'help'")
+            print("* Commands: 'm' toggle dashboard, 'check' manual check, 'status', 'help'")
 
 
 # Print status summary (for debug mode)
@@ -2668,7 +2748,7 @@ def print_status_summary():
     print(f"  Next check: {get_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else 'Calculating...'}")
     print(f"  Total checks: {CHECK_COUNT}")
     print(f"  Debug mode: {DEBUG_MODE}")
-    print(f"  UI mode: {UI_DISPLAY_MODE}")
+    print(f"  dashboard mode: {DASHBOARD_MODE}")
     print("─" * HORIZONTAL_LINE)
 
 
@@ -2683,288 +2763,381 @@ def update_check_times(last_time=None, next_time=None):
     if next_time is not None:
         NEXT_CHECK_TIME = next_time
 
-    # Update web UI data
-    if WEB_UI_ENABLED:
+    # Update web dashboard data
+    if WEB_DASHBOARD_ENABLED:
         last_str = get_short_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else None
         next_str = get_short_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else None
-        update_web_ui_data(check_count=CHECK_COUNT, last_check=last_str, next_check=next_str)
+        update_web_dashboard_data(check_count=CHECK_COUNT, last_check=last_str, next_check=next_str)
 
 
-# Generate Rich UI layout for user mode (simple/minimal)
-def generate_user_ui(target_data):
+# Generate shared Targets table for all dashboard modes
+def generate_dashboard_targets_table(target_data):
     if not RICH_AVAILABLE:
         return None
 
-    # Type guard: Rich is available at this point
+    # Type guard: Rich components are available
     assert Table is not None
     assert box is not None
     assert Text is not None
-    assert Panel is not None
-    assert Layout is not None
 
-    table = Table(title="Instagram Monitor", box=box.ROUNDED, show_header=True, header_style="bold cyan")
-    table.add_column("Target", style="green", width=20)
-    table.add_column("Followers", justify="right", width=12)
-    table.add_column("Following", justify="right", width=12)
-    table.add_column("Posts", justify="right", width=10)
-    table.add_column("Status", width=15)
+    table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan")
+    table.add_column("Target", style="green", width=18)
+    table.add_column("Vis.", width=5) # Visibility: PUB/PRI
+    table.add_column("Followers", justify="right", width=10)
+    table.add_column("Following", justify="right", width=10)
+    table.add_column("Posts", justify="right", width=7)
+    table.add_column("Reels", justify="right", width=7)
+    table.add_column("Story", width=6)
+    table.add_column("Status", width=12)
 
     for target, data in target_data.items():
-        status_style = "green" if data.get('status') == 'OK' else "yellow"
+        status_style = "green" if data.get('status') == 'OK' else "yellow" if data.get('status') == 'Checking' else "blue"
+        visibility = "PRI" if data.get('is_private') else "PUB"
+        story_icon = "✨ Yes" if data.get('has_story') else "  -"
         table.add_row(
             target,
-            str(data.get('followers', '-')),
-            str(data.get('following', '-')),
-            str(data.get('posts', '-')),
-            Text(data.get('status', 'Unknown'), style=status_style)
-        )
-
-    # Timing info panel
-    timing_text = Text()
-    if LAST_CHECK_TIME:
-        timing_text.append(f"Last check: {get_short_date_from_ts(LAST_CHECK_TIME)}\n", style="dim")
-    if NEXT_CHECK_TIME:
-        timing_text.append(f"Next check: {get_short_date_from_ts(NEXT_CHECK_TIME)}\n", style="dim")
-    timing_text.append(f"Total checks: {CHECK_COUNT}", style="dim")
-
-    timing_panel = Panel(timing_text, title="Timing", box=box.ROUNDED, border_style="blue")
-
-    # Mode toggle button - visual button style
-    mode_btn_text = Text()
-    mode_btn_text.append("  [ ", style="dim")  # type: ignore[arg-type]
-    mode_btn_text.append("USER", style="bold green reverse")
-    mode_btn_text.append(" | ", style="dim")
-    mode_btn_text.append("CONFIG", style="dim")
-    mode_btn_text.append(" ]  ", style="dim")
-    mode_btn_text.append("\n\nType ", style="dim")
-    mode_btn_text.append("m", style="bold cyan")
-    mode_btn_text.append("+Enter to switch", style="dim")
-
-    mode_panel = Panel(mode_btn_text, title="View Mode", box=box.ROUNDED, border_style="cyan", padding=(0, 1))
-
-    layout = Layout()
-    layout.split_column(
-        Layout(table, name="main", ratio=3),
-        Layout(name="bottom", size=6)
-    )
-    layout["bottom"].split_row(
-        Layout(timing_panel, name="timing", ratio=2),
-        Layout(mode_panel, name="mode", ratio=1)
-    )
-
-    return layout
-
-
-# Generate Rich UI layout for config mode (detailed/complex)
-def generate_config_ui(target_data, config_data):
-    if not RICH_AVAILABLE:
-        return None
-
-    # Type guard: Rich is available at this point
-    assert Table is not None
-    assert box is not None
-    assert Text is not None
-    assert Panel is not None
-    assert Layout is not None
-
-    # Main targets table
-    targets_table = Table(title="Monitored Targets", box=box.ROUNDED, show_header=True, header_style="bold cyan")
-    targets_table.add_column("Target", style="green")
-    targets_table.add_column("Followers", justify="right")
-    targets_table.add_column("Following", justify="right")
-    targets_table.add_column("Posts", justify="right")
-    targets_table.add_column("Reels", justify="right")
-    targets_table.add_column("Stories", justify="center")
-    targets_table.add_column("Bio Changed", justify="center")
-    targets_table.add_column("Status")
-
-    for target, data in target_data.items():
-        status_style = "green" if data.get('status') == 'OK' else "yellow" if data.get('status') == 'Checking' else "red"
-        story_indicator = "✓" if data.get('has_story') else "✗"
-        bio_indicator = "✓" if data.get('bio_changed') else "—"
-
-        targets_table.add_row(
-            target,
+            visibility,
             str(data.get('followers', '-')),
             str(data.get('following', '-')),
             str(data.get('posts', '-')),
             str(data.get('reels', '-')),
-            Text(story_indicator, style="green" if data.get('has_story') else "dim"),
-            Text(bio_indicator, style="yellow" if data.get('bio_changed') else "dim"),
+            story_icon,
             Text(data.get('status', 'Unknown'), style=status_style)
         )
+    return table
 
-    # Configuration table
-    config_table = Table(title="Configuration", box=box.ROUNDED, show_header=True, header_style="bold magenta")
-    config_table.add_column("Setting", style="cyan", width=30)
-    config_table.add_column("Value", width=50)
 
-    config_items = [
-        ("Check Interval", f"{display_time(config_data.get('check_interval', INSTA_CHECK_INTERVAL))}"),
-        ("Random Diff", f"-{config_data.get('random_low', RANDOM_SLEEP_DIFF_LOW)}s / +{config_data.get('random_high', RANDOM_SLEEP_DIFF_HIGH)}s"),
-        ("Session User", config_data.get('session_user', SESSION_USERNAME or '<anonymous>')),
-        ("Skip Session", str(config_data.get('skip_session', SKIP_SESSION))),
-        ("Skip Followers", str(config_data.get('skip_followers', SKIP_FOLLOWERS))),
-        ("Skip Followings", str(config_data.get('skip_followings', SKIP_FOLLOWINGS))),
-        ("Status Notifications", str(config_data.get('status_notif', STATUS_NOTIFICATION))),
-        ("Follower Notifications", str(config_data.get('follower_notif', FOLLOWERS_NOTIFICATION))),
-        ("Webhook Enabled", str(config_data.get('webhook_enabled', WEBHOOK_ENABLED))),
-        ("Debug Mode", str(config_data.get('debug_mode', DEBUG_MODE))),
-        ("Detailed Logging", str(config_data.get('detailed_logging', DETAILED_FOLLOWER_LOGGING))),
-        ("Human Mode", str(config_data.get('human_mode', BE_HUMAN))),
-    ]
+# Generate Dashboard layout for user mode (simple/minimal)
+def generate_user_dashboard(target_data):
+    if not RICH_AVAILABLE:
+        return None
 
-    for setting, value in config_items:
-        config_table.add_row(setting, value)
+    # Type guard: Rich is available at this point
+    assert Table is not None
+    assert box is not None
+    assert Text is not None
+    assert Panel is not None
+    assert Layout is not None
 
-    # Timing and statistics panel
-    stats_text = Text()
-    stats_text.append("Timing Information\n", style="bold underline")
-    stats_text.append(f"Last check: {get_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else 'Not yet'}\n")
-    stats_text.append(f"Next check: {get_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else 'Calculating...'}\n")
-    stats_text.append(f"Total checks: {CHECK_COUNT}\n\n")
-    stats_text.append("Statistics\n", style="bold underline")
-    stats_text.append(f"Uptime: {calculate_timespan(datetime.now(), config_data.get('start_time', datetime.now())) if config_data.get('start_time') else 'N/A'}\n")
+    # Header with Tool Name and Version
+    header_text = Text.assemble(
+        ("Instagram Monitor ", "bold magenta"),
+        (f"v{VERSION}", "dim"),
+        "  |  ",
+        ("Status: ", "bold"),
+        ("Active", "green"),
+        "  |  ",
+        ("Uptime: ", "bold"),
+        (f"{calculate_timespan(datetime.now(), DASHBOARD_DATA.get('start_time', datetime.now()))}", "cyan")
+    )
+    header_panel = Panel(header_text, style="white on blue", box=box.SQUARE)
 
-    stats_panel = Panel(stats_text, title="Status", box=box.ROUNDED, border_style="green")
+    header_panel = Panel(header_text, style="white on blue", box=box.SQUARE)
 
-    # Mode toggle button - visual button style
+    table = generate_dashboard_targets_table(target_data)
+
+
+    # Activity Log Panel (Latest at bottom)
+    activities = DASHBOARD_DATA.get('activities', [])
+    log_text = Text()
+    if not activities:
+        log_text.append("Waiting for activity...", style="dim italic")
+    else:
+        # Show last 10 activities, latest at bottom
+        for act in reversed(activities[:10]):
+            log_text.append(f"{act['time']} ", style="dim")
+            log_text.append(f"{act['message']}\n")
+
+    log_panel = Panel(log_text, title="Live Activity Log", box=box.ROUNDED, border_style="yellow")
+
+    # Timing info panel
+    timing_text = Text()
+    if LAST_CHECK_TIME:
+        timing_text.append(f"Last: {get_short_date_from_ts(LAST_CHECK_TIME)}\n", style="dim")
+    if NEXT_CHECK_TIME:
+        timing_text.append(f"Next: {get_short_date_from_ts(NEXT_CHECK_TIME)}\n", style="dim")
+    timing_text.append(f"Checks: {CHECK_COUNT}", style="dim")
+
+    timing_panel = Panel(timing_text, title="Timing", box=box.ROUNDED, border_style="blue")
+
+    # Mode toggle button
     mode_btn_text = Text()
-    mode_btn_text.append("  [ ", style="dim")  # type: ignore[arg-type]
-    mode_btn_text.append("USER", style="dim")
-    mode_btn_text.append(" | ", style="dim")
-    mode_btn_text.append("CONFIG", style="bold magenta reverse")
-    mode_btn_text.append(" ]  ", style="dim")
-    mode_btn_text.append("\n\nType ", style="dim")
-    mode_btn_text.append("m", style="bold cyan")
-    mode_btn_text.append("+Enter to switch", style="dim")
+    mode_btn_text.append("USER", style="bold green reverse")
+    mode_btn_text.append(" | CONFIG\n", style="dim")
+    mode_btn_text.append("Press 'm' to toggle\n", style="dim italic")
+    mode_btn_text.append("Press 'q' to exit", style="dim italic red")
 
-    mode_panel = Panel(mode_btn_text, title="View Mode", box=box.ROUNDED, border_style="cyan", padding=(0, 1))
+    mode_panel = Panel(mode_btn_text, title="Mode", box=box.ROUNDED, border_style="cyan")
 
-    # Debug commands panel (if debug mode)
-    debug_panel = None
-    if DEBUG_MODE:
-        debug_text = Text()
-        debug_text.append("Commands:\n", style="bold")
-        debug_text.append("  check  - Trigger check\n", style="dim")
-        debug_text.append("  status - Show status\n", style="dim")
-        debug_panel = Panel(debug_text, title="Debug", box=box.ROUNDED, border_style="yellow")
-
-    # Build layout
     layout = Layout()
     layout.split_column(
-        Layout(targets_table, name="targets", ratio=2),
-        Layout(name="bottom", ratio=1)
+        Layout(header_panel, size=3),
+        Layout(name="main", ratio=1),
+        Layout(log_panel, size=12)
     )
-
-    if DEBUG_MODE and debug_panel is not None:
-        layout["bottom"].split_row(
-            Layout(config_table, name="config", ratio=2),
-            Layout(name="right", ratio=1)
-        )
-        layout["bottom"]["right"].split_column(
-            Layout(stats_panel, name="stats"),
-            Layout(name="controls", size=6)
-        )
-        layout["bottom"]["right"]["controls"].split_row(
-            Layout(mode_panel, name="mode"),
-            Layout(debug_panel, name="debug")
-        )
-    else:
-        layout["bottom"].split_row(
-            Layout(config_table, name="config", ratio=2),
-            Layout(name="right", ratio=1)
-        )
-        layout["bottom"]["right"].split_column(
-            Layout(stats_panel, name="stats"),
-            Layout(mode_panel, name="mode", size=6)
-        )
+    layout["main"].split_row(
+        Layout(table, ratio=3),
+        Layout(name="right", size=25)
+    )
+    layout["main"]["right"].split_column(
+        Layout(timing_panel),
+        Layout(mode_panel)
+    )
 
     return layout
 
 
-# Update Rich UI display
-def update_rich_ui():
-    global RICH_LIVE, RICH_CONSOLE, UI_DATA, UI_DISPLAY_MODE
+# Generate Dashboard layout for config mode (detailed/complex)
+def generate_config_dashboard(target_data, config_data):
+    if not RICH_AVAILABLE:
+        return None
 
-    if not RICH_AVAILABLE or not RICH_UI_ENABLED or RICH_CONSOLE is None:
+    # Type guard: Rich is available at this point
+    assert Table is not None
+    assert box is not None
+    assert Text is not None
+    assert Panel is not None
+    assert Layout is not None
+
+    # Header
+    header_text = Text.assemble(
+        ("Instagram Monitor ", "bold magenta"),
+        (f"v{VERSION}", "dim"),
+        "  |  ",
+        ("Settings Mode", "bold yellow")
+    )
+    header_panel = Panel(header_text, style="white on blue", box=box.SQUARE)
+
+    # Main targets table - unified with user mode
+    targets_table = generate_dashboard_targets_table(target_data)
+
+    # Configuration tables (two columns for better space usage)
+    config_table_left = Table(box=box.ROUNDED, show_header=False, header_style="bold magenta", border_style="magenta")
+    config_table_left.add_column("Setting", style="cyan")
+    config_table_left.add_column("Value")
+
+    config_table_right = Table(box=box.ROUNDED, show_header=False, header_style="bold magenta", border_style="magenta")
+    config_table_right.add_column("Setting", style="cyan")
+    config_table_right.add_column("Value")
+
+    # Left column items
+    left_items = [
+        ("Interval", f"{display_time(config_data.get('check_interval', INSTA_CHECK_INTERVAL))}"),
+        ("Random", f"-{config_data.get('random_low', RANDOM_SLEEP_DIFF_LOW)}s / +{config_data.get('random_high', RANDOM_SLEEP_DIFF_HIGH)}s"),
+        ("Session", config_data.get('session_user', SESSION_USERNAME or '<anonymous>')),
+        ("Human", str(config_data.get('human_mode', BE_HUMAN))),
+        ("Jitter", str(config_data.get('enable_jitter', ENABLE_JITTER))),
+        ("Liveness", f"{display_time(LIVENESS_CHECK_INTERVAL)}" if LIVENESS_CHECK_INTERVAL else "Off"),
+    ]
+
+    # Right column items
+    hours_str = "00-23"
+    if CHECK_POSTS_IN_HOURS_RANGE:
+        ranges = []
+        if not (MIN_H1 == 0 and MAX_H1 == 0): ranges.append(f"{MIN_H1}-{MAX_H1}")
+        if not (MIN_H2 == 0 and MAX_H2 == 0): ranges.append(f"{MIN_H2}-{MAX_H2}")
+        hours_str = ", ".join(ranges) if ranges else "Disabled"
+
+    right_items = [
+        ("Notify", "S:" + str(STATUS_NOTIFICATION)[0] + " F:" + str(FOLLOWERS_NOTIFICATION)[0] + " E:" + str(ERROR_NOTIFICATION)[0]),
+        ("Webhook", str(config_data.get('webhook_enabled', WEBHOOK_ENABLED))),
+        ("Hours", hours_str),
+        ("Detailed", str(config_data.get('detailed_log', DETAILED_FOLLOWER_LOGGING))),
+        ("CSV", "Yes" if CSV_FILE else "No"),
+        ("Imgcat", "Yes" if imgcat_exe else "No"),
+    ]
+
+    for setting, value in left_items:
+        config_table_left.add_row(setting, value)
+    for setting, value in right_items:
+        config_table_right.add_row(setting, value)
+
+    # UA footer (mini panel)
+    ua_text = Text()
+    ua_text.append("Browser UA: ", style="cyan")
+    ua_text.append(f"{USER_AGENT[:70]}..." if len(USER_AGENT) > 70 else (USER_AGENT or "Auto"), style="dim")
+    ua_text.append("\nMobile UA:  ", style="cyan")
+    ua_text.append(f"{USER_AGENT_MOBILE[:70]}..." if len(USER_AGENT_MOBILE) > 70 else (USER_AGENT_MOBILE or "Auto"), style="dim")
+    ua_panel = Panel(ua_text, title="User Agents", box=box.ROUNDED, border_style="magenta", expand=True)
+
+    # Activity Log Panel (Latest at bottom)
+    activities = DASHBOARD_DATA.get('activities', [])
+    log_text = Text()
+    if not activities:
+        log_text.append("Waiting for activity...", style="dim italic")
+    else:
+        for act in reversed(activities[:8]):
+            log_text.append(f"{act['time']} ", style="dim")
+            log_text.append(f"{act['message']}\n")
+    log_panel = Panel(log_text, title="Live Activity Log", box=box.ROUNDED, border_style="yellow")
+
+    # Mode toggle
+    mode_btn_text = Text()
+    mode_btn_text.append("USER | ", style="dim")
+    mode_btn_text.append("CONFIG\n", style="bold magenta reverse")
+    mode_btn_text.append("Press 'm' to toggle\n", style="dim italic")
+    mode_btn_text.append("Press 'q' to exit", style="dim italic red")
+    mode_panel = Panel(mode_btn_text, title="Mode", box=box.ROUNDED, border_style="cyan")
+
+    # Build layout
+    layout = Layout()
+    layout.split_column(
+        Layout(header_panel, size=3),
+        Layout(targets_table, ratio=1),
+        Layout(name="config_area", size=8),
+        Layout(name="bottom", ratio=1)
+    )
+
+    layout["config_area"].split_row(
+        Layout(config_table_left),
+        Layout(config_table_right)
+    )
+
+    layout["bottom"].split_row(
+        Layout(log_panel, ratio=2),
+        Layout(name="right", ratio=1)
+    )
+
+    layout["bottom"]["right"].split_column(
+        Layout(ua_panel, ratio=1),
+        Layout(mode_panel, size=5)
+    )
+
+    return layout
+
+
+# Update Dashboard display
+def update_dashboard():
+    global DASHBOARD_LIVE, DASHBOARD_CONSOLE, DASHBOARD_DATA, DASHBOARD_MODE
+
+    if not RICH_AVAILABLE or not DASHBOARD_ENABLED or DASHBOARD_CONSOLE is None:
         return
 
     # Type guard: Rich is available at this point
     assert Layout is not None
 
-    # Get current target data from UI_DATA
-    target_data = UI_DATA.get('targets', {})
-    config_data = UI_DATA.get('config', {})
+    # Get current target data from DASHBOARD_DATA
+    target_data = DASHBOARD_DATA.get('targets', {})
+    config_data = DASHBOARD_DATA.get('config', {})
 
-    # If no targets yet, show empty state
+    # If no targets yet, show informative loading state
     if not target_data:
-        # Create a simple "waiting for data" layout
+        # Create detailed loading screen
         assert Panel is not None
         assert Text is not None
         assert box is not None
-        waiting_text = Text()
-        waiting_text.append("Waiting for monitoring data...\n\n", style="dim")
-        waiting_text.append("Press ", style="dim")
-        waiting_text.append("m", style="bold cyan")
-        waiting_text.append(" + Enter to toggle UI mode", style="dim")
-        waiting_panel = Panel(waiting_text, title="Instagram Monitor", box=box.ROUNDED)
-        waiting_layout = Layout()
-        waiting_layout.split_column(Layout(waiting_panel, name="content"))
 
-        if RICH_LIVE is not None:
-            RICH_LIVE.update(waiting_layout)
+        loading_text = Text()
+        loading_text.append(f"Instagram Monitor v{VERSION} Dashboard\n\n", style="bold magenta")
+        loading_text.append("⏳ Initializing and fetching profile data...\n\n", style="yellow")
+        loading_text.append("This may take a moment while we:\n", style="dim")
+        loading_text.append("  • Load Instagram session\n", style="dim")
+        loading_text.append("  • Fetch profile information\n", style="dim")
+        loading_text.append("  • Count posts, reels, and stories\n", style="dim")
+        loading_text.append("  • Retrieve follower/following data\n\n", style="dim")
+
+        # Show which users are being monitored
+        targets_list = DASHBOARD_DATA.get('targets_list', [])
+        if targets_list:
+            loading_text.append("Monitored targets:\n", style="bold cyan")
+            for target in targets_list:
+                loading_text.append(f"  • {target}\n", style="cyan")
+
+        loading_text.append("\n💡 Please wait patiently...\n\n", style="italic green")
+        loading_text.append("Press ", style="dim")
+        loading_text.append("q", style="bold red")
+        loading_text.append(" to exit", style="dim")
+
+        loading_panel = Panel(loading_text, title="Instagram Monitor", box=box.ROUNDED, border_style="magenta")
+        loading_layout = Layout()
+        loading_layout.split_column(Layout(loading_panel, name="content"))
+
+        if DASHBOARD_LIVE is not None:
+            DASHBOARD_LIVE.update(loading_layout)
         return
 
-    # Generate appropriate UI based on mode
-    if UI_DISPLAY_MODE == 'config':
-        layout = generate_config_ui(target_data, config_data)
+    # Generate appropriate Dashboard based on mode
+    if DASHBOARD_MODE == 'config':
+        layout = generate_config_dashboard(target_data, config_data)
     else:
-        layout = generate_user_ui(target_data)
+        layout = generate_user_dashboard(target_data)
 
-    if layout is not None and RICH_LIVE is not None:
-        RICH_LIVE.update(layout)
+    if layout is not None and DASHBOARD_LIVE is not None:
+        DASHBOARD_LIVE.update(layout)
 
 
-# Initialize Rich UI Live display
-def init_rich_ui():
-    global RICH_LIVE, RICH_CONSOLE
+# Initialize Dashboard Live display
+def init_dashboard():
+    global DASHBOARD_LIVE, DASHBOARD_CONSOLE
 
-    if not RICH_AVAILABLE or not RICH_UI_ENABLED or RICH_CONSOLE is None:
+    if not RICH_AVAILABLE or not DASHBOARD_ENABLED or DASHBOARD_CONSOLE is None:
         return False
 
     # Type guard: Rich is available at this point
     assert Live is not None
     assert Layout is not None
     assert Panel is not None
+    assert Text is not None
 
-    # Create initial empty layout
+    # Prepare initial loading screen components
+    loading_text = Text()
+    loading_text.append("Instagram Monitor Dashboard\n\n", style="bold magenta")
+    loading_text.append("⏳ Initializing and fetching profile data...\n\n", style="yellow")
+    loading_text.append("This may take a moment while we:\n", style="dim")
+    loading_text.append("  • Load Instagram session\n", style="dim")
+    loading_text.append("  • Fetch profile information\n", style="dim")
+    loading_text.append("  • Count posts, reels, and stories\n", style="dim")
+    loading_text.append("  • Retrieve follower/following data\n\n", style="dim")
+
+    # Show which users are being monitored
+    targets_list = DASHBOARD_DATA.get('targets_list', [])
+    if targets_list:
+        loading_text.append("Monitored targets:\n", style="bold cyan")
+        for target in targets_list:
+            loading_text.append(f"  • {target}\n", style="cyan")
+
+    loading_text.append("\n💡 Please wait patiently...", style="italic green")
+
     initial_layout = Layout()
-    initial_layout.split_column(Layout(Panel("Initializing...", title="Instagram Monitor"), name="content"))
+    initial_layout.split_column(
+        Layout(Panel(loading_text, title="Instagram Monitor", border_style="magenta"), name="content")
+    )
 
-    # Start Live display
-    RICH_LIVE = Live(initial_layout, console=RICH_CONSOLE, refresh_per_second=2, screen=False)
-    RICH_LIVE.start()
+    try:
+        # Start Live display (fullscreen/screen=True for a true dashboard feel)
+        DASHBOARD_LIVE = Live(initial_layout, console=DASHBOARD_CONSOLE, refresh_per_second=2, screen=True)
+        DASHBOARD_LIVE.start()
+        return True
+    except Exception:
+        # If screen=True fails, try screen=False
+        try:
+            DASHBOARD_LIVE = Live(initial_layout, console=DASHBOARD_CONSOLE, refresh_per_second=2, screen=False)
+            DASHBOARD_LIVE.start()
+            return True
+        except Exception:
+            # Dashboard failed completely
+            return False
 
-    return True
+
+# Stop Dashboard Live display
+def stop_dashboard():
+    global DASHBOARD_LIVE
+
+    if DASHBOARD_LIVE is not None:
+        DASHBOARD_LIVE.stop()
+        DASHBOARD_LIVE = None
 
 
-# Stop Rich UI Live display
-def stop_rich_ui():
-    global RICH_LIVE
-
-    if RICH_LIVE is not None:
-        RICH_LIVE.stop()
-        RICH_LIVE = None
-
-
-# Print check timing information
+# Prints remaining sleep time message
 def print_check_timing(r_sleep_time, prefix=""):
     global NEXT_CHECK_TIME
 
     now = now_local_naive()
     next_check = now + timedelta(seconds=r_sleep_time)
     NEXT_CHECK_TIME = next_check
+
+    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+        return
 
     if DEBUG_MODE:
         print(f"{prefix}Last check:\t\t\t\t{get_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else 'N/A'}")
@@ -2991,6 +3164,9 @@ def setup_pbar(total_expected, title):
     # If a bar exists for this thread, close it first
     if _thread_local.pbar is not None:  # type: ignore[misc]
         close_pbar()
+
+    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+        return
 
     custom_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
     # Write progress bar updates to terminal only (not log file) to avoid cluttering logs
@@ -3202,6 +3378,8 @@ def instagram_wrap_send(orig_send):
 
 
 def sleep_message(sleeptime):
+    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+        return
     now = now_local_naive()
     next_check = now + timedelta(seconds=sleeptime)
     print(f"*** Sleeping for: {display_time(sleeptime)} (until ~{next_check.strftime('%H:%M:%S')}) @ {now.strftime('%H:%M:%S')}")
@@ -3323,14 +3501,14 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
 
 # Monitors activity of the specified Instagram user
 def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None):  # type: ignore[reportComplexity]
-    global pbar, UI_DATA
+    global pbar, DASHBOARD_DATA
 
     # Wait for previous user's initial loading to complete (to avoid progress bar overlap)
     if wait_for_prev_user is not None:
         wait_for_prev_user.wait()
 
-    # Only print if Rich UI is not enabled (Rich UI will show this information)
-    if not (RICH_UI_ENABLED and RICH_AVAILABLE):
+    # Only print if Dashboard is not enabled (Dashboard will show this information)
+    if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
         print(f"Target:\t\t\t\t\t{user}")
         print("─" * HORIZONTAL_LINE)
 
@@ -3434,13 +3612,22 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"* Warning: Could not apply custom mobile user-agent patch due to an unexpected error: {e}")
             print("* Proceeding with the default Instaloader mobile user-agent")
 
-        print("- loading profile from username...", end=" ", flush=True)
+        if DASHBOARD_ENABLED:
+            log_activity(f"Loading profile: {user}")
+        else:
+            print("- loading profile from username...", end=" ", flush=True)
+
         profile = instaloader.Profile.from_username(bot.context, user)
 
         time.sleep(NEXT_OPERATION_DELAY)
         insta_username = profile.username
         insta_userid = profile.userid
-        print(f"     OK: {insta_username}")
+
+        if not DASHBOARD_ENABLED:
+            print(f"     OK: {insta_username}")
+        else:
+            log_activity(f"Profile loaded: {insta_username}", user=user)
+
         followers_count = profile.followers
         followings_count = profile.followees
         bio = profile.biography
@@ -3449,9 +3636,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         can_view = (not is_private) or followed_by_viewer
         posts_count = profile.mediacount
         if not skip_session and can_view:
-            print("- fetching reels count...", end=" ", flush=True)
+            if not DASHBOARD_ENABLED:
+                print("- fetching reels count...", end=" ", flush=True)
+
             reels_count = get_total_reels_count(user, bot, skip_session)
-            print("              OK")
+
+            if not DASHBOARD_ENABLED:
+                print("              OK")
+            else:
+                log_activity(f"Reels count fetched: {reels_count}", user=user)
 
         if not is_private:
             if bot.context.is_logged_in:
@@ -3459,22 +3652,35 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             else:
                 has_story = False
         elif bot.context.is_logged_in and followed_by_viewer:
-            print("- checking for stories...", end=" ", flush=True)
+            if not DASHBOARD_ENABLED:
+                print("- checking for stories...", end=" ", flush=True)
+
             story = next(bot.get_stories(userids=[insta_userid]), None)
             has_story = bool(story and story.itemcount)
-            print("              OK")
+
+            if not DASHBOARD_ENABLED:
+                print("              OK")
+            else:
+                log_activity("Checked for stories", user=user)
         else:
             has_story = False
 
         profile_image_url = profile.profile_pic_url_no_iphone
 
         if bot.context.is_logged_in:
-            print("- loading own profile...", end=" ", flush=True)
+            if not DASHBOARD_ENABLED:
+                print("- loading own profile...", end=" ", flush=True)
+
             me = instaloader.Profile.own_profile(bot.context)
             session_username = me.username
-            print(f"               OK: {session_username}")
 
-        print("─" * HORIZONTAL_LINE)
+            if not DASHBOARD_ENABLED:
+                print(f"               OK: {session_username}")
+            else:
+                log_activity(f"Session user loaded: {session_username}")
+
+        if not DASHBOARD_ENABLED:
+            print("─" * HORIZONTAL_LINE)
 
         if not bot.context.is_logged_in:
             session_username = None
@@ -3494,8 +3700,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     is_private_old = is_private
     followed_by_viewer_old = followed_by_viewer
 
-    # Only print detailed profile info if Rich UI is not enabled
-    if not (RICH_UI_ENABLED and RICH_AVAILABLE):
+    # Only print detailed profile info if Dashboard is not enabled
+    if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
         print(f"Session user:\t\t\t\t{session_username or '<anonymous>'}")
 
         print(f"\nUsername:\t\t\t\t{insta_username}")
@@ -3517,6 +3723,36 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         print(f"\nBio:\n\n{bio}\n")
         print_cur_ts("Timestamp:\t\t\t\t")
+
+    # Populate initial Dashboard data immediately after first fetch (regardless of print mode)
+    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+        if 'targets' not in DASHBOARD_DATA:
+            DASHBOARD_DATA['targets'] = {}
+
+        DASHBOARD_DATA['targets'][user] = {
+            'followers': followers_count,
+            'following': followings_count,
+            'posts': posts_count,
+            'reels': reels_count,
+            'has_story': has_story,
+            'status': 'OK',
+            'bio_changed': False
+        }
+
+        DASHBOARD_DATA['config'] = {
+            'Check Interval': display_time(INSTA_CHECK_INTERVAL),
+            'Session User': SESSION_USERNAME or '<anonymous>',
+            'Skip Session': SKIP_SESSION,
+            'Skip Followers': SKIP_FOLLOWERS,
+            'Skip Followings': SKIP_FOLLOWINGS,
+            'Status Notifications': STATUS_NOTIFICATION,
+            'Follower Notifications': FOLLOWERS_NOTIFICATION,
+            'Webhook Enabled': WEBHOOK_ENABLED,
+            'Debug Mode': DEBUG_MODE,
+            'Detailed Logging': DETAILED_FOLLOWER_LOGGING,
+            'start_time': DASHBOARD_DATA.get('start_time', datetime.now())
+        }
+        update_dashboard()
 
     if user_root_path or OUTPUT_DIR:
         insta_followers_file = os.path.join(json_dir, f"instagram_{user}_followers.json")
@@ -3549,7 +3785,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if followers_count == followers_old_count:
                 followers = followers_old
             followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file)), pytz.timezone(LOCAL_TIMEZONE))
-            print(f"* Followers ({followers_old_count}) actual ({len(followers_old)}) loaded from file '{insta_followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
+            if DASHBOARD_ENABLED:
+                log_activity(f"Followers loaded from file: {len(followers_old)}", user=user)
+            else:
+                print(f"* Followers ({followers_old_count}) actual ({len(followers_old)}) loaded from file '{insta_followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
             followers_followings_fetched = True
 
     if followers_count != followers_old_count:
@@ -3644,7 +3883,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if followings_count == followings_old_count:
                 followings = followings_old
             following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file)), pytz.timezone(LOCAL_TIMEZONE))
-            print(f"\n* Followings ({followings_old_count}) actual ({len(followings_old)}) loaded from file '{insta_followings_file}' ({get_short_date_from_ts(following_mdate, show_weekday=False, always_show_year=True)})")
+            if DASHBOARD_ENABLED:
+                log_activity(f"Followings loaded from file: {len(followings_old)}", user=user)
+            else:
+                print(f"\n* Followings ({followings_old_count}) actual ({len(followings_old)}) loaded from file '{insta_followings_file}' ({get_short_date_from_ts(following_mdate, show_weekday=False, always_show_year=True)})")
             followers_followings_fetched = True
 
     if followings_count != followings_old_count:
@@ -4017,14 +4259,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     now = now_local_naive()
     next_check = now + timedelta(seconds=r_sleep_time)
 
-    # Only print tracking message if Rich UI is not enabled
-    if not (RICH_UI_ENABLED and RICH_AVAILABLE):
+    # Only print tracking message if Dashboard is not enabled
+    if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
         if threading.current_thread() is not threading.main_thread():
             print(f"* Tracking {user} (and others)... next check for {user} planned at ~{next_check.strftime('%H:%M:%S')} (in {display_time(r_sleep_time)})\n")
         else:
             print(f"* Tracking {user}... next check planned at ~{next_check.strftime('%H:%M:%S')} (in {display_time(r_sleep_time)})\n")
 
-    print_cur_ts("Timestamp:\t\t\t\t")
+    if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+        print_cur_ts("Timestamp:\t\t\t\t")
 
     if HOURS_VERBOSE or DEBUG_MODE:
         sleep_message(r_sleep_time)
@@ -4038,7 +4281,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         while sleep_remaining > 0:
             # Check for stop event
             if stop_event and stop_event.is_set():
-                print(f"* Monitoring stopped for {user}")
+                if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                    print(f"* Monitoring stopped for {user}")
+                else:
+                    log_activity("Monitoring stopped", user=user)
                 return
 
             # Check for manual trigger (debug mode)
@@ -4083,8 +4329,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         if in_allowed_hours:
             if HOURS_VERBOSE:
-                print(f"*** Fetching Updates. Current Hour: {int(cur_h)}. Allowed hours: {hours_to_check()}")
-                print("─" * HORIZONTAL_LINE)
+                if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                    print(f"*** Fetching Updates. Current Hour: {int(cur_h)}. Allowed hours: {hours_to_check()}")
+                    print("─" * HORIZONTAL_LINE)
+                else:
+                    log_activity(f"Fetching updates (Hour: {int(cur_h)})", user=user)
 
             debug_print(f"Fetching profile data from Instagram API...")
 
@@ -4122,7 +4371,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 profile_image_url = profile.profile_pic_url_no_iphone
                 email_sent = False
 
-                # Prepare target data for both Rich UI and Web UI
+                # Prepare target data for both Dashboard and Web Dashboard
                 target_data = {
                     user: {
                         'followers': followers_count,
@@ -4130,35 +4379,41 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         'posts': posts_count,
                         'reels': reels_count if 'reels_count' in dir() else 0,
                         'has_story': has_story,
+                        'is_private': is_private,
                         'status': 'OK',
                         'bio_changed': False
                     }
                 }
                 config_data = {
-                    'Check Interval': display_time(INSTA_CHECK_INTERVAL),
-                    'Session User': SESSION_USERNAME or '<anonymous>',
-                    'Skip Session': SKIP_SESSION,
-                    'Skip Followers': SKIP_FOLLOWERS,
-                    'Skip Followings': SKIP_FOLLOWINGS,
-                    'Status Notifications': STATUS_NOTIFICATION,
-                    'Follower Notifications': FOLLOWERS_NOTIFICATION,
-                    'Webhook Enabled': WEBHOOK_ENABLED,
-                    'Debug Mode': DEBUG_MODE,
-                    'Detailed Logging': DETAILED_FOLLOWER_LOGGING,
-                    'start_time': UI_DATA.get('start_time', datetime.now())
+                    'check_interval': INSTA_CHECK_INTERVAL,
+                    'random_low': RANDOM_SLEEP_DIFF_LOW,
+                    'random_high': RANDOM_SLEEP_DIFF_HIGH,
+                    'session_user': SESSION_USERNAME or '<anonymous>',
+                    'skip_session': SKIP_SESSION,
+                    'skip_followers': SKIP_FOLLOWERS,
+                    'skip_followings': SKIP_FOLLOWINGS,
+                    'status_notif': STATUS_NOTIFICATION,
+                    'follower_notif': FOLLOWERS_NOTIFICATION,
+                    'error_notif': ERROR_NOTIFICATION,
+                    'webhook_enabled': WEBHOOK_ENABLED,
+                    'human_mode': BE_HUMAN,
+                    'enable_jitter': ENABLE_JITTER,
+                    'debug_mode': DEBUG_MODE,
+                    'detailed_log': DETAILED_FOLLOWER_LOGGING,
+                    'start_time': DASHBOARD_DATA.get('start_time', datetime.now())
                 }
 
-                # Update Rich UI with target data (merge with existing targets for multi-target mode)
-                if RICH_UI_ENABLED and RICH_AVAILABLE:
-                    if 'targets' not in UI_DATA:
-                        UI_DATA['targets'] = {}
-                    UI_DATA['targets'].update(target_data)  # Merge, don't overwrite
-                    UI_DATA['config'] = config_data
-                    update_rich_ui()
+                # Update Dashboard with target data (merge with existing targets for multi-target mode)
+                if DASHBOARD_ENABLED and RICH_AVAILABLE:
+                    if 'targets' not in DASHBOARD_DATA:
+                        DASHBOARD_DATA['targets'] = {}
+                    DASHBOARD_DATA['targets'].update(target_data)  # Merge, don't overwrite
+                    DASHBOARD_DATA['config'] = config_data
+                    update_dashboard()
 
-                # Update web UI with target data
-                if WEB_UI_ENABLED:
-                    update_web_ui_data(targets=target_data, config=config_data)
+                # Update web dashboard with target data
+                if WEB_DASHBOARD_ENABLED:
+                    update_web_dashboard_data(targets=target_data, config=config_data)
             except Exception as e:
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
                 error_msg = format_error_message(e)
@@ -4201,7 +4456,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     followings_diff_str = "+" + str(followings_diff)
                 else:
                     followings_diff_str = str(followings_diff)
-                print(f"* Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})")
+                if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                    print(f"* Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})")
+                log_activity(f"Followings changed: {followings_old_count} -> {followings_count}", user=user)
                 try:
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
@@ -4267,6 +4524,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 added_followings_mbody = "\nAdded followings:\n\n"
                                 for f_in_list in added_followings:
                                     print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                                    log_activity(f"Added following: {f_in_list}", user=user)
                                     added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                     try:
                                         if csv_file_name:
@@ -4310,6 +4568,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 else:
                     followers_diff_str = str(followers_diff)
                 print(f"* Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})")
+                log_activity(f"Followers changed: {followers_old_count} -> {followers_count}", user=user)
 
                 try:
                     if csv_file_name:
@@ -4362,6 +4621,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 removed_followers_mbody = "\nRemoved followers:\n\n"
                                 for f_in_list in removed_followers:
                                     print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                                    log_activity(f"Removed follower: {f_in_list}", user=user)
                                     removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                     try:
                                         if csv_file_name:
@@ -4375,6 +4635,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 added_followers_mbody = "\nAdded followers:\n\n"
                                 for f_in_list in added_followers:
                                     print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                                    log_activity(f"Added follower: {f_in_list}", user=user)
                                     added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                     try:
                                         if csv_file_name:
@@ -4419,6 +4680,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
             if bio != bio_old:
                 print(f"* Bio changed for user {user} !\n")
+                log_activity("Bio changed", user=user)
                 print(f"Old bio:\n\n{bio_old}\n")
                 print(f"New bio:\n\n{bio}\n")
 
@@ -4463,6 +4725,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     profile_visibility_old = "private"
 
                 print(f"* Profile visibility changed for user {user} to {profile_visibility} !\n")
+                log_activity(f"Visibility changed: {profile_visibility}", user=user)
 
                 try:
                     if csv_file_name:
@@ -4519,6 +4782,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
             if has_story and not story_flag:
                 print(f"* New story for user {user} !\n")
+                log_activity("New story detected", user=user)
                 story_flag = True
                 stories_count = 1
 
@@ -4555,6 +4819,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 processed_stories_list = []
                 stories_count = 0
                 print(f"* Story for user {user} disappeared !")
+                log_activity("Story disappeared", user=user)
                 print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
                 story_flag = False
@@ -4591,6 +4856,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 expire_ts = 0
 
                             print(f"* User {user} has new story item:\n")
+                            log_activity(f"New story item: {story_type}", user=user)
                             print(f"Date:\t\t\t{get_date_from_ts(local_dt)}")
                             print(f"Expiry:\t\t\t{get_date_from_ts(expire_local_dt)}")
                             if story_item.typename == "GraphStoryImage":
@@ -4797,6 +5063,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     post_url = f"https://www.instagram.com/{'reel' if last_source == 'reel' else 'p'}/{shortcode}/"
 
                     print(f"* New {last_source.lower()} for user {user} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n")
+                    log_activity(f"New {last_source.lower()} detected", user=user)
                     print(f"Date:\t\t\t\t\t{get_date_from_ts(highestinsta_dt)}")
                     print(f"{last_source.capitalize()} URL:\t\t\t\t{post_url}")
                     print(f"Profile URL:\t\t\t\thttps://www.instagram.com/{insta_username}/")
@@ -4955,12 +5222,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         if HOURS_VERBOSE:
             sleep_message(r_sleep_time)
 
-        # Sleep with manual check support in debug mode (or stop event support in webui mode)
+        # Sleep with manual check support in debug mode (or stop event support in Web Dashboard mode)
         if DEBUG_MODE or stop_event:
             # Sleep in smaller increments to allow manual check trigger or stop event
             sleep_remaining = r_sleep_time
             while sleep_remaining > 0:
-                # Check for stop event (webui mode)
+                # Check for stop event (Web Dashboard mode)
                 if stop_event and stop_event.is_set():
                     print(f"* Monitoring stopped for {user}")
                     return
@@ -4982,7 +5249,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
 def main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
-    global DEBUG_MODE, UI_DISPLAY_MODE, RICH_UI_ENABLED, WEB_UI_ENABLED, DETAILED_FOLLOWER_LOGGING, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, RICH_CONSOLE, UI_DATA
+    global DEBUG_MODE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, DETAILED_FOLLOWER_LOGGING, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -4998,8 +5265,6 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
 
     clear_screen(CLEAR_SCREEN)
-
-    print(f"Instagram Monitoring Tool v{VERSION}\n")
 
     parser = argparse.ArgumentParser(
         prog="instagram_monitor",
@@ -5256,57 +5521,57 @@ def main():
         help="Enable debug mode (verbose output, manual 'check' command support)"
     )
 
-    # UI options
-    ui_opts = parser.add_argument_group("UI options")
-    ui_opts.add_argument(
-        "--rich-text-ui",
-        dest="rich_text_ui",
+    # Dashboard options
+    dashboard_opts = parser.add_argument_group("Dashboard options")
+    dashboard_opts.add_argument(
+        "--dashboard",
+        dest="dashboard",
         action="store_true",
         default=None,
-        help="Enable Rich terminal UI (live dashboard). Default: traditional text output"
+        help="Enable terminal dashboard (live view). Default: traditional text output"
     )
-    ui_opts.add_argument(
-        "--no-rich-ui",
-        dest="disable_ui",
+    dashboard_opts.add_argument(
+        "--no-dashboard",
+        dest="disable_dashboard",
         action="store_true",
         default=None,
-        help="Disable Rich terminal UI (use traditional text output)"
+        help="Disable terminal dashboard (use traditional text output)"
     )
-    ui_opts.add_argument(
-        "--ui-mode",
-        dest="ui_mode",
+    dashboard_opts.add_argument(
+        "--dashboard-mode",
+        dest="dashboard_mode",
         metavar="MODE",
         type=str,
         choices=['user', 'config'],
-        help="UI display mode: 'user' (simple/minimal) or 'config' (detailed with settings). Only applies when Rich UI is enabled"
+        help="Dashboard display mode: 'user' (simple/minimal) or 'config' (detailed with settings). Only applies when terminal dashboard is enabled"
     )
-    ui_opts.add_argument(
-        "--web-ui",
-        dest="web_ui",
+    dashboard_opts.add_argument(
+        "--web-dashboard",
+        dest="web_dashboard",
         action="store_true",
         default=None,
-        help="Enable web-based UI on localhost (default: disabled)"
+        help="Enable web-based dashboard on localhost (default: disabled)"
     )
-    ui_opts.add_argument(
-        "--no-web-ui",
-        dest="no_web_ui",
+    dashboard_opts.add_argument(
+        "--no-web-dashboard",
+        dest="no_web_dashboard",
         action="store_true",
         default=None,
-        help="Disable web-based UI"
+        help="Disable web-based dashboard"
     )
-    ui_opts.add_argument(
-        "--web-ui-standalone",
-        dest="webui_standalone",
+    dashboard_opts.add_argument(
+        "--standalone-web-dashboard",
+        dest="standalone_dashboard",
         action="store_true",
         default=None,
-        help="Start standalone web UI control panel (no CLI targets needed)"
+        help="Start standalone web dashboard control panel (no CLI targets needed)"
     )
-    ui_opts.add_argument(
-        "--web-port",
-        dest="web_port",
+    dashboard_opts.add_argument(
+        "--web-dashboard-port",
+        dest="web_dashboard_port",
         metavar="PORT",
         type=int,
-        help="Port for web UI server (default: 5000)"
+        help="Port for web dashboard server (default: 5000)"
     )
 
     # Webhook options
@@ -5500,10 +5765,11 @@ def main():
             seen.add(u)
             normalized.append(u)
     targets = normalized
+    DASHBOARD_DATA['targets_list'] = targets
 
-    # Handle standalone web UI mode BEFORE checking targets
-    if getattr(args, 'webui_standalone', None) is True:
-        run_standalone_webui(args)
+    # Handle standalone web dashboard mode BEFORE checking targets
+    if getattr(args, 'standalone_dashboard', None) is True:
+        run_standalone_web_dashboard(args)
         sys.exit(0)
 
     if not targets:
@@ -5535,29 +5801,29 @@ def main():
     if args.enable_jitter is True:
         ENABLE_JITTER = True
 
-    # Handle new debug, UI, and webhook arguments
+    # Handle new debug, dashboard, and webhook arguments
     if args.debug_mode is True:
         DEBUG_MODE = True
 
-    if args.ui_mode:
-        UI_DISPLAY_MODE = args.ui_mode
+    if args.dashboard_mode:
+        DASHBOARD_MODE = args.dashboard_mode
 
-    # Rich text UI handling
-    if getattr(args, 'rich_text_ui', None) is True:
-        RICH_UI_ENABLED = True
+    # Terminal Dashboard handling
+    if getattr(args, 'dashboard', None) is True:
+        DASHBOARD_ENABLED = True
 
-    if args.disable_ui is True:
-        RICH_UI_ENABLED = False
+    if args.disable_dashboard is True:
+        DASHBOARD_ENABLED = False
 
-    # Web UI handling
-    if args.web_ui is True:
-        WEB_UI_ENABLED = True
+    # Web Dashboard handling
+    if args.web_dashboard is True:
+        WEB_DASHBOARD_ENABLED = True
 
-    if args.no_web_ui is True:
-        WEB_UI_ENABLED = False
+    if args.no_web_dashboard is True:
+        WEB_DASHBOARD_ENABLED = False
 
-    if args.web_port:
-        WEB_UI_PORT = args.web_port
+    if args.web_dashboard_port:
+        WEB_DASHBOARD_PORT = args.web_dashboard_port
 
     if args.detailed_follower_logging is True:
         DETAILED_FOLLOWER_LOGGING = True
@@ -5636,6 +5902,10 @@ def main():
             imgcat_exe = resolve_executable(IMGCAT_PATH)
         except Exception:
             pass
+
+    # Print version header after arguments are parsed and DASHBOARD_ENABLED is set
+    if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+        print(f"Instagram Monitoring Tool v{VERSION}\n")
 
     if args.csv_file:
         CSV_FILE = os.path.expanduser(args.csv_file)
@@ -5739,102 +6009,104 @@ def main():
         FOLLOWERS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
 
-    print(f"* Instagram polling interval:\t\t[ {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)} ]")
-    print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
-    print(f"* Mode of the tool:\t\t\t{mode_of_the_tool}")
-    print(f"* Human mode:\t\t\t\t{BE_HUMAN}")
-    print(f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}")
-    print(f"* Skip session login:\t\t\t{SKIP_SESSION}")
-    print(f"* Skip fetching followers:\t\t{SKIP_FOLLOWERS}")
-    print(f"* Skip fetching followings:\t\t{SKIP_FOLLOWINGS}")
-    print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
-    print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
-    print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
-    print(f"* Detailed follower logging:\t\t{DETAILED_FOLLOWER_LOGGING}")
-    hours_ranges_str = ""
-    if CHECK_POSTS_IN_HOURS_RANGE:
-        ranges = []
-        if not (MIN_H1 == 0 and MAX_H1 == 0):
-            ranges.append(f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59")
-        if not (MIN_H2 == 0 and MAX_H2 == 0):
-            ranges.append(f"{MIN_H2:02d}:00 - {MAX_H2:02d}:59")
+    # Only print summary screen if Dashboard is not enabled
+    if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+        print(f"* Instagram polling interval:\t\t[ {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)} ]")
+        print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
+        print(f"* Mode of the tool:\t\t\t{mode_of_the_tool}")
+        print(f"* Human mode:\t\t\t\t{BE_HUMAN}")
+        print(f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}")
+        print(f"* Skip session login:\t\t\t{SKIP_SESSION}")
+        print(f"* Skip fetching followers:\t\t{SKIP_FOLLOWERS}")
+        print(f"* Skip fetching followings:\t\t{SKIP_FOLLOWINGS}")
+        print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
+        print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
+        print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
+        print(f"* Detailed follower logging:\t\t{DETAILED_FOLLOWER_LOGGING}")
+        hours_ranges_str = ""
+        if CHECK_POSTS_IN_HOURS_RANGE:
+            ranges = []
+            if not (MIN_H1 == 0 and MAX_H1 == 0):
+                ranges.append(f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59")
+            if not (MIN_H2 == 0 and MAX_H2 == 0):
+                ranges.append(f"{MIN_H2:02d}:00 - {MAX_H2:02d}:59")
 
-        if ranges:
-            hours_ranges_str = ", ".join(ranges)
+            if ranges:
+                hours_ranges_str = ", ".join(ranges)
+            else:
+                hours_ranges_str = "None (both ranges disabled)"
         else:
-            hours_ranges_str = "None (both ranges disabled)"
-    else:
-        hours_ranges_str = "00:00 - 23:59"
-    print("* Hours for fetching updates:\t\t" + hours_ranges_str)
-    print(f"* Browser user agent:\t\t\t{USER_AGENT}")
-    print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
-    print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
-    print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
-    if len(targets) == 1:
-        print(f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
-    else:
-        if CSV_FILE:
-            print(f"* CSV logging enabled:\t\t\tTrue (per-user files, base: {CSV_FILE})")
+            hours_ranges_str = "00:00 - 23:59"
+        print("* Hours for fetching updates:\t\t" + hours_ranges_str)
+        print(f"* Browser user agent:\t\t\t{USER_AGENT}")
+        print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
+        print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
+        print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
+        if len(targets) == 1:
+            print(f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
         else:
-            print(f"* CSV logging enabled:\t\t\tFalse")
-    print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
-    print(f"* Empty profile pic template:\t\t{profile_pic_file_exists}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""))
-    # Rich UI status
-    rich_ui_status = RICH_UI_ENABLED and RICH_AVAILABLE
-    rich_ui_reason = ""
-    if not rich_ui_status:
-        if not RICH_AVAILABLE:
-            rich_ui_reason = " (missing rich)"
-        elif not RICH_UI_ENABLED:
-            rich_ui_reason = " (disabled)"
-    print(f"* Rich UI:\t\t\t\t{rich_ui_status}{rich_ui_reason}")
-    # Web UI status
-    web_ui_status = WEB_UI_ENABLED and FLASK_AVAILABLE
-    web_ui_reason = ""
-    if not web_ui_status:
-        if not WEB_UI_ENABLED:
-            web_ui_reason = " (disabled)"
-        elif not FLASK_AVAILABLE:
-            web_ui_reason = " (missing Flask, install with: pip install flask)"
-    print(f"* Web UI:\t\t\t\t{web_ui_status}{web_ui_reason}")
-    print(f"* UI display mode:\t\t\t{UI_DISPLAY_MODE} ({'enabled' if RICH_UI_ENABLED and RICH_AVAILABLE else 'disabled'})")
-    print(f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
-    print(f"* Configuration file:\t\t\t{cfg_path}")
-    print(f"* Dotenv file:\t\t\t\t{env_path or 'None'}")
-    if OUTPUT_DIR:
-        output_dir_desc = "(root for user data & logs)" if len(targets) == 1 else "(container for per-user subdirectories & logs)"
-        print(f"* Output directory:\t\t\t{OUTPUT_DIR} {output_dir_desc}")
-    print(f"* Webhook notifications:\t\t{WEBHOOK_ENABLED}" + (f" ({WEBHOOK_URL[:50]}...)" if WEBHOOK_ENABLED and WEBHOOK_URL and len(WEBHOOK_URL) > 50 else (f" ({WEBHOOK_URL})" if WEBHOOK_ENABLED and WEBHOOK_URL else "")))
-    if WEBHOOK_ENABLED:
-        print(f"*   Webhook status:\t\t\t{WEBHOOK_STATUS_NOTIFICATION}")
-        print(f"*   Webhook followers:\t\t\t{WEBHOOK_FOLLOWERS_NOTIFICATION}")
-        print(f"*   Webhook errors:\t\t\t{WEBHOOK_ERROR_NOTIFICATION}")
-    print(f"* Debug mode:\t\t\t\t{DEBUG_MODE}")
+            if CSV_FILE:
+                print(f"* CSV logging enabled:\t\t\tTrue (per-user files, base: {CSV_FILE})")
+            else:
+                print(f"* CSV logging enabled:\t\t\tFalse")
+        print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
+        print(f"* Empty profile pic template:\t\t{profile_pic_file_exists}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""))
+        # Dashboard status
+        dashboard_status = DASHBOARD_ENABLED and RICH_AVAILABLE
+        dashboard_reason = ""
+        if not dashboard_status:
+            if not RICH_AVAILABLE:
+                dashboard_reason = " (missing rich)"
+            elif not DASHBOARD_ENABLED:
+                dashboard_reason = " (disabled)"
+        print(f"* Dashboard:\t\t\t\t{dashboard_status}{dashboard_reason}")
+        # Web Dashboard status
+        web_dashboard_status = WEB_DASHBOARD_ENABLED and FLASK_AVAILABLE
+        web_dashboard_reason = ""
+        if not web_dashboard_status:
+            if not WEB_DASHBOARD_ENABLED:
+                web_dashboard_reason = " (disabled)"
+            elif not FLASK_AVAILABLE:
+                web_dashboard_reason = " (missing Flask, install with: pip install flask)"
+        print(f"* Web Dashboard:\t\t\t{web_dashboard_status}{web_dashboard_reason}")
+        print(f"* Dashboard mode:\t\t\t{DASHBOARD_MODE} ({'enabled' if DASHBOARD_ENABLED and RICH_AVAILABLE else 'disabled'})")
+        print(f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
+        print(f"* Configuration file:\t\t\t{cfg_path}")
+        print(f"* Dotenv file:\t\t\t\t{env_path or 'None'}")
+        if OUTPUT_DIR:
+            output_dir_desc = "(root for user data & logs)" if len(targets) == 1 else "(container for per-user subdirectories & logs)"
+            print(f"* Output directory:\t\t\t{OUTPUT_DIR} {output_dir_desc}")
+        print(f"* Webhook notifications:\t\t{WEBHOOK_ENABLED}" + (f" ({WEBHOOK_URL[:50]}...)" if WEBHOOK_ENABLED and WEBHOOK_URL and len(WEBHOOK_URL) > 50 else (f" ({WEBHOOK_URL})" if WEBHOOK_ENABLED and WEBHOOK_URL else "")))
+        if WEBHOOK_ENABLED:
+            print(f"*   Webhook status:\t\t\t{WEBHOOK_STATUS_NOTIFICATION}")
+            print(f"*   Webhook followers:\t\t\t{WEBHOOK_FOLLOWERS_NOTIFICATION}")
+            print(f"*   Webhook errors:\t\t\t{WEBHOOK_ERROR_NOTIFICATION}")
+        print(f"* Debug mode:\t\t\t\t{DEBUG_MODE}")
 
-    print(f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}")
+        print(f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}")
 
-    # Initialize Rich console if available and enabled (can work alongside web UI)
-    if RICH_AVAILABLE and RICH_UI_ENABLED:  # type: ignore[name-defined]
+    # Initialize Rich console if available and enabled (can work alongside web dashboard)
+    if RICH_AVAILABLE and DASHBOARD_ENABLED:  # type: ignore[name-defined]
         assert Console is not None
-        RICH_CONSOLE = Console()
-        UI_DATA['start_time'] = datetime.now()
-        UI_DATA['ui_mode'] = UI_DISPLAY_MODE
+        DASHBOARD_CONSOLE = Console(file=stdout_bck)
+        DASHBOARD_DATA['start_time'] = datetime.now()
+        DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
 
-    # Start web UI server if enabled (before monitoring starts to avoid message interleaving)
-    if WEB_UI_ENABLED:  # type: ignore[name-defined]
-        WEB_UI_DATA['start_time'] = datetime.now()
-        WEB_UI_DATA['ui_mode'] = UI_DISPLAY_MODE
-        start_web_server()
+    # Start web dashboard server if enabled (before monitoring starts to avoid message interleaving)
+    if WEB_DASHBOARD_ENABLED:  # type: ignore[name-defined]
+        WEB_DASHBOARD_DATA['start_time'] = datetime.now()
+        WEB_DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
+        start_web_dashboard_server()
 
-    # Start UI input handler for mode toggle (and debug commands if debug mode)
-    # Works for both Rich UI and Web UI
-    start_ui_input_handler()
+    # Start Dashboard input handler for mode toggle (and debug commands if debug mode)
+    # Works for both Dashboard and Web Dashboard
+    start_dashboard_input_handler()
 
-    # Initialize Rich UI Live display if enabled
-    if RICH_AVAILABLE and RICH_UI_ENABLED and RICH_CONSOLE is not None:
-        init_rich_ui()
-        # Show initial Rich UI immediately
-        update_rich_ui()
+    # Initialize Dashboard Live display if enabled
+    if RICH_AVAILABLE and DASHBOARD_ENABLED and DASHBOARD_CONSOLE is not None:
+        init_dashboard()
+        # Show initial Dashboard immediately
+        update_dashboard()
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
     if platform.system() != 'Windows':
@@ -5845,8 +6117,8 @@ def main():
         signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
 
     # Print monitoring message after all setup is complete
-    # Note: If Rich UI is enabled, this will be shown in the Rich UI instead
-    if not (RICH_AVAILABLE and RICH_UI_ENABLED):
+    # Note: If Dashboard is enabled, this will be shown in the dashboard instead
+    if not (RICH_AVAILABLE and DASHBOARD_ENABLED):
         if len(targets) == 1:
             out = f"\nMonitoring Instagram user {targets[0]}"
         else:
@@ -5875,16 +6147,17 @@ def main():
             stagger = max(1, int(INSTA_CHECK_INTERVAL / max(1, len(targets))))
 
         now = now_local_naive()
-        print(f"* Multi-target staggering:\t\t{display_time(stagger)} between targets (jitter: {display_time(jitter)})")
-        print("* Planned first poll times:")
-        for idx, u in enumerate(targets):
-            base_delay = idx * stagger
-            add_jitter = int(random.uniform(0, jitter)) if jitter else 0
-            delay = base_delay + add_jitter
-            planned = now + timedelta(seconds=delay)
-            print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
+        if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+            print(f"* Multi-target staggering:\t\t{display_time(stagger)} between targets (jitter: {display_time(jitter)})")
+            print("* Planned first poll times:")
+            for idx, u in enumerate(targets):
+                base_delay = idx * stagger
+                add_jitter = int(random.uniform(0, jitter)) if jitter else 0
+                delay = base_delay + add_jitter
+                planned = now + timedelta(seconds=delay)
+                print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
 
-        print("─" * HORIZONTAL_LINE)
+            print("─" * HORIZONTAL_LINE)
 
         # Create events to coordinate initial loading between users.
         # We create N+1 events: event[i] means "user i finished initial load".
