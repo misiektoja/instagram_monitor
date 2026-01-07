@@ -332,21 +332,24 @@ WEBHOOK_ERROR_NOTIFICATION = False
 DEBUG_MODE = False
 
 # ----------------------------
-# UI Mode
+# UI Display Mode
 # ----------------------------
-# UI mode: 'user' for simple/minimal display, 'config' for detailed/complex display with settings
+# UI display mode: 'user' for simple/minimal display, 'config' for detailed/complex display with settings
+# This mode applies to both the Rich terminal UI and the Web-based dashboard
 # Can also be set via --ui-mode flag
-UI_MODE = 'user'
+UI_DISPLAY_MODE = 'user'
 
 # Enable Rich terminal UI (live dashboard)
 # Set to False to use traditional text output
-UI_ENABLED = True
+# Can be enabled via --rich-text-ui flag
+RICH_UI_ENABLED = False
 
 # ----------------------------
 # Web UI Settings
 # ----------------------------
-# Enable web-based UI instead of terminal UI (runs on localhost)
-WEB_UI_ENABLED = True
+# Enable web-based UI (runs on localhost)
+# Can be enabled via --web-ui flag
+WEB_UI_ENABLED = False
 
 # Port for the web UI server
 WEB_UI_PORT = 5000
@@ -437,8 +440,8 @@ WEBHOOK_STATUS_NOTIFICATION = True
 WEBHOOK_FOLLOWERS_NOTIFICATION = True
 WEBHOOK_ERROR_NOTIFICATION = False
 DEBUG_MODE = False
-UI_MODE = 'user'
-UI_ENABLED = True
+UI_DISPLAY_MODE = 'user'
+RICH_UI_ENABLED = True
 WEB_UI_ENABLED = True
 WEB_UI_PORT = 5000
 WEB_UI_HOST = '127.0.0.1'
@@ -588,6 +591,7 @@ try:
     from rich.panel import Panel  # type: ignore
     from rich.layout import Layout  # type: ignore
     from rich.text import Text  # type: ignore
+    from rich.live import Live  # type: ignore
     from rich import box  # type: ignore
     RICH_AVAILABLE = True
 except ImportError:
@@ -596,6 +600,7 @@ except ImportError:
     Panel = None  # type: ignore
     Layout = None  # type: ignore
     Text = None  # type: ignore
+    Live = None  # type: ignore
     box = None  # type: ignore
     RICH_AVAILABLE = False
 
@@ -677,13 +682,13 @@ def create_web_app():
 
     @app.route('/api/mode', methods=['POST'])
     def api_set_mode():  # type: ignore
-        global UI_MODE
+        global UI_DISPLAY_MODE
         data = flask_request.get_json()  # type: ignore
         if data and 'mode' in data:
-            UI_MODE = data['mode']
+            UI_DISPLAY_MODE = data['mode']
             with WEB_UI_DATA_LOCK:  # type: ignore
-                WEB_UI_DATA['ui_mode'] = UI_MODE
-            return jsonify({'success': True, 'mode': UI_MODE})  # type: ignore
+                WEB_UI_DATA['ui_mode'] = UI_DISPLAY_MODE
+            return jsonify({'success': True, 'mode': UI_DISPLAY_MODE})  # type: ignore
         return jsonify({'success': False}), 400  # type: ignore
 
     @app.route('/api/trigger-check', methods=['POST'])
@@ -955,7 +960,6 @@ def start_web_server():
     global WEB_UI_APP, WEB_UI_THREAD
 
     if not FLASK_AVAILABLE:
-        print("* Warning: Flask not available, web UI disabled. Install with: pip install flask")
         return False
 
     if not WEB_UI_ENABLED:
@@ -1063,7 +1067,7 @@ def update_web_ui_data(targets=None, config=None, check_count=None, last_check=N
             WEB_UI_DATA['last_check'] = last_check
         if next_check is not None:
             WEB_UI_DATA['next_check'] = next_check
-        WEB_UI_DATA['ui_mode'] = UI_MODE
+        WEB_UI_DATA['ui_mode'] = UI_DISPLAY_MODE
 
 
 def add_web_activity(message):
@@ -2512,7 +2516,6 @@ def extract_usernames_safely(data_dict):
 
 # Extracts detailed user info from a JSON response for detailed follower logging
 def extract_detailed_users_safely(data_dict):
-    """Extract detailed user information including user_id, full_name, and profile_pic_url."""
     users = []
 
     possible_keys = ['edge_followed_by', 'edge_follow']
@@ -2555,7 +2558,6 @@ def extract_detailed_users_safely(data_dict):
 
 # Save detailed followers/followings to JSON file
 def save_detailed_followers(filename, count, users_list, detailed=False):
-    """Save followers/followings with optional detailed information."""
     if detailed and DETAILED_FOLLOWER_LOGGING:
         # Save detailed format: [count, [{username, user_id, full_name, ...}, ...]]
         data_to_save = [count, users_list]
@@ -2578,7 +2580,6 @@ def save_detailed_followers(filename, count, users_list, detailed=False):
 
 # Load detailed followers/followings from JSON file
 def load_detailed_followers(filename):
-    """Load followers/followings, handling both simple and detailed formats."""
     try:
         with open(filename, 'r', encoding="utf-8") as f:
             data = json.load(f)
@@ -2605,8 +2606,8 @@ def load_detailed_followers(filename):
 
 # UI input handler thread function - handles mode toggle and debug commands
 def ui_input_handler():
-    """Background thread to handle keyboard input for UI mode toggle and debug commands."""
-    global MANUAL_CHECK_TRIGGERED, UI_MODE
+    # This toggles the UI mode for both the Rich terminal UI and the Web-based dashboard
+    global MANUAL_CHECK_TRIGGERED, UI_DISPLAY_MODE
 
     while True:
         try:
@@ -2614,10 +2615,19 @@ def ui_input_handler():
 
             # Mode toggle shortcuts: 'm', 'mode'
             if user_input in ('m', 'mode'):
-                UI_MODE = 'config' if UI_MODE == 'user' else 'user'
+                UI_DISPLAY_MODE = 'config' if UI_DISPLAY_MODE == 'user' else 'user'
+                # Update UI_DATA with new mode
+                global UI_DATA
+                UI_DATA['ui_mode'] = UI_DISPLAY_MODE
+                # Update web UI mode if enabled
+                if WEB_UI_ENABLED:
+                    WEB_UI_DATA['ui_mode'] = UI_DISPLAY_MODE
+                # Update Rich UI if enabled
+                if RICH_UI_ENABLED and RICH_AVAILABLE:
+                    update_rich_ui()
                 # Don't print in UI mode - the UI will update automatically
-                if not UI_ENABLED or not RICH_AVAILABLE:
-                    print(f"* UI mode: {UI_MODE}")
+                if not RICH_UI_ENABLED or not RICH_AVAILABLE:
+                    print(f"* UI mode: {UI_DISPLAY_MODE}")
 
             # Debug commands (only work in debug mode)
             elif user_input == 'check' and DEBUG_MODE:
@@ -2640,11 +2650,10 @@ def ui_input_handler():
 
 # Start UI input handler thread
 def start_ui_input_handler():
-    """Start the background input handler thread for UI mode toggle and debug commands."""
     global DEBUG_INPUT_THREAD
 
     # Start if UI is enabled OR debug mode is on
-    if DEBUG_INPUT_THREAD is None and (UI_ENABLED or DEBUG_MODE):
+    if DEBUG_INPUT_THREAD is None and (RICH_UI_ENABLED or DEBUG_MODE):
         DEBUG_INPUT_THREAD = threading.Thread(target=ui_input_handler, daemon=True, name="ui_input_handler")
         DEBUG_INPUT_THREAD.start()
         if DEBUG_MODE:
@@ -2653,20 +2662,18 @@ def start_ui_input_handler():
 
 # Print status summary (for debug mode)
 def print_status_summary():
-    """Print current monitoring status."""
     print("─" * HORIZONTAL_LINE)
     print("Current Monitoring Status:")
     print(f"  Last check: {get_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else 'Not yet'}")
     print(f"  Next check: {get_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else 'Calculating...'}")
     print(f"  Total checks: {CHECK_COUNT}")
     print(f"  Debug mode: {DEBUG_MODE}")
-    print(f"  UI mode: {UI_MODE}")
+    print(f"  UI mode: {UI_DISPLAY_MODE}")
     print("─" * HORIZONTAL_LINE)
 
 
 # Update global tracking for last/next check times
 def update_check_times(last_time=None, next_time=None):
-    """Update global tracking variables for check times."""
     global LAST_CHECK_TIME, NEXT_CHECK_TIME, CHECK_COUNT
 
     if last_time is not None:
@@ -2685,7 +2692,6 @@ def update_check_times(last_time=None, next_time=None):
 
 # Generate Rich UI layout for user mode (simple/minimal)
 def generate_user_ui(target_data):
-    """Generate a simple, minimal UI for user mode."""
     if not RICH_AVAILABLE:
         return None
 
@@ -2751,7 +2757,6 @@ def generate_user_ui(target_data):
 
 # Generate Rich UI layout for config mode (detailed/complex)
 def generate_config_ui(target_data, config_data):
-    """Generate a detailed, complex UI for config mode showing all settings."""
     if not RICH_AVAILABLE:
         return None
 
@@ -2878,9 +2883,83 @@ def generate_config_ui(target_data, config_data):
     return layout
 
 
+# Update Rich UI display
+def update_rich_ui():
+    global RICH_LIVE, RICH_CONSOLE, UI_DATA, UI_DISPLAY_MODE
+
+    if not RICH_AVAILABLE or not RICH_UI_ENABLED or RICH_CONSOLE is None:
+        return
+
+    # Type guard: Rich is available at this point
+    assert Layout is not None
+
+    # Get current target data from UI_DATA
+    target_data = UI_DATA.get('targets', {})
+    config_data = UI_DATA.get('config', {})
+
+    # If no targets yet, show empty state
+    if not target_data:
+        # Create a simple "waiting for data" layout
+        assert Panel is not None
+        assert Text is not None
+        assert box is not None
+        waiting_text = Text()
+        waiting_text.append("Waiting for monitoring data...\n\n", style="dim")
+        waiting_text.append("Press ", style="dim")
+        waiting_text.append("m", style="bold cyan")
+        waiting_text.append(" + Enter to toggle UI mode", style="dim")
+        waiting_panel = Panel(waiting_text, title="Instagram Monitor", box=box.ROUNDED)
+        waiting_layout = Layout()
+        waiting_layout.split_column(Layout(waiting_panel, name="content"))
+
+        if RICH_LIVE is not None:
+            RICH_LIVE.update(waiting_layout)
+        return
+
+    # Generate appropriate UI based on mode
+    if UI_DISPLAY_MODE == 'config':
+        layout = generate_config_ui(target_data, config_data)
+    else:
+        layout = generate_user_ui(target_data)
+
+    if layout is not None and RICH_LIVE is not None:
+        RICH_LIVE.update(layout)
+
+
+# Initialize Rich UI Live display
+def init_rich_ui():
+    global RICH_LIVE, RICH_CONSOLE
+
+    if not RICH_AVAILABLE or not RICH_UI_ENABLED or RICH_CONSOLE is None:
+        return False
+
+    # Type guard: Rich is available at this point
+    assert Live is not None
+    assert Layout is not None
+    assert Panel is not None
+
+    # Create initial empty layout
+    initial_layout = Layout()
+    initial_layout.split_column(Layout(Panel("Initializing...", title="Instagram Monitor"), name="content"))
+
+    # Start Live display
+    RICH_LIVE = Live(initial_layout, console=RICH_CONSOLE, refresh_per_second=2, screen=False)
+    RICH_LIVE.start()
+
+    return True
+
+
+# Stop Rich UI Live display
+def stop_rich_ui():
+    global RICH_LIVE
+
+    if RICH_LIVE is not None:
+        RICH_LIVE.stop()
+        RICH_LIVE = None
+
+
 # Print check timing information
 def print_check_timing(r_sleep_time, prefix=""):
-    """Print last check and next check timing information."""
     global NEXT_CHECK_TIME
 
     now = now_local_naive()
@@ -3244,14 +3323,16 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
 
 # Monitors activity of the specified Instagram user
 def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None):  # type: ignore[reportComplexity]
-    global pbar
+    global pbar, UI_DATA
 
     # Wait for previous user's initial loading to complete (to avoid progress bar overlap)
     if wait_for_prev_user is not None:
         wait_for_prev_user.wait()
 
-    print(f"Target:\t\t\t\t\t{user}")
-    print("─" * HORIZONTAL_LINE)
+    # Only print if Rich UI is not enabled (Rich UI will show this information)
+    if not (RICH_UI_ENABLED and RICH_AVAILABLE):
+        print(f"Target:\t\t\t\t\t{user}")
+        print("─" * HORIZONTAL_LINE)
 
     # Resolve output directory for this user
     user_root_dir = ""
@@ -3413,27 +3494,29 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     is_private_old = is_private
     followed_by_viewer_old = followed_by_viewer
 
-    print(f"Session user:\t\t\t\t{session_username or '<anonymous>'}")
+    # Only print detailed profile info if Rich UI is not enabled
+    if not (RICH_UI_ENABLED and RICH_AVAILABLE):
+        print(f"Session user:\t\t\t\t{session_username or '<anonymous>'}")
 
-    print(f"\nUsername:\t\t\t\t{insta_username}")
-    print(f"User ID:\t\t\t\t{insta_userid}")
-    print(f"URL:\t\t\t\t\thttps://www.instagram.com/{insta_username}/")
+        print(f"\nUsername:\t\t\t\t{insta_username}")
+        print(f"User ID:\t\t\t\t{insta_userid}")
+        print(f"URL:\t\t\t\t\thttps://www.instagram.com/{insta_username}/")
 
-    print(f"\nProfile:\t\t\t\t{'public' if not is_private else 'private'}")
-    print(f"Can view all contents:\t\t\t{'Yes' if can_view else 'No'}")
+        print(f"\nProfile:\t\t\t\t{'public' if not is_private else 'private'}")
+        print(f"Can view all contents:\t\t\t{'Yes' if can_view else 'No'}")
 
-    print(f"\nPosts:\t\t\t\t\t{posts_count}")
-    if not skip_session and can_view:
-        print(f"Reels:\t\t\t\t\t{reels_count}")
+        print(f"\nPosts:\t\t\t\t\t{posts_count}")
+        if not skip_session and can_view:
+            print(f"Reels:\t\t\t\t\t{reels_count}")
 
-    print(f"\nFollowers:\t\t\t\t{followers_count}")
-    print(f"Followings:\t\t\t\t{followings_count}")
+        print(f"\nFollowers:\t\t\t\t{followers_count}")
+        print(f"Followings:\t\t\t\t{followings_count}")
 
-    if bot.context.is_logged_in:
-        print(f"\nStory available:\t\t\t{has_story}")
+        if bot.context.is_logged_in:
+            print(f"\nStory available:\t\t\t{has_story}")
 
-    print(f"\nBio:\n\n{bio}\n")
-    print_cur_ts("Timestamp:\t\t\t\t")
+        print(f"\nBio:\n\n{bio}\n")
+        print_cur_ts("Timestamp:\t\t\t\t")
 
     if user_root_path or OUTPUT_DIR:
         insta_followers_file = os.path.join(json_dir, f"instagram_{user}_followers.json")
@@ -3934,10 +4017,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     now = now_local_naive()
     next_check = now + timedelta(seconds=r_sleep_time)
 
-    if threading.current_thread() is not threading.main_thread():
-        print(f"* Tracking {user} (and others)... next check for {user} planned at ~{next_check.strftime('%H:%M:%S')} (in {display_time(r_sleep_time)})\n")
-    else:
-        print(f"* Tracking {user}... next check planned at ~{next_check.strftime('%H:%M:%S')} (in {display_time(r_sleep_time)})\n")
+    # Only print tracking message if Rich UI is not enabled
+    if not (RICH_UI_ENABLED and RICH_AVAILABLE):
+        if threading.current_thread() is not threading.main_thread():
+            print(f"* Tracking {user} (and others)... next check for {user} planned at ~{next_check.strftime('%H:%M:%S')} (in {display_time(r_sleep_time)})\n")
+        else:
+            print(f"* Tracking {user}... next check planned at ~{next_check.strftime('%H:%M:%S')} (in {display_time(r_sleep_time)})\n")
 
     print_cur_ts("Timestamp:\t\t\t\t")
 
@@ -4037,31 +4122,42 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 profile_image_url = profile.profile_pic_url_no_iphone
                 email_sent = False
 
+                # Prepare target data for both Rich UI and Web UI
+                target_data = {
+                    user: {
+                        'followers': followers_count,
+                        'following': followings_count,
+                        'posts': posts_count,
+                        'reels': reels_count if 'reels_count' in dir() else 0,
+                        'has_story': has_story,
+                        'status': 'OK',
+                        'bio_changed': False
+                    }
+                }
+                config_data = {
+                    'Check Interval': display_time(INSTA_CHECK_INTERVAL),
+                    'Session User': SESSION_USERNAME or '<anonymous>',
+                    'Skip Session': SKIP_SESSION,
+                    'Skip Followers': SKIP_FOLLOWERS,
+                    'Skip Followings': SKIP_FOLLOWINGS,
+                    'Status Notifications': STATUS_NOTIFICATION,
+                    'Follower Notifications': FOLLOWERS_NOTIFICATION,
+                    'Webhook Enabled': WEBHOOK_ENABLED,
+                    'Debug Mode': DEBUG_MODE,
+                    'Detailed Logging': DETAILED_FOLLOWER_LOGGING,
+                    'start_time': UI_DATA.get('start_time', datetime.now())
+                }
+
+                # Update Rich UI with target data (merge with existing targets for multi-target mode)
+                if RICH_UI_ENABLED and RICH_AVAILABLE:
+                    if 'targets' not in UI_DATA:
+                        UI_DATA['targets'] = {}
+                    UI_DATA['targets'].update(target_data)  # Merge, don't overwrite
+                    UI_DATA['config'] = config_data
+                    update_rich_ui()
+
                 # Update web UI with target data
                 if WEB_UI_ENABLED:
-                    target_data = {
-                        user: {
-                            'followers': followers_count,
-                            'following': followings_count,
-                            'posts': posts_count,
-                            'reels': reels_count if 'reels_count' in dir() else 0,
-                            'has_story': has_story,
-                            'status': 'OK',
-                            'bio_changed': False
-                        }
-                    }
-                    config_data = {
-                        'Check Interval': display_time(INSTA_CHECK_INTERVAL),
-                        'Session User': SESSION_USERNAME or '<anonymous>',
-                        'Skip Session': SKIP_SESSION,
-                        'Skip Followers': SKIP_FOLLOWERS,
-                        'Skip Followings': SKIP_FOLLOWINGS,
-                        'Status Notifications': STATUS_NOTIFICATION,
-                        'Follower Notifications': FOLLOWERS_NOTIFICATION,
-                        'Webhook Enabled': WEBHOOK_ENABLED,
-                        'Debug Mode': DEBUG_MODE,
-                        'Detailed Logging': DETAILED_FOLLOWER_LOGGING
-                    }
                     update_web_ui_data(targets=target_data, config=config_data)
             except Exception as e:
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
@@ -4886,7 +4982,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
 def main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
-    global DEBUG_MODE, UI_MODE, UI_ENABLED, WEB_UI_ENABLED, DETAILED_FOLLOWER_LOGGING, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, RICH_CONSOLE
+    global DEBUG_MODE, UI_DISPLAY_MODE, RICH_UI_ENABLED, WEB_UI_ENABLED, DETAILED_FOLLOWER_LOGGING, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, RICH_CONSOLE, UI_DATA
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -5126,6 +5222,13 @@ def main():
         help="Disable detection of changed profile picture"
     )
     opts.add_argument(
+        "--detailed-followers",
+        dest="detailed_follower_logging",
+        action="store_true",
+        default=None,
+        help="Store detailed follower info (user_id, full_name, profile_pic_url) in JSON files"
+    )
+    opts.add_argument(
         "-b", "--csv-file",
         dest="csv_file",
         metavar="CSV_FILENAME",
@@ -5145,65 +5248,65 @@ def main():
         default=None,
         help="Disable logging to instagram_monitor_<username>.log"
     )
-
-    # Debug & UI options
-    debug_ui = parser.add_argument_group("Debug & UI options")
-    debug_ui.add_argument(
+    opts.add_argument(
         "--debug",
         dest="debug_mode",
         action="store_true",
         default=None,
         help="Enable debug mode (verbose output, manual 'check' command support)"
     )
-    debug_ui.add_argument(
-        "--ui-mode",
-        dest="ui_mode",
-        metavar="MODE",
-        type=str,
-        choices=['user', 'config'],
-        help="UI display mode: 'user' (simple/minimal) or 'config' (detailed with settings)"
+
+    # UI options
+    ui_opts = parser.add_argument_group("UI options")
+    ui_opts.add_argument(
+        "--rich-text-ui",
+        dest="rich_text_ui",
+        action="store_true",
+        default=None,
+        help="Enable Rich terminal UI (live dashboard). Default: traditional text output"
     )
-    debug_ui.add_argument(
-        "--no-ui",
+    ui_opts.add_argument(
+        "--no-rich-ui",
         dest="disable_ui",
         action="store_true",
         default=None,
         help="Disable Rich terminal UI (use traditional text output)"
     )
-    debug_ui.add_argument(
-        "--webui",
-        dest="webui_standalone",
-        action="store_true",
-        default=None,
-        help="Start standalone web UI control panel (no CLI targets needed)"
+    ui_opts.add_argument(
+        "--ui-mode",
+        dest="ui_mode",
+        metavar="MODE",
+        type=str,
+        choices=['user', 'config'],
+        help="UI display mode: 'user' (simple/minimal) or 'config' (detailed with settings). Only applies when Rich UI is enabled"
     )
-    debug_ui.add_argument(
+    ui_opts.add_argument(
         "--web-ui",
         dest="web_ui",
         action="store_true",
         default=None,
-        help="Enable web-based UI on localhost (default: enabled)"
+        help="Enable web-based UI on localhost (default: disabled)"
     )
-    debug_ui.add_argument(
+    ui_opts.add_argument(
         "--no-web-ui",
         dest="no_web_ui",
         action="store_true",
         default=None,
         help="Disable web-based UI"
     )
-    debug_ui.add_argument(
+    ui_opts.add_argument(
+        "--web-ui-standalone",
+        dest="webui_standalone",
+        action="store_true",
+        default=None,
+        help="Start standalone web UI control panel (no CLI targets needed)"
+    )
+    ui_opts.add_argument(
         "--web-port",
         dest="web_port",
         metavar="PORT",
         type=int,
         help="Port for web UI server (default: 5000)"
-    )
-    debug_ui.add_argument(
-        "--detailed-followers",
-        dest="detailed_follower_logging",
-        action="store_true",
-        default=None,
-        help="Store detailed follower info (user_id, full_name, profile_pic_url) in JSON files"
     )
 
     # Webhook options
@@ -5399,7 +5502,7 @@ def main():
     targets = normalized
 
     # Handle standalone web UI mode BEFORE checking targets
-    if args.webui_standalone is True:
+    if getattr(args, 'webui_standalone', None) is True:
         run_standalone_webui(args)
         sys.exit(0)
 
@@ -5437,11 +5540,16 @@ def main():
         DEBUG_MODE = True
 
     if args.ui_mode:
-        UI_MODE = args.ui_mode
+        UI_DISPLAY_MODE = args.ui_mode
+
+    # Rich text UI handling
+    if getattr(args, 'rich_text_ui', None) is True:
+        RICH_UI_ENABLED = True
 
     if args.disable_ui is True:
-        UI_ENABLED = False
+        RICH_UI_ENABLED = False
 
+    # Web UI handling
     if args.web_ui is True:
         WEB_UI_ENABLED = True
 
@@ -5642,6 +5750,7 @@ def main():
     print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
     print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
     print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
+    print(f"* Detailed follower logging:\t\t{DETAILED_FOLLOWER_LOGGING}")
     hours_ranges_str = ""
     if CHECK_POSTS_IN_HOURS_RANGE:
         ranges = []
@@ -5670,38 +5779,62 @@ def main():
             print(f"* CSV logging enabled:\t\t\tFalse")
     print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
     print(f"* Empty profile pic template:\t\t{profile_pic_file_exists}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""))
+    # Rich UI status
+    rich_ui_status = RICH_UI_ENABLED and RICH_AVAILABLE
+    rich_ui_reason = ""
+    if not rich_ui_status:
+        if not RICH_AVAILABLE:
+            rich_ui_reason = " (missing rich)"
+        elif not RICH_UI_ENABLED:
+            rich_ui_reason = " (disabled)"
+    print(f"* Rich UI:\t\t\t\t{rich_ui_status}{rich_ui_reason}")
+    # Web UI status
+    web_ui_status = WEB_UI_ENABLED and FLASK_AVAILABLE
+    web_ui_reason = ""
+    if not web_ui_status:
+        if not WEB_UI_ENABLED:
+            web_ui_reason = " (disabled)"
+        elif not FLASK_AVAILABLE:
+            web_ui_reason = " (missing Flask, install with: pip install flask)"
+    print(f"* Web UI:\t\t\t\t{web_ui_status}{web_ui_reason}")
+    print(f"* UI display mode:\t\t\t{UI_DISPLAY_MODE} ({'enabled' if RICH_UI_ENABLED and RICH_AVAILABLE else 'disabled'})")
     print(f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
     print(f"* Configuration file:\t\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t\t{env_path or 'None'}")
     if OUTPUT_DIR:
         output_dir_desc = "(root for user data & logs)" if len(targets) == 1 else "(container for per-user subdirectories & logs)"
         print(f"* Output directory:\t\t\t{OUTPUT_DIR} {output_dir_desc}")
-    print(f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}")
-
-    # New feature status
-    print(f"* Debug mode:\t\t\t\t{DEBUG_MODE}")
-    print(f"* UI mode:\t\t\t\t{UI_MODE} ({'enabled' if UI_ENABLED and RICH_AVAILABLE else 'disabled'})")
-    print(f"* Detailed follower logging:\t\t{DETAILED_FOLLOWER_LOGGING}")
     print(f"* Webhook notifications:\t\t{WEBHOOK_ENABLED}" + (f" ({WEBHOOK_URL[:50]}...)" if WEBHOOK_ENABLED and WEBHOOK_URL and len(WEBHOOK_URL) > 50 else (f" ({WEBHOOK_URL})" if WEBHOOK_ENABLED and WEBHOOK_URL else "")))
     if WEBHOOK_ENABLED:
         print(f"*   Webhook status:\t\t\t{WEBHOOK_STATUS_NOTIFICATION}")
         print(f"*   Webhook followers:\t\t\t{WEBHOOK_FOLLOWERS_NOTIFICATION}")
         print(f"*   Webhook errors:\t\t\t{WEBHOOK_ERROR_NOTIFICATION}")
+    print(f"* Debug mode:\t\t\t\t{DEBUG_MODE}")
 
-    # Initialize Rich console if available and enabled
-    if RICH_AVAILABLE and UI_ENABLED and not WEB_UI_ENABLED:  # type: ignore[name-defined]
+    print(f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}")
+
+    # Initialize Rich console if available and enabled (can work alongside web UI)
+    if RICH_AVAILABLE and RICH_UI_ENABLED:  # type: ignore[name-defined]
         assert Console is not None
         RICH_CONSOLE = Console()
+        UI_DATA['start_time'] = datetime.now()
+        UI_DATA['ui_mode'] = UI_DISPLAY_MODE
 
     # Start web UI server if enabled (before monitoring starts to avoid message interleaving)
     if WEB_UI_ENABLED:  # type: ignore[name-defined]
         WEB_UI_DATA['start_time'] = datetime.now()
-        WEB_UI_DATA['ui_mode'] = UI_MODE
+        WEB_UI_DATA['ui_mode'] = UI_DISPLAY_MODE
         start_web_server()
 
     # Start UI input handler for mode toggle (and debug commands if debug mode)
-    if not WEB_UI_ENABLED:  # type: ignore[name-defined]
-        start_ui_input_handler()
+    # Works for both Rich UI and Web UI
+    start_ui_input_handler()
+
+    # Initialize Rich UI Live display if enabled
+    if RICH_AVAILABLE and RICH_UI_ENABLED and RICH_CONSOLE is not None:
+        init_rich_ui()
+        # Show initial Rich UI immediately
+        update_rich_ui()
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
     if platform.system() != 'Windows':
@@ -5712,12 +5845,14 @@ def main():
         signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
 
     # Print monitoring message after all setup is complete
-    if len(targets) == 1:
-        out = f"\nMonitoring Instagram user {targets[0]}"
-    else:
-        out = f"\nMonitoring Instagram users ({len(targets)}): {', '.join(targets)}"
-    print(out)
-    print("─" * len(out))
+    # Note: If Rich UI is enabled, this will be shown in the Rich UI instead
+    if not (RICH_AVAILABLE and RICH_UI_ENABLED):
+        if len(targets) == 1:
+            out = f"\nMonitoring Instagram user {targets[0]}"
+        else:
+            out = f"\nMonitoring Instagram users ({len(targets)}): {', '.join(targets)}"
+        print(out)
+        print("─" * len(out))
 
     # Multi-target mode: run multiple monitors in one process, with configurable staggering
     if len(targets) == 1:
