@@ -3340,7 +3340,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         profile_pic_file = f"instagram_{user}_profile_pic.jpeg"
         profile_pic_file_old = f"instagram_{user}_profile_pic_old.jpeg"
         profile_pic_file_tmp = f"instagram_{user}_profile_pic_tmp.jpeg"
-
     followers = []
     followings = []
     followers_old = followers
@@ -5532,7 +5531,6 @@ def main():
     print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
     print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
     print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
-
     hours_ranges_str = ""
     if CHECK_POSTS_IN_HOURS_RANGE:
         ranges = []
@@ -5548,7 +5546,6 @@ def main():
     else:
         hours_ranges_str = "00:00 - 23:59"
     print("* Hours for fetching updates:\t\t" + hours_ranges_str)
-
     print(f"* Browser user agent:\t\t\t{USER_AGENT}")
     print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
     print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
