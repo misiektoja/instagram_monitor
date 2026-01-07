@@ -469,6 +469,8 @@ By default, the tool starts a web server on `http://127.0.0.1:5000/` with a beau
 
 The web UI automatically refreshes every 2 seconds to show the latest data.
 
+**Security Note:** The web UI is intended for localhost use only. Never expose it to an untrusted network.
+
 To change the web UI port:
 ```sh
 instagram_monitor <target_insta_user> --web-port 8080
