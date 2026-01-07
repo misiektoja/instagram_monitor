@@ -357,6 +357,12 @@ WEB_DASHBOARD_PORT = 5000
 # Host for the web dashboard server (use '0.0.0.0' to allow external access)
 WEB_DASHBOARD_HOST = '127.0.0.1'
 
+# Template directory for web dashboard
+# If empty, the tool will auto-detect the templates directory relative to the script location
+# For pip-installed packages, templates should be in the package directory
+# Can also be set via --web-dashboard-template-dir flag
+WEB_DASHBOARD_TEMPLATE_DIR = ""
+
 # ----------------------------
 # Detailed Follower Logging
 # ----------------------------
@@ -445,6 +451,7 @@ DASHBOARD_ENABLED = False
 WEB_DASHBOARD_ENABLED = False
 WEB_DASHBOARD_PORT = 5000
 WEB_DASHBOARD_HOST = '127.0.0.1'
+WEB_DASHBOARD_TEMPLATE_DIR = ""
 DETAILED_FOLLOWER_LOGGING = False
 
 exec(CONFIG_BLOCK, globals())
@@ -639,6 +646,54 @@ _thread_local = threading.local()
 # Web Dashboard Flask Server
 # ===========================
 
+# Helper function to run Flask app with suppressed startup messages
+def run_flask_quietly(app, host, port, debug=False, use_reloader=False, threaded=True):
+    import sys
+
+    # Filter class that suppresses Flask startup messages but allows errors through
+    class FilteredWriter:
+        def __init__(self, original_stream):
+            self.original = original_stream
+
+        def write(self, s):
+            # Filter out Flask/werkzeug startup messages
+            if isinstance(s, str):
+                # Suppress common Flask startup messages
+                if any(msg in s for msg in [
+                    "* Serving Flask app",
+                    "* Debug mode:",
+                    " * Running on",
+                    "WARNING: This is a development server",
+                    "Press CTRL+C to quit"
+                ]):
+                    return  # Suppress these messages
+                # Allow everything else (errors, warnings, etc.) through
+            self.original.write(s)
+
+        def flush(self):
+            self.original.flush()
+
+        def __getattr__(self, name):
+            # Delegate all other attributes to the original stream
+            return getattr(self.original, name)
+
+    # Wrap stdout and stderr with filters
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    filtered_stdout = FilteredWriter(old_stdout)
+    filtered_stderr = FilteredWriter(old_stderr)
+
+    try:
+        sys.stdout = filtered_stdout
+        sys.stderr = filtered_stderr
+
+        # Run Flask (startup messages will be filtered)
+        app.run(host=host, port=port, debug=debug, use_reloader=use_reloader, threaded=threaded)
+    finally:
+        # Restore stdout/stderr
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+
 # Creates and configures the Flask web application
 def create_web_dashboard_app():
     """
@@ -655,12 +710,77 @@ def create_web_dashboard_app():
     assert flask_request is not None
 
     import logging
+    # Suppress Flask and werkzeug logging more aggressively
     log = logging.getLogger('werkzeug')
-    log.setLevel(logging.WARNING)  # Suppress Flask info/debug request logs, but keep warnings/errors
+    log.setLevel(logging.ERROR)  # Only show errors, suppress info/debug/warning
+    # Also suppress Flask's own logger
+    flask_log = logging.getLogger('flask')
+    flask_log.setLevel(logging.ERROR)
 
-    # Get the directory where the script is located for templates
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    template_dir = os.path.join(script_dir, 'templates')
+    # Suppress Flask startup messages by setting environment variable
+    os.environ['FLASK_ENV'] = 'production'
+    # Note: We don't set WERKZEUG_RUN_MAIN here because it causes issues when use_reloader=False
+    # The FilteredWriter in run_flask_quietly() will handle suppressing startup messages
+
+    # Determine template directory
+    template_dir = None
+    candidate_dirs = []  # For error messages
+
+    # If explicitly set via config or CLI, use that
+    if WEB_DASHBOARD_TEMPLATE_DIR:
+        template_dir = os.path.expanduser(WEB_DASHBOARD_TEMPLATE_DIR)
+        candidate_dirs = [template_dir]  # For error message
+        if not os.path.isdir(template_dir):
+            print(f"\n❌ Error: Web Dashboard template directory not found: {template_dir}")
+            print(f"   Please check the WEB_DASHBOARD_TEMPLATE_DIR setting or --web-dashboard-template-dir flag")
+            print(f"   The directory must exist and contain index.html\n")
+            return None
+    else:
+        # Auto-detect: try script directory first (for direct execution)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate_dirs = [
+            os.path.join(script_dir, 'templates'),
+        ]
+
+        # For pip-installed packages, also check package directory
+        # Try to find templates in common package locations
+        try:
+            import importlib.util
+            spec = importlib.util.find_spec('instagram_monitor')
+            if spec and spec.origin:
+                package_dir = os.path.dirname(spec.origin)
+                package_template_dir = os.path.join(package_dir, 'templates')
+                if package_template_dir not in candidate_dirs:  # Avoid duplicates
+                    candidate_dirs.append(package_template_dir)
+        except (ImportError, AttributeError, ValueError):
+            pass
+
+        # Try each candidate directory
+        for candidate in candidate_dirs:
+            index_path = os.path.join(candidate, 'index.html')
+            if os.path.isdir(candidate) and os.path.isfile(index_path):
+                template_dir = candidate
+                break
+
+    # Verify template directory was found
+    if not template_dir:
+        print(f"\n❌ Error: Web Dashboard templates not found")
+        print(f"   The tool searched for templates in the following locations:")
+        for candidate in candidate_dirs:
+            print(f"     - {candidate}")
+        print(f"\n   To fix this, you can:")
+        print(f"   1. Ensure templates/ directory exists in the script directory")
+        print(f"   2. Set WEB_DASHBOARD_TEMPLATE_DIR in your config file")
+        print(f"   3. Use --web-dashboard-template-dir flag to specify the template directory")
+        print(f"   4. If installed via pip, ensure the package includes the templates directory\n")
+        return None
+
+    # Final verification that index.html exists
+    index_path = os.path.join(template_dir, 'index.html')
+    if not os.path.isfile(index_path):
+        print(f"\n❌ Error: Template file 'index.html' not found in: {template_dir}")
+        print(f"   The template directory exists but is missing the required index.html file\n")
+        return None
 
     app = Flask(__name__, template_folder=template_dir)
 
@@ -965,24 +1085,29 @@ def start_web_dashboard_server():
     if not WEB_DASHBOARD_ENABLED:
         return False
 
-    WEB_DASHBOARD_APP = create_web_dashboard_app()
-    if WEB_DASHBOARD_APP is None:
+    try:
+        WEB_DASHBOARD_APP = create_web_dashboard_app()
+        if WEB_DASHBOARD_APP is None:
+            return False
+    except Exception as e:
+        # create_web_dashboard_app() already prints nice error messages, but catch any unexpected errors
+        print(f"\n❌ Error: Failed to create web dashboard application: {e}\n")
         return False
 
     def run_server():
         assert WEB_DASHBOARD_APP is not None  # Type guard
-        WEB_DASHBOARD_APP.run(host=WEB_DASHBOARD_HOST, port=WEB_DASHBOARD_PORT, debug=False, use_reloader=False, threaded=True)
+        run_flask_quietly(WEB_DASHBOARD_APP, WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, debug=False, use_reloader=False, threaded=True)
 
     WEB_DASHBOARD_THREAD = threading.Thread(target=run_server, daemon=True, name="web_ui_server")
     WEB_DASHBOARD_THREAD.start()
 
-    print(f"* Web Dashboard available at: http://{WEB_DASHBOARD_HOST}:{WEB_DASHBOARD_PORT}/")
+    print(f"\n* Web Dashboard available at:\t\thttp://{WEB_DASHBOARD_HOST}:{WEB_DASHBOARD_PORT}/")
     return True
 
 
 # Runs the web dashboard in standalone mode - no CLI targets needed
 def run_standalone_web_dashboard(args):
-    global WEB_DASHBOARD_STANDALONE_MODE, WEB_DASHBOARD_ENABLED, WEB_DASHBOARD_PORT, WEB_DASHBOARD_HOST
+    global WEB_DASHBOARD_STANDALONE_MODE, WEB_DASHBOARD_ENABLED, WEB_DASHBOARD_PORT, WEB_DASHBOARD_HOST, WEB_DASHBOARD_TEMPLATE_DIR
     global SESSION_USERNAME, DEBUG_MODE, INSTA_CHECK_INTERVAL
     global RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
 
@@ -992,6 +1117,9 @@ def run_standalone_web_dashboard(args):
     # Apply any CLI overrides
     if args.web_port:
         WEB_DASHBOARD_PORT = args.web_port
+
+    if args.web_dashboard_template_dir:
+        WEB_DASHBOARD_TEMPLATE_DIR = args.web_dashboard_template_dir
 
     if args.session_username:
         SESSION_USERNAME = args.session_username
@@ -1044,8 +1172,8 @@ def run_standalone_web_dashboard(args):
     add_web_dashboard_activity("Web Dashboard control panel started")
 
     try:
-        # Run Flask in the main thread (blocking)
-        app.run(host=WEB_DASHBOARD_HOST, port=WEB_DASHBOARD_PORT, debug=False, use_reloader=False, threaded=True)
+        # Run Flask in the main thread (blocking) with suppressed startup messages
+        run_flask_quietly(app, WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, debug=False, use_reloader=False, threaded=True)
     except KeyboardInterrupt:
         print("\n* Shutting down web dashboard...")
         # Stop all monitoring threads
@@ -5573,6 +5701,13 @@ def main():
         type=int,
         help="Port for web dashboard server (default: 5000)"
     )
+    dashboard_opts.add_argument(
+        "--web-dashboard-template-dir",
+        dest="web_dashboard_template_dir",
+        metavar="DIR",
+        type=str,
+        help="Directory containing web dashboard templates (default: auto-detect)"
+    )
 
     # Webhook options
     webhook_grp = parser.add_argument_group("Webhook notifications")
@@ -5824,6 +5959,9 @@ def main():
 
     if args.web_dashboard_port:
         WEB_DASHBOARD_PORT = args.web_dashboard_port
+
+    if args.web_dashboard_template_dir:
+        WEB_DASHBOARD_TEMPLATE_DIR = args.web_dashboard_template_dir
 
     if args.detailed_follower_logging is True:
         DETAILED_FOLLOWER_LOGGING = True
