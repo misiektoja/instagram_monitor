@@ -6250,6 +6250,7 @@ def main():
             print("* To fix this, please run: pip install rich")
             print("* Reverting to original text console...")
             print("*" * HORIZONTAL_LINE)
+            DASHBOARD_ENABLED = False
 
         if WEB_DASHBOARD_ENABLED and not FLASK_AVAILABLE:
             print("\n" + "*" * HORIZONTAL_LINE)
