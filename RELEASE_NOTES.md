@@ -12,6 +12,7 @@
 - **IMPROVE:** Added display of next user check time after the initial processing is finished
 - **IMPROVE:** Simplified status messages to 'OK'
 - **IMPROVE:** Enhanced **Logger** to be dashboard-aware, preventing interleaved output when the dashboard is active
+- **IMPROVE:** Further enhanced **error messages** for **Instagram challenge/shadow ban detection** - when Instagram requires a challenge/re-login or temporarily shadow bans the IP, error messages now provide clear, informative explanations instead of cryptic **KeyError 'data'** messages
 
 **Bug fixes**:
 
