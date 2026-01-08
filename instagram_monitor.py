@@ -3760,7 +3760,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             session_username = None
 
     except Exception as e:
-        error_msg = f"{type(e).__name__}: {e}"
+        error_msg = format_error_message(e)
         print(f"* Error: {error_msg}")
         if WEB_DASHBOARD_ENABLED:
             update_web_dashboard_data(targets={user: {'status': 'Error: ' + error_msg}})
@@ -3921,7 +3921,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             followers_count = profile.followers
         except Exception as e:
             close_pbar()
-            error_msg = f"{type(e).__name__}: {e}"
+            error_msg = format_error_message(e)
             print(f"* Error while getting followers: {error_msg}")
             if WEB_DASHBOARD_ENABLED:
                 update_web_dashboard_data(targets={user: {'status': 'Error: ' + error_msg}})
@@ -4029,7 +4029,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             followings_count = profile.followees
         except Exception as e:
             close_pbar()
-            error_msg = f"{type(e).__name__}: {type(e).__name__}: {e}"
+            error_msg = format_error_message(e)
             print(f"* Error while getting followings: {error_msg}")
             if WEB_DASHBOARD_ENABLED:
                 update_web_dashboard_data(targets={user: {'status': 'Error: ' + error_msg}})
@@ -4223,7 +4223,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 stories_old_count = stories_count
 
             except Exception as e:
-                error_msg = f"{type(e).__name__}: {e}"
+                error_msg = format_error_message(e)
                 print(f"* Error while processing story items: {error_msg}")
                 if WEB_DASHBOARD_ENABLED:
                     update_web_dashboard_data(targets={user: {'status': 'Error: ' + error_msg}})
@@ -4317,7 +4317,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     if comment_created_at:
                         post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
         except Exception as e:
-            print(f"* Error while getting post's likes list / comments list: {type(e).__name__}: {e}")
+            error_msg = format_error_message(e)
+            print(f"* Error while getting post's likes list / comments list: {error_msg}")
 
         post_url = f"https://www.instagram.com/{'reel' if last_source == 'reel' else 'p'}/{shortcode}/"
         print(f"* Newest {last_source.lower()} for user {user}:\n")
@@ -4631,7 +4632,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     except Exception as e:
                         close_pbar()
                         followings = followings_old
-                        print(f"* Error while processing followings: {type(e).__name__}: {e}")
+                        error_msg = format_error_message(e)
+                        print(f"* Error while processing followings: {error_msg}")
 
                     if not followings and followings_count > 0:
                         followings = followings_old
@@ -4742,7 +4744,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     except Exception as e:
                         close_pbar()
                         followers = followers_old
-                        print(f"* Error while processing followers: {type(e).__name__}: {e}")
+                        error_msg = format_error_message(e)
+                        print(f"* Error while processing followers: {error_msg}")
 
                     if not followers and followers_count > 0:
                         followers = followers_old
@@ -5092,7 +5095,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     stories_old_count = stories_count
 
                 except Exception as e:
-                    print(f"* Error while processing story items: {type(e).__name__}: {e}")
+                    error_msg = format_error_message(e)
+                    print(f"* Error while processing story items: {error_msg}")
                     print_cur_ts("\nTimestamp:\t\t\t\t")
 
             new_post = False
@@ -6391,7 +6395,8 @@ def main():
                 )
             except Exception as e:
                 # Surface thread exceptions so the user sees them
-                print(f"* Error in target '{u}': {type(e).__name__}: {e}")
+                error_msg = format_error_message(e)
+                print(f"* Error in target '{u}': {error_msg}")
                 traceback.print_exc()
                 # Still signal completion even on error, so next user can proceed
                 loading_events[idx + 1].set()
