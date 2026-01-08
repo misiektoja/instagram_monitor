@@ -4,9 +4,9 @@
 
 **Features and Improvements**:
 
-- **NEW:** Added **custom output directory feature** (`OUTPUT_DIR` config option and `-o` / `--output-dir` flag) to organize all downloaded files into user-specific subdirectories for **images**, **videos**, **logs** and **JSON**; this significantly improves file organization, especially when monitoring multiple users; see [Output Directory](https://github.com/misiektoja/instagram_monitor#output-directory) for more info (closes [#35](https://github.com/misiektoja/instagram_monitor/issues/35))
 - **NEW:** Integrated a comprehensive **Dual Dashboard system** featuring a beautiful **Terminal Dashboard** (Rich-powered) and a modern **Web Dashboard** (Flask-powered), providing real-time stats, activity feeds and interactive control via a new informative loading screen
-- **NEW:** Added **Dashboard View Modes** - toggle between **'User'** (minimal) and **'Config'** (detailed) modes across both dashboards with a single keypress ('m') or button click; includes graceful exit ('q') and synchronized state throughout the tool
+- **NEW:** Added **Dashboard View Modes** - toggle between **'User'** (minimal) and **'Config'** (detailed) modes across both dashboards with a single keypress ('m') or button click; includes synchronized state throughout the tool
+- **NEW:** Added **custom output directory feature** (`OUTPUT_DIR` config option and `-o` / `--output-dir` flag) to organize all downloaded files into user-specific subdirectories for **images**, **videos**, **logs** and **JSON**; this significantly improves file organization, especially when monitoring multiple users; see [Output Directory](https://github.com/misiektoja/instagram_monitor#output-directory) for more info (closes [#35](https://github.com/misiektoja/instagram_monitor/issues/35))
 - **IMPROVE:** Enhanced startup summary to display the configured **Output directory** and its role (root for user data vs container for per-user subdirectories)
 - **IMPROVE:** Enhanced `CHECK_POSTS_IN_HOURS_RANGE` logic to support **disabling hour ranges** and updated status message (to disable any range, set both MIN and MAX to 0)
 - **IMPROVE:** Added display of next user check time after the initial processing is finished
