@@ -6226,7 +6226,7 @@ def main():
             if not WEB_DASHBOARD_ENABLED:
                 web_dashboard_reason = " (disabled)"
             elif not FLASK_AVAILABLE:
-                web_dashboard_reason = " (missing Flask, install with: pip install flask)"
+                web_dashboard_reason = " (missing Flask)"
         print(f"* Web Dashboard:\t\t\t{web_dashboard_status}{web_dashboard_reason}")
         print(f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
         print(f"* Configuration file:\t\t\t{cfg_path}")
@@ -6242,6 +6242,21 @@ def main():
         print(f"* Debug mode:\t\t\t\t{DEBUG_MODE}")
 
         print(f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}")
+
+        # More visible warnings if requested features are missing
+        if DASHBOARD_ENABLED and not RICH_AVAILABLE:
+            print("\n" + "*" * HORIZONTAL_LINE)
+            print("* WARNING: Terminal Dashboard is enabled, but 'rich' library is missing!")
+            print("* To fix this, please run: pip install rich")
+            print("* Reverting to original text console...")
+            print("*" * HORIZONTAL_LINE)
+
+        if WEB_DASHBOARD_ENABLED and not FLASK_AVAILABLE:
+            print("\n" + "*" * HORIZONTAL_LINE)
+            print("* WARNING: Web Dashboard is enabled, but 'Flask' library is missing!")
+            print("* To fix this, please run: pip install flask")
+            print("* Web Dashboard will NOT be available!")
+            print("*" * HORIZONTAL_LINE)
 
     # Initialize Rich console if available and enabled (can work alongside web dashboard)
     if RICH_AVAILABLE and DASHBOARD_ENABLED:  # type: ignore[name-defined]
