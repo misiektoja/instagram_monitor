@@ -54,8 +54,8 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
 5. [View Modes](#view-modes)
    * [Traditional Text Mode](#traditional-text-mode)
    * [Terminal Dashboard](#terminal-dashboard-mode)
-   * [Web Dashboard](#web-dashboard-mode)
-   * [Dashboard View Modes](#dashboard-view-modes)
+    * [Web Dashboard](#web-dashboard-mode)
+    * [Dashboard View Modes](#dashboard-view-modes)
 6. [Usage](#usage)
    * [Monitoring Mode](#monitoring-mode)
    * [Email Notifications](#email-notifications)
@@ -347,15 +347,30 @@ To toggle mode: Press **'m'**. To exit: Press **'q'**.
 <a id="web-dashboard-mode"></a>
 ### Web Dashboard
 
-A modern, real-time web interface running on your local machine (default: `http://127.0.0.1:5000/`).
+A modern, real-time web interface running on your local machine (default: `http://127.0.0.1:8000/`).
 
 **Key Features:**
-- **Visual Analytics**: Interactive display of monitoring data.
+- **Full Control Panel**: Add or remove monitoring targets directly from the browser.
+- **Visual Analytics**: Real-time display of followers, followings, posts and story status.
 - **Manual Trigger**: A "Trigger Check" button to force an immediate update for all users.
-- **Synchronization**: Changes made in the web dashboard (like mode toggles) are reflected in the terminal dashboard.
-- **Accessibility**: Monitor from another window while the terminal stays clean.
+- **Synchronization**: Changes made in the web dashboard (like mode toggles) are reflected in the terminal instantly.
+- **Dynamic Configuration**: Configure sessions and settings without touching the terminal or config files.
 
-The web dashboard requires `flask`. If flask is missing, it will be disabled while the terminal dashboard remains active.
+To enable the web dashboard, use the `--web-dashboard` flag (or set `WEB_DASHBOARD_ENABLED = True` in your config).
+
+**Flexible Usage:**
+- **Standard Monitoring**: Provide targets on the CLI, and the dashboard acts as a live mirror and remote management interface.
+- **Control Panel Mode**: Start the tool with **only** the `--web-dashboard` flag (no initial targets). The script will wait for you to add users through the browser.
+
+```sh
+# Starting with initial targets
+instagram_monitor target1 target2 --web-dashboard
+
+# Starting as a pure control panel
+instagram_monitor --web-dashboard
+```
+
+The web dashboard requires `flask`. If flask is missing, it will be disabled while the console output remains active.
 
 ---
 
