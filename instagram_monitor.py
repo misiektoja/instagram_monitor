@@ -5928,9 +5928,28 @@ def main():
     DASHBOARD_DATA['targets_list'] = targets
 
 
+    # Terminal Dashboard handling
+    if getattr(args, 'dashboard', None) is True:
+        DASHBOARD_ENABLED = True
+
+    if args.disable_dashboard is True:
+        DASHBOARD_ENABLED = False
+
+    # Web Dashboard handling
+    if args.web_dashboard is True:
+        WEB_DASHBOARD_ENABLED = True
+
+    if args.no_web_dashboard is True:
+        WEB_DASHBOARD_ENABLED = False
+
+    if args.web_dashboard_port:
+        WEB_DASHBOARD_PORT = args.web_dashboard_port
+
+    if args.web_dashboard_template_dir:
+        WEB_DASHBOARD_TEMPLATE_DIR = args.web_dashboard_template_dir
+
     # Allow empty targets if web dashboard is enabled
-    web_dashboard_enabled_arg = getattr(args, 'web_dashboard', False) is True
-    if not targets and not web_dashboard_enabled_arg:
+    if not targets and not WEB_DASHBOARD_ENABLED:
         print("* Error: At least one TARGET_USERNAME argument is required !")
         parser.print_help()
         sys.exit(1)
@@ -5964,25 +5983,6 @@ def main():
         DEBUG_MODE = True
 
 
-    # Terminal Dashboard handling
-    if getattr(args, 'dashboard', None) is True:
-        DASHBOARD_ENABLED = True
-
-    if args.disable_dashboard is True:
-        DASHBOARD_ENABLED = False
-
-    # Web Dashboard handling
-    if args.web_dashboard is True:
-        WEB_DASHBOARD_ENABLED = True
-
-    if args.no_web_dashboard is True:
-        WEB_DASHBOARD_ENABLED = False
-
-    if args.web_dashboard_port:
-        WEB_DASHBOARD_PORT = args.web_dashboard_port
-
-    if args.web_dashboard_template_dir:
-        WEB_DASHBOARD_TEMPLATE_DIR = args.web_dashboard_template_dir
 
     if args.detailed_follower_logging is True:
         DETAILED_FOLLOWER_LOGGING = True
