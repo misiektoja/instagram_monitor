@@ -2111,10 +2111,14 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
             try:
                 if imgcat_exe and not is_empty_profile_pic:
                     if func_ver == 1:
-                        subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file}", shell=True, check=True)
+                        subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{profile_pic_file}\"", shell=True, check=True)
                     else:
-                        subprocess.run(f"{imgcat_exe} {profile_pic_file} {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
-                shutil.copy2(profile_pic_file, f'instagram_{user}_profile_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
+                        subprocess.run(f"\"{imgcat_exe}\" \"{profile_pic_file}\" {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
+                profile_pic_copy_filename = f'instagram_{user}_profile_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg'
+                profile_pic_save_dir = os.path.dirname(profile_pic_file)
+                if profile_pic_save_dir:
+                    profile_pic_copy_filename = os.path.join(profile_pic_save_dir, profile_pic_copy_filename)
+                shutil.copy2(profile_pic_file, profile_pic_copy_filename)
             except Exception:
                 pass
             try:
@@ -2204,10 +2208,14 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 try:
                     if imgcat_exe and not is_empty_profile_pic_tmp:
                         if func_ver == 1:
-                            subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file_tmp}", shell=True, check=True)
+                            subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{profile_pic_file_tmp}\"", shell=True, check=True)
                         else:
-                            subprocess.run(f"{imgcat_exe} {profile_pic_file_tmp} {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
-                    shutil.copy2(profile_pic_file_tmp, f'instagram_{user}_profile_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
+                            subprocess.run(f"\"{imgcat_exe}\" \"{profile_pic_file_tmp}\" {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
+                    profile_pic_copy_filename = f'instagram_{user}_profile_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg'
+                    profile_pic_save_dir = os.path.dirname(profile_pic_file)
+                    if profile_pic_save_dir:
+                        profile_pic_copy_filename = os.path.join(profile_pic_save_dir, profile_pic_copy_filename)
+                    shutil.copy2(profile_pic_file_tmp, profile_pic_copy_filename)
                     if csv_text != "Profile Picture Created":
                         os.replace(profile_pic_file, profile_pic_file_old)
                     os.replace(profile_pic_file_tmp, profile_pic_file)
@@ -2244,7 +2252,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                             log_activity(f"Profile picture already exists (added {get_short_date_from_ts(profile_pic_mdate_dt, True)})", user=user)
                         try:
                             if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
-                                subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file}", shell=True, check=True)
+                                subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{profile_pic_file}\"", shell=True, check=True)
                         except Exception:
                             pass
                     try:
@@ -4516,7 +4524,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             if os.path.isfile(story_image_filename):
                                 try:
                                     if imgcat_exe:
-                                        subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {story_image_filename}", shell=True, check=True)
+                                        subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{story_image_filename}\"", shell=True, check=True)
                                         if i < stories_count:
                                             print()
                                 except Exception:
@@ -4684,13 +4692,16 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 image_filename = f'instagram_{user}_{last_source.lower()}_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
             else:
                 image_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
+            if (user_root_path or OUTPUT_DIR) and 'images_dir' in locals():
+                if not os.path.dirname(image_filename) == images_dir:
+                    image_filename = os.path.join(images_dir, image_filename)
             if not os.path.isfile(image_filename):
                 if save_pic_video(thumbnail_url, image_filename, highestinsta_ts):
                     print(f"{last_source.capitalize()} thumbnail image saved for {user} to '{image_filename}'")
             if os.path.isfile(image_filename):
                 try:
                     if imgcat_exe:
-                        subprocess.run(f"{imgcat_exe} {image_filename}", shell=True, check=True)
+                        subprocess.run(f"\"{imgcat_exe}\" \"{image_filename}\"", shell=True, check=True)
                 except Exception:
                     pass
 
@@ -5451,7 +5462,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                         print(f"Story thumbnail image saved for {user} to '{story_image_filename}'")
                                         try:
                                             if imgcat_exe:
-                                                subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {story_image_filename}", shell=True, check=True)
+                                                subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{story_image_filename}\"", shell=True, check=True)
                                                 if i < stories_count:
                                                     print()
                                         except Exception:
@@ -5663,13 +5674,16 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     else:
                         image_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
                     if thumbnail_url:
+                        if (user_root_path or OUTPUT_DIR) and 'images_dir' in locals():
+                            if not os.path.dirname(image_filename) == images_dir:
+                                image_filename = os.path.join(images_dir, image_filename)
                         if not os.path.isfile(image_filename):
                             if save_pic_video(thumbnail_url, image_filename, highestinsta_ts):
                                 m_body_html_pic_saved_text = f'<br><br><img src="cid:{last_source.lower()}_pic" width="50%">'
                                 print(f"{last_source.capitalize()} thumbnail image saved for {user} to '{image_filename}'")
                                 try:
                                     if imgcat_exe:
-                                        subprocess.run(f"{imgcat_exe} {image_filename}", shell=True, check=True)
+                                        subprocess.run(f"\"{imgcat_exe}\" \"{image_filename}\"", shell=True, check=True)
                                 except Exception:
                                     pass
 
