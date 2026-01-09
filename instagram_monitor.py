@@ -1322,7 +1322,14 @@ class Logger(object):
             self.logfile.flush()
 
     def flush(self):
-        pass
+        self.terminal.flush()
+        self.logfile.flush()
+
+    def fileno(self):
+        return self.terminal.fileno()
+
+    def isatty(self):
+        return self.terminal.isatty()
 
 
 # Signal handler when user presses Ctrl+C
