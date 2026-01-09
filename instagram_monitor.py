@@ -15,6 +15,8 @@ pytz
 tzlocal (optional)
 python-dotenv (optional)
 tqdm
+flask (optional - for web dashboard)
+rich (optional - for terminal dashboard)
 """
 
 VERSION = "2.1"
@@ -5815,7 +5817,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             time.sleep(r_sleep_time)
 
 
-def main():
+def run_main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
     global DEBUG_MODE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, DETAILED_FOLLOWER_LOGGING, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR
@@ -6875,11 +6877,11 @@ def main():
     sys.exit(0)
 
 
-if __name__ == "__main__":
+def main():
     try:
-        main()
+        run_main()
     except KeyboardInterrupt:
-        # Clean exit on Ctrl+C (though main() handles this mostly)
+        # Clean exit on Ctrl+C (though run_main() handles this mostly)
         if DASHBOARD_LIVE:
             DASHBOARD_LIVE.stop()
         sys.exit(0)
@@ -6904,7 +6906,7 @@ if __name__ == "__main__":
 
         # Propagate to Web Dashboard if enabled
         if WEB_DASHBOARD_ENABLED:
-            with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                 WEB_DASHBOARD_DATA['error'] = {
                     'message': str(e),
                     'traceback': error_trace,
@@ -6914,3 +6916,7 @@ if __name__ == "__main__":
             print("The Web Dashboard may have disconnected due to this error.")
 
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
