@@ -579,10 +579,17 @@ instagram_monitor <target_insta_user> -b instagram_username.csv
 
 The file will be automatically created if it does not exist.
 
-In **multi-target** mode, the tool writes **one CSV per user**. If you pass `-b instagram_data.csv`, it will create:
-- `instagram_data_<user1>.csv`
-- `instagram_data_<user2>.csv`
-... etc.
+The tool uses the following logic for CSV path resolution:
+
+1.  **Absolute Path**:
+    *   **Single-target mode**: The file is saved exactly where specified.
+    *   **Multi-target mode**: The absolute path is used as a base; separate files are created for each user (e.g., `/path/file_user1.csv`). Isolation is preserved.
+2.  **Relative Path + `OUTPUT_DIR`**: If you provide a relative path and have `OUTPUT_DIR` configured, the file is saved in the `csvs/` subdirectory:
+    *   **Single-target mode**: `OUTPUT_DIR/csvs/<filename>` (uses basename of your input)
+    *   **Multi-target mode**: `OUTPUT_DIR/<username>/csvs/<filename>` (uses basename of your input)
+3.  **Relative Path + no `OUTPUT_DIR`**:
+    *   **Single-target mode**: Saved as specified in the current working directory.
+    *   **Multi-target mode**: One file per user is created in the current working directory using a suffix: `<CSV_FILE_basename>_<username>.csv`.
 
 <a id="output-directory"></a>
 ### Output Directory
@@ -597,17 +604,23 @@ instagram_monitor <target_insta_user> -o /path/to/downloads
 
 The tool will organize files into subdirectories:
 
-- **Single-target mode**: Files are saved directly into subdirectories of the output folder:
-  - `OUTPUT_DIR/images/`
-  - `OUTPUT_DIR/videos/`
-  - `OUTPUT_DIR/json/`
-  - `OUTPUT_DIR/logs/`
+- **Output structure**: The layout depends on whether you monitor one or multiple users:
 
-- **Multi-target mode**: Each user gets their own subdirectory:
-  - `OUTPUT_DIR/<username>/images/`
-  - `OUTPUT_DIR/<username>/videos/`
-  - `OUTPUT_DIR/<username>/json/`
-  - `OUTPUT_DIR/logs/` (shared logs)
+  - **Single-target mode**: All files are organized into subdirectories directly under `OUTPUT_DIR`:
+    - `OUTPUT_DIR/images/`
+    - `OUTPUT_DIR/videos/`
+    - `OUTPUT_DIR/json/`
+    - `OUTPUT_DIR/logs/`
+    - `OUTPUT_DIR/csvs/`
+
+  - **Multi-target mode**: Each user gets their own isolated subdirectory:
+    - `OUTPUT_DIR/<username>/images/`
+    - `OUTPUT_DIR/<username>/videos/`
+    - `OUTPUT_DIR/<username>/json/`
+    - `OUTPUT_DIR/<username>/logs/`
+    - `OUTPUT_DIR/<username>/csvs/`
+
+Common messages (like the summary screen or global errors) are automatically broadcasted to all active log files.
 
 This helps keep your files organized, especially when monitoring multiple users.
 
