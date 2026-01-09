@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -24,8 +25,8 @@
             top: 0;
             width: 250px;
             height: 100vh;
-            background: rgba(0,0,0,0.3);
-            border-right: 1px solid rgba(255,255,255,0.1);
+            background: rgba(0, 0, 0, 0.3);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
             padding: 20px;
             display: flex;
             flex-direction: column;
@@ -53,7 +54,8 @@
             color: #888;
         }
 
-        .nav-item:hover, .nav-item.active {
+        .nav-item:hover,
+        .nav-item.active {
             background: rgba(233, 69, 96, 0.2);
             color: #e94560;
         }
@@ -93,7 +95,7 @@
             align-items: center;
             gap: 10px;
             padding: 8px 16px;
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 20px;
             font-size: 14px;
         }
@@ -116,15 +118,24 @@
         }
 
         @keyframes pulse {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.5; transform: scale(0.9); }
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.5;
+                transform: scale(0.9);
+            }
         }
 
         .card {
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 16px;
             padding: 24px;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             margin-bottom: 20px;
         }
 
@@ -143,10 +154,10 @@
         }
 
         .stat-card {
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 12px;
             padding: 20px;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .stat-label {
@@ -175,6 +186,15 @@
             gap: 8px;
         }
 
+        .btn-info {
+            background-color: #17a2b8;
+            color: white;
+        }
+
+        .btn-info:hover {
+            background-color: #138496;
+        }
+
         .btn-primary {
             background: linear-gradient(135deg, #e94560, #0f3460);
             color: white;
@@ -186,12 +206,12 @@
         }
 
         .btn-secondary {
-            background: rgba(255,255,255,0.1);
+            background: rgba(255, 255, 255, 0.1);
             color: #e0e0e0;
         }
 
         .btn-secondary:hover {
-            background: rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.2);
         }
 
         .btn-danger {
@@ -226,8 +246,8 @@
         .form-input {
             width: 100%;
             padding: 12px 16px;
-            background: rgba(0,0,0,0.3);
-            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 10px;
             color: #e0e0e0;
             font-size: 14px;
@@ -259,7 +279,7 @@
         .targets-table td {
             padding: 16px;
             text-align: left;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         .targets-table th {
@@ -268,6 +288,42 @@
             letter-spacing: 1px;
             color: #888;
             font-weight: 600;
+            white-space: nowrap;
+            /* Prevent wrapping of headers */
+        }
+
+        /* Fix mismatch in User View table */
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table th,
+        .table td {
+            padding: 16px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .table th {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #888;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        /* Enforce minimum width specifically for Target column to prevent crowding */
+        .table td:first-child,
+        .targets-table td:first-child {
+            min-width: 200px;
+        }
+
+        /* Ensure other columns have enough width */
+        .targets-table td,
+        .table td {
+            min-width: 80px;
         }
 
         .target-name {
@@ -310,7 +366,7 @@
         }
 
         .badge-idle {
-            background: rgba(255,255,255,0.1);
+            background: rgba(255, 255, 255, 0.1);
             color: #888;
         }
 
@@ -322,7 +378,7 @@
         .activity-item {
             padding: 12px 16px;
             border-left: 3px solid #e94560;
-            background: rgba(255,255,255,0.02);
+            background: rgba(255, 255, 255, 0.02);
             margin-bottom: 8px;
             border-radius: 0 8px 8px 0;
         }
@@ -356,7 +412,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(255,255,255,0.1);
+            background: rgba(255, 255, 255, 0.1);
             border-radius: 26px;
             transition: 0.3s;
         }
@@ -373,11 +429,11 @@
             transition: 0.3s;
         }
 
-        .toggle-switch input:checked + .toggle-slider {
+        .toggle-switch input:checked+.toggle-slider {
             background: #e94560;
         }
 
-        .toggle-switch input:checked + .toggle-slider:before {
+        .toggle-switch input:checked+.toggle-slider:before {
             transform: translateX(24px);
         }
 
@@ -386,7 +442,7 @@
             justify-content: space-between;
             align-items: center;
             padding: 16px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         .setting-info h4 {
@@ -406,7 +462,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.7);
+            background: rgba(0, 0, 0, 0.7);
             z-index: 1000;
             align-items: center;
             justify-content: center;
@@ -422,7 +478,7 @@
             padding: 30px;
             width: 90%;
             max-width: 500px;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .modal-header {
@@ -466,9 +522,9 @@
             right: 30px;
             padding: 16px 24px;
             background: #1a1a2e;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 10px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
             z-index: 2000;
             display: none;
             animation: slideIn 0.3s ease;
@@ -489,8 +545,15 @@
         }
 
         @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
         }
 
         .quick-actions {
@@ -506,11 +569,11 @@
         }
 
         ::-webkit-scrollbar-track {
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
         }
 
         ::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.2);
             border-radius: 4px;
         }
 
@@ -525,6 +588,7 @@
         }
     </style>
 </head>
+
 <body>
     <!-- Sidebar -->
     <nav class="sidebar">
@@ -549,7 +613,7 @@
         <div style="margin-top: auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
             <div style="font-size: 12px; color: #666;">
                 <div>Uptime: <span id="server-uptime">-</span></div>
-                <div style="margin-top: 4px;">v2.0.4</div>
+                <div style="margin-top: 4px;" id="tool-version">v2.0.4</div>
             </div>
         </div>
     </nav>
@@ -561,11 +625,15 @@
             <div class="page-header">
                 <h1 class="page-title">Dashboard</h1>
                 <div style="display: flex; align-items: center; gap: 16px;">
-                    <div style="display: flex; gap: 8px; background: rgba(255,255,255,0.05); padding: 4px; border-radius: 8px;">
-                        <button id="mode-user-btn" class="btn btn-secondary" style="padding: 8px 16px; font-size: 13px;" onclick="setUIMode('user')" title="User Mode - Simple view">
+                    <div
+                        style="display: flex; gap: 8px; background: rgba(255,255,255,0.05); padding: 4px; border-radius: 8px;">
+                        <button id="mode-user-btn" class="btn btn-secondary" style="padding: 8px 16px; font-size: 13px;"
+                            onclick="setUIMode('user')" title="User Mode - Simple view">
                             👤 User
                         </button>
-                        <button id="mode-config-btn" class="btn btn-secondary" style="padding: 8px 16px; font-size: 13px;" onclick="setUIMode('config')" title="Config Mode - Detailed view">
+                        <button id="mode-config-btn" class="btn btn-secondary"
+                            style="padding: 8px 16px; font-size: 13px;" onclick="setUIMode('config')"
+                            title="Config Mode - Detailed view">
                             ⚙️ Config
                         </button>
                     </div>
@@ -582,6 +650,9 @@
                 </button>
                 <button class="btn btn-success" id="start-all-btn" onclick="startAllMonitoring()">
                     <span>▶️</span> Start All
+                </button>
+                <button class="btn btn-info" id="recheck-all-btn" onclick="triggerCheck()">
+                    <span>🔄</span> Recheck All
                 </button>
                 <button class="btn btn-danger" id="stop-all-btn" onclick="stopAllMonitoring()">
                     <span>⏹️</span> Stop All
@@ -611,60 +682,89 @@
             <div id="dashboard-user-mode" class="dashboard-mode">
                 <div class="card">
                     <div class="card-title">Monitored Targets</div>
-                    <table class="targets-table" id="dashboard-targets-simple">
+                    <table class="table">
                         <thead>
                             <tr>
+                            <tr>
                                 <th>Target</th>
+                                <th>Followers</th>
+                                <th>Following</th>
+                                <th>Posts</th>
+                                <th>Reels</th>
+                                <th>Story</th>
                                 <th>Status</th>
-                                <th>Last Check</th>
-                                <th>Next Check</th>
                             </tr>
                         </thead>
                         <tbody id="dashboard-targets-simple-body">
                             <tr>
-                                <td colspan="4">
+                                <td colspan="6">
                                     <div class="empty-state">
                                         <div class="empty-state-icon">👥</div>
-                                        <p>No targets added yet. Click "Add Target" to start monitoring.</p>
+                                        <p>Loading targets...</p>
                                     </div>
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+
+                <!-- Last Fetched Card -->
+                <div class="card" style="margin-top: 24px;">
+                    <div class="card-title">Last Fetched Update</div>
+                    <div id="last-fetched-container">
+                        <!-- Populated by JS -->
+                        <div class="empty-state">
+                            <p>No recent updates found.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 24px;">
+                    <div class="card-title">Recent Activity</div>
+                    <div class="activity-feed" id="dashboard-activity">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📜</div>
+                            <p>No activity yet</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Config mode: Detailed view -->
+            <!-- Unified Config Page -->
             <div id="dashboard-config-mode" class="dashboard-mode" style="display: none;">
                 <div class="card">
-                    <div class="card-title">Monitored Targets</div>
-                    <table class="targets-table" id="dashboard-targets">
+                    <div class="card-title">Detailed Configuration</div>
+                    <div class="settings-grid" id="full-config-grid"
+                        style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 24px;">
+                    <div class="card-title">Detailed Targets View</div>
+                    <table class="table">
                         <thead>
                             <tr>
                                 <th>Target</th>
                                 <th>Followers</th>
                                 <th>Following</th>
                                 <th>Posts</th>
+                                <th>Reels</th>
+                                <th>Story</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="dashboard-targets-body">
-                            <tr>
-                                <td colspan="6">
-                                    <div class="empty-state">
-                                        <div class="empty-state-icon">👥</div>
-                                        <p>No targets added yet. Click "Add Target" to start monitoring.</p>
-                                    </div>
-                                </td>
-                            </tr>
+                            <!-- Populated by JS -->
                         </tbody>
                     </table>
                 </div>
 
-                <div class="card">
+                <div class="card" style="margin-top: 24px;">
                     <div class="card-title">Recent Activity</div>
-                    <div class="activity-feed" id="dashboard-activity">
+                    <div class="activity-feed" id="dashboard-activity-config">
+                        <!-- Mirror of activity feed -->
                         <div class="empty-state">
                             <div class="empty-state-icon">📜</div>
                             <p>No activity yet</p>
@@ -752,7 +852,8 @@
 
                 <p style="color: #666; font-size: 12px; margin-top: 16px;">
                     💡 Tip: For Firefox session import, first log into Instagram in Firefox, then run:<br>
-                    <code style="background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px; margin-top: 8px; display: inline-block;">
+                    <code
+                        style="background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px; margin-top: 8px; display: inline-block;">
                         instagram_monitor --import-firefox-session -u YOUR_USERNAME
                     </code>
                 </p>
@@ -826,7 +927,8 @@
 
                 <div class="form-group" style="margin-top: 16px;">
                     <label class="form-label">Webhook URL</label>
-                    <input type="text" class="form-input" id="webhook-url" placeholder="https://discord.com/api/webhooks/...">
+                    <input type="text" class="form-input" id="webhook-url"
+                        placeholder="https://discord.com/api/webhooks/...">
                 </div>
             </div>
 
@@ -887,7 +989,8 @@
 
             <div class="form-group">
                 <label class="form-label">Instagram Username</label>
-                <input type="text" class="form-input" id="new-target-username" placeholder="username" onkeypress="if(event.key==='Enter')addTarget()">
+                <input type="text" class="form-input" id="new-target-username" placeholder="username"
+                    onkeypress="if(event.key==='Enter')addTarget()">
             </div>
 
             <div class="setting-row" style="border: none; padding-bottom: 0;">
@@ -913,6 +1016,35 @@
     <!-- Toast -->
     <div class="toast" id="toast">
         <span id="toast-message"></span>
+    </div>
+
+    <!-- Critical Error Modal -->
+    <div class="modal-overlay" id="error-modal" style="z-index: 9999; background: rgba(0,0,0,0.9);">
+        <div class="modal" style="border: 1px solid #dc3545; box-shadow: 0 4px 25px rgba(220, 53, 69, 0.5);">
+            <div class="modal-header" style="background: linear-gradient(135deg, #dc3545, #a71d2a); color: white;">
+                <h2 class="modal-title">⚠️ Critical Error</h2>
+            </div>
+            <div class="modal-body">
+                <p style="color: #ff6b6b; font-weight: bold; margin-bottom: 16px; font-size: 16px;">
+                    The monitoring process has encountered a critical error.
+                </p>
+                <div id="error-traceback" style="
+                    background: #111;
+                    padding: 16px;
+                    border-radius: 8px;
+                    overflow: auto;
+                    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+                    font-size: 12px;
+                    color: #ff8787;
+                    border: 1px solid #444;
+                    max-height: 400px;
+                    white-space: pre-wrap;
+                    line-height: 1.4;">Waiting for error details...</div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="location.reload()">Reload Page</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -991,14 +1123,14 @@
         }
 
         // Close modal when clicking overlay (but not modal content)
-        document.getElementById('modal-add-target').addEventListener('click', function(e) {
+        document.getElementById('modal-add-target').addEventListener('click', function (e) {
             if (e.target.id === 'modal-add-target') {
                 hideModal('add-target');
             }
         });
 
         // Close modal with Escape key
-        document.addEventListener('keydown', function(e) {
+        document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') {
                 const activeModal = document.querySelector('.modal-overlay.active');
                 if (activeModal) {
@@ -1039,6 +1171,27 @@
         }
 
         function updateDashboard(data) {
+            // Check for critical error FIRST
+            if (data.error) {
+                const modal = document.getElementById('error-modal');
+                const trace = document.getElementById('error-traceback');
+
+                // Format timestamp
+                const date = new Date(data.error.timestamp * 1000).toLocaleString();
+
+                trace.innerHTML = `<strong>Error:</strong> ${escapeHtml(data.error.message)}<br><br>` +
+                    `<strong>Time:</strong> ${date}<br><br>` +
+                    `<strong>Traceback:</strong><br>${escapeHtml(data.error.traceback).replace(/\n/g, '<br>')}`;
+
+                modal.classList.add('active'); // Use existing modal activation
+                // Disable background interaction? No strict need, overlay covers it.
+                return; // Stop updating dashboard
+            }
+
+            if (data.version) {
+                document.getElementById('tool-version').textContent = `v${data.version}`;
+            }
+
             // Update UI mode if changed
             if (data.ui_mode && data.ui_mode !== currentUIMode) {
                 currentUIMode = data.ui_mode;
@@ -1075,6 +1228,14 @@
             targets = data.targets || {};
             renderTargetsTable(data.last_check, data.next_check);
 
+            // Render Last Fetched Card
+            renderLastFetched();
+
+            // Render Full Config Grid
+            if (data.config) {
+                renderFullConfig(data.config);
+            }
+
             // Update session info
             if (data.session) {
                 document.getElementById('session-status-text').textContent =
@@ -1096,6 +1257,118 @@
             }
         }
 
+        function renderLastFetched() {
+            const container = document.getElementById('last-fetched-container');
+            let latestUpdate = null;
+
+            // Find latest update across targets
+            for (const tData of Object.values(targets)) {
+                if (tData.last_post) {
+                    latestUpdate = tData.last_post;
+                    break; // Simple logic: take first one found
+                }
+                if (tData.last_story) {
+                    latestUpdate = tData.last_story;
+                    break;
+                }
+            }
+
+            if (!latestUpdate) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <p>No recent updates found.</p>
+                    </div>
+                 `;
+                return;
+            }
+
+            const caption = latestUpdate.caption ? escapeHtml(latestUpdate.caption) : '';
+            const isImage = latestUpdate.url && (latestUpdate.url.includes('.jpg') || latestUpdate.url.includes('.jpeg') || latestUpdate.url.includes('.png'));
+
+            container.innerHTML = `
+                <div style="display: flex; gap: 16px; align-items: flex-start;">
+                    ${isImage ? `<img src="${latestUpdate.url}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid #333;">` : ''}
+                    <div>
+                        <div style="font-weight: bold; color: #00bcd4; margin-bottom: 4px;">${escapeHtml(latestUpdate.type || 'Unknown')}</div>
+                        <div style="font-size: 12px; color: #888; margin-bottom: 8px;">${escapeHtml(latestUpdate.timestamp || '-')}</div>
+                        <div style="font-size: 14px; margin-bottom: 4px;">${caption}</div>
+                        ${latestUpdate.url ? `<a href="${latestUpdate.url}" target="_blank" style="font-size: 12px; text-decoration: underline;">View Media</a>` : ''}
+                    </div>
+                </div>
+             `;
+        }
+
+        function renderFullConfig(config) {
+            const grid = document.getElementById('full-config-grid');
+            if (!grid) return;
+
+            // Define display mapping
+            const items = [
+                { l: 'Polling Interval', v: config.check_interval_str },
+                { l: 'Hours Range', v: config.hours_range },
+                { l: 'Session User', v: config.session_user },
+                // Notifications Section
+                { l: 'Email Status', v: config.email_notifications ? 'Enabled' : 'Disabled' },
+                { l: 'Email Followers', v: config.follower_notifications ? 'Enabled' : 'Disabled' },
+                { l: 'Email Errors', v: config.error_notifications ? 'Enabled' : 'Disabled' },
+                { l: 'Webhook', v: config.webhook_enabled ? 'Enabled' : 'Disabled' },
+                // Config
+                { l: 'Local Timezone', v: config.local_timezone },
+                { l: 'Config File', v: config.config_file },
+                { l: 'Dotenv File', v: config.dotenv_file },
+                { l: 'Output Dir', v: (config.output_dir === '.' || !config.output_dir) ? '-' : config.output_dir },
+                { l: 'Templates', v: config.template_dir },
+                // Features
+                { l: 'Skip Session', v: config.skip_session_login },
+                { l: 'Skip Followers', v: config.skip_followers },
+                { l: 'Skip Followings', v: config.skip_followings },
+                { l: 'Skip Stories Details', v: config.skip_stories },
+                { l: 'Skip Posts Details', v: config.skip_posts },
+                { l: 'Get More Posts Details', v: config.get_more_post_details },
+                { l: 'Jitter/Back-off', v: config.enable_jitter },
+                { l: 'Profile Pic Detect', v: config.profile_pic_changes },
+                { l: 'Detailed Logging', v: config.detailed_logging },
+                { l: 'CSV Logging', v: config.csv_logging },
+                { l: 'Human Mode', v: config.human_mode },
+                { l: 'User Agent', v: config.user_agent ? config.user_agent.substring(0, 50) + (config.user_agent.length > 50 ? '...' : '') : '-' },
+            ];
+
+            grid.innerHTML = items.map(item => `
+                <div class="setting-row" style="border: none; padding: 0;">
+                    <div class="setting-info">
+                        <h4 style="font-size: 12px; color: #888; text-transform: uppercase;">${escapeHtml(item.l)}</h4>
+                        <p style="font-size: 14px; color: #ddd;">${(() => {
+                    let val = item.v !== undefined && item.v !== null ? String(item.v) : '-';
+                    if (val === 'true') return 'True';
+                    if (val === 'false') return 'False';
+                    return escapeHtml(val);
+                })()}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderDashboardActivities() {
+            const feed = document.getElementById('dashboard-activity');
+            const feedConfig = document.getElementById('dashboard-activity-config');
+            const recentActivities = activities.slice(0, 8); // Show 8 for consistency
+
+            const html = recentActivities.length === 0 ? `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📜</div>
+                        <p>No activity yet</p>
+                    </div>
+                ` : recentActivities.map(a => `
+                <div class="activity-item">
+                    <div class="activity-time">${a.time}</div>
+                    <div class="activity-message">${a.message}</div>
+                </div>
+            `).join('');
+
+            if (feed) feed.innerHTML = html;
+            if (feedConfig) feedConfig.innerHTML = html;
+        }
+
         function renderTargetsTable(globalLastCheck, globalNextCheck) {
             const tbody = document.getElementById('dashboard-targets-body');
             const tbodySimple = document.getElementById('dashboard-targets-simple-body');
@@ -1115,7 +1388,7 @@
                 if (tbodySimple) {
                     tbodySimple.innerHTML = `
                         <tr>
-                            <td colspan="4">
+                            <td colspan="5">
                                 <div class="empty-state">
                                     <div class="empty-state-icon">👥</div>
                                     <p>No targets added yet. Click "Add Target" to start monitoring.</p>
@@ -1137,7 +1410,7 @@
                 return;
             }
 
-            // Render simple view for user mode
+            // Render simple view for user mode (Expanded with more columns now)
             if (tbodySimple) {
                 const lastCheck = globalLastCheck || '-';
                 const nextCheck = globalNextCheck || '-';
@@ -1153,9 +1426,12 @@
                                 </div>
                             </div>
                         </td>
+                        <td>${data.followers ?? '-'}</td>
+                        <td>${data.following ?? '-'}</td>
+                        <td>${data.posts ?? '-'}</td>
+                        <td>${data.reels ?? '-'}</td>
+                        <td>${data.has_story ? (data.stories_count > 0 ? '✨ ' + data.stories_count : '✨ Yes') : '-'}</td>
                         <td><span class="badge badge-${getStatusBadge(data.status)}">${data.status || 'Idle'}</span></td>
-                        <td>${escapeHtml(lastCheck)}</td>
-                        <td>${escapeHtml(nextCheck)}</td>
                     </tr>
                 `).join('');
             }
@@ -1174,10 +1450,12 @@
                     <td>${data.followers ?? '-'}</td>
                     <td>${data.following ?? '-'}</td>
                     <td>${data.posts ?? '-'}</td>
+                    <td>${data.reels ?? '-'}</td>
+                    <td>${data.has_story ? (data.stories_count > 0 ? '✨ ' + data.stories_count : '✨ Yes') : '-'}</td>
                     <td><span class="badge badge-${getStatusBadge(data.status)}">${data.status || 'Idle'}</span></td>
                     <td>
                         <div class="target-actions">
-                            <button class="btn btn-secondary btn-sm" onclick="triggerCheck('${escapeHtml(name)}')" title="Check now" aria-label="Check now for ${escapeHtml(name)}">
+                            <button class="btn btn-secondary btn-sm" onclick="triggerCheck('${escapeHtml(name)}')" title="Recheck" aria-label="Recheck for ${escapeHtml(name)}">
                                 🔄
                             </button>
                             <button class="btn btn-success btn-sm" onclick="startMonitoring('${escapeHtml(name)}')" title="Start" aria-label="Start monitoring ${escapeHtml(name)}">
@@ -1185,6 +1463,9 @@
                             </button>
                             <button class="btn btn-danger btn-sm" onclick="stopMonitoring('${escapeHtml(name)}')" title="Stop" aria-label="Stop monitoring ${escapeHtml(name)}">
                                 ⏹️
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="removeTarget('${escapeHtml(name)}')" title="Remove" aria-label="Remove target ${escapeHtml(name)}">
+                                🗑️
                             </button>
                         </div>
                     </td>
@@ -1204,8 +1485,14 @@
                     <td>${data.last_checked || 'Never'}</td>
                     <td>
                         <div class="target-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="triggerCheck('${escapeHtml(name)}')" title="Recheck" aria-label="Recheck for ${escapeHtml(name)}">
+                                🔄
+                            </button>
                             <button class="btn btn-success btn-sm" onclick="startMonitoring('${escapeHtml(name)}')" title="Start" aria-label="Start monitoring ${escapeHtml(name)}">
                                 ▶️
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="stopMonitoring('${escapeHtml(name)}')" title="Stop" aria-label="Stop monitoring ${escapeHtml(name)}">
+                                ⏹️
                             </button>
                             <button class="btn btn-danger btn-sm" onclick="removeTarget('${escapeHtml(name)}')" title="Remove" aria-label="Remove target ${escapeHtml(name)}">
                                 🗑️
@@ -1370,7 +1657,11 @@
 
         async function startAllMonitoring() {
             try {
-                const response = await fetch('/api/monitoring/start', { method: 'POST' });
+                const response = await fetch('/api/monitoring/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
                 const data = await response.json();
                 if (data.success) {
                     showToast('Started all monitoring');
@@ -1385,7 +1676,11 @@
 
         async function stopAllMonitoring() {
             try {
-                const response = await fetch('/api/monitoring/stop', { method: 'POST' });
+                const response = await fetch('/api/monitoring/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
                 const data = await response.json();
                 if (data.success) {
                     showToast('Stopped all monitoring');
@@ -1517,4 +1812,5 @@
         setInterval(fetchStatus, 5000);
     </script>
 </body>
+
 </html>
