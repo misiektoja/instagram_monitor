@@ -214,6 +214,17 @@ NEXT_OPERATION_DELAY = 0.7
 
 # CSV file to write all activities and profile changes
 # Can also be set using the -b flag
+#
+# Path resolution logic:
+# 1. Absolute path:
+#    - Multi-target mode: uses as base (e.g. /path/file_user1.csv), isolation is preserved
+#    - Single-target mode: uses exactly as specified
+# 2. Relative path + no OUTPUT_DIR:
+#    - Multi-target mode: <CSV_FILE_basename>_<username>.csv (in current working dir)
+#    - Single-target mode: <CSV_FILE> (in current working dir, path preserved)
+# 3. Relative path + OUTPUT_DIR:
+#    - Multi-target mode: OUTPUT_DIR/<username>/csvs/<filename> (uses basename of CSV_FILE)
+#    - Single-target mode: OUTPUT_DIR/csvs/<filename> (uses basename of CSV_FILE)
 CSV_FILE = ""
 
 # Location of the optional dotenv file which can keep secrets
@@ -227,24 +238,27 @@ FIREFOX_MACOS_COOKIE = "~/Library/Application Support/Firefox/Profiles/*/cookies
 FIREFOX_WINDOWS_COOKIE = "~/AppData/Roaming/Mozilla/Firefox/Profiles/*/cookies.sqlite"
 FIREFOX_LINUX_COOKIE = "~/.mozilla/firefox/*/cookies.sqlite"
 
-# Base name for the log file. Output will be saved to instagram_monitor_<username>.log
-# Can include a directory path to specify the location, e.g. ~/some_dir/instagram_monitor
+# Base name for the log file. Output will be saved to target-specific log files.
+# If OUTPUT_DIR is set, log will be saved to OUTPUT_DIR/<username>/logs/<INSTA_LOGFILE>.log
+# Otherwise, it will be saved to <INSTA_LOGFILE>_<username>.log in current working dir
 INSTA_LOGFILE = "instagram_monitor"
 
 # Optional: specify directory layout for generated files
 # If set, all downloaded files (images, videos, json, logs) will be saved under this directory
 #
-# Structure (single-target example):
+# Structure (single-target mode):
 #   OUTPUT_DIR/
 #     logs/
+#     csvs/
 #     images/
 #     videos/
 #     json/
 #
-# Structure (multi-target example):
+# Structure (multi-target mode):
 #   OUTPUT_DIR/
-#     logs/           (Shared logs)
 #     username1/
+#       logs/
+#       csvs/
 #       images/
 #       videos/
 #       json/
@@ -1130,10 +1144,16 @@ def start_monitoring_for_target(username):
                 if user in WEB_DASHBOARD_DATA['targets']:
                     WEB_DASHBOARD_DATA['targets'][user]['status'] = 'Starting'
 
+            # Resolve target-specific paths
+            target_csv, target_log = get_target_paths(user)
+            if not DISABLE_LOGGING and target_log:
+                if isinstance(sys.stdout, Logger):
+                    sys.stdout.add_target_log(user, target_log)
+
             # Run the actual monitoring (with stop event check)
             instagram_monitor_user(
                 user,
-                "",  # No CSV file
+                target_csv,
                 SKIP_SESSION,
                 SKIP_FOLLOWERS,
                 SKIP_FOLLOWINGS,
@@ -1141,7 +1161,7 @@ def start_monitoring_for_target(username):
                 SKIP_GETTING_POSTS_DETAILS,
                 GET_MORE_POST_DETAILS,
                 stop_event=stop_evt,
-                user_root_path=OUTPUT_DIR
+                user_root_path=None # Fallback to OUTPUT_DIR/user if OUTPUT_DIR is set
             )
         except Exception as e:
             add_web_dashboard_activity(f"Error monitoring {user}: {str(e)}")
@@ -1302,11 +1322,36 @@ def show_follow_info(followers_reported: int, followers_actual: int, followings_
     print(f"* Followers: reported ({followers_reported}) actual ({followers_actual}). Followings: reported ({followings_reported}) actual ({followings_actual})")
 
 
-# Logger class to output messages to stdout and log file
+# Logger class to output messages to stdout and log files
 class Logger(object):
-    def __init__(self, filename):
+    def __init__(self, main_filename=None):
         self.terminal = sys.stdout
-        self.logfile = open(filename, "a", buffering=1, encoding="utf-8")
+        self.target_logs = {}  # target -> file_handle
+        self.main_log = None
+        if main_filename:
+            try:
+                self.main_log = open(main_filename, "a", buffering=1, encoding="utf-8")
+            except Exception as e:
+                print(f"* Error: Could not open main log file '{main_filename}': {e}", file=sys.stderr)
+
+    def add_target_log(self, target, filename):
+        with STDOUT_LOCK:
+            if target not in self.target_logs:
+                try:
+                    # Ensure directory exists if path contains one
+                    dirname = os.path.dirname(filename)
+                    if dirname:
+                        os.makedirs(dirname, exist_ok=True)
+                    self.target_logs[target] = open(filename, "a", buffering=1, encoding="utf-8")
+                except Exception as e:
+                    print(f"* Error: Could not open log file '{filename}' for target '{target}': {e}", file=sys.stderr)
+
+    def _get_current_target(self):
+        thread_name = threading.current_thread().name
+        # Target threads are named "instagram_monitor:<user>" or "monitor:<user>"
+        if ':' in thread_name:
+            return thread_name.split(':', 1)[1]
+        return None
 
     def write(self, message):
         global last_output
@@ -1317,15 +1362,32 @@ class Logger(object):
                 if tid not in LAST_OUTPUT_BY_THREAD:
                     LAST_OUTPUT_BY_THREAD[tid] = []
                 LAST_OUTPUT_BY_THREAD[tid].append(message)
+
             if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
                 self.terminal.write(message)
                 self.terminal.flush()
-            self.logfile.write(message)
-            self.logfile.flush()
+
+            target = self._get_current_target()
+            if target and target in self.target_logs:
+                # User-specific action: log ONLY to user log
+                self.target_logs[target].write(message)
+                self.target_logs[target].flush()
+            else:
+                # Common message (e.g. summary screen from MainThread): log to ALL logs
+                if self.main_log:
+                    self.main_log.write(message)
+                    self.main_log.flush()
+                for handle in self.target_logs.values():
+                    handle.write(message)
+                    handle.flush()
 
     def flush(self):
         self.terminal.flush()
-        self.logfile.flush()
+        if self.main_log:
+            self.main_log.flush()
+        with STDOUT_LOCK:
+            for handle in self.target_logs.values():
+                handle.flush()
 
     def fileno(self):
         return self.terminal.fileno()
@@ -1699,6 +1761,8 @@ def debug_print(message):
 # Initializes the CSV file
 def init_csv_file(csv_file_name):
     try:
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(os.path.abspath(csv_file_name)), exist_ok=True)
         if not os.path.isfile(csv_file_name) or os.path.getsize(csv_file_name) == 0:
             with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
@@ -3889,14 +3953,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         json_dir = os.path.join(user_root_dir, "json")
         images_dir = os.path.join(user_root_dir, "images")
         videos_dir = os.path.join(user_root_dir, "videos")
-        for d in [user_root_dir, json_dir, images_dir, videos_dir]:
+        for d in [user_root_dir, json_dir, images_dir, videos_dir, os.path.join(user_root_dir, "logs"), os.path.join(user_root_dir, "csvs")]:
             os.makedirs(d, exist_ok=True)
     elif OUTPUT_DIR:
         user_root_dir = os.path.join(OUTPUT_DIR, user)
         json_dir = os.path.join(user_root_dir, "json")
         images_dir = os.path.join(user_root_dir, "images")
         videos_dir = os.path.join(user_root_dir, "videos")
-        for d in [user_root_dir, json_dir, images_dir, videos_dir]:
+        for d in [user_root_dir, json_dir, images_dir, videos_dir, os.path.join(user_root_dir, "logs"), os.path.join(user_root_dir, "csvs")]:
             os.makedirs(d, exist_ok=True)
 
     try:
@@ -5831,6 +5895,59 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             time.sleep(r_sleep_time)
 
 
+# Helper to resolve log and CSV paths for a specific target
+def get_target_paths(user):
+    # Use DASHBOARD_DATA to check if we are in single-target mode
+    targets_list = DASHBOARD_DATA.get('targets_list', [])
+    is_multi = len(targets_list) > 1
+
+    target_csv = ""
+    if CSV_FILE:
+        base_path = Path(CSV_FILE)
+        base_suffix = base_path.suffix if base_path.suffix else ".csv"
+
+        if os.path.isabs(CSV_FILE):
+            if is_multi:
+                # Multi-target with absolute path: use as base
+                target_csv = str(base_path.with_name(f"{base_path.stem}_{user}{base_suffix}"))
+            else:
+                # Single-target with absolute path: use exactly as specified
+                target_csv = CSV_FILE
+        elif OUTPUT_DIR:
+            if is_multi:
+                # Multi target with OUTPUT_DIR: OUTPUT_DIR/<user>/csvs/
+                target_csv = os.path.join(OUTPUT_DIR, user, "csvs", os.path.basename(CSV_FILE))
+            else:
+                # Single target with OUTPUT_DIR: OUTPUT_DIR/csvs/
+                target_csv = os.path.join(OUTPUT_DIR, "csvs", os.path.basename(CSV_FILE))
+        else:
+            # Traditional behavior if no OUTPUT_DIR
+            if is_multi:
+                target_csv = str(base_path.with_name(f"{base_path.stem}_{user}{base_suffix}"))
+            else:
+                target_csv = str(base_path)
+
+    target_log = ""
+    if not DISABLE_LOGGING:
+        if OUTPUT_DIR:
+            if is_multi:
+                # Multi target: OUTPUT_DIR/<user>/logs/monitor.log
+                target_log = os.path.join(OUTPUT_DIR, user, "logs", f"{Path(INSTA_LOGFILE).stem}.log")
+            else:
+                # Single target: OUTPUT_DIR/logs/monitor.log
+                target_log = os.path.join(OUTPUT_DIR, "logs", f"{Path(INSTA_LOGFILE).stem}.log")
+        else:
+            # Traditional behavior: monitor_<user>.log
+            log_path = Path(os.path.expanduser(INSTA_LOGFILE))
+            suffix = f"_{user}"
+            if log_path.suffix == "":
+                target_log = str(log_path.parent / f"{log_path.name}{suffix}.log")
+            else:
+                target_log = str(log_path.parent / f"{log_path.stem}{suffix}{log_path.suffix}")
+
+    return target_csv, target_log
+
+
 def run_main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
     global DEBUG_MODE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, DETAILED_FOLLOWER_LOGGING, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA
@@ -6497,82 +6614,38 @@ def run_main():
         if CSV_FILE:
             CSV_FILE = os.path.expanduser(CSV_FILE)
 
-    # CSV per-user handling:
-    # - single target: keep existing behavior (use CSV_FILE as-is)
-    # - multi target: create one CSV per user based on CSV_FILE prefix, e.g. instagram_data.csv -> instagram_data_user.csv
-    csv_files_by_user: dict = {}
-    if CSV_FILE and len(targets) == 1:
-        try:
-            with open(CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
-                pass
-        except Exception as e:
-            print(f"* Error, CSV file cannot be opened for writing: {e}")
-            sys.exit(1)
-        csv_files_by_user[targets[0]] = CSV_FILE
-    elif CSV_FILE and len(targets) > 1:
-        base_path = Path(CSV_FILE)
-        base_suffix = base_path.suffix if base_path.suffix else ".csv"
-        for u in targets:
-            per_user = str(base_path.with_name(f"{base_path.stem}_{u}{base_suffix}"))
-            try:
-                with open(per_user, 'a', newline='', buffering=1, encoding="utf-8") as _:
-                    pass
-            except Exception as e:
-                print(f"* Error, CSV file cannot be opened for writing ({u}): {e}")
-                sys.exit(1)
-            csv_files_by_user[u] = per_user
-
     if args.disable_logging is True:
         DISABLE_LOGGING = True
 
-    # Decide output log suffix
-    if len(targets) == 1:
-        log_suffix = targets[0]
-    else:
-        # Join sorted usernames (human readable, deterministic)
-        joined = "_".join(sorted(targets))
-        joined = joined.replace(os.sep, "_").replace(" ", "_")
-        # Keep filenames at a reasonable length, add a short hash only if we had to truncate
-        if len(joined) > 140:
-            h = hashlib.md5(joined.encode("utf-8")).hexdigest()[:8]
-            joined = joined[:140] + "_" + h
-        log_suffix = joined
-
+    # Initialize Logger
     if not DISABLE_LOGGING:
-        log_path = Path(os.path.expanduser(INSTA_LOGFILE))
+        sys.stdout = Logger()
 
-        if OUTPUT_DIR:
-            out_path = Path(os.path.expanduser(OUTPUT_DIR))
-            logs_dir = out_path / "logs"
-            logs_dir.mkdir(parents=True, exist_ok=True)
+    # Resolve CSV and Log paths for each target
+    csv_files_by_user: dict = {}
+    for u in targets:
+        target_csv, target_log = get_target_paths(u)
 
-            # Construct log filename
-            if log_path.name:
-                log_filename = log_path.name
-            else:
-                log_filename = "instagram_monitor"
+        if target_csv:
+            csv_files_by_user[u] = target_csv
+            # Pre-create/verify CSV
+            try:
+                init_csv_file(target_csv)
+            except Exception as e:
+                print(f"* Error: CSV file cannot be opened for writing ({u}): {e}")
+                sys.exit(1)
 
-            if not log_filename.endswith(".log"):
-                log_filename += ".log"
+        if target_log:
+            # Register in Logger
+            sys.stdout.add_target_log(u, target_log)
 
-            # Append suffix if needed
-            if log_path.suffix == "":
-                log_path = logs_dir / f"{Path(log_filename).stem}_{log_suffix}.log"
-            else:
-                log_path = logs_dir / f"{Path(log_filename).stem}_{log_suffix}{log_path.suffix}"
-
+    # For display in summary screen
+    if not DISABLE_LOGGING:
+        if len(targets) == 1:
+            _, final_log = get_target_paths(targets[0])
+            FINAL_LOG_PATH = final_log
         else:
-            # Default behavior
-            if log_path.parent != Path('.'):
-                if log_path.suffix == "":
-                    log_path = log_path.parent / f"{log_path.name}_{log_suffix}.log"
-            else:
-                if log_path.suffix == "":
-                    log_path = Path(f"{log_path.name}_{log_suffix}.log")
-
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        FINAL_LOG_PATH = str(log_path)
-        sys.stdout = Logger(FINAL_LOG_PATH)
+            FINAL_LOG_PATH = "per-target files"
     else:
         FINAL_LOG_PATH = None
 
@@ -6626,13 +6699,6 @@ def run_main():
         print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
         print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
         print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
-        if len(targets) == 1:
-            print(f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
-        else:
-            if CSV_FILE:
-                print(f"* CSV logging enabled:\t\t\tTrue (per-user files, base: {CSV_FILE})")
-            else:
-                print(f"* CSV logging enabled:\t\t\tFalse")
         print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
         print(f"* Empty profile pic template:\t\t{profile_pic_file_exists}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""))
         # Dashboard status
@@ -6653,14 +6719,23 @@ def run_main():
             elif not FLASK_AVAILABLE:
                 web_dashboard_reason = " (missing Flask)"
         print(f"* Web Dashboard:\t\t\t{web_dashboard_status}{web_dashboard_reason}")
+        if len(targets) == 1:
+            print(f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
+        else:
+            if CSV_FILE:
+                print(f"* CSV logging enabled:\t\t\tTrue (per-user files, base: {CSV_FILE})")
+            else:
+                print(f"* CSV logging enabled:\t\t\tFalse")
         print(f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
+        if OUTPUT_DIR:
+            output_dir_desc = "(root for user data & logs)" if len(targets) == 1 else "(container for per-user subdirectories & logs)"
+            print(f"* Output directory:\t\t\t{OUTPUT_DIR} {output_dir_desc}")
+        else:
+            print(f"* Output directory:\t\t\t{os.getcwd()} (current working directory)")
         print(f"* Configuration file:\t\t\t{cfg_path}")
         print(f"* Dotenv file:\t\t\t\t{env_path or 'None'}")
         if WEB_DASHBOARD_ENABLED:
             print(f"* Web Dashboard templates:\t\t{WEB_DASHBOARD_TEMPLATE_DIR or 'Auto-detect'}")
-        if OUTPUT_DIR:
-            output_dir_desc = "(root for user data & logs)" if len(targets) == 1 else "(container for per-user subdirectories & logs)"
-            print(f"* Output directory:\t\t\t{OUTPUT_DIR} {output_dir_desc}")
         print(f"* Webhook notifications:\t\t{WEBHOOK_ENABLED}" + (f" ({WEBHOOK_URL[:50]}...)" if WEBHOOK_ENABLED and WEBHOOK_URL and len(WEBHOOK_URL) > 50 else (f" ({WEBHOOK_URL})" if WEBHOOK_ENABLED and WEBHOOK_URL else "")))
         if WEBHOOK_ENABLED:
             print(f"*   Webhook status:\t\t\t{WEBHOOK_STATUS_NOTIFICATION}")
