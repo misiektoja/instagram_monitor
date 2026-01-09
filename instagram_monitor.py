@@ -3150,17 +3150,18 @@ def generate_config_dashboard(target_data, config_data):
         ("Session User", config_data.get('session_user', '-')),
         ("Human Mode", str(config_data.get('human_mode', '-'))),
         ("Profile Pic Checks", str(config_data.get('profile_pic_changes', '-'))),
-        ("Skip Session Login", str(config_data.get('skip_session', '-'))),
+        ("Skip Session Login", str(config_data.get('skip_session_login', '-'))),
         ("Skip Followers", str(config_data.get('skip_followers', '-'))),
         ("Skip Followings", str(config_data.get('skip_followings', '-'))),
-        ("Skip Stories Details", str(config_data.get('skip_story', '-'))),
+        ("Skip Stories Details", str(config_data.get('skip_stories', '-'))),
         ("Skip Post Details", str(config_data.get('skip_posts', '-'))),
-        ("Get More Post Details", str(config_data.get('get_more_details', '-'))),
-        ("Detailed logging", str(config_data.get('detailed_log', '-'))),
+        ("Get More Post Details", str(config_data.get('get_more_post_details', '-'))),
+        ("Detailed logging", str(config_data.get('detailed_logging', '-'))),
         ("Liveness Check", str(config_data.get('liveness_check', '-'))),
+        ("Debug Mode", str(config_data.get('debug_mode', '-'))),
     ]
 
-    # Remove User Agent fields from main list (since we have a dedicated footer)
+    # UA footer (mini panel)
     # Right column items from unified config
     right_items = [
         ("Hours Range", config_data.get('hours_range', '-')),
@@ -3173,7 +3174,12 @@ def generate_config_dashboard(target_data, config_data):
         ("Output Logging", str(config_data.get('logging_enabled', '-'))),
         ("Output Dir", config_data.get('output_dir', '-')),
         ("Webhook Enabled", str(config_data.get('webhook_enabled', '-'))),
-        ("Email Notifications", str(config_data.get('email_notifications', '-'))),
+        ("Webhook Status", str(config_data.get('webhook_status', '-'))),
+        ("Webhook Followers", str(config_data.get('webhook_followers', '-'))),
+        ("Webhook Errors", str(config_data.get('webhook_errors', '-'))),
+        ("Email Status", str(config_data.get('email_notifications', '-'))),
+        ("Email Followers", str(config_data.get('follower_notifications', '-'))),
+        ("Email Errors", str(config_data.get('error_notifications', '-'))),
     ]
 
     for setting, value in left_items:
@@ -3187,7 +3193,13 @@ def generate_config_dashboard(target_data, config_data):
     ua_text.append(f"{USER_AGENT[:70]}..." if len(USER_AGENT) > 70 else (USER_AGENT or "Auto"), style="dim")
     ua_text.append("\nMobile UA:  ", style="cyan")
     ua_text.append(f"{USER_AGENT_MOBILE[:70]}..." if len(USER_AGENT_MOBILE) > 70 else (USER_AGENT_MOBILE or "Auto"), style="dim")
-    ua_panel = Panel(ua_text, title="User Agents", box=box.ROUNDED, border_style="magenta", expand=True)
+    ua_text.append("\nConfig file: ", style="cyan")
+    ua_text.append(f"{config_data.get('config_file', 'None')}", style="dim")
+    ua_text.append("\nDotenv file: ", style="cyan")
+    ua_text.append(f"{config_data.get('dotenv_file', 'None')}", style="dim")
+    ua_text.append("\nTimezone:    ", style="cyan")
+    ua_text.append(f"{config_data.get('local_timezone', 'UTC')}", style="dim")
+    ua_panel = Panel(ua_text, title="Environment Details", box=box.ROUNDED, border_style="magenta", expand=True)
 
     # Activity Log Panel (Latest at bottom)
     activities = DASHBOARD_DATA.get('activities', [])
@@ -3693,6 +3705,7 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'skip_posts': SKIP_GETTING_POSTS_DETAILS,
         'get_more_post_details': GET_MORE_POST_DETAILS,
         'detailed_logging': DETAILED_FOLLOWER_LOGGING,
+        'debug_mode': DEBUG_MODE,
         'hours_range': hours_ranges_str,
         'user_agent': USER_AGENT,
         'user_agent_mobile': USER_AGENT_MOBILE,
@@ -3706,7 +3719,7 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'log_file': final_log_path if final_log_path and not DISABLE_LOGGING else "",
         'config_file': cfg_path or CLI_CONFIG_PATH or 'None',
         'dotenv_file': env_path or DOTENV_FILE or 'None',
-        'output_dir': OUTPUT_DIR if OUTPUT_DIR else ".",
+        'output_dir': OUTPUT_DIR or "-",
         'template_dir': WEB_DASHBOARD_TEMPLATE_DIR or "Auto",
         'local_timezone': LOCAL_TIMEZONE,
         'webhook_enabled': WEBHOOK_ENABLED,
