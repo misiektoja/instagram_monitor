@@ -3620,8 +3620,8 @@ def close_pbar():
 
         # Write final state to log file if logging is enabled
         if stdout_bck is not None and isinstance(sys.stdout, Logger):
-            sys.stdout.logfile.write(final_str + "\n")
-            sys.stdout.logfile.flush()
+            sys.stdout.main_log.write(final_str + "\n")
+            sys.stdout.main_log.flush()
 
         _thread_local.pbar = None  # type: ignore[misc]
         # Also clear global for backward compatibility
@@ -6623,7 +6623,7 @@ def run_main():
 
     # Initialize Logger
     if not DISABLE_LOGGING:
-        sys.stdout = Logger()
+        sys.stdout = Logger()  # type: ignore[assignment]
 
     # Resolve CSV and Log paths for each target
     csv_files_by_user: dict = {}
@@ -6641,7 +6641,8 @@ def run_main():
 
         if target_log:
             # Register in Logger
-            sys.stdout.add_target_log(u, target_log)
+            if isinstance(sys.stdout, Logger):
+                sys.stdout.add_target_log(u, target_log)
 
     # For display in summary screen
     if not DISABLE_LOGGING:
