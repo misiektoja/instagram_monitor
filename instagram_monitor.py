@@ -825,7 +825,7 @@ def create_web_dashboard_app():
 
     @app.route('/')
     def index():  # type: ignore
-        return render_template('index.html')  # type: ignore[misc]
+        return render_template('index.html', version=VERSION)  # type: ignore[misc]
 
     @app.route('/api/status')
     def api_status():  # type: ignore
@@ -1178,7 +1178,7 @@ def stop_monitoring_for_target(username):
 
 # Starts the Flask web server in a background thread
 def start_web_dashboard_server():
-    global WEB_DASHBOARD_APP, WEB_DASHBOARD_THREAD
+    global WEB_DASHBOARD_APP, WEB_DASHBOARD_THREAD, WEB_DASHBOARD_TEMPLATE_DIR, VERSION
 
     if not FLASK_AVAILABLE:
         return False

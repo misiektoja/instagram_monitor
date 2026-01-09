@@ -613,7 +613,7 @@
         <div style="margin-top: auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
             <div style="font-size: 12px; color: #666;">
                 <div>Uptime: <span id="server-uptime">-</span></div>
-                <div style="margin-top: 4px;" id="tool-version">v2.0.4</div>
+                <div style="margin-top: 4px;" id="tool-version">v{{ version }}</div>
             </div>
         </div>
     </nav>
@@ -1186,10 +1186,6 @@
                 modal.classList.add('active'); // Use existing modal activation
                 // Disable background interaction? No strict need, overlay covers it.
                 return; // Stop updating dashboard
-            }
-
-            if (data.version) {
-                document.getElementById('tool-version').textContent = `v${data.version}`;
             }
 
             // Update UI mode if changed
