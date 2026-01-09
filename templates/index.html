@@ -586,6 +586,36 @@
             padding: 6px 12px;
             font-size: 12px;
         }
+
+        /* Sorting styles */
+        .sortable {
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            padding-right: 20px !important;
+        }
+
+        .sortable:hover {
+            color: #e94560 !important;
+        }
+
+        .sort-indicator {
+            display: inline-block;
+            margin-left: 5px;
+            font-size: 10px;
+            vertical-align: middle;
+            opacity: 0.5;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+
+        .sort-indicator.active {
+            opacity: 1;
+            color: #e94560;
+        }
+
+        .sort-indicator.desc {
+            transform: rotate(180deg);
+        }
     </style>
 </head>
 
@@ -686,7 +716,9 @@
                         <thead>
                             <tr>
                             <tr>
-                                <th>Target</th>
+                                <th class="sortable" onclick="toggleTargetSort()">
+                                    Target <span id="sort-indicator-user" class="sort-indicator">▲</span>
+                                </th>
                                 <th>Followers</th>
                                 <th>Following</th>
                                 <th>Posts</th>
@@ -745,7 +777,9 @@
                     <table class="table">
                         <thead>
                             <tr>
-                                <th>Target</th>
+                                <th class="sortable" onclick="toggleTargetSort()">
+                                    Target <span id="sort-indicator-config" class="sort-indicator">▲</span>
+                                </th>
                                 <th>Followers</th>
                                 <th>Following</th>
                                 <th>Posts</th>
@@ -787,7 +821,9 @@
                 <table class="targets-table">
                     <thead>
                         <tr>
-                            <th>Username</th>
+                            <th class="sortable" onclick="toggleTargetSort()">
+                                Username <span id="sort-indicator-targets" class="sort-indicator">▲</span>
+                            </th>
                             <th>Added</th>
                             <th>Status</th>
                             <th>Last Checked</th>
@@ -1170,7 +1206,53 @@
             }
         }
 
+        let currentTargetSort = 'asc'; // 'asc', 'desc'
+        let dashboardData = null; // Store full data
+
+        function toggleTargetSort() {
+            if (currentTargetSort === 'asc') currentTargetSort = 'desc';
+            else currentTargetSort = 'asc';
+
+            updateSortIndicators();
+            if (dashboardData) {
+                renderTargetsTable(dashboardData.last_check, dashboardData.next_check);
+            }
+        }
+
+        function updateSortIndicators() {
+            const indicators = [
+                document.getElementById('sort-indicator-user'),
+                document.getElementById('sort-indicator-config'),
+                document.getElementById('sort-indicator-targets')
+            ];
+
+            indicators.forEach(ind => {
+                if (!ind) return;
+                ind.classList.remove('desc');
+                ind.style.opacity = '1';
+                ind.classList.add('active');
+                if (currentTargetSort === 'desc') {
+                    ind.classList.add('desc');
+                }
+            });
+        }
+
+        function getSortedTargets() {
+            const entries = Object.entries(targets);
+
+            return entries.sort((a, b) => {
+                const nameA = a[0].toLowerCase();
+                const nameB = b[0].toLowerCase();
+                if (currentTargetSort === 'asc') {
+                    return nameA.localeCompare(nameB);
+                } else {
+                    return nameB.localeCompare(nameA);
+                }
+            });
+        }
+
         function updateDashboard(data) {
+            dashboardData = data;
             // Check for critical error FIRST
             if (data.error) {
                 const modal = document.getElementById('error-modal');
@@ -1369,6 +1451,7 @@
             const tbody = document.getElementById('dashboard-targets-body');
             const tbodySimple = document.getElementById('dashboard-targets-simple-body');
             const targetsList = document.getElementById('targets-list');
+            const sortedEntries = getSortedTargets();
 
             if (Object.keys(targets).length === 0) {
                 tbody.innerHTML = `
@@ -1411,7 +1494,7 @@
                 const lastCheck = globalLastCheck || '-';
                 const nextCheck = globalNextCheck || '-';
 
-                tbodySimple.innerHTML = Object.entries(targets).map(([name, data]) => `
+                tbodySimple.innerHTML = sortedEntries.map(([name, data]) => `
                     <tr>
                         <td>
                             <div class="target-name">
@@ -1432,7 +1515,7 @@
                 `).join('');
             }
 
-            tbody.innerHTML = Object.entries(targets).map(([name, data]) => `
+            tbody.innerHTML = sortedEntries.map(([name, data]) => `
                 <tr>
                     <td>
                         <div class="target-name">
@@ -1468,7 +1551,7 @@
                 </tr>
             `).join('');
 
-            targetsList.innerHTML = Object.entries(targets).map(([name, data]) => `
+            targetsList.innerHTML = sortedEntries.map(([name, data]) => `
                 <tr>
                     <td>
                         <div class="target-name">
@@ -1503,7 +1586,7 @@
             if (!status) return 'idle';
             status = status.toLowerCase();
             if (status === 'ok' || status === 'monitoring' || status === 'running') return 'success';
-            if (status === 'checking' || status === 'starting') return 'warning';
+            if (status === 'checking' || status === 'starting' || status === 'pending') return 'warning';
             if (status === 'error') return 'error';
             return 'idle';
         }

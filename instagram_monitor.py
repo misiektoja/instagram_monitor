@@ -835,6 +835,7 @@ def create_web_dashboard_app():
         return None
 
     app = Flask(__name__, template_folder=template_dir)
+    app.config['JSON_SORT_KEYS'] = False
 
     # Update global variable so it shows in dashboard
     WEB_DASHBOARD_TEMPLATE_DIR = template_dir
@@ -934,7 +935,7 @@ def create_web_dashboard_app():
                     'followers': None,
                     'following': None,
                     'posts': None,
-                    'status': 'Idle',
+                    'status': 'Pending',
                     'added': datetime.now().strftime('%Y-%m-%d %H:%M'),
                     'last_checked': None
                 }
@@ -1142,7 +1143,7 @@ def start_monitoring_for_target(username):
             add_web_dashboard_activity(f"Started monitoring: {user}")
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore[union-attr]
                 if user in WEB_DASHBOARD_DATA['targets']:
-                    WEB_DASHBOARD_DATA['targets'][user]['status'] = 'Starting'
+                    WEB_DASHBOARD_DATA['targets'][user]['status'] = 'Pending'
 
             # Resolve target-specific paths
             target_csv, target_log = get_target_paths(user)
@@ -3932,6 +3933,8 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
 # Monitors activity of the specified Instagram user
 def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None):  # type: ignore[reportComplexity]
     global pbar, DASHBOARD_DATA
+    if WEB_DASHBOARD_ENABLED:
+        update_web_dashboard_data(targets={user: {'status': 'Starting'}})
 
     # Wait for previous user's initial loading to complete (to avoid progress bar overlap)
     if wait_for_prev_user is not None:
@@ -6465,7 +6468,7 @@ def run_main():
         if u not in seen:
             seen.add(u)
             normalized.append(u)
-    targets = normalized
+    targets = sorted(normalized)
     DASHBOARD_DATA['targets_list'] = targets
 
 
@@ -6798,7 +6801,7 @@ def run_main():
                         'followers': None,
                         'following': None,
                         'posts': None,
-                        'status': 'Starting',
+                        'status': 'Pending',
                         'added': datetime.now().strftime('%Y-%m-%d %H:%M'),
                         'last_checked': None
                     }
@@ -6882,7 +6885,7 @@ def run_main():
         now = now_local_naive()
         if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
             print(f"* Multi-target staggering:\t\t{display_time(stagger)} between targets (jitter: {display_time(jitter)})")
-            print("* Planned first poll times:")
+            print("* Planned first poll times (processed alphabetically):")
             for idx, u in enumerate(targets):
                 base_delay = idx * stagger
                 add_jitter = int(random.uniform(0, jitter)) if jitter else 0
