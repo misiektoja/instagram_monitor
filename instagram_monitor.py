@@ -582,6 +582,7 @@ import hashlib
 # Important: this lock is acquired from multiple call-sites that can nest (e.g. helpers called inside other locked
 # regions). Use an RLock to avoid self-deadlocks that would freeze the web dashboard API
 WEB_DASHBOARD_DATA_LOCK = threading.RLock()
+DASHBOARD_DATA_LOCK = threading.RLock()
 
 # Initialize manual check trigger event (thread-safe)
 MANUAL_CHECK_TRIGGERED: threading.Event = threading.Event()
@@ -1228,6 +1229,39 @@ def start_web_dashboard_server():
     print(f"\n* Web Dashboard available at:\t\thttp://{WEB_DASHBOARD_HOST}:{WEB_DASHBOARD_PORT}/")
     return True
 
+
+# Updates the terminal dashboard data store
+def update_terminal_dashboard_data(targets=None, config=None):
+    with DASHBOARD_DATA_LOCK:  # type: ignore
+        if targets is not None:
+            if 'targets' not in DASHBOARD_DATA:
+                DASHBOARD_DATA['targets'] = {}
+            for user, data in targets.items():
+                if user not in DASHBOARD_DATA['targets']:
+                    DASHBOARD_DATA['targets'][user] = {}
+                # Deep merge the target data
+                if isinstance(data, dict):
+                    DASHBOARD_DATA['targets'][user].update(data)
+                else:
+                    DASHBOARD_DATA['targets'][user] = data
+        if config is not None:
+            if 'config' not in DASHBOARD_DATA:
+                DASHBOARD_DATA['config'] = {}
+            if isinstance(config, dict):
+                DASHBOARD_DATA['config'].update(config)
+            else:
+                DASHBOARD_DATA['config'] = config
+        DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
+
+# Updates both the terminal and web dashboard data stores and triggers a UI update
+def update_ui_data(targets=None, config=None, check_count=None, last_check=None, next_check=None):
+    if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
+        if DASHBOARD_ENABLED:
+            update_terminal_dashboard_data(targets=targets, config=config)
+            update_dashboard()
+
+        if WEB_DASHBOARD_ENABLED:
+            update_web_dashboard_data(targets=targets, config=config, check_count=check_count, last_check=last_check, next_check=next_check)
 
 # Updates the web dashboard data store
 def update_web_dashboard_data(targets=None, config=None, check_count=None, last_check=None, next_check=None):
@@ -3019,7 +3053,7 @@ def update_check_times(last_time=None, next_time=None, user=None):
         last_str = get_short_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else None
         next_str = get_short_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else None
 
-        update_web_dashboard_data(
+        update_ui_data(
             check_count=CHECK_COUNT,
             last_check=last_str,
             next_check=next_str,
@@ -3056,24 +3090,30 @@ def generate_dashboard_targets_table(target_data):
     table.add_column("Status", width=12)
 
     for target, data in target_data.items():
-        status_style = "green" if data.get('status') == 'OK' else "yellow" if data.get('status') == 'Checking' else "blue"
-        visibility = "PRI" if data.get('is_private') else "PUB"
+        status_val = data.get('status', 'Unknown')
+        status_style = "green" if status_val == 'OK' else "yellow" if status_val in ('Checking', 'Starting', 'Loading Profile', 'Fetching Reels') else "blue"
+
+        is_private = data.get('is_private')
+        visibility = "PRI" if is_private else "PUB" if is_private is False else "-"
+
         has_story = data.get('has_story')
-        stories_count = data.get('stories_count', 0)
+        stories_count = data.get('stories_count')
 
         story_str = "  -"
         if has_story:
-            story_str = f"✨ {stories_count}" if stories_count > 0 else "✨ Yes"
+            story_str = f"✨ {stories_count}" if stories_count is not None and stories_count > 0 else "✨ Yes"
+        elif has_story is False:
+             story_str = "  No"
 
         table.add_row(
             target,
             visibility,
-            str(data.get('followers', '-')),
-            str(data.get('following', '-')),
-            str(data.get('posts', '-')),
-            str(data.get('reels', '-')),
+            str(data.get('followers') if data.get('followers') is not None else '-'),
+            str(data.get('following') if data.get('following') is not None else '-'),
+            str(data.get('posts') if data.get('posts') is not None else '-'),
+            str(data.get('reels') if data.get('reels') is not None else '-'),
             story_str,
-            Text(data.get('status', 'Unknown'), style=status_style)
+            Text(status_val, style=status_style)
         )
     return table
 
@@ -3351,7 +3391,7 @@ def update_dashboard():
     config_data = DASHBOARD_DATA.get('config', {})
 
     # If no targets yet, show informative loading state
-    if not target_data:
+    if not target_data and not DASHBOARD_DATA.get('targets_list', []):
         # Create detailed loading screen
         assert Panel is not None
         assert Text is not None
@@ -3429,9 +3469,26 @@ def init_dashboard():
     loading_text.append("\n💡 Please wait patiently...", style="italic green")
 
     initial_layout = Layout()
-    initial_layout.split_column(
-        Layout(Panel(loading_text, title="Instagram Monitor", border_style="magenta"), name="content")
-    )
+
+    # If we have targets already (CLI mode), show the dashboard layout immediately instead of loading screen
+    targets_list = DASHBOARD_DATA.get('targets_list', [])
+    if targets_list:
+        # Pre-populate targets with Pending status if not already there
+        if 'targets' not in DASHBOARD_DATA:
+            DASHBOARD_DATA['targets'] = {}
+        for u in targets_list:
+            if u not in DASHBOARD_DATA['targets']:
+                DASHBOARD_DATA['targets'][u] = {'status': 'Pending'}
+
+        # Generate the appropriate dashboard right away
+        if DASHBOARD_MODE == 'config':
+            initial_layout = generate_config_dashboard(DASHBOARD_DATA['targets'], DASHBOARD_DATA.get('config', {}))
+        else:
+            initial_layout = generate_user_dashboard(DASHBOARD_DATA['targets'])
+    else:
+        initial_layout.split_column(
+            Layout(Panel(loading_text, title="Instagram Monitor", border_style="magenta"), name="content")
+        )
 
     try:
         # Start Live display (fullscreen/screen=True for a true dashboard feel)
@@ -3933,8 +3990,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
 # Monitors activity of the specified Instagram user
 def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None):  # type: ignore[reportComplexity]
     global pbar, DASHBOARD_DATA
-    if WEB_DASHBOARD_ENABLED:
-        update_web_dashboard_data(targets={user: {'status': 'Starting'}})
+    update_ui_data(targets={user: {'status': 'Starting'}})
 
     # Wait for previous user's initial loading to complete (to avoid progress bar overlap)
     if wait_for_prev_user is not None:
@@ -4048,15 +4104,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"* Warning: Could not apply custom mobile user-agent patch due to an unexpected error: {e}")
             print("* Proceeding with the default Instaloader mobile user-agent")
 
-        if DASHBOARD_ENABLED:
-            log_activity(f"Loading profile: {user}")
+        if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
+            log_activity(f"Loading profile: {user}", user=user)
+            update_ui_data(targets={user: {'status': 'Loading Profile'}})
         else:
             print("- loading profile from username...", end=" ", flush=True)
-            if WEB_DASHBOARD_ENABLED:
-                log_activity(f"Loading profile: {user}", user=user)
-
-        if WEB_DASHBOARD_ENABLED:
-            update_web_dashboard_data(targets={user: {'status': 'Loading Profile'}})
 
         profile = instaloader.Profile.from_username(bot.context, user)
 
@@ -4066,8 +4118,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         if not DASHBOARD_ENABLED:
             print(f"     OK: {insta_username}")
-            if WEB_DASHBOARD_ENABLED:
-                log_activity(f"Profile loaded: {insta_username}", user=user)
+            log_activity(f"Profile loaded: {insta_username}", user=user)
         else:
             log_activity(f"Profile loaded: {insta_username}", user=user)
 
@@ -4079,8 +4130,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         can_view = (not is_private) or followed_by_viewer
         posts_count = profile.mediacount
         if not skip_session and can_view:
-            if WEB_DASHBOARD_ENABLED:
-                update_web_dashboard_data(targets={user: {'status': 'Fetching Reels'}})
+            update_ui_data(targets={user: {'status': 'Fetching Reels'}})
             if not DASHBOARD_ENABLED:
                 print("- fetching reels count...", end=" ", flush=True)
 
@@ -4088,8 +4138,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
             if not DASHBOARD_ENABLED:
                 print("              OK")
-                if WEB_DASHBOARD_ENABLED:
-                    log_activity(f"Reels count fetched: {reels_count}", user=user)
+                log_activity(f"Reels count fetched: {reels_count}", user=user)
             else:
                 log_activity(f"Reels count fetched: {reels_count}", user=user)
 
@@ -4102,16 +4151,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if not DASHBOARD_ENABLED:
                 print("- checking for stories...", end=" ", flush=True)
 
-            if WEB_DASHBOARD_ENABLED:
-                update_web_dashboard_data(targets={user: {'status': 'Checking Stories'}})
+            update_ui_data(targets={user: {'status': 'Checking Stories'}})
 
             story = next(bot.get_stories(userids=[insta_userid]), None)
             has_story = bool(story and story.itemcount)
 
             if not DASHBOARD_ENABLED:
                 print("              OK")
-                if WEB_DASHBOARD_ENABLED:
-                    log_activity("Checked for stories", user=user)
+                log_activity("Checked for stories", user=user)
             else:
                 log_activity("Checked for stories", user=user)
         else:
@@ -4141,7 +4188,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         error_msg = format_error_message(e)
         print(f"* Error: {error_msg}")
         if WEB_DASHBOARD_ENABLED:
-            update_web_dashboard_data(targets={user: {'status': 'Error: ' + error_msg}})
+            update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
         # traceback.print_exc()
         if threading.current_thread() is threading.main_thread():
             sys.exit(1)
@@ -4185,60 +4232,29 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         print_cur_ts("Timestamp:\t\t\t\t")
 
     # Populate initial Dashboard data immediately after first fetch (regardless of print mode)
-    if DASHBOARD_ENABLED and RICH_AVAILABLE:
-        if 'targets' not in DASHBOARD_DATA:
-            DASHBOARD_DATA['targets'] = {}
+    target_data_unified = {
+        'followers': followers_count,
+        'following': followings_count,
+        'posts': posts_count,
+        'reels': reels_count,
+        'has_story': has_story,
+        'stories_count': 0, # Initial count
+        'is_private': is_private,
+        'status': 'OK',
+        'bio_changed': False,
+        'last_post': None,
+        'last_story': None
+    }
 
-        DASHBOARD_DATA['targets'][user] = {
-            'followers': followers_count,
-            'following': followings_count,
-            'posts': posts_count,
-            'reels': reels_count,
-            'has_story': has_story,
-            'stories_count': 0, # Initial count
-            'status': 'OK',
-            'bio_changed': False,
-            'last_post': None,
-            'last_story': None
-        }
+    # Use unified config data (reuse existing or fallback if not init)
+    config_data = DASHBOARD_DATA.get('config', {}) if DASHBOARD_ENABLED else WEB_DASHBOARD_DATA.get('config', {})
+    if not config_data:
+        # Fallback (partial data is better than crash)
+        config_data = get_dashboard_config_data()
 
-        # Use unified config data (reuse existing or fallback if not init)
-        config_data = DASHBOARD_DATA.get('config', {})
-        if not config_data:
-            # Fallback (partial data is better than crash)
-            config_data = get_dashboard_config_data()
+    config_data['start_time'] = DASHBOARD_DATA.get('start_time', datetime.now())
 
-        config_data['start_time'] = DASHBOARD_DATA.get('start_time', datetime.now())
-        DASHBOARD_DATA['config'] = config_data
-
-        update_dashboard()
-
-    # Populate initial web dashboard data
-    if WEB_DASHBOARD_ENABLED:
-        target_data_initial = {
-            user: {
-                'followers': followers_count,
-                'following': followings_count,
-                'posts': posts_count,
-                'reels': reels_count,
-                'has_story': has_story,
-                'stories_count': 0,
-                'is_private': is_private,
-                'status': 'OK',
-                'bio_changed': False,
-                'last_post': None,
-                'last_story': None
-            }
-        }
-        # Pass unified config data to web dashboard as well
-        config_data_web = WEB_DASHBOARD_DATA.get('config', {})
-        if not config_data_web:
-             # Try to copy from main dashboard data or fallback
-             config_data_web = DASHBOARD_DATA.get('config', get_dashboard_config_data())
-
-        config_data_web['start_time'] = WEB_DASHBOARD_DATA.get('start_time', datetime.now())
-
-        update_web_dashboard_data(targets=target_data_initial, config=config_data_web)
+    update_ui_data(targets={user: target_data_unified}, config=config_data)
 
     if user_root_path or OUTPUT_DIR:
         insta_followers_file = os.path.join(json_dir, f"instagram_{user}_followers.json")
@@ -4271,8 +4287,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if followers_count == followers_old_count:
                 followers = followers_old
             followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file)), pytz.timezone(LOCAL_TIMEZONE))
-            if WEB_DASHBOARD_ENABLED:
-                update_web_dashboard_data(targets={user: {'status': 'Loading Followers'}})
+            update_ui_data(targets={user: {'status': 'Loading Followers'}})
 
             if DASHBOARD_ENABLED:
                 log_activity(f"Followers loaded from file: {len(followers_old)}", user=user)
@@ -4303,8 +4318,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         followers_followings_fetched = True
 
         try:
-            if WEB_DASHBOARD_ENABLED:
-                update_web_dashboard_data(targets={user: {'status': 'Downloading Followers'}})
+            update_ui_data(targets={user: {'status': 'Downloading Followers'}})
             setup_pbar(total_expected=followers_count, title="* Downloading Followers")
             followers = [follower.username for follower in profile.get_followers()]
             close_pbar()
@@ -4313,8 +4327,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             close_pbar()
             error_msg = format_error_message(e)
             print(f"* Error while getting followers: {error_msg}")
-            if WEB_DASHBOARD_ENABLED:
-                update_web_dashboard_data(targets={user: {'status': 'Error: ' + error_msg}})
+            update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
             if threading.current_thread() is threading.main_thread():
                 sys.exit(1)
             else:
@@ -4380,8 +4393,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if followings_count == followings_old_count:
                 followings = followings_old
             following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file)), pytz.timezone(LOCAL_TIMEZONE))
-            if WEB_DASHBOARD_ENABLED:
-                update_web_dashboard_data(targets={user: {'status': 'Loading Followings'}})
+            update_ui_data(targets={user: {'status': 'Loading Followings'}})
 
             if DASHBOARD_ENABLED:
                 log_activity(f"Followings loaded from file: {len(followings_old)}", user=user)
@@ -4411,8 +4423,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         followers_followings_fetched = True
 
         try:
-            if WEB_DASHBOARD_ENABLED:
-                update_web_dashboard_data(targets={user: {'status': 'Downloading Followings'}})
+            update_ui_data(targets={user: {'status': 'Downloading Followings'}})
             setup_pbar(total_expected=followings_count, title="* Downloading Followings")
             followings = [followee.username for followee in profile.get_followees()]
             close_pbar()
@@ -4421,8 +4432,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             close_pbar()
             error_msg = format_error_message(e)
             print(f"* Error while getting followings: {error_msg}")
-            if WEB_DASHBOARD_ENABLED:
-                update_web_dashboard_data(targets={user: {'status': 'Error: ' + error_msg}})
+            update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
             if threading.current_thread() is threading.main_thread():
                 sys.exit(1)
             else:
@@ -4510,8 +4520,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         if not skip_session and can_view and not skip_getting_story_details:
             try:
-                if WEB_DASHBOARD_ENABLED:
-                    update_web_dashboard_data(targets={user: {'status': 'Loading Stories'}})
+                update_ui_data(targets={user: {'status': 'Loading Stories'}})
                 stories = bot.get_stories(userids=[insta_userid])
 
                 for story in stories:
@@ -4623,8 +4632,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             except Exception as e:
                 error_msg = format_error_message(e)
                 print(f"* Error while processing story items: {error_msg}")
-                if WEB_DASHBOARD_ENABLED:
-                    update_web_dashboard_data(targets={user: {'status': 'Error: ' + error_msg}})
+                update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
                 if threading.current_thread() is threading.main_thread():
                     sys.exit(1)
                 else:
@@ -4654,8 +4662,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         else:
             print("Fetching user's latest post ...\n")
 
-        if WEB_DASHBOARD_ENABLED:
-            update_web_dashboard_data(targets={user: {'status': 'Fetching Posts'}})
+        update_ui_data(targets={user: {'status': 'Fetching Posts'}})
         try:
 
             time.sleep(NEXT_OPERATION_DELAY)
@@ -4696,8 +4703,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         except Exception as e:
             error_msg = format_error_message(e)
             print(f"* Error while processing posts/reels: {error_msg}")
-            if WEB_DASHBOARD_ENABLED:
-                update_web_dashboard_data(targets={user: {'status': 'Error: ' + error_msg}})
+            update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
             if threading.current_thread() is threading.main_thread():
                 sys.exit(1)
             else:
@@ -4816,7 +4822,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         update_dashboard()
 
     if WEB_DASHBOARD_ENABLED:
-        update_web_dashboard_data(targets={
+        update_ui_data(targets={
             user: {
                 'followers': followers_count,
                 'following': followings_count,
@@ -4858,8 +4864,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     if stop_event or DEBUG_MODE or WEB_DASHBOARD_ENABLED:
         # Sleep in smaller increments to allow stop event or manual check trigger
         sleep_remaining = r_sleep_time
-        if WEB_DASHBOARD_ENABLED:
-            update_web_dashboard_data(targets={user: {'status': 'Waiting'}})
+        update_ui_data(targets={user: {'status': 'Waiting'}})
         while sleep_remaining > 0:
             # Check for stop event
             if stop_event and stop_event.is_set():
@@ -4918,7 +4923,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         reset_thread_output()
         if WEB_DASHBOARD_ENABLED:
-            update_web_dashboard_data(targets={user: {'status': 'Checking'}})
+            update_ui_data(targets={user: {'status': 'Checking'}})
 
         # Update last check time
         update_check_times(last_time=now_local_naive(), user=user)
@@ -4935,8 +4940,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
                     print(f"*** Fetching Updates. Current Hour: {int(cur_h)}. Allowed hours: {hours_to_check()}")
                     print("─" * HORIZONTAL_LINE)
-                    if WEB_DASHBOARD_ENABLED:
-                         log_activity(f"Fetching updates (Hour: {int(cur_h)})", user=user)
+                    log_activity(f"Fetching updates (Hour: {int(cur_h)})", user=user)
                 else:
                     log_activity(f"Fetching updates (Hour: {int(cur_h)})", user=user)
 
@@ -5017,8 +5021,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     update_dashboard()
 
                 # Update web dashboard with target data
-                if WEB_DASHBOARD_ENABLED:
-                    update_web_dashboard_data(targets=target_data, config=config_data)
+                update_ui_data(targets=target_data, config=config_data)
             except Exception as e:
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
                 error_msg = format_error_message(e)
@@ -5639,8 +5642,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     update_check_times(next_time=next_check, user=user)
 
                     if stop_event or DEBUG_MODE or WEB_DASHBOARD_ENABLED:
-                        if WEB_DASHBOARD_ENABLED:
-                            update_web_dashboard_data(targets={user: {'status': 'Waiting'}})
+                        update_ui_data(targets={user: {'status': 'Waiting'}})
                         sleep_remaining = r_sleep_time
                         while sleep_remaining > 0:
                             if stop_event and stop_event.is_set():
@@ -5855,8 +5857,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         # Sleep with manual check support in debug mode (or stop event support in Web Dashboard mode)
         if DEBUG_MODE or stop_event or WEB_DASHBOARD_ENABLED:
-            if WEB_DASHBOARD_ENABLED:
-                update_web_dashboard_data(targets={user: {'status': 'Waiting'}})
+            update_ui_data(targets={user: {'status': 'Waiting'}})
             # Sleep in smaller increments to allow manual check trigger or stop event
             sleep_remaining = r_sleep_time
             while sleep_remaining > 0:
@@ -6793,18 +6794,30 @@ def run_main():
         WEB_DASHBOARD_DATA['start_time'] = datetime.now()
         WEB_DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
 
-        # Pre-populate web dashboard targets from CLI targets
+        # Pre-populate both terminal and web dashboard targets from CLI targets
+        target_initial_state = {
+            u: {
+                'followers': None,
+                'following': None,
+                'posts': None,
+                'reels': None,
+                'status': 'Pending',
+                'added': datetime.now().strftime('%Y-%m-%d %H:%M'),
+                'last_checked': None
+            } for u in targets
+        }
+
+        with DASHBOARD_DATA_LOCK: # type: ignore
+            if 'targets' not in DASHBOARD_DATA:
+                DASHBOARD_DATA['targets'] = {}
+            for u, data in target_initial_state.items():
+                if u not in DASHBOARD_DATA['targets']:
+                    DASHBOARD_DATA['targets'][u] = data.copy()
+
         with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-            for u in targets:
+            for u, data in target_initial_state.items():
                 if u not in WEB_DASHBOARD_DATA['targets']:
-                    WEB_DASHBOARD_DATA['targets'][u] = {
-                        'followers': None,
-                        'following': None,
-                        'posts': None,
-                        'status': 'Pending',
-                        'added': datetime.now().strftime('%Y-%m-%d %H:%M'),
-                        'last_checked': None
-                    }
+                    WEB_DASHBOARD_DATA['targets'][u] = data.copy()
 
         start_web_dashboard_server()
 
