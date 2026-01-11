@@ -3166,24 +3166,53 @@ def dashboard_input_handler():
     global MANUAL_CHECK_TRIGGERED, DASHBOARD_MODE
 
     import sys
-    import tty
-    import termios
+    is_windows = platform.system() == "Windows"
 
-    # Save terminal settings
-    if sys.stdin.isatty():
-        old_settings = termios.tcgetattr(sys.stdin)
+    if is_windows:
+        import msvcrt
     else:
-        old_settings = None
+        try:
+            import tty
+            import termios
+        except ImportError:
+            # Fallback if somehow on a non-Unix platform that isn't Windows
+            return
+
+    # Save terminal settings (Unix only)
+    old_settings = None
+    if not is_windows and sys.stdin.isatty():
+        try:
+            old_settings = termios.tcgetattr(sys.stdin)
+            tty.setcbreak(sys.stdin.fileno())
+        except Exception:
+            old_settings = None
 
     try:
-        # Set terminal to raw mode for single-character input (no echo, no Enter needed)
-        if old_settings:
-            tty.setcbreak(sys.stdin.fileno())
-
         while True:
             try:
-                # Read single character without requiring Enter
-                char = sys.stdin.read(1).lower()
+                char = None
+                if is_windows:
+                    # Windows unbuffered input
+                    if msvcrt.kbhit():
+                        # Read character and decode from bytes
+                        try:
+                            char_bytes = msvcrt.getch()
+                            # Handle special keys (arrows etc) which return two bytes
+                            if char_bytes in (b'\x00', b'\xe0'):
+                                msvcrt.getch() # Skip second byte
+                                continue
+                            char = char_bytes.decode('utf-8', errors='ignore').lower()
+                        except (UnicodeDecodeError, AttributeError):
+                            continue
+                    else:
+                        time.sleep(0.1)
+                        continue
+                else:
+                    # Unix/macOS: Read single character without requiring Enter
+                    char = sys.stdin.read(1).lower()
+
+                if not char:
+                    continue
 
                 # Exit command: 'q' or 'Q'
                 if char in ('q', 'Q'):
@@ -3218,7 +3247,7 @@ def dashboard_input_handler():
 
                 # Stop All: 'x'
                 elif char == 'x':
-                    with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                    with DASHBOARD_DATA_LOCK: # type: ignore
                         targets_to_stop = list(DASHBOARD_DATA.get('targets', {}).keys())
                     for t in targets_to_stop:
                         stop_monitoring_for_target(t)
@@ -3249,12 +3278,17 @@ def dashboard_input_handler():
                         print("  h  - Show this help\n")
             except (EOFError, OSError):
                 break
-            except Exception:
+            except Exception as e:
+                debug_print(f"Error in dashboard input handler: {e}")
                 pass
     finally:
-        # Restore terminal settings
+        # Restore terminal settings (Unix only)
         if old_settings:
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+            try:
+                import termios
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+            except Exception:
+                pass
 
 
 # Start Dashboard input handler thread
