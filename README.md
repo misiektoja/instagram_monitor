@@ -12,15 +12,10 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
   - changes in **profile visibility** (public to private and vice versa)
 - **Anonymous download** of users' **story images and videos** without leaving view traces
 - **Download** of users' **post images and post / reel videos**
-- **Email notifications** for different events (new posts, reels, stories, changes in followings, followers, bio, profile pictures, visibility and errors)
-- **Webhook notifications** (Discord-compatible) for all monitored events
-- **Terminal Dashboard** - beautiful, live-updating terminal dashboard with real-time stats and mode toggle (press 'm' to switch views)
-- **Web Dashboard** - modern, real-time UI on localhost with stats, mode toggle, manual check trigger, and activity feed
-- **Dual Dashboard modes**: 'user' mode (simple/minimal display) or 'config' mode (detailed with all settings and variables). Applies to both terminal and Web Dashboard. Toggle with 'm' key or web dashboard button.
-- **Detailed follower logging** - fetches followers/followings every check to detect changes even when counts remain the same
-- **Debug mode** with verbose output, shows every check, supports manual 'check' command to trigger immediate checks
-- **Last/Next check display** - always shows when the last check occurred and when the next one is scheduled
-- **Attaching changed profile pictures** and **stories/posts/reels images** directly in email notifications
+- **Email and webhook notifications** for different events (new posts, reels, stories, changes in followings, followers, bio, profile pictures, visibility and errors)
+- **Terminal Dashboard** - beautiful, live-updating terminal dashboard with real-time stats and interactive controls
+- **Web Dashboard** - modern, real-time UI on localhost with stats, interactive controls and activity feed
+- **Attaching changed profile pictures** and **stories/posts/reels images** directly in notifications
 - **Displaying the profile picture** and **stories/posts/reels images** right in your terminal (if you have `imgcat` installed)
 - **Saving all user activities and profile changes** with timestamps to a **CSV file**
 - Support for both **public and private profiles**
@@ -54,13 +49,12 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
 5. [View Modes](#view-modes)
    * [Traditional Text Mode](#traditional-text-mode)
    * [Terminal Dashboard](#terminal-dashboard-mode)
-    * [Web Dashboard](#web-dashboard-mode)
-    * [Dashboard View Modes](#dashboard-view-modes)
+   * [Web Dashboard](#web-dashboard-mode)
+   * [Dashboard View Modes](#dashboard-view-modes)
 6. [Usage](#usage)
    * [Monitoring Mode](#monitoring-mode)
    * [Email Notifications](#email-notifications)
    * [Webhook Notifications](#webhook-notifications)
-   * [Debug Mode](#debug-mode)
    * [Detailed Follower Logging](#detailed-follower-logging)
    * [CSV Export](#csv-export)
    * [Output Directory](#output-directory)
@@ -324,9 +318,7 @@ This is the classic command-line output. It is characterized by:
 - **Persistence**: Ideal for running in the background (e.g., via `nohup` or `tmux`) where you want a full history of events in your terminal scrollback or log files.
 - **Low Overhead**: Minimal resource usage and compatible with any terminal.
 
-To use traditional text mode even if `rich` is installed:
-- Set `DASHBOARD_ENABLED = False` in your config.
-- Or use the `--no-dashboard` flag.
+It is the default mode of operation.
 
 ---
 
@@ -335,13 +327,26 @@ To use traditional text mode even if `rich` is installed:
 
 The Terminal Dashboard provides a beautiful, live-updating interface directly in your terminal. It requires the `rich` library.
 
+To enable the terminal dashboard, use the `--dashboard` flag (or set `DASHBOARD_ENABLED = True` in your config).
+
 **Key Features:**
-- **Real-time Stats Table**: Shows followers, followings, posts, reels and story status for all targets at once.
+- **Visual Analytics**: Real-time display of tracked targets with number of followers, followings, posts, visibility and story status.
 - **Live Activity Log**: A scrolling view of the last few events.
 - **Interactive Toggles**: Press **'m'** to switch between 'User' and 'Config' views instantly.
+- **Remote Control**: Start, stop or recheck monitoring for all targets directly from the terminal.
 - **Uptime & Status**: Clean header showing tool version, status and total runtime.
 
-To toggle mode: Press **'m'**. To exit: Press **'q'**.
+**Keyboard Shortcuts:**
+- **'m'**: Toggle dashboard view (User/Config)
+- **'s'**: **Start All** monitoring
+- **'x'**: **Stop All** monitoring
+- **'r'**: **Recheck All** targets
+- **'q'**: **Exit** the tool
+- **'h'**: Show help (lists commands in the activity log)
+
+```sh
+instagram_monitor target1 target2 --dashboard
+```
 
 ---
 
@@ -352,8 +357,10 @@ A modern, real-time web interface running on your local machine (default: `http:
 
 **Key Features:**
 - **Full Control Panel**: Add or remove monitoring targets directly from the browser.
-- **Visual Analytics**: Real-time display of followers, followings, posts and story status.
-- **Manual Trigger**: A "Trigger Check" button to force an immediate update for all users.
+- **Visual Analytics**: Real-time display of tracked targets with number of followers, followings, posts, visibility and story status.
+- **Live Activity Log**: A scrolling view of the last few events.
+- **Manual Trigger**: A "Recheck" button to force an immediate update for specific or all users.
+- **Remote Management**: Start or stop monitoring for specific or all targets with a single click.
 - **Synchronization**: Changes made in the web dashboard (like mode toggles) are reflected in the terminal instantly.
 - **Dynamic Configuration**: Configure sessions and settings without touching the terminal or config files.
 
@@ -387,7 +394,7 @@ Both the Terminal and Web dashboards support two levels of information density:
 
 2. **Config Mode** (`config`):
    - Detailed view showing all internal settings.
-   - Displays User Agent strings, Hour Ranges, Jitter status, and more.
+   - Displays User Agent strings, Hour Ranges, Jitter status and more.
    - Useful for auditing your setup and verifying configuration.
 
 Toggle seamlessly between modes using the **'m'** key or the web dashboard toggle button.
@@ -497,58 +504,64 @@ Example email:
 <a id="webhook-notifications"></a>
 ### Webhook Notifications
 
-The tool supports webhook notifications (compatible with Discord and other webhook services) for all monitored events.
+The tool supports webhook notifications (compatible with Discord and other webhook services) for all monitored events (posts, reels, stories, followings, followers, bio, profile visibility, profile picture changes and errors).
 
+#### 1. Configure Discord Webhook
+If you are new to Discord, follow these steps to get your **Webhook URL**:
+
+1.  **Create a Server**: Click the **+** (Plus) icon on the left sidebar ("Add a Server") -> **Create My Own** -> **For me and my friends**.
+2.  **Create/Edit a Channel**: In your new server, find the **#general** channel (or create a new one). Click the **Edit Channel** icon (⚙️ gear) next to the channel name.
+3.  **Create Webhook**: Go to **Integrations** in the left menu -> **Webhooks** -> **New Webhook**.
+4.  **Copy URL**: Click on the new webhook (often named "Spidey Bot", you can rename it) and click **Copy Webhook URL**.
+
+#### 2. Enable in the Tool
 To enable webhook notifications:
-- set `WEBHOOK_ENABLED` to `True` and `WEBHOOK_URL` to your webhook URL
-- or use the `--webhook-url` flag
+- set `WEBHOOK_ENABLED` to `True` and `WEBHOOK_URL` to your copied URL in `instagram_monitor.conf`
+- or use the `--webhook-url` flag (alternatively use the `--webhook` flag if URL is already in config)
 
 ```sh
-instagram_monitor <target_insta_user> --webhook-url "https://discord.com/api/webhooks/your_webhook_id/your_webhook_token"
+# Enable with URL
+instagram_monitor <target_insta_user> --webhook-url "https://discord.com/api/webhooks/..."
+
+# Explicitly enable/disable if URL is in config
+instagram_monitor <target_insta_user> --webhook
+instagram_monitor <target_insta_user> --no-webhook
 ```
 
-By default, when a webhook URL is provided, status notifications (new posts, stories, bio changes, etc.) are enabled. To control which notifications are sent via webhook:
-
-- Use `--webhook-status` to enable/disable status notifications (new posts, reels, stories, bio changes, visibility changes, etc.)
-- Use `--webhook-followers` to enable/disable follower change notifications
-- Use `--webhook-errors` to enable/disable error notifications
-
-Example with all notification types:
+#### 3. Test your settings
+You can verify your configuration by sending a test notification:
 
 ```sh
-instagram_monitor <target_insta_user> --webhook-url "https://discord.com/api/webhooks/..." --webhook-status --webhook-followers --webhook-errors
+# Verify settings from configuration file
+instagram_monitor --send-test-webhook
+
+# Verify a specific URL from command line
+instagram_monitor --webhook-url "https://discord.com/api/webhooks/..." --send-test-webhook
 ```
 
-You can also configure webhook settings in the configuration file:
+#### 4. Advanced Configuration
+By default, all webhook notification types (status, followers, errors) are **disabled**. You must explicitly enable what you want the tool to send:
 
+- Use `--webhook-status` to toggle status notifications (new posts, reels, stories, bio, visibility, profile pic)
+- Use `--webhook-followers` to toggle follower/following change notifications
+- Use `--webhook-errors` to toggle error notifications
+
+Example with explicit control:
+```sh
+# Enable webhooks and specifically choose what to send
+instagram_monitor <target_insta_user> --webhook-url "..." --webhook-status --webhook-followers --webhook-errors
 ```
-WEBHOOK_ENABLED = True
+
+Configuration file options (all disabled by default):
+```ini
+WEBHOOK_ENABLED = False
 WEBHOOK_URL = "https://discord.com/api/webhooks/..."
 WEBHOOK_USERNAME = "Instagram Monitor"
 WEBHOOK_AVATAR_URL = ""
-WEBHOOK_STATUS_NOTIFICATION = True
-WEBHOOK_FOLLOWERS_NOTIFICATION = True
-WEBHOOK_ERROR_NOTIFICATION = True
+WEBHOOK_STATUS_NOTIFICATION = False
+WEBHOOK_FOLLOWERS_NOTIFICATION = False
+WEBHOOK_ERROR_NOTIFICATION = False
 ```
-
-<a id="debug-mode"></a>
-### Debug Mode
-
-Debug mode provides verbose terminal output showing detailed information about each check cycle, API calls, and internal operations. It also allows you to manually trigger checks by typing `check` in the terminal.
-
-To enable debug mode:
-- set `DEBUG_MODE` to `True`
-- or use the `--debug` flag
-
-```sh
-instagram_monitor <target_insta_user> --debug
-```
-
-In debug mode:
-- Detailed timestamps and operation logs are printed to the terminal
-- Type `check` and press Enter to manually trigger an immediate check
-- All API responses and state changes are logged
-
 
 <a id="detailed-follower-logging"></a>
 ### Detailed Follower Logging
