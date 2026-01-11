@@ -70,8 +70,9 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
    * [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix)
    * [Coloring Log Output with GRC](#coloring-log-output-with-grc)
 6. [How to Prevent Getting Challenged and Account Suspension](#how-to-prevent-getting-challenged-and-account-suspension)
-7. [Change Log](#change-log)
-8. [License](#license)
+7. [Troubleshooting](#troubleshooting)
+8. [Change Log](#change-log)
+9. [License](#license)
 
 <a id="requirements"></a>
 ## Requirements
@@ -851,6 +852,17 @@ Refrain from logging in via VPNs, especially with IPs in different regions. Sudd
 If you have created a new account for monitoring and you are using [Session Login Using Firefox](#option-3-session-login-using-firefox-cookies-recommended), make sure to behave like a regular user for several days. New accounts are more closely monitored by Instagram's bot detection systems. Watch content, post stories or reels and leave comments - this helps establish a natural activity pattern.
 
 Once you start using the tool, try to blend its actions with normal usage. However, avoid overlapping browser activity with tool activity, as simultaneous actions can trigger suspicious behavior flags.
+
+<a id="troubleshooting"></a>
+## Troubleshooting
+
+In case of issues, run the tool with the `--debug` flag. It shows full HTTP traffic and internal script logic. Create a new issue in Github if you cannot fix it yourself.
+
+### Choosing the Right Logging Level
+
+- **Default Mode**: Silent and clean. Only logs changes (new posts, bio updates, etc.) and critical errors. Best for long-term production use.
+- **Verbose Mode (`--verbose`)**: Recommended for most users. Shows when the next check is scheduled and confirms that the loop is running correctly.
+- **Debug Mode (`--debug`)**: For developers or fixing issues. Shows full HTTP traffic, internal script logic
 
 <a id="change-log"></a>
 ## Change Log
