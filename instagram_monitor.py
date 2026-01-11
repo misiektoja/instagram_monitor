@@ -6631,17 +6631,6 @@ def run_main():
 
     # Print summary screen (will be suppressed from terminal by Logger when dashboard is active, but still logged to files)
     print(f"* Instagram polling interval:\t\t[ {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)} ]")
-    print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
-    print(f"* Mode of the tool:\t\t\t{mode_of_the_tool}")
-    print(f"* Human mode:\t\t\t\t{BE_HUMAN}")
-    print(f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}")
-    print(f"* Skip session login:\t\t\t{SKIP_SESSION}")
-    print(f"* Skip fetching followers:\t\t{SKIP_FOLLOWERS}")
-    print(f"* Skip fetching followings:\t\t{SKIP_FOLLOWINGS}")
-    print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
-    print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
-    print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
-    print(f"* Detailed follower logging:\t\t{DETAILED_FOLLOWER_LOGGING}")
     hours_ranges_str = ""
     if CHECK_POSTS_IN_HOURS_RANGE:
         ranges = []
@@ -6657,10 +6646,21 @@ def run_main():
     else:
         hours_ranges_str = "00:00 - 23:59"
     print("* Hours for fetching updates:\t\t" + hours_ranges_str)
+    print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
+    print(f"* Mode of the tool:\t\t\t{mode_of_the_tool}")
+    print(f"* Human mode:\t\t\t\t{BE_HUMAN}")
+    print(f"* Skip session login:\t\t\t{SKIP_SESSION}")
+    print(f"* Skip fetching followers:\t\t{SKIP_FOLLOWERS}")
+    print(f"* Skip fetching followings:\t\t{SKIP_FOLLOWINGS}")
+    print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
+    print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
+    print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
+    print(f"* Detailed follower logging:\t\t{DETAILED_FOLLOWER_LOGGING}")
     print(f"* Browser user agent:\t\t\t{USER_AGENT}")
     print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
     print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
     print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
+    print(f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}")
     print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
     print(f"* Empty profile pic template:\t\t{profile_pic_file_exists}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""))
     # Dashboard status
