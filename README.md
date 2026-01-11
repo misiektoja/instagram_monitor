@@ -24,7 +24,7 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
 - **Displaying the profile picture** and **stories/posts/reels images** right in your terminal (if you have `imgcat` installed)
 - **Saving all user activities and profile changes** with timestamps to a **CSV file**
 - Support for both **public and private profiles**
-- **Two modes of operation**: with or without a logged-in Instagram account
+- **Two session modes**: with or without a logged-in Instagram account
 - **Monitor multiple users** in a single process with automatic request staggering to avoid detection
 - Various mechanisms to **prevent captcha and detection of automated tools**, including **Be Human mode** (simulates random user actions), **Jitter mode** (adds human-like delays and back-off to HTTP requests) and **hour-range checking** (limits fetching updates to specific hours of the day)
 - **Flexible configuration** - support for config files, dotenv files, environment variables and command-line arguments
@@ -46,8 +46,8 @@ instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users
 3. [Quick Start](#quick-start)
 4. [Configuration](#configuration)
    * [Configuration File](#configuration-file)
-   * [Mode 1: Without Logged-In Instagram Account (No Session Login)](#mode-1-without-logged-in-instagram-account-no-session-login)
-   * [Mode 2: With Logged-In Instagram Account (Session Login)](#mode-2-with-logged-in-instagram-account-session-login)
+   * [Session Mode 1: Without Logged-In Instagram Account (No Session Login)](#session-mode-1-without-logged-in-instagram-account-no-session-login)
+   * [Session Mode 2: With Logged-In Instagram Account (Session Login)](#session-mode-2-with-logged-in-instagram-account-session-login)
    * [Time Zone](#time-zone)
    * [SMTP Settings](#smtp-settings)
    * [Storing Secrets](#storing-secrets)
@@ -130,7 +130,7 @@ If you installed manually, download the newest *[instagram_monitor.py](https://r
 <a id="quick-start"></a>
 ## Quick Start
 
-- Track the `target_insta_user` in [mode 1](#mode-1-without-logged-in-instagram-account-no-session-login) (no session login - anonymous):
+- Track the `target_insta_user` in [session mode 1](#session-mode-1-without-logged-in-instagram-account-no-session-login) (no session login - anonymous):
 
 ```sh
 instagram_monitor <target_insta_user>
@@ -142,7 +142,7 @@ Or if you installed [manually](#manual-installation):
 python3 instagram_monitor.py <target_insta_user>
 ```
 
-- Track the `target_insta_user` in [mode 2](#option-3-session-login-using-firefox-cookies-recommended) (with session login via Firefox web browser):
+- Track the `target_insta_user` in [session mode 2](#option-3-session-login-using-firefox-cookies-recommended) (with session login via Firefox web browser):
 
 ```sh
 # log in to the Instagram account (your_insta_user) via Firefox web browser
@@ -173,8 +173,8 @@ instagram_monitor --generate-config > instagram_monitor.conf
 
 Edit the `instagram_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
-<a id="mode-1-without-logged-in-instagram-account-no-session-login"></a>
-### Mode 1: Without Logged-In Instagram Account (No Session Login)
+<a id="session-mode-1-without-logged-in-instagram-account-no-session-login"></a>
+### Session Mode 1: Without Logged-In Instagram Account (No Session Login)
 
 In this mode, the tool operates without logging in to an Instagram account (anonymous).
 
@@ -182,8 +182,8 @@ You can still monitor basic user activity such as new or deleted posts (excludin
 
 This mode requires no setup, is easy to use and is resistant to Instagram's anti-bot mechanisms and CAPTCHA challenges.
 
-<a id="mode-2-with-logged-in-instagram-account-session-login"></a>
-### Mode 2: With Logged-In Instagram Account (Session Login)
+<a id="session-mode-2-with-logged-in-instagram-account-session-login"></a>
+### Session Mode 2: With Logged-In Instagram Account (Session Login)
 
 In this mode, the tool uses an Instagram session login to access additional data. This includes detailed insights into new posts, reels and stories, also about added or removed followers/followings.
 
@@ -397,13 +397,13 @@ Toggle seamlessly between modes using the **'m'** key or the web dashboard toggl
 <a id="monitoring-mode"></a>
 ### Monitoring Mode
 
-To monitor specific user activity in [mode 1](#mode-1-without-logged-in-instagram-account-no-session-login) (no session login - anonymous), just type Instagram username as a command-line argument (`target_insta_user` in the example below):
+To monitor specific user activity in [session mode 1](#session-mode-1-without-logged-in-instagram-account-no-session-login) (no session login - anonymous), just type Instagram username as a command-line argument (`target_insta_user` in the example below):
 
 ```sh
 instagram_monitor <target_insta_user>
 ```
 
-To monitor specific user activity in [mode 2](#mode-2-with-logged-in-instagram-account-session-login) (with session login), you also need to specify your Instagram account name (`your_insta_user` in the example below) via `SESSION_USERNAME` configuration option or `-u` flag:
+To monitor specific user activity in [session mode 2](#session-mode-2-with-logged-in-instagram-account-session-login) (with session login), you also need to specify your Instagram account name (`your_insta_user` in the example below) via `SESSION_USERNAME` configuration option or `-u` flag:
 
 ```sh
 instagram_monitor -u <your_insta_user> <target_insta_user>
@@ -566,7 +566,7 @@ To enable detailed follower logging:
 instagram_monitor <target_insta_user> --detailed-followers
 ```
 
-**Note**: This feature requires [Mode 2](#mode-2-with-logged-in-instagram-account-session-login) (session login) to access the Instagram API. It will increase API calls since it fetches the full follower/following lists every check interval.
+**Note**: This feature requires [Session Mode 2](#session-mode-2-with-logged-in-instagram-account-session-login) (session login) to access the Instagram API. It will increase API calls since it fetches the full follower/following lists every check interval.
 
 <a id="csv-export"></a>
 ### CSV Export
@@ -764,7 +764,7 @@ Since v1.7, the tool includes a new experimental **Be Human** mode that makes it
 
 It is disabled by default, but you can enable it via `BE_HUMAN` configuration option or `--be-human` flag.
 
-It is used only with session login (mode 2).
+It is used only with session login (session mode 2).
 
 After each check cycle, the tool will randomly do one or more of these harmless actions:
 - View your explore feed: pulls a single post from Instagram's explore feed
