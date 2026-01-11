@@ -1428,6 +1428,9 @@
                 { l: 'Output Dir', v: (config.output_dir === '.' || !config.output_dir) ? '-' : config.output_dir },
                 { l: 'Templates', v: config.template_dir },
                 { l: 'Webhook', v: config.webhook_enabled },
+                { l: 'Webhook Status', v: config.webhook_status ? 'Enabled' : 'Disabled' },
+                { l: 'Webhook Followers', v: config.webhook_followers ? 'Enabled' : 'Disabled' },
+                { l: 'Webhook Errors', v: config.webhook_errors ? 'Enabled' : 'Disabled' },
                 { l: 'Verbose Mode', v: config.verbose_mode },
                 { l: 'Debug Mode', v: config.debug_mode },
             ];
