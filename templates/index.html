@@ -774,6 +774,14 @@
                 </div>
 
                 <div class="card" style="margin-top: 24px;">
+                    <div class="card-title">Environment Details</div>
+                    <div class="settings-grid" id="env-details-grid"
+                        style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 24px;">
                     <div class="card-title">Detailed Targets View</div>
                     <table class="table">
                         <thead>
@@ -1382,51 +1390,68 @@
             const grid = document.getElementById('full-config-grid');
             if (!grid) return;
 
-            // Define display mapping
+            // Main configuration items
             const items = [
+                { l: 'Session User', v: config.session_user },
                 { l: 'Polling Interval', v: config.check_interval_str },
                 { l: 'Hours Range', v: config.hours_range },
-                { l: 'Session User', v: config.session_user },
-                // Notifications Section
                 { l: 'Email Status', v: config.email_notifications ? 'Enabled' : 'Disabled' },
                 { l: 'Email Followers', v: config.follower_notifications ? 'Enabled' : 'Disabled' },
                 { l: 'Email Errors', v: config.error_notifications ? 'Enabled' : 'Disabled' },
-                { l: 'Webhook', v: config.webhook_enabled ? 'Enabled' : 'Disabled' },
-                // Config
-                { l: 'Local Timezone', v: config.local_timezone },
-                { l: 'Config File', v: config.config_file },
-                { l: 'Dotenv File', v: config.dotenv_file },
-                { l: 'Output Dir', v: (config.output_dir === '.' || !config.output_dir) ? '-' : config.output_dir },
-                { l: 'Templates', v: config.template_dir },
-                // Features
+                { l: 'Session Mode', v: config.session_mode },
                 { l: 'Skip Session', v: config.skip_session_login },
                 { l: 'Skip Followers', v: config.skip_followers },
                 { l: 'Skip Followings', v: config.skip_followings },
                 { l: 'Skip Stories Details', v: config.skip_stories },
                 { l: 'Skip Posts Details', v: config.skip_posts },
                 { l: 'Get More Posts Details', v: config.get_more_post_details },
+                { l: 'Detailed Follower Logging', v: config.detailed_logging },
                 { l: 'Jitter/Back-off', v: config.enable_jitter },
+                { l: 'Liveness', v: config.liveness_check },
                 { l: 'Profile Pic Detect', v: config.profile_pic_changes },
+                { l: 'Display Profile Pics', v: config.imgcat },
                 { l: 'Empty Pic Template', v: config.empty_profile_pic },
-                { l: 'Detailed Logging', v: config.detailed_logging },
+                { l: 'Dashboard', v: config.dashboard_status },
+                { l: 'Web Dashboard', v: config.web_dashboard_status },
                 { l: 'CSV Logging', v: config.csv_logging },
-                { l: 'Human Mode', v: config.human_mode },
-                { l: 'User Agent', v: config.user_agent ? config.user_agent.substring(0, 50) + (config.user_agent.length > 50 ? '...' : '') : '-' },
+                { l: 'Output Logging', v: config.logging_enabled },
+                { l: 'Output Dir', v: (config.output_dir === '.' || !config.output_dir) ? '-' : config.output_dir },
+                { l: 'Templates', v: config.template_dir },
+                { l: 'Webhook', v: config.webhook_enabled },
+                { l: 'Debug Mode', v: config.debug_mode },
             ];
 
-            grid.innerHTML = items.map(item => `
-                <div class="setting-row" style="border: none; padding: 0;">
-                    <div class="setting-info">
-                        <h4 style="font-size: 12px; color: #888; text-transform: uppercase;">${escapeHtml(item.l)}</h4>
-                        <p style="font-size: 14px; color: #ddd;">${(() => {
-                    let val = item.v !== undefined && item.v !== null ? String(item.v) : '-';
-                    if (val === 'true') return 'True';
-                    if (val === 'false') return 'False';
-                    return escapeHtml(val);
-                })()}</p>
+            // Environment specific items
+            const envItems = [
+                { l: 'Browser User Agent', v: config.user_agent ? config.user_agent : '-' },
+                { l: 'Mobile User Agent', v: config.user_agent_mobile ? config.user_agent_mobile : '-' },
+                { l: 'Local Timezone', v: config.local_timezone },
+                { l: 'Config File', v: config.config_file },
+                { l: 'Dotenv File', v: config.dotenv_file },
+            ];
+
+            const renderItems = (itemList, targetGrid) => {
+                targetGrid.innerHTML = itemList.map(item => `
+                    <div class="setting-row" style="border: none; padding: 0;">
+                        <div class="setting-info">
+                            <h4 style="font-size: 12px; color: #888; text-transform: uppercase;">${escapeHtml(item.l)}</h4>
+                            <p style="font-size: 14px; color: #ddd; word-break: break-all;">${(() => {
+                        let val = item.v !== undefined && item.v !== null ? String(item.v) : '-';
+                        if (val === 'true') return 'True';
+                        if (val === 'false') return 'False';
+                        return escapeHtml(val);
+                    })()}</p>
+                        </div>
                     </div>
-                </div>
-            `).join('');
+                `).join('');
+            };
+
+            renderItems(items, grid);
+
+            const envGrid = document.getElementById('env-details-grid');
+            if (envGrid) {
+                renderItems(envItems, envGrid);
+            }
         }
 
         function renderDashboardActivities() {

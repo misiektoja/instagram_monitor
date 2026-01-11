@@ -456,6 +456,7 @@ WEB_DASHBOARD_PORT = 8000
 WEB_DASHBOARD_HOST = '127.0.0.1'
 WEB_DASHBOARD_TEMPLATE_DIR = ""
 DETAILED_FOLLOWER_LOGGING = False
+mode_of_the_tool = "Unknown"
 
 exec(CONFIG_BLOCK, globals())
 
@@ -3182,15 +3183,6 @@ def generate_user_dashboard(target_data):
 
     last_fetched_panel = Panel(last_fetched_text, title="Last Fetched", box=box.ROUNDED, border_style="green")
 
-    # Timing info panel
-    timing_text = Text()
-    if LAST_CHECK_TIME:
-        timing_text.append(f"Last: {get_short_date_from_ts(LAST_CHECK_TIME)}\n", style="dim")
-    if NEXT_CHECK_TIME:
-        timing_text.append(f"Next: {get_short_date_from_ts(NEXT_CHECK_TIME)}\n", style="dim")
-    timing_text.append(f"Checks: {CHECK_COUNT}", style="dim")
-
-    timing_panel = Panel(timing_text, title="Timing", box=box.ROUNDED, border_style="blue")
 
     # Mode toggle button
     mode_btn_text = Text()
@@ -3212,7 +3204,6 @@ def generate_user_dashboard(target_data):
         Layout(name="right", ratio=1)
     )
     layout["main"]["right"].split_column(
-        Layout(timing_panel, size=6),
         Layout(last_fetched_panel),
         Layout(mode_panel, size=6)
     )
@@ -3253,42 +3244,39 @@ def generate_config_dashboard(target_data, config_data):
     config_table_right.add_column("Setting", style="cyan")
     config_table_right.add_column("Value")
 
-    # Left column items from unified config
+    # Left column items
     left_items = [
-        ("Polling Interval", config_data.get('check_interval_str', '-')),
         ("Session User", config_data.get('session_user', '-')),
-        ("Human Mode", str(config_data.get('human_mode', '-'))),
-        ("Profile Pic Checks", str(config_data.get('profile_pic_changes', '-'))),
-        ("Skip Session Login", str(config_data.get('skip_session_login', '-'))),
+        ("Hours Range", config_data.get('hours_range', '-')),
+        ("Email Followers", str(config_data.get('follower_notifications', '-'))),
+        ("Session Mode", config_data.get('session_mode', '-')),
         ("Skip Followers", str(config_data.get('skip_followers', '-'))),
-        ("Skip Followings", str(config_data.get('skip_followings', '-'))),
         ("Skip Stories Details", str(config_data.get('skip_stories', '-'))),
-        ("Skip Post Details", str(config_data.get('skip_posts', '-'))),
         ("Get More Post Details", str(config_data.get('get_more_post_details', '-'))),
-        ("Detailed logging", str(config_data.get('detailed_logging', '-'))),
         ("Liveness Check", str(config_data.get('liveness_check', '-'))),
-        ("Debug Mode", str(config_data.get('debug_mode', '-'))),
+        ("Display Profile Pics", config_data.get('imgcat', '-')),
+        ("Dashboard", config_data.get('dashboard_status', '-')),
+        ("CSV Logging", config_data.get('csv_logging', '-')),
+        ("Output Dir", config_data.get('output_dir', '-')),
+        ("Webhook", str(config_data.get('webhook_enabled', '-'))),
     ]
 
-    # UA footer (mini panel)
-    # Right column items from unified config
+    # Right column items
     right_items = [
-        ("Hours Range", config_data.get('hours_range', '-')),
+        ("Polling Interval", config_data.get('check_interval_str', '-')),
+        ("Email Status", str(config_data.get('email_notifications', '-'))),
+        ("Email Errors", str(config_data.get('error_notifications', '-'))),
+        ("Skip Session Login", str(config_data.get('skip_session_login', '-'))),
+        ("Skip Followings", str(config_data.get('skip_followings', '-'))),
+        ("Skip Post Details", str(config_data.get('skip_posts', '-'))),
+        ("Detailed Follower Logging", str(config_data.get('detailed_logging', '-'))),
         ("HTTP Jitter", str(config_data.get('enable_jitter', '-'))),
-        ("CSV Logging", config_data.get('csv_logging', '-')),
-        ("Imgcat Display", config_data.get('imgcat', '-')),
+        ("Profile Pic Detect", str(config_data.get('profile_pic_changes', '-'))),
         ("Empty Pic Template", config_data.get('empty_profile_pic', '-')),
-        ("Dashboard (Rich)", config_data.get('dashboard_status', '-')),
         ("Web Dashboard", config_data.get('web_dashboard_status', '-')),
         ("Output Logging", str(config_data.get('logging_enabled', '-'))),
-        ("Output Dir", config_data.get('output_dir', '-')),
-        ("Webhook Enabled", str(config_data.get('webhook_enabled', '-'))),
-        ("Webhook Status", str(config_data.get('webhook_status', '-'))),
-        ("Webhook Followers", str(config_data.get('webhook_followers', '-'))),
-        ("Webhook Errors", str(config_data.get('webhook_errors', '-'))),
-        ("Email Status", str(config_data.get('email_notifications', '-'))),
-        ("Email Followers", str(config_data.get('follower_notifications', '-'))),
-        ("Email Errors", str(config_data.get('error_notifications', '-'))),
+        ("Templates", config_data.get('template_dir', '-')),
+        ("Debug Mode", str(config_data.get('debug_mode', '-'))),
     ]
 
     for setting, value in left_items:
@@ -3321,15 +3309,6 @@ def generate_config_dashboard(target_data, config_data):
             log_text.append(f"{act['message']}\n")
     log_panel = Panel(log_text, title="Live Activity Log", box=box.ROUNDED, border_style="yellow")
 
-    # Timing info panel (Consistent with User mode)
-    timing_text = Text()
-    if LAST_CHECK_TIME:
-        timing_text.append(f"Last: {get_short_date_from_ts(LAST_CHECK_TIME)}\n", style="dim")
-    if NEXT_CHECK_TIME:
-        timing_text.append(f"Next: {get_short_date_from_ts(NEXT_CHECK_TIME)}\n", style="dim")
-    timing_text.append(f"Checks: {CHECK_COUNT}", style="dim")
-
-    timing_panel = Panel(timing_text, title="Timing", box=box.ROUNDED, border_style="blue")
 
     # Mode toggle
     mode_btn_text = Text()
@@ -3363,7 +3342,6 @@ def generate_config_dashboard(target_data, config_data):
     )
 
     layout["bottom"]["right"].split_column(
-        Layout(timing_panel, size=6),
         Layout(ua_panel, ratio=1),
         Layout(mode_panel, size=5)
     )
@@ -3759,7 +3737,7 @@ def instagram_wrap_send(orig_send):
 
 
 # Returns a dictionary containing all current configuration settings
-def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_file_exists=False, cfg_path=None, env_path=None, check_interval_low=None, mode_of_the_tool="Unknown", targets=None):
+def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_file_exists=False, cfg_path=None, env_path=None, check_interval_low=None, targets=None):
     # Prepare hours/ranges string
     hours_ranges_str = ""
     if CHECK_POSTS_IN_HOURS_RANGE:
@@ -3779,8 +3757,6 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
     # Use arguments or fall back to defaults
     targets_list = targets if targets is not None else DASHBOARD_DATA.get('targets_list', [])
     mode_val = mode_of_the_tool
-    if WEB_DASHBOARD_ENABLED:
-         mode_val += " (Web UI)"
 
     # Determine status/reason for dashboards
     dashboard_status = DASHBOARD_ENABLED and RICH_AVAILABLE
@@ -3822,7 +3798,7 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'session_user': SESSION_USERNAME or '<anonymous>',
         'human_mode': BE_HUMAN,
         'enable_jitter': ENABLE_JITTER,
-        'mode': mode_val,
+        'session_mode': mode_val,
         'profile_pic_changes': DETECT_CHANGED_PROFILE_PIC,
         'skip_session_login': SKIP_SESSION,
         'skip_followers': SKIP_FOLLOWERS,
@@ -3841,7 +3817,7 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'empty_profile_pic': f"{bool(profile_pic_file_exists)}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""),
         'dashboard_status': f"{dashboard_status}{dashboard_reason}",
         'web_dashboard_status': f"{web_dashboard_status}{web_dashboard_reason}",
-        'logging_enabled': not DISABLE_LOGGING,
+        'logging_enabled': "True" if not DISABLE_LOGGING else "False",
         'log_file': final_log_path if final_log_path and not DISABLE_LOGGING else "",
         'config_file': cfg_path or CLI_CONFIG_PATH or 'None',
         'dotenv_file': env_path or DOTENV_FILE or 'None',
@@ -5913,7 +5889,7 @@ def get_target_paths(user):
 def run_main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
     global DEBUG_MODE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, DETAILED_FOLLOWER_LOGGING, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA
-    global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR
+    global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -6647,7 +6623,7 @@ def run_main():
         hours_ranges_str = "00:00 - 23:59"
     print("* Hours for fetching updates:\t\t" + hours_ranges_str)
     print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
-    print(f"* Mode of the tool:\t\t\t{mode_of_the_tool}")
+    print(f"* Session Mode:\t\t\t\t{mode_of_the_tool}")
     print(f"* Human mode:\t\t\t\t{BE_HUMAN}")
     print(f"* Skip session login:\t\t\t{SKIP_SESSION}")
     print(f"* Skip fetching followers:\t\t{SKIP_FOLLOWERS}")
@@ -6737,10 +6713,12 @@ def run_main():
             cfg_path=cfg_path,
             env_path=env_path,
             check_interval_low=check_interval_low,
-            mode_of_the_tool=mode_of_the_tool,
             targets=targets
         )
         DASHBOARD_DATA['targets_list'] = targets
+
+        if WEB_DASHBOARD_ENABLED:
+             update_web_dashboard_data(config=DASHBOARD_DATA['config'])
 
     if RICH_AVAILABLE and DASHBOARD_ENABLED:  # type: ignore[name-defined]
         assert Console is not None
