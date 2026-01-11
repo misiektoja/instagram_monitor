@@ -15,6 +15,8 @@ pytz
 tzlocal (optional)
 python-dotenv (optional)
 tqdm
+flask (optional - for web dashboard)
+rich (optional - for terminal dashboard)
 """
 
 VERSION = "2.1"
@@ -132,6 +134,11 @@ SKIP_GETTING_POSTS_DETAILS = False
 # Can also be enabled via the -t flag
 GET_MORE_POST_DETAILS = False
 
+# When enabled, fetches the full list of followers and followings every check (not just when the count changes) and
+# compares usernames to detect who followed/unfollowed even when counts remain the same
+# This is useful for detecting when someone unfollows and someone else follows in the same interval, keeping the count unchanged
+DETAILED_FOLLOWER_LOGGING = False
+
 # Make the tool behave more like a human by performing random feed / profile / hashtag / followee actions
 # Used only with session login (mode 2), always disabled without login (anonymous mode 1)
 BE_HUMAN = False
@@ -212,6 +219,17 @@ NEXT_OPERATION_DELAY = 0.7
 
 # CSV file to write all activities and profile changes
 # Can also be set using the -b flag
+#
+# Path resolution logic:
+# 1. Absolute path:
+#    - Multi-target mode: uses as base (e.g. /path/file_user1.csv), isolation is preserved
+#    - Single-target mode: uses exactly as specified
+# 2. Relative path + no OUTPUT_DIR:
+#    - Multi-target mode: <CSV_FILE_basename>_<username>.csv (in current working dir)
+#    - Single-target mode: <CSV_FILE> (in current working dir, path preserved)
+# 3. Relative path + OUTPUT_DIR:
+#    - Multi-target mode: OUTPUT_DIR/<username>/csvs/<filename> (uses basename of CSV_FILE)
+#    - Single-target mode: OUTPUT_DIR/csvs/<filename> (uses basename of CSV_FILE)
 CSV_FILE = ""
 
 # Location of the optional dotenv file which can keep secrets
@@ -225,24 +243,27 @@ FIREFOX_MACOS_COOKIE = "~/Library/Application Support/Firefox/Profiles/*/cookies
 FIREFOX_WINDOWS_COOKIE = "~/AppData/Roaming/Mozilla/Firefox/Profiles/*/cookies.sqlite"
 FIREFOX_LINUX_COOKIE = "~/.mozilla/firefox/*/cookies.sqlite"
 
-# Base name for the log file. Output will be saved to instagram_monitor_<username>.log
-# Can include a directory path to specify the location, e.g. ~/some_dir/instagram_monitor
+# Base name for the log file. Output will be saved to target-specific log files.
+# If OUTPUT_DIR is set, log will be saved to OUTPUT_DIR/<username>/logs/<INSTA_LOGFILE>.log
+# Otherwise, it will be saved to <INSTA_LOGFILE>_<username>.log in current working dir
 INSTA_LOGFILE = "instagram_monitor"
 
 # Optional: specify directory layout for generated files
 # If set, all downloaded files (images, videos, json, logs) will be saved under this directory
 #
-# Structure (single-target example):
+# Structure (single-target mode):
 #   OUTPUT_DIR/
 #     logs/
+#     csvs/
 #     images/
 #     videos/
 #     json/
 #
-# Structure (multi-target example):
+# Structure (multi-target mode):
 #   OUTPUT_DIR/
-#     logs/           (Shared logs)
 #     username1/
+#       logs/
+#       csvs/
 #       images/
 #       videos/
 #       json/
@@ -264,6 +285,14 @@ CLEAR_SCREEN = True
 
 # Value used by signal handlers to increase/decrease user activity check interval (INSTA_CHECK_INTERVAL); in seconds
 INSTA_CHECK_SIGNAL_VALUE = 300  # 5 min
+
+# Enable verbose mode for operational status updates (can also be enabled via --verbose flag)
+# Shows calculated sleep durations, next check timestamps and liveness confirmations
+VERBOSE_MODE = False
+
+# Enable debug mode for full technical logging (can also be enabled via --debug flag)
+# Shows every API request and internal state changes
+DEBUG_MODE = False
 
 # ----------------------------
 # Multi-target monitoring mode
@@ -291,6 +320,70 @@ MULTI_TARGET_STAGGER_JITTER = 5
 #
 # If True, serializes all HTTP calls (via a global lock) across targets. Recommended for multi-target mode.
 MULTI_TARGET_SERIALIZE_HTTP = True
+
+# ----------------------------
+# Terminal Dashboard Settings
+# ----------------------------
+
+# Enable terminal dashboard (live view)
+# Set to False to use traditional text output
+# Can be enabled via --dashboard flag
+DASHBOARD_ENABLED = False
+
+# ----------------------------
+# Web Dashboard Settings
+# ----------------------------
+# Enable web-based dashboard (runs on localhost)
+# Can be enabled via --web-dashboard flag
+WEB_DASHBOARD_ENABLED = False
+
+# Port for the web dashboard server
+WEB_DASHBOARD_PORT = 8000
+
+# Host for the web dashboard server (use '0.0.0.0' to allow external access, it is not recommended!)
+WEB_DASHBOARD_HOST = '127.0.0.1'
+
+# Template directory for web dashboard
+# If empty, the tool will auto-detect the templates directory relative to the script location
+# For pip-installed packages, templates should be in the package directory
+# Can also be set via --web-dashboard-template-dir flag
+WEB_DASHBOARD_TEMPLATE_DIR = ""
+
+# ----------------------------
+# Webhook Integration
+# ----------------------------
+# Discord API limits (for reference and validation)
+DISCORD_FIELD_VALUE_LIMIT = 1024
+DISCORD_FIELD_NAME_LIMIT = 256
+DISCORD_EMBED_DESCRIPTION_LIMIT = 4096
+DISCORD_EMBED_TITLE_LIMIT = 256
+DISCORD_MAX_FIELDS = 25
+
+# Enable webhook notifications (Discord-compatible)
+# Can also be enabled via the --webhook flag
+WEBHOOK_ENABLED = False
+
+# Webhook URL (Discord webhook URL or compatible endpoint)
+# For Discord: Right-click channel -> Edit Channel -> Integrations -> Webhooks -> Copy Webhook URL
+WEBHOOK_URL = ""
+
+# Webhook username to display (leave empty for default)
+WEBHOOK_USERNAME = "Instagram Monitor"
+
+# Webhook avatar URL (leave empty for default)
+WEBHOOK_AVATAR_URL = ""
+
+# Send webhook on status changes (new posts/reels/stories, bio, profile pic, visibility)
+# Can also be enabled via the --webhook-status flag
+WEBHOOK_STATUS_NOTIFICATION = False
+
+# Send webhook on follower changes
+# Can also be enabled via the --webhook-followers flag
+WEBHOOK_FOLLOWERS_NOTIFICATION = False
+
+# Send webhook on errors
+# Can also be enabled via the --webhook-errors flag
+WEBHOOK_ERROR_NOTIFICATION = False
 """
 
 # -------------------------
@@ -357,6 +450,22 @@ TARGET_USERNAMES = []
 MULTI_TARGET_STAGGER = 0
 MULTI_TARGET_STAGGER_JITTER = 0
 MULTI_TARGET_SERIALIZE_HTTP = False
+WEBHOOK_ENABLED = False
+WEBHOOK_URL = ""
+WEBHOOK_USERNAME = "Instagram Monitor"
+WEBHOOK_AVATAR_URL = ""
+WEBHOOK_STATUS_NOTIFICATION = True
+WEBHOOK_FOLLOWERS_NOTIFICATION = True
+WEBHOOK_ERROR_NOTIFICATION = False
+DEBUG_MODE = False
+VERBOSE_MODE = False
+DASHBOARD_ENABLED = False
+WEB_DASHBOARD_ENABLED = False
+WEB_DASHBOARD_PORT = 8000
+WEB_DASHBOARD_HOST = '127.0.0.1'
+WEB_DASHBOARD_TEMPLATE_DIR = ""
+DETAILED_FOLLOWER_LOGGING = False
+mode_of_the_tool = "Unknown"
 
 exec(CONFIG_BLOCK, globals())
 
@@ -389,7 +498,52 @@ NAME_COUNT = 1
 WRAPPER_COUNT = 0
 pbar = None
 
+# Global tracking for last/next check times
+LAST_CHECK_TIME = None
+NEXT_CHECK_TIME = None
+CHECK_COUNT = 0
+
+# Global state for debug mode manual check trigger (thread-safe Event)
+# Will be initialized after threading is imported
+DEBUG_INPUT_THREAD = None
+
+# Dashboard components (initialized later)
+DASHBOARD_CONSOLE = None
+DASHBOARD_LIVE = None
+DASHBOARD_MODE = 'user'
+DASHBOARD_DATA = {}
+
+# Web Dashboard global state
+WEB_DASHBOARD_APP = None
+WEB_DASHBOARD_THREAD = None
+WEB_DASHBOARD_DATA = {
+    'version': VERSION,
+    'targets': {},
+    'config': {},
+    'check_count': 0,
+    'last_check': None,
+    'next_check': None,
+    'dashboard_mode': 'user',
+    'uptime': None,
+    'start_time': None,
+    'activities': [],
+    'is_monitoring': False,
+    'session': {'username': None, 'active': False}
+}
+WEB_DASHBOARD_MONITOR_THREADS = {}  # Active monitoring threads by username
+WEB_DASHBOARD_STOP_EVENTS = {}  # Stop events for each monitoring thread
+WEB_DASHBOARD_RECHECK_EVENTS = {}  # Recheck events for each monitoring thread
+
 import sys
+import signal
+
+
+# Early signal handler to catch Ctrl+C during imports/initialization
+def _startup_sigint_handler(signum, frame):
+    sys.exit(0)
+
+
+signal.signal(signal.SIGINT, _startup_sigint_handler)
 
 if sys.version_info < (3, 9):
     print("* Error: Python version 3.9 or higher required !")
@@ -406,7 +560,7 @@ from dateutil.parser import isoparse, parse
 import calendar
 import requests as req
 import shutil
-import signal
+import shutil
 import smtplib
 import ssl
 from email.header import Header
@@ -433,6 +587,15 @@ import subprocess
 import threading
 import hashlib
 
+# Initialize the web dashboard data lock now that threading is imported
+# Important: this lock is acquired from multiple call-sites that can nest (e.g. helpers called inside other locked
+# regions). Use an RLock to avoid self-deadlocks that would freeze the web dashboard API
+WEB_DASHBOARD_DATA_LOCK = threading.RLock()
+DASHBOARD_DATA_LOCK = threading.RLock()
+
+# Initialize manual check trigger event (thread-safe)
+MANUAL_CHECK_TRIGGERED: threading.Event = threading.Event()
+
 try:
     import instaloader
     from instaloader import ConnectionException, Instaloader
@@ -454,6 +617,37 @@ try:
 except ModuleNotFoundError:
     raise SystemExit("Error: Couldn't find the tqdm library !\n\nTo install it, run:\n    pip3 install tqdm\n\nOnce installed, re-run this tool")
 
+try:
+    from rich.console import Console  # type: ignore
+    from rich.table import Table  # type: ignore
+    from rich.panel import Panel  # type: ignore
+    from rich.layout import Layout  # type: ignore
+    from rich.text import Text  # type: ignore
+    from rich.live import Live  # type: ignore
+    from rich import box  # type: ignore
+    RICH_AVAILABLE = True
+except ImportError:
+    Console = None  # type: ignore
+    Table = None  # type: ignore
+    Panel = None  # type: ignore
+    Layout = None  # type: ignore
+    Text = None  # type: ignore
+    Live = None  # type: ignore
+    box = None  # type: ignore
+    RICH_AVAILABLE = False
+
+try:
+    from flask import Flask, render_template, jsonify, request as flask_request  # type: ignore
+    import jinja2
+    FLASK_AVAILABLE = True
+except ImportError:
+    Flask = None  # type: ignore
+    render_template = None  # type: ignore
+    jsonify = None  # type: ignore
+    flask_request = None  # type: ignore
+    jinja2 = None  # type: ignore
+    FLASK_AVAILABLE = False
+
 
 # Global lock to avoid interleaved output when using multi-target threading
 STDOUT_LOCK = threading.Lock()
@@ -473,6 +667,829 @@ LAST_OUTPUT_BY_THREAD = {}
 
 # Thread-local storage for progress bar state (multi-target safe)
 _thread_local = threading.local()
+
+
+# ===========================
+# Web Dashboard Flask Server
+# ===========================
+
+# Helper function to run Flask app with suppressed startup messages
+def run_flask_quietly(app, host, port, debug=False, use_reloader=False, threaded=True):
+    import sys
+
+    # Filter class that suppresses Flask startup messages but allows errors through
+    class FilteredWriter:
+        def __init__(self, original_stream):
+            self.original = original_stream
+
+        def write(self, s):
+            # Filter out Flask/werkzeug startup messages
+            if isinstance(s, str):
+                # Suppress common Flask startup messages
+                if any(msg in s for msg in [
+                    "* Serving Flask app",
+                    "* Debug mode:",
+                    " * Running on",
+                    "WARNING: This is a development server",
+                    "Press CTRL+C to quit",
+                    "Address already in use"
+                ]):
+                    return  # Suppress these messages
+                # Suppress Flask's port-in-use message, but not our formatted version (which contains asterisks)
+                if "is in use by another program" in s and "*" not in s:
+                    return
+                # Allow everything else (errors, warnings, etc.) through
+            self.original.write(s)
+
+        def flush(self):
+            self.original.flush()
+
+        def __getattr__(self, name):
+            # Delegate all other attributes to the original stream
+            return getattr(self.original, name)
+
+    # Wrap stdout and stderr with filters
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    filtered_stdout = FilteredWriter(old_stdout)
+    filtered_stderr = FilteredWriter(old_stderr)
+
+    try:
+        sys.stdout = filtered_stdout
+        sys.stderr = filtered_stderr
+
+        # Run Flask (startup messages will be filtered)
+        try:
+            app.run(host=host, port=port, debug=debug, use_reloader=use_reloader, threaded=threaded)
+        except (OSError, SystemExit) as e:
+            # Restore streams first so the error prints correctly
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
+
+            # Check if this is a port-in-use error
+            is_port_error = ((isinstance(e, OSError) and "Address already in use" in str(e)) or (isinstance(e, SystemExit) and e.code == 1))
+
+            if is_port_error:
+                print("*" * HORIZONTAL_LINE)
+                print(f"* Error: Port {port} is in use by another program. Either identify and stop that program or start the server with a different port.\n")
+                print(f"* Web Dashboard will NOT be available!")
+                print("*" * HORIZONTAL_LINE)
+            else:
+                raise e
+    finally:
+        # Restore stdout/stderr
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+
+
+# Creates and configures the Flask web application
+def create_web_dashboard_app():
+    """
+    Note: Web Dashboard is intended for localhost use only as current implementation does not have CSRF protection
+    (like Flask-WTF) or authentication
+    """
+    global WEB_DASHBOARD_TEMPLATE_DIR
+    if not FLASK_AVAILABLE:
+        return None
+
+    # Type guard: Flask is available at this point
+    assert Flask is not None
+    assert render_template is not None
+    assert jsonify is not None
+    assert flask_request is not None
+
+    import logging
+    # Suppress Flask and werkzeug logging more aggressively
+    log = logging.getLogger('werkzeug')
+    log.setLevel(logging.ERROR)  # Only show errors, suppress info/debug/warning
+    # Also suppress Flask's own logger
+    flask_log = logging.getLogger('flask')
+    flask_log.setLevel(logging.ERROR)
+
+    # Suppress Flask startup messages by setting environment variable
+    os.environ['FLASK_ENV'] = 'production'
+    # Note: We don't set WERKZEUG_RUN_MAIN here because it causes issues when use_reloader=False
+    # The FilteredWriter in run_flask_quietly() will handle suppressing startup messages
+
+    # Determine template directory
+    template_dir = None
+    candidate_dirs = []  # For error messages
+
+    # If explicitly set via config or CLI, use that
+    if WEB_DASHBOARD_TEMPLATE_DIR:
+        template_dir = os.path.expanduser(WEB_DASHBOARD_TEMPLATE_DIR)
+        candidate_dirs = [template_dir]  # For error message
+        if not os.path.isdir(template_dir):
+            print("\n" + "*" * HORIZONTAL_LINE)
+            print(f"* Error: Web Dashboard template directory not found: {template_dir}\n")
+            print(f"  Please check the WEB_DASHBOARD_TEMPLATE_DIR setting or --web-dashboard-template-dir flag")
+            print(f"  The directory must exist and contain index.html\n")
+            print(f"* Web Dashboard will NOT be available!")
+            print("*" * HORIZONTAL_LINE)
+            return None
+    else:
+        # Auto-detect: try script directory first (for direct execution)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate_dirs = [
+            os.path.join(script_dir, 'templates'),
+        ]
+
+        # For pip-installed packages, also check package directory
+        # Try to find templates in common package locations
+        try:
+            import importlib.util
+            spec = importlib.util.find_spec('instagram_monitor')
+            if spec and spec.origin:
+                package_dir = os.path.dirname(spec.origin)
+                package_template_dir = os.path.join(package_dir, 'templates')
+                if package_template_dir not in candidate_dirs:  # Avoid duplicates
+                    candidate_dirs.append(package_template_dir)
+        except (ImportError, AttributeError, ValueError):
+            pass
+
+        # Try each candidate directory
+        for candidate in candidate_dirs:
+            index_path = os.path.join(candidate, 'index.html')
+            if os.path.isdir(candidate) and os.path.isfile(index_path):
+                template_dir = candidate
+                break
+
+    # Verify template directory was found
+    if not template_dir:
+        print("\n" + "*" * HORIZONTAL_LINE)
+        print(f"* Error: Web Dashboard templates not found\n")
+        print(f"  The tool searched for templates in the following locations:")
+        for candidate in candidate_dirs:
+            print(f"     - {candidate}")
+        print()
+        print(f"  To fix this, you can:")
+        print(f"    1. Ensure templates/ directory exists in the script directory")
+        print(f"    2. Set WEB_DASHBOARD_TEMPLATE_DIR in your config file")
+        print(f"    3. Use --web-dashboard-template-dir flag to specify the template directory")
+        print(f"    4. If installed via pip, ensure the package includes the templates directory\n")
+        print(f"* Web Dashboard will NOT be available!")
+        print("*" * HORIZONTAL_LINE)
+        return None
+
+    # Final verification that index.html exists
+    index_path = os.path.join(template_dir, 'index.html')
+    if not os.path.isfile(index_path):
+        print("\n" + "*" * HORIZONTAL_LINE)
+        print(f"* Error: Template file 'index.html' not found in: {template_dir}\n")
+        print(f"  The template directory exists, but is missing the required index.html file\n")
+        print(f"* Web Dashboard will NOT be available!")
+        print("*" * HORIZONTAL_LINE)
+        return None
+
+    app = Flask(__name__, template_folder=template_dir)
+    app.config['JSON_SORT_KEYS'] = False
+
+    # Update global variable so it shows in dashboard
+    WEB_DASHBOARD_TEMPLATE_DIR = template_dir
+
+    @app.route('/')
+    def index():  # type: ignore
+        return render_template('index.html', version=VERSION)  # type: ignore[misc]
+
+    @app.route('/api/status')
+    def api_status():  # type: ignore
+        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+            data = WEB_DASHBOARD_DATA.copy()
+            # Calculate uptime
+            if data.get('start_time'):
+                uptime_delta = datetime.now() - data['start_time']
+                hours, remainder = divmod(int(uptime_delta.total_seconds()), 3600)
+                minutes, seconds = divmod(remainder, 60)
+                data['uptime'] = f"{hours}h {minutes}m {seconds}s"
+            return jsonify(data)  # type: ignore
+
+    # Catch TemplateNotFound specifically to show friendly error
+    if jinja2 is not None:
+        @app.errorhandler(jinja2.exceptions.TemplateNotFound)  # type: ignore
+        def handle_template_not_found(e):
+            return f"""
+            <html>
+                <body style="font-family: sans-serif; background: #111; color: #ff6b6b; padding: 40px; text-align: center;">
+                    <h1 style="font-size: 24px; margin-bottom: 16px;">⚠️ Template Not Found</h1>
+                    <p style="font-size: 16px; color: #ddd;">The application could not find the required template file: <strong>{e.name}</strong></p>  # type: ignore
+                    <div style="background: #222; padding: 20px; border-radius: 8px; margin: 30px auto; max-width: 600px; text-align: left; font-family: monospace; color: #aaa;">
+                        <strong>Configured Template Directory:</strong><br>
+                        <span style="color: #4ec9b0;">{template_dir}</span>
+                    </div>
+                    <p style="color: #888;">Please verify that the directory exists and contains 'index.html'.</p>
+                </body>
+            </html>
+            """, 500
+
+    @app.route('/api/mode', methods=['POST'])
+    def api_set_mode():  # type: ignore
+        global DASHBOARD_MODE
+        data = flask_request.get_json()  # type: ignore
+        if data and 'mode' in data:
+            DASHBOARD_MODE = data['mode']
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                WEB_DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
+            return jsonify({'success': True, 'mode': DASHBOARD_MODE})  # type: ignore
+        return jsonify({'success': False}), 400  # type: ignore
+
+    @app.route('/api/trigger-check', methods=['POST'])
+    def api_trigger_check():  # type: ignore
+        global MANUAL_CHECK_TRIGGERED
+        data = flask_request.get_json(silent=True) or {}  # type: ignore
+        target = data.get('target')
+
+        if target:
+            target = target.strip().lower()
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                if target in WEB_DASHBOARD_RECHECK_EVENTS:
+                    WEB_DASHBOARD_RECHECK_EVENTS[target].set()
+                    msg = f"Recheck triggered"
+                    success = True
+                else:
+                    msg = f"Recheck failed: target not running"
+                    success = False
+            log_activity(msg, user=target)
+        else:
+            # Trigger all
+            recheck_all_targets()
+            msg = "Recheck all triggered"
+            success = True
+            log_activity(msg)
+
+        return jsonify({'success': success, 'message': msg})  # type: ignore
+
+    @app.route('/api/targets', methods=['GET', 'POST'])  # type: ignore[misc]
+    def api_targets():  # type: ignore[return]
+        global WEB_DASHBOARD_DATA
+        if flask_request.method == 'GET':  # type: ignore
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                return jsonify({'targets': WEB_DASHBOARD_DATA.get('targets', {})})  # type: ignore
+        elif flask_request.method == 'POST':  # type: ignore
+            data = flask_request.get_json()  # type: ignore
+            if not data or 'username' not in data:
+                return jsonify({'success': False, 'error': 'Username required'}), 400  # type: ignore
+            username = data['username'].strip().lower()
+            if not username:
+                return jsonify({'success': False, 'error': 'Username required'}), 400  # type: ignore
+            start_now = data.get('start', False)
+
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                if username in WEB_DASHBOARD_DATA['targets']:
+                    return jsonify({'success': False, 'error': 'Target already exists'}), 400  # type: ignore
+                WEB_DASHBOARD_DATA['targets'][username] = {
+                    'followers': None,
+                    'following': None,
+                    'posts': None,
+                    'status': 'Pending',
+                    'added': datetime.now().strftime('%Y-%m-%d %H:%M'),
+                    'last_checked': None
+                }
+
+            log_activity(f"Added target", user=username)
+
+            # Start monitoring if requested
+            if start_now:
+                start_monitoring_for_target(username)
+
+            return jsonify({'success': True, 'username': username})  # type: ignore
+
+    @app.route('/api/targets/<username>', methods=['DELETE'])
+    def api_delete_target(username):  # type: ignore
+        global WEB_DASHBOARD_DATA
+        username = username.strip().lower()
+
+        # Stop monitoring if running
+        stop_monitoring_for_target(username)
+
+        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+            if username in WEB_DASHBOARD_DATA['targets']:
+                del WEB_DASHBOARD_DATA['targets'][username]
+                removed = True
+            else:
+                removed = False
+
+        if removed:
+            log_activity(f"Removed target", user=username)
+            return jsonify({'success': True})  # type: ignore
+        return jsonify({'success': False, 'error': 'Target not found'}), 404  # type: ignore
+
+    @app.route('/api/monitoring/start', methods=['POST'])
+    def api_start_monitoring():  # type: ignore
+        data = flask_request.get_json(silent=True) or {}  # type: ignore
+        target = data.get('target')
+
+        if target:
+            success = start_monitoring_for_target(target)
+        else:
+            # Start all targets
+            start_all_monitoring()
+            success = True
+
+        update_ui_data(is_monitoring=True)
+        return jsonify({'success': success})  # type: ignore
+
+    @app.route('/api/monitoring/stop', methods=['POST'])
+    def api_stop_monitoring():  # type: ignore
+        data = flask_request.get_json(silent=True) or {}  # type: ignore[union-attr]
+        target = data.get('target')
+
+        if target:
+            stop_monitoring_for_target(target)
+        else:
+            # Stop all targets
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore[union-attr]
+                targets_to_stop = list(WEB_DASHBOARD_DATA['targets'].keys())
+            for t in targets_to_stop:
+                stop_monitoring_for_target(t)
+
+        # Check if any monitors still running
+        active = any(t.is_alive() for t in WEB_DASHBOARD_MONITOR_THREADS.values())
+        update_ui_data(is_monitoring=active)
+        return jsonify({'success': True})  # type: ignore
+
+    @app.route('/api/settings', methods=['GET', 'POST'])  # type: ignore[misc]
+    def api_settings():  # type: ignore[return]
+        global INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
+        global STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_URL
+        global DETAILED_FOLLOWER_LOGGING, DEBUG_MODE, SESSION_USERNAME
+        global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS
+        global ENABLE_JITTER, DETECT_CHANGED_PROFILE_PIC, SKIP_SESSION, CLI_CONFIG_PATH
+        global DOTENV_FILE, WEB_DASHBOARD_TEMPLATE_DIR, LOCAL_TIMEZONE, OUTPUT_DIR, CSV_FILE
+        global VERBOSE_MODE
+
+        if flask_request.method == 'GET':  # type: ignore
+            return jsonify({  # type: ignore
+                'check_interval': INSTA_CHECK_INTERVAL,
+                'random_low': RANDOM_SLEEP_DIFF_LOW,
+                'random_high': RANDOM_SLEEP_DIFF_HIGH,
+                'email_notifications': STATUS_NOTIFICATION,
+                'follower_notifications': FOLLOWERS_NOTIFICATION,
+                'error_notifications': ERROR_NOTIFICATION,
+                'webhook_enabled': WEBHOOK_ENABLED,
+                'webhook_url': WEBHOOK_URL,
+                'detailed_logging': DETAILED_FOLLOWER_LOGGING,
+                'verbose_mode': VERBOSE_MODE,
+                'debug_mode': DEBUG_MODE,
+                'session_username': SESSION_USERNAME,
+                # New fields
+                'skip_stories': SKIP_GETTING_STORY_DETAILS,
+                'skip_posts': SKIP_GETTING_POSTS_DETAILS,
+                'get_more_post_details': GET_MORE_POST_DETAILS,
+                'enable_jitter': ENABLE_JITTER,
+                'profile_pic_changes': DETECT_CHANGED_PROFILE_PIC,
+                'skip_session_login': SKIP_SESSION,
+                'config_file': CLI_CONFIG_PATH or "None",
+                'dotenv_file': DOTENV_FILE or "None",
+                'template_dir': WEB_DASHBOARD_TEMPLATE_DIR or "Auto",
+                'local_timezone': LOCAL_TIMEZONE,
+                'csv_file': "Enabled" if CSV_FILE else "Disabled",
+                'output_dir': OUTPUT_DIR or "-"
+            })
+        elif flask_request.method == 'POST':  # type: ignore
+            data = flask_request.get_json()  # type: ignore
+            if not data:
+                return jsonify({'success': False, 'error': 'No data provided'}), 400  # type: ignore
+
+            if 'check_interval' in data:
+                INSTA_CHECK_INTERVAL = max(300, int(data['check_interval']))
+            if 'random_low' in data:
+                RANDOM_SLEEP_DIFF_LOW = max(0, int(data['random_low']))
+            if 'random_high' in data:
+                RANDOM_SLEEP_DIFF_HIGH = max(0, int(data['random_high']))
+            if 'email_notifications' in data:
+                STATUS_NOTIFICATION = bool(data['email_notifications'])
+            if 'follower_notifications' in data:
+                FOLLOWERS_NOTIFICATION = bool(data['follower_notifications'])
+            if 'webhook_enabled' in data:
+                WEBHOOK_ENABLED = bool(data['webhook_enabled'])
+            if 'webhook_url' in data:
+                webhook_url = data['webhook_url']
+                if webhook_url and not validate_webhook_url(webhook_url):
+                    return jsonify({'success': False, 'error': 'Invalid webhook URL format. Must be HTTPS URL.'}), 400  # type: ignore
+                WEBHOOK_URL = webhook_url
+            if 'detailed_logging' in data:
+                DETAILED_FOLLOWER_LOGGING = bool(data['detailed_logging'])
+            if 'verbose_mode' in data:
+                VERBOSE_MODE = bool(data['verbose_mode'])
+            if 'debug_mode' in data:
+                DEBUG_MODE = bool(data['debug_mode'])
+
+            log_activity("Settings updated from web dashboard")
+            return jsonify({'success': True})  # type: ignore
+
+    @app.route('/api/session', methods=['GET', 'POST'])  # type: ignore[misc]
+    def api_session():  # type: ignore[return]
+        global SESSION_USERNAME, SKIP_SESSION
+
+        if flask_request.method == 'GET':  # type: ignore
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                return jsonify(WEB_DASHBOARD_DATA.get('session', {}))  # type: ignore
+        elif flask_request.method == 'POST':  # type: ignore
+            data = flask_request.get_json()  # type: ignore
+            if not data:
+                return jsonify({'success': False, 'error': 'No data provided'}), 400  # type: ignore
+
+            username = data.get('username', '').strip()
+            method = data.get('method', 'firefox')
+
+            if username:
+                SESSION_USERNAME = username
+                SKIP_SESSION = False
+                with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                    WEB_DASHBOARD_DATA['session'] = {'username': username, 'active': False, 'method': method}
+                log_activity(f"Session configured for: {username}")
+                return jsonify({'success': True, 'message': f'Session set for {username}'})  # type: ignore
+            return jsonify({'success': False, 'error': 'Username required'}), 400  # type: ignore
+
+    @app.route('/api/session/test', methods=['POST'])
+    def api_test_session():  # type: ignore
+        if not SESSION_USERNAME:
+            return jsonify({'success': False, 'error': 'No session configured'})  # type: ignore
+
+        try:
+            L = Instaloader()
+            L.load_session_from_file(SESSION_USERNAME)
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                WEB_DASHBOARD_DATA['session']['active'] = True
+            log_activity(f"Session test successful", user=SESSION_USERNAME)
+            return jsonify({'success': True, 'username': SESSION_USERNAME})  # type: ignore
+        except Exception as e:
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                WEB_DASHBOARD_DATA['session']['active'] = False
+            return jsonify({'success': False, 'error': str(e)})  # type: ignore
+
+    @app.route('/api/activity/clear', methods=['POST'])
+    def api_clear_activity():  # type: ignore
+        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+            WEB_DASHBOARD_DATA['activities'] = []
+        return jsonify({'success': True})  # type: ignore
+
+    return app
+
+
+# Starts monitoring for a specific target in standalone mode
+def start_monitoring_for_target(username, wait_event=None, signal_event=None, delay_s=0):
+    global WEB_DASHBOARD_MONITOR_THREADS, WEB_DASHBOARD_STOP_EVENTS
+
+    if username in WEB_DASHBOARD_MONITOR_THREADS and WEB_DASHBOARD_MONITOR_THREADS[username].is_alive():
+        if signal_event:
+            signal_event.set()  # Still signal so next in stagger can proceed
+        return False  # Already monitoring
+
+    stop_event = threading.Event()
+    WEB_DASHBOARD_STOP_EVENTS[username] = stop_event
+
+    def _monitor_runner(user, stop_evt, wait_evt, signal_evt, sleep_s):
+        global WEB_DASHBOARD_RECHECK_EVENTS
+        try:
+            recheck_event = threading.Event()
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                WEB_DASHBOARD_RECHECK_EVENTS[user] = recheck_event
+
+            manual_recheck = False
+
+            if sleep_s > 0:
+                # Interruptible wait for staggering
+                sleep_remaining = sleep_s
+                while sleep_remaining > 0:
+                    if stop_evt and stop_evt.is_set():
+                        return
+                    if recheck_event.is_set():
+                        recheck_event.clear()
+                        print(f"* Staggered start interrupted for {user} by recheck request!")
+                        print_cur_ts("\nTimestamp:\t\t\t\t")
+                        manual_recheck = True
+                        break
+
+                    wait_chunk = min(1, sleep_remaining)
+                    if stop_evt:
+                        stop_evt.wait(wait_chunk)
+                    else:
+                        time.sleep(wait_chunk)
+                    sleep_remaining -= wait_chunk
+
+            log_activity(f"Started monitoring", user=user)
+            update_ui_data(targets={user: {'status': 'Pending'}})
+
+            # Resolve target-specific paths
+            target_csv, target_log = get_target_paths(user)
+            if not DISABLE_LOGGING and target_log:
+                if isinstance(sys.stdout, Logger):
+                    sys.stdout.add_target_log(user, target_log)
+
+            # Run the actual monitoring (with stop event check)
+            instagram_monitor_user(
+                user,
+                target_csv,
+                SKIP_SESSION,
+                SKIP_FOLLOWERS,
+                SKIP_FOLLOWINGS,
+                SKIP_GETTING_STORY_DETAILS,
+                SKIP_GETTING_POSTS_DETAILS,
+                GET_MORE_POST_DETAILS,
+                wait_for_prev_user=wait_evt,
+                signal_loading_complete=signal_evt,
+                stop_event=stop_evt,
+                user_root_path=None,  # Fallback to OUTPUT_DIR/user if OUTPUT_DIR is set
+                manual_recheck=manual_recheck
+            )
+        except Exception as e:
+            log_activity(f"Error monitoring: {str(e)}", user=user)
+            update_ui_data(targets={user: {'status': 'Error'}})
+            if signal_evt:
+                signal_evt.set()
+        finally:
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                if user in WEB_DASHBOARD_RECHECK_EVENTS:
+                    del WEB_DASHBOARD_RECHECK_EVENTS[user]
+
+    t = threading.Thread(target=_monitor_runner, args=(username, stop_event, wait_event, signal_event, delay_s), daemon=True, name=f"monitor:{username}")
+    WEB_DASHBOARD_MONITOR_THREADS[username] = t
+    t.start()
+    return True
+
+
+# Stops monitoring for a specific target
+def stop_monitoring_for_target(username):
+    global WEB_DASHBOARD_STOP_EVENTS, WEB_DASHBOARD_MONITOR_THREADS
+
+    if username in WEB_DASHBOARD_STOP_EVENTS:
+        WEB_DASHBOARD_STOP_EVENTS[username].set()
+        if username in WEB_DASHBOARD_MONITOR_THREADS:
+            log_activity(f"Stopping monitoring", user=username)
+        update_ui_data(targets={username: {'status': 'Stopped'}})
+
+    # Clean up thread reference
+    if username in WEB_DASHBOARD_MONITOR_THREADS:
+        del WEB_DASHBOARD_MONITOR_THREADS[username]
+    if username in WEB_DASHBOARD_STOP_EVENTS:
+        del WEB_DASHBOARD_STOP_EVENTS[username]
+
+
+# Starts monitoring for all targets with staggering
+def start_all_monitoring():
+    global WEB_DASHBOARD_DATA, MULTI_TARGET_STAGGER, MULTI_TARGET_STAGGER_JITTER, INSTA_CHECK_INTERVAL
+
+    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+        targets = list(WEB_DASHBOARD_DATA.get('targets', {}).keys())
+
+    if not targets:
+        log_activity("Start All: No targets found")
+        return
+
+    # Filter out targets that are already running
+    targets_to_start = []
+    for u in targets:
+        if u not in WEB_DASHBOARD_MONITOR_THREADS or not WEB_DASHBOARD_MONITOR_THREADS[u].is_alive():
+            targets_to_start.append(u)
+
+    if not targets_to_start:
+        log_activity("Start All: All targets already running")
+        return
+
+    stagger = MULTI_TARGET_STAGGER
+    jitter = MULTI_TARGET_STAGGER_JITTER
+
+    # Auto-spread across the base interval
+    if stagger == 0:
+        stagger = max(1, int(INSTA_CHECK_INTERVAL / max(1, len(targets_to_start))))
+
+    now = now_local_naive()
+    log_activity(f"Start All: Staggering {len(targets_to_start)} targets with {display_time(stagger)} interval")
+
+    print(f"* Multi-target staggering:\t\t{display_time(stagger)} between targets (jitter: {display_time(jitter)})")
+    print("\n* Planned first poll times (processed alphabetically):")
+
+    planned_actions = []
+    for idx, u in enumerate(targets_to_start):
+        base_delay = idx * stagger
+        add_jitter = int(random.uniform(0, jitter)) if jitter else 0
+        delay = base_delay + add_jitter
+        planned = now + timedelta(seconds=delay)
+        planned_actions.append((u, delay, planned))
+        print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
+
+    print_cur_ts("\nTimestamp:\t\t\t\t")
+
+    loading_events = [threading.Event() for _ in range(len(targets_to_start) + 1)]
+    loading_events[0].set()
+
+    def _staggered_launcher_thread():
+        # Small pause to let user see the plans in console before monitoring starts
+        time.sleep(1.5)
+        for idx, (u, delay, planned) in enumerate(planned_actions):
+            # Activity log
+            msg = f"check planned @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})"
+            log_activity(msg, user=u)
+
+            # Start monitoring
+            start_monitoring_for_target(u, wait_event=loading_events[idx], signal_event=loading_events[idx + 1], delay_s=delay)
+
+    threading.Thread(target=_staggered_launcher_thread, daemon=True, name="start_all_launcher").start()
+
+
+# Rechecks all monitored targets with staggering
+def recheck_all_targets():
+    global WEB_DASHBOARD_RECHECK_EVENTS, MULTI_TARGET_STAGGER, MULTI_TARGET_STAGGER_JITTER, INSTA_CHECK_INTERVAL
+
+    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+        # Identify monitored targets by alive threads
+        targets = [u for u, t in WEB_DASHBOARD_MONITOR_THREADS.items() if t.is_alive()]
+
+    if not targets:
+        log_activity("Recheck All: Recheck requires at least 1 monitored user")
+        update_ui_data(config={'status_msg': "Recheck requires at least 1 monitored user"})
+        return
+
+    stagger = MULTI_TARGET_STAGGER
+    jitter = MULTI_TARGET_STAGGER_JITTER
+
+    # Auto-spread across the base interval
+    if stagger == 0:
+        stagger = max(1, int(INSTA_CHECK_INTERVAL / max(1, len(targets))))
+
+    log_activity(f"Recheck All: Staggering recheck for {len(targets)} targets")
+
+    # Regular text console output
+    now = now_local_naive()
+    print(f"* Recheck All: Staggering {len(targets)} targets with {display_time(stagger)} interval (jitter: {display_time(jitter)})")
+    print("\n* Planned poll times (processed alphabetically):")
+
+    planned_actions = []
+    for idx, u in enumerate(sorted(targets)):
+        base_delay = idx * stagger
+        add_jitter = int(random.uniform(0, jitter)) if jitter else 0
+        delay = base_delay + add_jitter
+        planned = now + timedelta(seconds=delay)
+        planned_actions.append((u, delay, planned))
+        print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
+
+    print_cur_ts("\nTimestamp:\t\t\t\t")
+
+    def _staggered_rechecker_thread():
+        # Small pause to let user see the plans in console before rechecks start
+        time.sleep(1.5)
+        for idx, (u, delay, planned) in enumerate(planned_actions):
+            # Activity log
+            msg = f"Recheck planned @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})"
+            log_activity(msg, user=u)
+
+            def _single_rechecker(target_user, delay_s):
+                _thread_local.user = target_user  # Set user context for debug_print
+                try:
+                    if delay_s > 0:
+                        time.sleep(delay_s)
+                    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                        if target_user in WEB_DASHBOARD_RECHECK_EVENTS:
+                            WEB_DASHBOARD_RECHECK_EVENTS[target_user].set()
+                            log_activity("Recheck triggered", user=target_user)
+                        else:
+                            debug_print("Recheck event not found (might have finished or pending start)")
+                except Exception as e:
+                    debug_print(f"Error in rechecker thread: {e}")
+
+            threading.Thread(target=_single_rechecker, args=(u, delay), daemon=True, name=f"rechecker:{u}").start()
+
+    threading.Thread(target=_staggered_rechecker_thread, daemon=True, name="recheck_all_launcher").start()
+
+
+# Starts the Flask web server in a background thread
+def start_web_dashboard_server():
+    global WEB_DASHBOARD_APP, WEB_DASHBOARD_THREAD, WEB_DASHBOARD_TEMPLATE_DIR, VERSION
+
+    if not FLASK_AVAILABLE:
+        return False
+
+    if not WEB_DASHBOARD_ENABLED:
+        return False
+
+    try:
+        WEB_DASHBOARD_APP = create_web_dashboard_app()
+        if WEB_DASHBOARD_APP is None:
+            return False
+    except Exception as e:
+        # create_web_dashboard_app() already prints nice error messages, but catch any unexpected errors
+        print(f"\n* Error: Failed to create web dashboard application: {e}\n")
+        return False
+
+    def run_server():
+        assert WEB_DASHBOARD_APP is not None  # Type guard
+        run_flask_quietly(WEB_DASHBOARD_APP, WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, debug=False, use_reloader=False, threaded=True)
+
+    WEB_DASHBOARD_THREAD = threading.Thread(target=run_server, daemon=True, name="web_ui_server")
+    WEB_DASHBOARD_THREAD.start()
+
+    print(f"\n* Web Dashboard available at:\t\thttp://{WEB_DASHBOARD_HOST}:{WEB_DASHBOARD_PORT}/")
+    return True
+
+
+# Updates the terminal dashboard data store
+def update_terminal_dashboard_data(targets=None, config=None, is_monitoring=None):
+    with DASHBOARD_DATA_LOCK:  # type: ignore
+        if targets is not None:
+            if 'targets' not in DASHBOARD_DATA:
+                DASHBOARD_DATA['targets'] = {}
+            for user, data in targets.items():
+                if user not in DASHBOARD_DATA['targets']:
+                    DASHBOARD_DATA['targets'][user] = {}
+                # Deep merge the target data
+                if isinstance(data, dict):
+                    DASHBOARD_DATA['targets'][user].update(data)
+                else:
+                    DASHBOARD_DATA['targets'][user] = data
+        if config is not None:
+            if 'config' not in DASHBOARD_DATA:
+                DASHBOARD_DATA['config'] = {}
+            if isinstance(config, dict):
+                DASHBOARD_DATA['config'].update(config)
+            else:
+                DASHBOARD_DATA['config'] = config
+        if is_monitoring is not None:
+            DASHBOARD_DATA['is_monitoring'] = is_monitoring
+        DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
+
+
+# Updates both the terminal and web dashboard data stores and triggers a UI update
+def update_ui_data(targets=None, config=None, check_count=None, last_check=None, next_check=None, is_monitoring=None):
+    global DEBUG_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED
+    if DEBUG_MODE:
+        parts = []
+        if targets: parts.append(f"targets={list(targets.keys())}")
+        if check_count is not None: parts.append(f"check_count={check_count}")
+        if is_monitoring is not None: parts.append(f"monitoring={is_monitoring}")
+        if parts:
+            debug_print(f"UI Data Update: {', '.join(parts)}")
+    if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
+        if DASHBOARD_ENABLED:
+            update_terminal_dashboard_data(targets=targets, config=config, is_monitoring=is_monitoring)
+            update_dashboard()
+
+        if WEB_DASHBOARD_ENABLED:
+            update_web_dashboard_data(targets=targets, config=config, check_count=check_count, last_check=last_check, next_check=next_check, is_monitoring=is_monitoring)
+
+
+# Updates the web dashboard data store
+def update_web_dashboard_data(targets=None, config=None, check_count=None, last_check=None, next_check=None, is_monitoring=None):
+    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+        if targets is not None:
+            if 'targets' not in WEB_DASHBOARD_DATA:
+                WEB_DASHBOARD_DATA['targets'] = {}
+            for user, data in targets.items():
+                if user not in WEB_DASHBOARD_DATA['targets']:
+                    WEB_DASHBOARD_DATA['targets'][user] = {}
+                # Deep merge the target data
+                if isinstance(data, dict):
+                    WEB_DASHBOARD_DATA['targets'][user].update(data)
+                else:
+                    WEB_DASHBOARD_DATA['targets'][user] = data
+        if config is not None:
+            if 'config' not in WEB_DASHBOARD_DATA:
+                WEB_DASHBOARD_DATA['config'] = {}
+            if isinstance(config, dict):
+                WEB_DASHBOARD_DATA['config'].update(config)
+            else:
+                WEB_DASHBOARD_DATA['config'] = config
+        if check_count is not None:
+            WEB_DASHBOARD_DATA['check_count'] = check_count
+        if last_check is not None:
+            WEB_DASHBOARD_DATA['last_check'] = last_check
+        if next_check is not None:
+            WEB_DASHBOARD_DATA['next_check'] = next_check
+        if is_monitoring is not None:
+            WEB_DASHBOARD_DATA['is_monitoring'] = is_monitoring
+        WEB_DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
+
+
+# Logs an activity to both Dashboard and Web Dashboard activity feeds
+def log_activity(message, user=None):
+    global DASHBOARD_DATA, WEB_DASHBOARD_DATA
+
+    timestamp_full = datetime.now()
+    timestamp_str = timestamp_full.strftime("%H:%M:%S")
+
+    # Format message with user if provided
+    display_message = f"[{user}] {message}" if user else message
+
+    activity_item_rich = {'time': timestamp_str, 'message': display_message, 'dt': timestamp_full}
+    activity_item_web = {'time': timestamp_str, 'message': display_message}
+
+    # Update Dashboard data
+    if 'activities' not in DASHBOARD_DATA:
+        DASHBOARD_DATA['activities'] = []
+    DASHBOARD_DATA['activities'].insert(0, activity_item_rich)
+    DASHBOARD_DATA['activities'] = DASHBOARD_DATA['activities'][:50]  # Last 50 for Rich
+
+    # Update Web Dashboard data (thread-safe)
+    if WEB_DASHBOARD_DATA_LOCK:
+        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore[union-attr]
+            if 'activities' not in WEB_DASHBOARD_DATA:
+                WEB_DASHBOARD_DATA['activities'] = []
+            WEB_DASHBOARD_DATA['activities'].insert(0, activity_item_web)
+            WEB_DASHBOARD_DATA['activities'] = WEB_DASHBOARD_DATA['activities'][:100]  # Last 100 for Web
+
+    # If Dashboard is live, trigger an update
+    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+        update_dashboard()
 
 
 def _thread_key() -> int:
@@ -502,11 +1519,36 @@ def show_follow_info(followers_reported: int, followers_actual: int, followings_
     print(f"* Followers: reported ({followers_reported}) actual ({followers_actual}). Followings: reported ({followings_reported}) actual ({followings_actual})")
 
 
-# Logger class to output messages to stdout and log file
+# Logger class to output messages to stdout and log files
 class Logger(object):
-    def __init__(self, filename):
+    def __init__(self, main_filename=None):
         self.terminal = sys.stdout
-        self.logfile = open(filename, "a", buffering=1, encoding="utf-8")
+        self.target_logs = {}  # target -> file_handle
+        self.main_log = None
+        if main_filename:
+            try:
+                self.main_log = open(main_filename, "a", buffering=1, encoding="utf-8")
+            except Exception as e:
+                print(f"* Error: Could not open main log file '{main_filename}': {e}", file=sys.stderr)
+
+    def add_target_log(self, target, filename):
+        with STDOUT_LOCK:
+            if target not in self.target_logs:
+                try:
+                    # Ensure directory exists if path contains one
+                    dirname = os.path.dirname(filename)
+                    if dirname:
+                        os.makedirs(dirname, exist_ok=True)
+                    self.target_logs[target] = open(filename, "a", buffering=1, encoding="utf-8")
+                except Exception as e:
+                    print(f"* Error: Could not open log file '{filename}' for target '{target}': {e}", file=sys.stderr)
+
+    def _get_current_target(self):
+        thread_name = threading.current_thread().name
+        # Target threads are named "instagram_monitor:<user>" or "monitor:<user>"
+        if ':' in thread_name:
+            return thread_name.split(':', 1)[1]
+        return None
 
     def write(self, message):
         global last_output
@@ -517,22 +1559,53 @@ class Logger(object):
                 if tid not in LAST_OUTPUT_BY_THREAD:
                     LAST_OUTPUT_BY_THREAD[tid] = []
                 LAST_OUTPUT_BY_THREAD[tid].append(message)
-            self.terminal.write(message)
-            self.logfile.write(message)
-            self.terminal.flush()
-            self.logfile.flush()
+
+            if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                self.terminal.write(message)
+                self.terminal.flush()
+
+            # Always log to main log if available
+            if self.main_log:
+                self.main_log.write(message)
+                self.main_log.flush()
+
+            target = self._get_current_target()
+            if target and target in self.target_logs:
+                # User-specific action: log to user log
+                self.target_logs[target].write(message)
+                self.target_logs[target].flush()
+            else:
+                # Common message (e.g. summary screen from MainThread): log to ALL target logs
+                for handle in self.target_logs.values():
+                    handle.write(message)
+                    handle.flush()
 
     def flush(self):
-        pass
+        self.terminal.flush()
+        if self.main_log:
+            self.main_log.flush()
+        with STDOUT_LOCK:
+            for handle in self.target_logs.values():
+                handle.flush()
+
+    def fileno(self):
+        return self.terminal.fileno()
+
+    def isatty(self):
+        return self.terminal.isatty()
 
 
 # Signal handler when user presses Ctrl+C
 def signal_handler(sig, frame):
     if getattr(_thread_local, 'pbar', None) is not None:
         close_pbar()
+
+    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+        stop_dashboard()
+
     sys.stdout = stdout_bck
     print('\n* You pressed Ctrl+C, tool is terminated.')
-    sys.exit(0)
+    os._exit(0)
 
 
 # Checks internet connectivity
@@ -743,9 +1816,175 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     return 0
 
 
+# Validates webhook URL format
+def validate_webhook_url(url):
+    if not url:
+        return False
+    if not url.startswith('https://'):
+        return False
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        if not parsed.netloc or not parsed.scheme == 'https':
+            return False
+        return True
+    except Exception:
+        return False
+
+
+# Helper function to send follower/following change webhooks
+def send_follower_change_webhook(user, change_type, old_count, new_count, added_list, removed_list):
+    diff = new_count - old_count
+    diff_str = f"+{diff}" if diff > 0 else str(diff)
+
+    webhook_fields = [
+        {"name": "Old Count", "value": str(old_count), "inline": True},
+        {"name": "New Count", "value": str(new_count), "inline": True},
+        {"name": "Change", "value": diff_str, "inline": True},
+    ]
+
+    if added_list:
+        field_name = "New Followers" if change_type == "followers" else "Added"
+        webhook_fields.append({
+            "name": field_name,
+            "value": added_list[:DISCORD_FIELD_VALUE_LIMIT]  # type: ignore
+        })
+
+    if removed_list:
+        field_name = "Lost Followers" if change_type == "followers" else "Removed"
+        webhook_fields.append({
+            "name": field_name,
+            "value": removed_list[:DISCORD_FIELD_VALUE_LIMIT]  # type: ignore
+        })
+
+    # Use different emojis/colors for followers vs followings
+    if change_type == "followers":
+        emoji = "📈" if diff > 0 else "📉"
+        color = 0x2ecc71 if diff > 0 else 0xe74c3c  # Green if gained, red if lost
+    else:  # followings
+        emoji = "📊"
+        color = 0x3498db  # Blue
+
+    title = f"{emoji} {user} {change_type.capitalize()} Changed"
+    description = f"User **{user}** {change_type} changed from {old_count} to {new_count}"
+    notification_type = "followers" if change_type == "followers" else "status"
+
+    return send_webhook(
+        title,
+        description,
+        color=color,
+        fields=webhook_fields,
+        notification_type=notification_type
+    )
+
+
+# Sends webhook notification (Discord-compatible)
+def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status"):
+    if not WEBHOOK_ENABLED or not WEBHOOK_URL:
+        return 1
+
+    # Validate webhook URL
+    if not validate_webhook_url(WEBHOOK_URL):
+        debug_print("* Webhook error: Invalid webhook URL format")
+        return 1
+
+    # Check if this notification type is enabled
+    if notification_type == "status" and not WEBHOOK_STATUS_NOTIFICATION:
+        return 1
+    elif notification_type == "followers" and not WEBHOOK_FOLLOWERS_NOTIFICATION:
+        return 1
+    elif notification_type == "error" and not WEBHOOK_ERROR_NOTIFICATION:
+        return 1
+
+    try:
+        embed = {
+            "title": title[:DISCORD_EMBED_TITLE_LIMIT] if title else "Instagram Monitor",  # type: ignore
+            "description": description[:DISCORD_EMBED_DESCRIPTION_LIMIT] if description else "",  # type: ignore
+            "color": color,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "footer": {
+                "text": f"Instagram Monitor v{VERSION}"
+            }
+        }
+
+        if fields:
+            embed["fields"] = []
+            for field in fields[:DISCORD_MAX_FIELDS]:  # type: ignore
+                embed["fields"].append({
+                    "name": str(field.get("name", ""))[:DISCORD_FIELD_NAME_LIMIT],  # type: ignore
+                    "value": str(field.get("value", ""))[:DISCORD_FIELD_VALUE_LIMIT],  # type: ignore
+                    "inline": field.get("inline", False)
+                })
+
+        if image_url:
+            embed["image"] = {"url": image_url}
+        elif local_image_file and os.path.isfile(local_image_file):
+            # If using local file, use attachment:// syntax
+            filename = os.path.basename(local_image_file)
+            embed["image"] = {"url": f"attachment://{filename}"}
+
+        payload: dict = {
+            "embeds": [embed]
+        }
+
+        if WEBHOOK_USERNAME:
+            payload["username"] = WEBHOOK_USERNAME
+
+        if WEBHOOK_AVATAR_URL:
+            payload["avatar_url"] = WEBHOOK_AVATAR_URL
+
+        if local_image_file and os.path.isfile(local_image_file):
+            filename = os.path.basename(local_image_file)
+            with open(local_image_file, 'rb') as f:
+                files = {
+                    "file": (filename, f, "image/jpeg"),
+                    "payload_json": (None, json.dumps(payload))
+                }
+                response = req.post(
+                    WEBHOOK_URL,
+                    files=files,
+                    timeout=10
+                )
+        else:
+            response = req.post(
+                WEBHOOK_URL,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=10
+            )
+
+        if response.status_code in (200, 204):
+            print("* Webhook notification sent successfully")
+            return 0
+        else:
+            print(f"* Webhook error: HTTP {response.status_code} - {response.text[:200]}")
+            return 1
+
+    except Exception as e:
+        print(f"* Error sending webhook: {e}")
+        return 1
+
+
+# Debug print helper - only prints if DEBUG_MODE is enabled
+def debug_print(message):
+    if DEBUG_MODE:
+        timestamp = now_local_naive().strftime("%H:%M:%S")
+        user = getattr(_thread_local, 'user', None)
+        user_prefix = f" [{user}]" if user else ""
+
+        # If we just printed a partial line (no newline), add one before the debug message to avoid clobbering
+        if getattr(_thread_local, 'in_partial_line', False):
+            print()
+            _thread_local.in_partial_line = False
+
+        print(f"[DEBUG {timestamp}]{user_prefix} {message}")
+
+
 # Initializes the CSV file
 def init_csv_file(csv_file_name):
     try:
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(os.path.abspath(csv_file_name)), exist_ok=True)
         if not os.path.isfile(csv_file_name) or os.path.getsize(csv_file_name) == 0:
             with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
@@ -758,6 +1997,7 @@ def init_csv_file(csv_file_name):
 def write_csv_entry(csv_file_name, timestamp, object_type, old, new):
     try:
 
+        debug_print(f"Writing CSV entry to {csv_file_name}: Type={object_type}, Old={old}, New={new}")
         with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as csv_file:
             csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
             csvwriter.writerow({'Date': timestamp, 'Type': object_type, 'Old': old, 'New': new})
@@ -836,6 +2076,7 @@ def get_cur_ts(ts_str=""):
 
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str=""):
+    # Always print; Logger handles terminal suppression while ensuring file logging
     print(get_cur_ts(str(ts_str)))
     print("─" * HORIZONTAL_LINE)
 
@@ -950,7 +2191,7 @@ def get_hour_min_from_ts(ts, show_seconds=False):
         return ""
 
     out_strf = "%H:%M:%S" if show_seconds else "%H:%M"
-    return ts_new.strftime(out_strf)
+    return ts_new.strftime(out_strf)  # type: ignore[arg-type]
 
 
 # Returns the range between two timestamps/datetime objects; eg. Sun 21 Apr 14:09 - 14:15
@@ -1150,15 +2391,20 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 print(f"* User {user} does not have profile picture set, empty template saved to '{profile_pic_file}'{new_line}")
             else:
                 print(f"* User {user} profile picture saved to '{profile_pic_file}'")
+                log_activity("Profile picture saved", user=user)
                 print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago){new_line}")
 
             try:
-                if imgcat_exe and not is_empty_profile_pic:
+                if imgcat_exe and not is_empty_profile_pic and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
                     if func_ver == 1:
-                        subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file}", shell=True, check=True)
+                        subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{profile_pic_file}\"", shell=True, check=True)
                     else:
-                        subprocess.run(f"{imgcat_exe} {profile_pic_file} {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
-                shutil.copy2(profile_pic_file, f'instagram_{user}_profile_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
+                        subprocess.run(f"\"{imgcat_exe}\" \"{profile_pic_file}\" {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
+                profile_pic_copy_filename = f'instagram_{user}_profile_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg'
+                profile_pic_save_dir = os.path.dirname(profile_pic_file)
+                if profile_pic_save_dir:
+                    profile_pic_copy_filename = os.path.join(profile_pic_save_dir, profile_pic_copy_filename)
+                shutil.copy2(profile_pic_file, profile_pic_copy_filename)
             except Exception:
                 pass
             try:
@@ -1170,7 +2416,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
             print(f"* Error saving profile picture !{new_line}")
 
         if func_ver == 2:
-            print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+            print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
             print_cur_ts("Timestamp:\t\t\t\t")
         else:
             print_cur_ts("\nTimestamp:\t\t\t\t")
@@ -1187,8 +2433,10 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
         if save_pic_video(profile_image_url, profile_pic_file_tmp):
             profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)), pytz.timezone(LOCAL_TIMEZONE))
             if profile_pic_file_empty and os.path.isfile(profile_pic_file_empty):
+                debug_print("Comparing current profile picture with empty template...")
                 is_empty_profile_pic = compare_images(profile_pic_file, profile_pic_file_empty)
 
+            debug_print("Comparing current profile picture with downloaded temporary one...")
             if not compare_images(profile_pic_file, profile_pic_file_tmp) and profile_pic_mdate_dt != profile_pic_tmp_mdate_dt:
                 if profile_pic_file_empty and os.path.isfile(profile_pic_file_empty):
                     is_empty_profile_pic_tmp = compare_images(profile_pic_file_tmp, profile_pic_file_empty)
@@ -1196,6 +2444,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 # User has removed profile picture
                 if is_empty_profile_pic_tmp and not is_empty_profile_pic:
                     print(f"* User {user} has removed profile picture added on {profile_pic_mdate} ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)}){new_line}")
+                    log_activity("Profile picture removed", user=user)
                     csv_text = "Profile Picture Removed"
 
                     if send_email_notification:
@@ -1207,6 +2456,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 # User has set profile picture
                 elif is_empty_profile_pic and not is_empty_profile_pic_tmp:
                     print(f"* User {user} has set profile picture !")
+                    log_activity("Profile picture set", user=user)
                     print(f"* User profile picture saved to '{profile_pic_file}'")
                     print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago){new_line}")
                     csv_text = "Profile Picture Created"
@@ -1221,6 +2471,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 # User has changed profile picture
                 elif not is_empty_profile_pic_tmp and not is_empty_profile_pic:
                     print(f"* User {user} has changed profile picture ! (previous one added on {profile_pic_mdate} - {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)")
+                    log_activity("Profile picture changed", user=user)
                     print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago){new_line}")
                     csv_text = "Profile Picture Changed"
 
@@ -1243,12 +2494,16 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     print(f"* Error: {e}")
 
                 try:
-                    if imgcat_exe and not is_empty_profile_pic_tmp:
+                    if imgcat_exe and not is_empty_profile_pic_tmp and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
                         if func_ver == 1:
-                            subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file_tmp}", shell=True, check=True)
+                            subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{profile_pic_file_tmp}\"", shell=True, check=True)
                         else:
-                            subprocess.run(f"{imgcat_exe} {profile_pic_file_tmp} {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
-                    shutil.copy2(profile_pic_file_tmp, f'instagram_{user}_profile_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
+                            subprocess.run(f"\"{imgcat_exe}\" \"{profile_pic_file_tmp}\" {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
+                    profile_pic_copy_filename = f'instagram_{user}_profile_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg'
+                    profile_pic_save_dir = os.path.dirname(profile_pic_file)
+                    if profile_pic_save_dir:
+                        profile_pic_copy_filename = os.path.join(profile_pic_save_dir, profile_pic_copy_filename)
+                    shutil.copy2(profile_pic_file_tmp, profile_pic_copy_filename)
                     if csv_text != "Profile Picture Created":
                         os.replace(profile_pic_file, profile_pic_file_old)
                     os.replace(profile_pic_file_tmp, profile_pic_file)
@@ -1256,7 +2511,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     print(f"* Error while replacing/copying files: {e}")
 
                 if send_email_notification and m_subject and m_body:
-                    print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
                     if not m_body_html:
                         send_email(m_subject, m_body, "", SMTP_SSL)
                     else:
@@ -1265,20 +2520,47 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                         else:
                             send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
+                # Send webhook notification for profile picture changes
+                if csv_text == "Profile Picture Removed":
+                    send_webhook(
+                        f"🖼️ {user} Profile Picture Removed",
+                        f"User **{user}** has removed their profile picture (was set on {profile_pic_mdate})",
+                        color=0xe74c3c,  # Red
+                        notification_type="status"
+                    )
+                elif csv_text == "Profile Picture Created":
+                    send_webhook(
+                        f"🖼️ {user} Profile Picture Set",
+                        f"User **{user}** has set a new profile picture",
+                        color=0x2ecc71,  # Green
+                        local_image_file=profile_pic_file,
+                        notification_type="status"
+                    )
+                elif csv_text == "Profile Picture Changed":
+                    send_webhook(
+                        f"🖼️ {user} Profile Picture Changed",
+                        f"User **{user}** has changed their profile picture",
+                        color=0x3498db,  # Blue
+                        local_image_file=profile_pic_file,
+                        notification_type="status"
+                    )
+
                 if func_ver == 2:
-                    print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                    print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                     print_cur_ts("Timestamp:\t\t\t\t")
 
             else:
                 if func_ver == 1:
                     if is_empty_profile_pic:
                         print(f"* User {user} does not have profile picture set")
+                        log_activity("No profile picture set", user=user)
                     else:
                         print(f"* Profile picture '{profile_pic_file}' already exists")
                         print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)")
+                        log_activity(f"Profile picture already exists (added {get_short_date_from_ts(profile_pic_mdate_dt, True)})", user=user)
                         try:
-                            if imgcat_exe:
-                                subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file}", shell=True, check=True)
+                            if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                                subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{profile_pic_file}\"", shell=True, check=True)
                         except Exception:
                             pass
                     try:
@@ -1288,7 +2570,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
         else:
             print(f"* Error while checking if the profile picture has changed !")
             if func_ver == 2:
-                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
         if func_ver == 1:
             print_cur_ts("\nTimestamp:\t\t\t\t")
@@ -1413,10 +2695,20 @@ def check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
             m_subject = f"Instagram user {user} posts number has changed! ({posts_count_old} -> {posts_count})"
 
             m_body = f"Posts number changed for user {user} from {posts_count_old} to {posts_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-            print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+            print(f"* Sending email notification to {RECEIVER_EMAIL}")
             send_email(m_subject, m_body, "", SMTP_SSL)
 
-        print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+        # Send webhook notification for posts count change
+        diff = posts_count - posts_count_old
+        diff_str = f"+{diff}" if diff > 0 else str(diff)
+        send_webhook(
+            f"📮 {user} Posts Count Changed",
+            f"User **{user}** posts count changed from {posts_count_old} to {posts_count} ({diff_str})",
+            color=0x34495e,  # Dark Blue
+            notification_type="status"
+        )
+
+        print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
         print_cur_ts("Timestamp:\t\t\t\t")
         return 1
     else:
@@ -1433,10 +2725,20 @@ def check_reels_counts(user, reels_count, reels_count_old, r_sleep_time):
             m_subject = f"Instagram user {user} reels number has changed! ({reels_count_old} -> {reels_count})"
 
             m_body = f"Reels number changed for user {user} from {reels_count_old} to {reels_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-            print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+            print(f"* Sending email notification to {RECEIVER_EMAIL}")
             send_email(m_subject, m_body, "", SMTP_SSL)
 
-        print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+        # Send webhook notification for reels count change
+        diff = reels_count - reels_count_old
+        diff_str = f"+{diff}" if diff > 0 else str(diff)
+        send_webhook(
+            f"🎬 {user} Reels Count Changed",
+            f"User **{user}** reels count changed from {reels_count_old} to {reels_count} ({diff_str})",
+            color=0x34495e,  # Dark Blue
+            notification_type="status"
+        )
+
+        print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
         print_cur_ts("Timestamp:\t\t\t\t")
         return 1
     else:
@@ -1568,9 +2870,10 @@ def find_config_file(cli_path=None):
         p = Path(os.path.expanduser(cli_path))
         return str(p) if p.is_file() else None
 
+    config_filename = f".{DEFAULT_CONFIG_FILENAME}"
     candidates = [
         Path.cwd() / DEFAULT_CONFIG_FILENAME,
-        Path.home() / f".{DEFAULT_CONFIG_FILENAME}",
+        Path.home() / config_filename,
         Path(__file__).parent / DEFAULT_CONFIG_FILENAME,
     ]
 
@@ -1767,30 +3070,723 @@ def extract_usernames_safely(data_dict):
     return usernames
 
 
+# Extracts detailed user info from a JSON response for detailed follower logging
+def extract_detailed_users_safely(data_dict):
+    users = []
+
+    possible_keys = ['edge_followed_by', 'edge_follow']
+
+    try:
+        user_data = data_dict['data']['user']
+    except KeyError:
+        return []
+
+    edges = None
+    for key in possible_keys:
+        if key in user_data:
+            try:
+                edges = user_data[key]['edges']
+                break
+            except KeyError:
+                continue
+
+    if edges is None or not isinstance(edges, list):
+        return []
+
+    for edge in edges:
+        try:
+            node = edge['node']
+            user_info = {
+                'username': node.get('username', ''),
+                'user_id': node.get('id', ''),
+                'full_name': node.get('full_name', ''),
+                'profile_pic_url': node.get('profile_pic_url', ''),
+                'is_verified': node.get('is_verified', False),
+                'is_private': node.get('is_private', False)
+            }
+            if user_info['username']:
+                users.append(user_info)
+        except (KeyError, TypeError):
+            continue
+
+    return users
+
+
+# Save detailed followers/followings to JSON file
+def save_detailed_followers(filename, count, users_list, detailed=False):
+    if detailed and DETAILED_FOLLOWER_LOGGING:
+        # Save detailed format: [count, [{username, user_id, full_name, ...}, ...]]
+        data_to_save = [count, users_list]
+    else:
+        # Save simple format: [count, [username1, username2, ...]]
+        if users_list and isinstance(users_list[0], dict):
+            usernames = [u['username'] for u in users_list]
+        else:
+            usernames = users_list
+        data_to_save = [count, usernames]
+
+    try:
+        with open(filename, 'w', encoding="utf-8") as f:
+            json.dump(data_to_save, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"* Error saving to '{filename}': {e}")
+        return False
+
+
+# Load detailed followers/followings from JSON file
+def load_detailed_followers(filename):
+    try:
+        with open(filename, 'r', encoding="utf-8") as f:
+            data = json.load(f)
+
+        if not data or len(data) < 2:
+            return None, []
+
+        count = data[0]
+        users = data[1]
+
+        # Check if it's detailed format (list of dicts) or simple (list of strings)
+        if users and isinstance(users[0], dict):
+            # Detailed format - extract usernames for comparison
+            usernames = [u.get('username', '') for u in users]
+            return count, usernames, users  # Return both usernames and full data
+        else:
+            # Simple format
+            return count, users, None
+
+    except Exception as e:
+        debug_print(f"Error loading '{filename}': {e}")
+        return None, [], None
+
+
+# Dashboard input handler thread function - handles mode toggle and debug commands
+def dashboard_input_handler():
+    # This toggles the dashboard mode for both the Terminal Dashboard and the Web-based dashboard
+    global MANUAL_CHECK_TRIGGERED, DASHBOARD_MODE
+
+    import sys
+    import tty
+    import termios
+
+    # Save terminal settings
+    if sys.stdin.isatty():
+        old_settings = termios.tcgetattr(sys.stdin)
+    else:
+        old_settings = None
+
+    try:
+        # Set terminal to raw mode for single-character input (no echo, no Enter needed)
+        if old_settings:
+            tty.setcbreak(sys.stdin.fileno())
+
+        while True:
+            try:
+                # Read single character without requiring Enter
+                char = sys.stdin.read(1).lower()
+
+                # Exit command: 'q' or 'Q'
+                if char in ('q', 'Q'):
+                    log_activity("User requested exit (pressed 'q')")
+                    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+                        stop_dashboard()
+                    # Use os._exit to immediately kill all threads
+                    os._exit(0)
+
+                # Mode toggle: just 'm' (no Enter needed)
+                elif char == 'm':
+                    DASHBOARD_MODE = 'config' if DASHBOARD_MODE == 'user' else 'user'
+                    # Update DASHBOARD_DATA with new mode
+                    global DASHBOARD_DATA
+                    DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
+                    log_activity(f"Dashboard Mode changed to: {DASHBOARD_MODE.upper()}")
+                    # Update web dashboard mode if enabled
+                    if WEB_DASHBOARD_ENABLED:
+                        WEB_DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
+                    # Update Dashboard if enabled
+                    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+                        update_dashboard()
+                    # Don't print in dashboard mode - the dashboard will update automatically
+                    if not DASHBOARD_ENABLED or not RICH_AVAILABLE:
+                        print(f"* dashboard mode: {DASHBOARD_MODE}")
+
+                # Start All: 's'
+                elif char == 's':
+                    start_all_monitoring()
+                    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+                        update_dashboard()
+
+                # Stop All: 'x'
+                elif char == 'x':
+                    with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                        targets_to_stop = list(DASHBOARD_DATA.get('targets', {}).keys())
+                    for t in targets_to_stop:
+                        stop_monitoring_for_target(t)
+                    log_activity("Stop All triggered")
+                    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+                        update_dashboard()
+
+                # Recheck All: 'r'
+                elif char == 'r':
+                    recheck_all_targets()
+                    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+                        update_dashboard()
+
+                elif char == 'i' and DEBUG_MODE: # Changed from 's' to 'i' for info
+                    print_status_summary()
+                elif char == 'h':
+                    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+                        log_activity("Commands: m=mode | s=start | x=stop | r=recheck | q=exit" + (" | c=check | i=status" if DEBUG_MODE else ""))
+                    else:
+                        print("\nCommands:")
+                        print("  m  - Toggle dashboard view (user/config)")
+                        print("  s  - Start All monitoring")
+                        print("  x  - Stop All monitoring")
+                        print("  r  - Recheck All targets")
+                        print("  q  - Exit the tool")
+                        if DEBUG_MODE:
+                            print("  i  - Show status summary")
+                        print("  h  - Show this help\n")
+            except (EOFError, OSError):
+                break
+            except Exception:
+                pass
+    finally:
+        # Restore terminal settings
+        if old_settings:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+
+
+# Start Dashboard input handler thread
+def start_dashboard_input_handler():
+    global DEBUG_INPUT_THREAD
+
+    # Start if Dashboard is enabled OR debug mode is on
+    if DEBUG_INPUT_THREAD is None and (DASHBOARD_ENABLED or DEBUG_MODE):
+        DEBUG_INPUT_THREAD = threading.Thread(target=dashboard_input_handler, daemon=True, name="dashboard_input_handler")
+        DEBUG_INPUT_THREAD.start()
+
+
+# Print status summary (for debug mode)
+def print_status_summary():
+    print("─" * HORIZONTAL_LINE)
+    print("Current Monitoring Status:")
+    print(f"  Last check: {get_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else 'Not yet'}")
+    print(f"  Next check: {get_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else 'Calculating...'}")
+    print(f"  Total checks: {CHECK_COUNT}")
+    print(f"  Debug mode: {DEBUG_MODE}")
+    print("─" * HORIZONTAL_LINE)
+
+
+# Update global tracking for last/next check times
+
+def update_check_times(last_time=None, next_time=None, user=None):
+    global LAST_CHECK_TIME, NEXT_CHECK_TIME, CHECK_COUNT, DASHBOARD_DATA
+    if last_time:
+        LAST_CHECK_TIME = last_time.timestamp()
+    if next_time:
+        NEXT_CHECK_TIME = next_time.timestamp()
+
+    CHECK_COUNT += 1
+
+    # Update dashboard data if dashboard is enabled
+    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+        DASHBOARD_DATA['config'] = get_dashboard_config_data() # Ensure timing is fresh
+        update_dashboard()
+
+    if WEB_DASHBOARD_ENABLED:
+        last_str = get_short_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else None
+        next_str = get_short_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else None
+
+        update_ui_data(
+            check_count=CHECK_COUNT,
+            last_check=last_str,
+            next_check=next_str,
+            config=get_dashboard_config_data()
+        )
+
+        # Also update per-target check times if user is specified
+        if user:
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                if user in WEB_DASHBOARD_DATA.get('targets', {}):
+                    WEB_DASHBOARD_DATA['targets'][user]['last_checked'] = last_str
+                    if next_str:
+                        WEB_DASHBOARD_DATA['targets'][user]['next_check'] = next_str
+
+
+# Generate shared Targets table for all dashboard modes
+def generate_dashboard_targets_table(target_data):
+    if not RICH_AVAILABLE:
+        return None
+
+    # Type guard: Rich components are available
+    assert Table is not None
+    assert box is not None
+    assert Text is not None
+
+    table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan")
+    table.add_column("Target", style="green", width=18)
+    table.add_column("Vis.", width=5) # Visibility: PUB/PRI
+    table.add_column("Followers", justify="right", width=10)
+    table.add_column("Following", justify="right", width=10)
+    table.add_column("Posts", justify="right", width=7)
+    table.add_column("Reels", justify="right", width=7)
+    table.add_column("Story", width=6)
+    table.add_column("Status", width=12)
+
+    for target, data in target_data.items():
+        status_val = data.get('status', 'Unknown')
+        status_style = "green" if status_val == 'OK' else "yellow" if status_val in ('Checking', 'Starting', 'Loading Profile', 'Fetching Reels') else "blue"
+
+        is_private = data.get('is_private')
+        visibility = "PRI" if is_private else "PUB" if is_private is False else "-"
+
+        has_story = data.get('has_story')
+        stories_count = data.get('stories_count')
+
+        story_str = "  -"
+        if has_story:
+            story_str = f"✨ {stories_count}" if stories_count is not None and stories_count > 0 else "✨ Yes"
+        elif has_story is False:
+             story_str = "  No"
+
+        table.add_row(
+            target,
+            visibility,
+            str(data.get('followers') if data.get('followers') is not None else '-'),
+            str(data.get('following') if data.get('following') is not None else '-'),
+            str(data.get('posts') if data.get('posts') is not None else '-'),
+            str(data.get('reels') if data.get('reels') is not None else '-'),
+            story_str,
+            Text(status_val, style=status_style)
+        )
+    return table
+
+
+# Generate Dashboard layout for user mode (simple/minimal)
+def generate_user_dashboard(target_data):
+    if not RICH_AVAILABLE:
+        return None
+
+    # Type guard: Rich is available at this point
+    assert Table is not None
+    assert box is not None
+    assert Text is not None
+    assert Panel is not None
+    assert Layout is not None
+
+    # Header with Tool Name and Version
+    header_text = Text.assemble(
+        ("Instagram Monitor ", "bold magenta"),
+        (f"v{VERSION}", "dim"),
+        "  |  ",
+        ("Status: ", "bold"),
+        ("Active", "green"),
+        "  |  ",
+        ("Uptime: ", "bold"),
+        (f"{calculate_timespan(datetime.now(), DASHBOARD_DATA.get('start_time', datetime.now()))}", "cyan")
+    )
+    header_panel = Panel(header_text, style="white on blue", box=box.SQUARE)
+
+    table = generate_dashboard_targets_table(target_data)
+
+
+    # Activity Log Panel (Latest at bottom)
+    activities = DASHBOARD_DATA.get('activities', [])
+    log_text = Text()
+    if not activities:
+        log_text.append("Waiting for activity...", style="dim italic")
+    else:
+        # Show last 10 activities, latest at bottom
+        for act in reversed(activities[:10]):
+            log_text.append(f"{act['time']} ", style="dim")
+            log_text.append(f"{act['message']}\n")
+
+    log_panel = Panel(log_text, title="Live Activity Log", box=box.ROUNDED, border_style="yellow")
+
+    # Last Fetched Panel
+    last_fetched_text = Text()
+    # Find the most recently updated target with last_post/last_story
+    latest_update = None
+    latest_ts = 0
+
+    for t_data in target_data.values():
+        if t_data.get('last_post'):
+            # Simple check, in reality would parse timestamp
+             latest_update = t_data['last_post']
+             break # Just take the first one found for now/single user
+        if t_data.get('last_story'):
+             latest_update = t_data['last_story']
+             break
+
+    if latest_update:
+        last_fetched_text.append(f"Type: {latest_update.get('type', 'Unknown')}\n", style="bold cyan")
+        last_fetched_text.append(f"Date: {latest_update.get('timestamp', '-')}\n", style="dim")
+        caption = latest_update.get('caption', '')
+        if caption:
+            caption = caption.replace('\n', ' ')
+            if len(caption) > 60: caption = caption[:57] + "..."
+            last_fetched_text.append(f"Caption: {caption}\n")
+        last_fetched_text.append(f"URL: {latest_update.get('url', '-')}", style="blue underline")
+    else:
+        last_fetched_text.append("No posts/stories fetched yet.", style="dim italic")
+
+    last_fetched_panel = Panel(last_fetched_text, title="Last Fetched", box=box.ROUNDED, border_style="green")
+
+
+    # Actions panel
+    mode_btn_text = Text()
+    mode_btn_text.append("USER", style="bold green reverse")
+    mode_btn_text.append(" | CONFIG\n", style="dim")
+    mode_btn_text.append("m: toggle | s: start | x: stop\n", style="dim italic")
+    mode_btn_text.append("r: recheck | q: exit", style="dim italic")
+
+    mode_panel = Panel(mode_btn_text, title="Actions", box=box.ROUNDED, border_style="cyan")
+
+    layout = Layout()
+    layout.split_column(
+        Layout(header_panel, size=3),
+        Layout(name="main", ratio=1),
+        Layout(log_panel, size=12)
+    )
+    layout["main"].split_row(
+        Layout(table, ratio=2),
+        Layout(name="right", ratio=1)
+    )
+    layout["main"]["right"].split_column(
+        Layout(last_fetched_panel),
+        Layout(mode_panel, size=6)
+    )
+
+    return layout
+
+
+# Generate Dashboard layout for config mode (detailed/complex)
+def generate_config_dashboard(target_data, config_data):
+    if not RICH_AVAILABLE:
+        return None
+
+    # Type guard: Rich is available at this point
+    assert Table is not None
+    assert box is not None
+    assert Text is not None
+    assert Panel is not None
+    assert Layout is not None
+
+    # Header
+    header_text = Text.assemble(
+        ("Instagram Monitor ", "bold magenta"),
+        (f"v{VERSION}", "dim"),
+        "  |  ",
+        ("Settings Mode", "bold yellow")
+    )
+    header_panel = Panel(header_text, style="white on blue", box=box.SQUARE)
+
+    # Main targets table - unified with user mode
+    targets_table = generate_dashboard_targets_table(target_data)
+
+    # Configuration tables (two columns for better space usage)
+    config_table_left = Table(box=box.ROUNDED, show_header=False, header_style="bold magenta", border_style="magenta")
+    config_table_left.add_column("Setting", style="cyan")
+    config_table_left.add_column("Value")
+
+    config_table_right = Table(box=box.ROUNDED, show_header=False, header_style="bold magenta", border_style="magenta")
+    config_table_right.add_column("Setting", style="cyan")
+    config_table_right.add_column("Value")
+
+    # Left column items
+    left_items = [
+        ("Session User", config_data.get('session_user', '-')),
+        ("Hours Range", config_data.get('hours_range', '-')),
+        ("Email Followers", str(config_data.get('follower_notifications', '-'))),
+        ("Session Mode", config_data.get('session_mode', '-')),
+        ("Skip Followers", str(config_data.get('skip_followers', '-'))),
+        ("Skip Stories Details", str(config_data.get('skip_stories', '-'))),
+        ("Get More Post Details", str(config_data.get('get_more_post_details', '-'))),
+        ("Liveness Check", str(config_data.get('liveness_check', '-'))),
+        ("Display Profile Pics", config_data.get('imgcat', '-')),
+        ("Dashboard", config_data.get('dashboard_status', '-')),
+        ("CSV Logging", config_data.get('csv_logging', '-')),
+        ("Output Dir", config_data.get('output_dir', '-')),
+        ("Webhook", str(config_data.get('webhook_enabled', '-'))),
+        ("Webhook Status", str(config_data.get('webhook_status', '-'))),
+        ("Webhook Followers", str(config_data.get('webhook_followers', '-'))),
+        ("Webhook Errors", str(config_data.get('webhook_errors', '-'))),
+    ]
+
+    # Right column items
+    right_items = [
+        ("Polling Interval", config_data.get('check_interval_str', '-')),
+        ("Email Status", str(config_data.get('email_notifications', '-'))),
+        ("Email Errors", str(config_data.get('error_notifications', '-'))),
+        ("Skip Session Login", str(config_data.get('skip_session_login', '-'))),
+        ("Skip Followings", str(config_data.get('skip_followings', '-'))),
+        ("Skip Post Details", str(config_data.get('skip_posts', '-'))),
+        ("Detailed Follower Logging", str(config_data.get('detailed_logging', '-'))),
+        ("HTTP Jitter", str(config_data.get('enable_jitter', '-'))),
+        ("Profile Pic Detect", str(config_data.get('profile_pic_changes', '-'))),
+        ("Empty Pic Template", config_data.get('empty_profile_pic', '-')),
+        ("Web Dashboard", config_data.get('web_dashboard_status', '-')),
+        ("Output Logging", str(config_data.get('logging_enabled', '-'))),
+        ("Templates", config_data.get('template_dir', '-')),
+        ("Verbose Mode", str(config_data.get('verbose_mode', '-'))),
+        ("Debug Mode", str(config_data.get('debug_mode', '-'))),
+    ]
+
+    for setting, value in left_items:
+        config_table_left.add_row(setting, value)
+    for setting, value in right_items:
+        config_table_right.add_row(setting, value)
+
+    # UA footer (mini panel)
+    ua_text = Text()
+    ua_text.append("Browser UA: ", style="cyan")
+    ua_text.append(f"{USER_AGENT[:70]}..." if len(USER_AGENT) > 70 else (USER_AGENT or "Auto"), style="dim")
+    ua_text.append("\nMobile UA:  ", style="cyan")
+    ua_text.append(f"{USER_AGENT_MOBILE[:70]}..." if len(USER_AGENT_MOBILE) > 70 else (USER_AGENT_MOBILE or "Auto"), style="dim")
+    ua_text.append("\nConfig file: ", style="cyan")
+    ua_text.append(f"{config_data.get('config_file', 'None')}", style="dim")
+    ua_text.append("\nDotenv file: ", style="cyan")
+    ua_text.append(f"{config_data.get('dotenv_file', 'None')}", style="dim")
+    ua_text.append("\nTimezone:    ", style="cyan")
+    ua_text.append(f"{config_data.get('local_timezone', 'UTC')}", style="dim")
+    ua_panel = Panel(ua_text, title="Environment Details", box=box.ROUNDED, border_style="magenta", expand=True)
+
+    # Activity Log Panel (Latest at bottom)
+    activities = DASHBOARD_DATA.get('activities', [])
+    log_text = Text()
+    if not activities:
+        log_text.append("Waiting for activity...", style="dim italic")
+    else:
+        for act in reversed(activities[:8]):
+            log_text.append(f"{act['time']} ", style="dim")
+            log_text.append(f"{act['message']}\n")
+    log_panel = Panel(log_text, title="Live Activity Log", box=box.ROUNDED, border_style="yellow")
+
+
+    # Actions panel
+    mode_btn_text = Text()
+    mode_btn_text.append("USER | ", style="dim")
+    mode_btn_text.append("CONFIG\n", style="bold magenta reverse")
+    mode_btn_text.append("m: toggle | s: start | x: stop\n", style="dim italic")
+    mode_btn_text.append("r: recheck | q: exit", style="dim italic")
+    mode_panel = Panel(mode_btn_text, title="Actions", box=box.ROUNDED, border_style="cyan")
+
+    # Dynamic height calculation to prevent cutoff
+    # Base height + number of rows + padding
+    config_height = max(len(left_items), len(right_items)) + 2
+
+    # Build layout
+    layout = Layout()
+    layout.split_column(
+        Layout(header_panel, size=3),
+        Layout(targets_table, ratio=1),
+        Layout(name="config_area", size=config_height),
+        Layout(name="bottom", ratio=1)
+    )
+
+    layout["config_area"].split_row(
+        Layout(config_table_left),
+        Layout(config_table_right)
+    )
+
+    layout["bottom"].split_row(
+        Layout(log_panel, ratio=2),
+        Layout(name="right", ratio=1)
+    )
+
+    layout["bottom"]["right"].split_column(
+        Layout(ua_panel, ratio=1),
+        Layout(mode_panel, size=5)
+    )
+
+    return layout
+
+# Update Dashboard display
+def update_dashboard():
+    global DASHBOARD_LIVE, DASHBOARD_CONSOLE, DASHBOARD_DATA, DASHBOARD_MODE
+
+    if not RICH_AVAILABLE or not DASHBOARD_ENABLED or DASHBOARD_CONSOLE is None:
+        return
+
+    # Type guard: Rich is available at this point
+    assert Layout is not None
+
+    # Get current target data from DASHBOARD_DATA
+    target_data = DASHBOARD_DATA.get('targets', {})
+    config_data = DASHBOARD_DATA.get('config', {})
+
+    # If no targets yet, show informative loading state
+    if not target_data and not DASHBOARD_DATA.get('targets_list', []):
+        # Create detailed loading screen
+        assert Panel is not None
+        assert Text is not None
+        assert box is not None
+
+        loading_text = Text()
+        loading_text.append(f"Instagram Monitor v{VERSION} Dashboard\n\n", style="bold magenta")
+        loading_text.append("⏳ Initializing and fetching profile data...\n\n", style="yellow")
+        loading_text.append("This may take a moment while we:\n", style="dim")
+        loading_text.append("  • Load Instagram session\n", style="dim")
+        loading_text.append("  • Fetch profile information\n", style="dim")
+        loading_text.append("  • Count posts, reels, and stories\n", style="dim")
+        loading_text.append("  • Retrieve follower/following data\n\n", style="dim")
+
+        # Show which users are being monitored
+        targets_list = DASHBOARD_DATA.get('targets_list', [])
+        if targets_list:
+            loading_text.append("Monitored targets:\n", style="bold cyan")
+            for target in targets_list:
+                loading_text.append(f"  • {target}\n", style="cyan")
+
+        loading_text.append("\n💡 Please wait patiently...\n\n", style="italic green")
+        loading_text.append("Press ", style="dim")
+        loading_text.append("q", style="bold red")
+        loading_text.append(" to exit", style="dim")
+
+        loading_panel = Panel(loading_text, title="Instagram Monitor", box=box.ROUNDED, border_style="magenta")
+        loading_layout = Layout()
+        loading_layout.split_column(Layout(loading_panel, name="content"))
+
+        if DASHBOARD_LIVE is not None:
+            DASHBOARD_LIVE.update(loading_layout)
+        return
+
+    # Generate appropriate Dashboard based on mode
+    if DASHBOARD_MODE == 'config':
+        layout = generate_config_dashboard(target_data, config_data)
+    else:
+        layout = generate_user_dashboard(target_data)
+
+    if layout is not None and DASHBOARD_LIVE is not None:
+        DASHBOARD_LIVE.update(layout)
+
+
+# Initialize Dashboard Live display
+def init_dashboard():
+    global DASHBOARD_LIVE, DASHBOARD_CONSOLE
+
+    if not RICH_AVAILABLE or not DASHBOARD_ENABLED or DASHBOARD_CONSOLE is None:
+        return False
+
+    # Type guard: Rich is available at this point
+    assert Live is not None
+    assert Layout is not None
+    assert Panel is not None
+    assert Text is not None
+
+    # Prepare initial loading screen components
+    loading_text = Text()
+    loading_text.append("Instagram Monitor Dashboard\n\n", style="bold magenta")
+    loading_text.append("⏳ Initializing and fetching profile data...\n\n", style="yellow")
+    loading_text.append("This may take a moment while we:\n", style="dim")
+    loading_text.append("  • Load Instagram session\n", style="dim")
+    loading_text.append("  • Fetch profile information\n", style="dim")
+    loading_text.append("  • Count posts, reels, and stories\n", style="dim")
+    loading_text.append("  • Retrieve follower/following data\n\n", style="dim")
+
+    # Show which users are being monitored
+    targets_list = DASHBOARD_DATA.get('targets_list', [])
+    if targets_list:
+        loading_text.append("Monitored targets:\n", style="bold cyan")
+        for target in targets_list:
+            loading_text.append(f"  • {target}\n", style="cyan")
+
+    loading_text.append("\n💡 Please wait patiently...", style="italic green")
+
+    initial_layout = Layout()
+
+    # If we have targets already (CLI mode), show the dashboard layout immediately instead of loading screen
+    targets_list = DASHBOARD_DATA.get('targets_list', [])
+    if targets_list:
+        # Pre-populate targets with Pending status if not already there
+        if 'targets' not in DASHBOARD_DATA:
+            DASHBOARD_DATA['targets'] = {}
+        for u in targets_list:
+            if u not in DASHBOARD_DATA['targets']:
+                DASHBOARD_DATA['targets'][u] = {'status': 'Pending'}
+
+        # Generate the appropriate dashboard right away
+        if DASHBOARD_MODE == 'config':
+            initial_layout = generate_config_dashboard(DASHBOARD_DATA['targets'], DASHBOARD_DATA.get('config', {}))
+        else:
+            initial_layout = generate_user_dashboard(DASHBOARD_DATA['targets'])
+    else:
+        initial_layout.split_column(
+            Layout(Panel(loading_text, title="Instagram Monitor", border_style="magenta"), name="content")
+        )
+
+    try:
+        # Start Live display (fullscreen/screen=True for a true dashboard feel)
+        DASHBOARD_LIVE = Live(initial_layout, console=DASHBOARD_CONSOLE, refresh_per_second=2, screen=True, redirect_stdout=False, redirect_stderr=False)
+        DASHBOARD_LIVE.start()
+        return True
+    except Exception:
+        # If screen=True fails, try screen=False
+        try:
+            DASHBOARD_LIVE = Live(initial_layout, console=DASHBOARD_CONSOLE, refresh_per_second=2, screen=False, redirect_stdout=False, redirect_stderr=False)
+            DASHBOARD_LIVE.start()
+            return True
+        except Exception:
+            # Dashboard failed completely
+            return False
+
+
+# Stop Dashboard Live display
+def stop_dashboard():
+    global DASHBOARD_LIVE
+
+    if DASHBOARD_LIVE is not None:
+        DASHBOARD_LIVE.stop()
+        DASHBOARD_LIVE = None
+
+
+# Prints remaining sleep time message
+def print_check_timing(r_sleep_time, prefix=""):
+    global VERBOSE_MODE, DEBUG_MODE
+
+    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+        return
+
+    if DEBUG_MODE or VERBOSE_MODE:
+        # Calculate next check time from now + sleep time
+        now = now_local_naive()
+        next_check = now + timedelta(seconds=r_sleep_time)
+        next_check_str = f'{calendar.day_abbr[next_check.weekday()]} {next_check.strftime("%d %b %Y, %H:%M:%S")}'
+
+        print(f"{prefix}Last check:\t\t\t\t{get_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else 'N/A'}")
+        print(f"{prefix}Next check:\t\t\t\t{next_check_str} (in {display_time(r_sleep_time)})")
+        print(f"{prefix}Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+        print_cur_ts("\nTimestamp:\t\t\t\t")
+
+
 # Initializes and sets up a progress bar for displaying download progress
 def setup_pbar(total_expected, title):
     global START_TIME, NAME_COUNT, WRAPPER_COUNT, pbar
 
     # Use thread-local storage for multi-target safety
     if not hasattr(_thread_local, 'pbar'):
-        _thread_local.pbar = None
-        _thread_local.START_TIME = 0
-        _thread_local.NAME_COUNT = 0
-        _thread_local.WRAPPER_COUNT = 0
+        _thread_local.pbar = None  # type: ignore[misc]
+        _thread_local.START_TIME = 0  # type: ignore[misc]
+        _thread_local.NAME_COUNT = 0  # type: ignore[misc]
+        _thread_local.WRAPPER_COUNT = 0  # type: ignore[misc]
 
-    _thread_local.START_TIME = datetime.now()
-    _thread_local.NAME_COUNT = 0
-    _thread_local.WRAPPER_COUNT = 0
+    _thread_local.START_TIME = datetime.now()  # type: ignore[misc]
+    _thread_local.NAME_COUNT = 0  # type: ignore[misc]
+    _thread_local.WRAPPER_COUNT = 0  # type: ignore[misc]
 
     # If a bar exists for this thread, close it first
-    if _thread_local.pbar is not None:
+    if _thread_local.pbar is not None:  # type: ignore[misc]
         close_pbar()
+
+    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+        return
 
     custom_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
     # Write progress bar updates to terminal only (not log file) to avoid cluttering logs
     terminal_out = stdout_bck if stdout_bck is not None else sys.stdout
     # Use HORIZONTAL_LINE (default 113) as the fixed width for consistent behavior across environments
-    _thread_local.pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=terminal_out, ncols=HORIZONTAL_LINE)
+    _thread_local.pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=terminal_out, ncols=HORIZONTAL_LINE)  # type: ignore[misc]
 
     # Also set global for backward compatibility (single-threaded mode)
     pbar = _thread_local.pbar
@@ -1850,11 +3846,11 @@ def close_pbar():
         thread_pbar.close()
 
         # Write final state to log file if logging is enabled
-        if stdout_bck is not None and isinstance(sys.stdout, Logger):
-            sys.stdout.logfile.write(final_str + "\n")
-            sys.stdout.logfile.flush()
+        if stdout_bck is not None and isinstance(sys.stdout, Logger) and sys.stdout.main_log:
+            sys.stdout.main_log.write(final_str + "\n")
+            sys.stdout.main_log.flush()
 
-        _thread_local.pbar = None
+        _thread_local.pbar = None  # type: ignore[misc]
         # Also clear global for backward compatibility
         pbar = None
 
@@ -1866,8 +3862,8 @@ def instagram_wrap_request(orig_request):
         global NAME_COUNT, START_TIME, WRAPPER_COUNT, pbar
         method = kwargs.get("method") or (args[1] if len(args) > 1 else None)
         url = kwargs.get("url") or (args[2] if len(args) > 2 else None)
-        if JITTER_VERBOSE:
-            print(f"[WRAP-REQ] {method} {url}")
+        if JITTER_VERBOSE or DEBUG_MODE:
+            debug_print(f"[WRAP-REQ] {method} {url}")
 
         def _do_request():
             # If jitter is disabled, just perform the request (but still optionally serialized by the outer lock)
@@ -1897,12 +3893,13 @@ def instagram_wrap_request(orig_request):
                             "Giving up after multiple 429/checkpoint"
                         )
                     wait = backoff + random.uniform(0, 30)
-                    if JITTER_VERBOSE:
+                    if JITTER_VERBOSE or DEBUG_MODE:
                         thread_pbar = getattr(_thread_local, 'pbar', None)
                         if thread_pbar:
                             tqdm.write(f"* Back-off {wait:.0f}s after {resp.status_code}")
+                            debug_print(f"* Back-off {wait:.0f}s after {resp.status_code}")
                         else:
-                            print(f"* Back-off {wait:.0f}s after {resp.status_code}")
+                            debug_print(f"* Back-off {wait:.0f}s after {resp.status_code}")
                     time.sleep(wait)
                     backoff *= 2
                     continue
@@ -1928,8 +3925,8 @@ def instagram_wrap_request(orig_request):
 
                     # Only count requests that actually returned follower/following data
                     if user_list:
-                        _thread_local.WRAPPER_COUNT = thread_wrapper_count + 1
-                        thread_wrapper_count = _thread_local.WRAPPER_COUNT
+                        _thread_local.WRAPPER_COUNT = thread_wrapper_count + 1  # type: ignore[misc]
+                        thread_wrapper_count = _thread_local.WRAPPER_COUNT  # type: ignore[misc]
                 except (ValueError, KeyError) as e:
                     # JSON decode error or missing keys - not a follower/following request
                     # Silently skip, this is expected for non-follower/following requests
@@ -1944,8 +3941,8 @@ def instagram_wrap_request(orig_request):
             # Update progress bar only if we extracted usernames
             if user_list:
                 increment = len(user_list)
-                _thread_local.NAME_COUNT = thread_name_count + increment
-                thread_name_count = _thread_local.NAME_COUNT
+                _thread_local.NAME_COUNT = thread_name_count + increment  # type: ignore[misc]
+                thread_name_count = _thread_local.NAME_COUNT  # type: ignore[misc]
                 if (thread_pbar.n + increment) > thread_pbar.total:
                     thread_pbar.total = thread_pbar.n + increment
 
@@ -1980,8 +3977,8 @@ def instagram_wrap_send(orig_send):
         req_obj = args[1] if len(args) > 1 else kwargs.get("request")
         method = getattr(req_obj, "method", None)
         url = getattr(req_obj, "url", None)
-        if JITTER_VERBOSE:
-            print(f"[WRAP-SEND] {method} {url}")
+        if JITTER_VERBOSE or DEBUG_MODE:
+            debug_print(f"[WRAP-SEND] {method} {url}")
 
         def _do_send():
             if ENABLE_JITTER:
@@ -1995,17 +3992,126 @@ def instagram_wrap_send(orig_send):
     return wrapper
 
 
-def sleep_message(sleeptime):
+# Returns a dictionary containing all current configuration settings
+def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_file_exists=False, cfg_path=None, env_path=None, check_interval_low=None, targets=None):
+    # Prepare hours/ranges string
+    hours_ranges_str = ""
+    if CHECK_POSTS_IN_HOURS_RANGE:
+        ranges = []
+        if not (MIN_H1 == 0 and MAX_H1 == 0):
+            ranges.append(f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59")
+        if not (MIN_H2 == 0 and MAX_H2 == 0):
+            ranges.append(f"{MIN_H2:02d}:00 - {MAX_H2:02d}:59")
+
+        if ranges:
+            hours_ranges_str = ", ".join(ranges)
+        else:
+            hours_ranges_str = "None (both ranges disabled)"
+    else:
+        hours_ranges_str = "00:00 - 23:59"
+
+    # Use arguments or fall back to defaults
+    targets_list = targets if targets is not None else DASHBOARD_DATA.get('targets_list', [])
+    mode_val = mode_of_the_tool
+
+    # Determine status/reason for dashboards
+    dashboard_status = DASHBOARD_ENABLED and RICH_AVAILABLE
+    dashboard_reason = ""
+    if not dashboard_status:
+        if not RICH_AVAILABLE:
+            dashboard_reason = " (missing rich)"
+        elif not DASHBOARD_ENABLED:
+            dashboard_reason = " (disabled)"
+
+    web_dashboard_status = WEB_DASHBOARD_ENABLED and FLASK_AVAILABLE
+    web_dashboard_reason = ""
+    if not web_dashboard_status:
+        if not WEB_DASHBOARD_ENABLED:
+            web_dashboard_reason = " (disabled)"
+        elif not FLASK_AVAILABLE:
+             web_dashboard_reason = " (missing Flask)"
+
+    csv_status = "False"
+    if CSV_FILE:
+         csv_status = f"True (Base: {CSV_FILE})" if len(targets_list) > 1 else f"True ({CSV_FILE})"
+
+    # Calculate interval strings safely
+    interval_str = ""
+    try:
+        if check_interval_low is None:
+             check_interval_low = int(INSTA_CHECK_INTERVAL - RANDOM_SLEEP_DIFF_LOW)
+        interval_str = f"[ {display_time(check_interval_low)} - {display_time(int(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH))} ]"
+    except Exception:
+        interval_str = f"[ {INSTA_CHECK_INTERVAL}s +/- ]"
+
+    return {
+        'check_interval': INSTA_CHECK_INTERVAL,
+        'check_interval_low': int(INSTA_CHECK_INTERVAL - RANDOM_SLEEP_DIFF_LOW),
+        'check_interval_high': int(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH),
+        'check_interval_str': interval_str,
+        'random_low': RANDOM_SLEEP_DIFF_LOW,
+        'random_high': RANDOM_SLEEP_DIFF_HIGH,
+        'session_user': SESSION_USERNAME or '<anonymous>',
+        'human_mode': BE_HUMAN,
+        'enable_jitter': ENABLE_JITTER,
+        'session_mode': mode_val,
+        'profile_pic_changes': DETECT_CHANGED_PROFILE_PIC,
+        'skip_session_login': SKIP_SESSION,
+        'skip_followers': SKIP_FOLLOWERS,
+        'skip_followings': SKIP_FOLLOWINGS,
+        'skip_stories': SKIP_GETTING_STORY_DETAILS,
+        'skip_posts': SKIP_GETTING_POSTS_DETAILS,
+        'get_more_post_details': GET_MORE_POST_DETAILS,
+        'detailed_logging': DETAILED_FOLLOWER_LOGGING,
+        'verbose_mode': VERBOSE_MODE,
+        'debug_mode': DEBUG_MODE,
+        'hours_range': hours_ranges_str,
+        'user_agent': USER_AGENT,
+        'user_agent_mobile': USER_AGENT_MOBILE,
+        'liveness_check': f"{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""),
+        'csv_logging': csv_status,
+        'imgcat': f"{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""),
+        'empty_profile_pic': f"{bool(profile_pic_file_exists)}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""),
+        'dashboard_status': f"{dashboard_status}{dashboard_reason}",
+        'web_dashboard_status': f"{web_dashboard_status}{web_dashboard_reason}",
+        'logging_enabled': "True" if not DISABLE_LOGGING else "False",
+        'log_file': final_log_path if final_log_path and not DISABLE_LOGGING else "",
+        'config_file': cfg_path or CLI_CONFIG_PATH or 'None',
+        'dotenv_file': env_path or DOTENV_FILE or 'None',
+        'output_dir': OUTPUT_DIR or "-",
+        'template_dir': WEB_DASHBOARD_TEMPLATE_DIR or "Auto",
+        'local_timezone': LOCAL_TIMEZONE,
+        'webhook_enabled': WEBHOOK_ENABLED,
+        'webhook_url': WEBHOOK_URL,
+        'webhook_status': WEBHOOK_STATUS_NOTIFICATION,
+        'webhook_followers': WEBHOOK_FOLLOWERS_NOTIFICATION,
+        'webhook_errors': WEBHOOK_ERROR_NOTIFICATION,
+        'email_notifications': STATUS_NOTIFICATION,
+        'follower_notifications': FOLLOWERS_NOTIFICATION,
+        'error_notifications': ERROR_NOTIFICATION
+    }
+
+
+def sleep_message(sleeptime, user=None):
+    global VERBOSE_MODE, DEBUG_MODE
+    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+        return
     now = now_local_naive()
     next_check = now + timedelta(seconds=sleeptime)
-    print(f"*** Sleeping for: {display_time(sleeptime)} (until ~{next_check.strftime('%H:%M:%S')}) @ {now.strftime('%H:%M:%S')}")
-    print("─" * HORIZONTAL_LINE)
+    user_suffix = f" for {user}" if user else ""
+    message = f"Sleeping {display_time(sleeptime)}{user_suffix}, resumes at ~{next_check.strftime('%H:%M:%S')}"
+    if DEBUG_MODE:
+        debug_print(message)
+    elif HOURS_VERBOSE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE):
+        print("* " + message)
+        print_cur_ts("\nTimestamp:\t\t\t\t")
 
 
 # Formats error messages to be more informative, especially for Instagram detection/challenge errors
 def format_error_message(e: Exception) -> str:
     error_str = str(e)
     error_type = type(e).__name__
+    debug_print(f"Formatting error message for {error_type}: {error_str}")
 
     # Check for KeyError related to 'data' key - indicates Instagram challenge/shadow ban
     if error_type == "KeyError" and ("'data'" in error_str or '"data"' in error_str or error_str == "data"):
@@ -2032,6 +4138,36 @@ def hours_to_check():
     return sorted(hours)
 
 
+# Formats a list of hours as compact ranges (e.g., [0, 1, 2, 3, 11, 12, 13] -> "0-3, 11-13")
+def format_hours_as_ranges(hours_list):
+    if not hours_list:
+        return "none"
+
+    ranges = []
+    start = hours_list[0]
+    end = hours_list[0]
+
+    for h in hours_list[1:]:
+        if h == end + 1:
+            end = h
+        else:
+            # End current range and start new one
+            if start == end:
+                ranges.append(str(start))
+            else:
+                ranges.append(f"{start}-{end}")
+            start = h
+            end = h
+
+    # Don't forget the last range
+    if start == end:
+        ranges.append(str(start))
+    else:
+        ranges.append(f"{start}-{end}")
+
+    return ", ".join(ranges)
+
+
 # Returns probability of executing one human action for cycle
 def probability_for_cycle(sleep_seconds: int) -> float:
     if CHECK_POSTS_IN_HOURS_RANGE:
@@ -2050,32 +4186,31 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
     ctx = bot.context
     prob = probability_for_cycle(sleep_seconds)
 
-    if BE_HUMAN_VERBOSE:
-        print("─" * HORIZONTAL_LINE)
-        print("* BeHuman: simulation start")
+    if BE_HUMAN_VERBOSE or DEBUG_MODE:
+        debug_print("BeHuman: simulation start")
 
     # Explore feed
     if ctx.is_logged_in and random.random() < prob:
         try:
             posts = bot.get_explore_posts()
             post = next(posts)
-            if BE_HUMAN_VERBOSE:
-                print("* BeHuman #1: explore feed peek OK")
+            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+                debug_print("BeHuman #1: explore feed peek OK")
             time.sleep(random.uniform(2, 6))
         except Exception as e:
-            if BE_HUMAN_VERBOSE:
-                print(f"* BeHuman #1 error: explore peek failed ({e})")
+            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+                debug_print(f"BeHuman #1 error: explore peek failed ({e})")
 
     # View your own profile
     if ctx.is_logged_in and random.random() < prob:
         try:
             _ = instaloader.Profile.own_profile(ctx)
-            if BE_HUMAN_VERBOSE:
-                print("* BeHuman #2: viewed own profile OK")
+            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+                debug_print("BeHuman #2: viewed own profile OK")
             time.sleep(random.uniform(1, 4))
         except Exception as e:
-            if BE_HUMAN_VERBOSE:
-                print(f"* BeHuman #2 error: cannot view own profile: {e}")
+            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+                debug_print(f"BeHuman #2 error: cannot view own profile: {e}")
 
     # Browse a random hashtag
     if random.random() < prob / 2:
@@ -2083,46 +4218,49 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
         try:
             posts = bot.get_hashtag_posts(tag)
             post = next(posts)
-            if BE_HUMAN_VERBOSE:
-                print(f"* BeHuman #3: browsed one post from #{tag} OK")
+            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+                debug_print(f"BeHuman #3: browsed one post from #{tag} OK")
             time.sleep(random.uniform(2, 5))
         except StopIteration:
-            if BE_HUMAN_VERBOSE:
-                print(f"* BeHuman #3 warning: no posts for #{tag}")
+            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+                debug_print(f"BeHuman #3 warning: no posts for #{tag}")
         except Exception as e:
-            if BE_HUMAN_VERBOSE:
-                print(f"* BeHuman #3 error: cannot browse #{tag}: {e}")
+            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+                debug_print(f"BeHuman #3 error: cannot browse #{tag}: {e}")
 
     # Visit a random followee profile
     if ctx.is_logged_in and random.random() < prob / 2:
         try:
             me = instaloader.Profile.own_profile(ctx)
             followees = list(me.get_followees())
-            if not followees and BE_HUMAN_VERBOSE:
-                print("* BeHuman #4 warning: you follow 0 accounts, skipping visit")
+            if not followees and (BE_HUMAN_VERBOSE or DEBUG_MODE):
+                debug_print("BeHuman #4 warning: you follow 0 accounts, skipping visit")
             else:
                 someone = random.choice(followees)
                 _ = instaloader.Profile.from_username(ctx, someone.username)
-                if BE_HUMAN_VERBOSE:
-                    print(f"* BeHuman #4: visited followee {someone.username} OK")
+                if BE_HUMAN_VERBOSE or DEBUG_MODE:
+                    debug_print(f"BeHuman #4: visited followee {someone.username} OK")
                 time.sleep(random.uniform(2, 5))
         except Exception as e:
-            if BE_HUMAN_VERBOSE:
-                print(f"* BeHuman #4 error: cannot visit followee: {e}")
+            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+                debug_print(f"BeHuman #4 error: cannot visit followee: {e}")
 
-    if BE_HUMAN_VERBOSE:
-        print("* BeHuman: simulation stop")
-        print_cur_ts("\nTimestamp:\t\t\t\t")
+    if BE_HUMAN_VERBOSE or DEBUG_MODE:
+        debug_print("BeHuman: simulation stop")
 
 
 # Monitors activity of the specified Instagram user
-def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, user_root_path=None):
-    global pbar
+def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None, manual_recheck=False):  # type: ignore[reportComplexity]
+    global pbar, DASHBOARD_DATA, VERBOSE_MODE, CHECK_COUNT
+    _thread_local.user = user  # Store user in thread-local storage for debug_print
+    _thread_local.in_partial_line = False  # Track partial line prints
+    update_ui_data(targets={user: {'status': 'Starting'}})
 
     # Wait for previous user's initial loading to complete (to avoid progress bar overlap)
     if wait_for_prev_user is not None:
         wait_for_prev_user.wait()
 
+    # Only print if Dashboard is not enabled (Dashboard will show this information)
     print(f"Target:\t\t\t\t\t{user}")
     print("─" * HORIZONTAL_LINE)
 
@@ -2137,14 +4275,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         json_dir = os.path.join(user_root_dir, "json")
         images_dir = os.path.join(user_root_dir, "images")
         videos_dir = os.path.join(user_root_dir, "videos")
-        for d in [user_root_dir, json_dir, images_dir, videos_dir]:
+        for d in [user_root_dir, json_dir, images_dir, videos_dir, os.path.join(user_root_dir, "logs"), os.path.join(user_root_dir, "csvs")]:
             os.makedirs(d, exist_ok=True)
     elif OUTPUT_DIR:
         user_root_dir = os.path.join(OUTPUT_DIR, user)
         json_dir = os.path.join(user_root_dir, "json")
         images_dir = os.path.join(user_root_dir, "images")
         videos_dir = os.path.join(user_root_dir, "videos")
-        for d in [user_root_dir, json_dir, images_dir, videos_dir]:
+        for d in [user_root_dir, json_dir, images_dir, videos_dir, os.path.join(user_root_dir, "logs"), os.path.join(user_root_dir, "csvs")]:
             os.makedirs(d, exist_ok=True)
 
     try:
@@ -2182,19 +4320,26 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             with SESSION_FILE_LOCK:
                 if SESSION_PASSWORD:
                     try:
+                        debug_print(f"Loading session for {SESSION_USERNAME} from file...")
                         bot.load_session_from_file(SESSION_USERNAME)
                     except FileNotFoundError:
+                        debug_print(f"Session file for {SESSION_USERNAME} not found, logging in...")
                         bot.login(SESSION_USERNAME, SESSION_PASSWORD)
                         bot.save_session_to_file()
                     except instaloader.exceptions.BadCredentialsException:
+                        debug_print(f"Bad credentials for {SESSION_USERNAME}, logging in again...")
                         bot.login(SESSION_USERNAME, SESSION_PASSWORD)
                         bot.save_session_to_file()
                 else:
                     try:
+                        debug_print(f"Loading session for {SESSION_USERNAME} from file (no password provided)...")
                         bot.load_session_from_file(SESSION_USERNAME)
                     except FileNotFoundError:
                         print("* Error: No Instagram session file found, please run 'instaloader -l SESSION_USERNAME' to create one")
-                        sys.exit(1)
+                        if threading.current_thread() is threading.main_thread():
+                            sys.exit(1)
+                        else:
+                            return
 
         patched = False
 
@@ -2226,13 +4371,25 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"* Warning: Could not apply custom mobile user-agent patch due to an unexpected error: {e}")
             print("* Proceeding with the default Instaloader mobile user-agent")
 
+        # Always print and log activity; Logger handles terminal suppression
+        _thread_local.in_partial_line = True
         print("- loading profile from username...", end=" ", flush=True)
+        log_activity(f"Loading profile: {user}", user=user)
+        update_ui_data(targets={user: {'status': 'Loading Profile'}})
+
         profile = instaloader.Profile.from_username(bot.context, user)
 
         time.sleep(NEXT_OPERATION_DELAY)
         insta_username = profile.username
         insta_userid = profile.userid
+
+        debug_print(f"Profile loaded: ID {insta_userid}")
+        debug_print(f"Metadata: followers={profile.followers}, followees={profile.followees}, posts={profile.mediacount}, private={profile.is_private}")
+
         print(f"     OK: {insta_username}")
+        _thread_local.in_partial_line = False
+        log_activity(f"Profile loaded: {insta_username}", user=user)
+
         followers_count = profile.followers
         followings_count = profile.followees
         bio = profile.biography
@@ -2241,9 +4398,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         can_view = (not is_private) or followed_by_viewer
         posts_count = profile.mediacount
         if not skip_session and can_view:
+            update_ui_data(targets={user: {'status': 'Fetching Reels'}})
+            _thread_local.in_partial_line = True
             print("- fetching reels count...", end=" ", flush=True)
             reels_count = get_total_reels_count(user, bot, skip_session)
+
             print("              OK")
+            _thread_local.in_partial_line = False
+            log_activity(f"Reels count fetched: {reels_count}", user=user)
 
         if not is_private:
             if bot.context.is_logged_in:
@@ -2251,20 +4413,30 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             else:
                 has_story = False
         elif bot.context.is_logged_in and followed_by_viewer:
+            _thread_local.in_partial_line = True
             print("- checking for stories...", end=" ", flush=True)
+            update_ui_data(targets={user: {'status': 'Checking Stories'}})
             story = next(bot.get_stories(userids=[insta_userid]), None)
             has_story = bool(story and story.itemcount)
+
             print("              OK")
+            _thread_local.in_partial_line = False
+            log_activity("Checked for stories", user=user)
         else:
             has_story = False
 
         profile_image_url = profile.profile_pic_url_no_iphone
 
         if bot.context.is_logged_in:
+            # Always print and log activity; Logger handles terminal suppression
+            _thread_local.in_partial_line = True
             print("- loading own profile...", end=" ", flush=True)
             me = instaloader.Profile.own_profile(bot.context)
             session_username = me.username
             print(f"               OK: {session_username}")
+            _thread_local.in_partial_line = False
+            log_activity(f"Session user loaded: {session_username}")
+            update_ui_data(targets={user: {'session': {'username': session_username, 'active': True}}})
 
         print("─" * HORIZONTAL_LINE)
 
@@ -2272,11 +4444,20 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             session_username = None
 
     except Exception as e:
-        print(f"* Error: {type(e).__name__}: {e}")
+        _thread_local.in_partial_line = False
+        error_msg = format_error_message(e)
+        print(f"* Error: {error_msg}")
+        if WEB_DASHBOARD_ENABLED:
+            update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
         # traceback.print_exc()
-        sys.exit(1)
+        if threading.current_thread() is threading.main_thread():
+            sys.exit(1)
+        else:
+            return
 
     story_flag = False
+    last_post = None
+    last_story = None
 
     followers_old_count = followers_count
     followings_old_count = followings_count
@@ -2286,27 +4467,55 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     is_private_old = is_private
     followed_by_viewer_old = followed_by_viewer
 
-    print(f"Session user:\t\t\t\t{session_username or '<anonymous>'}")
+    # Only print detailed profile info if Dashboard is not enabled
+    # Print detailed profile info (will be suppressed from terminal by Logger when dashboard is active, but still logged to files)
+    if True:  # Always print for logging
+        print(f"Session user:\t\t\t\t{session_username or '<anonymous>'}")
 
-    print(f"\nUsername:\t\t\t\t{insta_username}")
-    print(f"User ID:\t\t\t\t{insta_userid}")
-    print(f"URL:\t\t\t\t\thttps://www.instagram.com/{insta_username}/")
+        print(f"\nUsername:\t\t\t\t{insta_username}")
+        print(f"User ID:\t\t\t\t{insta_userid}")
+        print(f"URL:\t\t\t\t\thttps://www.instagram.com/{insta_username}/")
 
-    print(f"\nProfile:\t\t\t\t{'public' if not is_private else 'private'}")
-    print(f"Can view all contents:\t\t\t{'Yes' if can_view else 'No'}")
+        print(f"\nProfile:\t\t\t\t{'public' if not is_private else 'private'}")
+        print(f"Can view all contents:\t\t\t{'Yes' if can_view else 'No'}")
 
-    print(f"\nPosts:\t\t\t\t\t{posts_count}")
-    if not skip_session and can_view:
-        print(f"Reels:\t\t\t\t\t{reels_count}")
+        print(f"\nPosts:\t\t\t\t\t{posts_count}")
+        if not skip_session and can_view:
+            print(f"Reels:\t\t\t\t\t{reels_count}")
 
-    print(f"\nFollowers:\t\t\t\t{followers_count}")
-    print(f"Followings:\t\t\t\t{followings_count}")
+        print(f"\nFollowers:\t\t\t\t{followers_count}")
+        print(f"Followings:\t\t\t\t{followings_count}")
 
-    if bot.context.is_logged_in:
-        print(f"\nStory available:\t\t\t{has_story}")
+        if bot.context.is_logged_in:
+            print(f"\nStory available:\t\t\t{has_story}")
 
-    print(f"\nBio:\n\n{bio}\n")
-    print_cur_ts("Timestamp:\t\t\t\t")
+        print(f"\nBio:\n\n{bio}\n")
+        print_cur_ts("Timestamp:\t\t\t\t")
+
+    # Populate initial Dashboard data immediately after first fetch (regardless of print mode)
+    target_data_unified = {
+        'followers': followers_count,
+        'following': followings_count,
+        'posts': posts_count,
+        'reels': reels_count,
+        'has_story': has_story,
+        'stories_count': 0, # Initial count
+        'is_private': is_private,
+        'status': 'OK',
+        'bio_changed': False,
+        'last_post': None,
+        'last_story': None
+    }
+
+    # Use unified config data (reuse existing or fallback if not init)
+    config_data = DASHBOARD_DATA.get('config', {}) if DASHBOARD_ENABLED else WEB_DASHBOARD_DATA.get('config', {})
+    if not config_data:
+        # Fallback (partial data is better than crash)
+        config_data = get_dashboard_config_data()
+
+    config_data['start_time'] = DASHBOARD_DATA.get('start_time', datetime.now())
+
+    update_ui_data(targets={user: target_data_unified}, config=config_data)
 
     if user_root_path or OUTPUT_DIR:
         insta_followers_file = os.path.join(json_dir, f"instagram_{user}_followers.json")
@@ -2320,7 +4529,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         profile_pic_file = f"instagram_{user}_profile_pic.jpeg"
         profile_pic_file_old = f"instagram_{user}_profile_pic_old.jpeg"
         profile_pic_file_tmp = f"instagram_{user}_profile_pic_tmp.jpeg"
-
     followers = []
     followings = []
     followers_old = followers
@@ -2340,7 +4548,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if followers_count == followers_old_count:
                 followers = followers_old
             followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file)), pytz.timezone(LOCAL_TIMEZONE))
+            update_ui_data(targets={user: {'status': 'Loading Followers'}})
+
             print(f"* Followers ({followers_old_count}) actual ({len(followers_old)}) loaded from file '{insta_followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
+            log_activity(f"Followers loaded from file: {len(followers_old)}", user=user)
             followers_followings_fetched = True
 
     if followers_count != followers_old_count:
@@ -2359,19 +4570,32 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         except Exception as e:
             print(f"* Error: {e}")
 
-    if ((followers_count != followers_old_count) or (followers_count > 0 and not followers)) and not skip_session and not skip_followers and can_view:
-        # print("\n* Getting followers ...")
+    if ((followers_count != followers_old_count) or (followers_count > 0 and not followers) or DETAILED_FOLLOWER_LOGGING) and not skip_session and not skip_followers and can_view:
+        # Fetch followers if count changed, list is empty, or detailed logging is enabled
+        if DETAILED_FOLLOWER_LOGGING:
+            message = "Detailed follower logging: fetching followers..."
+            if DEBUG_MODE:
+                debug_print(message)
+            else:
+                print("* " + message)
+                print_cur_ts("\nTimestamp:\t\t\t\t")
         followers_followings_fetched = True
 
         try:
+            update_ui_data(targets={user: {'status': 'Downloading Followers'}})
             setup_pbar(total_expected=followers_count, title="* Downloading Followers")
             followers = [follower.username for follower in profile.get_followers()]
             close_pbar()
             followers_count = profile.followers
         except Exception as e:
             close_pbar()
-            print(f"* Error while getting followers: {type(e).__name__}: {e}")
-            sys.exit(1)
+            error_msg = format_error_message(e)
+            print(f"* Error while getting followers: {error_msg}")
+            update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
+            if threading.current_thread() is threading.main_thread():
+                sys.exit(1)
+            else:
+                return
 
         if not followers and followers_count > 0:
             print("* Empty followers list returned, not saved to file")
@@ -2386,7 +4610,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             except Exception as e:
                 print(f"* Cannot save list of followers to '{insta_followers_file}' file: {e}")
 
-    if ((followers_count != followers_old_count) and (followers != followers_old)) and not skip_session and not skip_followers and can_view and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
+    # Compare followers: either count changed OR detailed logging detected a difference
+    should_compare_followers = ((followers_count != followers_old_count) or (DETAILED_FOLLOWER_LOGGING and followers != followers_old))
+    if should_compare_followers and (followers != followers_old) and not skip_session and not skip_followers and can_view and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
         a, b = set(followers_old), set(followers)
         removed_followers = list(a - b)
         added_followers = list(b - a)
@@ -2431,7 +4657,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if followings_count == followings_old_count:
                 followings = followings_old
             following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file)), pytz.timezone(LOCAL_TIMEZONE))
+            update_ui_data(targets={user: {'status': 'Loading Followings'}})
+
             print(f"\n* Followings ({followings_old_count}) actual ({len(followings_old)}) loaded from file '{insta_followings_file}' ({get_short_date_from_ts(following_mdate, show_weekday=False, always_show_year=True)})")
+            log_activity(f"Followings loaded from file: {len(followings_old)}", user=user)
             followers_followings_fetched = True
 
     if followings_count != followings_old_count:
@@ -2449,19 +4678,32 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         except Exception as e:
             print(f"* Error: {e}")
 
-    if ((followings_count != followings_old_count) or (followings_count > 0 and not followings)) and not skip_session and not skip_followings and can_view:
-        # print("\n* Getting followings ...")
+    if ((followings_count != followings_old_count) or (followings_count > 0 and not followings) or DETAILED_FOLLOWER_LOGGING) and not skip_session and not skip_followings and can_view:
+        # Fetch followings if count changed, list is empty, or detailed logging is enabled
+        if DETAILED_FOLLOWER_LOGGING:
+            message = "Detailed followings logging: fetching followings..."
+            if DEBUG_MODE:
+                debug_print(message)
+            else:
+                print("* " + message)
+                print_cur_ts("\nTimestamp:\t\t\t\t")
         followers_followings_fetched = True
 
         try:
+            update_ui_data(targets={user: {'status': 'Downloading Followings'}})
             setup_pbar(total_expected=followings_count, title="* Downloading Followings")
             followings = [followee.username for followee in profile.get_followees()]
             close_pbar()
             followings_count = profile.followees
         except Exception as e:
             close_pbar()
-            print(f"* Error while getting followings: {type(e).__name__}: {e}")
-            sys.exit(1)
+            error_msg = format_error_message(e)
+            print(f"* Error while getting followings: {error_msg}")
+            update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
+            if threading.current_thread() is threading.main_thread():
+                sys.exit(1)
+            else:
+                return
 
         if not followings and followings_count > 0:
             print("* Empty followings list returned, not saved to file")
@@ -2476,7 +4718,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             except Exception as e:
                 print(f"* Cannot save list of followings to '{insta_followings_file}' file: {e}")
 
-    if ((followings_count != followings_old_count) and (followings != followings_old)) and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
+    # Compare followings: either count changed OR detailed logging detected a difference
+    should_compare_followings = ((followings_count != followings_old_count) or (DETAILED_FOLLOWER_LOGGING and followings != followings_old))
+    if should_compare_followings and (followings != followings_old) and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
         a, b = set(followings_old), set(followings)
         removed_followings = list(a - b)
         added_followings = list(b - a)
@@ -2543,6 +4787,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         if not skip_session and can_view and not skip_getting_story_details:
             try:
+                update_ui_data(targets={user: {'status': 'Loading Stories'}})
                 stories = bot.get_stories(userids=[insta_userid])
 
                 for story in stories:
@@ -2621,8 +4866,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                     print(f"Story thumbnail image saved for {user} to '{story_image_filename}'")
                             if os.path.isfile(story_image_filename):
                                 try:
-                                    if imgcat_exe:
-                                        subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {story_image_filename}", shell=True, check=True)
+                                    if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                                        subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{story_image_filename}\"", shell=True, check=True)
                                         if i < stories_count:
                                             print()
                                 except Exception:
@@ -2634,6 +4879,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         except Exception as e:
                             print(f"* Error: {e}")
 
+                        # Update last_story for dashboard (this loop runs from oldest to newest usually, so we update on each)
+                        last_story = {
+                            'type': story_type,
+                            'caption': story_caption[:50] + "..." if story_caption and len(story_caption) > 50 else (story_caption or ""),
+                            'url': story_thumbnail_url,
+                            'timestamp': get_short_date_from_ts(local_dt)
+                        }
+
                         if i == stories_count:
                             print_cur_ts("\nTimestamp:\t\t\t\t")
                         else:
@@ -2644,8 +4897,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 stories_old_count = stories_count
 
             except Exception as e:
-                print(f"* Error while processing story items: {type(e).__name__}: {e}")
-                sys.exit(1)
+                error_msg = format_error_message(e)
+                print(f"* Error while processing story items: {error_msg}")
+                update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
+                if threading.current_thread() is threading.main_thread():
+                    sys.exit(1)
+                else:
+                    return
 
     # Post details
 
@@ -2670,6 +4928,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print("Fetching user's latest post/reel ...\n")
         else:
             print("Fetching user's latest post ...\n")
+
+        update_ui_data(targets={user: {'status': 'Fetching Posts'}})
         try:
 
             time.sleep(NEXT_OPERATION_DELAY)
@@ -2710,7 +4970,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         except Exception as e:
             error_msg = format_error_message(e)
             print(f"* Error while processing posts/reels: {error_msg}")
-            sys.exit(1)
+            update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
+            if threading.current_thread() is threading.main_thread():
+                sys.exit(1)
+            else:
+                return
 
         try:
             # Below won't work until Instaloader updates query hashes in new release
@@ -2724,7 +4988,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     if comment_created_at:
                         post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
         except Exception as e:
-            print(f"* Error while getting post's likes list / comments list: {type(e).__name__}: {e}")
+            error_msg = format_error_message(e)
+            print(f"* Error while getting post's likes list / comments list: {error_msg}")
 
         post_url = f"https://www.instagram.com/{'reel' if last_source == 'reel' else 'p'}/{shortcode}/"
         print(f"* Newest {last_source.lower()} for user {user}:\n")
@@ -2747,28 +5012,46 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"Comments list:{post_comments_list}")
 
         if video_url:
-            if highestinsta_dt:
+            if highestinsta_dt and highestinsta_dt.timestamp() > 0:
                 video_filename = f'instagram_{user}_{last_source.lower()}_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
             else:
                 video_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
+
+            if (user_root_path or OUTPUT_DIR) and 'videos_dir' in locals():
+                if not os.path.dirname(video_filename) == videos_dir:
+                    video_filename = os.path.join(videos_dir, video_filename)
+
             if not os.path.isfile(video_filename):
                 if save_pic_video(video_url, video_filename, highestinsta_ts):
                     print(f"{last_source.capitalize()} video saved for {user} to '{video_filename}'")
+                else:
+                    print(f"Error saving {last_source.lower()} video !")
 
         if thumbnail_url:
             if highestinsta_dt:
                 image_filename = f'instagram_{user}_{last_source.lower()}_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
             else:
                 image_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
+            if (user_root_path or OUTPUT_DIR) and 'images_dir' in locals():
+                if not os.path.dirname(image_filename) == images_dir:
+                    image_filename = os.path.join(images_dir, image_filename)
             if not os.path.isfile(image_filename):
                 if save_pic_video(thumbnail_url, image_filename, highestinsta_ts):
                     print(f"{last_source.capitalize()} thumbnail image saved for {user} to '{image_filename}'")
             if os.path.isfile(image_filename):
                 try:
-                    if imgcat_exe:
-                        subprocess.run(f"{imgcat_exe} {image_filename}", shell=True, check=True)
+                    if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                        subprocess.run(f"\"{imgcat_exe}\" \"{image_filename}\"", shell=True, check=True)
                 except Exception:
                     pass
+
+        # Update last_post for dashboard
+        last_post = {
+            'type': last_source.capitalize(),
+            'caption': caption[:50] + "..." if caption and len(caption) > 50 else (caption or ""),
+            'url': thumbnail_url,
+            'timestamp': get_short_date_from_ts(highestinsta_dt)
+        }
 
         print_cur_ts("\nTimestamp:\t\t\t\t")
 
@@ -2779,20 +5062,57 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         highestinsta_ts_old = int(time.time())
         highestinsta_dt_old = now_local()
 
+    # Initialize check timing and update last check time for dashboard
+    # Combined call prevents double increment of CHECK_COUNT
+    r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
+    update_check_times(
+        last_time=now_local_naive(),
+        next_time=now_local_naive() + timedelta(seconds=r_sleep_time),
+        user=user
+    )
+    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+        if 'targets' not in DASHBOARD_DATA:
+            DASHBOARD_DATA['targets'] = {}
+
+        DASHBOARD_DATA['targets'][user].update({
+            'followers': followers_count,
+            'following': followings_count,
+            'posts': posts_count,
+            'reels': reels_count,
+            'has_story': has_story,
+            'stories_count': stories_count,
+            'last_post': last_post,
+            'last_story': last_story
+        })
+
+        DASHBOARD_DATA['config'] = get_dashboard_config_data()
+        update_dashboard()
+
+    if WEB_DASHBOARD_ENABLED:
+        update_ui_data(targets={
+            user: {
+                'followers': followers_count,
+                'following': followings_count,
+                'posts': posts_count,
+                'reels': reels_count,
+                'has_story': has_story,
+                'stories_count': stories_count,
+                'last_post': last_post, # Will be merged
+                'last_story': last_story, # Will be merged
+                'status': 'Waiting'
+            }
+        }, config=get_dashboard_config_data())
+
     # Signal that full initial loading (followers, followings, profile pic, stories, latest post/reel) is complete
     # so the next user can start without interleaving output
     if signal_loading_complete is not None:
         signal_loading_complete.set()
 
-    r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
-
-    if HOURS_VERBOSE:
-        sleep_message(r_sleep_time)
-
     # Monitoring active message
     now = now_local_naive()
     next_check = now + timedelta(seconds=r_sleep_time)
 
+    # Only print tracking message if Dashboard is not enabled
     if threading.current_thread() is not threading.main_thread():
         print(f"* Tracking {user} (and others)... next check for {user} planned at ~{next_check.strftime('%H:%M:%S')} (in {display_time(r_sleep_time)})\n")
     else:
@@ -2800,7 +5120,48 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     print_cur_ts("Timestamp:\t\t\t\t")
 
-    time.sleep(r_sleep_time)
+    if HOURS_VERBOSE or DEBUG_MODE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE):
+        sleep_message(r_sleep_time, user)
+        debug_print(f"Next check scheduled for: {get_date_from_ts(NEXT_CHECK_TIME)}")
+
+    # Track whether the current check was triggered manually by the user
+    manual_recheck_active = manual_recheck
+
+    # Use interruptible sleep if stop_event is provided (allows immediate stop)
+    if stop_event or DEBUG_MODE or WEB_DASHBOARD_ENABLED:
+        # Sleep in smaller increments to allow stop event or manual check trigger
+        sleep_remaining = r_sleep_time
+        update_ui_data(targets={user: {'status': 'Waiting'}})
+        while sleep_remaining > 0:
+            # Check for stop event
+            if stop_event and stop_event.is_set():
+                print(f"* Monitoring stopped for {user}\n")
+                print_cur_ts("Timestamp:\t\t\t\t")
+                log_activity("Monitoring stopped", user=user)
+                return
+
+            # Check for recheck trigger (Web Dashboard mode)
+            recheck_triggered = False
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                if user in WEB_DASHBOARD_RECHECK_EVENTS and WEB_DASHBOARD_RECHECK_EVENTS[user].is_set():
+                    WEB_DASHBOARD_RECHECK_EVENTS[user].clear()
+                    recheck_triggered = True
+
+            if recheck_triggered:
+                print(f"* Recheck requested for {user}! Breaking sleep early...\n")
+                print_cur_ts("Timestamp:\t\t\t\t")
+                manual_recheck_active = True
+                break
+
+            # Sleep in 1-second increments for responsiveness
+            sleep_chunk = min(1, sleep_remaining)
+            if stop_event:
+                stop_event.wait(sleep_chunk)
+            else:
+                time.sleep(sleep_chunk)
+            sleep_remaining -= sleep_chunk
+    else:
+        time.sleep(r_sleep_time)
 
     alive_counter = 0
 
@@ -2808,16 +5169,38 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     # Primary loop
     while True:
+        # Check stop event at the start of each loop iteration
+        if stop_event and stop_event.is_set():
+            print(f"* Monitoring stopped for {user}\n")
+            print_cur_ts("Timestamp:\t\t\t\t")
+            return
+
         reset_thread_output()
+        if WEB_DASHBOARD_ENABLED:
+            update_ui_data(targets={user: {'status': 'Checking'}})
+
+        # Update last check time
+        update_check_times(last_time=now_local_naive(), user=user)
+
+        # Debug/Verbose: show check start
+        if VERBOSE_MODE:
+            print(f"* Starting check #{CHECK_COUNT} for {user} ...")
+            print_cur_ts("\nTimestamp:\t\t\t\t")
+        elif DEBUG_MODE:
+            debug_print(f"Starting check #{CHECK_COUNT}")
 
         cur_h = datetime.now().strftime("%H")
 
         in_allowed_hours = (CHECK_POSTS_IN_HOURS_RANGE and (int(cur_h) in hours_to_check())) or not CHECK_POSTS_IN_HOURS_RANGE
 
         if in_allowed_hours:
-            if HOURS_VERBOSE:
-                print(f"*** Fetching Updates. Current Hour: {int(cur_h)}. Allowed hours: {hours_to_check()}")
-                print("─" * HORIZONTAL_LINE)
+            if HOURS_VERBOSE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE) or DEBUG_MODE:
+                print(f"* Fetching updates for {user}, current hour: {int(cur_h)}, allowed: [{format_hours_as_ranges(hours_to_check())}]")
+                print_cur_ts("\nTimestamp:\t\t\t\t")
+                log_activity(f"Fetching updates (hour: {int(cur_h)})", user=user)
+
+            debug_print(f"Fetching profile data from Instagram API...")
+
             try:
                 profile = instaloader.Profile.from_username(bot.context, user)
                 time.sleep(NEXT_OPERATION_DELAY)
@@ -2829,8 +5212,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 followed_by_viewer = profile.followed_by_viewer
                 can_view = (not is_private) or followed_by_viewer
                 posts_count = profile.mediacount
+
+                debug_print(f"Profile loaded: followers={followers_count}, following={followings_count}, posts={posts_count}")
+
                 if not skip_session and can_view:
                     reels_count = get_total_reels_count(user, bot, skip_session)
+                    debug_print(f"Reels count: {reels_count}")
 
                 if not is_private:
                     if bot.context.is_logged_in:
@@ -2843,23 +5230,78 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 else:
                     has_story = False
 
+                debug_print(f"Story available: {has_story}")
+
                 profile_image_url = profile.profile_pic_url_no_iphone
                 email_sent = False
+
+                # Prepare target data for both Dashboard and Web Dashboard
+                target_data = {
+                    user: {
+                        'followers': followers_count,
+                        'following': followings_count,
+                        'posts': posts_count,
+                        'reels': reels_count if 'reels_count' in dir() else 0,
+                        'has_story': has_story,
+                        'is_private': is_private,
+                        'status': 'OK',
+                        'bio_changed': False
+                    }
+                }
+                config_data = {
+                    'check_interval': INSTA_CHECK_INTERVAL,
+                    'random_low': RANDOM_SLEEP_DIFF_LOW,
+                    'random_high': RANDOM_SLEEP_DIFF_HIGH,
+                    'session_user': SESSION_USERNAME or '<anonymous>',
+                    'skip_session': SKIP_SESSION,
+                    'skip_followers': SKIP_FOLLOWERS,
+                    'skip_followings': SKIP_FOLLOWINGS,
+                    'status_notif': STATUS_NOTIFICATION,
+                    'follower_notif': FOLLOWERS_NOTIFICATION,
+                    'error_notif': ERROR_NOTIFICATION,
+                    'webhook_enabled': WEBHOOK_ENABLED,
+                    'human_mode': BE_HUMAN,
+                    'enable_jitter': ENABLE_JITTER,
+                    'debug_mode': DEBUG_MODE,
+                    'detailed_log': DETAILED_FOLLOWER_LOGGING,
+                    'start_time': DASHBOARD_DATA.get('start_time', datetime.now())
+                }
+
+                # Update Dashboard with target data (merge with existing targets for multi-target mode)
+                if DASHBOARD_ENABLED and RICH_AVAILABLE:
+                    if 'targets' not in DASHBOARD_DATA:
+                        DASHBOARD_DATA['targets'] = {}
+                    DASHBOARD_DATA['targets'].update(target_data)  # Merge, don't overwrite
+                    DASHBOARD_DATA['config'] = config_data
+                    update_dashboard()
+
+                # Update web dashboard with target data
+                update_ui_data(targets=target_data, config=config_data)
             except Exception as e:
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
                 error_msg = format_error_message(e)
                 print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
+                debug_print(f"Full exception: {type(e).__name__}: {e}")
+
                 if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                     print("* Session might not be valid anymore!")
                     if ERROR_NOTIFICATION and not email_sent:
                         m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
 
                         m_body = f"Session might not be valid anymore.\n\nSession: {session_label()}\nTarget: {user}\n\nError: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                        print(f"Sending email notification to {RECEIVER_EMAIL}")
+                        print(f"* Sending email notification to {RECEIVER_EMAIL}")
                         send_email(m_subject, m_body, "", SMTP_SSL)
                         email_sent = True
 
-                print_cur_ts("Timestamp:\t\t\t\t")
+                    # Send webhook notification for session error
+                    send_webhook(
+                        "⚠️ Session Error",
+                        f"Session might not be valid anymore.\n\nTarget: **{user}**\nError: `{e}`",
+                        color=0x1f1f1f,  # Dark/Black
+                        notification_type="error"
+                    )
+
+                print_cur_ts("\nTimestamp:\t\t\t\t")
                 time.sleep(r_sleep_time)
                 continue
 
@@ -2871,10 +5313,18 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
 
                     m_body = f"Session might not be valid anymore.\n\nSession: {session_label()}\nTarget: {user}\n\nOutput: {get_thread_output()}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
+                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
                     email_sent = True
-                print_cur_ts("Timestamp:\t\t\t\t")
+
+                # Send webhook notification for session error (redirect)
+                send_webhook(
+                    "⚠️ Session Error (Redirect)",
+                    f"Session might not be valid anymore (HTTP redirect).\n\nTarget: **{user}**",
+                    color=0x1f1f1f,  # Dark/Black
+                    notification_type="error"
+                )
+                print_cur_ts("\nTimestamp:\t\t\t\t")
                 time.sleep(r_sleep_time)
                 continue
 
@@ -2886,6 +5336,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 else:
                     followings_diff_str = str(followings_diff)
                 print(f"* Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})")
+                log_activity(f"Followings changed: {followings_old_count} -> {followings_count}", user=user)
                 try:
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
@@ -2920,7 +5371,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     except Exception as e:
                         close_pbar()
                         followings = followings_old
-                        print(f"* Error while processing followings: {type(e).__name__}: {e}")
+                        error_msg = format_error_message(e)
+                        print(f"* Error while processing followings: {error_msg}")
 
                     if not followings and followings_count > 0:
                         followings = followings_old
@@ -2951,6 +5403,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 added_followings_mbody = "\nAdded followings:\n\n"
                                 for f_in_list in added_followings:
                                     print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                                    log_activity(f"Added following: {f_in_list}", user=user)
                                     added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                     try:
                                         if csv_file_name:
@@ -2970,12 +5423,20 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     else:
 
                         m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
+
+                # Send webhook notification for followings change
+                webhook_result = send_follower_change_webhook(
+                    user, "followings", followings_old_count, followings_count,
+                    added_followings_list, removed_followings_list
+                )
+                if webhook_result != 0 and DEBUG_MODE:
+                    print(f"* Warning: Webhook notification for followings change failed")
 
                 followings_old_count = followings_count
 
-                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
 
             if followers_count != followers_old_count:
@@ -2986,6 +5447,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 else:
                     followers_diff_str = str(followers_diff)
                 print(f"* Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})")
+                log_activity(f"Followers changed: {followers_old_count} -> {followers_count}", user=user)
 
                 try:
                     if csv_file_name:
@@ -3021,7 +5483,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     except Exception as e:
                         close_pbar()
                         followers = followers_old
-                        print(f"* Error while processing followers: {type(e).__name__}: {e}")
+                        error_msg = format_error_message(e)
+                        print(f"* Error while processing followers: {error_msg}")
 
                     if not followers and followers_count > 0:
                         followers = followers_old
@@ -3038,6 +5501,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 removed_followers_mbody = "\nRemoved followers:\n\n"
                                 for f_in_list in removed_followers:
                                     print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                                    log_activity(f"Removed follower: {f_in_list}", user=user)
                                     removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                     try:
                                         if csv_file_name:
@@ -3051,6 +5515,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 added_followers_mbody = "\nAdded followers:\n\n"
                                 for f_in_list in added_followers:
                                     print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                                    log_activity(f"Added follower: {f_in_list}", user=user)
                                     added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                     try:
                                         if csv_file_name:
@@ -3068,12 +5533,20 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                     else:
                         m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
+
+                # Send webhook notification for followers change
+                webhook_result = send_follower_change_webhook(
+                    user, "followers", followers_old_count, followers_count,
+                    added_followers_list, removed_followers_list
+                )
+                if webhook_result != 0 and DEBUG_MODE:
+                    print(f"* Warning: Webhook notification for followers change failed")
 
                 followers_old_count = followers_count
 
-                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
 
             # Profile pic
@@ -3087,6 +5560,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
             if bio != bio_old:
                 print(f"* Bio changed for user {user} !\n")
+                log_activity("Bio changed", user=user)
                 print(f"Old bio:\n\n{bio_old}\n")
                 print(f"New bio:\n\n{bio}\n")
 
@@ -3100,11 +5574,25 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     m_subject = f"Instagram user {user} bio has changed!"
 
                     m_body = f"Instagram user {user} bio has changed\n\nOld bio:\n\n{bio_old}\n\nNew bio:\n\n{bio}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
+                # Send webhook notification for bio change
+                webhook_result = send_webhook(
+                    f"📝 {user} Bio Changed",
+                    f"User **{user}** has updated their bio",
+                    color=0x9b59b6,  # Purple
+                    fields=[
+                        {"name": "Old Bio", "value": (bio_old[:DISCORD_FIELD_VALUE_LIMIT-4] + "...") if len(bio_old) > DISCORD_FIELD_VALUE_LIMIT else bio_old or "(empty)"},
+                        {"name": "New Bio", "value": (bio[:DISCORD_FIELD_VALUE_LIMIT-4] + "...") if len(bio) > DISCORD_FIELD_VALUE_LIMIT else bio or "(empty)"},
+                    ],
+                    notification_type="status"
+                )
+                if webhook_result != 0 and DEBUG_MODE:
+                    print(f"* Warning: Webhook notification for bio change failed")
+
                 bio_old = bio
-                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
 
             if is_private != is_private_old:
@@ -3117,6 +5605,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     profile_visibility_old = "private"
 
                 print(f"* Profile visibility changed for user {user} to {profile_visibility} !\n")
+                log_activity(f"Visibility changed: {profile_visibility}", user=user)
 
                 try:
                     if csv_file_name:
@@ -3128,11 +5617,26 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     m_subject = f"Instagram user {user} profile visibility has changed to {profile_visibility} !"
 
                     m_body = f"Instagram user {user} profile visibility has changed to {profile_visibility}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
+                # Send webhook notification for visibility change
+                emoji = "🔒" if is_private else "🔓"
+                webhook_result = send_webhook(
+                    f"{emoji} {user} Profile Visibility Changed",
+                    f"User **{user}** profile is now **{profile_visibility}**",
+                    color=0xe67e22,  # Orange
+                    fields=[
+                        {"name": "Old", "value": profile_visibility_old, "inline": True},
+                        {"name": "New", "value": profile_visibility, "inline": True},
+                    ],
+                    notification_type="status"
+                )
+                if webhook_result != 0 and DEBUG_MODE:
+                    print(f"* Warning: Webhook notification for visibility change failed")
+
                 is_private_old = is_private
-                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
 
             if followed_by_viewer != followed_by_viewer_old:
@@ -3149,15 +5653,25 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     m_subject = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user} !"
 
                     m_body = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
+                # Send webhook notification for following status change
+                emoji = "✅" if followed_by_viewer else "❌"
+                send_webhook(
+                    f"{emoji} {user} Following Status Changed",
+                    f"Your account {'started following' if followed_by_viewer else 'stopped following'} **{user}**",
+                    color=0x95a5a6,  # Gray
+                    notification_type="status"
+                )
+
                 followed_by_viewer_old = followed_by_viewer
-                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
 
             if has_story and not story_flag:
                 print(f"* New story for user {user} !\n")
+                log_activity("New story detected", user=user)
                 story_flag = True
                 stories_count = 1
 
@@ -3171,8 +5685,21 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     m_subject = f"Instagram user {user} has a new story!"
 
                     m_body = f"Instagram user {user} has a new story\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
+                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
+
+                # Send webhook notification for new story
+                webhook_result = send_webhook(
+                    f"📖 {user} New Story",
+                    f"User **{user}** has posted a new story!",
+                    color=0xe91e63,  # Pink
+                    fields=[
+                        {"name": "Profile", "value": f"https://www.instagram.com/{user}/", "inline": True},
+                    ],
+                    notification_type="status"
+                )
+                if webhook_result != 0 and DEBUG_MODE:
+                    print(f"* Warning: Webhook notification for new story failed")
 
                 print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
@@ -3181,6 +5708,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 processed_stories_list = []
                 stories_count = 0
                 print(f"* Story for user {user} disappeared !")
+                log_activity("Story disappeared", user=user)
                 print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
                 story_flag = False
@@ -3217,6 +5745,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 expire_ts = 0
 
                             print(f"* User {user} has new story item:\n")
+                            log_activity(f"New story item: {story_type}", user=user)
                             print(f"Date:\t\t\t{get_date_from_ts(local_dt)}")
                             print(f"Expiry:\t\t\t{get_date_from_ts(expire_local_dt)}")
                             if story_item.typename == "GraphStoryImage":
@@ -3260,6 +5789,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                     story_video_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
                                 else:
                                     story_video_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.mp4'
+
+                                if user_root_path or OUTPUT_DIR:
+                                    story_video_filename = os.path.join(videos_dir, story_video_filename)
                                 if not os.path.isfile(story_video_filename):
                                     if save_pic_video(story_video_url, story_video_filename, local_ts):
                                         print(f"Story video saved for {user} to '{story_video_filename}'")
@@ -3269,14 +5801,17 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 story_image_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
                             else:
                                 story_image_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
+
+                            if user_root_path or OUTPUT_DIR:
+                                story_image_filename = os.path.join(images_dir, story_image_filename)
                             if story_thumbnail_url:
                                 if not os.path.isfile(story_image_filename):
                                     if save_pic_video(story_thumbnail_url, story_image_filename, local_ts):
                                         m_body_html_pic_saved_text = f'<br><br><img src="cid:story_pic" width="50%">'
                                         print(f"Story thumbnail image saved for {user} to '{story_image_filename}'")
                                         try:
-                                            if imgcat_exe:
-                                                subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {story_image_filename}", shell=True, check=True)
+                                            if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                                                subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{story_image_filename}\"", shell=True, check=True)
                                                 if i < stories_count:
                                                     print()
                                         except Exception:
@@ -3294,7 +5829,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 m_body = f"Instagram user {user} has a new story item\n\nDate: {get_date_from_ts(int(local_ts))}\nExpiry: {get_date_from_ts(int(expire_ts))}\nType: {story_type}{story_mentions_m_body}{story_hashtags_m_body}{story_caption_m_body}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                 m_body_html = f"Instagram user <b>{user}</b> has a new story item{m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(int(local_ts))}</b><br>Expiry: {get_date_from_ts(int(expire_ts))}<br>Type: {story_type}{story_mentions_m_body_html}{story_hashtags_m_body_html}{story_caption_m_body_html}<br><br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
-                                print(f"Sending email notification to {RECEIVER_EMAIL}")
+                                print(f"* Sending email notification to {RECEIVER_EMAIL}")
                                 if m_body_html_pic_saved_text:
                                     send_email(m_subject, m_body, m_body_html, SMTP_SSL, story_image_filename, "story_pic")
                                 else:
@@ -3308,7 +5843,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     stories_old_count = stories_count
 
                 except Exception as e:
-                    print(f"* Error while processing story items: {type(e).__name__}: {e}")
+                    error_msg = format_error_message(e)
+                    print(f"* Error while processing story items: {error_msg}")
                     print_cur_ts("\nTimestamp:\t\t\t\t")
 
             new_post = False
@@ -3379,6 +5915,22 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         else:
                             raise Exception("Failed to get last post/reel details")
 
+                    # Prepare next check timing
+                    r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
+                    next_check = now_local_naive() + timedelta(seconds=r_sleep_time)
+                    update_check_times(next_time=next_check, user=user)
+
+                    if stop_event or DEBUG_MODE or WEB_DASHBOARD_ENABLED:
+                        update_ui_data(targets={user: {'status': 'Waiting'}})
+                        sleep_remaining = r_sleep_time
+                        while sleep_remaining > 0:
+                            if stop_event and stop_event.is_set():
+                                break
+                            time.sleep(min(1, sleep_remaining))
+                            sleep_remaining -= min(1, sleep_remaining)
+                    else:
+                        time.sleep(r_sleep_time)
+
                 except Exception as e:
                     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
                     error_msg = format_error_message(e)
@@ -3389,7 +5941,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
 
                             m_body = f"Session might not be valid anymore.\n\nSession: {session_label()}\nTarget: {user}\n\nError: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                            print(f"Sending email notification to {RECEIVER_EMAIL}")
+                            print(f"* Sending email notification to {RECEIVER_EMAIL}")
                             send_email(m_subject, m_body, "", SMTP_SSL)
                             email_sent = True
 
@@ -3417,6 +5969,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     post_url = f"https://www.instagram.com/{'reel' if last_source == 'reel' else 'p'}/{shortcode}/"
 
                     print(f"* New {last_source.lower()} for user {user} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n")
+                    log_activity(f"New {last_source.lower()} detected", user=user)
                     print(f"Date:\t\t\t\t\t{get_date_from_ts(highestinsta_dt)}")
                     print(f"{last_source.capitalize()} URL:\t\t\t\t{post_url}")
                     print(f"Profile URL:\t\t\t\thttps://www.instagram.com/{insta_username}/")
@@ -3466,13 +6019,16 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     else:
                         image_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
                     if thumbnail_url:
+                        if (user_root_path or OUTPUT_DIR) and 'images_dir' in locals():
+                            if not os.path.dirname(image_filename) == images_dir:
+                                image_filename = os.path.join(images_dir, image_filename)
                         if not os.path.isfile(image_filename):
                             if save_pic_video(thumbnail_url, image_filename, highestinsta_ts):
                                 m_body_html_pic_saved_text = f'<br><br><img src="cid:{last_source.lower()}_pic" width="50%">'
                                 print(f"{last_source.capitalize()} thumbnail image saved for {user} to '{image_filename}'")
                                 try:
-                                    if imgcat_exe:
-                                        subprocess.run(f"{imgcat_exe} {image_filename}", shell=True, check=True)
+                                    if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                                        subprocess.run(f"\"{imgcat_exe}\" \"{image_filename}\"", shell=True, check=True)
                                 except Exception:
                                     pass
 
@@ -3488,11 +6044,35 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         m_body = f"Instagram user {user} has a new {last_source.lower()} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n\nDate: {get_date_from_ts(highestinsta_dt)}\n{last_source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nLikes: {likes}\nComments: {comments}\nTagged: {tagged_users}{location_mbody}{location_mbody_str}\nDescription:\n\n{caption}\n{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{post_comments_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                         m_body_html = f"Instagram user <b>{user}</b> has a new {last_source.lower()} after <b>{calculate_timespan(highestinsta_dt, highestinsta_dt_old)}</b> ({get_date_from_ts(highestinsta_dt_old)}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(highestinsta_dt)}</b><br>{last_source.capitalize()} URL: <a href=\"{post_url}\">{post_url}</a><br>Profile URL: <a href=\"https://www.instagram.com/{insta_username}/\">https://www.instagram.com/{insta_username}/</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {tagged_users}{location_mbody}{location_mbody_str}<br>Description:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
-                        print(f"\nSending email notification to {RECEIVER_EMAIL}")
+                        print(f"\n* Sending email notification to {RECEIVER_EMAIL}")
                         if m_body_html_pic_saved_text:
                             send_email(m_subject, m_body, m_body_html, SMTP_SSL, image_filename, f"{last_source.lower()}_pic")
                         else:
                             send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+
+                    # Send webhook notification for new post/reel
+                    emoji = "🎬" if last_source == "reel" else "📸"
+                    webhook_fields = [
+                        {"name": "Date", "value": get_date_from_ts(highestinsta_dt), "inline": True},
+                        {"name": "Likes", "value": str(likes), "inline": True},
+                        {"name": "Comments", "value": str(comments), "inline": True},
+                        {"name": f"{last_source.capitalize()} URL", "value": post_url},
+                    ]
+                    if location:
+                        webhook_fields.append({"name": "Location", "value": location, "inline": True})
+                    if caption:
+                        webhook_fields.append({"name": "Description", "value": (caption[:DISCORD_FIELD_VALUE_LIMIT-4] + "...") if len(caption) > DISCORD_FIELD_VALUE_LIMIT else caption})
+
+                    webhook_result = send_webhook(
+                        f"{emoji} {user} New {last_source.capitalize()}",
+                        f"User **{user}** posted a new {last_source.lower()}!",
+                        color=0x1da1f2 if last_source == "post" else 0xff6b6b,  # Blue for post, coral for reel
+                        fields=webhook_fields,
+                        image_url=thumbnail_url if thumbnail_url else None,
+                        notification_type="status"
+                    )
+                    if webhook_result != 0 and DEBUG_MODE:
+                        print(f"* Warning: Webhook notification for new {last_source} failed")
 
                     posts_count_old = posts_count
                     reels_count_old = reels_count
@@ -3520,8 +6100,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     reels_count_old = reels_count
 
         else:
-            if HOURS_VERBOSE:
-                print(f"*** Skipping Updates. Current Hour: {int(cur_h)}. Allowed hours: {hours_to_check()}")
+            if HOURS_VERBOSE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE) or DEBUG_MODE:
+                print(f"* Skipping updates for {user}, current hour: {int(cur_h)}, allowed: [{format_hours_as_ranges(hours_to_check())}]")
                 print("─" * HORIZONTAL_LINE)
 
         alive_counter += 1
@@ -3530,7 +6110,25 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print_cur_ts("Liveness check, timestamp:\t")
             alive_counter = 0
 
+        debug_print(f"After check: manual_recheck_active={manual_recheck_active}")
+
+        if manual_recheck_active:
+            print(f"* Check completed for {user} ...\n")
+            print_cur_ts("Timestamp:\t\t\t\t")
+            log_activity("Check completed", user=user)
+            manual_recheck_active = False
+        elif VERBOSE_MODE or DEBUG_MODE:
+            print(f"* Check completed for {user} ...\n")
+            print_cur_ts("Timestamp:\t\t\t\t")
+
         r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
+
+        # Update next check time tracking
+        update_check_times(next_time=now_local_naive() + timedelta(seconds=r_sleep_time), user=user)
+
+        # Print timing information (includes last check and next check in debug mode)
+        print_check_timing(r_sleep_time)
+        debug_print(f"Check #{CHECK_COUNT} completed")
 
         # Be human please
         try:
@@ -3540,14 +6138,100 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"* Warning: It is not easy to be a human, our simulation failed: {e}")
             print_cur_ts("\nTimestamp:\t\t\t\t")
 
-        if HOURS_VERBOSE:
-            sleep_message(r_sleep_time)
+        if HOURS_VERBOSE or DEBUG_MODE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE):
+            sleep_message(r_sleep_time, user)
+            debug_print(f"Next check scheduled for: {get_date_from_ts(NEXT_CHECK_TIME)}")
 
-        time.sleep(r_sleep_time)
+        # Sleep with manual check support in debug mode (or stop event support in Web Dashboard mode)
+        if DEBUG_MODE or stop_event or WEB_DASHBOARD_ENABLED:
+            update_ui_data(targets={user: {'status': 'Waiting'}})
+            # Sleep in smaller increments to allow manual check trigger or stop event
+            sleep_remaining = r_sleep_time
+            while sleep_remaining > 0:
+                # Check for stop event (Web Dashboard mode)
+                if stop_event and stop_event.is_set():
+                    print(f"* Monitoring stopped for {user}\n")
+                    print_cur_ts("Timestamp:\t\t\t\t")
+                    return
 
 
-def main():
+                # Check for recheck trigger (Web Dashboard mode)
+                recheck_triggered = False
+                with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                    if user in WEB_DASHBOARD_RECHECK_EVENTS and WEB_DASHBOARD_RECHECK_EVENTS[user].is_set():
+                        WEB_DASHBOARD_RECHECK_EVENTS[user].clear()
+                        recheck_triggered = True
+
+                if recheck_triggered:
+                    print(f"* Recheck requested for {user}! Breaking sleep early...\n")
+                    print_cur_ts("Timestamp:\t\t\t\t")
+                    manual_recheck_active = True
+                    break
+
+                # Sleep in 1-second increments for responsiveness
+                sleep_chunk = min(1, sleep_remaining)
+                time.sleep(sleep_chunk)
+                sleep_remaining -= sleep_chunk
+        else:
+            time.sleep(r_sleep_time)
+
+# Helper to resolve log and CSV paths for a specific target
+def get_target_paths(user):
+    # Use DASHBOARD_DATA to check if we are in single-target mode
+    targets_list = DASHBOARD_DATA.get('targets_list', [])
+    is_multi = len(targets_list) > 1
+
+    target_csv = ""
+    if CSV_FILE:
+        base_path = Path(CSV_FILE)
+        base_suffix = base_path.suffix if base_path.suffix else ".csv"
+
+        if os.path.isabs(CSV_FILE):
+            if is_multi:
+                # Multi-target with absolute path: use as base
+                target_csv = str(base_path.with_name(f"{base_path.stem}_{user}{base_suffix}"))
+            else:
+                # Single-target with absolute path: use exactly as specified
+                target_csv = CSV_FILE
+        elif OUTPUT_DIR:
+            if is_multi:
+                # Multi target with OUTPUT_DIR: OUTPUT_DIR/<user>/csvs/
+                target_csv = os.path.join(OUTPUT_DIR, user, "csvs", os.path.basename(CSV_FILE))
+            else:
+                # Single target with OUTPUT_DIR: OUTPUT_DIR/csvs/
+                target_csv = os.path.join(OUTPUT_DIR, "csvs", os.path.basename(CSV_FILE))
+        else:
+            # Traditional behavior if no OUTPUT_DIR
+            if is_multi:
+                target_csv = str(base_path.with_name(f"{base_path.stem}_{user}{base_suffix}"))
+            else:
+                target_csv = str(base_path)
+
+    target_log = ""
+    if not DISABLE_LOGGING:
+        if OUTPUT_DIR:
+            if is_multi:
+                # Multi target: OUTPUT_DIR/<user>/logs/monitor.log
+                target_log = os.path.join(OUTPUT_DIR, user, "logs", f"{Path(INSTA_LOGFILE).stem}.log")
+            else:
+                # Single target: OUTPUT_DIR/logs/monitor.log
+                target_log = os.path.join(OUTPUT_DIR, "logs", f"{Path(INSTA_LOGFILE).stem}.log")
+        else:
+            # Traditional behavior: monitor_<user>.log
+            log_path = Path(os.path.expanduser(INSTA_LOGFILE))
+            suffix = f"_{user}"
+            if log_path.suffix == "":
+                target_log = str(log_path.parent / f"{log_path.name}{suffix}.log")
+            else:
+                target_log = str(log_path.parent / f"{log_path.stem}{suffix}{log_path.suffix}")
+
+    return target_csv, target_log
+
+
+def run_main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
+    global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, DETAILED_FOLLOWER_LOGGING, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA
+    global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -3563,8 +6247,6 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
 
     clear_screen(CLEAR_SCREEN)
-
-    print(f"Instagram Monitoring Tool v{VERSION}\n")
 
     parser = argparse.ArgumentParser(
         prog="instagram_monitor",
@@ -3625,7 +6307,7 @@ def main():
     )
 
     # Notifications
-    notify = parser.add_argument_group("Notifications")
+    notify = parser.add_argument_group("Email Notifications")
     notify.add_argument(
         "-s", "--notify-status",
         dest="status_notification",
@@ -3787,6 +6469,13 @@ def main():
         help="Disable detection of changed profile picture"
     )
     opts.add_argument(
+        "--detailed-followers",
+        dest="detailed_follower_logging",
+        action="store_true",
+        default=None,
+        help="Store detailed follower info (user_id, full_name, profile_pic_url) in JSON files"
+    )
+    opts.add_argument(
         "-b", "--csv-file",
         dest="csv_file",
         metavar="CSV_FILENAME",
@@ -3805,6 +6494,119 @@ def main():
         action="store_true",
         default=None,
         help="Disable logging to instagram_monitor_<username>.log"
+    )
+    opts.add_argument(
+        "--verbose",
+        dest="verbose_mode",
+        action="store_true",
+        default=None,
+        help="Enable verbose mode (shows timing details, next check schedule and interval info)"
+    )
+    opts.add_argument(
+        "--debug",
+        dest="debug_mode",
+        action="store_true",
+        default=None,
+        help="Enable debug mode (full API traces, internal logic logs)"
+    )
+
+    # Terminal dashboard options
+    term_opts = parser.add_argument_group("Terminal dashboard")
+    term_opts.add_argument(
+        "--dashboard",
+        dest="dashboard",
+        action="store_true",
+        default=None,
+        help="Enable terminal dashboard (live view). Default: traditional text output"
+    )
+    term_opts.add_argument(
+        "--no-dashboard",
+        dest="disable_dashboard",
+        action="store_true",
+        default=None,
+        help="Disable terminal dashboard (use traditional text output)"
+    )
+
+    # Web dashboard options
+    web_opts = parser.add_argument_group("Web dashboard")
+    web_opts.add_argument(
+        "--web-dashboard",
+        dest="web_dashboard",
+        action="store_true",
+        default=None,
+        help="Enable web-based dashboard on localhost (default: disabled)"
+    )
+    web_opts.add_argument(
+        "--no-web-dashboard",
+        dest="no_web_dashboard",
+        action="store_true",
+        default=None,
+        help="Disable web-based dashboard"
+    )
+    web_opts.add_argument(
+        "--web-dashboard-port",
+        dest="web_dashboard_port",
+        metavar="PORT",
+        type=int,
+        help="Port for web dashboard server (default: 8000)"
+    )
+    web_opts.add_argument(
+        "--web-dashboard-template-dir",
+        dest="web_dashboard_template_dir",
+        metavar="DIR",
+        type=str,
+        help="Directory containing web dashboard templates (default: auto-detect)"
+    )
+
+    # Webhook options
+    webhook_grp = parser.add_argument_group("Webhook notifications")
+    webhook_grp.add_argument(
+        "--webhook",
+        dest="webhook_enabled",
+        action="store_true",
+        default=None,
+        help="Enable webhook notification system (individual types like --webhook-status must still be enabled)"
+    )
+    webhook_grp.add_argument(
+        "--no-webhook",
+        dest="no_webhook",
+        action="store_true",
+        default=None,
+        help="Disable webhook notifications"
+    )
+    webhook_grp.add_argument(
+        "--webhook-url",
+        dest="webhook_url",
+        metavar="URL",
+        type=str,
+        help="Discord-compatible webhook URL for notifications"
+    )
+    webhook_grp.add_argument(
+        "--webhook-status",
+        dest="webhook_status",
+        action="store_true",
+        default=None,
+        help="Send webhook on status changes (posts/reels/stories/bio/profile pic)"
+    )
+    webhook_grp.add_argument(
+        "--webhook-followers",
+        dest="webhook_followers",
+        action="store_true",
+        default=None,
+        help="Send webhook on follower changes"
+    )
+    webhook_grp.add_argument(
+        "--webhook-errors",
+        dest="webhook_errors",
+        action="store_true",
+        default=None,
+        help="Send webhook on errors"
+    )
+    webhook_grp.add_argument(
+        "--send-test-webhook",
+        dest="send_test_webhook",
+        action="store_true",
+        help="Send test webhook notification to verify settings"
     )
 
     # Firefox session import options
@@ -3837,6 +6639,9 @@ def main():
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
 
     cfg_path = find_config_file(CLI_CONFIG_PATH)
+
+    if cfg_path:
+        CLI_CONFIG_PATH = cfg_path # Update global for dashboard display
 
     if not cfg_path and CLI_CONFIG_PATH:
         print(f"* Error: Config file '{CLI_CONFIG_PATH}' does not exist")
@@ -3905,6 +6710,7 @@ def main():
 
     local_tz = None
     if LOCAL_TIMEZONE == "Auto":
+        # Ensure we update the global variable so API sees it
         if get_localzone is not None:
             try:
                 local_tz = get_localzone()
@@ -3935,12 +6741,65 @@ def main():
     if not check_internet():
         sys.exit(1)
 
+    # Handle new debug, dashboard, and webhook arguments
+    if args.debug_mode is True:
+        DEBUG_MODE = True
+
+    if args.verbose_mode is True:
+        VERBOSE_MODE = True
+
+    if args.detailed_follower_logging is True:
+        DETAILED_FOLLOWER_LOGGING = True
+
+    # Webhook configuration
+    if args.webhook_url:
+        if not validate_webhook_url(args.webhook_url):
+            print(f"* Error: Invalid webhook URL format. Must be HTTPS URL.")
+            sys.exit(1)
+        WEBHOOK_URL = args.webhook_url
+        WEBHOOK_ENABLED = True
+
+    if args.webhook_enabled is True:
+        WEBHOOK_ENABLED = True
+
+    if args.no_webhook is True:
+        WEBHOOK_ENABLED = False
+
+    if args.webhook_status is True:
+        WEBHOOK_STATUS_NOTIFICATION = True
+
+    if args.webhook_followers is True:
+        WEBHOOK_FOLLOWERS_NOTIFICATION = True
+
+    if args.webhook_errors is True:
+        WEBHOOK_ERROR_NOTIFICATION = True
+
     if args.send_test_email:
         print("* Sending test email notification ...\n")
         if send_email("instagram_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL, smtp_timeout=5) == 0:
             print("* Email sent successfully !")
         else:
             sys.exit(1)
+        sys.exit(0)
+
+    if args.send_test_webhook:
+        print("* Sending test webhook notification ...")
+        # Ensure we have a URL for the test
+        if not WEBHOOK_URL:
+            print("* Error: WEBHOOK_URL is not set. Use --webhook-url or set it in the config file.")
+            sys.exit(1)
+
+        # Temporarily enable if we are testing from CLI
+        old_webhook_enabled = WEBHOOK_ENABLED
+        WEBHOOK_ENABLED = True
+
+        if send_webhook("instagram_monitor: test webhook", "This is test webhook - your settings seems to be correct !", color=0x7289DA) == 0:
+            print("* Webhook sent successfully !")
+        else:
+            print("* Error: Test webhook notification failed. Check the error message above.")
+            sys.exit(1)
+
+        WEBHOOK_ENABLED = old_webhook_enabled
         sys.exit(0)
 
     # Resolve targets: CLI (positional + --targets) > config TARGET_USERNAMES
@@ -3966,9 +6825,33 @@ def main():
         if u not in seen:
             seen.add(u)
             normalized.append(u)
-    targets = normalized
+    targets = sorted(normalized)
+    DASHBOARD_DATA['targets_list'] = targets
 
-    if not targets:
+
+    # Terminal Dashboard handling
+    if getattr(args, 'dashboard', None) is True:
+        DASHBOARD_ENABLED = True
+
+    if args.disable_dashboard is True:
+        DASHBOARD_ENABLED = False
+
+    # Web Dashboard handling
+    if args.web_dashboard is True:
+        WEB_DASHBOARD_ENABLED = True
+
+    if args.no_web_dashboard is True:
+        WEB_DASHBOARD_ENABLED = False
+
+    if args.web_dashboard_port:
+        WEB_DASHBOARD_PORT = args.web_dashboard_port
+
+    if args.web_dashboard_template_dir:
+        # Resolve to absolute path immediately
+        WEB_DASHBOARD_TEMPLATE_DIR = os.path.abspath(os.path.expanduser(args.web_dashboard_template_dir))
+
+    # Allow empty targets if web dashboard is enabled
+    if not targets and not WEB_DASHBOARD_ENABLED:
         print("* Error: At least one TARGET_USERNAME argument is required !")
         parser.print_help()
         sys.exit(1)
@@ -3996,6 +6879,8 @@ def main():
 
     if args.enable_jitter is True:
         ENABLE_JITTER = True
+
+
 
     if args.check_interval:
         if args.check_interval <= 0:
@@ -4055,88 +6940,49 @@ def main():
         except Exception:
             pass
 
+    # Print version header after arguments are parsed and DASHBOARD_ENABLED is set
+    if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+        print(f"Instagram Monitoring Tool v{VERSION}\n")
+
     if args.csv_file:
         CSV_FILE = os.path.expanduser(args.csv_file)
     else:
         if CSV_FILE:
             CSV_FILE = os.path.expanduser(CSV_FILE)
 
-    # CSV per-user handling:
-    # - single target: keep existing behavior (use CSV_FILE as-is)
-    # - multi target: create one CSV per user based on CSV_FILE prefix, e.g. instagram_data.csv -> instagram_data_user.csv
-    csv_files_by_user: dict = {}
-    if CSV_FILE and len(targets) == 1:
-        try:
-            with open(CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
-                pass
-        except Exception as e:
-            print(f"* Error, CSV file cannot be opened for writing: {e}")
-            sys.exit(1)
-        csv_files_by_user[targets[0]] = CSV_FILE
-    elif CSV_FILE and len(targets) > 1:
-        base_path = Path(CSV_FILE)
-        base_suffix = base_path.suffix if base_path.suffix else ".csv"
-        for u in targets:
-            per_user = str(base_path.with_name(f"{base_path.stem}_{u}{base_suffix}"))
-            try:
-                with open(per_user, 'a', newline='', buffering=1, encoding="utf-8") as _:
-                    pass
-            except Exception as e:
-                print(f"* Error, CSV file cannot be opened for writing ({u}): {e}")
-                sys.exit(1)
-            csv_files_by_user[u] = per_user
-
     if args.disable_logging is True:
         DISABLE_LOGGING = True
 
-    # Decide output log suffix
-    if len(targets) == 1:
-        log_suffix = targets[0]
-    else:
-        # Join sorted usernames (human readable, deterministic)
-        joined = "_".join(sorted(targets))
-        joined = joined.replace(os.sep, "_").replace(" ", "_")
-        # Keep filenames at a reasonable length, add a short hash only if we had to truncate
-        if len(joined) > 140:
-            h = hashlib.md5(joined.encode("utf-8")).hexdigest()[:8]
-            joined = joined[:140] + "_" + h
-        log_suffix = joined
-
+    # Initialize Logger
     if not DISABLE_LOGGING:
-        log_path = Path(os.path.expanduser(INSTA_LOGFILE))
+        sys.stdout = Logger()  # type: ignore[assignment]
 
-        if OUTPUT_DIR:
-            out_path = Path(os.path.expanduser(OUTPUT_DIR))
-            logs_dir = out_path / "logs"
-            logs_dir.mkdir(parents=True, exist_ok=True)
+    # Resolve CSV and Log paths for each target
+    csv_files_by_user: dict = {}
+    for u in targets:
+        target_csv, target_log = get_target_paths(u)
 
-            # Construct log filename
-            if log_path.name:
-                log_filename = log_path.name
-            else:
-                log_filename = "instagram_monitor"
+        if target_csv:
+            csv_files_by_user[u] = target_csv
+            # Pre-create/verify CSV
+            try:
+                init_csv_file(target_csv)
+            except Exception as e:
+                print(f"* Error: CSV file cannot be opened for writing ({u}): {e}")
+                sys.exit(1)
 
-            if not log_filename.endswith(".log"):
-                log_filename += ".log"
+        if target_log:
+            # Register in Logger
+            if isinstance(sys.stdout, Logger):
+                sys.stdout.add_target_log(u, target_log)
 
-            # Append suffix if needed
-            if log_path.suffix == "":
-                log_path = logs_dir / f"{Path(log_filename).stem}_{log_suffix}.log"
-            else:
-                log_path = logs_dir / f"{Path(log_filename).stem}_{log_suffix}{log_path.suffix}"
-
+    # For display in summary screen
+    if not DISABLE_LOGGING:
+        if len(targets) == 1:
+            _, final_log = get_target_paths(targets[0])
+            FINAL_LOG_PATH = final_log
         else:
-            # Default behavior
-            if log_path.parent != Path('.'):
-                if log_path.suffix == "":
-                    log_path = log_path.parent / f"{log_path.name}_{log_suffix}.log"
-            else:
-                if log_path.suffix == "":
-                    log_path = Path(f"{log_path.name}_{log_suffix}.log")
-
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        FINAL_LOG_PATH = str(log_path)
-        sys.stdout = Logger(FINAL_LOG_PATH)
+            FINAL_LOG_PATH = "per-target files"
     else:
         FINAL_LOG_PATH = None
 
@@ -4157,18 +7003,8 @@ def main():
         FOLLOWERS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
 
+    # Print summary screen (will be suppressed from terminal by Logger when dashboard is active, but still logged to files)
     print(f"* Instagram polling interval:\t\t[ {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)} ]")
-    print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
-    print(f"* Mode of the tool:\t\t\t{mode_of_the_tool}")
-    print(f"* Human mode:\t\t\t\t{BE_HUMAN}")
-    print(f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}")
-    print(f"* Skip session login:\t\t\t{SKIP_SESSION}")
-    print(f"* Skip fetching followers:\t\t{SKIP_FOLLOWERS}")
-    print(f"* Skip fetching followings:\t\t{SKIP_FOLLOWINGS}")
-    print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
-    print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
-    print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
-
     hours_ranges_str = ""
     if CHECK_POSTS_IN_HOURS_RANGE:
         ranges = []
@@ -4184,11 +7020,41 @@ def main():
     else:
         hours_ranges_str = "00:00 - 23:59"
     print("* Hours for fetching updates:\t\t" + hours_ranges_str)
-
+    print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
+    print(f"* Session Mode:\t\t\t\t{mode_of_the_tool}")
+    print(f"* Human mode:\t\t\t\t{BE_HUMAN}")
+    print(f"* Skip session login:\t\t\t{SKIP_SESSION}")
+    print(f"* Skip fetching followers:\t\t{SKIP_FOLLOWERS}")
+    print(f"* Skip fetching followings:\t\t{SKIP_FOLLOWINGS}")
+    print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
+    print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
+    print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
+    print(f"* Detailed follower logging:\t\t{DETAILED_FOLLOWER_LOGGING}")
     print(f"* Browser user agent:\t\t\t{USER_AGENT}")
     print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
     print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
     print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
+    print(f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}")
+    print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
+    print(f"* Empty profile pic template:\t\t{profile_pic_file_exists}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""))
+    # Dashboard status
+    dashboard_status = DASHBOARD_ENABLED and RICH_AVAILABLE
+    dashboard_reason = ""
+    if not dashboard_status:
+        if not RICH_AVAILABLE:
+            dashboard_reason = " (missing rich)"
+        elif not DASHBOARD_ENABLED:
+            dashboard_reason = " (disabled)"
+    print(f"* Dashboard:\t\t\t\t{dashboard_status}{dashboard_reason}")
+    # Web Dashboard status
+    web_dashboard_status = WEB_DASHBOARD_ENABLED and FLASK_AVAILABLE
+    web_dashboard_reason = ""
+    if not web_dashboard_status:
+        if not WEB_DASHBOARD_ENABLED:
+            web_dashboard_reason = " (disabled)"
+        elif not FLASK_AVAILABLE:
+            web_dashboard_reason = " (missing Flask)"
+    print(f"* Web Dashboard:\t\t\t{web_dashboard_status}{web_dashboard_reason}")
     if len(targets) == 1:
         print(f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     else:
@@ -4196,22 +7062,109 @@ def main():
             print(f"* CSV logging enabled:\t\t\tTrue (per-user files, base: {CSV_FILE})")
         else:
             print(f"* CSV logging enabled:\t\t\tFalse")
-    print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
-    print(f"* Empty profile pic template:\t\t{profile_pic_file_exists}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""))
     print(f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
-    print(f"* Configuration file:\t\t\t{cfg_path}")
-    print(f"* Dotenv file:\t\t\t\t{env_path or 'None'}")
     if OUTPUT_DIR:
         output_dir_desc = "(root for user data & logs)" if len(targets) == 1 else "(container for per-user subdirectories & logs)"
         print(f"* Output directory:\t\t\t{OUTPUT_DIR} {output_dir_desc}")
+    else:
+        print(f"* Output directory:\t\t\t{os.getcwd()} (current working directory)")
+    print(f"* Configuration file:\t\t\t{cfg_path}")
+    print(f"* Dotenv file:\t\t\t\t{env_path or 'None'}")
+    if WEB_DASHBOARD_ENABLED:
+        print(f"* Web Dashboard templates:\t\t{WEB_DASHBOARD_TEMPLATE_DIR or 'Auto-detect'}")
+    print(f"* Webhook notifications:\t\t{WEBHOOK_ENABLED}" + (f" ({WEBHOOK_URL[:50]}...)" if WEBHOOK_ENABLED and WEBHOOK_URL and len(WEBHOOK_URL) > 50 else (f" ({WEBHOOK_URL})" if WEBHOOK_ENABLED and WEBHOOK_URL else "")))
+    if WEBHOOK_ENABLED:
+        print(f"*   Webhook on status/profile changes:\t{WEBHOOK_STATUS_NOTIFICATION}")
+        print(f"*   Webhook on follow changes:\t\t{WEBHOOK_FOLLOWERS_NOTIFICATION}")
+        print(f"*   Webhook on errors:\t\t\t{WEBHOOK_ERROR_NOTIFICATION}")
+    print(f"* Verbose mode:\t\t\t\t{VERBOSE_MODE}")
+    print(f"* Debug mode:\t\t\t\t{DEBUG_MODE}")
+
     print(f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}")
 
-    if len(targets) == 1:
-        out = f"\nMonitoring Instagram user {targets[0]}"
-    else:
-        out = f"\nMonitoring Instagram users ({len(targets)}): {', '.join(targets)}"
-    print(out)
-    print("─" * len(out))
+    # More visible warnings if requested features are missing (still only printed to terminal when dashboard is not active)
+    if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+        if DASHBOARD_ENABLED and not RICH_AVAILABLE:
+            print("\n" + "*" * HORIZONTAL_LINE)
+            print("* WARNING: Terminal Dashboard is enabled, but 'rich' library is missing!")
+            print("* To fix this, please run: pip install rich")
+            print("* Reverting to original text console...")
+            print("*" * HORIZONTAL_LINE)
+            DASHBOARD_ENABLED = False
+
+        if WEB_DASHBOARD_ENABLED and not FLASK_AVAILABLE:
+            print("\n" + "*" * HORIZONTAL_LINE)
+            print("* WARNING: Web Dashboard is enabled, but 'Flask' library is missing!")
+            print("* To fix this, please run: pip install flask")
+            print("* Web Dashboard will NOT be available!")
+            print("*" * HORIZONTAL_LINE)
+
+    # Initialize Rich console if available and enabled (can work alongside web dashboard)
+    if (RICH_AVAILABLE and DASHBOARD_ENABLED) or WEB_DASHBOARD_ENABLED:
+        debug_print("Initializing dashboard data...")
+
+        # Initial config data population for dashboard
+        DASHBOARD_DATA['config'] = get_dashboard_config_data(
+            final_log_path=FINAL_LOG_PATH,
+            imgcat_exe=imgcat_exe,
+            profile_pic_file_exists=profile_pic_file_exists,
+            cfg_path=cfg_path,
+            env_path=env_path,
+            check_interval_low=check_interval_low,
+            targets=targets
+        )
+        DASHBOARD_DATA['targets_list'] = targets
+
+        if WEB_DASHBOARD_ENABLED:
+            update_web_dashboard_data(config=DASHBOARD_DATA['config'])
+
+    if RICH_AVAILABLE and DASHBOARD_ENABLED:  # type: ignore[name-defined]
+        assert Console is not None
+        DASHBOARD_CONSOLE = Console(file=stdout_bck)
+        DASHBOARD_DATA['start_time'] = datetime.now()
+        DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
+
+    # Start web dashboard server if enabled (before monitoring starts to avoid message interleaving)
+    if WEB_DASHBOARD_ENABLED:  # type: ignore[name-defined]
+        WEB_DASHBOARD_DATA['start_time'] = datetime.now()
+        WEB_DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
+
+        # Pre-populate both terminal and web dashboard targets from CLI targets
+        target_initial_state = {
+            u: {
+                'followers': None,
+                'following': None,
+                'posts': None,
+                'reels': None,
+                'status': 'Pending',
+                'added': datetime.now().strftime('%Y-%m-%d %H:%M'),
+                'last_checked': None
+            } for u in targets
+        }
+
+        with DASHBOARD_DATA_LOCK:  # type: ignore
+            if 'targets' not in DASHBOARD_DATA:
+                DASHBOARD_DATA['targets'] = {}
+            for u, data in target_initial_state.items():
+                if u not in DASHBOARD_DATA['targets']:
+                    DASHBOARD_DATA['targets'][u] = data.copy()
+
+        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+            for u, data in target_initial_state.items():
+                if u not in WEB_DASHBOARD_DATA['targets']:
+                    WEB_DASHBOARD_DATA['targets'][u] = data.copy()
+
+        start_web_dashboard_server()
+
+    # Start Dashboard input handler for mode toggle (and debug commands if debug mode)
+    # Works for both Dashboard and Web Dashboard
+    start_dashboard_input_handler()
+
+    # Initialize Dashboard Live display if enabled
+    if RICH_AVAILABLE and DASHBOARD_ENABLED and DASHBOARD_CONSOLE is not None:
+        init_dashboard()
+        # Show initial Dashboard immediately
+        update_dashboard()
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
     if platform.system() != 'Windows':
@@ -4221,9 +7174,45 @@ def main():
         signal.signal(signal.SIGABRT, decrease_check_signal_handler)
         signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
 
+    # Print monitoring message after all setup is complete
+    # Note: If Dashboard is enabled, this will be shown in the dashboard instead
+    if targets:
+        if len(targets) == 1:
+            out = f"\nMonitoring Instagram user {targets[0]}"
+        else:
+            out = f"\nMonitoring Instagram users ({len(targets)}): {', '.join(targets)}"
+        print(out)
+        print("─" * len(out))
+
     # Multi-target mode: run multiple monitors in one process, with configurable staggering
-    if len(targets) == 1:
-        instagram_monitor_user(targets[0], csv_files_by_user.get(targets[0], CSV_FILE), SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, user_root_path=OUTPUT_DIR)
+    if len(targets) == 0:
+        print("\n" + "═" * 80)
+        print("     INSTAGRAM MONITOR - WEB DASHBOARD MODE")
+        print("═" * 80)
+        print(f"\n* Status: Waiting for targets...")
+        print(f"* Web UI: http://{WEB_DASHBOARD_HOST}:{WEB_DASHBOARD_PORT}/")
+        print("\n* Info: No initial targets specified on command line.")
+        print("  Please open the Web UI above to manually add Instagram users for monitoring.")
+        print("  You can also configure sessions and settings directly from the dashboard.")
+        print("\n" + "─" * 80)
+        print("Press Ctrl+C to exit\n")
+
+        # We need to keep the main thread alive.
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            # Cleanly stop any monitors started via Web UI
+            for u in list(WEB_DASHBOARD_STOP_EVENTS.keys()):
+                stop_monitoring_for_target(u)
+            sys.exit(0)
+    elif len(targets) == 1:
+        # Integrated Mode Stop Event registration
+        stop_event = threading.Event()
+        if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
+            WEB_DASHBOARD_STOP_EVENTS[targets[0]] = stop_event
+
+        instagram_monitor_user(targets[0], csv_files_by_user.get(targets[0], CSV_FILE), SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, user_root_path=OUTPUT_DIR, stop_event=stop_event)
     else:
         stagger = args.targets_stagger if args.targets_stagger is not None else MULTI_TARGET_STAGGER
         jitter = args.targets_stagger_jitter if args.targets_stagger_jitter is not None else MULTI_TARGET_STAGGER_JITTER
@@ -4243,15 +7232,16 @@ def main():
 
         now = now_local_naive()
         print(f"* Multi-target staggering:\t\t{display_time(stagger)} between targets (jitter: {display_time(jitter)})")
-        print("* Planned first poll times:")
+        print("\n* Planned first poll times (processed alphabetically):")
         for idx, u in enumerate(targets):
             base_delay = idx * stagger
             add_jitter = int(random.uniform(0, jitter)) if jitter else 0
             delay = base_delay + add_jitter
             planned = now + timedelta(seconds=delay)
             print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
+            debug_print(f"Target {u} scheduled with delay_s={delay}")
 
-        print("─" * HORIZONTAL_LINE)
+        print_cur_ts("\nTimestamp:\t\t\t\t")
 
         # Create events to coordinate initial loading between users.
         # We create N+1 events: event[i] means "user i finished initial load".
@@ -4259,12 +7249,45 @@ def main():
         loading_events = [threading.Event() for _ in range(len(targets) + 1)]
         loading_events[0].set()  # allow the first user to start immediately
 
-        def _runner(u: str, delay_s: int, idx: int):
+        def _runner(u: str, delay_s: int, idx: int, stop_event: Optional[threading.Event] = None):
+            global WEB_DASHBOARD_RECHECK_EVENTS, WEB_DASHBOARD_MONITOR_THREADS
+            _thread_local.user = u  # Set user context for debug_print
             try:
+                # Register recheck event and thread early for dashboard visibility/control
+                recheck_event = threading.Event()
+                if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
+                    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                        WEB_DASHBOARD_RECHECK_EVENTS[u] = recheck_event
+                        WEB_DASHBOARD_MONITOR_THREADS[u] = threading.current_thread()
+
+                manual_startup_recheck = False
                 if delay_s > 0:
-                    time.sleep(delay_s)
+                    # Interruptible wait for staggering
+                    sleep_remaining = delay_s
+                    while sleep_remaining > 0:
+                        if stop_event and stop_event.is_set():
+                            return
+                        if recheck_event.is_set():
+                            recheck_event.clear()
+                            print(f"* Staggered start interrupted for {u} by recheck request!")
+                            print_cur_ts("\nTimestamp:\t\t\t\t")
+                            manual_startup_recheck = True
+                            break
+
+                        wait_chunk = min(1, sleep_remaining)
+                        if stop_event:
+                            stop_event.wait(wait_chunk)
+                        else:
+                            time.sleep(wait_chunk)
+                        sleep_remaining -= wait_chunk
+                    if not manual_startup_recheck:
+                        debug_print("Staggered start delay expired")
+
                 # Wait for previous user's loading to complete
                 wait_event = loading_events[idx]
+                if not wait_event.is_set():
+                    debug_print(f"Target {u} waiting for previous user's initial load...")
+
                 # Signal when this user's loading is complete
                 signal_event = loading_events[idx + 1]
 
@@ -4286,29 +7309,91 @@ def main():
                     GET_MORE_POST_DETAILS,
                     wait_for_prev_user=wait_event,
                     signal_loading_complete=signal_event,
-                    user_root_path=user_root
+                    user_root_path=user_root,
+                    stop_event=stop_event,
+                    manual_recheck=manual_startup_recheck
                 )
             except Exception as e:
                 # Surface thread exceptions so the user sees them
-                print(f"* Error in target '{u}': {type(e).__name__}: {e}")
+                error_msg = format_error_message(e)
+                print(f"* Error in target '{u}': {error_msg}")
                 traceback.print_exc()
                 # Still signal completion even on error, so next user can proceed
                 loading_events[idx + 1].set()
+            finally:
+                with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                    if u in WEB_DASHBOARD_RECHECK_EVENTS:
+                        del WEB_DASHBOARD_RECHECK_EVENTS[u]
 
         threads = []
         for idx, u in enumerate(targets):
             base_delay = idx * stagger
             add_jitter = int(random.uniform(0, jitter)) if jitter else 0
             delay = base_delay + add_jitter
-            t = threading.Thread(target=_runner, args=(u, delay, idx), name=f"instagram_monitor:{u}", daemon=True)
+            stop_event = threading.Event()
+            if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
+                WEB_DASHBOARD_STOP_EVENTS[u] = stop_event
+
+            t = threading.Thread(target=_runner, args=(u, delay, idx, stop_event), name=f"instagram_monitor:{u}", daemon=True)
             t.start()
             threads.append(t)
 
         for t in threads:
             t.join()
 
+    if WEB_DASHBOARD_ENABLED:
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            # Cleanly stop any monitors started via Web UI
+            for u in list(WEB_DASHBOARD_STOP_EVENTS.keys()):
+                stop_monitoring_for_target(u)
+            sys.exit(0)
+
     sys.stdout = stdout_bck
     sys.exit(0)
+
+
+def main():
+    try:
+        run_main()
+    except KeyboardInterrupt:
+        # Clean exit on Ctrl+C (though run_main() handles this mostly)
+        if DASHBOARD_LIVE:
+            DASHBOARD_LIVE.stop()
+        sys.exit(0)
+    except Exception as e:
+        # Critical error handling
+        error_trace = traceback.format_exc()
+
+        # Stop Terminal Dashboard so we can see the error
+        if DASHBOARD_LIVE:
+            DASHBOARD_LIVE.stop()
+
+        # Force restore stdout/stderr to ensure visibility (bypassing Logger suppression)
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
+
+        # Print error to console
+        print("\n" + "*" * 80)
+        print("CRITICAL ERROR ENCOUNTERED")
+        print("*" * 80)
+        print(f"\n{error_trace}")
+        print("*" * 80 + "\n")
+
+        # Propagate to Web Dashboard if enabled
+        if WEB_DASHBOARD_ENABLED:
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                WEB_DASHBOARD_DATA['error'] = {
+                    'message': str(e),
+                    'traceback': error_trace,
+                    'timestamp': time.time()
+                }
+
+            print("The Web Dashboard may have disconnected due to this error.")
+
+        sys.exit(1)
 
 
 if __name__ == "__main__":

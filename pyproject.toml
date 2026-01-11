@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "instagram_monitor"
-version = "2.0.4"
+version = "2.1"
 description = "Tool implementing real-time tracking of Instagram users activities and profile changes"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -19,6 +19,8 @@ dependencies = [
   "tzlocal>=4.0",
   "python-dotenv>=0.19",
   "tqdm>=4.0",
+  "flask>=2.0",
+  "rich>=12.0",
 ]
 classifiers = [
   "Programming Language :: Python :: 3",
