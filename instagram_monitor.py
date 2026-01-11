@@ -360,6 +360,7 @@ DISCORD_EMBED_TITLE_LIMIT = 256
 DISCORD_MAX_FIELDS = 25
 
 # Enable webhook notifications (Discord-compatible)
+# Can also be enabled via the --webhook flag
 WEBHOOK_ENABLED = False
 
 # Webhook URL (Discord webhook URL or compatible endpoint)
@@ -379,6 +380,7 @@ WEBHOOK_STATUS_NOTIFICATION = True
 WEBHOOK_FOLLOWERS_NOTIFICATION = True
 
 # Send webhook on errors
+# Can also be enabled via the --webhook-errors flag
 WEBHOOK_ERROR_NOTIFICATION = False
 """
 
@@ -1875,7 +1877,7 @@ def send_follower_change_webhook(user, change_type, old_count, new_count, added_
 
 
 # Sends webhook notification (Discord-compatible)
-def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, notification_type="status"):
+def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status"):
     if not WEBHOOK_ENABLED or not WEBHOOK_URL:
         return 1
 
@@ -1914,6 +1916,10 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
 
         if image_url:
             embed["image"] = {"url": image_url}
+        elif local_image_file and os.path.isfile(local_image_file):
+            # If using local file, use attachment:// syntax
+            filename = os.path.basename(local_image_file)
+            embed["image"] = {"url": f"attachment://{filename}"}
 
         payload: dict = {
             "embeds": [embed]
@@ -1925,15 +1931,28 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         if WEBHOOK_AVATAR_URL:
             payload["avatar_url"] = WEBHOOK_AVATAR_URL
 
-        response = req.post(
-            WEBHOOK_URL,
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=10
-        )
+        if local_image_file and os.path.isfile(local_image_file):
+            filename = os.path.basename(local_image_file)
+            with open(local_image_file, 'rb') as f:
+                files = {
+                    "file": (filename, f, "image/jpeg"),
+                    "payload_json": (None, json.dumps(payload))
+                }
+                response = req.post(
+                    WEBHOOK_URL,
+                    files=files,
+                    timeout=10
+                )
+        else:
+            response = req.post(
+                WEBHOOK_URL,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=10
+            )
 
         if response.status_code in (200, 204):
-            debug_print("* Webhook notification sent successfully")
+            print("* Webhook notification sent successfully")
             return 0
         else:
             print(f"* Webhook error: HTTP {response.status_code} - {response.text[:200]}")
@@ -2395,7 +2414,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
             print(f"* Error saving profile picture !{new_line}")
 
         if func_ver == 2:
-            print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+            print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
             print_cur_ts("Timestamp:\t\t\t\t")
         else:
             print_cur_ts("\nTimestamp:\t\t\t\t")
@@ -2432,6 +2451,14 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                         m_body = f"Instagram user {user} has removed profile picture added on {profile_pic_mdate} (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                         m_body_html = f"Instagram user {user} has removed profile picture added on <b>{profile_pic_mdate}</b> (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})<br><br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
+                    # Send webhook notification for profile picture removal
+                    send_webhook(
+                        f"🖼️ {user} Profile Picture Removed",
+                        f"User **{user}** has removed their profile picture (was set on {profile_pic_mdate})",
+                        color=0xe74c3c,  # Red
+                        notification_type="status"
+                    )
+
                 # User has set profile picture
                 elif is_empty_profile_pic and not is_empty_profile_pic_tmp:
                     print(f"* User {user} has set profile picture !")
@@ -2447,6 +2474,15 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                         m_body = f"Instagram user {user} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                         m_body_html = f"Instagram user <b>{user}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
+                    # Send webhook notification for profile picture set
+                    send_webhook(
+                        f"🖼️ {user} Profile Picture Set",
+                        f"User **{user}** has set a new profile picture",
+                        color=0x2ecc71,  # Green
+                        local_image_file=profile_pic_file_tmp,
+                        notification_type="status"
+                    )
+
                 # User has changed profile picture
                 elif not is_empty_profile_pic_tmp and not is_empty_profile_pic:
                     print(f"* User {user} has changed profile picture ! (previous one added on {profile_pic_mdate} - {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)")
@@ -2460,6 +2496,15 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
 
                         m_body = f"Instagram user {user} has changed profile picture !\n\nPrevious one added on {profile_pic_mdate} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                         m_body_html = f"Instagram user <b>{user}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{profile_pic_mdate}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+
+                    # Send webhook notification for profile picture change
+                    send_webhook(
+                        f"🖼️ {user} Profile Picture Changed",
+                        f"User **{user}** has changed their profile picture",
+                        color=0x3498db,  # Blue
+                        local_image_file=profile_pic_file_tmp,
+                        notification_type="status"
+                    )
 
                 try:
                     if csv_file_name:
@@ -2490,7 +2535,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     print(f"* Error while replacing/copying files: {e}")
 
                 if send_email_notification and m_subject and m_body:
-                    print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+                    print(f"Sending email notification to {RECEIVER_EMAIL}")
                     if not m_body_html:
                         send_email(m_subject, m_body, "", SMTP_SSL)
                     else:
@@ -2500,7 +2545,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                             send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
                 if func_ver == 2:
-                    print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                    print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                     print_cur_ts("Timestamp:\t\t\t\t")
 
             else:
@@ -2524,7 +2569,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
         else:
             print(f"* Error while checking if the profile picture has changed !")
             if func_ver == 2:
-                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
         if func_ver == 1:
             print_cur_ts("\nTimestamp:\t\t\t\t")
@@ -2649,10 +2694,20 @@ def check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
             m_subject = f"Instagram user {user} posts number has changed! ({posts_count_old} -> {posts_count})"
 
             m_body = f"Posts number changed for user {user} from {posts_count_old} to {posts_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-            print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+            print(f"Sending email notification to {RECEIVER_EMAIL}")
             send_email(m_subject, m_body, "", SMTP_SSL)
 
-        print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+        # Send webhook notification for posts count change
+        diff = posts_count - posts_count_old
+        diff_str = f"+{diff}" if diff > 0 else str(diff)
+        send_webhook(
+            f"📮 {user} Posts Count Changed",
+            f"User **{user}** posts count changed from {posts_count_old} to {posts_count} ({diff_str})",
+            color=0x34495e,  # Dark Blue
+            notification_type="status"
+        )
+
+        print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
         print_cur_ts("Timestamp:\t\t\t\t")
         return 1
     else:
@@ -2669,10 +2724,20 @@ def check_reels_counts(user, reels_count, reels_count_old, r_sleep_time):
             m_subject = f"Instagram user {user} reels number has changed! ({reels_count_old} -> {reels_count})"
 
             m_body = f"Reels number changed for user {user} from {reels_count_old} to {reels_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-            print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+            print(f"Sending email notification to {RECEIVER_EMAIL}")
             send_email(m_subject, m_body, "", SMTP_SSL)
 
-        print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+        # Send webhook notification for reels count change
+        diff = reels_count - reels_count_old
+        diff_str = f"+{diff}" if diff > 0 else str(diff)
+        send_webhook(
+            f"🎬 {user} Reels Count Changed",
+            f"User **{user}** reels count changed from {reels_count_old} to {reels_count} ({diff_str})",
+            color=0x34495e,  # Dark Blue
+            notification_type="status"
+        )
+
+        print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
         print_cur_ts("Timestamp:\t\t\t\t")
         return 1
     else:
@@ -5224,7 +5289,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         send_email(m_subject, m_body, "", SMTP_SSL)
                         email_sent = True
 
-                print_cur_ts("Timestamp:\t\t\t\t")
+                    # Send webhook notification for session error
+                    send_webhook(
+                        "⚠️ Session Error",
+                        f"Session might not be valid anymore.\n\nTarget: **{user}**\nError: `{e}`",
+                        color=0x1f1f1f,  # Dark/Black
+                        notification_type="error"
+                    )
+
+                print_cur_ts("\nTimestamp:\t\t\t\t")
                 time.sleep(r_sleep_time)
                 continue
 
@@ -5239,7 +5312,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
                     email_sent = True
-                print_cur_ts("Timestamp:\t\t\t\t")
+
+                # Send webhook notification for session error (redirect)
+                send_webhook(
+                    "⚠️ Session Error (Redirect)",
+                    f"Session might not be valid anymore (HTTP redirect).\n\nTarget: **{user}**",
+                    color=0x1f1f1f,  # Dark/Black
+                    notification_type="error"
+                )
+                print_cur_ts("\nTimestamp:\t\t\t\t")
                 time.sleep(r_sleep_time)
                 continue
 
@@ -5338,7 +5419,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     else:
 
                         m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+                    print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
                 # Send webhook notification for followings change
@@ -5351,7 +5432,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 followings_old_count = followings_count
 
-                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
 
             if followers_count != followers_old_count:
@@ -5448,7 +5529,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                     else:
                         m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+                    print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
                 # Send webhook notification for followers change
@@ -5461,7 +5542,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 followers_old_count = followers_count
 
-                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
 
             # Profile pic
@@ -5489,7 +5570,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     m_subject = f"Instagram user {user} bio has changed!"
 
                     m_body = f"Instagram user {user} bio has changed\n\nOld bio:\n\n{bio_old}\n\nNew bio:\n\n{bio}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+                    print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
                 # Send webhook notification for bio change
@@ -5507,7 +5588,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     print(f"* Warning: Webhook notification for bio change failed")
 
                 bio_old = bio
-                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
 
             if is_private != is_private_old:
@@ -5532,7 +5613,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     m_subject = f"Instagram user {user} profile visibility has changed to {profile_visibility} !"
 
                     m_body = f"Instagram user {user} profile visibility has changed to {profile_visibility}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+                    print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
                 # Send webhook notification for visibility change
@@ -5551,7 +5632,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     print(f"* Warning: Webhook notification for visibility change failed")
 
                 is_private_old = is_private
-                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
 
             if followed_by_viewer != followed_by_viewer_old:
@@ -5568,11 +5649,20 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     m_subject = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user} !"
 
                     m_body = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}\n")
+                    print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
+                # Send webhook notification for following status change
+                emoji = "✅" if followed_by_viewer else "❌"
+                send_webhook(
+                    f"{emoji} {user} Following Status Changed",
+                    f"Your account {'started following' if followed_by_viewer else 'stopped following'} **{user}**",
+                    color=0x95a5a6,  # Gray
+                    notification_type="status"
+                )
+
                 followed_by_viewer_old = followed_by_viewer
-                print(f"Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
 
             if has_story and not story_flag:
@@ -6467,6 +6557,20 @@ def run_main():
     # Webhook options
     webhook_grp = parser.add_argument_group("Webhook notifications")
     webhook_grp.add_argument(
+        "--webhook",
+        dest="webhook_enabled",
+        action="store_true",
+        default=None,
+        help="Enable webhook notifications (default: enabled if --webhook-url is set)"
+    )
+    webhook_grp.add_argument(
+        "--no-webhook",
+        dest="no_webhook",
+        action="store_true",
+        default=None,
+        help="Disable webhook notifications"
+    )
+    webhook_grp.add_argument(
         "--webhook-url",
         dest="webhook_url",
         metavar="URL",
@@ -6493,6 +6597,12 @@ def run_main():
         action="store_true",
         default=None,
         help="Send webhook on errors"
+    )
+    webhook_grp.add_argument(
+        "--send-test-webhook",
+        dest="send_test_webhook",
+        action="store_true",
+        help="Send test webhook notification to verify settings"
     )
 
     # Firefox session import options
@@ -6627,12 +6737,65 @@ def run_main():
     if not check_internet():
         sys.exit(1)
 
+    # Handle new debug, dashboard, and webhook arguments
+    if args.debug_mode is True:
+        DEBUG_MODE = True
+
+    if args.verbose_mode is True:
+        VERBOSE_MODE = True
+
+    if args.detailed_follower_logging is True:
+        DETAILED_FOLLOWER_LOGGING = True
+
+    # Webhook configuration
+    if args.webhook_url:
+        if not validate_webhook_url(args.webhook_url):
+            print(f"* Error: Invalid webhook URL format. Must be HTTPS URL.")
+            sys.exit(1)
+        WEBHOOK_URL = args.webhook_url
+        WEBHOOK_ENABLED = True
+
+    if args.webhook_enabled is True:
+        WEBHOOK_ENABLED = True
+
+    if args.no_webhook is True:
+        WEBHOOK_ENABLED = False
+
+    if args.webhook_status is True:
+        WEBHOOK_STATUS_NOTIFICATION = True
+
+    if args.webhook_followers is True:
+        WEBHOOK_FOLLOWERS_NOTIFICATION = True
+
+    if args.webhook_errors is True:
+        WEBHOOK_ERROR_NOTIFICATION = True
+
     if args.send_test_email:
         print("* Sending test email notification ...\n")
         if send_email("instagram_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL, smtp_timeout=5) == 0:
             print("* Email sent successfully !")
         else:
             sys.exit(1)
+        sys.exit(0)
+
+    if args.send_test_webhook:
+        print("* Sending test webhook notification ...")
+        # Ensure we have a URL for the test
+        if not WEBHOOK_URL:
+            print("* Error: WEBHOOK_URL is not set. Use --webhook-url or set it in the config file.")
+            sys.exit(1)
+
+        # Temporarily enable if we are testing from CLI
+        old_webhook_enabled = WEBHOOK_ENABLED
+        WEBHOOK_ENABLED = True
+
+        if send_webhook("instagram_monitor: test webhook", "This is test webhook - your settings seems to be correct !", color=0x7289DA) == 0:
+            print("* Webhook sent successfully !")
+        else:
+            print("* Error: Test webhook notification failed. Check the error message above.")
+            sys.exit(1)
+
+        WEBHOOK_ENABLED = old_webhook_enabled
         sys.exit(0)
 
     # Resolve targets: CLI (positional + --targets) > config TARGET_USERNAMES
@@ -6713,32 +6876,7 @@ def run_main():
     if args.enable_jitter is True:
         ENABLE_JITTER = True
 
-    # Handle new debug, dashboard, and webhook arguments
-    if args.debug_mode is True:
-        DEBUG_MODE = True
 
-    if args.verbose_mode is True:
-        VERBOSE_MODE = True
-
-    if args.detailed_follower_logging is True:
-        DETAILED_FOLLOWER_LOGGING = True
-
-    # Webhook configuration
-    if args.webhook_url:
-        if not validate_webhook_url(args.webhook_url):
-            print(f"* Error: Invalid webhook URL format. Must be HTTPS URL.")
-            sys.exit(1)
-        WEBHOOK_URL = args.webhook_url
-        WEBHOOK_ENABLED = True
-
-    if args.webhook_status is True:
-        WEBHOOK_STATUS_NOTIFICATION = True
-
-    if args.webhook_followers is True:
-        WEBHOOK_FOLLOWERS_NOTIFICATION = True
-
-    if args.webhook_errors is True:
-        WEBHOOK_ERROR_NOTIFICATION = True
 
     if args.check_interval:
         if args.check_interval <= 0:
