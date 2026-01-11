@@ -3838,7 +3838,7 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'liveness_check': f"{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""),
         'csv_logging': csv_status,
         'imgcat': f"{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""),
-        'empty_profile_pic': f"{bool(profile_pic_file_exists)}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if PROFILE_PIC_FILE_EMPTY else ""),
+        'empty_profile_pic': f"{bool(profile_pic_file_exists)}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""),
         'dashboard_status': f"{dashboard_status}{dashboard_reason}",
         'web_dashboard_status': f"{web_dashboard_status}{web_dashboard_reason}",
         'logging_enabled': not DISABLE_LOGGING,

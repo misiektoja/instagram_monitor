@@ -719,6 +719,7 @@
                                 <th class="sortable" onclick="toggleTargetSort()">
                                     Target <span id="sort-indicator-user" class="sort-indicator">▲</span>
                                 </th>
+                                <th>Vis.</th>
                                 <th>Followers</th>
                                 <th>Following</th>
                                 <th>Posts</th>
@@ -780,6 +781,7 @@
                                 <th class="sortable" onclick="toggleTargetSort()">
                                     Target <span id="sort-indicator-config" class="sort-indicator">▲</span>
                                 </th>
+                                <th>Vis.</th>
                                 <th>Followers</th>
                                 <th>Following</th>
                                 <th>Posts</th>
@@ -1405,6 +1407,7 @@
                 { l: 'Get More Posts Details', v: config.get_more_post_details },
                 { l: 'Jitter/Back-off', v: config.enable_jitter },
                 { l: 'Profile Pic Detect', v: config.profile_pic_changes },
+                { l: 'Empty Pic Template', v: config.empty_profile_pic },
                 { l: 'Detailed Logging', v: config.detailed_logging },
                 { l: 'CSV Logging', v: config.csv_logging },
                 { l: 'Human Mode', v: config.human_mode },
@@ -1505,6 +1508,7 @@
                                 </div>
                             </div>
                         </td>
+                        <td>${data.is_private === true ? 'PRI' : (data.is_private === false ? 'PUB' : '-')}</td>
                         <td>${data.followers ?? '-'}</td>
                         <td>${data.following ?? '-'}</td>
                         <td>${data.posts ?? '-'}</td>
@@ -1526,6 +1530,7 @@
                             </div>
                         </div>
                     </td>
+                    <td>${data.is_private === true ? 'PRI' : (data.is_private === false ? 'PUB' : '-')}</td>
                     <td>${data.followers ?? '-'}</td>
                     <td>${data.following ?? '-'}</td>
                     <td>${data.posts ?? '-'}</td>
