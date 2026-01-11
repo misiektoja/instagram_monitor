@@ -994,6 +994,16 @@
 
                 <div class="setting-row">
                     <div class="setting-info">
+                        <h4>Verbose Mode</h4>
+                        <p>Show timing and interval details in console</p>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="verbose-mode">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <div class="setting-info">
                         <h4>Debug Mode</h4>
                         <p>Show verbose output in console</p>
                     </div>
@@ -1418,6 +1428,7 @@
                 { l: 'Output Dir', v: (config.output_dir === '.' || !config.output_dir) ? '-' : config.output_dir },
                 { l: 'Templates', v: config.template_dir },
                 { l: 'Webhook', v: config.webhook_enabled },
+                { l: 'Verbose Mode', v: config.verbose_mode },
                 { l: 'Debug Mode', v: config.debug_mode },
             ];
 
@@ -1652,6 +1663,7 @@
             document.getElementById('webhook-enabled').checked = s.webhook_enabled || false;
             document.getElementById('webhook-url').value = s.webhook_url || '';
             document.getElementById('detailed-logging').checked = s.detailed_logging || false;
+            document.getElementById('verbose-mode').checked = s.verbose_mode || false;
             document.getElementById('debug-mode').checked = s.debug_mode || false;
             if (s.session_username) {
                 document.getElementById('session-username').value = s.session_username;
@@ -1812,6 +1824,7 @@
                 webhook_enabled: document.getElementById('webhook-enabled').checked,
                 webhook_url: document.getElementById('webhook-url').value,
                 detailed_logging: document.getElementById('detailed-logging').checked,
+                verbose_mode: document.getElementById('verbose-mode').checked,
                 debug_mode: document.getElementById('debug-mode').checked
             };
 
