@@ -496,7 +496,6 @@ CHECK_COUNT = 0
 
 # Global state for debug mode manual check trigger (thread-safe Event)
 # Will be initialized after threading is imported
-MANUAL_CHECK_TRIGGERED = None  # type: ignore[assignment]
 DEBUG_INPUT_THREAD = None
 
 # Dashboard components (initialized later)
@@ -719,10 +718,7 @@ def run_flask_quietly(app, host, port, debug=False, use_reloader=False, threaded
             sys.stderr = old_stderr
 
             # Check if this is a port-in-use error
-            is_port_error = (
-                (isinstance(e, OSError) and "Address already in use" in str(e)) or
-                (isinstance(e, SystemExit) and e.code == 1)
-            )
+            is_port_error = ((isinstance(e, OSError) and "Address already in use" in str(e)) or (isinstance(e, SystemExit) and e.code == 1))
 
             if is_port_error:
                 print("*" * HORIZONTAL_LINE)
@@ -898,21 +894,19 @@ def create_web_dashboard_app():
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                 if target in WEB_DASHBOARD_RECHECK_EVENTS:
                     WEB_DASHBOARD_RECHECK_EVENTS[target].set()
-                    msg = f"Recheck triggered for {target}"
+                    msg = f"Recheck triggered"
                     success = True
                 else:
-                    msg = f"Recheck failed: target {target} not running"
+                    msg = f"Recheck failed: target not running"
                     success = False
+            log_activity(msg, user=target)
         else:
             # Trigger all
-            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-                for t_event in WEB_DASHBOARD_RECHECK_EVENTS.values():
-                    t_event.set()
-            MANUAL_CHECK_TRIGGERED.set()  # type: ignore
+            recheck_all_targets()
             msg = "Recheck all triggered"
             success = True
+            log_activity(msg)
 
-        add_web_dashboard_activity(msg)
         return jsonify({'success': success, 'message': msg})  # type: ignore
 
     @app.route('/api/targets', methods=['GET', 'POST'])  # type: ignore[misc]
@@ -942,7 +936,7 @@ def create_web_dashboard_app():
                     'last_checked': None
                 }
 
-            add_web_dashboard_activity(f"Added target: {username}")
+            log_activity(f"Added target", user=username)
 
             # Start monitoring if requested
             if start_now:
@@ -966,7 +960,7 @@ def create_web_dashboard_app():
                 removed = False
 
         if removed:
-            add_web_dashboard_activity(f"Removed target: {username}")
+            log_activity(f"Removed target", user=username)
             return jsonify({'success': True})  # type: ignore
         return jsonify({'success': False, 'error': 'Target not found'}), 404  # type: ignore
 
@@ -979,14 +973,10 @@ def create_web_dashboard_app():
             success = start_monitoring_for_target(target)
         else:
             # Start all targets
-            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-                targets_to_start = list(WEB_DASHBOARD_DATA['targets'].keys())
-            for t in targets_to_start:
-                start_monitoring_for_target(t)
+            start_all_monitoring()
             success = True
 
-        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-            WEB_DASHBOARD_DATA['is_monitoring'] = True
+        update_ui_data(is_monitoring=True)
         return jsonify({'success': success})  # type: ignore
 
     @app.route('/api/monitoring/stop', methods=['POST'])
@@ -1003,10 +993,9 @@ def create_web_dashboard_app():
             for t in targets_to_stop:
                 stop_monitoring_for_target(t)
 
-        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-            # Check if any monitors still running
-            active = any(t.is_alive() for t in WEB_DASHBOARD_MONITOR_THREADS.values())
-            WEB_DASHBOARD_DATA['is_monitoring'] = active
+        # Check if any monitors still running
+        active = any(t.is_alive() for t in WEB_DASHBOARD_MONITOR_THREADS.values())
+        update_ui_data(is_monitoring=active)
         return jsonify({'success': True})  # type: ignore
 
     @app.route('/api/settings', methods=['GET', 'POST'])  # type: ignore[misc]
@@ -1072,7 +1061,7 @@ def create_web_dashboard_app():
             if 'debug_mode' in data:
                 DEBUG_MODE = bool(data['debug_mode'])
 
-            add_web_dashboard_activity("Settings updated from web dashboard")
+            log_activity("Settings updated from web dashboard")
             return jsonify({'success': True})  # type: ignore
 
     @app.route('/api/session', methods=['GET', 'POST'])  # type: ignore[misc]
@@ -1095,7 +1084,7 @@ def create_web_dashboard_app():
                 SKIP_SESSION = False
                 with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                     WEB_DASHBOARD_DATA['session'] = {'username': username, 'active': False, 'method': method}
-                add_web_dashboard_activity(f"Session configured for: {username}")
+                log_activity(f"Session configured for: {username}")
                 return jsonify({'success': True, 'message': f'Session set for {username}'})  # type: ignore
             return jsonify({'success': False, 'error': 'Username required'}), 400  # type: ignore
 
@@ -1109,7 +1098,7 @@ def create_web_dashboard_app():
             L.load_session_from_file(SESSION_USERNAME)
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                 WEB_DASHBOARD_DATA['session']['active'] = True
-            add_web_dashboard_activity(f"Session test successful: {SESSION_USERNAME}")
+            log_activity(f"Session test successful", user=SESSION_USERNAME)
             return jsonify({'success': True, 'username': SESSION_USERNAME})  # type: ignore
         except Exception as e:
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
@@ -1126,26 +1115,48 @@ def create_web_dashboard_app():
 
 
 # Starts monitoring for a specific target in standalone mode
-def start_monitoring_for_target(username):
+def start_monitoring_for_target(username, wait_event=None, signal_event=None, delay_s=0):
     global WEB_DASHBOARD_MONITOR_THREADS, WEB_DASHBOARD_STOP_EVENTS
 
     if username in WEB_DASHBOARD_MONITOR_THREADS and WEB_DASHBOARD_MONITOR_THREADS[username].is_alive():
+        if signal_event:
+            signal_event.set()  # Still signal so next in stagger can proceed
         return False  # Already monitoring
 
     stop_event = threading.Event()
     WEB_DASHBOARD_STOP_EVENTS[username] = stop_event
 
-    def _monitor_runner(user, stop_evt):
+    def _monitor_runner(user, stop_evt, wait_evt, signal_evt, sleep_s):
         global WEB_DASHBOARD_RECHECK_EVENTS
         try:
             recheck_event = threading.Event()
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-                 WEB_DASHBOARD_RECHECK_EVENTS[user] = recheck_event
+                WEB_DASHBOARD_RECHECK_EVENTS[user] = recheck_event
 
-            add_web_dashboard_activity(f"Started monitoring: {user}")
-            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore[union-attr]
-                if user in WEB_DASHBOARD_DATA['targets']:
-                    WEB_DASHBOARD_DATA['targets'][user]['status'] = 'Pending'
+            manual_recheck = False
+
+            if sleep_s > 0:
+                # Interruptible wait for staggering
+                sleep_remaining = sleep_s
+                while sleep_remaining > 0:
+                    if stop_evt and stop_evt.is_set():
+                        return
+                    if recheck_event.is_set():
+                        recheck_event.clear()
+                        print(f"* Staggered start interrupted for {user} by recheck request!")
+                        print_cur_ts("\nTimestamp:\t\t\t\t")
+                        manual_recheck = True
+                        break
+
+                    wait_chunk = min(1, sleep_remaining)
+                    if stop_evt:
+                        stop_evt.wait(wait_chunk)
+                    else:
+                        time.sleep(wait_chunk)
+                    sleep_remaining -= wait_chunk
+
+            log_activity(f"Started monitoring", user=user)
+            update_ui_data(targets={user: {'status': 'Pending'}})
 
             # Resolve target-specific paths
             target_csv, target_log = get_target_paths(user)
@@ -1163,20 +1174,23 @@ def start_monitoring_for_target(username):
                 SKIP_GETTING_STORY_DETAILS,
                 SKIP_GETTING_POSTS_DETAILS,
                 GET_MORE_POST_DETAILS,
+                wait_for_prev_user=wait_evt,
+                signal_loading_complete=signal_evt,
                 stop_event=stop_evt,
-                user_root_path=None # Fallback to OUTPUT_DIR/user if OUTPUT_DIR is set
+                user_root_path=None,  # Fallback to OUTPUT_DIR/user if OUTPUT_DIR is set
+                manual_recheck=manual_recheck
             )
         except Exception as e:
-            add_web_dashboard_activity(f"Error monitoring {user}: {str(e)}")
-            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-                if user in WEB_DASHBOARD_DATA['targets']:
-                    WEB_DASHBOARD_DATA['targets'][user]['status'] = 'Error'
+            log_activity(f"Error monitoring: {str(e)}", user=user)
+            update_ui_data(targets={user: {'status': 'Error'}})
+            if signal_evt:
+                signal_evt.set()
         finally:
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                 if user in WEB_DASHBOARD_RECHECK_EVENTS:
                     del WEB_DASHBOARD_RECHECK_EVENTS[user]
 
-    t = threading.Thread(target=_monitor_runner, args=(username, stop_event), daemon=True, name=f"monitor:{username}")
+    t = threading.Thread(target=_monitor_runner, args=(username, stop_event, wait_event, signal_event, delay_s), daemon=True, name=f"monitor:{username}")
     WEB_DASHBOARD_MONITOR_THREADS[username] = t
     t.start()
     return True
@@ -1189,16 +1203,140 @@ def stop_monitoring_for_target(username):
     if username in WEB_DASHBOARD_STOP_EVENTS:
         WEB_DASHBOARD_STOP_EVENTS[username].set()
         if username in WEB_DASHBOARD_MONITOR_THREADS:
-            add_web_dashboard_activity(f"Stopping monitoring: {username}")
-        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-            if username in WEB_DASHBOARD_DATA['targets']:
-                WEB_DASHBOARD_DATA['targets'][username]['status'] = 'Stopped'
+            log_activity(f"Stopping monitoring", user=username)
+        update_ui_data(targets={username: {'status': 'Stopped'}})
 
     # Clean up thread reference
     if username in WEB_DASHBOARD_MONITOR_THREADS:
         del WEB_DASHBOARD_MONITOR_THREADS[username]
     if username in WEB_DASHBOARD_STOP_EVENTS:
         del WEB_DASHBOARD_STOP_EVENTS[username]
+
+
+# Starts monitoring for all targets with staggering
+def start_all_monitoring():
+    global WEB_DASHBOARD_DATA, MULTI_TARGET_STAGGER, MULTI_TARGET_STAGGER_JITTER, INSTA_CHECK_INTERVAL
+
+    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+        targets = list(WEB_DASHBOARD_DATA.get('targets', {}).keys())
+
+    if not targets:
+        log_activity("Start All: No targets found")
+        return
+
+    # Filter out targets that are already running
+    targets_to_start = []
+    for u in targets:
+        if u not in WEB_DASHBOARD_MONITOR_THREADS or not WEB_DASHBOARD_MONITOR_THREADS[u].is_alive():
+            targets_to_start.append(u)
+
+    if not targets_to_start:
+        log_activity("Start All: All targets already running")
+        return
+
+    stagger = MULTI_TARGET_STAGGER
+    jitter = MULTI_TARGET_STAGGER_JITTER
+
+    # Auto-spread across the base interval
+    if stagger == 0:
+        stagger = max(1, int(INSTA_CHECK_INTERVAL / max(1, len(targets_to_start))))
+
+    now = now_local_naive()
+    log_activity(f"Start All: Staggering {len(targets_to_start)} targets with {display_time(stagger)} interval")
+
+    print(f"* Multi-target staggering:\t\t{display_time(stagger)} between targets (jitter: {display_time(jitter)})")
+    print("\n* Planned first poll times (processed alphabetically):")
+
+    planned_actions = []
+    for idx, u in enumerate(targets_to_start):
+        base_delay = idx * stagger
+        add_jitter = int(random.uniform(0, jitter)) if jitter else 0
+        delay = base_delay + add_jitter
+        planned = now + timedelta(seconds=delay)
+        planned_actions.append((u, delay, planned))
+        print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
+
+    print_cur_ts("\nTimestamp:\t\t\t\t")
+
+    loading_events = [threading.Event() for _ in range(len(targets_to_start) + 1)]
+    loading_events[0].set()
+
+    def _staggered_launcher_thread():
+        # Small pause to let user see the plans in console before monitoring starts
+        time.sleep(1.5)
+        for idx, (u, delay, planned) in enumerate(planned_actions):
+            # Activity log
+            msg = f"check planned @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})"
+            log_activity(msg, user=u)
+
+            # Start monitoring
+            start_monitoring_for_target(u, wait_event=loading_events[idx], signal_event=loading_events[idx + 1], delay_s=delay)
+
+    threading.Thread(target=_staggered_launcher_thread, daemon=True, name="start_all_launcher").start()
+
+
+# Rechecks all monitored targets with staggering
+def recheck_all_targets():
+    global WEB_DASHBOARD_RECHECK_EVENTS, MULTI_TARGET_STAGGER, MULTI_TARGET_STAGGER_JITTER, INSTA_CHECK_INTERVAL
+
+    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+        # Identify monitored targets by alive threads
+        targets = [u for u, t in WEB_DASHBOARD_MONITOR_THREADS.items() if t.is_alive()]
+
+    if not targets:
+        log_activity("Recheck All: Recheck requires at least 1 monitored user")
+        update_ui_data(config={'status_msg': "Recheck requires at least 1 monitored user"})
+        return
+
+    stagger = MULTI_TARGET_STAGGER
+    jitter = MULTI_TARGET_STAGGER_JITTER
+
+    # Auto-spread across the base interval
+    if stagger == 0:
+        stagger = max(1, int(INSTA_CHECK_INTERVAL / max(1, len(targets))))
+
+    log_activity(f"Recheck All: Staggering recheck for {len(targets)} targets")
+
+    # Regular text console output
+    now = now_local_naive()
+    print(f"* Recheck All: Staggering {len(targets)} targets with {display_time(stagger)} interval (jitter: {display_time(jitter)})")
+    print("\n* Planned poll times (processed alphabetically):")
+
+    planned_actions = []
+    for idx, u in enumerate(sorted(targets)):
+        base_delay = idx * stagger
+        add_jitter = int(random.uniform(0, jitter)) if jitter else 0
+        delay = base_delay + add_jitter
+        planned = now + timedelta(seconds=delay)
+        planned_actions.append((u, delay, planned))
+        print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
+
+    print_cur_ts("\nTimestamp:\t\t\t\t")
+
+    def _staggered_rechecker_thread():
+        # Small pause to let user see the plans in console before rechecks start
+        time.sleep(1.5)
+        for idx, (u, delay, planned) in enumerate(planned_actions):
+            # Activity log
+            msg = f"Recheck planned @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})"
+            log_activity(msg, user=u)
+
+            def _single_rechecker(target_user, delay_s):
+                try:
+                    if delay_s > 0:
+                        time.sleep(delay_s)
+                    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                        if target_user in WEB_DASHBOARD_RECHECK_EVENTS:
+                            WEB_DASHBOARD_RECHECK_EVENTS[target_user].set()
+                            log_activity("Recheck triggered", user=target_user)
+                        else:
+                            debug_print(f"Recheck event for {target_user} not found (might have finished or pending start)")
+                except Exception as e:
+                    debug_print(f"Error in rechecker thread for {target_user}: {e}")
+
+            threading.Thread(target=_single_rechecker, args=(u, delay), daemon=True, name=f"rechecker:{u}").start()
+
+    threading.Thread(target=_staggered_rechecker_thread, daemon=True, name="recheck_all_launcher").start()
 
 
 # Starts the Flask web server in a background thread
@@ -1232,7 +1370,7 @@ def start_web_dashboard_server():
 
 
 # Updates the terminal dashboard data store
-def update_terminal_dashboard_data(targets=None, config=None):
+def update_terminal_dashboard_data(targets=None, config=None, is_monitoring=None):
     with DASHBOARD_DATA_LOCK:  # type: ignore
         if targets is not None:
             if 'targets' not in DASHBOARD_DATA:
@@ -1252,20 +1390,24 @@ def update_terminal_dashboard_data(targets=None, config=None):
                 DASHBOARD_DATA['config'].update(config)
             else:
                 DASHBOARD_DATA['config'] = config
+        if is_monitoring is not None:
+            DASHBOARD_DATA['is_monitoring'] = is_monitoring
         DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
 
+
 # Updates both the terminal and web dashboard data stores and triggers a UI update
-def update_ui_data(targets=None, config=None, check_count=None, last_check=None, next_check=None):
+def update_ui_data(targets=None, config=None, check_count=None, last_check=None, next_check=None, is_monitoring=None):
     if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
         if DASHBOARD_ENABLED:
-            update_terminal_dashboard_data(targets=targets, config=config)
+            update_terminal_dashboard_data(targets=targets, config=config, is_monitoring=is_monitoring)
             update_dashboard()
 
         if WEB_DASHBOARD_ENABLED:
-            update_web_dashboard_data(targets=targets, config=config, check_count=check_count, last_check=last_check, next_check=next_check)
+            update_web_dashboard_data(targets=targets, config=config, check_count=check_count, last_check=last_check, next_check=next_check, is_monitoring=is_monitoring)
+
 
 # Updates the web dashboard data store
-def update_web_dashboard_data(targets=None, config=None, check_count=None, last_check=None, next_check=None):
+def update_web_dashboard_data(targets=None, config=None, check_count=None, last_check=None, next_check=None, is_monitoring=None):
     with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
         if targets is not None:
             if 'targets' not in WEB_DASHBOARD_DATA:
@@ -1291,6 +1433,8 @@ def update_web_dashboard_data(targets=None, config=None, check_count=None, last_
             WEB_DASHBOARD_DATA['last_check'] = last_check
         if next_check is not None:
             WEB_DASHBOARD_DATA['next_check'] = next_check
+        if is_monitoring is not None:
+            WEB_DASHBOARD_DATA['is_monitoring'] = is_monitoring
         WEB_DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
 
 
@@ -1324,11 +1468,6 @@ def log_activity(message, user=None):
     # If Dashboard is live, trigger an update
     if DASHBOARD_ENABLED and RICH_AVAILABLE:
         update_dashboard()
-
-
-# Legacy wrapper for add_web_dashboard_activity
-def add_web_dashboard_activity(message):
-    log_activity(message)
 
 
 def _thread_key() -> int:
@@ -2978,22 +3117,42 @@ def dashboard_input_handler():
                     if not DASHBOARD_ENABLED or not RICH_AVAILABLE:
                         print(f"* dashboard mode: {DASHBOARD_MODE}")
 
-                # Debug commands (only work in debug mode)
-                elif char == 'c' and DEBUG_MODE:
-                    MANUAL_CHECK_TRIGGERED.set()  # type: ignore
-                    log_activity("Manual check triggered!")
-                elif char == 's' and DEBUG_MODE:
+                # Start All: 's'
+                elif char == 's':
+                    start_all_monitoring()
+                    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+                        update_dashboard()
+
+                # Stop All: 'x'
+                elif char == 'x':
+                    with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                        targets_to_stop = list(DASHBOARD_DATA.get('targets', {}).keys())
+                    for t in targets_to_stop:
+                        stop_monitoring_for_target(t)
+                    log_activity("Stop All triggered")
+                    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+                        update_dashboard()
+
+                # Recheck All: 'r'
+                elif char == 'r':
+                    recheck_all_targets()
+                    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+                        update_dashboard()
+
+                elif char == 'i' and DEBUG_MODE: # Changed from 's' to 'i' for info
                     print_status_summary()
                 elif char == 'h':
                     if DASHBOARD_ENABLED and RICH_AVAILABLE:
-                        log_activity("Commands: m=toggle mode | q=exit" + (" | c=check | s=status" if DEBUG_MODE else ""))
+                        log_activity("Commands: m=mode | s=start | x=stop | r=recheck | q=exit" + (" | c=check | i=status" if DEBUG_MODE else ""))
                     else:
                         print("\nCommands:")
                         print("  m  - Toggle dashboard view (user/config)")
+                        print("  s  - Start All monitoring")
+                        print("  x  - Stop All monitoring")
+                        print("  r  - Recheck All targets")
                         print("  q  - Exit the tool")
                         if DEBUG_MODE:
-                            print("  c  - Trigger immediate check")
-                            print("  s  - Show status summary")
+                            print("  i  - Show status summary")
                         print("  h  - Show this help\n")
             except (EOFError, OSError):
                 break
@@ -3013,8 +3172,6 @@ def start_dashboard_input_handler():
     if DEBUG_INPUT_THREAD is None and (DASHBOARD_ENABLED or DEBUG_MODE):
         DEBUG_INPUT_THREAD = threading.Thread(target=dashboard_input_handler, daemon=True, name="dashboard_input_handler")
         DEBUG_INPUT_THREAD.start()
-        if DEBUG_MODE:
-            print("* Commands: 'm' toggle dashboard, 'check' manual check, 'status', 'help'")
 
 
 # Print status summary (for debug mode)
@@ -3184,14 +3341,14 @@ def generate_user_dashboard(target_data):
     last_fetched_panel = Panel(last_fetched_text, title="Last Fetched", box=box.ROUNDED, border_style="green")
 
 
-    # Mode toggle button
+    # Actions panel
     mode_btn_text = Text()
     mode_btn_text.append("USER", style="bold green reverse")
     mode_btn_text.append(" | CONFIG\n", style="dim")
-    mode_btn_text.append("Press 'm' to toggle\n", style="dim italic")
-    mode_btn_text.append("Press 'q' to exit", style="dim italic red")
+    mode_btn_text.append("m: toggle | s: start | x: stop\n", style="dim italic")
+    mode_btn_text.append("r: recheck | q: exit", style="dim italic")
 
-    mode_panel = Panel(mode_btn_text, title="Mode", box=box.ROUNDED, border_style="cyan")
+    mode_panel = Panel(mode_btn_text, title="Actions", box=box.ROUNDED, border_style="cyan")
 
     layout = Layout()
     layout.split_column(
@@ -3310,13 +3467,13 @@ def generate_config_dashboard(target_data, config_data):
     log_panel = Panel(log_text, title="Live Activity Log", box=box.ROUNDED, border_style="yellow")
 
 
-    # Mode toggle
+    # Actions panel
     mode_btn_text = Text()
     mode_btn_text.append("USER | ", style="dim")
     mode_btn_text.append("CONFIG\n", style="bold magenta reverse")
-    mode_btn_text.append("Press 'm' to toggle\n", style="dim italic")
-    mode_btn_text.append("Press 'q' to exit", style="dim italic red")
-    mode_panel = Panel(mode_btn_text, title="Mode", box=box.ROUNDED, border_style="cyan")
+    mode_btn_text.append("m: toggle | s: start | x: stop\n", style="dim italic")
+    mode_btn_text.append("r: recheck | q: exit", style="dim italic")
+    mode_panel = Panel(mode_btn_text, title="Actions", box=box.ROUNDED, border_style="cyan")
 
     # Dynamic height calculation to prevent cutoff
     # Base height + number of rows + padding
@@ -3591,7 +3748,7 @@ def close_pbar():
         thread_pbar.close()
 
         # Write final state to log file if logging is enabled
-        if stdout_bck is not None and isinstance(sys.stdout, Logger):
+        if stdout_bck is not None and isinstance(sys.stdout, Logger) and sys.stdout.main_log:
             sys.stdout.main_log.write(final_str + "\n")
             sys.stdout.main_log.flush()
 
@@ -3958,7 +4115,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
 
 
 # Monitors activity of the specified Instagram user
-def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None):  # type: ignore[reportComplexity]
+def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None, manual_recheck=False):  # type: ignore[reportComplexity]
     global pbar, DASHBOARD_DATA
     update_ui_data(targets={user: {'status': 'Starting'}})
 
@@ -4808,6 +4965,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         if DEBUG_MODE:
             print(f"[DEBUG] Next check scheduled: {get_date_from_ts(NEXT_CHECK_TIME)}")
 
+    # Track whether the current check was triggered manually by the user
+    manual_recheck_active = manual_recheck
+
     # Use interruptible sleep if stop_event is provided (allows immediate stop)
     if stop_event or DEBUG_MODE or WEB_DASHBOARD_ENABLED:
         # Sleep in smaller increments to allow stop event or manual check trigger
@@ -4821,13 +4981,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 log_activity("Monitoring stopped", user=user)
                 return
 
-            # Check for manual trigger (debug mode)
-            if DEBUG_MODE and MANUAL_CHECK_TRIGGERED.is_set():  # type: ignore
-                MANUAL_CHECK_TRIGGERED.clear()  # type: ignore
-                print(f"* Manual check requested! Breaking sleep early...\n")
-                print_cur_ts("Timestamp:\t\t\t\t")
-                debug_print(f"Manual check triggered, {sleep_remaining}s remaining in sleep")
-                break
 
             # Check for recheck trigger (Web Dashboard mode)
             recheck_triggered = False
@@ -4839,6 +4992,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if recheck_triggered:
                 print(f"* Recheck requested for {user}! Breaking sleep early...\n")
                 print_cur_ts("Timestamp:\t\t\t\t")
+                manual_recheck_active = True
                 break
 
             # Sleep in 1-second increments for responsiveness
@@ -4854,6 +5008,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     alive_counter = 0
 
     email_sent = False
+
 
     # Primary loop
     while True:
@@ -5772,6 +5927,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print_cur_ts("Liveness check, timestamp:\t")
             alive_counter = 0
 
+        debug_print(f"After check for {user}: manual_recheck_active={manual_recheck_active}")
+
+        if manual_recheck_active:
+            print(f"* Check completed for {user} ...\n")
+            print_cur_ts("Timestamp:\t\t\t\t")
+            log_activity("Check completed", user=user)
+            manual_recheck_active = False
+
         r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
 
         # Update next check time tracking
@@ -5805,13 +5968,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     print_cur_ts("Timestamp:\t\t\t\t")
                     return
 
-                # Check for manual trigger
-                if MANUAL_CHECK_TRIGGERED.is_set():  # type: ignore
-                    MANUAL_CHECK_TRIGGERED.clear()  # type: ignore
-                    print(f"* Manual check requested! Breaking sleep early...\n")
-                    print_cur_ts("Timestamp:\t\t\t\t")
-                    debug_print(f"Manual check triggered, {sleep_remaining}s remaining in sleep")
-                    break
 
                 # Check for recheck trigger (Web Dashboard mode)
                 recheck_triggered = False
@@ -5823,6 +5979,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 if recheck_triggered:
                     print(f"* Recheck requested for {user}! Breaking sleep early...\n")
                     print_cur_ts("Timestamp:\t\t\t\t")
+                    manual_recheck_active = True
                     break
 
                 # Sleep in 1-second increments for responsiveness
@@ -5831,7 +5988,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 sleep_remaining -= sleep_chunk
         else:
             time.sleep(r_sleep_time)
-
 
 # Helper to resolve log and CSV paths for a specific target
 def get_target_paths(user):
@@ -6811,7 +6967,7 @@ def run_main():
     elif len(targets) == 1:
         # Integrated Mode Stop Event registration
         stop_event = threading.Event()
-        if WEB_DASHBOARD_ENABLED:
+        if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
             WEB_DASHBOARD_STOP_EVENTS[targets[0]] = stop_event
 
         instagram_monitor_user(targets[0], csv_files_by_user.get(targets[0], CSV_FILE), SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, user_root_path=OUTPUT_DIR, stop_event=stop_event)
@@ -6842,7 +6998,7 @@ def run_main():
             planned = now + timedelta(seconds=delay)
             print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
 
-        print("─" * HORIZONTAL_LINE)
+        print_cur_ts("\nTimestamp:\t\t\t\t")
 
         # Create events to coordinate initial loading between users.
         # We create N+1 events: event[i] means "user i finished initial load".
@@ -6851,9 +7007,36 @@ def run_main():
         loading_events[0].set()  # allow the first user to start immediately
 
         def _runner(u: str, delay_s: int, idx: int, stop_event: Optional[threading.Event] = None):
+            global WEB_DASHBOARD_RECHECK_EVENTS, WEB_DASHBOARD_MONITOR_THREADS
             try:
+                # Register recheck event and thread early for dashboard visibility/control
+                recheck_event = threading.Event()
+                if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
+                    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                        WEB_DASHBOARD_RECHECK_EVENTS[u] = recheck_event
+                        WEB_DASHBOARD_MONITOR_THREADS[u] = threading.current_thread()
+
+                manual_startup_recheck = False
                 if delay_s > 0:
-                    time.sleep(delay_s)
+                    # Interruptible wait for staggering
+                    sleep_remaining = delay_s
+                    while sleep_remaining > 0:
+                        if stop_event and stop_event.is_set():
+                            return
+                        if recheck_event.is_set():
+                            recheck_event.clear()
+                            print(f"* Staggered start interrupted for {u} by recheck request!")
+                            print_cur_ts("\nTimestamp:\t\t\t\t")
+                            manual_startup_recheck = True
+                            break
+
+                        wait_chunk = min(1, sleep_remaining)
+                        if stop_event:
+                            stop_event.wait(wait_chunk)
+                        else:
+                            time.sleep(wait_chunk)
+                        sleep_remaining -= wait_chunk
+
                 # Wait for previous user's loading to complete
                 wait_event = loading_events[idx]
                 # Signal when this user's loading is complete
@@ -6878,7 +7061,8 @@ def run_main():
                     wait_for_prev_user=wait_event,
                     signal_loading_complete=signal_event,
                     user_root_path=user_root,
-                    stop_event=stop_event
+                    stop_event=stop_event,
+                    manual_recheck=manual_startup_recheck
                 )
             except Exception as e:
                 # Surface thread exceptions so the user sees them
@@ -6887,6 +7071,10 @@ def run_main():
                 traceback.print_exc()
                 # Still signal completion even on error, so next user can proceed
                 loading_events[idx + 1].set()
+            finally:
+                with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                    if u in WEB_DASHBOARD_RECHECK_EVENTS:
+                        del WEB_DASHBOARD_RECHECK_EVENTS[u]
 
         threads = []
         for idx, u in enumerate(targets):
@@ -6894,7 +7082,7 @@ def run_main():
             add_jitter = int(random.uniform(0, jitter)) if jitter else 0
             delay = base_delay + add_jitter
             stop_event = threading.Event()
-            if WEB_DASHBOARD_ENABLED:
+            if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
                 WEB_DASHBOARD_STOP_EVENTS[u] = stop_event
 
             t = threading.Thread(target=_runner, args=(u, delay, idx, stop_event), name=f"instagram_monitor:{u}", daemon=True)

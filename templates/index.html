@@ -1457,7 +1457,7 @@
         function renderDashboardActivities() {
             const feed = document.getElementById('dashboard-activity');
             const feedConfig = document.getElementById('dashboard-activity-config');
-            const recentActivities = activities.slice(0, 8); // Show 8 for consistency
+            const recentActivities = activities.slice(0, 10); // last 10 events
 
             const html = recentActivities.length === 0 ? `
                     <div class="empty-state">
@@ -1641,27 +1641,7 @@
             `).join('');
         }
 
-        function renderDashboardActivities() {
-            const feed = document.getElementById('dashboard-activity');
-            const recentActivities = activities.slice(0, 5);
 
-            if (recentActivities.length === 0) {
-                feed.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📜</div>
-                        <p>No activity yet</p>
-                    </div>
-                `;
-                return;
-            }
-
-            feed.innerHTML = recentActivities.map(a => `
-                <div class="activity-item">
-                    <div class="activity-time">${a.time}</div>
-                    <div class="activity-message">${a.message}</div>
-                </div>
-            `).join('');
-        }
 
         function populateSettings(s) {
             document.getElementById('check-interval').value = s.check_interval || 5400;
@@ -1811,7 +1791,11 @@
                 });
                 const data = await response.json();
                 if (data.success) {
-                    showToast(`Check triggered for ${username}`);
+                    if (username) {
+                        showToast(`Check triggered for ${username}`);
+                    } else {
+                        showToast('Recheck all triggered');
+                    }
                 }
             } catch (err) {
                 showToast('Failed to trigger check', 'error');
