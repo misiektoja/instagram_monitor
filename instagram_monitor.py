@@ -1123,8 +1123,8 @@ def create_web_dashboard_app():
             if changes:
                 msg = "Settings updated: " + "; ".join(changes)
                 log_activity(msg)
+                print(f"* {msg}")
                 print_cur_ts("Timestamp:\t\t\t\t")
-                print(f"* {msg}\n")
 
             return jsonify({'success': True})  # type: ignore
 
