@@ -7041,6 +7041,11 @@ def run_main():
 
     if PROFILE_PIC_FILE_EMPTY:
         PROFILE_PIC_FILE_EMPTY = os.path.expanduser(PROFILE_PIC_FILE_EMPTY)
+        # Backwards compatibility: if .jpg does not exist, try .jpeg
+        if not os.path.exists(PROFILE_PIC_FILE_EMPTY) and PROFILE_PIC_FILE_EMPTY.lower().endswith('.jpg'):
+            PROFILE_PIC_FILE_EMPTY_JPEG = PROFILE_PIC_FILE_EMPTY.rsplit('.jpg', 1)[0] + '.jpeg'
+            if os.path.exists(PROFILE_PIC_FILE_EMPTY_JPEG):
+                PROFILE_PIC_FILE_EMPTY = PROFILE_PIC_FILE_EMPTY_JPEG
 
     profile_pic_file_exists = os.path.exists(PROFILE_PIC_FILE_EMPTY) if PROFILE_PIC_FILE_EMPTY else False
 
