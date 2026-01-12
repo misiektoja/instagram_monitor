@@ -3197,6 +3197,11 @@ def dashboard_input_handler():
                         # Read character and decode from bytes
                         try:
                             char_bytes = msvcrt.getch()
+                            # Handle Ctrl+C (ASCII 3)
+                            if char_bytes == b'\x03':
+                                # Trigger clean exit
+                                signal_handler(signal.SIGINT, None)
+                                break
                             # Handle special keys (arrows etc) which return two bytes
                             if char_bytes in (b'\x00', b'\xe0'):
                                 msvcrt.getch() # Skip second byte
@@ -7373,7 +7378,15 @@ def run_main():
             threads.append(t)
 
         for t in threads:
-            t.join()
+            # Signal-friendly join loop (especially for Windows)
+            # Blocking join() prevents SIGINT from being processed by the main thread on Windows
+            while t.is_alive():
+                try:
+                    t.join(timeout=0.2)
+                except (KeyboardInterrupt, SystemExit):
+                    # Signal handler should already be triggered by signal.signal,
+                    # but if we're here, we ensure clean exit
+                    signal_handler(signal.SIGINT, None)
 
     if WEB_DASHBOARD_ENABLED:
         try:
