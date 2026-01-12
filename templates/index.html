@@ -943,7 +943,8 @@
                         </div>
                     </div>
                     <p style="font-size: 11px; color: #666; margin-top: -10px;">
-                        Final interval = Base ± Random. Use 0 for Liveness Check to disable.
+                        Final interval = Base ± Random. <b>Base Interval min: 300s.</b> Use 0 for Liveness Check to
+                        disable.
                     </p>
                 </div>
 
@@ -2015,7 +2016,16 @@
                 });
                 const data = await response.json();
                 if (data.success) {
-                    showToast('Settings saved');
+                    if (data.changes && data.changes.length > 0) {
+                        const hasLimit = data.changes.some(c => c.includes('(min 300s limit)'));
+                        if (hasLimit) {
+                            showToast('Settings saved (some values capped to limits)', 'warning');
+                        } else {
+                            showToast('Settings saved');
+                        }
+                    } else {
+                        showToast('Settings saved');
+                    }
                 } else {
                     showToast(data.error || 'Failed to save settings', 'error');
                 }

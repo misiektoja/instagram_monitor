@@ -1079,15 +1079,18 @@ def create_web_dashboard_app():
 
                 if processed_val != current_val:
                     # Special validation for some fields
+                    note = ""
                     if key == 'check_interval':
-                        processed_val = max(300, processed_val)
+                        if processed_val < 300:
+                            processed_val = 300
+                            note = " (min 300s limit)"
                     elif key in ['random_low', 'random_high']:
                         processed_val = max(0, processed_val)
                     elif key == 'webhook_url':
                         if processed_val and not validate_webhook_url(processed_val):
                             return current_val
 
-                    changes.append(f"'{key}' changed from {current_val} to {processed_val}")
+                    changes.append(f"'{key}' changed from {current_val} to {processed_val}{note}")
                     return processed_val
                 return current_val
 
@@ -1126,7 +1129,7 @@ def create_web_dashboard_app():
                 print(f"* {msg}")
                 print_cur_ts("\nTimestamp:\t\t\t\t")
 
-            return jsonify({'success': True})  # type: ignore
+            return jsonify({'success': True, 'changes': changes})  # type: ignore
 
     @app.route('/api/session', methods=['GET', 'POST'])  # type: ignore[misc]
     def api_session():  # type: ignore[return]
