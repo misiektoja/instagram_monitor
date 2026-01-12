@@ -1124,7 +1124,7 @@ def create_web_dashboard_app():
                 msg = "Settings updated: " + "; ".join(changes)
                 log_activity(msg)
                 print(f"* {msg}")
-                print_cur_ts("Timestamp:\t\t\t\t")
+                print_cur_ts("\nTimestamp:\t\t\t\t")
 
             return jsonify({'success': True})  # type: ignore
 
@@ -7041,11 +7041,16 @@ def run_main():
 
     if PROFILE_PIC_FILE_EMPTY:
         PROFILE_PIC_FILE_EMPTY = os.path.expanduser(PROFILE_PIC_FILE_EMPTY)
-        # Backwards compatibility: if .jpg does not exist, try .jpeg
-        if not os.path.exists(PROFILE_PIC_FILE_EMPTY) and PROFILE_PIC_FILE_EMPTY.lower().endswith('.jpg'):
-            PROFILE_PIC_FILE_EMPTY_JPEG = PROFILE_PIC_FILE_EMPTY.rsplit('.jpg', 1)[0] + '.jpeg'
-            if os.path.exists(PROFILE_PIC_FILE_EMPTY_JPEG):
-                PROFILE_PIC_FILE_EMPTY = PROFILE_PIC_FILE_EMPTY_JPEG
+        # Bidirectional backwards compatibility fallback (.jpg <-> .jpeg)
+        if not os.path.exists(PROFILE_PIC_FILE_EMPTY):
+            if PROFILE_PIC_FILE_EMPTY.lower().endswith('.jpg'):
+                fallback = PROFILE_PIC_FILE_EMPTY.rsplit('.jpg', 1)[0] + '.jpeg'
+                if os.path.exists(fallback):
+                    PROFILE_PIC_FILE_EMPTY = fallback
+            elif PROFILE_PIC_FILE_EMPTY.lower().endswith('.jpeg'):
+                fallback = PROFILE_PIC_FILE_EMPTY.rsplit('.jpeg', 1)[0] + '.jpg'
+                if os.path.exists(fallback):
+                    PROFILE_PIC_FILE_EMPTY = fallback
 
     profile_pic_file_exists = os.path.exists(PROFILE_PIC_FILE_EMPTY) if PROFILE_PIC_FILE_EMPTY else False
 
