@@ -6696,7 +6696,25 @@ def run_main():
     if cfg_path:
         try:
             with open(cfg_path, "r") as cf:
-                exec(cf.read(), globals())
+                content = cf.read()
+                try:
+                    exec(content, globals())
+                except (SyntaxError, UnicodeDecodeError) as e:
+                    # Handle common Windows path escape issues (e.g. \U in \Users)
+                    # This happens because exec() treats the string as code with escape sequences
+                    if "unicodeescape" in str(e):
+                        # Attempt to fix by escaping backslashes (simple approach)
+                        # This is safe for most config values which are paths or simple strings
+                        fixed_content = content.replace('\\', '\\\\')
+                        try:
+                            exec(fixed_content, globals())
+                        except Exception as retry_e:
+                            # If even retry fails, show the original error but with a hint
+                            print(f"* Error loading config file '{cfg_path}': {e}")
+                            print(f"* Hint: Windows paths should use forward slashes (/) or escaped backslashes (\\\\)")
+                            sys.exit(1)
+                    else:
+                        raise e
         except Exception as e:
             print(f"* Error loading config file '{cfg_path}': {e}")
             sys.exit(1)
