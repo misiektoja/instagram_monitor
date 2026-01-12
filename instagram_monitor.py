@@ -93,14 +93,18 @@ LOCAL_TIMEZONE = 'Auto'
 
 # Notify when the user's profile picture changes? (via console and email if STATUS_NOTIFICATION / -s is enabled).
 # If enabled, the current profile picture is saved as:
-#   - instagram_<username>_profile_pic.jpeg (initial)
-#   - instagram_<username>_profile_pic_YYmmdd_HHMM.jpeg (on change)
-# The binary JPEGs are compared to detect changes
+#   - instagram_<username>_profile_pic.jpg (initial)
+#   - instagram_<username>_profile_pic_YYmmdd_HHMM.jpg (on change)
+# The binary JPGs are compared to detect changes
 # Can also be disabled by using -k flag
 DETECT_CHANGED_PROFILE_PIC = True
 
+# Whether to download thumbnail images for posts, reels and stories
+# If False, only videos (if available) will be downloaded
+DOWNLOAD_THUMBNAILS = True
+
 # Location of the optional file with the empty profile picture template
-PROFILE_PIC_FILE_EMPTY = "instagram_profile_pic_empty.jpeg"
+PROFILE_PIC_FILE_EMPTY = "instagram_profile_pic_empty.jpg"
 
 # If you have 'imgcat' installed, you can set its path below to display profile pictures directly in your terminal
 # If you specify only the binary name, it will be auto-searched in your PATH
@@ -409,6 +413,7 @@ RANDOM_SLEEP_DIFF_LOW = 0
 RANDOM_SLEEP_DIFF_HIGH = 0
 LOCAL_TIMEZONE = ""
 DETECT_CHANGED_PROFILE_PIC = False
+DOWNLOAD_THUMBNAILS = False
 PROFILE_PIC_FILE_EMPTY = ""
 IMGCAT_PATH = ""
 SKIP_SESSION = False
@@ -2400,7 +2405,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                         subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{profile_pic_file}\"", shell=True, check=True)
                     else:
                         subprocess.run(f"\"{imgcat_exe}\" \"{profile_pic_file}\" {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
-                profile_pic_copy_filename = f'instagram_{user}_profile_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg'
+                profile_pic_copy_filename = f'instagram_{user}_profile_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpg'
                 profile_pic_save_dir = os.path.dirname(profile_pic_file)
                 if profile_pic_save_dir:
                     profile_pic_copy_filename = os.path.join(profile_pic_save_dir, profile_pic_copy_filename)
@@ -2499,7 +2504,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                             subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{profile_pic_file_tmp}\"", shell=True, check=True)
                         else:
                             subprocess.run(f"\"{imgcat_exe}\" \"{profile_pic_file_tmp}\" {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
-                    profile_pic_copy_filename = f'instagram_{user}_profile_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg'
+                    profile_pic_copy_filename = f'instagram_{user}_profile_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpg'
                     profile_pic_save_dir = os.path.dirname(profile_pic_file)
                     if profile_pic_save_dir:
                         profile_pic_copy_filename = os.path.join(profile_pic_save_dir, profile_pic_copy_filename)
@@ -4559,15 +4564,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     if user_root_path or OUTPUT_DIR:
         insta_followers_file = os.path.join(json_dir, f"instagram_{user}_followers.json")
         insta_followings_file = os.path.join(json_dir, f"instagram_{user}_followings.json")
-        profile_pic_file = os.path.join(images_dir, f"instagram_{user}_profile_pic.jpeg")
-        profile_pic_file_old = os.path.join(images_dir, f"instagram_{user}_profile_pic_old.jpeg")
-        profile_pic_file_tmp = os.path.join(images_dir, f"instagram_{user}_profile_pic_tmp.jpeg")
+        profile_pic_file = os.path.join(images_dir, f"instagram_{user}_profile_pic.jpg")
+        profile_pic_file_old = os.path.join(images_dir, f"instagram_{user}_profile_pic_old.jpg")
+        profile_pic_file_tmp = os.path.join(images_dir, f"instagram_{user}_profile_pic_tmp.jpg")
     else:
         insta_followers_file = f"instagram_{user}_followers.json"
         insta_followings_file = f"instagram_{user}_followings.json"
-        profile_pic_file = f"instagram_{user}_profile_pic.jpeg"
-        profile_pic_file_old = f"instagram_{user}_profile_pic_old.jpeg"
-        profile_pic_file_tmp = f"instagram_{user}_profile_pic_tmp.jpeg"
+        profile_pic_file = f"instagram_{user}_profile_pic.jpg"
+        profile_pic_file_old = f"instagram_{user}_profile_pic_old.jpg"
+        profile_pic_file_tmp = f"instagram_{user}_profile_pic_tmp.jpg"
     followers = []
     followings = []
     followers_old = followers
@@ -4892,11 +4897,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 if save_pic_video(story_video_url, story_video_filename, local_ts):
                                     print(f"Story video saved for {user} to '{story_video_filename}'")
 
-                        if story_thumbnail_url:
+                        if DOWNLOAD_THUMBNAILS and story_thumbnail_url:
                             if local_dt:
-                                story_image_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
+                                story_image_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.jpg'
                             else:
-                                story_image_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
+                                story_image_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.jpg'
 
                             if user_root_path or OUTPUT_DIR:
                                 story_image_filename = os.path.join(images_dir, story_image_filename)
@@ -5066,11 +5071,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 else:
                     print(f"Error saving {last_source.lower()} video !")
 
-        if thumbnail_url:
+        if DOWNLOAD_THUMBNAILS and thumbnail_url:
             if highestinsta_dt:
-                image_filename = f'instagram_{user}_{last_source.lower()}_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
+                image_filename = f'instagram_{user}_{last_source.lower()}_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.jpg'
             else:
-                image_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
+                image_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.jpg'
             if (user_root_path or OUTPUT_DIR) and 'images_dir' in locals():
                 if not os.path.dirname(image_filename) == images_dir:
                     image_filename = os.path.join(images_dir, image_filename)
@@ -5836,25 +5841,26 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                         print(f"Story video saved for {user} to '{story_video_filename}'")
 
                             m_body_html_pic_saved_text = ""
-                            if local_dt:
-                                story_image_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
-                            else:
-                                story_image_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
+                            if DOWNLOAD_THUMBNAILS:
+                                if local_dt:
+                                    story_image_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.jpg'
+                                else:
+                                    story_image_filename = f'instagram_{user}_story_{now_local().strftime("%Y%m%d_%H%M%S")}.jpg'
 
-                            if user_root_path or OUTPUT_DIR:
-                                story_image_filename = os.path.join(images_dir, story_image_filename)
-                            if story_thumbnail_url:
-                                if not os.path.isfile(story_image_filename):
-                                    if save_pic_video(story_thumbnail_url, story_image_filename, local_ts):
-                                        m_body_html_pic_saved_text = f'<br><br><img src="cid:story_pic" width="50%">'
-                                        print(f"Story thumbnail image saved for {user} to '{story_image_filename}'")
-                                        try:
-                                            if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
-                                                subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{story_image_filename}\"", shell=True, check=True)
-                                                if i < stories_count:
-                                                    print()
-                                        except Exception:
-                                            pass
+                                if user_root_path or OUTPUT_DIR:
+                                    story_image_filename = os.path.join(images_dir, story_image_filename)
+                                if story_thumbnail_url:
+                                    if not os.path.isfile(story_image_filename):
+                                        if save_pic_video(story_thumbnail_url, story_image_filename, local_ts):
+                                            m_body_html_pic_saved_text = f'<br><br><img src="cid:story_pic" width="50%">'
+                                            print(f"Story thumbnail image saved for {user} to '{story_image_filename}'")
+                                            try:
+                                                if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                                                    subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{story_image_filename}\"", shell=True, check=True)
+                                                    if i < stories_count:
+                                                        print()
+                                            except Exception:
+                                                pass
 
                             try:
                                 if csv_file_name:
@@ -6053,23 +6059,24 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 print(f"Error saving {last_source.lower()} video !")
 
                     m_body_html_pic_saved_text = ""
-                    if highestinsta_dt:
-                        image_filename = f'instagram_{user}_{last_source.lower()}_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.jpeg'
-                    else:
-                        image_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.jpeg'
-                    if thumbnail_url:
-                        if (user_root_path or OUTPUT_DIR) and 'images_dir' in locals():
-                            if not os.path.dirname(image_filename) == images_dir:
-                                image_filename = os.path.join(images_dir, image_filename)
-                        if not os.path.isfile(image_filename):
-                            if save_pic_video(thumbnail_url, image_filename, highestinsta_ts):
-                                m_body_html_pic_saved_text = f'<br><br><img src="cid:{last_source.lower()}_pic" width="50%">'
-                                print(f"{last_source.capitalize()} thumbnail image saved for {user} to '{image_filename}'")
-                                try:
-                                    if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
-                                        subprocess.run(f"\"{imgcat_exe}\" \"{image_filename}\"", shell=True, check=True)
-                                except Exception:
-                                    pass
+                    if DOWNLOAD_THUMBNAILS:
+                        if highestinsta_dt:
+                            image_filename = f'instagram_{user}_{last_source.lower()}_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.jpg'
+                        else:
+                            image_filename = f'instagram_{user}_{last_source.lower()}_{now_local().strftime("%Y%m%d_%H%M%S")}.jpg'
+                        if thumbnail_url:
+                            if (user_root_path or OUTPUT_DIR) and 'images_dir' in locals():
+                                if not os.path.dirname(image_filename) == images_dir:
+                                    image_filename = os.path.join(images_dir, image_filename)
+                            if not os.path.isfile(image_filename):
+                                if save_pic_video(thumbnail_url, image_filename, highestinsta_ts):
+                                    m_body_html_pic_saved_text = f'<br><br><img src="cid:{last_source.lower()}_pic" width="50%">'
+                                    print(f"{last_source.capitalize()} thumbnail image saved for {user} to '{image_filename}'")
+                                    try:
+                                        if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                                            subprocess.run(f"\"{imgcat_exe}\" \"{image_filename}\"", shell=True, check=True)
+                                    except Exception:
+                                        pass
 
                     try:
                         if csv_file_name:

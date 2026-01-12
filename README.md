@@ -455,14 +455,14 @@ Thanks to this we do not need to re-fetch it every time the tool is restarted an
 
 When downloading lists of followers or followings, a **progress bar** is displayed showing real-time download progress, including statistics such as names per request, total requests, elapsed time and estimated remaining time. Progress updates are shown in the terminal only (to avoid cluttering log files), with the final completion state written to the log file for reference.
 
-The tool also saves the user profile picture to `instagram_<username>_profile_pic*.jpeg` files.
+The tool also saves the user profile picture to `instagram_<username>_profile_pic*.jpg` files.
 
 It also saves downloaded posts/reels images & videos to:
-- `instagram_<username>_post/reel_YYYYmmdd_HHMMSS.jpeg`
+- `instagram_<username>_post/reel_YYYYmmdd_HHMMSS.jpg`
 - `instagram_<username>_post/reel_YYYYmmdd_HHMMSS.mp4`
 
 And downloaded stories images & videos to:
-- `instagram_<username>_story_YYYYmmdd_HHMMSS.jpeg`
+- `instagram_<username>_story_YYYYmmdd_HHMMSS.jpg`
 - `instagram_<username>_story_YYYYmmdd_HHMMSS.mp4`
 
 
@@ -653,13 +653,13 @@ This feature is enabled by default. To disable it, either:
 
 Since Instagram periodically changes the profile picture URL even when the image is the same, the tool performs a binary comparison of JPEG files to detect actual changes.
 
-On the first run, it saves the current profile picture to `instagram_<username>_profile_pic.jpeg`
+On the first run, it saves the current profile picture to `instagram_<username>_profile_pic.jpg`
 
 On each subsequent check a new image is fetched and it is compared byte-for-byte with the saved image.
 
-If a change is detected, the old picture is moved to `instagram_<username>_profile_pic_old.jpeg` and the new one is saved to:
-- `instagram_<username>_profile_pic.jpeg` (current)
-- `instagram_<username>_profile_pic_YYmmdd_HHMM.jpeg` (for history)
+If a change is detected, the old picture is moved to `instagram_<username>_profile_pic_old.jpg` and the new one is saved to:
+- `instagram_<username>_profile_pic.jpg` (current)
+- `instagram_<username>_profile_pic_YYmmdd_HHMM.jpg` (for history)
 
 <a id="empty-profile-picture-detection"></a>
 #### Empty Profile Picture Detection
@@ -667,7 +667,7 @@ If a change is detected, the old picture is moved to `instagram_<username>_profi
 The tool also has built-in detection of empty profile pictures. Instagram does not indicate an empty user's profile image in their API; that's why the tool detects it by using an empty profile image template (which appears to be identical on a binary level for all users).
 
 To enable this:
-- download the [instagram_profile_pic_empty.jpeg](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_profile_pic_empty.jpeg) file
+- download the [instagram_profile_pic_empty.jpg](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_profile_pic_empty.jpg) file
 - place it in the directory where you run the tool (or change the path via `PROFILE_PIC_FILE_EMPTY` configuration option)
 
 Without this file, the tool will treat an empty profile picture as a regular image. For example, if a user removes their profile picture, it would be treated as a change rather than a removal.
