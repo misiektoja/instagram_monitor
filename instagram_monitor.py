@@ -1992,13 +1992,13 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                     "payload_json": (None, json.dumps(payload))
                 }
                 response = req.post(
-                    WEBHOOK_URL,
+                    str(WEBHOOK_URL),
                     files=files,
                     timeout=10
                 )
         else:
             response = req.post(
-                WEBHOOK_URL,
+                str(WEBHOOK_URL),
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=10
@@ -6866,7 +6866,7 @@ def run_main():
         if not validate_webhook_url(args.webhook_url):
             print(f"* Error: Invalid webhook URL format. Must be HTTPS URL.")
             sys.exit(1)
-        WEBHOOK_URL = args.webhook_url
+        WEBHOOK_URL = str(args.webhook_url or "")
         WEBHOOK_ENABLED = True
 
     if args.webhook_enabled is True:
@@ -7182,7 +7182,7 @@ def run_main():
     print(f"* Dotenv file:\t\t\t\t{env_path or 'None'}")
     if WEB_DASHBOARD_ENABLED:
         print(f"* Web Dashboard templates:\t\t{WEB_DASHBOARD_TEMPLATE_DIR or 'Auto-detect'}")
-    print(f"* Webhook notifications:\t\t{WEBHOOK_ENABLED}" + (f" ({WEBHOOK_URL[:50]}...)" if WEBHOOK_ENABLED and WEBHOOK_URL and len(WEBHOOK_URL) > 50 else (f" ({WEBHOOK_URL})" if WEBHOOK_ENABLED and WEBHOOK_URL else "")))
+    print(f"* Webhook notifications:\t\t{WEBHOOK_ENABLED}" + (f" ({str(WEBHOOK_URL)[:50]}...)" if WEBHOOK_ENABLED and WEBHOOK_URL and len(str(WEBHOOK_URL)) > 50 else (f" ({WEBHOOK_URL})" if WEBHOOK_ENABLED and WEBHOOK_URL else "")))
     if WEBHOOK_ENABLED:
         print(f"*   Webhook on status/profile changes:\t{WEBHOOK_STATUS_NOTIFICATION}")
         print(f"*   Webhook on follow changes:\t\t{WEBHOOK_FOLLOWERS_NOTIFICATION}")
