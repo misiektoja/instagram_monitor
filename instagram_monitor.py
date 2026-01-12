@@ -3233,8 +3233,8 @@ def dashboard_input_handler():
     old_settings = None
     if not is_windows and sys.stdin.isatty():
         try:
-            old_settings = termios.tcgetattr(sys.stdin)
-            tty.setcbreak(sys.stdin.fileno())
+            old_settings = termios.tcgetattr(sys.stdin)  # type: ignore
+            tty.setcbreak(sys.stdin.fileno())  # type: ignore
         except Exception:
             old_settings = None
 
@@ -3244,10 +3244,10 @@ def dashboard_input_handler():
                 char = None
                 if is_windows:
                     # Windows unbuffered input
-                    if msvcrt.kbhit():
+                    if msvcrt.kbhit():  # type: ignore
                         # Read character and decode from bytes
                         try:
-                            char_bytes = msvcrt.getch()
+                            char_bytes = msvcrt.getch()  # type: ignore
                             # Handle Ctrl+C (ASCII 3)
                             if char_bytes == b'\x03':
                                 # Trigger clean exit
@@ -3255,7 +3255,7 @@ def dashboard_input_handler():
                                 break
                             # Handle special keys (arrows etc) which return two bytes
                             if char_bytes in (b'\x00', b'\xe0'):
-                                msvcrt.getch() # Skip second byte
+                                msvcrt.getch() # Skip second byte  # type: ignore
                                 continue
                             char = char_bytes.decode('utf-8', errors='ignore').lower()
                         except (UnicodeDecodeError, AttributeError):
@@ -3342,7 +3342,7 @@ def dashboard_input_handler():
         if old_settings:
             try:
                 import termios
-                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)  # type: ignore
             except Exception:
                 pass
 
