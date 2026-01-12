@@ -915,102 +915,235 @@
                 </button>
             </div>
 
-            <div class="card">
-                <div class="card-title">Check Intervals</div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label class="form-label">Check Interval (seconds)</label>
-                        <input type="number" class="form-input" id="check-interval" value="5400" min="300">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
+                <!-- Intervals Card -->
+                <div class="card">
+                    <div class="card-title">Check Intervals</div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Base Interval (sec)</label>
+                            <input type="number" class="form-input" id="check-interval" min="300">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Liveness Check (sec)</label>
+                            <input type="number" class="form-input" id="liveness-check-interval" min="0">
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">Random Variation Low (seconds)</label>
-                        <input type="number" class="form-input" id="random-low" value="900" min="0">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Random Variation Low (sec)</label>
+                            <input type="number" class="form-input" id="random-low" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Random Variation High (sec)</label>
+                            <input type="number" class="form-input" id="random-high" min="0">
+                        </div>
+                    </div>
+                    <p style="font-size: 11px; color: #666; margin-top: -10px;">
+                        Final interval = Base ± Random. Use 0 for Liveness Check to disable.
+                    </p>
+                </div>
+
+                <!-- Notifications Card -->
+                <div class="card">
+                    <div class="card-title">Notifications</div>
+
+                    <div style="margin-bottom: 20px;">
+                        <h4
+                            style="font-size: 13px; color: #e94560; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 5px;">
+                            Email Notifications</h4>
+                        <div class="setting-row" style="padding: 8px 0;">
+                            <div class="setting-info">
+                                <h4>Status & Profile changes</h4>
+                                <p>New posts, reels, stories, bio, pic</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="email-notifications">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row" style="padding: 8px 0;">
+                            <div class="setting-info">
+                                <h4>Follower changes</h4>
+                                <p>New followers or un-follows</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="follower-notifications">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row" style="padding: 8px 0;">
+                            <div class="setting-info">
+                                <h4>Error alerts</h4>
+                                <p>Critical monitoring errors</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="error-notifications">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4
+                            style="font-size: 13px; color: #e94560; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 5px;">
+                            Webhook Notifications</h4>
+                        <div class="setting-row" style="padding: 8px 0;">
+                            <div class="setting-info">
+                                <h4>Enabled</h4>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="webhook-enabled">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-group" style="margin: 10px 0;">
+                            <label class="form-label">Webhook URL</label>
+                            <input type="text" class="form-input" id="webhook-url"
+                                placeholder="https://discord.com/api/webhooks/...">
+                        </div>
+                        <div class="setting-row" style="padding: 8px 0;">
+                            <div class="setting-info">
+                                <h4>Status changes</h4>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="webhook-status">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row" style="padding: 8px 0;">
+                            <div class="setting-info">
+                                <h4>Follower changes</h4>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="webhook-followers">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row" style="padding: 8px 0;">
+                            <div class="setting-info">
+                                <h4>Errors</h4>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="webhook-errors">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label">Random Variation High (seconds)</label>
-                    <input type="number" class="form-input" id="random-high" value="180" min="0">
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-title">Notifications</div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <h4>Email Notifications</h4>
-                        <p>Send email on status changes</p>
+                <!-- Tracking Options Card -->
+                <div class="card">
+                    <div class="card-title">Tracking Options</div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Be Human Mode</h4>
+                            <p>Perform random human-like actions</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="be-human">
+                            <span class="toggle-slider"></span>
+                        </label>
                     </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="email-notifications">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <h4>Follower Notifications</h4>
-                        <p>Send email on follower changes</p>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Skip Session Login</h4>
+                            <p>Anonymous mode (limited info)</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="skip-session-login">
+                            <span class="toggle-slider"></span>
+                        </label>
                     </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="follower-notifications">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <h4>Webhook Enabled</h4>
-                        <p>Send Discord/webhook notifications</p>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Profile Pic Monitoring</h4>
+                            <p>Detect changes to profile picture</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="profile-pic-changes">
+                            <span class="toggle-slider"></span>
+                        </label>
                     </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="webhook-enabled">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-
-                <div class="form-group" style="margin-top: 16px;">
-                    <label class="form-label">Webhook URL</label>
-                    <input type="text" class="form-input" id="webhook-url"
-                        placeholder="https://discord.com/api/webhooks/...">
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-title">Advanced</div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <h4>Detailed Follower Logging</h4>
-                        <p>Fetch full follower list every check</p>
+                    <div style="margin-top: 15px; grid-template-columns: 1fr 1fr; display: grid; gap: 10px;">
+                        <div class="setting-row" style="padding: 5px 0;">
+                            <span style="font-size: 13px;">Skip Followers</span>
+                            <label class="toggle-switch"><input type="checkbox" id="skip-followers"><span
+                                    class="toggle-slider"></span></label>
+                        </div>
+                        <div class="setting-row" style="padding: 5px 0;">
+                            <span style="font-size: 13px;">Skip Followings</span>
+                            <label class="toggle-switch"><input type="checkbox" id="skip-followings"><span
+                                    class="toggle-slider"></span></label>
+                        </div>
+                        <div class="setting-row" style="padding: 5px 0;">
+                            <span style="font-size: 13px;">Skip Stories</span>
+                            <label class="toggle-switch"><input type="checkbox" id="skip-stories"><span
+                                    class="toggle-slider"></span></label>
+                        </div>
+                        <div class="setting-row" style="padding: 5px 0;">
+                            <span style="font-size: 13px;">Skip Posts</span>
+                            <label class="toggle-switch"><input type="checkbox" id="skip-posts"><span
+                                    class="toggle-slider"></span></label>
+                        </div>
                     </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="detailed-logging">
-                        <span class="toggle-slider"></span>
-                    </label>
+                    <div class="setting-row" style="padding: 8px 0; margin-top: 10px;">
+                        <div class="setting-info">
+                            <h4>Get More Post Details</h4>
+                            <p>Detailed fetch for each post</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="get-more-post-details">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
                 </div>
 
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <h4>Verbose Mode</h4>
-                        <p>Show timing and interval details in console</p>
+                <!-- Advanced & Logging Card -->
+                <div class="card">
+                    <div class="card-title">Logging & Advanced</div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Output Logging</h4>
+                            <p>Enable logging to instagram_monitor.log</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="logging-enabled">
+                            <span class="toggle-slider"></span>
+                        </label>
                     </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="verbose-mode">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <h4>Debug Mode</h4>
-                        <p>Show verbose output in console</p>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Detailed Follower Logging</h4>
+                            <p>Log all follower IDs periodically</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="detailed-logging">
+                            <span class="toggle-slider"></span>
+                        </label>
                     </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="debug-mode">
-                        <span class="toggle-slider"></span>
-                    </label>
+                    <div class="form-group" style="margin-top: 10px;">
+                        <label class="form-label">CSV Filename</label>
+                        <input type="text" class="form-input" id="csv-filename" placeholder="test.csv">
+                    </div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Verbose Mode</h4>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="verbose-mode">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Debug Mode</h4>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="debug-mode">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1659,17 +1792,38 @@
 
         function populateSettings(s) {
             document.getElementById('check-interval').value = s.check_interval || 5400;
+            document.getElementById('liveness-check-interval').value = s.liveness_check_interval || 0;
             document.getElementById('random-low').value = s.random_low || 900;
             document.getElementById('random-high').value = s.random_high || 180;
+
             document.getElementById('email-notifications').checked = s.email_notifications || false;
             document.getElementById('follower-notifications').checked = s.follower_notifications || false;
+            document.getElementById('error_notifications' in s ? 'error_notifications' : 'error-notifications').checked = s.error_notifications || false;
+
             document.getElementById('webhook-enabled').checked = s.webhook_enabled || false;
             document.getElementById('webhook-url').value = s.webhook_url || '';
+            document.getElementById('webhook-status').checked = s.webhook_status || false;
+            document.getElementById('webhook-followers').checked = s.webhook_followers || false;
+            document.getElementById('webhook-errors').checked = s.webhook_errors || false;
+
+            document.getElementById('be-human').checked = s.be_human || false;
+            document.getElementById('skip-session-login').checked = s.skip_session_login || false;
+            document.getElementById('profile-pic-changes').checked = s.profile_pic_changes || false;
+            document.getElementById('skip-followers').checked = s.skip_followers || false;
+            document.getElementById('skip-followings').checked = s.skip_followings || false;
+            document.getElementById('skip-stories').checked = s.skip_stories || false;
+            document.getElementById('skip-posts').checked = s.skip_posts || false;
+            document.getElementById('get-more-post-details').checked = s.get_more_post_details || false;
+
+            document.getElementById('logging-enabled').checked = s.logging_enabled || false;
             document.getElementById('detailed-logging').checked = s.detailed_logging || false;
+            document.getElementById('csv-filename').value = s.csv_file || '';
             document.getElementById('verbose-mode').checked = s.verbose_mode || false;
             document.getElementById('debug-mode').checked = s.debug_mode || false;
+
             if (s.session_username) {
-                document.getElementById('session-username').value = s.session_username;
+                const sessionUser = document.getElementById('session-username');
+                if (sessionUser) sessionUser.value = s.session_username;
             }
         }
 
@@ -1820,13 +1974,32 @@
         async function saveSettings() {
             const newSettings = {
                 check_interval: parseInt(document.getElementById('check-interval').value),
+                liveness_check_interval: parseInt(document.getElementById('liveness-check-interval').value),
                 random_low: parseInt(document.getElementById('random-low').value),
                 random_high: parseInt(document.getElementById('random-high').value),
+
                 email_notifications: document.getElementById('email-notifications').checked,
                 follower_notifications: document.getElementById('follower-notifications').checked,
+                error_notifications: document.getElementById('error-notifications').checked,
+
                 webhook_enabled: document.getElementById('webhook-enabled').checked,
                 webhook_url: document.getElementById('webhook-url').value,
+                webhook_status: document.getElementById('webhook-status').checked,
+                webhook_followers: document.getElementById('webhook-followers').checked,
+                webhook_errors: document.getElementById('webhook-errors').checked,
+
+                be_human: document.getElementById('be-human').checked,
+                skip_session_login: document.getElementById('skip-session-login').checked,
+                profile_pic_changes: document.getElementById('profile-pic-changes').checked,
+                skip_followers: document.getElementById('skip-followers').checked,
+                skip_followings: document.getElementById('skip-followings').checked,
+                skip_stories: document.getElementById('skip-stories').checked,
+                skip_posts: document.getElementById('skip-posts').checked,
+                get_more_post_details: document.getElementById('get-more-post-details').checked,
+
+                logging_enabled: document.getElementById('logging-enabled').checked,
                 detailed_logging: document.getElementById('detailed-logging').checked,
+                csv_filename: document.getElementById('csv-filename').value,
                 verbose_mode: document.getElementById('verbose-mode').checked,
                 debug_mode: document.getElementById('debug-mode').checked
             };

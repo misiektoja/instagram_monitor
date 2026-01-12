@@ -1020,7 +1020,9 @@ def create_web_dashboard_app():
         global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS
         global ENABLE_JITTER, DETECT_CHANGED_PROFILE_PIC, SKIP_SESSION, CLI_CONFIG_PATH
         global DOTENV_FILE, WEB_DASHBOARD_TEMPLATE_DIR, LOCAL_TIMEZONE, OUTPUT_DIR, CSV_FILE
-        global VERBOSE_MODE
+        global VERBOSE_MODE, BE_HUMAN, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, LIVENESS_CHECK_INTERVAL
+        global WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
+        global DISABLE_LOGGING
 
         if flask_request.method == 'GET':  # type: ignore
             return jsonify({  # type: ignore
@@ -1032,11 +1034,17 @@ def create_web_dashboard_app():
                 'error_notifications': ERROR_NOTIFICATION,
                 'webhook_enabled': WEBHOOK_ENABLED,
                 'webhook_url': WEBHOOK_URL,
+                'webhook_status': WEBHOOK_STATUS_NOTIFICATION,
+                'webhook_followers': WEBHOOK_FOLLOWERS_NOTIFICATION,
+                'webhook_errors': WEBHOOK_ERROR_NOTIFICATION,
                 'detailed_logging': DETAILED_FOLLOWER_LOGGING,
                 'verbose_mode': VERBOSE_MODE,
                 'debug_mode': DEBUG_MODE,
                 'session_username': SESSION_USERNAME,
-                # New fields
+                'be_human': BE_HUMAN,
+                'skip_followers': SKIP_FOLLOWERS,
+                'skip_followings': SKIP_FOLLOWINGS,
+                'liveness_check_interval': LIVENESS_CHECK_INTERVAL,
                 'skip_stories': SKIP_GETTING_STORY_DETAILS,
                 'skip_posts': SKIP_GETTING_POSTS_DETAILS,
                 'get_more_post_details': GET_MORE_POST_DETAILS,
@@ -1047,39 +1055,76 @@ def create_web_dashboard_app():
                 'dotenv_file': DOTENV_FILE or "None",
                 'template_dir': WEB_DASHBOARD_TEMPLATE_DIR or "Auto",
                 'local_timezone': LOCAL_TIMEZONE,
-                'csv_file': "Enabled" if CSV_FILE else "Disabled",
-                'output_dir': OUTPUT_DIR or "-"
+                'csv_file': CSV_FILE,
+                'csv_enabled': bool(CSV_FILE),
+                'output_dir': OUTPUT_DIR or "-",
+                'logging_enabled': not DISABLE_LOGGING
             })
         elif flask_request.method == 'POST':  # type: ignore
             data = flask_request.get_json()  # type: ignore
             if not data:
                 return jsonify({'success': False, 'error': 'No data provided'}), 400  # type: ignore
 
-            if 'check_interval' in data:
-                INSTA_CHECK_INTERVAL = max(300, int(data['check_interval']))
-            if 'random_low' in data:
-                RANDOM_SLEEP_DIFF_LOW = max(0, int(data['random_low']))
-            if 'random_high' in data:
-                RANDOM_SLEEP_DIFF_HIGH = max(0, int(data['random_high']))
-            if 'email_notifications' in data:
-                STATUS_NOTIFICATION = bool(data['email_notifications'])
-            if 'follower_notifications' in data:
-                FOLLOWERS_NOTIFICATION = bool(data['follower_notifications'])
-            if 'webhook_enabled' in data:
-                WEBHOOK_ENABLED = bool(data['webhook_enabled'])
-            if 'webhook_url' in data:
-                webhook_url = data['webhook_url']
-                if webhook_url and not validate_webhook_url(webhook_url):
-                    return jsonify({'success': False, 'error': 'Invalid webhook URL format. Must be HTTPS URL.'}), 400  # type: ignore
-                WEBHOOK_URL = webhook_url
-            if 'detailed_logging' in data:
-                DETAILED_FOLLOWER_LOGGING = bool(data['detailed_logging'])
-            if 'verbose_mode' in data:
-                VERBOSE_MODE = bool(data['verbose_mode'])
-            if 'debug_mode' in data:
-                DEBUG_MODE = bool(data['debug_mode'])
+            changes = []
 
-            log_activity("Settings updated from web dashboard")
+            def update_setting(key, current_val, new_val, cast_func=None):
+                nonlocal changes
+                if key not in data:
+                    return current_val
+
+                try:
+                    processed_val = cast_func(data[key]) if cast_func else data[key]
+                except (ValueError, TypeError):
+                    return current_val
+
+                if processed_val != current_val:
+                    # Special validation for some fields
+                    if key == 'check_interval':
+                        processed_val = max(300, processed_val)
+                    elif key in ['random_low', 'random_high']:
+                        processed_val = max(0, processed_val)
+                    elif key == 'webhook_url':
+                        if processed_val and not validate_webhook_url(processed_val):
+                            return current_val
+
+                    changes.append(f"'{key}' changed from {current_val} to {processed_val}")
+                    return processed_val
+                return current_val
+
+            INSTA_CHECK_INTERVAL = update_setting('check_interval', INSTA_CHECK_INTERVAL, data.get('check_interval'), int)
+            RANDOM_SLEEP_DIFF_LOW = update_setting('random_low', RANDOM_SLEEP_DIFF_LOW, data.get('random_low'), int)
+            RANDOM_SLEEP_DIFF_HIGH = update_setting('random_high', RANDOM_SLEEP_DIFF_HIGH, data.get('random_high'), int)
+            STATUS_NOTIFICATION = update_setting('email_notifications', STATUS_NOTIFICATION, data.get('email_notifications'), bool)
+            FOLLOWERS_NOTIFICATION = update_setting('follower_notifications', FOLLOWERS_NOTIFICATION, data.get('follower_notifications'), bool)
+            ERROR_NOTIFICATION = update_setting('error_notifications', ERROR_NOTIFICATION, data.get('error_notifications'), bool)
+            WEBHOOK_ENABLED = update_setting('webhook_enabled', WEBHOOK_ENABLED, data.get('webhook_enabled'), bool)
+            WEBHOOK_URL = update_setting('webhook_url', WEBHOOK_URL, data.get('webhook_url'), str)
+            WEBHOOK_STATUS_NOTIFICATION = update_setting('webhook_status', WEBHOOK_STATUS_NOTIFICATION, data.get('webhook_status'), bool)
+            WEBHOOK_FOLLOWERS_NOTIFICATION = update_setting('webhook_followers', WEBHOOK_FOLLOWERS_NOTIFICATION, data.get('webhook_followers'), bool)
+            WEBHOOK_ERROR_NOTIFICATION = update_setting('webhook_errors', WEBHOOK_ERROR_NOTIFICATION, data.get('webhook_errors'), bool)
+            DETAILED_FOLLOWER_LOGGING = update_setting('detailed_logging', DETAILED_FOLLOWER_LOGGING, data.get('detailed_logging'), bool)
+            VERBOSE_MODE = update_setting('verbose_mode', VERBOSE_MODE, data.get('verbose_mode'), bool)
+            DEBUG_MODE = update_setting('debug_mode', DEBUG_MODE, data.get('debug_mode'), bool)
+            BE_HUMAN = update_setting('be_human', BE_HUMAN, data.get('be_human'), bool)
+            SKIP_FOLLOWERS = update_setting('skip_followers', SKIP_FOLLOWERS, data.get('skip_followers'), bool)
+            SKIP_FOLLOWINGS = update_setting('skip_followings', SKIP_FOLLOWINGS, data.get('skip_followings'), bool)
+            SKIP_GETTING_STORY_DETAILS = update_setting('skip_stories', SKIP_GETTING_STORY_DETAILS, data.get('skip_stories'), bool)
+            SKIP_GETTING_POSTS_DETAILS = update_setting('skip_posts', SKIP_GETTING_POSTS_DETAILS, data.get('skip_posts'), bool)
+            GET_MORE_POST_DETAILS = update_setting('get_more_post_details', GET_MORE_POST_DETAILS, data.get('get_more_post_details'), bool)
+            DETECT_CHANGED_PROFILE_PIC = update_setting('profile_pic_changes', DETECT_CHANGED_PROFILE_PIC, data.get('profile_pic_changes'), bool)
+            SKIP_SESSION = update_setting('skip_session_login', SKIP_SESSION, data.get('skip_session_login'), bool)
+            LIVENESS_CHECK_INTERVAL = update_setting('liveness_check_interval', LIVENESS_CHECK_INTERVAL, data.get('liveness_check_interval'), int)
+            DISABLE_LOGGING = not update_setting('logging_enabled', not DISABLE_LOGGING, data.get('logging_enabled'), bool)
+
+            if 'csv_filename' in data and data['csv_filename'] != CSV_FILE:
+                changes.append(f"'csv_filename' changed from {CSV_FILE} to {data['csv_filename']}")
+                CSV_FILE = data['csv_filename']
+
+            if changes:
+                msg = "Settings updated: " + "; ".join(changes)
+                log_activity(msg)
+                print_cur_ts(f"* {msg}\n")
+
             return jsonify({'success': True})  # type: ignore
 
     @app.route('/api/session', methods=['GET', 'POST'])  # type: ignore[misc]
