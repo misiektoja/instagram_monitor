@@ -2026,6 +2026,8 @@
                     } else {
                         showToast('Settings saved');
                     }
+                    // Refresh values from backend to reflect any server-side adjustments (like limits)
+                    fetchSettings();
                 } else {
                     showToast(data.error || 'Failed to save settings', 'error');
                 }
