@@ -398,13 +398,13 @@ WEBHOOK_ERROR_NOTIFICATION = False
 # Do not change values below - modify them in the configuration section or config file instead
 SESSION_USERNAME = ""
 SESSION_PASSWORD = ""
-SMTP_HOST = ""
-SMTP_PORT = 0
-SMTP_USER = ""
-SMTP_PASSWORD = ""
-SMTP_SSL = False
-SENDER_EMAIL = ""
-RECEIVER_EMAIL = ""
+SMTP_HOST: str = ""
+SMTP_PORT: int = 0
+SMTP_USER: str = ""
+SMTP_PASSWORD: str = ""
+SMTP_SSL: bool = False
+SENDER_EMAIL: str = ""
+RECEIVER_EMAIL: str = ""
 STATUS_NOTIFICATION = False
 FOLLOWERS_NOTIFICATION = False
 ERROR_NOTIFICATION = False
@@ -1169,37 +1169,37 @@ def create_web_dashboard_app():
                     return processed_val
                 return current_val
 
-            INSTA_CHECK_INTERVAL = update_setting('check_interval', INSTA_CHECK_INTERVAL, data.get('check_interval'), int)
-            RANDOM_SLEEP_DIFF_LOW = update_setting('random_low', RANDOM_SLEEP_DIFF_LOW, data.get('random_low'), int)
-            RANDOM_SLEEP_DIFF_HIGH = update_setting('random_high', RANDOM_SLEEP_DIFF_HIGH, data.get('random_high'), int)
-            STATUS_NOTIFICATION = update_setting('email_notifications', STATUS_NOTIFICATION, data.get('email_notifications'), bool)
-            FOLLOWERS_NOTIFICATION = update_setting('follower_notifications', FOLLOWERS_NOTIFICATION, data.get('follower_notifications'), bool)
-            ERROR_NOTIFICATION = update_setting('error_notifications', ERROR_NOTIFICATION, data.get('error_notifications'), bool)
-            WEBHOOK_ENABLED = update_setting('webhook_enabled', WEBHOOK_ENABLED, data.get('webhook_enabled'), bool)
-            WEBHOOK_URL = update_setting('webhook_url', WEBHOOK_URL, data.get('webhook_url'), str)
-            WEBHOOK_STATUS_NOTIFICATION = update_setting('webhook_status', WEBHOOK_STATUS_NOTIFICATION, data.get('webhook_status'), bool)
-            WEBHOOK_FOLLOWERS_NOTIFICATION = update_setting('webhook_followers', WEBHOOK_FOLLOWERS_NOTIFICATION, data.get('webhook_followers'), bool)
-            WEBHOOK_ERROR_NOTIFICATION = update_setting('webhook_errors', WEBHOOK_ERROR_NOTIFICATION, data.get('webhook_errors'), bool)
-            DETAILED_FOLLOWER_LOGGING = update_setting('detailed_logging', DETAILED_FOLLOWER_LOGGING, data.get('detailed_logging'), bool)
-            VERBOSE_MODE = update_setting('verbose_mode', VERBOSE_MODE, data.get('verbose_mode'), bool)
-            DEBUG_MODE = update_setting('debug_mode', DEBUG_MODE, data.get('debug_mode'), bool)
-            BE_HUMAN = update_setting('be_human', BE_HUMAN, data.get('be_human'), bool)
-            SKIP_FOLLOWERS = update_setting('skip_followers', SKIP_FOLLOWERS, data.get('skip_followers'), bool)
-            SKIP_FOLLOWINGS = update_setting('skip_followings', SKIP_FOLLOWINGS, data.get('skip_followings'), bool)
-            SKIP_GETTING_STORY_DETAILS = update_setting('skip_stories', SKIP_GETTING_STORY_DETAILS, data.get('skip_stories'), bool)
-            SKIP_GETTING_POSTS_DETAILS = update_setting('skip_posts', SKIP_GETTING_POSTS_DETAILS, data.get('skip_posts'), bool)
-            GET_MORE_POST_DETAILS = update_setting('get_more_post_details', GET_MORE_POST_DETAILS, data.get('get_more_post_details'), bool)
-            DETECT_CHANGED_PROFILE_PIC = update_setting('profile_pic_changes', DETECT_CHANGED_PROFILE_PIC, data.get('profile_pic_changes'), bool)
-            SKIP_SESSION = update_setting('skip_session_login', SKIP_SESSION, data.get('skip_session_login'), bool)
-            LIVENESS_CHECK_INTERVAL = update_setting('liveness_check_interval', LIVENESS_CHECK_INTERVAL, data.get('liveness_check_interval'), int)
-            DISABLE_LOGGING = not update_setting('logging_enabled', not DISABLE_LOGGING, data.get('logging_enabled'), bool)
+            INSTA_CHECK_INTERVAL = int(update_setting('check_interval', INSTA_CHECK_INTERVAL, data.get('check_interval'), int))
+            RANDOM_SLEEP_DIFF_LOW = int(update_setting('random_low', RANDOM_SLEEP_DIFF_LOW, data.get('random_low'), int))
+            RANDOM_SLEEP_DIFF_HIGH = int(update_setting('random_high', RANDOM_SLEEP_DIFF_HIGH, data.get('random_high'), int))
+            STATUS_NOTIFICATION = bool(update_setting('email_notifications', STATUS_NOTIFICATION, data.get('email_notifications'), bool))
+            FOLLOWERS_NOTIFICATION = bool(update_setting('follower_notifications', FOLLOWERS_NOTIFICATION, data.get('follower_notifications'), bool))
+            ERROR_NOTIFICATION = bool(update_setting('error_notifications', ERROR_NOTIFICATION, data.get('error_notifications'), bool))
+            WEBHOOK_ENABLED = bool(update_setting('webhook_enabled', WEBHOOK_ENABLED, data.get('webhook_enabled'), bool))
+            WEBHOOK_URL = str(update_setting('webhook_url', WEBHOOK_URL, data.get('webhook_url'), str))
+            WEBHOOK_STATUS_NOTIFICATION = bool(update_setting('webhook_status', WEBHOOK_STATUS_NOTIFICATION, data.get('webhook_status'), bool))
+            WEBHOOK_FOLLOWERS_NOTIFICATION = bool(update_setting('webhook_followers', WEBHOOK_FOLLOWERS_NOTIFICATION, data.get('webhook_followers'), bool))
+            WEBHOOK_ERROR_NOTIFICATION = bool(update_setting('webhook_errors', WEBHOOK_ERROR_NOTIFICATION, data.get('webhook_errors'), bool))
+            DETAILED_FOLLOWER_LOGGING = bool(update_setting('detailed_logging', DETAILED_FOLLOWER_LOGGING, data.get('detailed_logging'), bool))
+            VERBOSE_MODE = bool(update_setting('verbose_mode', VERBOSE_MODE, data.get('verbose_mode'), bool))
+            DEBUG_MODE = bool(update_setting('debug_mode', DEBUG_MODE, data.get('debug_mode'), bool))
+            BE_HUMAN = bool(update_setting('be_human', BE_HUMAN, data.get('be_human'), bool))
+            SKIP_FOLLOWERS = bool(update_setting('skip_followers', SKIP_FOLLOWERS, data.get('skip_followers'), bool))
+            SKIP_FOLLOWINGS = bool(update_setting('skip_followings', SKIP_FOLLOWINGS, data.get('skip_followings'), bool))
+            SKIP_GETTING_STORY_DETAILS = bool(update_setting('skip_stories', SKIP_GETTING_STORY_DETAILS, data.get('skip_stories'), bool))
+            SKIP_GETTING_POSTS_DETAILS = bool(update_setting('skip_posts', SKIP_GETTING_POSTS_DETAILS, data.get('skip_posts'), bool))
+            GET_MORE_POST_DETAILS = bool(update_setting('get_more_post_details', GET_MORE_POST_DETAILS, data.get('get_more_post_details'), bool))
+            DETECT_CHANGED_PROFILE_PIC = bool(update_setting('profile_pic_changes', DETECT_CHANGED_PROFILE_PIC, data.get('profile_pic_changes'), bool))
+            SKIP_SESSION = bool(update_setting('skip_session_login', SKIP_SESSION, data.get('skip_session_login'), bool))
+            LIVENESS_CHECK_INTERVAL = int(update_setting('liveness_check_interval', LIVENESS_CHECK_INTERVAL, data.get('liveness_check_interval'), int))
+            DISABLE_LOGGING = not bool(update_setting('logging_enabled', not DISABLE_LOGGING, data.get('logging_enabled'), bool))
 
-            SMTP_HOST = update_setting('smtp_host', SMTP_HOST, data.get('smtp_host'), str)
-            SMTP_PORT = update_setting('smtp_port', SMTP_PORT, data.get('smtp_port'), int)
-            SMTP_USER = update_setting('smtp_user', SMTP_USER, data.get('smtp_user'), str)
-            SMTP_SSL = update_setting('smtp_ssl', SMTP_SSL, data.get('smtp_ssl'), bool)
-            SENDER_EMAIL = update_setting('sender_email', SENDER_EMAIL, data.get('sender_email'), str)
-            RECEIVER_EMAIL = update_setting('receiver_email', RECEIVER_EMAIL, data.get('receiver_email'), str)
+            SMTP_HOST = str(update_setting('smtp_host', SMTP_HOST, data.get('smtp_host'), str))
+            SMTP_PORT = int(update_setting('smtp_port', SMTP_PORT, data.get('smtp_port'), int))
+            SMTP_USER = str(update_setting('smtp_user', SMTP_USER, data.get('smtp_user'), str))
+            SMTP_SSL = bool(update_setting('smtp_ssl', SMTP_SSL, data.get('smtp_ssl'), bool))
+            SENDER_EMAIL = str(update_setting('sender_email', SENDER_EMAIL, data.get('sender_email'), str))
+            RECEIVER_EMAIL = str(update_setting('receiver_email', RECEIVER_EMAIL, data.get('receiver_email'), str))
 
             # Special case for SMTP_PASSWORD
             if 'smtp_password' in data and data['smtp_password']:
