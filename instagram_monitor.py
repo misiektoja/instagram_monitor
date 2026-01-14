@@ -533,7 +533,7 @@ WEB_DASHBOARD_DATA = {
     'start_time': None,
     'activities': [],
     'is_monitoring': False,
-    'session': {'username': None, 'active': False}
+    'session': {'username': SESSION_USERNAME if SESSION_USERNAME else None, 'active': False}
 }
 WEB_DASHBOARD_MONITOR_THREADS = {}  # Active monitoring threads by username
 WEB_DASHBOARD_STOP_EVENTS = {}  # Stop events for each monitoring thread
@@ -856,6 +856,69 @@ def create_web_dashboard_app():
     def index():  # type: ignore
         return render_template('index.html', version=VERSION)  # type: ignore[misc]
 
+    def get_web_dashboard_session_data():
+        """Helper to get consistent, rich session data for the dashboard"""
+        global SESSION_USERNAME, SKIP_SESSION
+
+        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+            # Get base data (mostly the 'active' status)
+            data = WEB_DASHBOARD_DATA.get('session', {'username': None, 'active': False}).copy()
+
+        # Ensure username matches current global
+        data['username'] = SESSION_USERNAME if SESSION_USERNAME else None
+        data['skip_session'] = SKIP_SESSION
+
+        # Force active to False if Mode 1
+        if SKIP_SESSION or not SESSION_USERNAME:
+            data['active'] = False
+
+        # Enhance with file information if we have a username
+        if data['username']:
+            username = data['username']
+            # Try to resolve Instaloader's default path
+            # Replicating Instaloader's get_default_sessionpath(username) logic
+            if system() == 'Windows':
+                appdata = os.environ.get('APPDATA')
+                if appdata:
+                    session_file = os.path.join(appdata, 'Instaloader', f'session-{username}')
+                else:
+                    session_file = f"session-{username}"
+            else:
+                session_file = os.path.expanduser(f'~/.config/instaloader/session-{username}')
+
+            # Fallback check for local .session file just in case it's used
+            if not os.path.isfile(session_file):
+                local_fallback = os.path.abspath(f"{username}.session")
+                if os.path.isfile(local_fallback):
+                    session_file = local_fallback
+                else:
+                    # Also check for ~/.instaloader/session-{username} (older versions)
+                    old_unix_fallback = os.path.expanduser(f'~/.instaloader/session-{username}')
+                    if os.path.isfile(old_unix_fallback):
+                        session_file = old_unix_fallback
+
+            data['file_path'] = os.path.abspath(session_file)
+            data['file_exists'] = os.path.isfile(session_file)
+
+            if data['file_exists']:
+                try:
+                    stat = os.stat(session_file)
+                    data['file_size'] = stat.st_size
+                    data['file_size_human'] = f"{stat.st_size / 1024:.2f} KB" if stat.st_size < 1024 * 1024 else f"{stat.st_size / (1024 * 1024):.2f} MB"
+                    data['last_modified'] = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                    last_modified_dt = datetime.fromtimestamp(stat.st_mtime)
+                    data['last_modified_relative'] = calculate_timespan(datetime.now(), last_modified_dt, show_seconds=False, granularity=2)
+                except (OSError, Exception):
+                    data['file_size_human'] = 'Unknown'
+            else:
+                data['file_size_human'] = 'N/A'
+        else:
+            data['file_path'] = None
+            data['file_exists'] = False
+            data['file_size_human'] = 'N/A'
+
+        return data
+
     @app.route('/api/status')
     def api_status():  # type: ignore
         with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
@@ -866,6 +929,10 @@ def create_web_dashboard_app():
                 hours, remainder = divmod(int(uptime_delta.total_seconds()), 3600)
                 minutes, seconds = divmod(remainder, 60)
                 data['uptime'] = f"{hours}h {minutes}m {seconds}s"
+
+            # Use consistent session data
+            data['session'] = get_web_dashboard_session_data()
+
             return jsonify(data)  # type: ignore
 
     # Catch TemplateNotFound specifically to show friendly error
@@ -1154,13 +1221,13 @@ def create_web_dashboard_app():
 
             return jsonify({'success': True, 'changes': changes})  # type: ignore
 
+
     @app.route('/api/session', methods=['GET', 'POST'])  # type: ignore[misc]
     def api_session():  # type: ignore[return]
         global SESSION_USERNAME, SKIP_SESSION
 
         if flask_request.method == 'GET':  # type: ignore
-            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-                return jsonify(WEB_DASHBOARD_DATA.get('session', {}))  # type: ignore
+            return jsonify(get_web_dashboard_session_data())  # type: ignore
         elif flask_request.method == 'POST':  # type: ignore
             data = flask_request.get_json()  # type: ignore
             if not data:
@@ -1174,9 +1241,89 @@ def create_web_dashboard_app():
                 SKIP_SESSION = False
                 with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                     WEB_DASHBOARD_DATA['session'] = {'username': username, 'active': False, 'method': method}
-                log_activity(f"Session configured for: {username}")
+
+                msg = f"Session configured for: {username} (Method: {method})"
+                mode_msg = "Session mode switched to: Mode 2 (Logged In)"
+                log_activity(msg)
+                print(f"\n* {msg}")
+                print(f"* {mode_msg}")
+                print_cur_ts("\nTimestamp:\t\t\t\t")
+
                 return jsonify({'success': True, 'message': f'Session set for {username}'})  # type: ignore
             return jsonify({'success': False, 'error': 'Username required'}), 400  # type: ignore
+
+    @app.route('/api/session/firefox/profiles', methods=['GET'])
+    def api_firefox_profiles():  # type: ignore
+        try:
+            default_cookiefile = {
+                "Windows": FIREFOX_WINDOWS_COOKIE,
+                "Darwin": FIREFOX_MACOS_COOKIE,
+            }.get(system(), FIREFOX_LINUX_COOKIE)
+
+            cookiefiles = glob(expanduser(default_cookiefile))
+            profiles = []
+            for path in cookiefiles:
+                profiles.append({
+                    'name': basename(dirname(path)),
+                    'path': path
+                })
+            return jsonify({'success': True, 'profiles': profiles})  # type: ignore
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500  # type: ignore
+
+    @app.route('/api/session/firefox/import', methods=['POST'])
+    def api_firefox_import():  # type: ignore
+        global SESSION_USERNAME, SKIP_SESSION
+        data = flask_request.get_json()  # type: ignore
+        if not data or 'path' not in data:
+            return jsonify({'success': False, 'error': 'Cookie file path required'}), 400  # type: ignore
+
+        cookiefile = data['path']
+        try:
+            # We use a temporary instaloader instance to detect the username
+            L = Instaloader(max_connection_attempts=1)
+            # Re-use parts of import_session logic but without SystemExit
+            try:
+                with connect(f"file:{cookiefile}?immutable=1", uri=True) as conn:
+                    try:
+                        cookie_iter = conn.execute(
+                            "SELECT name, value FROM moz_cookies WHERE baseDomain='instagram.com'"
+                        )
+                    except OperationalError:
+                        cookie_iter = conn.execute(
+                            "SELECT name, value FROM moz_cookies WHERE host LIKE '%instagram.com'"
+                        )
+                    cookie_dict = dict(cookie_iter)
+            except sqlite3.DatabaseError:
+                return jsonify({'success': False, 'error': 'Invalid Firefox cookies.sqlite file'}), 400  # type: ignore
+
+            L.context._session.cookies.update(cookie_dict)
+            username = L.test_login()
+
+            if not username:
+                return jsonify({'success': False, 'error': 'Not logged in in Firefox'}), 400  # type: ignore
+
+            # Save session
+            L.context.username = username
+            L.save_session_to_file(username)
+
+            # Update global state
+            SESSION_USERNAME = username
+            SKIP_SESSION = False
+
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                WEB_DASHBOARD_DATA['session'] = {'username': username, 'active': True, 'method': 'firefox'}
+
+            msg = f"Imported session from Firefox for: {username}"
+            mode_msg = "Session mode switched to: Mode 2 (Logged In)"
+            log_activity(msg)
+            print(f"\n* {msg}")
+            print(f"* {mode_msg}")
+            print_cur_ts("\nTimestamp:\t\t\t\t")
+
+            return jsonify({'success': True, 'username': username})  # type: ignore
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500  # type: ignore
 
     @app.route('/api/session/test', methods=['POST'])
     def api_test_session():  # type: ignore
@@ -1186,14 +1333,148 @@ def create_web_dashboard_app():
         try:
             L = Instaloader()
             L.load_session_from_file(SESSION_USERNAME)
+            # Test if session is actually valid by trying to get profile
+            test_username = L.test_login()
+            if test_username:
+                with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                    WEB_DASHBOARD_DATA['session']['active'] = True
+                    WEB_DASHBOARD_DATA['session']['last_tested'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+                msg = f"Session test successful for: {SESSION_USERNAME}"
+                log_activity(msg)
+                print(f"\n* {msg}")
+                print_cur_ts("\nTimestamp:\t\t\t\t")
+
+                return jsonify({'success': True, 'username': test_username})  # type: ignore
+            else:
+                with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                    WEB_DASHBOARD_DATA['session']['active'] = False
+
+                msg = f"Session test failed for: {SESSION_USERNAME} (not logged in)"
+                log_activity(msg)
+                print(f"\n* {msg}")
+                print_cur_ts("\nTimestamp:\t\t\t\t")
+
+                return jsonify({'success': False, 'error': 'Session test failed: not logged in'})  # type: ignore
+        except FileNotFoundError:
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-                WEB_DASHBOARD_DATA['session']['active'] = True
-            log_activity(f"Session test successful", user=SESSION_USERNAME)
-            return jsonify({'success': True, 'username': SESSION_USERNAME})  # type: ignore
+                WEB_DASHBOARD_DATA['session']['active'] = False
+
+            msg = f"Session test failed: file not found for {SESSION_USERNAME}"
+            log_activity(msg)
+            print(f"\n* {msg}")
+            print_cur_ts("\nTimestamp:\t\t\t\t")
+
+            return jsonify({'success': False, 'error': 'Session file not found'})  # type: ignore
         except Exception as e:
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                 WEB_DASHBOARD_DATA['session']['active'] = False
+
+            msg = f"Session test error for {SESSION_USERNAME}: {str(e)}"
+            log_activity(msg)
+            print(f"\n* {msg}")
+            print_cur_ts("\nTimestamp:\t\t\t\t")
+
             return jsonify({'success': False, 'error': str(e)})  # type: ignore
+
+    @app.route('/api/session/refresh', methods=['POST'])
+    def api_refresh_session():  # type: ignore
+        global SESSION_USERNAME, SESSION_PASSWORD
+        if not SESSION_USERNAME:
+            return jsonify({'success': False, 'error': 'No session configured'})  # type: ignore
+
+        try:
+            L = Instaloader()
+            # Try to reload from file first
+            try:
+                L.load_session_from_file(SESSION_USERNAME)
+                # Test if still valid
+                test_username = L.test_login()
+                if test_username:
+                        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                            WEB_DASHBOARD_DATA['session']['active'] = True
+                            WEB_DASHBOARD_DATA['session']['last_refreshed'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+                        msg = f"Session refreshed successfully for: {SESSION_USERNAME}"
+                        log_activity(msg)
+                        print(f"\n* {msg}")
+                        print_cur_ts("\nTimestamp:\t\t\t\t")
+
+                        return jsonify({'success': True, 'username': test_username, 'message': 'Session refreshed'})  # type: ignore
+                else:
+                    # Session file exists but is invalid, try to re-login if password available
+                    if SESSION_PASSWORD:
+                        L.login(SESSION_USERNAME, SESSION_PASSWORD)
+                        L.save_session_to_file()
+                        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                            WEB_DASHBOARD_DATA['session']['active'] = True
+                            WEB_DASHBOARD_DATA['session']['last_refreshed'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+                        msg = f"Session re-authenticated and refreshed for: {SESSION_USERNAME}"
+                        log_activity(msg)
+                        print(f"* {msg}")
+                        print_cur_ts("\nTimestamp:\t\t\t\t")
+
+                        return jsonify({'success': True, 'username': SESSION_USERNAME, 'message': 'Session re-authenticated'})  # type: ignore
+                    else:
+                        return jsonify({'success': False, 'error': 'Session expired and no password available for re-login'})  # type: ignore
+            except FileNotFoundError:
+                if SESSION_PASSWORD:
+                    # No session file, try to login
+                    L.login(SESSION_USERNAME, SESSION_PASSWORD)
+                    L.save_session_to_file()
+                    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                        WEB_DASHBOARD_DATA['session']['active'] = True
+                        WEB_DASHBOARD_DATA['session']['last_refreshed'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    log_activity(f"Session created and saved", user=SESSION_USERNAME)
+                    print(f"* Session created and saved for: {SESSION_USERNAME}")
+                    print_cur_ts("\nTimestamp:\t\t\t\t")
+                    return jsonify({'success': True, 'username': SESSION_USERNAME, 'message': 'Session created'})  # type: ignore
+                else:
+                    return jsonify({'success': False, 'error': 'Session file not found and no password available'})  # type: ignore
+        except Exception as e:
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                WEB_DASHBOARD_DATA['session']['active'] = False
+
+            msg = f"Session refresh failed for {SESSION_USERNAME}: {str(e)}"
+            log_activity(msg)
+            print(f"\n* {msg}")
+            print_cur_ts("\nTimestamp:\t\t\t\t")
+
+            return jsonify({'success': False, 'error': str(e)})  # type: ignore
+
+    @app.route('/api/session/clear', methods=['POST'])
+    def api_clear_session():  # type: ignore
+        global SESSION_USERNAME, SKIP_SESSION
+        if not SESSION_USERNAME:
+            return jsonify({'success': False, 'error': 'No session configured'})  # type: ignore
+
+        username = SESSION_USERNAME
+        session_file = f"{username}.session"
+
+        # Remove session file if it exists
+        removed_file = False
+        if os.path.isfile(session_file):
+            try:
+                os.remove(session_file)
+                removed_file = True
+            except OSError as e:
+                return jsonify({'success': False, 'error': f'Failed to remove session file: {str(e)}'})  # type: ignore
+
+        # Clear session configuration
+        SESSION_USERNAME = ""
+        SKIP_SESSION = True
+        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+            WEB_DASHBOARD_DATA['session'] = {'username': None, 'active': False}
+
+        msg = f"Session cleared for: {username}"
+        mode_msg = "Session mode switched to: Mode 1 (Anonymous)"
+        log_activity(msg)
+        print(f"\n* {msg}")
+        print(f"* {mode_msg}")
+        print_cur_ts("\nTimestamp:\t\t\t\t")
+
+        return jsonify({'success': True, 'message': f'Session cleared for {username}', 'file_removed': removed_file})  # type: ignore
 
     @app.route('/api/activity/clear', methods=['POST'])
     def api_clear_activity():  # type: ignore
@@ -4438,18 +4719,26 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     try:
                         debug_print(f"Loading session for {SESSION_USERNAME} from file...")
                         bot.load_session_from_file(SESSION_USERNAME)
+                        with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                            WEB_DASHBOARD_DATA['session']['active'] = True
                     except FileNotFoundError:
                         debug_print(f"Session file for {SESSION_USERNAME} not found, logging in...")
                         bot.login(SESSION_USERNAME, SESSION_PASSWORD)
                         bot.save_session_to_file()
+                        with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                            WEB_DASHBOARD_DATA['session']['active'] = True
                     except instaloader.exceptions.BadCredentialsException:
                         debug_print(f"Bad credentials for {SESSION_USERNAME}, logging in again...")
                         bot.login(SESSION_USERNAME, SESSION_PASSWORD)
                         bot.save_session_to_file()
+                        with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                            WEB_DASHBOARD_DATA['session']['active'] = True
                 else:
                     try:
                         debug_print(f"Loading session for {SESSION_USERNAME} from file (no password provided)...")
                         bot.load_session_from_file(SESSION_USERNAME)
+                        with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                            WEB_DASHBOARD_DATA['session']['active'] = True
                     except FileNotFoundError:
                         print("* Error: No Instagram session file found, please run 'instaloader -l SESSION_USERNAME' to create one")
                         if threading.current_thread() is threading.main_thread():

@@ -863,12 +863,40 @@
                 <h1 class="page-title">Session Management</h1>
             </div>
 
+            <!-- Session Information Card -->
             <div class="card">
-                <div class="card-title">Instagram Session</div>
-                <p style="color: #888; margin-bottom: 20px;">
-                    A logged-in session is required to fetch followers, followings, stories, and detailed post info.
-                </p>
+                <div class="card-title">Session Information</div>
+                <div style="color: #888; font-size: 14px; line-height: 1.6;">
+                    <div
+                        style="background: rgba(233, 69, 96, 0.1); border-left: 4px solid #e94560; padding: 12px; border-radius: 4px; margin-bottom: 20px;">
+                        <span style="color: #e94560; font-weight: bold;">Current Status:</span>
+                        <span id="session-mode-indicator" class="badge badge-idle">Checking...</span>
+                    </div>
 
+                    <p style="margin-bottom: 12px;">
+                        <strong>Session Mode 1 (Anonymous):</strong> No login required. Limited to basic profile info
+                        and post counts.
+                    </p>
+                    <p style="margin-bottom: 12px;">
+                        <strong>Session Mode 2 (Logged In):</strong> Requires Instagram account login. Provides access
+                        to:
+                    </p>
+                    <ul style="margin-left: 20px; margin-bottom: 12px;">
+                        <li>Detailed follower/following lists</li>
+                        <li>Stories content and metadata</li>
+                        <li>Detailed post/reel information</li>
+                        <li>Profile picture change detection</li>
+                    </ul>
+                    <p>
+                        <strong>Recommended:</strong> Use Firefox cookie import method for best compatibility and lower
+                        detection risk.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Session Overview Card -->
+            <div class="card">
+                <div class="card-title">Session Overview</div>
                 <div class="setting-row">
                     <div class="setting-info">
                         <h4>Session Status</h4>
@@ -877,35 +905,87 @@
                     <span class="badge badge-idle" id="session-badge">Inactive</span>
                 </div>
 
-                <div class="form-group" style="margin-top: 24px;">
-                    <label class="form-label">Instagram Username (for session)</label>
-                    <input type="text" class="form-input" id="session-username" placeholder="your_instagram_username">
+                <!-- Session Details Grid -->
+                <div id="session-details"
+                    style="display: none; margin-top: 24px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,0.1);">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
+                        <div>
+                            <div style="font-size: 12px; color: #888; text-transform: uppercase; margin-bottom: 8px;">
+                                Username</div>
+                            <div style="font-size: 16px; font-weight: 600;" id="session-detail-username">-</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #888; text-transform: uppercase; margin-bottom: 8px;">
+                                Session File</div>
+                            <div style="font-size: 14px; word-break: break-all;" id="session-detail-file">-</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #888; text-transform: uppercase; margin-bottom: 8px;">
+                                File Size</div>
+                            <div style="font-size: 14px;" id="session-detail-size">-</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #888; text-transform: uppercase; margin-bottom: 8px;">
+                                Last Modified</div>
+                            <div style="font-size: 14px;" id="session-detail-modified">-</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #888; text-transform: uppercase; margin-bottom: 8px;">
+                                Method</div>
+                            <div style="font-size: 14px;" id="session-detail-method">-</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #888; text-transform: uppercase; margin-bottom: 8px;">
+                                Last Tested</div>
+                            <div style="font-size: 14px;" id="session-detail-tested">-</div>
+                        </div>
+                    </div>
                 </div>
+            </div>
 
-                <div class="form-group">
-                    <label class="form-label">Session Method</label>
-                    <select class="form-input" id="session-method">
-                        <option value="firefox">Import from Firefox (Recommended)</option>
-                        <option value="saved">Use Saved Session</option>
-                    </select>
-                </div>
+            <!-- Session Configuration Card -->
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-title">Configure Session</div>
 
-                <div style="margin-top: 24px; display: flex; gap: 12px;">
-                    <button class="btn btn-primary" onclick="configureSession()">
-                        <span>🔐</span> Configure Session
+                <div id="firefox-import-section" style="margin-bottom: 24px;">
+                    <button class="btn btn-secondary" onclick="detectFirefoxProfiles()" id="detect-firefox-btn">
+                        <span>🦊</span> Detect Firefox Profiles
                     </button>
-                    <button class="btn btn-secondary" onclick="testSession()">
-                        <span>🧪</span> Test Session
-                    </button>
+
+                    <div id="firefox-profiles-container"
+                        style="display: none; margin-top: 16px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 12px;">
+                        <label class="form-label">Select Firefox Profile</label>
+                        <select class="form-input" id="firefox-profile-select" style="margin-bottom: 12px;"></select>
+                        <button class="btn btn-primary btn-sm" onclick="importFirefoxSession()">
+                            <span>📥</span> Import Selected Profile
+                        </button>
+                    </div>
                 </div>
 
-                <p style="color: #666; font-size: 12px; margin-top: 16px;">
-                    💡 Tip: For Firefox session import, first log into Instagram in Firefox, then run:<br>
-                    <code
-                        style="background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px; margin-top: 8px; display: inline-block;">
-                        instagram_monitor --import-firefox-session -u YOUR_USERNAME
-                    </code>
-                </p>
+                <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 20px; margin-top: 20px;">
+                    <div class="form-group">
+                        <label class="form-label">Manual Username Setup (Mode 2)</label>
+                        <input type="text" class="form-input" id="session-username"
+                            placeholder="your_instagram_username">
+                    </div>
+
+                    <div style="margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap;">
+                        <button class="btn btn-primary" onclick="configureSession()">
+                            <span>🔐</span> Set Username
+                        </button>
+                        <button class="btn btn-secondary" onclick="testSession()">
+                            <span>🧪</span> Test Session
+                        </button>
+                        <button class="btn btn-info" onclick="refreshSession()" id="refresh-session-btn"
+                            style="display: none;">
+                            <span>🔄</span> Refresh
+                        </button>
+                        <button class="btn btn-danger" onclick="clearSession()" id="clear-session-btn"
+                            style="display: none;">
+                            <span>🗑️</span> Reset to Mode 1 (Anonymous)
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1518,15 +1598,7 @@
 
             // Update session info
             if (data.session) {
-                document.getElementById('session-status-text').textContent =
-                    data.session.username ? `Configured for: ${escapeHtml(data.session.username)}` : 'Not configured';
-                document.getElementById('session-badge').className =
-                    `badge ${data.session.active ? 'badge-success' : 'badge-idle'}`;
-                document.getElementById('session-badge').textContent =
-                    data.session.active ? 'Active' : 'Inactive';
-                if (data.session.username) {
-                    document.getElementById('session-username').value = data.session.username;
-                }
+                updateSessionDisplay(data.session);
             }
 
             // Update activities
@@ -1703,12 +1775,12 @@
                 targetsList.innerHTML = `
                     <tr>
                         <td colspan="5">
-                            <div class="empty-state">
-                                <div class="empty-state-icon">📭</div>
-                                <p>No targets configured</p>
-                            </div>
-                        </td>
-                    </tr>
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">📭</div>
+                                    <p>No targets configured</p>
+                                </div>
+                            </td>
+                        </tr>
                 `;
                 return;
             }
@@ -2107,7 +2179,7 @@
 
         async function configureSession() {
             const username = document.getElementById('session-username').value.trim();
-            const method = document.getElementById('session-method').value;
+            const method = 'saved'; // Default method when manually setting username
 
             if (!username) {
                 showToast('Please enter a username', 'error');
@@ -2124,11 +2196,54 @@
                 if (data.success) {
                     showToast('Session configured');
                     fetchStatus();
+                    fetchSessionDetails();
                 } else {
                     showToast(data.error || 'Failed to configure session', 'error');
                 }
             } catch (err) {
                 showToast('Failed to configure session', 'error');
+            }
+        }
+
+        async function detectFirefoxProfiles() {
+            try {
+                showToast('Searching for Firefox profiles...');
+                const response = await fetch('/api/session/firefox/profiles');
+                const data = await response.json();
+                if (data.success && data.profiles.length > 0) {
+                    const select = document.getElementById('firefox-profile-select');
+                    select.innerHTML = data.profiles.map(p => `<option value="${escapeHtml(p.path)}">${escapeHtml(p.name)}</option>`).join('');
+                    document.getElementById('firefox-profiles-container').style.display = 'block';
+                    showToast(`Found ${data.profiles.length} profiles`);
+                } else {
+                    showToast('No Firefox profiles found', 'error');
+                }
+            } catch (err) {
+                showToast('Failed to detect profiles', 'error');
+            }
+        }
+
+        async function importFirefoxSession() {
+            const path = document.getElementById('firefox-profile-select').value;
+            if (!path) return;
+
+            try {
+                showToast('Importing session from Firefox...');
+                const response = await fetch('/api/session/firefox/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showToast(`Imported session for ${data.username}`);
+                    fetchStatus();
+                    fetchSessionDetails();
+                } else {
+                    showToast(data.error || 'Failed to import session', 'error');
+                }
+            } catch (err) {
+                showToast('Failed to import session', 'error');
             }
         }
 
@@ -2140,11 +2255,123 @@
                 if (data.success) {
                     showToast(`Session valid: ${escapeHtml(data.username)}`);
                     fetchStatus();
+                    // Also fetch detailed session info
+                    fetchSessionDetails();
                 } else {
                     showToast(data.error || 'Session test failed', 'error');
                 }
             } catch (err) {
                 showToast('Session test failed', 'error');
+            }
+        }
+
+        async function refreshSession() {
+            if (!confirm('Refresh session? This will reload the session file and re-authenticate if needed.')) {
+                return;
+            }
+            try {
+                showToast('Refreshing session...');
+                const response = await fetch('/api/session/refresh', { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    showToast(data.message || 'Session refreshed successfully');
+                    fetchStatus();
+                    fetchSessionDetails();
+                } else {
+                    showToast(data.error || 'Session refresh failed', 'error');
+                }
+            } catch (err) {
+                showToast('Session refresh failed', 'error');
+            }
+        }
+
+        async function clearSession() {
+            if (!confirm('Clear session? This will remove the session configuration and delete the session file. You will need to reconfigure the session.')) {
+                return;
+            }
+            try {
+                showToast('Clearing session...');
+                const response = await fetch('/api/session/clear', { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    showToast(data.message || 'Session cleared');
+                    fetchStatus();
+                    fetchSessionDetails();
+                    // Clear form
+                    document.getElementById('session-username').value = '';
+                } else {
+                    showToast(data.error || 'Session clear failed', 'error');
+                }
+            } catch (err) {
+                showToast('Session clear failed', 'error');
+            }
+        }
+
+        async function fetchSessionDetails() {
+            try {
+                const response = await fetch('/api/session');
+                const sessionData = await response.json();
+                updateSessionDisplay(sessionData);
+            } catch (err) {
+                console.error('Failed to fetch session details:', err);
+            }
+        }
+
+        let cachedSessionData = null;
+
+        function updateSessionDisplay(sessionData) {
+            const statusText = document.getElementById('session-status-text');
+            const badge = document.getElementById('session-badge');
+            const detailsContainer = document.getElementById('session-details');
+            const refreshBtn = document.getElementById('refresh-session-btn');
+            const clearBtn = document.getElementById('clear-session-btn');
+            const modeIndicator = document.getElementById('session-mode-indicator');
+
+            // Resilience against shallow heartbeat updates
+            if (cachedSessionData && !sessionData.file_path && sessionData.username === cachedSessionData.username) {
+                sessionData = { ...cachedSessionData, ...sessionData };
+            }
+            cachedSessionData = sessionData;
+
+            if (sessionData.username) {
+                statusText.textContent = `Configured for: ${escapeHtml(sessionData.username)}`;
+                badge.className = `badge ${sessionData.active ? 'badge-success' : 'badge-warning'}`;
+                badge.textContent = sessionData.active ? 'Active' : 'Inactive';
+
+                modeIndicator.className = 'badge badge-success';
+                modeIndicator.textContent = 'Mode 2: Logged In';
+
+                // Show details
+                detailsContainer.style.display = 'block';
+                document.getElementById('session-detail-username').textContent = escapeHtml(sessionData.username);
+                document.getElementById('session-detail-file').textContent = sessionData.file_path ?
+                    escapeHtml(sessionData.file_path) : 'Not found';
+                document.getElementById('session-detail-size').textContent = sessionData.file_size_human || '-';
+                document.getElementById('session-detail-modified').textContent = sessionData.last_modified_relative ?
+                    `${escapeHtml(sessionData.last_modified)} (${escapeHtml(sessionData.last_modified_relative)} ago)` :
+                    (sessionData.file_exists ? 'Unknown' : 'N/A');
+                document.getElementById('session-detail-method').textContent = sessionData.method ?
+                    (sessionData.method === 'firefox' ? 'Firefox Import' : 'Manual Setup') : '-';
+                document.getElementById('session-detail-tested').textContent = sessionData.last_tested || 'Never';
+
+                // Show action buttons
+                refreshBtn.style.display = 'inline-flex';
+                clearBtn.style.display = 'inline-flex';
+
+                // Update username field
+                document.getElementById('session-username').value = sessionData.username;
+            } else {
+                statusText.textContent = 'Not configured';
+                badge.className = 'badge badge-idle';
+                badge.textContent = 'Inactive';
+
+                modeIndicator.className = 'badge badge-idle';
+                modeIndicator.textContent = 'Mode 1: Anonymous';
+
+                // Hide details
+                detailsContainer.style.display = 'none';
+                refreshBtn.style.display = 'none';
+                clearBtn.style.display = 'none';
             }
         }
 
@@ -2173,9 +2400,12 @@
         (async () => {
             await fetchStatus();
             updateUIModeDisplay();
+            fetchSessionDetails();
         })();
         fetchSettings();
         setInterval(fetchStatus, 5000);
+        // Also fetch session details periodically (less frequently)
+        setInterval(fetchSessionDetails, 30000); // Every 30 seconds
     </script>
 </body>
 
