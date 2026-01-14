@@ -1103,6 +1103,51 @@
                     </div>
                 </div>
 
+                <!-- SMTP Settings Card -->
+                <div class="card">
+                    <div class="card-title">SMTP Settings</div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">SMTP Host</label>
+                            <input type="text" class="form-input" id="smtp-host" placeholder="your_smtp_server_ssl">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">SMTP Port</label>
+                            <input type="number" class="form-input" id="smtp-port" placeholder="587">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">SMTP User</label>
+                            <input type="text" class="form-input" id="smtp-user" placeholder="your_smtp_user">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">SMTP Password</label>
+                            <input type="password" class="form-input" id="smtp-password" autocomplete="new-password">
+                        </div>
+                    </div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Enable SSL</h4>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="smtp-ssl">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-row" style="margin-top: 10px;">
+                        <div class="form-group">
+                            <label class="form-label">Sender Email</label>
+                            <input type="email" class="form-input" id="sender-email" placeholder="your_sender_email">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Receiver Email</label>
+                            <input type="email" class="form-input" id="receiver-email"
+                                placeholder="your_receiver_email">
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Advanced & Logging Card -->
                 <div class="card">
                     <div class="card-title">Logging & Advanced</div>
@@ -1829,6 +1874,22 @@
                 const sessionUser = document.getElementById('session-username');
                 if (sessionUser) sessionUser.value = s.session_username;
             }
+
+            document.getElementById('smtp-host').value = s.smtp_host || '';
+            document.getElementById('smtp-port').value = s.smtp_port || 587;
+            document.getElementById('smtp-user').value = s.smtp_user || '';
+            document.getElementById('smtp-ssl').checked = s.smtp_ssl || false;
+            document.getElementById('sender-email').value = s.sender_email || '';
+            document.getElementById('receiver-email').value = s.receiver_email || '';
+
+            const smtpPass = document.getElementById('smtp-password');
+            if (s.smtp_password_set) {
+                smtpPass.value = '********';
+                smtpPass.placeholder = '********';
+            } else {
+                smtpPass.value = '';
+                smtpPass.placeholder = '';
+            }
         }
 
         // Actions
@@ -2005,7 +2066,15 @@
                 detailed_logging: document.getElementById('detailed-logging').checked,
                 csv_filename: document.getElementById('csv-filename').value,
                 verbose_mode: document.getElementById('verbose-mode').checked,
-                debug_mode: document.getElementById('debug-mode').checked
+                debug_mode: document.getElementById('debug-mode').checked,
+
+                smtp_host: document.getElementById('smtp-host').value,
+                smtp_port: parseInt(document.getElementById('smtp-port').value) || 0,
+                smtp_user: document.getElementById('smtp-user').value,
+                smtp_password: document.getElementById('smtp-password').value,
+                smtp_ssl: document.getElementById('smtp-ssl').checked,
+                sender_email: document.getElementById('sender-email').value,
+                receiver_email: document.getElementById('receiver-email').value
             };
 
             try {

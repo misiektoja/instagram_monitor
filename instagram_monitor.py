@@ -1017,6 +1017,7 @@ def create_web_dashboard_app():
         global INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
         global STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_URL
         global DETAILED_FOLLOWER_LOGGING, DEBUG_MODE, SESSION_USERNAME
+        global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SSL, SENDER_EMAIL, RECEIVER_EMAIL
         global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS
         global ENABLE_JITTER, DETECT_CHANGED_PROFILE_PIC, SKIP_SESSION, CLI_CONFIG_PATH
         global DOTENV_FILE, WEB_DASHBOARD_TEMPLATE_DIR, LOCAL_TIMEZONE, OUTPUT_DIR, CSV_FILE
@@ -1058,7 +1059,14 @@ def create_web_dashboard_app():
                 'csv_file': CSV_FILE,
                 'csv_enabled': bool(CSV_FILE),
                 'output_dir': OUTPUT_DIR or "-",
-                'logging_enabled': not DISABLE_LOGGING
+                'logging_enabled': not DISABLE_LOGGING,
+                'smtp_host': SMTP_HOST,
+                'smtp_port': SMTP_PORT,
+                'smtp_user': SMTP_USER,
+                'smtp_ssl': SMTP_SSL,
+                'sender_email': SENDER_EMAIL,
+                'receiver_email': RECEIVER_EMAIL,
+                'smtp_password_set': bool(SMTP_PASSWORD and SMTP_PASSWORD != "your_smtp_password")
             })
         elif flask_request.method == 'POST':  # type: ignore
             data = flask_request.get_json()  # type: ignore
@@ -1118,6 +1126,21 @@ def create_web_dashboard_app():
             SKIP_SESSION = update_setting('skip_session_login', SKIP_SESSION, data.get('skip_session_login'), bool)
             LIVENESS_CHECK_INTERVAL = update_setting('liveness_check_interval', LIVENESS_CHECK_INTERVAL, data.get('liveness_check_interval'), int)
             DISABLE_LOGGING = not update_setting('logging_enabled', not DISABLE_LOGGING, data.get('logging_enabled'), bool)
+
+            SMTP_HOST = update_setting('smtp_host', SMTP_HOST, data.get('smtp_host'), str)
+            SMTP_PORT = update_setting('smtp_port', SMTP_PORT, data.get('smtp_port'), int)
+            SMTP_USER = update_setting('smtp_user', SMTP_USER, data.get('smtp_user'), str)
+            SMTP_SSL = update_setting('smtp_ssl', SMTP_SSL, data.get('smtp_ssl'), bool)
+            SENDER_EMAIL = update_setting('sender_email', SENDER_EMAIL, data.get('sender_email'), str)
+            RECEIVER_EMAIL = update_setting('receiver_email', RECEIVER_EMAIL, data.get('receiver_email'), str)
+
+            # Special case for SMTP_PASSWORD
+            if 'smtp_password' in data and data['smtp_password']:
+                # Only update if it's not the placeholder masked value
+                if data['smtp_password'] != '********':
+                    if data['smtp_password'] != SMTP_PASSWORD:
+                        changes.append("'smtp_password' updated")
+                        SMTP_PASSWORD = data['smtp_password']
 
             if 'csv_filename' in data and data['csv_filename'] != CSV_FILE:
                 changes.append(f"'csv_filename' changed from {CSV_FILE} to {data['csv_filename']}")
