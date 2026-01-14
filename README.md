@@ -168,6 +168,8 @@ instagram_monitor --generate-config > instagram_monitor.conf
 
 Edit the `instagram_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
+**Note**: Since **v2.1**, you can also change nearly all configuration settings temporarily while the tool is running via the **[Web Dashboard](#web-dashboard-mode)**.
+
 <a id="session-mode-1-without-logged-in-instagram-account-no-session-login"></a>
 ### Session Mode 1: Without Logged-In Instagram Account (No Session Login)
 
@@ -214,6 +216,8 @@ Log in to your account (`your_insta_user`) in Firefox, then run:
 ```sh
 instagram_monitor --import-firefox-session
 ```
+
+Since **v2.1**, you can also perform this import easily via the **[Web Dashboard](#web-dashboard-mode)** (no command line required). Simply open the dashboard, go to the **Session** page and click **Detect Firefox Profiles**.
 
 The tool will detect available Firefox profiles with a `cookies.sqlite` file. If multiple profiles are found, it will prompt you to select one, then import the session and save it via Instaloader.
 
