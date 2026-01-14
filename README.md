@@ -264,13 +264,14 @@ instagram_monitor --send-test-email
 <a id="storing-secrets"></a>
 ### Storing Secrets
 
-It is recommended to store secrets like `SESSION_PASSWORD` or `SMTP_PASSWORD` as either an environment variable or in a dotenv file.
+It is recommended to store secrets like `SESSION_PASSWORD`, `SMTP_PASSWORD` or `WEBHOOK_URL` as either an environment variable or in a dotenv file.
 
 Set the needed environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
 
 ```sh
 export SESSION_PASSWORD="your_instagram_session_password"
 export SMTP_PASSWORD="your_smtp_password"
+export WEBHOOK_URL="https://discord.com/api/webhooks/..."
 ```
 
 On **Windows Command Prompt** use `set` instead of `export` and on **Windows PowerShell** use `$env`.
@@ -280,6 +281,7 @@ Alternatively store them persistently in a dotenv file (recommended):
 ```ini
 SESSION_PASSWORD="your_instagram_session_password"
 SMTP_PASSWORD="your_smtp_password"
+WEBHOOK_URL="https://discord.com/api/webhooks/..."
 ```
 
 By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it.
@@ -515,8 +517,8 @@ If you are new to Discord, follow these steps to get your **Webhook URL**:
 4.  **Copy URL**: Click on the new webhook (often named "Spidey Bot", you can rename it) and click **Copy Webhook URL**.
 
 #### 2. Enable in the Tool
-To enable webhook notifications:
 - set `WEBHOOK_ENABLED` to `True` and `WEBHOOK_URL` to your copied URL in `instagram_monitor.conf`
+- or use an [environment variable](#storing-secrets) or a dotenv file for `WEBHOOK_URL`
 - or use the `--webhook-url` flag (alternatively use the `--webhook` flag if URL is already in config)
 
 ```sh
