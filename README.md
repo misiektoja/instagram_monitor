@@ -1,6 +1,6 @@
 # instagram_monitor
 
-instagram_monitor is an OSINT tool for real-time monitoring of **Instagram users' activities and profile changes**.
+**Track every move, capture every change.** **instagram_monitor** is a powerful, real-time OSINT suite for tracking every activity on Instagram — from story updates and bio changes to follower shifts — providing stunning dashboards and instant alerts to keep you in the loop.
 
 <a id="features"></a>
 ## Features
