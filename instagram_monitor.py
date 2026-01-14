@@ -1482,6 +1482,39 @@ def create_web_dashboard_app():
             WEB_DASHBOARD_DATA['activities'] = []
         return jsonify({'success': True})  # type: ignore
 
+    @app.route('/api/test-email', methods=['POST'])
+    def api_test_email():  # type: ignore
+        global SMTP_SSL
+        print("* Sending test email notification (triggered via web dashboard) ...")
+        res = send_email("instagram_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL, smtp_timeout=5)
+        if res == 0:
+            print("* Email notification sent successfully")
+            print_cur_ts("\nTimestamp:\t\t\t\t")
+            return jsonify({'success': True})  # type: ignore
+        print("* Error: Failed to send test email")
+        print_cur_ts("\nTimestamp:\t\t\t\t")
+        return jsonify({'success': False, 'error': 'Failed to send test email. Check console logs.'}), 500  # type: ignore
+
+    @app.route('/api/test-webhook', methods=['POST'])
+    def api_test_webhook():  # type: ignore
+        global WEBHOOK_URL, WEBHOOK_ENABLED
+        if not WEBHOOK_URL:
+            return jsonify({'success': False, 'error': 'WEBHOOK_URL is not set'}), 400  # type: ignore
+
+        print("* Sending test webhook notification (triggered via web dashboard) ...")
+        # Temporarily enable if we are testing
+        old_webhook_enabled = WEBHOOK_ENABLED
+        WEBHOOK_ENABLED = True
+        res = send_webhook("instagram_monitor: test webhook", "This is test webhook - your settings seems to be correct !", color=0x7289DA)
+        WEBHOOK_ENABLED = old_webhook_enabled
+
+        if res == 0:
+            print_cur_ts("\nTimestamp:\t\t\t\t")
+            return jsonify({'success': True})  # type: ignore
+        print("* Error: Test webhook notification failed")
+        print_cur_ts("\nTimestamp:\t\t\t\t")
+        return jsonify({'success': False, 'error': 'Failed to send test webhook. Check console logs.'}), 500  # type: ignore
+
     return app
 
 

@@ -879,14 +879,9 @@
                     </p>
                     <p style="margin-bottom: 12px;">
                         <strong>Session Mode 2 (Logged In):</strong> Requires Instagram account login. Provides access
-                        to:
+                        to full functionality including detailed follower/following lists, stories content, detailed
+                        post/reel info.
                     </p>
-                    <ul style="margin-left: 20px; margin-bottom: 12px;">
-                        <li>Detailed follower/following lists</li>
-                        <li>Stories content and metadata</li>
-                        <li>Detailed post/reel information</li>
-                        <li>Profile picture change detection</li>
-                    </ul>
                     <p>
                         <strong>Recommended:</strong> Use Firefox cookie import method for best compatibility and lower
                         detection risk.
@@ -999,7 +994,7 @@
             </div>
 
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
-                <!-- Intervals Card -->
+                <!-- Check Intervals Card -->
                 <div class="card">
                     <div class="card-title">Check Intervals</div>
                     <div class="form-row">
@@ -1026,94 +1021,6 @@
                         Final interval = Base ± Random. <b>Base Interval min: 300s.</b> Use 0 for Liveness Check to
                         disable.
                     </p>
-                </div>
-
-                <!-- Notifications Card -->
-                <div class="card">
-                    <div class="card-title">Notifications</div>
-
-                    <div style="margin-bottom: 20px;">
-                        <h4
-                            style="font-size: 13px; color: #e94560; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 5px;">
-                            Email Notifications</h4>
-                        <div class="setting-row" style="padding: 8px 0;">
-                            <div class="setting-info">
-                                <h4>Status & Profile changes</h4>
-                                <p>New posts, reels, stories, bio, pic</p>
-                            </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="email-notifications">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div class="setting-row" style="padding: 8px 0;">
-                            <div class="setting-info">
-                                <h4>Follower changes</h4>
-                                <p>New followers or un-follows</p>
-                            </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="follower-notifications">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div class="setting-row" style="padding: 8px 0;">
-                            <div class="setting-info">
-                                <h4>Error alerts</h4>
-                                <p>Critical monitoring errors</p>
-                            </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="error-notifications">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div>
-                        <h4
-                            style="font-size: 13px; color: #e94560; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 5px;">
-                            Webhook Notifications</h4>
-                        <div class="setting-row" style="padding: 8px 0;">
-                            <div class="setting-info">
-                                <h4>Enabled</h4>
-                            </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="webhook-enabled">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div class="form-group" style="margin: 10px 0;">
-                            <label class="form-label">Webhook URL</label>
-                            <input type="text" class="form-input" id="webhook-url"
-                                placeholder="https://discord.com/api/webhooks/...">
-                        </div>
-                        <div class="setting-row" style="padding: 8px 0;">
-                            <div class="setting-info">
-                                <h4>Status changes</h4>
-                            </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="webhook-status">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div class="setting-row" style="padding: 8px 0;">
-                            <div class="setting-info">
-                                <h4>Follower changes</h4>
-                            </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="webhook-followers">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div class="setting-row" style="padding: 8px 0;">
-                            <div class="setting-info">
-                                <h4>Errors</h4>
-                            </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="webhook-errors">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Tracking Options Card -->
@@ -1183,6 +1090,41 @@
                     </div>
                 </div>
 
+                <!-- Email Notifications Card -->
+                <div class="card">
+                    <div class="card-title">Email Notifications</div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Status & Profile changes</h4>
+                            <p>New posts, reels, stories, bio, pic</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="email-notifications">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Follower changes</h4>
+                            <p>New followers or un-follows</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="follower-notifications">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Error alerts</h4>
+                            <p>Critical monitoring errors</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="error-notifications">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
                 <!-- SMTP Settings Card -->
                 <div class="card">
                     <div class="card-title">SMTP Settings</div>
@@ -1226,9 +1168,65 @@
                                 placeholder="your_receiver_email">
                         </div>
                     </div>
+                    <div style="margin-top: 20px;">
+                        <button class="btn btn-secondary btn-sm" onclick="testEmail()">
+                            <span>📧</span> Send Test Email
+                        </button>
+                    </div>
                 </div>
 
-                <!-- Advanced & Logging Card -->
+                <!-- Webhook Notifications Card -->
+                <div class="card">
+                    <div class="card-title">Webhook Notifications</div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Enabled</h4>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="webhook-enabled">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin: 10px 0;">
+                        <label class="form-label">Webhook URL</label>
+                        <input type="text" class="form-input" id="webhook-url"
+                            placeholder="https://discord.com/api/webhooks/...">
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <button class="btn btn-secondary btn-sm" onclick="testWebhook()">
+                            <span>🔔</span> Send Test Webhook
+                        </button>
+                    </div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Status changes</h4>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="webhook-status">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Follower changes</h4>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="webhook-followers">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Errors</h4>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="webhook-errors">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Logging & Advanced Card -->
                 <div class="card">
                     <div class="card-title">Logging & Advanced</div>
                     <div class="setting-row" style="padding: 8px 0;">
@@ -1274,6 +1272,7 @@
                         </label>
                     </div>
                 </div>
+
             </div>
         </div>
 
@@ -2174,6 +2173,36 @@
                 }
             } catch (err) {
                 showToast('Failed to save settings', 'error');
+            }
+        }
+
+        async function testEmail() {
+            try {
+                showToast('Sending test email...');
+                const response = await fetch('/api/test-email', { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    showToast('Test email sent successfully');
+                } else {
+                    showToast(data.error || 'Failed to send test email', 'error');
+                }
+            } catch (err) {
+                showToast('Failed to send test email', 'error');
+            }
+        }
+
+        async function testWebhook() {
+            try {
+                showToast('Sending test webhook...');
+                const response = await fetch('/api/test-webhook', { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    showToast('Test webhook sent successfully');
+                } else {
+                    showToast(data.error || 'Failed to send test webhook', 'error');
+                }
+            } catch (err) {
+                showToast('Failed to send test webhook', 'error');
             }
         }
 
