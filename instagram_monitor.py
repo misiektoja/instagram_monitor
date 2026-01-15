@@ -597,6 +597,7 @@ import hashlib
 # regions). Use an RLock to avoid self-deadlocks that would freeze the web dashboard API
 WEB_DASHBOARD_DATA_LOCK = threading.RLock()
 DASHBOARD_DATA_LOCK = threading.RLock()
+SESSION_REFRESHED_EVENT = threading.Event()  # Signals monitoring threads to reload session
 
 # Initialize manual check trigger event (thread-safe)
 MANUAL_CHECK_TRIGGERED: threading.Event = threading.Event()
@@ -961,6 +962,10 @@ def create_web_dashboard_app():
             DASHBOARD_MODE = data['mode']
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                 WEB_DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
+            msg = f"Dashboard mode set to: {DASHBOARD_MODE}"
+            log_activity(msg)
+            print(f"\n* {msg}")
+            print_cur_ts("\nTimestamp:\t\t\t\t")
             return jsonify({'success': True, 'mode': DASHBOARD_MODE})  # type: ignore
         return jsonify({'success': False}), 400  # type: ignore
 
@@ -1219,7 +1224,9 @@ def create_web_dashboard_app():
                 print(f"* {msg}")
                 print_cur_ts("\nTimestamp:\t\t\t\t")
 
-            return jsonify({'success': True, 'changes': changes})  # type: ignore
+                SESSION_REFRESHED_EVENT.set()
+                SESSION_REFRESHED_EVENT.clear()
+                return jsonify({'success': True, 'changes': changes})  # type: ignore
 
 
     @app.route('/api/session', methods=['GET', 'POST'])  # type: ignore[misc]
@@ -1249,6 +1256,8 @@ def create_web_dashboard_app():
                 print(f"* {mode_msg}")
                 print_cur_ts("\nTimestamp:\t\t\t\t")
 
+                SESSION_REFRESHED_EVENT.set()
+                SESSION_REFRESHED_EVENT.clear()
                 return jsonify({'success': True, 'message': f'Session set for {username}'})  # type: ignore
             return jsonify({'success': False, 'error': 'Username required'}), 400  # type: ignore
 
@@ -1281,7 +1290,7 @@ def create_web_dashboard_app():
         cookiefile = data['path']
         try:
             # We use a temporary instaloader instance to detect the username
-            L = Instaloader(max_connection_attempts=1)
+            L = Instaloader(user_agent=USER_AGENT, max_connection_attempts=1)
             # Re-use parts of import_session logic but without SystemExit
             try:
                 with connect(f"file:{cookiefile}?immutable=1", uri=True) as conn:
@@ -1303,9 +1312,9 @@ def create_web_dashboard_app():
             if not username:
                 return jsonify({'success': False, 'error': 'Not logged in in Firefox'}), 400  # type: ignore
 
-            # Save session
+            # Save session - without arguments to saveto standard config directory
             L.context.username = username
-            L.save_session_to_file(username)
+            L.save_session_to_file()
 
             # Update global state
             SESSION_USERNAME = username
@@ -1321,6 +1330,8 @@ def create_web_dashboard_app():
             print(f"* {mode_msg}")
             print_cur_ts("\nTimestamp:\t\t\t\t")
 
+            SESSION_REFRESHED_EVENT.set()
+            SESSION_REFRESHED_EVENT.clear()
             return jsonify({'success': True, 'username': username})  # type: ignore
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500  # type: ignore
@@ -1400,6 +1411,8 @@ def create_web_dashboard_app():
                         print(f"\n* {msg}")
                         print_cur_ts("\nTimestamp:\t\t\t\t")
 
+                        SESSION_REFRESHED_EVENT.set()
+                        SESSION_REFRESHED_EVENT.clear()
                         return jsonify({'success': True, 'username': test_username, 'message': 'Session refreshed'})  # type: ignore
                 else:
                     # Session file exists but is invalid, try to re-login if password available
@@ -1415,6 +1428,8 @@ def create_web_dashboard_app():
                         print(f"* {msg}")
                         print_cur_ts("\nTimestamp:\t\t\t\t")
 
+                        SESSION_REFRESHED_EVENT.set()
+                        SESSION_REFRESHED_EVENT.clear()
                         return jsonify({'success': True, 'username': SESSION_USERNAME, 'message': 'Session re-authenticated'})  # type: ignore
                     else:
                         return jsonify({'success': False, 'error': 'Session expired and no password available for re-login'})  # type: ignore
@@ -1429,6 +1444,8 @@ def create_web_dashboard_app():
                     log_activity(f"Session created and saved", user=SESSION_USERNAME)
                     print(f"* Session created and saved for: {SESSION_USERNAME}")
                     print_cur_ts("\nTimestamp:\t\t\t\t")
+                    SESSION_REFRESHED_EVENT.set()
+                    SESSION_REFRESHED_EVENT.clear()
                     return jsonify({'success': True, 'username': SESSION_USERNAME, 'message': 'Session created'})  # type: ignore
                 else:
                     return jsonify({'success': False, 'error': 'Session file not found and no password available'})  # type: ignore
@@ -1474,6 +1491,8 @@ def create_web_dashboard_app():
         print(f"* {mode_msg}")
         print_cur_ts("\nTimestamp:\t\t\t\t")
 
+        SESSION_REFRESHED_EVENT.set()
+        SESSION_REFRESHED_EVENT.clear()
         return jsonify({'success': True, 'message': f'Session cleared for {username}', 'file_removed': removed_file})  # type: ignore
 
     @app.route('/api/activity/clear', methods=['POST'])
@@ -4746,38 +4765,66 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         session = ctx._session
 
         if not skip_session and SESSION_USERNAME:
-            # Session file is shared - avoid concurrent load/login/save in multi-target mode
-            with SESSION_FILE_LOCK:
-                if SESSION_PASSWORD:
-                    try:
-                        debug_print(f"Loading session for {SESSION_USERNAME} from file...")
-                        bot.load_session_from_file(SESSION_USERNAME)
-                        with WEB_DASHBOARD_DATA_LOCK: # type: ignore
-                            WEB_DASHBOARD_DATA['session']['active'] = True
-                    except FileNotFoundError:
-                        debug_print(f"Session file for {SESSION_USERNAME} not found, logging in...")
-                        bot.login(SESSION_USERNAME, SESSION_PASSWORD)
-                        bot.save_session_to_file()
-                        with WEB_DASHBOARD_DATA_LOCK: # type: ignore
-                            WEB_DASHBOARD_DATA['session']['active'] = True
-                    except instaloader.exceptions.BadCredentialsException:
-                        debug_print(f"Bad credentials for {SESSION_USERNAME}, logging in again...")
-                        bot.login(SESSION_USERNAME, SESSION_PASSWORD)
-                        bot.save_session_to_file()
-                        with WEB_DASHBOARD_DATA_LOCK: # type: ignore
-                            WEB_DASHBOARD_DATA['session']['active'] = True
+            try:
+                # Session file is shared - avoid concurrent load/login/save in multi-target mode
+                with SESSION_FILE_LOCK:
+                    if SESSION_PASSWORD:
+                        try:
+                            debug_print(f"Loading session for {SESSION_USERNAME} from file...")
+                            bot.load_session_from_file(SESSION_USERNAME)
+                            with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                                WEB_DASHBOARD_DATA['session']['active'] = True
+                        except FileNotFoundError:
+                            debug_print(f"Session file for {SESSION_USERNAME} not found, logging in...")
+                            bot.login(SESSION_USERNAME, SESSION_PASSWORD)
+                            bot.save_session_to_file()
+                            with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                                WEB_DASHBOARD_DATA['session']['active'] = True
+                        except instaloader.exceptions.BadCredentialsException:
+                            debug_print(f"Bad credentials for {SESSION_USERNAME}, logging in again...")
+                            bot.login(SESSION_USERNAME, SESSION_PASSWORD)
+                            bot.save_session_to_file()
+                            with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                                WEB_DASHBOARD_DATA['session']['active'] = True
+                    else:
+                        try:
+                            debug_print(f"Loading session for {SESSION_USERNAME} from file (no password provided)...")
+                            bot.load_session_from_file(SESSION_USERNAME)
+                            with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                                WEB_DASHBOARD_DATA['session']['active'] = True
+                        except FileNotFoundError:
+                            raise FileNotFoundError(f"Instagram session file for {SESSION_USERNAME} not found")
+
+            except Exception as e:
+                error_msg = format_error_message(e)
+                print(f"* Session error for {user}: {error_msg}")
+                print_cur_ts("\nTimestamp:\t\t\t\t")
+                log_activity(f"Session error: {error_msg}", user=user)
+
+                if WEB_DASHBOARD_ENABLED:
+                    update_ui_data(targets={user: {'status': 'Paused: Session re-login required'}})
+                    log_activity("Initial setup paused: Session re-login required via Web Dashboard", user=user)
+                    print(f"* Initial setup paused for {user}. Please refresh/import session via Web Dashboard.")
+                    print_cur_ts("\nTimestamp:\t\t\t\t")
+
+                    # Wait for session refresh or stop event
+                    while not (stop_event and stop_event.is_set()):
+                        if SESSION_REFRESHED_EVENT.wait(timeout=1.0):
+                            # Session refreshed! Refresh parameters and retry
+                            log_activity("Session refresh detected, resuming setup...", user=user)
+                            print(f"* Session refresh detected for {user}, resuming setup...")
+                            print_cur_ts("\nTimestamp:\t\t\t\t")
+                            return instagram_monitor_user(user, csv_file_name, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, wait_for_prev_user, signal_loading_complete, stop_event, user_root_path, manual_recheck)
+
+                    if stop_event and stop_event.is_set():
+                        return
+
                 else:
-                    try:
-                        debug_print(f"Loading session for {SESSION_USERNAME} from file (no password provided)...")
-                        bot.load_session_from_file(SESSION_USERNAME)
-                        with WEB_DASHBOARD_DATA_LOCK: # type: ignore
-                            WEB_DASHBOARD_DATA['session']['active'] = True
-                    except FileNotFoundError:
-                        print("* Error: No Instagram session file found, please run 'instaloader -l SESSION_USERNAME' to create one")
-                        if threading.current_thread() is threading.main_thread():
-                            sys.exit(1)
-                        else:
-                            return
+                    # Non-dashboard mode: behave as before
+                    if threading.current_thread() is threading.main_thread():
+                        sys.exit(1)
+                    else:
+                        return
 
         patched = False
 
@@ -4885,6 +4932,39 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         _thread_local.in_partial_line = False
         error_msg = format_error_message(e)
         print(f"* Error: {error_msg}")
+        print_cur_ts("\nTimestamp:\t\t\t\t")
+        log_activity(f"Error: {error_msg}", user=user)
+
+        # Handle session recovery for automated checks/challenge errors
+        if "detected automated checks" in error_msg and WEB_DASHBOARD_ENABLED:
+            update_ui_data(targets={user: {'status': 'Paused: Session re-login required'}})
+            log_activity("Monitoring paused: Session re-login required via Web Dashboard", user=user)
+            print(f"* Monitoring paused for {user}. Please refresh/import session via Web Dashboard.")
+            print_cur_ts("\nTimestamp:\t\t\t\t")
+
+            # Wait for session refresh or stop event
+            while not (stop_event and stop_event.is_set()):
+                if SESSION_REFRESHED_EVENT.wait(timeout=1.0):
+                    # Session refreshed! Reload and retry
+                    # Session refreshed! Reload and retry
+                    log_activity("Session/Mode change detected, resuming monitoring...", user=user)
+                    print(f"* Session/Mode change detected for {user}, resuming...")
+                    print_cur_ts("\nTimestamp:\t\t\t\t")
+
+                    # Refresh configuration from global settings
+                    skip_session = SKIP_SESSION
+                    skip_followers = SKIP_FOLLOWERS
+                    skip_followings = SKIP_FOLLOWINGS
+                    skip_getting_story_details = SKIP_GETTING_STORY_DETAILS
+                    skip_getting_posts_details = SKIP_GETTING_POSTS_DETAILS
+                    get_more_post_details = GET_MORE_POST_DETAILS
+
+                    # Re-run the function from the beginning to reset state with new settings
+                    return instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user, signal_loading_complete, stop_event, user_root_path, manual_recheck)
+
+            if stop_event and stop_event.is_set():
+                return
+
         if WEB_DASHBOARD_ENABLED:
             update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
         # traceback.print_exc()
@@ -5719,7 +5799,53 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
                 error_msg = format_error_message(e)
                 print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
+                log_activity(f"Error: {error_msg}", user=user)
                 debug_print(f"Full exception: {type(e).__name__}: {e}")
+
+                if "detected automated checks" in error_msg and WEB_DASHBOARD_ENABLED:
+                    update_ui_data(targets={user: {'status': 'Paused: Session re-login required'}})
+                    log_activity("Monitoring paused: Session re-login required via Web Dashboard", user=user)
+                    print(f"* Monitoring paused for {user}. Please refresh/import session via Web Dashboard.")
+                    print_cur_ts("\nTimestamp:\t\t\t\t")
+
+                    # Wait for session refresh or stop event
+                    while not (stop_event and stop_event.is_set()):
+                        if SESSION_REFRESHED_EVENT.wait(timeout=1.0):
+                            # Session refreshed!
+                            log_activity("Session/Mode change detected, resuming monitoring...", user=user)
+                            print(f"* Session/Mode change detected for {user}, resuming...")
+                            print_cur_ts("\nTimestamp:\t\t\t\t")
+
+                            # Refresh configuration from global settings
+                            skip_session = SKIP_SESSION
+                            skip_followers = SKIP_FOLLOWERS
+                            skip_followings = SKIP_FOLLOWINGS
+                            skip_getting_story_details = SKIP_GETTING_STORY_DETAILS
+                            skip_getting_posts_details = SKIP_GETTING_POSTS_DETAILS
+                            get_more_post_details = GET_MORE_POST_DETAILS
+
+                            # Reload session into bot context or clear if Mode 1
+                            with SESSION_FILE_LOCK:
+                                try:
+                                    if skip_session:
+                                        # Clear session context for Mode 1
+                                        bot.context._session.cookies.clear()
+                                        with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                                            WEB_DASHBOARD_DATA['session']['active'] = False
+                                        log_activity("Session cleared for Mode 1", user=user)
+                                    else:
+                                        bot.load_session_from_file(SESSION_USERNAME)
+                                        with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                                            WEB_DASHBOARD_DATA['session']['active'] = True
+                                        log_activity("Session reloaded successfully", user=user)
+                                except Exception as se:
+                                    log_activity(f"Error updating session state: {se}", user=user)
+                            # Break inner loop to retry profile fetch
+                            break
+
+                    if stop_event and stop_event.is_set():
+                        return
+                    continue # Retry the main loop
 
                 if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                     print("* Session might not be valid anymore!")
