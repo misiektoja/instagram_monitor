@@ -1018,7 +1018,7 @@ def create_web_dashboard_app():
                     'following': None,
                     'posts': None,
                     'status': 'Pending',
-                    'added': datetime.now().strftime('%Y-%m-%d %H:%M'),
+                    'added': datetime.now().strftime('%a %d %b %H:%M'),
                     'last_checked': None
                 }
 
@@ -2575,6 +2575,46 @@ def get_short_date_from_ts(ts, show_year=False, show_hour=True, show_weekday=Tru
         return f'{weekday_str}{ts_new.strftime(f"%d %b{hour_strftime}")}'
 
 
+# Returns the timestamp/datetime object in human readable format in squeezed version; eg.
+# - HH:MM if today
+# - Tom. HH:MM if tomorrow
+# - DD MMM HH:MM if other
+def get_squeezed_date_from_ts(ts):
+    tz = pytz.timezone(LOCAL_TIMEZONE)
+    now = datetime.now(tz)
+    today = now.date()
+    tomorrow = today + timedelta(days=1)
+
+    if isinstance(ts, (int, float)):
+        ts_dt = datetime.fromtimestamp(int(ts), tz)
+    elif isinstance(ts, datetime):
+        if ts.tzinfo is None:
+            ts = pytz.utc.localize(ts)
+        ts_dt = ts.astimezone(tz)
+    elif isinstance(ts, str):
+        try:
+            ts_dt = isoparse(ts)
+            if ts_dt.tzinfo is None:
+                ts_dt = pytz.utc.localize(ts_dt)
+            ts_dt = ts_dt.astimezone(tz)
+        except Exception:
+            return ts
+    else:
+        return "-"
+
+    ts_date = ts_dt.date()
+    time_str = ts_dt.strftime("%H:%M")
+
+    if ts_date == today:
+        return time_str
+    elif ts_date == tomorrow:
+        return f"Tom. {time_str}"
+    elif ts_date.year == today.year:
+        return ts_dt.strftime("%d %b %H:%M")
+    else:
+        return ts_dt.strftime("%d %b %y %H:%M")
+
+
 # Returns the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
 def get_hour_min_from_ts(ts, show_seconds=False):
     tz = pytz.timezone(LOCAL_TIMEZONE)
@@ -3438,27 +3478,26 @@ def extract_usernames_safely(data_dict):
     # The value is the path segment needed to reach the 'edges' list
     possible_keys = ['edge_followed_by', 'edge_follow']
 
-    # 1. Safely access the 'user' dictionary
+    # Safely access the 'user' dictionary
     try:
         user_data = data_dict['data']['user']
     except KeyError as e:
         # print(f"Format Check Failed: Missing essential key {e} in top level. Skipping.")
         return []
 
-    # 2. Iterate through possible keys to find the correct list
+    # Iterate through possible keys to find the correct list
     edges = None
     for key in possible_keys:
         if key in user_data:
-            # We found the key (e.g., 'edge_followed_by')
             try:
                 edges = user_data[key]['edges']
-                break  # Exit the loop once the correct key is found
+                break
             except KeyError:
                 # This handles the case where the key exists but 'edges' is missing
                 # print(f"Warning: Found '{key}' but 'edges' list is missing inside it. Trying next key.")
                 continue
 
-    # 3. Check if any edges were found and if it's a list
+    # Check if any edges were found and if it's a list
     if edges is None:
         # print("Format Check Failed: Could not find 'edge_followed_by' or 'edge_follow' data.")
         return []
@@ -3614,7 +3653,7 @@ def dashboard_input_handler():
                                 break
                             # Handle special keys (arrows etc) which return two bytes
                             if char_bytes in (b'\x00', b'\xe0'):
-                                msvcrt.getch() # Skip second byte  # type: ignore
+                                msvcrt.getch()  # type: ignore
                                 continue
                             char = char_bytes.decode('utf-8', errors='ignore').lower()
                         except (UnicodeDecodeError, AttributeError):
@@ -3662,7 +3701,7 @@ def dashboard_input_handler():
 
                 # Stop All: 'x'
                 elif char == 'x':
-                    with DASHBOARD_DATA_LOCK: # type: ignore
+                    with DASHBOARD_DATA_LOCK:  # type: ignore
                         targets_to_stop = list(DASHBOARD_DATA.get('targets', {}).keys())
                     for t in targets_to_stop:
                         stop_monitoring_for_target(t)
@@ -3676,7 +3715,7 @@ def dashboard_input_handler():
                     if DASHBOARD_ENABLED and RICH_AVAILABLE:
                         update_dashboard()
 
-                elif char == 'i' and DEBUG_MODE: # Changed from 's' to 'i' for info
+                elif char == 'i' and DEBUG_MODE:
                     print_status_summary()
                 elif char == 'h':
                     if DASHBOARD_ENABLED and RICH_AVAILABLE:
@@ -3729,38 +3768,93 @@ def print_status_summary():
 
 # Update global tracking for last/next check times
 
-def update_check_times(last_time=None, next_time=None, user=None):
-    global LAST_CHECK_TIME, NEXT_CHECK_TIME, CHECK_COUNT, DASHBOARD_DATA
-    if last_time:
+def update_check_times(last_time=None, next_time=None, user=None, increment_count=True):
+    global LAST_CHECK_TIME, NEXT_CHECK_TIME, CHECK_COUNT, DASHBOARD_DATA, WEB_DASHBOARD_DATA
+
+    # Update counts
+    if increment_count:
+        CHECK_COUNT += 1
+
+    # Format the timestamps for display
+    last_str = get_squeezed_date_from_ts(last_time.timestamp()) if last_time else None
+    next_str = get_squeezed_date_from_ts(next_time.timestamp()) if next_time else None
+
+    # Update per-target data
+    if user:
+        # Update Web Dashboard target data
+        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+            if 'targets' not in WEB_DASHBOARD_DATA:
+                WEB_DASHBOARD_DATA['targets'] = {}
+            if user not in WEB_DASHBOARD_DATA['targets']:
+                WEB_DASHBOARD_DATA['targets'][user] = {}
+
+            if last_time:
+                WEB_DASHBOARD_DATA['targets'][user]['last_checked'] = last_str
+                WEB_DASHBOARD_DATA['targets'][user]['last_checked_ts'] = last_time.timestamp()
+            if next_time:
+                WEB_DASHBOARD_DATA['targets'][user]['next_check'] = next_str
+                WEB_DASHBOARD_DATA['targets'][user]['next_check_ts'] = next_time.timestamp()
+
+        # Update Terminal Dashboard target data
+        if 'targets' not in DASHBOARD_DATA:
+            DASHBOARD_DATA['targets'] = {}
+        if user not in DASHBOARD_DATA['targets']:
+            DASHBOARD_DATA['targets'][user] = {}
+
+        if last_time:
+            DASHBOARD_DATA['targets'][user]['last_checked'] = last_str
+            DASHBOARD_DATA['targets'][user]['last_checked_ts'] = last_time.timestamp()
+        if next_time:
+            DASHBOARD_DATA['targets'][user]['next_check'] = next_str
+            DASHBOARD_DATA['targets'][user]['next_check_ts'] = next_time.timestamp()
+
+    # Recalculate global times
+    now_ts = datetime.now().timestamp()
+
+    # Recalculate Global LAST_CHECK_TIME
+    all_lasts = []
+    # Use WEB_DASHBOARD_DATA as source for aggregation
+    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+        for t_data in WEB_DASHBOARD_DATA.get('targets', {}).values():
+            ts = t_data.get('last_checked_ts')
+            if ts:
+                all_lasts.append(ts)
+    if all_lasts:
+        LAST_CHECK_TIME = max(all_lasts)
+    elif last_time:
         LAST_CHECK_TIME = last_time.timestamp()
-    if next_time:
+
+    # Recalculate Global NEXT_CHECK_TIME
+    all_nexts = []
+    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+        for t_data in WEB_DASHBOARD_DATA.get('targets', {}).values():
+            ts = t_data.get('next_check_ts')
+            # Only consider future check times for global "Next Check"
+            if ts and ts > now_ts:
+                all_nexts.append(ts)
+
+    if all_nexts:
+        NEXT_CHECK_TIME = min(all_nexts)
+    elif next_time and next_time.timestamp() > now_ts:
         NEXT_CHECK_TIME = next_time.timestamp()
+    else:
+        NEXT_CHECK_TIME = None
 
-    CHECK_COUNT += 1
-
-    # Update dashboard data if dashboard is enabled
+    # Update dashboard displays
     if DASHBOARD_ENABLED and RICH_AVAILABLE:
-        DASHBOARD_DATA['config'] = get_dashboard_config_data() # Ensure timing is fresh
+        DASHBOARD_DATA['config'] = get_dashboard_config_data()
         update_dashboard()
 
     if WEB_DASHBOARD_ENABLED:
-        last_str = get_short_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else None
-        next_str = get_short_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else None
+        last_display = get_squeezed_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else None
+        next_display = get_squeezed_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else None
 
         update_ui_data(
             check_count=CHECK_COUNT,
-            last_check=last_str,
-            next_check=next_str,
+            last_check=last_display,
+            next_check=next_display,
             config=get_dashboard_config_data()
         )
-
-        # Also update per-target check times if user is specified
-        if user:
-            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-                if user in WEB_DASHBOARD_DATA.get('targets', {}):
-                    WEB_DASHBOARD_DATA['targets'][user]['last_checked'] = last_str
-                    if next_str:
-                        WEB_DASHBOARD_DATA['targets'][user]['next_check'] = next_str
 
 
 # Generate shared Targets table for all dashboard modes
@@ -3775,12 +3869,14 @@ def generate_dashboard_targets_table(target_data):
 
     table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan")
     table.add_column("Target", style="green", width=18)
-    table.add_column("Vis.", width=5) # Visibility: PUB/PRI
+    table.add_column("Vis.", width=5)  # Visibility: PUB/PRI
     table.add_column("Followers", justify="right", width=10)
     table.add_column("Following", justify="right", width=10)
     table.add_column("Posts", justify="right", width=7)
     table.add_column("Reels", justify="right", width=7)
     table.add_column("Story", width=6)
+    table.add_column("Last Chk", width=12)
+    table.add_column("Next Chk", width=12)
     table.add_column("Status", width=12)
 
     for target, data in target_data.items():
@@ -3797,7 +3893,7 @@ def generate_dashboard_targets_table(target_data):
         if has_story:
             story_str = f"✨ {stories_count}" if stories_count is not None and stories_count > 0 else "✨ Yes"
         elif has_story is False:
-             story_str = "  No"
+            story_str = "  No"
 
         table.add_row(
             target,
@@ -3807,9 +3903,45 @@ def generate_dashboard_targets_table(target_data):
             str(data.get('posts') if data.get('posts') is not None else '-'),
             str(data.get('reels') if data.get('reels') is not None else '-'),
             story_str,
+            str(data.get('last_checked') or '-'),
+            str(data.get('next_check') or '-'),
             Text(status_val, style=status_style)
         )
     return table
+
+
+def generate_global_stats_panel():
+    if not RICH_AVAILABLE:
+        return None
+
+    # Type guard: Rich components are available
+    assert Table is not None
+    assert Panel is not None
+    assert box is not None
+    assert Text is not None
+
+    stats_table = Table.grid(expand=True)
+    stats_table.add_column(justify="center", ratio=1)
+    stats_table.add_column(justify="center", ratio=1)
+    stats_table.add_column(justify="center", ratio=2)
+    stats_table.add_column(justify="center", ratio=2)
+
+    # Calculate active targets
+    active_count = 0
+    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+        active_count = len(WEB_DASHBOARD_DATA.get('targets', {}))
+
+    last_check_str = get_squeezed_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else "Never"
+    next_check_str = get_squeezed_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else "-"
+
+    stats_table.add_row(
+        Text.assemble(("Active Targets: ", "cyan"), (str(active_count), "bold yellow")),
+        Text.assemble(("Total Checks: ", "cyan"), (str(CHECK_COUNT), "bold green")),
+        Text.assemble(("Global Last Check: ", "cyan"), (last_check_str, "bold magenta")),
+        Text.assemble(("Global Next Check: ", "cyan"), (next_check_str, "bold blue"))
+    )
+
+    return Panel(stats_table, title="Global Statistics", box=box.ROUNDED, border_style="bright_blue")
 
 
 # Generate Dashboard layout for user mode (simple/minimal)
@@ -3839,7 +3971,6 @@ def generate_user_dashboard(target_data):
 
     table = generate_dashboard_targets_table(target_data)
 
-
     # Activity Log Panel (Latest at bottom)
     activities = DASHBOARD_DATA.get('activities', [])
     log_text = Text()
@@ -3862,11 +3993,11 @@ def generate_user_dashboard(target_data):
     for t_data in target_data.values():
         if t_data.get('last_post'):
             # Simple check, in reality would parse timestamp
-             latest_update = t_data['last_post']
-             break # Just take the first one found for now/single user
+            latest_update = t_data['last_post']
+            break  # Just take the first one found for now/single user
         if t_data.get('last_story'):
-             latest_update = t_data['last_story']
-             break
+            latest_update = t_data['last_story']
+            break
 
     if latest_update:
         last_fetched_text.append(f"Type: {latest_update.get('type', 'Unknown')}\n", style="bold cyan")
@@ -3874,14 +4005,14 @@ def generate_user_dashboard(target_data):
         caption = latest_update.get('caption', '')
         if caption:
             caption = caption.replace('\n', ' ')
-            if len(caption) > 60: caption = caption[:57] + "..."
+            if len(caption) > 60:
+                caption = caption[:57] + "..."
             last_fetched_text.append(f"Caption: {caption}\n")
         last_fetched_text.append(f"URL: {latest_update.get('url', '-')}", style="blue underline")
     else:
         last_fetched_text.append("No posts/stories fetched yet.", style="dim italic")
 
     last_fetched_panel = Panel(last_fetched_text, title="Last Fetched", box=box.ROUNDED, border_style="green")
-
 
     # Actions panel
     mode_btn_text = Text()
@@ -3892,9 +4023,12 @@ def generate_user_dashboard(target_data):
 
     mode_panel = Panel(mode_btn_text, title="Actions", box=box.ROUNDED, border_style="cyan")
 
+    stats_panel = generate_global_stats_panel()
+
     layout = Layout()
     layout.split_column(
         Layout(header_panel, size=3),
+        Layout(stats_panel, size=3),
         Layout(name="main", ratio=1),
         Layout(log_panel, size=12)
     )
@@ -4012,7 +4146,6 @@ def generate_config_dashboard(target_data, config_data):
             log_text.append(f"{act['message']}\n")
     log_panel = Panel(log_text, title="Live Activity Log", box=box.ROUNDED, border_style="yellow")
 
-
     # Actions panel
     mode_btn_text = Text()
     mode_btn_text.append("USER | ", style="dim")
@@ -4020,6 +4153,8 @@ def generate_config_dashboard(target_data, config_data):
     mode_btn_text.append("m: toggle | s: start | x: stop\n", style="dim italic")
     mode_btn_text.append("r: recheck | q: exit", style="dim italic")
     mode_panel = Panel(mode_btn_text, title="Actions", box=box.ROUNDED, border_style="cyan")
+
+    stats_panel = generate_global_stats_panel()
 
     # Dynamic height calculation to prevent cutoff
     # Base height + number of rows + padding
@@ -4029,6 +4164,7 @@ def generate_config_dashboard(target_data, config_data):
     layout = Layout()
     layout.split_column(
         Layout(header_panel, size=3),
+        Layout(stats_panel, size=3),
         Layout(targets_table, ratio=1),
         Layout(name="config_area", size=config_height),
         Layout(name="bottom", ratio=1)
@@ -4050,6 +4186,7 @@ def generate_config_dashboard(target_data, config_data):
     )
 
     return layout
+
 
 # Update Dashboard display
 def update_dashboard():
@@ -4478,17 +4615,17 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         if not WEB_DASHBOARD_ENABLED:
             web_dashboard_reason = " (disabled)"
         elif not FLASK_AVAILABLE:
-             web_dashboard_reason = " (missing Flask)"
+            web_dashboard_reason = " (missing Flask)"
 
     csv_status = "False"
     if CSV_FILE:
-         csv_status = f"True (Base: {CSV_FILE})" if len(targets_list) > 1 else f"True ({CSV_FILE})"
+        csv_status = f"True (Base: {CSV_FILE})" if len(targets_list) > 1 else f"True ({CSV_FILE})"
 
     # Calculate interval strings safely
     interval_str = ""
     try:
         if check_interval_low is None:
-             check_interval_low = int(INSTA_CHECK_INTERVAL - RANDOM_SLEEP_DIFF_LOW)
+            check_interval_low = int(INSTA_CHECK_INTERVAL - RANDOM_SLEEP_DIFF_LOW)
         interval_str = f"[ {display_time(check_interval_low)} - {display_time(int(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH))} ]"
     except Exception:
         interval_str = f"[ {INSTA_CHECK_INTERVAL}s +/- ]"
@@ -4772,25 +4909,25 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         try:
                             debug_print(f"Loading session for {SESSION_USERNAME} from file...")
                             bot.load_session_from_file(SESSION_USERNAME)
-                            with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                 WEB_DASHBOARD_DATA['session']['active'] = True
                         except FileNotFoundError:
                             debug_print(f"Session file for {SESSION_USERNAME} not found, logging in...")
                             bot.login(SESSION_USERNAME, SESSION_PASSWORD)
                             bot.save_session_to_file()
-                            with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                 WEB_DASHBOARD_DATA['session']['active'] = True
                         except instaloader.exceptions.BadCredentialsException:
                             debug_print(f"Bad credentials for {SESSION_USERNAME}, logging in again...")
                             bot.login(SESSION_USERNAME, SESSION_PASSWORD)
                             bot.save_session_to_file()
-                            with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                 WEB_DASHBOARD_DATA['session']['active'] = True
                     else:
                         try:
                             debug_print(f"Loading session for {SESSION_USERNAME} from file (no password provided)...")
                             bot.load_session_from_file(SESSION_USERNAME)
-                            with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                 WEB_DASHBOARD_DATA['session']['active'] = True
                         except FileNotFoundError:
                             raise FileNotFoundError(f"Instagram session file for {SESSION_USERNAME} not found")
@@ -5017,7 +5154,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         'posts': posts_count,
         'reels': reels_count,
         'has_story': has_story,
-        'stories_count': 0, # Initial count
+        'stories_count': 0,  # Initial count
         'is_private': is_private,
         'status': 'OK',
         'bio_changed': False,
@@ -5615,8 +5752,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 'reels': reels_count,
                 'has_story': has_story,
                 'stories_count': stories_count,
-                'last_post': last_post, # Will be merged
-                'last_story': last_story, # Will be merged
+                'last_post': last_post,  # Will be merged
+                'last_story': last_story,  # Will be merged
                 'status': 'Waiting'
             }
         }, config=get_dashboard_config_data())
@@ -5830,12 +5967,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                     if skip_session:
                                         # Clear session context for Mode 1
                                         bot.context._session.cookies.clear()
-                                        with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                                        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                             WEB_DASHBOARD_DATA['session']['active'] = False
                                         log_activity("Session cleared for Mode 1", user=user)
                                     else:
                                         bot.load_session_from_file(SESSION_USERNAME)
-                                        with WEB_DASHBOARD_DATA_LOCK: # type: ignore
+                                        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                             WEB_DASHBOARD_DATA['session']['active'] = True
                                         log_activity("Session reloaded successfully", user=user)
                                 except Exception as se:
@@ -5845,7 +5982,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                     if stop_event and stop_event.is_set():
                         return
-                    continue # Retry the main loop
+                    continue  # Retry the main loop
 
                 if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                     print("* Session might not be valid anymore!")
@@ -6147,8 +6284,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     f"User **{user}** has updated their bio",
                     color=0x9b59b6,  # Purple
                     fields=[
-                        {"name": "Old Bio", "value": (bio_old[:DISCORD_FIELD_VALUE_LIMIT-4] + "...") if len(bio_old) > DISCORD_FIELD_VALUE_LIMIT else bio_old or "(empty)"},
-                        {"name": "New Bio", "value": (bio[:DISCORD_FIELD_VALUE_LIMIT-4] + "...") if len(bio) > DISCORD_FIELD_VALUE_LIMIT else bio or "(empty)"},
+                        {"name": "Old Bio", "value": (bio_old[:DISCORD_FIELD_VALUE_LIMIT - 4] + "...") if len(bio_old) > DISCORD_FIELD_VALUE_LIMIT else bio_old or "(empty)"},
+                        {"name": "New Bio", "value": (bio[:DISCORD_FIELD_VALUE_LIMIT - 4] + "...") if len(bio) > DISCORD_FIELD_VALUE_LIMIT else bio or "(empty)"},
                     ],
                     notification_type="status"
                 )
@@ -6627,7 +6764,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     if location:
                         webhook_fields.append({"name": "Location", "value": location, "inline": True})
                     if caption:
-                        webhook_fields.append({"name": "Description", "value": (caption[:DISCORD_FIELD_VALUE_LIMIT-4] + "...") if len(caption) > DISCORD_FIELD_VALUE_LIMIT else caption})
+                        webhook_fields.append({"name": "Description", "value": (caption[:DISCORD_FIELD_VALUE_LIMIT - 4] + "...") if len(caption) > DISCORD_FIELD_VALUE_LIMIT else caption})
 
                     webhook_result = send_webhook(
                         f"{emoji} {user} New {last_source.capitalize()}",
@@ -6720,7 +6857,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     print_cur_ts("Timestamp:\t\t\t\t")
                     return
 
-
                 # Check for recheck trigger (Web Dashboard mode)
                 recheck_triggered = False
                 with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
@@ -6740,6 +6876,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 sleep_remaining -= sleep_chunk
         else:
             time.sleep(r_sleep_time)
+
 
 # Helper to resolve log and CSV paths for a specific target
 def get_target_paths(user):
@@ -7207,7 +7344,7 @@ def run_main():
     cfg_path = find_config_file(CLI_CONFIG_PATH)
 
     if cfg_path:
-        CLI_CONFIG_PATH = cfg_path # Update global for dashboard display
+        CLI_CONFIG_PATH = cfg_path  # Update global for dashboard display
 
     if not cfg_path and CLI_CONFIG_PATH:
         print(f"* Error: Config file '{CLI_CONFIG_PATH}' does not exist")
@@ -7412,7 +7549,6 @@ def run_main():
     targets = sorted(normalized)
     DASHBOARD_DATA['targets_list'] = targets
 
-
     # Terminal Dashboard handling
     if getattr(args, 'dashboard', None) is True:
         DASHBOARD_ENABLED = True
@@ -7463,8 +7599,6 @@ def run_main():
 
     if args.enable_jitter is True:
         ENABLE_JITTER = True
-
-
 
     if args.check_interval:
         if args.check_interval <= 0:
@@ -7731,7 +7865,7 @@ def run_main():
                 'posts': None,
                 'reels': None,
                 'status': 'Pending',
-                'added': datetime.now().strftime('%Y-%m-%d %H:%M'),
+                'added': datetime.now().strftime('%a %d %b %H:%M'),
                 'last_checked': None
             } for u in targets
         }
@@ -7834,6 +7968,10 @@ def run_main():
             planned = now + timedelta(seconds=delay)
             print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
             debug_print(f"Target {u} scheduled with delay_s={delay}")
+
+            # Populate initial dashboard check times
+            if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
+                update_check_times(next_time=planned, user=u, increment_count=False)
 
         print_cur_ts("\nTimestamp:\t\t\t\t")
 

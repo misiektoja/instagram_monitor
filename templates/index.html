@@ -838,8 +838,9 @@
                                 Username <span id="sort-indicator-targets" class="sort-indicator">▲</span>
                             </th>
                             <th>Added</th>
-                            <th>Status</th>
                             <th>Last Checked</th>
+                            <th>Next Check</th>
+                            <th>Status</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -1749,47 +1750,51 @@
             const sortedEntries = getSortedTargets();
 
             if (Object.keys(targets).length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="6">
-                            <div class="empty-state">
-                                <div class="empty-state-icon">👥</div>
-                                <p>No targets added yet. Click "Add Target" to start monitoring.</p>
-                            </div>
-                        </td>
-                    </tr>
-                `;
-                if (tbodySimple) {
-                    tbodySimple.innerHTML = `
+                if (tbody) tbody.innerHTML = `<tr><td colspan="10"><div class="empty-state"><p>No targets added yet.</p></div></td></tr>`;
+                if (tbodySimple) tbodySimple.innerHTML = `<tr><td colspan="9"><div class="empty-state"><p>No targets added yet.</p></div></td></tr>`;
+                if (targetsList) targetsList.innerHTML = `<tr><td colspan="6"><div class="empty-state"><p>No targets configured</p></div></td></tr>`;
+                return;
+            }
+
+            const renderRow = ([name, data], isSimple = false, isTargetsList = false) => {
+                const statusVal = data.status || 'Idle';
+                const statusClass = getStatusBadge(statusVal);
+                const isPrivate = data.is_private;
+                const visibility = isPrivate === true ? 'PRI' : (isPrivate === false ? 'PUB' : '-');
+
+                let storyStr = "-";
+                if (data.has_story) {
+                    storyStr = data.stories_count > 0 ? `✨ ${data.stories_count}` : "✨ Yes";
+                } else if (data.has_story === false) {
+                    storyStr = "No";
+                }
+
+                if (isTargetsList) {
+                    return `
                         <tr>
-                            <td colspan="5">
-                                <div class="empty-state">
-                                    <div class="empty-state-icon">👥</div>
-                                    <p>No targets added yet. Click "Add Target" to start monitoring.</p>
+                            <td>
+                                <div class="target-name">
+                                    <div class="target-avatar">${name.charAt(0).toUpperCase()}</div>
+                                    <span><a href="https://instagram.com/${encodeURIComponent(name)}" target="_blank" style="color: inherit; text-decoration: none;">${escapeHtml(name)}</a></span>
+                                </div>
+                            </td>
+                            <td>${data.added || '-'}</td>
+                            <td>${escapeHtml(data.last_checked || 'Never')}</td>
+                            <td>${escapeHtml(data.next_check || '-')}</td>
+                            <td><span class="badge badge-${statusClass}">${escapeHtml(statusVal)}</span></td>
+                            <td>
+                                <div class="target-actions">
+                                    <button class="btn btn-secondary btn-sm" onclick="triggerCheck('${escapeHtml(name)}')" title="Recheck">🔄</button>
+                                    <button class="btn btn-success btn-sm" onclick="startMonitoring('${escapeHtml(name)}')" title="Start">▶️</button>
+                                    <button class="btn btn-danger btn-sm" onclick="stopMonitoring('${escapeHtml(name)}')" title="Stop">⏹️</button>
+                                    <button class="btn btn-danger btn-sm" onclick="removeTarget('${escapeHtml(name)}')" title="Remove">🗑️</button>
                                 </div>
                             </td>
                         </tr>
                     `;
                 }
-                targetsList.innerHTML = `
-                    <tr>
-                        <td colspan="5">
-                                <div class="empty-state">
-                                    <div class="empty-state-icon">📭</div>
-                                    <p>No targets configured</p>
-                                </div>
-                            </td>
-                        </tr>
-                `;
-                return;
-            }
 
-            // Render simple view for user mode (Expanded with more columns now)
-            if (tbodySimple) {
-                const lastCheck = globalLastCheck || '-';
-                const nextCheck = globalNextCheck || '-';
-
-                tbodySimple.innerHTML = sortedEntries.map(([name, data]) => `
+                return `
                     <tr>
                         <td>
                             <div class="target-name">
@@ -1800,83 +1805,29 @@
                                 </div>
                             </div>
                         </td>
-                        <td>${data.is_private === true ? 'PRI' : (data.is_private === false ? 'PUB' : '-')}</td>
-                        <td>${data.followers ?? '-'}</td>
-                        <td>${data.following ?? '-'}</td>
-                        <td>${data.posts ?? '-'}</td>
-                        <td>${data.reels ?? '-'}</td>
-                        <td>${data.has_story ? (data.stories_count > 0 ? '✨ ' + data.stories_count : '✨ Yes') : '-'}</td>
-                        <td><span class="badge badge-${getStatusBadge(data.status)}">${data.status || 'Idle'}</span></td>
-                    </tr>
-                `).join('');
-            }
-
-            tbody.innerHTML = sortedEntries.map(([name, data]) => `
-                <tr>
-                    <td>
-                        <div class="target-name">
-                            <div class="target-avatar">${name.charAt(0).toUpperCase()}</div>
-                            <div>
-                                <div><a href="https://instagram.com/${encodeURIComponent(name)}" target="_blank" style="color: inherit; text-decoration: none;">${escapeHtml(name)}</a></div>
-                                <div style="font-size: 12px; color: #666;">@${escapeHtml(name)}</div>
+                        <td><span class="badge ${isPrivate ? 'badge-warning' : 'badge-success'}" style="padding: 2px 6px; font-size: 10px;">${visibility}</span></td>
+                        <td class="text-right">${data.followers ?? '-'}</td>
+                        <td class="text-right">${data.following ?? '-'}</td>
+                        <td class="text-right">${data.posts ?? '-'}</td>
+                        <td class="text-right">${data.reels ?? '-'}</td>
+                        <td>${storyStr}</td>
+                        <td><span class="badge badge-${statusClass}">${escapeHtml(statusVal)}</span></td>
+                        ${!isSimple ? `
+                        <td>
+                            <div class="target-actions">
+                                <button class="btn btn-secondary btn-sm" onclick="triggerCheck('${escapeHtml(name)}')" title="Recheck">🔄</button>
+                                <button class="btn btn-success btn-sm" onclick="startMonitoring('${escapeHtml(name)}')" title="Start">▶️</button>
+                                <button class="btn btn-danger btn-sm" onclick="stopMonitoring('${escapeHtml(name)}')" title="Stop">⏹️</button>
+                                <button class="btn btn-danger btn-sm" onclick="removeTarget('${escapeHtml(name)}')" title="Remove">🗑️</button>
                             </div>
-                        </div>
-                    </td>
-                    <td>${data.is_private === true ? 'PRI' : (data.is_private === false ? 'PUB' : '-')}</td>
-                    <td>${data.followers ?? '-'}</td>
-                    <td>${data.following ?? '-'}</td>
-                    <td>${data.posts ?? '-'}</td>
-                    <td>${data.reels ?? '-'}</td>
-                    <td>${data.has_story ? (data.stories_count > 0 ? '✨ ' + data.stories_count : '✨ Yes') : '-'}</td>
-                    <td><span class="badge badge-${getStatusBadge(data.status)}">${data.status || 'Idle'}</span></td>
-                    <td>
-                        <div class="target-actions">
-                            <button class="btn btn-secondary btn-sm" onclick="triggerCheck('${escapeHtml(name)}')" title="Recheck" aria-label="Recheck for ${escapeHtml(name)}">
-                                🔄
-                            </button>
-                            <button class="btn btn-success btn-sm" onclick="startMonitoring('${escapeHtml(name)}')" title="Start" aria-label="Start monitoring ${escapeHtml(name)}">
-                                ▶️
-                            </button>
-                            <button class="btn btn-danger btn-sm" onclick="stopMonitoring('${escapeHtml(name)}')" title="Stop" aria-label="Stop monitoring ${escapeHtml(name)}">
-                                ⏹️
-                            </button>
-                            <button class="btn btn-danger btn-sm" onclick="removeTarget('${escapeHtml(name)}')" title="Remove" aria-label="Remove target ${escapeHtml(name)}">
-                                🗑️
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-            `).join('');
+                        </td>` : ''}
+                    </tr>
+                `;
+            };
 
-            targetsList.innerHTML = sortedEntries.map(([name, data]) => `
-                <tr>
-                    <td>
-                        <div class="target-name">
-                            <div class="target-avatar">${name.charAt(0).toUpperCase()}</div>
-                            <span><a href="https://instagram.com/${encodeURIComponent(name)}" target="_blank" style="color: inherit; text-decoration: none;">${escapeHtml(name)}</a></span>
-                        </div>
-                    </td>
-                    <td>${data.added || '-'}</td>
-                    <td><span class="badge badge-${getStatusBadge(data.status)}">${data.status || 'Idle'}</span></td>
-                    <td>${data.last_checked || 'Never'}</td>
-                    <td>
-                        <div class="target-actions">
-                            <button class="btn btn-secondary btn-sm" onclick="triggerCheck('${escapeHtml(name)}')" title="Recheck" aria-label="Recheck for ${escapeHtml(name)}">
-                                🔄
-                            </button>
-                            <button class="btn btn-success btn-sm" onclick="startMonitoring('${escapeHtml(name)}')" title="Start" aria-label="Start monitoring ${escapeHtml(name)}">
-                                ▶️
-                            </button>
-                            <button class="btn btn-danger btn-sm" onclick="stopMonitoring('${escapeHtml(name)}')" title="Stop" aria-label="Stop monitoring ${escapeHtml(name)}">
-                                ⏹️
-                            </button>
-                            <button class="btn btn-danger btn-sm" onclick="removeTarget('${escapeHtml(name)}')" title="Remove" aria-label="Remove target ${escapeHtml(name)}">
-                                🗑️
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-            `).join('');
+            if (tbodySimple) tbodySimple.innerHTML = sortedEntries.map(e => renderRow(e, true)).join('');
+            if (tbody) tbody.innerHTML = sortedEntries.map(e => renderRow(e, false)).join('');
+            if (targetsList) targetsList.innerHTML = sortedEntries.map(e => renderRow(e, false, true)).join('');
         }
 
         function getStatusBadge(status) {
