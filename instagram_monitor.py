@@ -2047,20 +2047,23 @@ class Logger(object):
                 self.terminal.write(message)
                 self.terminal.flush()
 
+            # Expand tabs for file output (stdout remains untouched)
+            expanded_message = message.expandtabs(8)
+
             # Always log to main log if available
             if self.main_log:
-                self.main_log.write(message)
+                self.main_log.write(expanded_message)
                 self.main_log.flush()
 
             target = self._get_current_target()
             if target and target in self.target_logs:
                 # User-specific action: log to user log
-                self.target_logs[target].write(message)
+                self.target_logs[target].write(expanded_message)
                 self.target_logs[target].flush()
             else:
                 # Common message (e.g. summary screen from MainThread): log to ALL target logs
                 for handle in self.target_logs.values():
-                    handle.write(message)
+                    handle.write(expanded_message)
                     handle.flush()
 
     def flush(self):
@@ -8054,7 +8057,7 @@ def run_main():
     print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
     print(f"* Empty profile pic template:\t\t{profile_pic_file_exists}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""))
     thumbnail_adnotation = " (forced by Web Dashboard)" if THUMBNAILS_FORCED_BY_WEB else ""
-    print(f"* Download thumbnail images:\t\t\t{DOWNLOAD_THUMBNAILS}{thumbnail_adnotation}")
+    print(f"* Download thumbnail images:\t\t{DOWNLOAD_THUMBNAILS}{thumbnail_adnotation}")
     # Dashboard status
     dashboard_status = DASHBOARD_ENABLED and RICH_AVAILABLE
     dashboard_reason = ""
