@@ -1759,7 +1759,7 @@
                                 </div>
                                 <div style="font-size: 13px; margin-bottom: 8px; color: #e0e0e0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${caption}</div>
                                 <div style="display: flex; gap: 12px; align-items: center;">
-                                    ${u.post_url ? `<a href="${u.post_url}" target="_blank" onclick="confirmAnonymity(event, '${u.post_url}')" style="font-size: 12px; color: #e94560; font-weight: 600; text-decoration: underline;">${u.is_story ? 'View Story' : 'View Post'}</a>` : ''}
+                                    ${u.post_url ? `<a href="${u.post_url}" target="_blank" ${u.is_story ? `onclick="confirmAnonymity(event, '${u.post_url}')"` : ''} style="font-size: 12px; color: #e94560; font-weight: 600; text-decoration: underline;">${u.is_story ? 'View Story' : 'View Post'}</a>` : ''}
                                     ${u.video_url ? `
                                         <a href="${u.video_url}" target="_blank" onclick="playVideo(event, '${u.video_url}')" style="font-size: 12px; color: #4ade80; text-decoration: underline; font-weight: 600;">Play Video</a>
                                     ` : (u.url ? `<a href="${u.url}" target="_blank" style="font-size: 12px; color: #bbb; text-decoration: underline;">View Media</a>` : '')}
