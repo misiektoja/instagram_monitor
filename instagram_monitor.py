@@ -2330,6 +2330,59 @@ def validate_webhook_url(url):
         return False
 
 
+# Helper function to compare follower/following lists and log changes
+def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_file_name):
+    a, b = set(old_list), set(new_list)
+    removed = list(a - b)
+    added = list(b - a)
+
+    added_list = ""
+    removed_list = ""
+    added_list_html = ""
+    removed_list_html = ""
+    added_mbody = ""
+    removed_mbody = ""
+
+    if old_list != new_list:
+        print()
+
+        if removed:
+            print(f"Removed {change_type}:\n")
+            removed_mbody = f"\nRemoved {change_type}:\n\n"
+            for item in removed:
+                url = f"https://www.instagram.com/{item}/"
+                print(f"- {item} [ {url} ]")
+                log_activity(f"Removed {'follower' if change_type == 'followers' else 'following'}: {item}",
+                             user=user, level='update', details={'url': url})
+                removed_list += f"- {item} [ {url} ]\n"
+                removed_list_html += f"- {item} [ <a href=\"{url}\">{url}</a> ]\n"
+                try:
+                    if csv_file_name:
+                        write_csv_entry(csv_file_name, now_local_naive(), f"Removed {change_type.capitalize()}", item, "")
+                except Exception as e:
+                    print(f"* Error: {e}")
+            print()
+
+        if added:
+            print(f"Added {change_type}:\n")
+            added_mbody = f"\nAdded {change_type}:\n\n"
+            for item in added:
+                url = f"https://www.instagram.com/{item}/"
+                print(f"- {item} [ {url} ]")
+                log_activity(f"Added {'follower' if change_type == 'followers' else 'following'}: {item}",
+                             user=user, level='update', details={'url': url})
+                added_list += f"- {item} [ {url} ]\n"
+                added_list_html += f"- {item} [ <a href=\"{url}\">{url}</a> ]\n"
+                try:
+                    if csv_file_name:
+                        write_csv_entry(csv_file_name, now_local_naive(), f"Added {change_type.capitalize()}", "", item)
+                except Exception as e:
+                    print(f"* Error: {e}")
+            print()
+
+    return added_list, removed_list, added_list_html, removed_list_html, added_mbody, removed_mbody
+
+
 # Helper function to send follower/following change webhooks
 def send_follower_change_webhook(user, change_type, old_count, new_count, added_list, removed_list):
     diff = new_count - old_count
@@ -5420,39 +5473,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     # Compare followers: either count changed OR detailed logging detected a difference
     should_compare_followers = ((followers_count != followers_old_count) or (DETAILED_FOLLOWER_LOGGING and followers != followers_old))
     if should_compare_followers and (followers != followers_old) and not skip_session and not skip_followers and can_view and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
-        a, b = set(followers_old), set(followers)
-        removed_followers = list(a - b)
-        added_followers = list(b - a)
-        added_followers_list = ""
-        removed_followers_list = ""
-
-        print()
-
-        if removed_followers:
-            print("Removed followers:\n")
-            for f_in_list in removed_followers:
-                print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                log_activity(f"Removed follower: {f_in_list}", user=user, level='update', details={'url': f"https://www.instagram.com/{f_in_list}/"})
-                removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                try:
-                    if csv_file_name:
-                        write_csv_entry(csv_file_name, now_local_naive(), "Removed Followers", f_in_list, "")
-                except Exception as e:
-                    print(f"* Error: {e}")
-            print()
-
-        if added_followers:
-            print("Added followers:\n")
-            for f_in_list in added_followers:
-                print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                log_activity(f"Added follower: {f_in_list}", user=user, level='update', details={'url': f"https://www.instagram.com/{f_in_list}/"})
-                added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                try:
-                    if csv_file_name:
-                        write_csv_entry(csv_file_name, now_local_naive(), "Added Followers", "", f_in_list)
-                except Exception as e:
-                    print(f"* Error: {e}")
-            print()
+        added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
+            user, "followers", followers_old, followers, csv_file_name
+        )
 
     if os.path.isfile(insta_followings_file):
         try:
@@ -5531,42 +5554,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             except Exception as e:
                 print(f"* Cannot save list of followings to '{insta_followings_file}' file: {e}")
 
-    # Compare followings: either count changed OR detailed logging detected a difference
     should_compare_followings = ((followings_count != followings_old_count) or (DETAILED_FOLLOWER_LOGGING and followings != followings_old))
     if should_compare_followings and (followings != followings_old) and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
-        a, b = set(followings_old), set(followings)
-        removed_followings = list(a - b)
-        added_followings = list(b - a)
-        added_followings_list = ""
-        removed_followings_list = ""
-
-        print()
-
-        if removed_followings:
-            print("Removed followings:\n")
-            for f_in_list in removed_followings:
-                print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                log_activity(f"Removed following: {f_in_list}", user=user, level='update', details={'url': f"https://www.instagram.com/{f_in_list}/"})
-                removed_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                try:
-                    if csv_file_name:
-                        write_csv_entry(csv_file_name, now_local_naive(), "Removed Followings", f_in_list, "")
-                except Exception as e:
-                    print(f"* Error: {e}")
-            print()
-
-        if added_followings:
-            print("Added followings:\n")
-            for f_in_list in added_followings:
-                print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                log_activity(f"Added following: {f_in_list}", user=user, level='update', details={'url': f"https://www.instagram.com/{f_in_list}/"})
-                added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                try:
-                    if csv_file_name:
-                        write_csv_entry(csv_file_name, now_local_naive(), "Added Followings", "", f_in_list)
-                except Exception as e:
-                    print(f"* Error: {e}")
-            print()
+        added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
+            user, "followings", followings_old, followings, csv_file_name
+        )
 
     if not skip_session and not skip_followers and can_view:
         followers_old = followers
@@ -6246,7 +6238,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 time.sleep(r_sleep_time)
                 continue
 
-            if followings_count != followings_old_count:
+            if followings_count != followings_old_count or DETAILED_FOLLOWER_LOGGING:
+                if DETAILED_FOLLOWER_LOGGING and followings_count > 5000:
+                    warning = f"High following count ({followings_count})! Detailed logging may increase rate limit risk."
+                    log_activity(warning, user=user, level='system')
+                    print(f"* Warning: {warning}")
+
                 followings_diff = followings_count - followings_old_count
                 followings_diff_str = ""
                 if followings_diff > 0:
@@ -6297,46 +6294,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     if not followings and followings_count > 0:
                         followings = followings_old
                     else:
-                        a, b = set(followings_old), set(followings)
-
-                        removed_followings = list(a - b)
-                        added_followings = list(b - a)
-
-                        if followings != followings_old:
-                            print()
-
-                            if removed_followings:
-                                print("Removed followings:\n")
-                                removed_followings_mbody = "\nRemoved followings:\n\n"
-                                for f_in_list in removed_followings:
-                                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                                    removed_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                                    removed_followings_list_html += f"- {f_in_list} [ <a href=\"https://www.instagram.com/{f_in_list}/\">https://www.instagram.com/{f_in_list}/</a> ]\n"
-                                    try:
-                                        if csv_file_name:
-                                            write_csv_entry(csv_file_name, now_local_naive(), "Removed Followings", f_in_list, "")
-                                    except Exception as e:
-                                        print(f"* Error: {e}")
-                                print()
-
-                            if added_followings:
-                                print("Added followings:\n")
-                                added_followings_mbody = "\nAdded followings:\n\n"
-                                for f_in_list in added_followings:
-                                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                                    log_activity(f"Added following: {f_in_list}", user=user, level='update', details={'url': f"https://www.instagram.com/{f_in_list}/"})
-                                    added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                                    added_followings_list_html += f"- {f_in_list} [ <a href=\"https://www.instagram.com/{f_in_list}/\">https://www.instagram.com/{f_in_list}/</a> ]\n"
-                                    try:
-                                        if csv_file_name:
-                                            write_csv_entry(csv_file_name, now_local_naive(), "Added Followings", "", f_in_list)
-                                    except Exception as e:
-                                        print(f"* Error: {e}")
-                                print()
+                        added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
+                            user, "followings", followings_old, followings, csv_file_name
+                        )
 
                         followings_old = followings
 
-                if STATUS_NOTIFICATION:
+                if STATUS_NOTIFICATION and (followings_count != followings_old_count or added_followings_list or removed_followings_list):
                     m_subject = f"Instagram user {user} followings number has changed! ({followings_diff_str}, {followings_old_count} -> {followings_count})"
 
                     if not skip_session and not skip_followings and can_view:
@@ -6371,7 +6335,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
 
-            if followers_count != followers_old_count:
+            if followers_count != followers_old_count or DETAILED_FOLLOWER_LOGGING:
+                if DETAILED_FOLLOWER_LOGGING and followers_count > 5000:
+                    warning = f"High follower count ({followers_count})! Detailed logging may increase rate limit risk."
+                    log_activity(warning, user=user, level='system')
+                    print(f"* Warning: {warning}")
+
                 followers_diff = followers_count - followers_old_count
                 followers_diff_str = ""
                 if followers_diff > 0:
@@ -6423,46 +6392,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     if not followers and followers_count > 0:
                         followers = followers_old
                     else:
-                        a, b = set(followers_old), set(followers)
-                        removed_followers = list(a - b)
-                        added_followers = list(b - a)
-
-                        if followers != followers_old:
-                            print()
-
-                            if removed_followers:
-                                print("Removed followers:\n")
-                                removed_followers_mbody = "\nRemoved followers:\n\n"
-                                for f_in_list in removed_followers:
-                                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                                    log_activity(f"Removed follower: {f_in_list}", user=user, level='update', details={'url': f"https://www.instagram.com/{f_in_list}/"})
-                                    removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                                    removed_followers_list_html += f"- {f_in_list} [ <a href=\"https://www.instagram.com/{f_in_list}/\">https://www.instagram.com/{f_in_list}/</a> ]\n"
-                                    try:
-                                        if csv_file_name:
-                                            write_csv_entry(csv_file_name, now_local_naive(), "Removed Followers", f_in_list, "")
-                                    except Exception as e:
-                                        print(f"* Error: {e}")
-                                print()
-
-                            if added_followers:
-                                print("Added followers:\n")
-                                added_followers_mbody = "\nAdded followers:\n\n"
-                                for f_in_list in added_followers:
-                                    print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                                    log_activity(f"Added follower: {f_in_list}", user=user, level='update', details={'url': f"https://www.instagram.com/{f_in_list}/"})
-                                    added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
-                                    added_followers_list_html += f"- {f_in_list} [ <a href=\"https://www.instagram.com/{f_in_list}/\">https://www.instagram.com/{f_in_list}/</a> ]\n"
-                                    try:
-                                        if csv_file_name:
-                                            write_csv_entry(csv_file_name, now_local_naive(), "Added Followers", "", f_in_list)
-                                    except Exception as e:
-                                        print(f"* Error: {e}")
-                                print()
+                        added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
+                            user, "followers", followers_old, followers, csv_file_name
+                        )
 
                         followers_old = followers
 
-                if STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION:
+                if STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION and (followers_count != followers_old_count or added_followers_list or removed_followers_list):
                     m_subject = f"Instagram user {user} followers number has changed! ({followers_diff_str}, {followers_old_count} -> {followers_count})"
 
                     if not skip_session and not skip_followers and can_view:
