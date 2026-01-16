@@ -1821,9 +1821,23 @@ def update_terminal_dashboard_data(targets=None, config=None, is_monitoring=None
             for user, data in targets.items():
                 if user not in DASHBOARD_DATA['targets']:
                     DASHBOARD_DATA['targets'][user] = {}
+                # Preserve last_checked and next_check values when updating
+                preserved_last_checked = DASHBOARD_DATA['targets'][user].get('last_checked')
+                preserved_last_checked_ts = DASHBOARD_DATA['targets'][user].get('last_checked_ts')
+                preserved_next_check = DASHBOARD_DATA['targets'][user].get('next_check')
+                preserved_next_check_ts = DASHBOARD_DATA['targets'][user].get('next_check_ts')
                 # Deep merge the target data
                 if isinstance(data, dict):
                     DASHBOARD_DATA['targets'][user].update(data)
+                    # Restore preserved values if they weren't explicitly set in the update
+                    if 'last_checked' not in data and preserved_last_checked is not None:
+                        DASHBOARD_DATA['targets'][user]['last_checked'] = preserved_last_checked
+                    if 'last_checked_ts' not in data and preserved_last_checked_ts is not None:
+                        DASHBOARD_DATA['targets'][user]['last_checked_ts'] = preserved_last_checked_ts
+                    if 'next_check' not in data and preserved_next_check is not None:
+                        DASHBOARD_DATA['targets'][user]['next_check'] = preserved_next_check
+                    if 'next_check_ts' not in data and preserved_next_check_ts is not None:
+                        DASHBOARD_DATA['targets'][user]['next_check_ts'] = preserved_next_check_ts
                 else:
                     DASHBOARD_DATA['targets'][user] = data
         if config is not None:
@@ -3911,10 +3925,14 @@ def update_check_times(last_time=None, next_time=None, user=None, increment_coun
 
     if all_nexts:
         NEXT_CHECK_TIME = min(all_nexts)
-    elif next_time and next_time.timestamp() > now_ts:
-        NEXT_CHECK_TIME = next_time.timestamp()
+    elif next_time:
+        if next_time.timestamp() > now_ts:
+            NEXT_CHECK_TIME = next_time.timestamp()
+        else:
+            NEXT_CHECK_TIME = None
     else:
-        NEXT_CHECK_TIME = None
+        # Keep existing NEXT_CHECK_TIME during active checks
+        pass
 
     # Update dashboard displays
     if DASHBOARD_ENABLED and RICH_AVAILABLE:
@@ -4065,14 +4083,22 @@ def generate_user_dashboard(target_data):
     # Find the most recently updated target with last_post/last_story
     latest_update = None
     latest_ts = 0
+    latest_user = None
 
-    for t_data in target_data.values():
+    for user, t_data in target_data.items():
+        # Prefer most recent update if available
+        if t_data.get('new_update'):
+            latest_update = t_data['new_update']
+            latest_user = user
+            break
         if t_data.get('last_post'):
             # Simple check, in reality would parse timestamp
             latest_update = t_data['last_post']
+            latest_user = user
             break  # Just take the first one found for now/single user
         if t_data.get('last_story'):
             latest_update = t_data['last_story']
+            latest_user = user
             break
 
     if latest_update:
@@ -4084,7 +4110,51 @@ def generate_user_dashboard(target_data):
             if len(caption) > 60:
                 caption = caption[:57] + "..."
             last_fetched_text.append(f"Caption: {caption}\n")
-        last_fetched_text.append(f"URL: {latest_update.get('url', '-')}", style="blue underline")
+
+        # Get file path from the update data (stored directly in file_path field)
+        file_path = latest_update.get('file_path')
+        if not file_path:
+            # Fallback: try to extract from url field (for backwards compatibility)
+            url_value = latest_update.get('url', '')
+            if url_value.startswith('/media/'):
+                # Remove /media/ prefix to get the actual file path
+                file_path = url_value[7:]  # Remove '/media/' (7 chars)
+                # Handle potential double slash if file_path starts with /
+                while file_path.startswith('/'):
+                    file_path = file_path[1:]
+                # Make it absolute if it's relative
+                if not os.path.isabs(file_path):
+                    file_path = os.path.abspath(file_path)
+            elif url_value and not url_value.startswith('http'):
+                # If it's not a URL and not /media/, it might be a direct file path
+                if os.path.exists(url_value):
+                    file_path = os.path.abspath(url_value)
+                elif os.path.isabs(url_value):
+                    file_path = url_value
+
+        # Display file path if available
+        if file_path:
+            if os.path.exists(file_path):
+                last_fetched_text.append(f"File: {file_path}\n", style="dim")
+            else:
+                # File path exists but file doesn't, show it anyway
+                last_fetched_text.append(f"File: {file_path}\n", style="dim yellow")
+
+        # Add Instagram URL
+        post_url = latest_update.get('post_url', '')
+        is_story = latest_update.get('is_story')
+        if is_story is None:
+            is_story = latest_update.get('type', '').lower().startswith('story')
+        if post_url:
+            if is_story:
+                # Add anonymity warning for stories
+                last_fetched_text.append(f"URL: {post_url} ", style="blue underline")
+                last_fetched_text.append("(⚠️ may break anonymity)", style="yellow italic")
+            else:
+                last_fetched_text.append(f"URL: {post_url}", style="blue underline")
+        elif url_value and url_value.startswith('http'):
+            # Fallback to url if post_url is not available
+            last_fetched_text.append(f"URL: {url_value}", style="blue underline")
     else:
         last_fetched_text.append("No posts/stories fetched yet.", style="dim italic")
 
@@ -5620,10 +5690,25 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             print(f"* Error: {e}")
 
                         # Update last_story for dashboard (this loop runs from oldest to newest usually, so we update on each)
+                        # Determine which file was saved (video or image)
+                        saved_file_path = None
+                        if story_video_url and 'story_video_filename' in locals() and os.path.isfile(story_video_filename):
+                            saved_file_path = story_video_filename
+                        elif DOWNLOAD_THUMBNAILS and story_thumbnail_url and 'story_image_filename' in locals() and os.path.isfile(story_image_filename):
+                            saved_file_path = story_image_filename
+
+                        # Prefer image thumbnail for display in dashboards
+                        display_url = None
+                        if 'story_image_filename' in locals() and os.path.isfile(story_image_filename):
+                            display_url = f"/media/{story_image_filename}"
+                        else:
+                            display_url = story_thumbnail_url
+
                         last_story = {
                             'type': story_type,
                             'caption': story_caption[:50] + "..." if story_caption and len(story_caption) > 50 else (story_caption or ""),
-                            'url': f"/media/{story_image_filename}" if os.path.isfile(story_image_filename) else story_thumbnail_url,
+                            'url': display_url,
+                            'file_path': saved_file_path if saved_file_path else None,
                             'post_url': f"https://www.instagram.com/stories/{user}/",
                             'timestamp': get_short_date_from_ts(local_dt)
                         }
@@ -5789,10 +5874,25 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     pass
 
         # Update last_post for dashboard
+        # Determine which file was saved (video or image)
+        saved_file_path = None
+        if video_url and 'video_filename' in locals() and os.path.isfile(video_filename):
+            saved_file_path = video_filename
+        elif DOWNLOAD_THUMBNAILS and thumbnail_url and 'image_filename' in locals() and os.path.isfile(image_filename):
+            saved_file_path = image_filename
+
+        # Prefer image thumbnail for display in dashboards
+        display_url = None
+        if 'image_filename' in locals() and os.path.isfile(image_filename):
+            display_url = f"/media/{image_filename}"
+        else:
+            display_url = thumbnail_url
+
         last_post = {
             'type': last_source.capitalize(),
             'caption': caption[:50] + "..." if caption and len(caption) > 50 else (caption or ""),
-            'url': f"/media/{image_filename}" if os.path.isfile(image_filename) else thumbnail_url,
+            'url': display_url,
+            'file_path': saved_file_path if saved_file_path else None,
             'post_url': post_url,
             'timestamp': get_short_date_from_ts(highestinsta_dt, show_year=True)
         }
@@ -6019,11 +6119,17 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     'start_time': DASHBOARD_DATA.get('start_time', datetime.now())
                 }
 
-                # Update Dashboard with target data (merge with existing targets for multi-target mode)
+                # Update Dashboard with target data (deep merge per target)
                 if DASHBOARD_ENABLED and RICH_AVAILABLE:
                     if 'targets' not in DASHBOARD_DATA:
                         DASHBOARD_DATA['targets'] = {}
-                    DASHBOARD_DATA['targets'].update(target_data)  # Merge, don't overwrite
+                    for t_user, t_data in target_data.items():
+                        if t_user not in DASHBOARD_DATA['targets']:
+                            DASHBOARD_DATA['targets'][t_user] = {}
+                        if isinstance(t_data, dict):
+                            DASHBOARD_DATA['targets'][t_user].update(t_data)
+                        else:
+                            DASHBOARD_DATA['targets'][t_user] = t_data
                     DASHBOARD_DATA['config'] = config_data
                     update_dashboard()
 
@@ -6702,11 +6808,26 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                             # Update web dashboard with the new story
                             if WEB_DASHBOARD_ENABLED:
+                                # Determine which file was saved (video or image)
+                                saved_file_path = None
+                                if 'story_video_filename' in locals() and os.path.isfile(story_video_filename):
+                                    saved_file_path = story_video_filename
+                                elif 'story_image_filename' in locals() and os.path.isfile(story_image_filename):
+                                    saved_file_path = story_image_filename
+
+                                # Prefer image thumbnail for display in dashboards
+                                display_url = None
+                                if 'story_image_filename' in locals() and os.path.isfile(story_image_filename):
+                                    display_url = f"/media/{story_image_filename}"
+                                else:
+                                    display_url = story_thumbnail_url
+
                                 new_story_update = {
                                     'type': f"Story {story_type}",
                                     'caption': story_caption[:50] + "..." if story_caption and len(story_caption) > 50 else (story_caption or ""),
-                                    'url': f"/media/{story_image_filename}" if 'story_image_filename' in locals() and os.path.isfile(story_image_filename) else story_thumbnail_url,
+                                    'url': display_url,
                                     'video_url': f"/media/{story_video_filename}" if 'story_video_filename' in locals() and os.path.isfile(story_video_filename) else None,
+                                    'file_path': saved_file_path if saved_file_path else None,
                                     'post_url': f"https://www.instagram.com/stories/{user}/",
                                     'timestamp': get_short_date_from_ts(local_dt),
                                     'user': user,
@@ -6956,11 +7077,26 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                     # Update web dashboard with the new post
                     if WEB_DASHBOARD_ENABLED:
+                        # Determine which file was saved (video or image)
+                        saved_file_path = None
+                        if 'video_filename' in locals() and os.path.isfile(video_filename):
+                            saved_file_path = video_filename
+                        elif 'image_filename' in locals() and os.path.isfile(image_filename):
+                            saved_file_path = image_filename
+
+                        # Prefer image thumbnail for display in dashboards
+                        display_url = None
+                        if 'image_filename' in locals() and os.path.isfile(image_filename):
+                            display_url = f"/media/{image_filename}"
+                        else:
+                            display_url = thumbnail_url
+
                         new_post_update = {
                             'type': last_source.capitalize(),
                             'caption': caption[:50] + "..." if caption and len(caption) > 50 else (caption or ""),
-                            'url': f"/media/{image_filename}" if 'image_filename' in locals() and os.path.isfile(image_filename) else thumbnail_url,
+                            'url': display_url,
                             'video_url': f"/media/{video_filename}" if 'video_filename' in locals() and os.path.isfile(video_filename) else None,
+                            'file_path': saved_file_path if saved_file_path else None,
                             'post_url': post_url,
                             'timestamp': get_short_date_from_ts(highestinsta_dt, show_year=True),
                             'user': user,
