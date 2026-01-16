@@ -1866,7 +1866,8 @@
                 const levelClass = a.level ? `log-${a.level}` : 'log-system';
                 let msgHtml = escapeHtml(a.message);
                 if (a.details && a.details.url) {
-                    msgHtml += ` <a href="${a.details.url}" target="_blank" class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
+                    const isStory = a.details.is_story === true;
+                    msgHtml += ` <a href="${a.details.url}" target="_blank" ${isStory ? `onclick="confirmAnonymity(event, '${a.details.url}')"` : ''} class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
                 }
                 return `
                 <div class="activity-item ${levelClass}">
@@ -2000,7 +2001,8 @@
                 const levelClass = a.level ? `log-${a.level}` : 'log-system';
                 let msgHtml = escapeHtml(a.message);
                 if (a.details && a.details.url) {
-                    msgHtml += ` <a href="${a.details.url}" target="_blank" class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
+                    const isStory = a.details.is_story === true;
+                    msgHtml += ` <a href="${a.details.url}" target="_blank" ${isStory ? `onclick="confirmAnonymity(event, '${a.details.url}')"` : ''} class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
                 }
                 return `
                 <div class="activity-item ${levelClass}">

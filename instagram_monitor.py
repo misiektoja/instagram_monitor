@@ -6561,7 +6561,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
             if has_story and not story_flag:
                 print(f"* New story for user {user} !\n")
-                log_activity("New story detected", user=user)
+                log_activity("New story detected", user=user, details={'is_story': True})
                 story_flag = True
                 stories_count = 1
 
@@ -6643,7 +6643,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 story_type = "Video"
 
                             print(f"* User {user} has new story item:\n")
-                            log_activity(f"New story item: {story_type}", user=user, level='update', details={'url': f"https://www.instagram.com/stories/{user}/"})
+                            log_activity(f"New story item: {story_type}", user=user, level='update', details={'url': f"https://www.instagram.com/stories/{user}/", 'is_story': True})
                             print(f"Date:\t\t\t{get_date_from_ts(local_dt)}")
                             print(f"Expiry:\t\t\t{get_date_from_ts(expire_local_dt)}")
                             print(f"Type:\t\t\t{story_type}")
