@@ -1022,7 +1022,7 @@ def create_web_dashboard_app():
                     'last_checked': None
                 }
 
-            log_activity(f"Added target", user=username)
+            log_activity(f"Added target", user=username, level='system')
 
             # Start monitoring if requested
             if start_now:
@@ -1046,7 +1046,7 @@ def create_web_dashboard_app():
                 removed = False
 
         if removed:
-            log_activity(f"Removed target", user=username)
+            log_activity(f"Removed target", user=username, level='warning')
             return jsonify({'success': True})  # type: ignore
         return jsonify({'success': False, 'error': 'Target not found'}), 404  # type: ignore
 
@@ -1440,7 +1440,7 @@ def create_web_dashboard_app():
                     with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                         WEB_DASHBOARD_DATA['session']['active'] = True
                         WEB_DASHBOARD_DATA['session']['last_refreshed'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    log_activity(f"Session created and saved", user=SESSION_USERNAME)
+                    log_activity(f"Session created and saved", user=SESSION_USERNAME, level='system')
                     print(f"* Session created and saved for: {SESSION_USERNAME}")
                     print_cur_ts("\nTimestamp:\t\t\t\t")
                     SESSION_REFRESHED_EVENT.set()
@@ -1580,7 +1580,7 @@ def start_monitoring_for_target(username, wait_event=None, signal_event=None, de
                         time.sleep(wait_chunk)
                     sleep_remaining -= wait_chunk
 
-            log_activity(f"Started monitoring", user=user)
+            log_activity(f"Started monitoring", user=user, level='system')
             update_ui_data(targets={user: {'status': 'Pending'}})
 
             # Resolve target-specific paths
@@ -1606,7 +1606,7 @@ def start_monitoring_for_target(username, wait_event=None, signal_event=None, de
                 manual_recheck=manual_recheck
             )
         except Exception as e:
-            log_activity(f"Error monitoring: {str(e)}", user=user)
+            log_activity(f"Error monitoring: {str(e)}", user=user, level='error')
             update_ui_data(targets={user: {'status': 'Error'}})
             if signal_evt:
                 signal_evt.set()
@@ -1628,7 +1628,7 @@ def stop_monitoring_for_target(username):
     if username in WEB_DASHBOARD_STOP_EVENTS:
         WEB_DASHBOARD_STOP_EVENTS[username].set()
         if username in WEB_DASHBOARD_MONITOR_THREADS:
-            log_activity(f"Stopping monitoring", user=username)
+            log_activity(f"Stopping monitoring", user=username, level='warning')
         update_ui_data(targets={username: {'status': 'Stopped'}})
 
     # Clean up thread reference
@@ -1876,7 +1876,7 @@ def update_web_dashboard_data(targets=None, config=None, check_count=None, last_
 
 
 # Logs an activity to both Dashboard and Web Dashboard activity feeds
-def log_activity(message, user=None):
+def log_activity(message, user=None, level='system', details=None, to_web=True):
     global DASHBOARD_DATA, WEB_DASHBOARD_DATA
 
     timestamp_full = datetime.now()
@@ -1885,8 +1885,13 @@ def log_activity(message, user=None):
     # Format message with user if provided
     display_message = f"[{user}] {message}" if user else message
 
-    activity_item_rich = {'time': timestamp_str, 'message': display_message, 'dt': timestamp_full}
-    activity_item_web = {'time': timestamp_str, 'message': display_message}
+    activity_item_rich = {
+        'time': timestamp_str,
+        'message': display_message,
+        'dt': timestamp_full,
+        'level': level,
+        'details': details
+    }
 
     # Update Dashboard data
     if 'activities' not in DASHBOARD_DATA:
@@ -1895,12 +1900,19 @@ def log_activity(message, user=None):
     DASHBOARD_DATA['activities'] = DASHBOARD_DATA['activities'][:50]  # Last 50 for Rich
 
     # Update Web Dashboard data (thread-safe)
-    if WEB_DASHBOARD_DATA_LOCK:
-        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore[union-attr]
-            if 'activities' not in WEB_DASHBOARD_DATA:
-                WEB_DASHBOARD_DATA['activities'] = []
-            WEB_DASHBOARD_DATA['activities'].insert(0, activity_item_web)
-            WEB_DASHBOARD_DATA['activities'] = WEB_DASHBOARD_DATA['activities'][:100]  # Last 100 for Web
+    if to_web:
+        activity_item_web = {
+            'time': timestamp_str,
+            'message': display_message,
+            'level': level,
+            'details': details
+        }
+        if WEB_DASHBOARD_DATA_LOCK:
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore[union-attr]
+                if 'activities' not in WEB_DASHBOARD_DATA:
+                    WEB_DASHBOARD_DATA['activities'] = []
+                WEB_DASHBOARD_DATA['activities'].insert(0, activity_item_web)
+                WEB_DASHBOARD_DATA['activities'] = WEB_DASHBOARD_DATA['activities'][:100]  # Last 100 for Web
 
     # If Dashboard is live, trigger an update
     if DASHBOARD_ENABLED and RICH_AVAILABLE:
@@ -2574,7 +2586,7 @@ def get_short_date_from_ts(ts, show_year=False, show_hour=True, show_weekday=Tru
     weekday_str = f"{calendar.day_abbr[ts_new.weekday()]} " if show_weekday else ""
 
     if (show_year and ts_new.year != datetime.now(tz).year) or always_show_year:
-        hour_prefix = "," if show_hour else ""
+        hour_prefix = " " if show_hour else ""
         return f'{weekday_str}{ts_new.strftime(f"%d %b %y{hour_prefix}{hour_strftime}")}'
     else:
         return f'{weekday_str}{ts_new.strftime(f"%d %b{hour_strftime}")}'
@@ -2846,7 +2858,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 print(f"* User {user} does not have profile picture set, empty template saved to '{profile_pic_file}'{new_line}")
             else:
                 print(f"* User {user} profile picture saved to '{profile_pic_file}'")
-                log_activity("Profile picture saved", user=user)
+                log_activity("Profile picture saved", user=user, level='update')
                 print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago){new_line}")
 
             try:
@@ -3164,6 +3176,7 @@ def check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
             notification_type="status"
         )
 
+        log_activity(f"Posts changed: {posts_count_old} -> {posts_count}", user=user, level='update')
         print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
         print_cur_ts("Timestamp:\t\t\t\t")
         return 1
@@ -5483,6 +5496,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             story_type = "Image"
                         else:
                             story_type = "Video"
+                        last_story = {
+                            'type': f"Story {story_type}",
+                            'caption': story_item.caption[:50] + "..." if story_item.caption and len(story_item.caption) > 50 else (story_item.caption or ""),
+                            'url': story_item.url,
+                            'post_url': f"https://www.instagram.com/stories/{user}/",
+                            'timestamp': get_short_date_from_ts(local_dt, show_year=True)
+                        }
                         print(f"Type:\t\t\t\t\t{story_type}")
 
                         story_mentions = story_item.caption_mentions
@@ -5712,7 +5732,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             'type': last_source.capitalize(),
             'caption': caption[:50] + "..." if caption and len(caption) > 50 else (caption or ""),
             'url': thumbnail_url,
-            'timestamp': get_short_date_from_ts(highestinsta_dt)
+            'post_url': post_url,
+            'timestamp': get_short_date_from_ts(highestinsta_dt, show_year=True)
         }
 
         print_cur_ts("\nTimestamp:\t\t\t\t")
@@ -6113,7 +6134,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 added_followings_mbody = "\nAdded followings:\n\n"
                                 for f_in_list in added_followings:
                                     print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                                    log_activity(f"Added following: {f_in_list}", user=user)
+                                    log_activity(f"Added following: {f_in_list}", user=user, level='update', details={'url': f"https://www.instagram.com/{f_in_list}/"})
                                     added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                     try:
                                         if csv_file_name:
@@ -6135,7 +6156,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                     print(f"* Sending email notification to {RECEIVER_EMAIL}")
                     if not skip_session and not skip_followings and can_view:
-                        m_body_html = f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})<br><br><b>{removed_followings_mbody.strip()}</b><br>{removed_followings_list.replace(chr(10), '<br>')}<b>{added_followings_mbody.strip()}</b><br>{added_followings_list.replace(chr(10), '<br>')}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                        m_body_html_parts = [f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})"]
+                        if removed_followings_list:
+                            m_body_html_parts.append(f"<br><b>{removed_followings_mbody.strip()}</b><br>{removed_followings_list.replace(chr(10), '<br>')}")
+                        if added_followings_list:
+                            m_body_html_parts.append(f"<br><b>{added_followings_mbody.strip()}</b><br>{added_followings_list.replace(chr(10), '<br>')}")
+                        m_body_html_parts.append(f"<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}")
+                        m_body_html = "".join(m_body_html_parts)
                     else:
                         m_body_html = f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
                     send_email(m_subject, m_body, m_body_html, SMTP_SSL)
@@ -6161,7 +6188,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 else:
                     followers_diff_str = str(followers_diff)
                 print(f"* Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})")
-                log_activity(f"Followers changed: {followers_old_count} -> {followers_count}", user=user)
+                log_activity(f"Followers changed: {followers_old_count} -> {followers_count}", user=user, level='update')
 
                 try:
                     if csv_file_name:
@@ -6215,7 +6242,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 removed_followers_mbody = "\nRemoved followers:\n\n"
                                 for f_in_list in removed_followers:
                                     print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                                    log_activity(f"Removed follower: {f_in_list}", user=user)
+                                    log_activity(f"Removed follower: {f_in_list}", user=user, level='update', details={'url': f"https://www.instagram.com/{f_in_list}/"})
                                     removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                     try:
                                         if csv_file_name:
@@ -6229,7 +6256,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 added_followers_mbody = "\nAdded followers:\n\n"
                                 for f_in_list in added_followers:
                                     print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
-                                    log_activity(f"Added follower: {f_in_list}", user=user)
+                                    log_activity(f"Added follower: {f_in_list}", user=user, level='update', details={'url': f"https://www.instagram.com/{f_in_list}/"})
                                     added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                                     try:
                                         if csv_file_name:
@@ -6249,7 +6276,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                     print(f"* Sending email notification to {RECEIVER_EMAIL}")
                     if not skip_session and not skip_followers and can_view:
-                        m_body_html = f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})<br><br><b>{removed_followers_mbody.strip()}</b><br>{removed_followers_list.replace(chr(10), '<br>')}<b>{added_followers_mbody.strip()}</b><br>{added_followers_list.replace(chr(10), '<br>')}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                        m_body_html_parts = [f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})"]
+                        if removed_followers_list:
+                            m_body_html_parts.append(f"<br><b>{removed_followers_mbody.strip()}</b><br>{removed_followers_list.replace(chr(10), '<br>')}")
+                        if added_followers_list:
+                            m_body_html_parts.append(f"<br><b>{added_followers_mbody.strip()}</b><br>{added_followers_list.replace(chr(10), '<br>')}")
+                        m_body_html_parts.append(f"<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}")
+                        m_body_html = "".join(m_body_html_parts)
                     else:
                         m_body_html = f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
                     send_email(m_subject, m_body, m_body_html, SMTP_SSL)
@@ -6466,14 +6499,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             else:
                                 expire_ts = 0
 
-                            print(f"* User {user} has new story item:\n")
-                            log_activity(f"New story item: {story_type}", user=user)
-                            print(f"Date:\t\t\t{get_date_from_ts(local_dt)}")
-                            print(f"Expiry:\t\t\t{get_date_from_ts(expire_local_dt)}")
                             if story_item.typename == "GraphStoryImage":
                                 story_type = "Image"
                             else:
                                 story_type = "Video"
+
+                            print(f"* User {user} has new story item:\n")
+                            log_activity(f"New story item: {story_type}", user=user, level='update', details={'url': f"https://www.instagram.com/stories/{user}/"})
+                            print(f"Date:\t\t\t{get_date_from_ts(local_dt)}")
+                            print(f"Expiry:\t\t\t{get_date_from_ts(expire_local_dt)}")
                             print(f"Type:\t\t\t{story_type}")
 
                             story_mentions = story_item.caption_mentions
@@ -6724,7 +6758,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     post_url = f"https://www.instagram.com/{'reel' if last_source == 'reel' else 'p'}/{shortcode}/"
 
                     print(f"* New {last_source.lower()} for user {user} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n")
-                    log_activity(f"New {last_source.lower()} detected", user=user)
+                    log_activity(f"New {last_source.lower()} detected", user=user, level='update', details={'url': post_url})
                     print(f"Date:\t\t\t\t\t{get_date_from_ts(highestinsta_dt)}")
                     print(f"{last_source.capitalize()} URL:\t\t\t\t{post_url}")
                     print(f"Profile URL:\t\t\t\thttps://www.instagram.com/{insta_username}/")

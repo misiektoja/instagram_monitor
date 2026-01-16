@@ -381,6 +381,27 @@
             background: rgba(255, 255, 255, 0.02);
             margin-bottom: 8px;
             border-radius: 0 8px 8px 0;
+            transition: background 0.2s;
+        }
+
+        .activity-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .activity-item.log-update {
+            border-left-color: #4ade80;
+        }
+
+        .activity-item.log-warning {
+            border-left-color: #fbbf24;
+        }
+
+        .activity-item.log-error {
+            border-left-color: #f87171;
+        }
+
+        .activity-item.log-system {
+            border-left-color: #60a5fa;
         }
 
         .activity-time {
@@ -641,6 +662,17 @@
         </div>
         <div class="nav-item" data-page="activity" onclick="showPage('activity')">
             <span>📜</span> Activity Log
+        </div>
+
+        <div style="padding: 0 20px; margin-bottom: 20px;">
+            <select id="log-filter" class="form-input"
+                style="padding: 8px; font-size: 12px; background: rgba(255,255,255,0.05);"
+                onchange="renderAllActivityFeeds()">
+                <option value="all">All Levels</option>
+                <option value="update">Update</option>
+                <option value="system">System</option>
+                <option value="error">Error</option>
+            </select>
         </div>
 
         <div style="margin-top: auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
@@ -1635,16 +1667,20 @@
             }
 
             const caption = latestUpdate.caption ? escapeHtml(latestUpdate.caption) : '';
-            const isImage = latestUpdate.url && (latestUpdate.url.includes('.jpg') || latestUpdate.url.includes('.png'));
+            // Relax isImage check as Instagram URLs are complex
+            const hasThumbnail = latestUpdate.url && latestUpdate.url.length > 0;
 
             container.innerHTML = `
                 <div style="display: flex; gap: 16px; align-items: flex-start;">
-                    ${isImage ? `<img src="${latestUpdate.url}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid #333;">` : ''}
+                    ${hasThumbnail ? `<img src="${latestUpdate.url}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid #333;" onerror="this.style.display='none'">` : ''}
                     <div>
                         <div style="font-weight: bold; color: #00bcd4; margin-bottom: 4px;">${escapeHtml(latestUpdate.type || 'Unknown')}</div>
                         <div style="font-size: 12px; color: #888; margin-bottom: 8px;">${escapeHtml(latestUpdate.timestamp || '-')}</div>
-                        <div style="font-size: 14px; margin-bottom: 4px;">${caption}</div>
-                        ${latestUpdate.url ? `<a href="${latestUpdate.url}" target="_blank" style="font-size: 12px; text-decoration: underline;">View Media</a>` : ''}
+                        <div style="font-size: 14px; margin-bottom: 8px; color: #e0e0e0;">${caption}</div>
+                        <div style="display: flex; gap: 12px; align-items: center;">
+                            ${latestUpdate.post_url ? `<a href="${latestUpdate.post_url}" target="_blank" style="font-size: 12px; color: #e94560; font-weight: 600; text-decoration: none;">View Post</a>` : ''}
+                            ${latestUpdate.url ? `<a href="${latestUpdate.url}" target="_blank" style="font-size: 12px; color: #bbb; text-decoration: underline;">View Media</a>` : ''}
+                        </div>
                     </div>
                 </div>
              `;
@@ -1722,22 +1758,37 @@
             }
         }
 
+        function renderAllActivityFeeds() {
+            renderDashboardActivities();
+            renderActivities();
+        }
+
         function renderDashboardActivities() {
             const feed = document.getElementById('dashboard-activity');
             const feedConfig = document.getElementById('dashboard-activity-config');
-            const recentActivities = activities.slice(0, 10); // last 10 events
+            const filter = document.getElementById('log-filter').value;
+
+            const filteredActivities = activities.filter(a => filter === 'all' || (a.level || 'system') === filter);
+            const recentActivities = filteredActivities.slice(0, 10); // last 10 elements for dashboard
 
             const html = recentActivities.length === 0 ? `
                     <div class="empty-state">
                         <div class="empty-state-icon">📜</div>
-                        <p>No activity yet</p>
+                        <p>No activity matches filters</p>
                     </div>
-                ` : recentActivities.map(a => `
-                <div class="activity-item">
+                ` : recentActivities.map(a => {
+                const levelClass = a.level ? `log-${a.level}` : 'log-system';
+                let msgHtml = escapeHtml(a.message);
+                if (a.details && a.details.url) {
+                    msgHtml += ` <a href="${a.details.url}" target="_blank" class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
+                }
+                return `
+                <div class="activity-item ${levelClass}">
                     <div class="activity-time">${a.time}</div>
-                    <div class="activity-message">${a.message}</div>
+                    <div class="activity-message">${msgHtml}</div>
                 </div>
-            `).join('');
+                `;
+            }).join('');
 
             if (feed) feed.innerHTML = html;
             if (feedConfig) feedConfig.innerHTML = html;
@@ -1841,22 +1892,33 @@
 
         function renderActivities() {
             const feed = document.getElementById('activity-feed');
-            if (activities.length === 0) {
+            const filter = document.getElementById('log-filter').value;
+
+            const filteredActivities = activities.filter(a => filter === 'all' || (a.level || 'system') === filter);
+
+            if (filteredActivities.length === 0) {
                 feed.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">📜</div>
-                        <p>No activity yet</p>
+                        <p>No activity matches filters</p>
                     </div>
                 `;
                 return;
             }
 
-            feed.innerHTML = activities.map(a => `
-                <div class="activity-item">
+            feed.innerHTML = filteredActivities.map(a => {
+                const levelClass = a.level ? `log-${a.level}` : 'log-system';
+                let msgHtml = escapeHtml(a.message);
+                if (a.details && a.details.url) {
+                    msgHtml += ` <a href="${a.details.url}" target="_blank" class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
+                }
+                return `
+                <div class="activity-item ${levelClass}">
                     <div class="activity-time">${a.time}</div>
-                    <div class="activity-message">${a.message}</div>
+                    <div class="activity-message">${msgHtml}</div>
                 </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
 
