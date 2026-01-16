@@ -414,6 +414,37 @@
             font-size: 13px;
         }
 
+        .fetched-history {
+            max-height: 250px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding-right: 8px;
+        }
+
+        .fetched-history-item {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .fetched-history-item:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        .fetched-history-item img {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid #333;
+            background: #111;
+        }
+
         .toggle-switch {
             position: relative;
             width: 50px;
@@ -1473,11 +1504,14 @@
         }
 
         // Close modal when clicking overlay (but not modal content)
-        document.getElementById('modal-add-target').addEventListener('click', function (e) {
-            if (e.target.id === 'modal-add-target') {
-                hideModal('add-target');
-            }
-        });
+        const modalAddTarget = document.getElementById('modal-add-target');
+        if (modalAddTarget) {
+            modalAddTarget.addEventListener('click', function (e) {
+                if (e.target.id === 'modal-add-target') {
+                    hideModal('add-target');
+                }
+            });
+        }
 
         // Close modal with Escape key
         document.addEventListener('keydown', function (e) {
@@ -1503,6 +1537,9 @@
             try {
                 const response = await fetch('/api/status');
                 const data = await response.json();
+                console.log('API Response:', data);
+                console.log('Targets in response:', data.targets);
+                console.log('Targets count:', Object.keys(data.targets || {}).length);
                 updateDashboard(data);
             } catch (err) {
                 console.error('Failed to fetch status:', err);
@@ -1566,9 +1603,11 @@
         }
 
         function updateDashboard(data) {
+            console.log('updateDashboard called with:', data);
             dashboardData = data;
             // Check for critical error FIRST
             if (data.error) {
+                console.error('Dashboard error:', data.error);
                 const modal = document.getElementById('error-modal');
                 const trace = document.getElementById('error-traceback');
 
@@ -1618,6 +1657,8 @@
 
             // Update targets table
             targets = data.targets || {};
+            console.log('Setting targets to:', targets);
+            console.log('Targets keys:', Object.keys(targets));
             renderTargetsTable(data.last_check, data.next_check);
 
             // Render Last Fetched Card
@@ -1641,23 +1682,56 @@
             }
         }
 
+        let lastFetchedDataHash = '';
+
         function renderLastFetched() {
             const container = document.getElementById('last-fetched-container');
-            let latestUpdate = null;
+            if (!container) return;
 
-            // Find latest update across targets
-            for (const tData of Object.values(targets)) {
-                if (tData.last_post) {
-                    latestUpdate = tData.last_post;
-                    break; // Simple logic: take first one found
-                }
-                if (tData.last_story) {
-                    latestUpdate = tData.last_story;
-                    break;
+            // Collect all updates from all targets
+            let allUpdates = [];
+            for (const [name, tData] of Object.entries(targets)) {
+                if (tData.fetched_updates) {
+                    allUpdates.push(...tData.fetched_updates);
+                } else {
+                    // Fallback for single legacy entries
+                    if (tData.last_post) {
+                        const p = { ...tData.last_post, user: name };
+                        allUpdates.push(p);
+                    }
+                    if (tData.last_story) {
+                        const s = { ...tData.last_story, user: name };
+                        allUpdates.push(s);
+                    }
                 }
             }
 
-            if (!latestUpdate) {
+            // Deduplicate and sort by timestamp
+
+            // To maintain history across multiple targets, we sort by a mock date if timestamp is missing
+            allUpdates.sort((a, b) => {
+                const da = a.timestamp || '';
+                const db = b.timestamp || '';
+                return db.localeCompare(da); // Roughly newest first
+            });
+
+            // Flatten and deduplicate by post_url + url
+            const seen = new Set();
+            allUpdates = allUpdates.filter(u => {
+                const key = (u.post_url || '') + (u.url || '');
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+
+            const topUpdates = allUpdates.slice(0, 10); // Show last 10 in scrollable box
+
+            // Check if data actually changed to avoid flicker
+            const currentHash = JSON.stringify(topUpdates);
+            if (currentHash === lastFetchedDataHash) return;
+            lastFetchedDataHash = currentHash;
+
+            if (topUpdates.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
                         <p>No recent updates found.</p>
@@ -1666,24 +1740,36 @@
                 return;
             }
 
-            const caption = latestUpdate.caption ? escapeHtml(latestUpdate.caption) : '';
-            // Relax isImage check as Instagram URLs are complex
-            const hasThumbnail = latestUpdate.url && latestUpdate.url.length > 0;
-
             container.innerHTML = `
-                <div style="display: flex; gap: 16px; align-items: flex-start;">
-                    ${hasThumbnail ? `<img src="${latestUpdate.url}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid #333;" onerror="this.style.display='none'">` : ''}
-                    <div>
-                        <div style="font-weight: bold; color: #00bcd4; margin-bottom: 4px;">${escapeHtml(latestUpdate.type || 'Unknown')}</div>
-                        <div style="font-size: 12px; color: #888; margin-bottom: 8px;">${escapeHtml(latestUpdate.timestamp || '-')}</div>
-                        <div style="font-size: 14px; margin-bottom: 8px; color: #e0e0e0;">${caption}</div>
-                        <div style="display: flex; gap: 12px; align-items: center;">
-                            ${latestUpdate.post_url ? `<a href="${latestUpdate.post_url}" target="_blank" style="font-size: 12px; color: #e94560; font-weight: 600; text-decoration: none;">View Post</a>` : ''}
-                            ${latestUpdate.url ? `<a href="${latestUpdate.url}" target="_blank" style="font-size: 12px; color: #bbb; text-decoration: underline;">View Media</a>` : ''}
+                <div class="fetched-history">
+                    ${topUpdates.map(u => {
+                const caption = u.caption ? escapeHtml(u.caption) : '';
+                const hasThumbnail = u.url && u.url.length > 0;
+                const userPrefix = u.user ? `<span style="color: #888; margin-right: 4px;">[${escapeHtml(u.user)}]</span>` : '';
+
+                return `
+                        <div class="fetched-history-item">
+                            ${hasThumbnail ? `<img src="${u.url}" loading="lazy" alt="Thumbnail">` : `
+                                <div style="width: 80px; height: 80px; background: #222; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #444; font-size: 24px;">🖼️</div>
+                            `}
+                            <div style="flex: 1;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <div style="font-weight: bold; color: #00bcd4;">${userPrefix}${escapeHtml(u.type || 'Update')}</div>
+                                    <div style="font-size: 11px; color: #666;">${escapeHtml(u.timestamp || '-')}</div>
+                                </div>
+                                <div style="font-size: 13px; margin-bottom: 8px; color: #e0e0e0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${caption}</div>
+                                <div style="display: flex; gap: 12px; align-items: center;">
+                                    ${u.post_url ? `<a href="${u.post_url}" target="_blank" onclick="confirmAnonymity(event, '${u.post_url}')" style="font-size: 12px; color: #e94560; font-weight: 600; text-decoration: underline;">${u.is_story ? 'View Story' : 'View Post'}</a>` : ''}
+                                    ${u.video_url ? `
+                                        <a href="${u.video_url}" target="_blank" onclick="playVideo(event, '${u.video_url}')" style="font-size: 12px; color: #4ade80; text-decoration: underline; font-weight: 600;">Play Video</a>
+                                    ` : (u.url ? `<a href="${u.url}" target="_blank" style="font-size: 12px; color: #bbb; text-decoration: underline;">View Media</a>` : '')}
+                                </div>
+                            </div>
                         </div>
-                    </div>
+                        `;
+            }).join('')}
                 </div>
-             `;
+            `;
         }
 
         function renderFullConfig(config) {
@@ -1795,12 +1881,16 @@
         }
 
         function renderTargetsTable(globalLastCheck, globalNextCheck) {
+            console.log('renderTargetsTable called, targets:', targets);
             const tbody = document.getElementById('dashboard-targets-body');
             const tbodySimple = document.getElementById('dashboard-targets-simple-body');
             const targetsList = document.getElementById('targets-list');
+            console.log('Found elements - tbody:', tbody, 'tbodySimple:', tbodySimple, 'targetsList:', targetsList);
             const sortedEntries = getSortedTargets();
+            console.log('Sorted entries:', sortedEntries);
 
             if (Object.keys(targets).length === 0) {
+                console.log('No targets found, showing empty state');
                 if (tbody) tbody.innerHTML = `<tr><td colspan="10"><div class="empty-state"><p>No targets added yet.</p></div></td></tr>`;
                 if (tbodySimple) tbodySimple.innerHTML = `<tr><td colspan="9"><div class="empty-state"><p>No targets added yet.</p></div></td></tr>`;
                 if (targetsList) targetsList.innerHTML = `<tr><td colspan="6"><div class="empty-state"><p>No targets configured</p></div></td></tr>`;
@@ -2438,6 +2528,46 @@
             return String(text).replace(/[&<>"']/g, m => map[m]);
         }
 
+        function confirmAnonymity(event, url) {
+            if (event) event.preventDefault();
+            const modal = document.getElementById('modal-anonymity');
+            const confirmLink = document.getElementById('anonymity-confirm-link');
+            confirmLink.href = url;
+            modal.classList.add('active');
+        }
+
+        function playVideo(event, videoUrl) {
+            if (event) event.preventDefault();
+            const modal = document.getElementById('modal-video-player');
+            const video = document.getElementById('local-video-element');
+            video.src = videoUrl;
+            modal.classList.add('active');
+            video.load();
+            video.play();
+        }
+
+        const modalAnonymity = document.getElementById('modal-anonymity');
+        if (modalAnonymity) {
+            modalAnonymity.addEventListener('click', function (e) {
+                if (e.target.id === 'modal-anonymity') {
+                    hideModal('anonymity');
+                }
+            });
+        }
+
+        const modalVideoPlayer = document.getElementById('modal-video-player');
+        if (modalVideoPlayer) {
+            modalVideoPlayer.addEventListener('click', function (e) {
+                if (e.target.id === 'modal-video-player') {
+                    const video = document.getElementById('local-video-element');
+                    if (video) {
+                        video.pause();
+                    }
+                    hideModal('video-player');
+                }
+            });
+        }
+
         // Initial load and polling
         (async () => {
             await fetchStatus();
@@ -2449,6 +2579,47 @@
         // Also fetch session details periodically (less frequently)
         setInterval(fetchSessionDetails, 30000); // Every 30 seconds
     </script>
+    <!-- Anonymity Confirmation Modal -->
+    <div id="modal-anonymity" class="modal-overlay">
+        <div class="modal" style="border-top: 4px solid #fbbf24;">
+            <div class="modal-header">
+                <h2 class="modal-title">⚠️ Anonymity Warning</h2>
+                <button class="modal-close" onclick="hideModal('anonymity')">&times;</button>
+            </div>
+            <p style="margin-bottom: 24px; line-height: 1.6; color: #ccc;">
+                You are about to visit Instagram directly.
+                <br><br>
+                <b>Warning:</b> This identifies you to the user as having viewed their content.
+                <br><br>
+                To stay anonymous, use the <b>"View Media"</b> or <b>"Play Video"</b> link instead, as it uses locally
+                downloaded content.
+            </p>
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="hideModal('anonymity')">Cancel</button>
+                <a id="anonymity-confirm-link" href="#" target="_blank" class="btn btn-danger"
+                    onclick="hideModal('anonymity')">I Understand, Proceed</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Video Player Modal -->
+    <div id="modal-video-player" class="modal-overlay">
+        <div class="modal"
+            style="max-width: 800px; padding: 0; background: black; overflow: hidden; border: 1px solid rgba(255,255,255,0.2);">
+            <div
+                style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #1a1a2e;">
+                <h2 class="modal-title" style="font-size: 16px;">🎬 Local Playback</h2>
+                <button class="modal-close"
+                    onclick="const vid = document.getElementById('local-video-element'); vid.pause(); hideModal('video-player')">&times;</button>
+            </div>
+            <div
+                style="width: 100%; aspect-ratio: 16 / 9; background: #000; display: flex; align-items: center; justify-content: center;">
+                <video id="local-video-element" controls style="max-width: 100%; max-height: calc(90vh - 50px);">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>
