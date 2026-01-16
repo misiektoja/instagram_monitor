@@ -2007,6 +2007,7 @@ class Logger(object):
     def __init__(self, main_filename=None):
         self.terminal = sys.stdout
         self.target_logs = {}  # target -> file_handle
+        self.target_paths = {} # target -> filename
         self.main_log = None
         if main_filename:
             try:
@@ -2016,15 +2017,24 @@ class Logger(object):
 
     def add_target_log(self, target, filename):
         with STDOUT_LOCK:
-            if target not in self.target_logs:
-                try:
-                    # Ensure directory exists if path contains one
-                    dirname = os.path.dirname(filename)
-                    if dirname:
-                        os.makedirs(dirname, exist_ok=True)
-                    self.target_logs[target] = open(filename, "a", buffering=1, encoding="utf-8")
-                except Exception as e:
-                    print(f"* Error: Could not open log file '{filename}' for target '{target}': {e}", file=sys.stderr)
+            self.target_paths[target] = filename
+
+    def _ensure_log_open(self, target):
+        if target in self.target_logs:
+            return self.target_logs[target]
+        if target in self.target_paths:
+            filename = self.target_paths[target]
+            try:
+                # Ensure directory exists if path contains one
+                dirname = os.path.dirname(filename)
+                if dirname:
+                    os.makedirs(dirname, exist_ok=True)
+                handle = open(filename, "a", buffering=1, encoding="utf-8")
+                self.target_logs[target] = handle
+                return handle
+            except Exception as e:
+                print(f"* Error: Could not open log file '{filename}' for target '{target}': {e}", file=sys.stderr)
+        return None
 
     def _get_current_target(self):
         thread_name = threading.current_thread().name
@@ -2056,15 +2066,18 @@ class Logger(object):
                 self.main_log.flush()
 
             target = self._get_current_target()
-            if target and target in self.target_logs:
-                # User-specific action: log to user log
-                self.target_logs[target].write(expanded_message)
-                self.target_logs[target].flush()
-            else:
-                # Common message (e.g. summary screen from MainThread): log to ALL target logs
-                for handle in self.target_logs.values():
+            if target:
+                handle = self._ensure_log_open(target)
+                if handle:
                     handle.write(expanded_message)
                     handle.flush()
+            else:
+                # Common message (e.g. summary screen from MainThread): log to ALL target logs
+                for t in list(self.target_paths.keys()):
+                    handle = self._ensure_log_open(t)
+                    if handle:
+                        handle.write(expanded_message)
+                        handle.flush()
 
     def flush(self):
         self.terminal.flush()
@@ -2550,6 +2563,8 @@ def init_csv_file(csv_file_name):
 # Writes CSV entry
 def write_csv_entry(csv_file_name, timestamp, object_type, old, new):
     try:
+        # Lazily initialize CSV file if it doesn't exist or is empty
+        init_csv_file(csv_file_name)
 
         debug_print(f"Writing CSV entry to {csv_file_name}: Type={object_type}, Old={old}, New={new}")
         with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as csv_file:
@@ -2933,6 +2948,7 @@ def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0):
                 url_time_in_tz_ts = 0
 
         if image_video_response.status_code == 200:
+            os.makedirs(os.path.dirname(os.path.abspath(image_video_file_name)), exist_ok=True)
             with open(image_video_file_name, 'wb') as f:
                 image_video_response.raw.decode_content = True
                 shutil.copyfileobj(image_video_response.raw, f)
@@ -3722,6 +3738,7 @@ def save_detailed_followers(filename, count, users_list, detailed=False):
         data_to_save = [count, usernames]
 
     try:
+        os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
         with open(filename, 'w', encoding="utf-8") as f:
             json.dump(data_to_save, f, indent=2, ensure_ascii=False)
         return True
@@ -5067,21 +5084,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         json_dir = os.path.join(user_root_dir, "json")
         images_dir = os.path.join(user_root_dir, "images")
         videos_dir = os.path.join(user_root_dir, "videos")
-        for d in [user_root_dir, json_dir, images_dir, videos_dir, os.path.join(user_root_dir, "logs"), os.path.join(user_root_dir, "csvs")]:
-            os.makedirs(d, exist_ok=True)
     elif OUTPUT_DIR:
         user_root_dir = os.path.join(OUTPUT_DIR, user)
         json_dir = os.path.join(user_root_dir, "json")
         images_dir = os.path.join(user_root_dir, "images")
         videos_dir = os.path.join(user_root_dir, "videos")
-        for d in [user_root_dir, json_dir, images_dir, videos_dir, os.path.join(user_root_dir, "logs"), os.path.join(user_root_dir, "csvs")]:
-            os.makedirs(d, exist_ok=True)
-
-    try:
-        if csv_file_name:
-            init_csv_file(csv_file_name)
-    except Exception as e:
-        print(f"* Error: {e}")
 
     followers_count = 0
     followings_count = 0
@@ -5469,6 +5476,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             followers_to_save.append(followers_count)
             followers_to_save.append(followers)
             try:
+                os.makedirs(os.path.dirname(os.path.abspath(insta_followers_file)), exist_ok=True)
                 with open(insta_followers_file, 'w', encoding="utf-8") as f:
                     json.dump(followers_to_save, f, indent=2)
                     print(f"* Followers ({followers_count}) actual ({len(followers)}) saved to file '{insta_followers_file}'")
@@ -5553,6 +5561,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             followings_to_save.append(followings_count)
             followings_to_save.append(followings)
             try:
+                os.makedirs(os.path.dirname(os.path.abspath(insta_followings_file)), exist_ok=True)
                 with open(insta_followings_file, 'w', encoding="utf-8") as f:
                     json.dump(followings_to_save, f, indent=2)
                     print(f"* Followings ({followings_count}) actual ({len(followings)}) saved to file '{insta_followings_file}'")
@@ -7983,12 +7992,6 @@ def run_main():
 
         if target_csv:
             csv_files_by_user[u] = target_csv
-            # Pre-create/verify CSV
-            try:
-                init_csv_file(target_csv)
-            except Exception as e:
-                print(f"* Error: CSV file cannot be opened for writing ({u}): {e}")
-                sys.exit(1)
 
         if target_log:
             # Register in Logger
