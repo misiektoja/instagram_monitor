@@ -5377,6 +5377,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         # Fetch followers if count changed, list is empty, or detailed logging is enabled
         if DETAILED_FOLLOWER_LOGGING:
             message = "Detailed follower logging: fetching followers..."
+            if followers_count > 5000:
+                warning = f"High follower count ({followers_count})! This may increase rate limit risk with detailed logging."
+                log_activity(warning, user=user, level='system')
+                print(f"* Warning: {warning}")
             if DEBUG_MODE:
                 debug_print(message)
             else:
@@ -5428,6 +5432,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print("Removed followers:\n")
             for f_in_list in removed_followers:
                 print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                log_activity(f"Removed follower: {f_in_list}", user=user, level='update', details={'url': f"https://www.instagram.com/{f_in_list}/"})
                 removed_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                 try:
                     if csv_file_name:
@@ -5440,6 +5445,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print("Added followers:\n")
             for f_in_list in added_followers:
                 print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                log_activity(f"Added follower: {f_in_list}", user=user, level='update', details={'url': f"https://www.instagram.com/{f_in_list}/"})
                 added_followers_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                 try:
                     if csv_file_name:
@@ -5485,6 +5491,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         # Fetch followings if count changed, list is empty, or detailed logging is enabled
         if DETAILED_FOLLOWER_LOGGING:
             message = "Detailed followings logging: fetching followings..."
+            if followings_count > 5000:
+                warning = f"High following count ({followings_count})! This may increase rate limit risk with detailed logging."
+                log_activity(warning, user=user, level='system')
+                print(f"* Warning: {warning}")
             if DEBUG_MODE:
                 debug_print(message)
             else:
@@ -5536,6 +5546,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print("Removed followings:\n")
             for f_in_list in removed_followings:
                 print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                log_activity(f"Removed following: {f_in_list}", user=user, level='update', details={'url': f"https://www.instagram.com/{f_in_list}/"})
                 removed_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                 try:
                     if csv_file_name:
@@ -5548,6 +5559,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print("Added followings:\n")
             for f_in_list in added_followings:
                 print(f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]")
+                log_activity(f"Added following: {f_in_list}", user=user, level='update', details={'url': f"https://www.instagram.com/{f_in_list}/"})
                 added_followings_list += f"- {f_in_list} [ https://www.instagram.com/{f_in_list}/ ]\n"
                 try:
                     if csv_file_name:
