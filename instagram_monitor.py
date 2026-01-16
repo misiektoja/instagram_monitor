@@ -4164,11 +4164,13 @@ def generate_user_dashboard(target_data):
                 caption = caption[:57] + "..."
             last_fetched_text.append(f"Caption: {caption}\n")
 
+        # Get URL value for potential fallbacks
+        url_value = latest_update.get('url', '')
+
         # Get file path from the update data (stored directly in file_path field)
         file_path = latest_update.get('file_path')
         if not file_path:
             # Fallback: try to extract from url field (for backwards compatibility)
-            url_value = latest_update.get('url', '')
             if url_value.startswith('/media/'):
                 # Remove /media/ prefix to get the actual file path
                 file_path = url_value[7:]  # Remove '/media/' (7 chars)
