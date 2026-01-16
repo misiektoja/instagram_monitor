@@ -1911,7 +1911,7 @@ def update_web_dashboard_data(targets=None, config=None, check_count=None, last_
 
                     if not exists:
                         target_obj['fetched_updates'].insert(0, new_update)
-                        target_obj['fetched_updates'] = target_obj['fetched_updates'][:10] # Keep last 10
+                        target_obj['fetched_updates'] = target_obj['fetched_updates'][:10]  # Keep last 10
                     # Set the latest for backward compatibility
                     target_obj['last_post'] = new_update if not str(new_update.get('type', '')).startswith('Story') else target_obj.get('last_post')
                     target_obj['last_story'] = new_update if str(new_update.get('type', '')).startswith('Story') else target_obj.get('last_story')
@@ -2065,16 +2065,31 @@ class Logger(object):
 
 
 # Signal handler when user presses Ctrl+C
-def signal_handler(sig, frame):
+def signal_handler(sig, frame, message=None):
     if getattr(_thread_local, 'pbar', None) is not None:
         close_pbar()
 
     if DASHBOARD_ENABLED and RICH_AVAILABLE:
         stop_dashboard()
 
+    # Stop all monitoring threads before exiting
+    if WEB_DASHBOARD_STOP_EVENTS:
+        for username in list(WEB_DASHBOARD_STOP_EVENTS.keys()):
+            stop_monitoring_for_target(username)
+
     sys.stdout = stdout_bck
-    print('\n* You pressed Ctrl+C, tool is terminated.')
-    os._exit(0)
+    if message is None:
+        message = '* You pressed Ctrl+C, tool is terminated.'
+    if message:
+        print(f'\n{message}')
+
+    # Use sys.exit in main thread to allow proper cleanup (prevents semaphore leaks)
+    # Use os._exit in background threads since sys.exit() won't work there
+    if threading.current_thread() is threading.main_thread():
+        sys.exit(0)
+    else:
+        # Background thread: use os._exit after cleanup to ensure process exits
+        os._exit(0)
 
 
 # Checks internet connectivity
@@ -3733,10 +3748,9 @@ def dashboard_input_handler():
                 # Exit command: 'q' or 'Q'
                 if char in ('q', 'Q'):
                     log_activity("User requested exit (pressed 'q')")
-                    if DASHBOARD_ENABLED and RICH_AVAILABLE:
-                        stop_dashboard()
-                    # Use os._exit to immediately kill all threads
-                    os._exit(0)
+                    # Trigger the signal handler to properly exit the main process
+                    signal_handler(signal.SIGINT, None, message='')
+                    break
 
                 # Mode toggle: just 'm' (no Enter needed)
                 elif char == 'm':
