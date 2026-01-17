@@ -4832,21 +4832,31 @@ def update_dashboard():
 
         loading_text = Text()
         loading_text.append(f"Instagram Monitor v{VERSION} Dashboard\n\n", style="bold magenta")
-        loading_text.append("⏳ Initializing and fetching profile data...\n\n", style="yellow")
-        loading_text.append("This may take a moment while we:\n", style="dim")
-        loading_text.append("  • Load Instagram session\n", style="dim")
-        loading_text.append("  • Fetch profile information\n", style="dim")
-        loading_text.append("  • Count posts, reels, and stories\n", style="dim")
-        loading_text.append("  • Retrieve follower/following data\n\n", style="dim")
 
-        # Show which users are being monitored
-        targets_list = DASHBOARD_DATA.get('targets_list', [])
-        if targets_list:
-            loading_text.append("Monitored targets:\n", style="bold cyan")
-            for target in targets_list:
-                loading_text.append(f"  • {target}\n", style="cyan")
+        if WEB_DASHBOARD_ENABLED and not DASHBOARD_DATA.get('targets_list', []):
+            loading_text.append("⌛ Waiting for targets...\n\n", style="yellow")
+            loading_text.append("* Web UI: ", style="dim")
+            loading_text.append(f"http://{WEB_DASHBOARD_HOST or '127.0.0.1'}:{WEB_DASHBOARD_PORT or '8000'}/\n\n", style="bold cyan")
+            loading_text.append("No initial targets specified on command line.\n", style="dim")
+            loading_text.append("Please open the Web UI above to manually add Instagram users for monitoring.\n", style="dim")
+            loading_text.append("You can also configure sessions and settings directly from the dashboard.\n\n", style="dim")
+        else:
+            loading_text.append("⏳ Initializing and fetching profile data...\n\n", style="yellow")
+            loading_text.append("This may take a moment while we:\n", style="dim")
+            loading_text.append("  • Load Instagram session\n", style="dim")
+            loading_text.append("  • Fetch profile information\n", style="dim")
+            loading_text.append("  • Count posts, reels, and stories\n", style="dim")
+            loading_text.append("  • Retrieve follower/following data\n\n", style="dim")
 
-        loading_text.append("\n💡 Please wait patiently...\n\n", style="italic green")
+            # Show which users are being monitored
+            targets_list = DASHBOARD_DATA.get('targets_list', [])
+            if targets_list:
+                loading_text.append("Monitored targets:\n", style="bold cyan")
+                for target in targets_list:
+                    loading_text.append(f"  • {target}\n", style="cyan")
+
+            loading_text.append("\n💡 Please wait patiently...\n\n", style="italic green")
+
         loading_text.append("Press ", style="dim")
         loading_text.append("q", style="bold red")
         loading_text.append(" to exit", style="dim")
@@ -4884,22 +4894,31 @@ def init_dashboard():
 
     # Prepare initial loading screen components
     loading_text = Text()
-    loading_text.append("Instagram Monitor Dashboard\n\n", style="bold magenta")
-    loading_text.append("⏳ Initializing and fetching profile data...\n\n", style="yellow")
-    loading_text.append("This may take a moment while we:\n", style="dim")
-    loading_text.append("  • Load Instagram session\n", style="dim")
-    loading_text.append("  • Fetch profile information\n", style="dim")
-    loading_text.append("  • Count posts, reels, and stories\n", style="dim")
-    loading_text.append("  • Retrieve follower/following data\n\n", style="dim")
+    loading_text.append(f"Instagram Monitor v{VERSION} Dashboard\n\n", style="bold magenta")
 
-    # Show which users are being monitored
-    targets_list = DASHBOARD_DATA.get('targets_list', [])
-    if targets_list:
-        loading_text.append("Monitored targets:\n", style="bold cyan")
-        for target in targets_list:
-            loading_text.append(f"  • {target}\n", style="cyan")
+    if WEB_DASHBOARD_ENABLED and not DASHBOARD_DATA.get('targets_list', []):
+        loading_text.append("⌛ Waiting for targets...\n\n", style="yellow")
+        loading_text.append("* Web UI: ", style="dim")
+        loading_text.append(f"http://{WEB_DASHBOARD_HOST or '127.0.0.1'}:{WEB_DASHBOARD_PORT or '8000'}/\n\n", style="bold cyan")
+        loading_text.append("No initial targets specified on command line.\n", style="dim")
+        loading_text.append("Please open the Web UI above to manually add Instagram users for monitoring.\n", style="dim")
+        loading_text.append("You can also configure sessions and settings directly from the dashboard.\n\n", style="dim")
+    else:
+        loading_text.append("⏳ Initializing and fetching profile data...\n\n", style="yellow")
+        loading_text.append("This may take a moment while we:\n", style="dim")
+        loading_text.append("  • Load Instagram session\n", style="dim")
+        loading_text.append("  • Fetch profile information\n", style="dim")
+        loading_text.append("  • Count posts, reels, and stories\n", style="dim")
+        loading_text.append("  • Retrieve follower/following data\n\n", style="dim")
 
-    loading_text.append("\n💡 Please wait patiently...", style="italic green")
+        # Show which users are being monitored
+        targets_list = DASHBOARD_DATA.get('targets_list', [])
+        if targets_list:
+            loading_text.append("Monitored targets:\n", style="bold cyan")
+            for target in targets_list:
+                loading_text.append(f"  • {target}\n", style="cyan")
+
+        loading_text.append("\n💡 Please wait patiently...", style="italic green")
 
     initial_layout = Layout()
 
