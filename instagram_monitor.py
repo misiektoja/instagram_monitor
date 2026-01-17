@@ -14,6 +14,7 @@ python-dateutil
 pytz
 tzlocal (optional)
 python-dotenv (optional)
+colorama (optional, for better colours on Windows terminals)
 tqdm
 flask (optional - for web dashboard)
 rich (optional - for terminal dashboard)
@@ -388,6 +389,45 @@ WEBHOOK_FOLLOWERS_NOTIFICATION = False
 # Send webhook on errors
 # Can also be enabled via the --webhook-errors flag
 WEBHOOK_ERROR_NOTIFICATION = False
+
+# Whether to use coloured output in the terminal (auto-disabled if the terminal
+# does not appear to support colours or when output is redirected to a file)
+# Can also be disabled via the --no-color flag
+COLORED_OUTPUT = True
+
+# Colour theme used for different parts of the output
+# Keys are logical names used by the tool, values are colour/style strings
+# You can combine multiple attributes with spaces or '+', for example:
+#   "bright_cyan bold", "yellow", "red underline", "bright_magenta bold underline", "red bold blink"
+# Valid colour names: black, red, green, yellow, blue, magenta, cyan, white,
+# and their bright_ variants (bright_red, bright_green, ...).
+COLOR_THEME = {
+    # General sections
+    "header": "bright_cyan",
+    "section": "bright_white",
+    # Identity
+    "username": "blue bold",
+    # Content types
+    "post": "bright_green",
+    "reel": "bright_magenta",
+    "story": "bright_yellow",
+    # Activity info
+    "status_change": "yellow",
+    "duration": "green",
+    # Misc
+    "timestamp_label": "",
+    "timestamp_value": "cyan",
+    "info": "cyan",
+    "warning": "yellow",
+    "error": "red",
+    "signal": "yellow",
+    # Dates
+    "date": "magenta",
+    "date_range": "magenta",
+    # Boolean values
+    "boolean_true": "green",
+    "boolean_false": "red",
+}
 """
 
 # -------------------------
@@ -462,6 +502,8 @@ WEBHOOK_AVATAR_URL = ""
 WEBHOOK_STATUS_NOTIFICATION = True
 WEBHOOK_FOLLOWERS_NOTIFICATION = True
 WEBHOOK_ERROR_NOTIFICATION = False
+COLORED_OUTPUT = False
+COLOR_THEME = {}
 DEBUG_MODE = False
 VERBOSE_MODE = False
 DASHBOARD_ENABLED = False
@@ -601,6 +643,11 @@ SESSION_REFRESHED_EVENT = threading.Event()  # Signals monitoring threads to rel
 
 # Initialize manual check trigger event (thread-safe)
 MANUAL_CHECK_TRIGGERED: threading.Event = threading.Event()
+
+try:
+    from colorama import init as colorama_init  # type: ignore[import]
+except ImportError:
+    colorama_init = None
 
 try:
     import instaloader
@@ -1996,9 +2043,340 @@ def session_label() -> str:
     return SESSION_USERNAME if SESSION_USERNAME else "<anonymous>"
 
 
-# Displays comparison between reported and actual follower/following counts
-def show_follow_info(followers_reported: int, followers_actual: int, followings_reported: int, followings_actual: int) -> None:
-    print(f"* Followers: reported ({followers_reported}) actual ({followers_actual}). Followings: reported ({followings_reported}) actual ({followings_actual})")
+# ANSI escape sequence helper used for colouring and stripping colour codes
+ANSI_ESCAPE_RE = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
+
+# Internal flag & style map for colour handling
+COLOR_ENABLED = False
+_COLOR_STYLES = {}
+
+# Default built-in colour theme. Values can be overridden via COLOR_THEME in config
+DEFAULT_COLOR_THEME = {
+    # General sections
+    "header": "bright_cyan",
+    "section": "bright_white",
+    # Identity
+    "username": "blue underline",
+    # Status values
+    "status_online": "green",
+    "status_offline": "red",
+    "status_other": "white",
+    # Content types
+    "post": "bright_green",
+    "reel": "bright_magenta",
+    "story": "bright_yellow",
+    # Activity info
+    "status_change": "yellow",
+    "duration": "green",
+    # Misc
+    "timestamp_label": "dim",
+    "timestamp_value": "cyan",
+    "info": "cyan",
+    "warning": "yellow",
+    "error": "red",
+    "signal": "yellow",
+    "email": "bright_cyan",
+    "webhook": "bright_blue",
+    # Dates
+    "date": "magenta",
+    "date_range": "magenta",
+    # Boolean values
+    "boolean_true": "green",
+    "boolean_false": "red",
+    # Counters / Diffs
+    "count_up": "green",
+    "count_down": "red",
+    "link": "blue underline",
+}
+
+ANSI_RESET = "\033[0m"
+
+# Mapping of style names to ANSI SGR codes
+_STYLE_CODES = {
+    "bold": "1",
+    "dim": "2",
+    "underline": "4",
+    "blink": "5",
+    "black": "30",
+    "red": "31",
+    "green": "32",
+    "yellow": "33",
+    "blue": "34",
+    "magenta": "35",
+    "cyan": "36",
+    "white": "37",
+    "bright_black": "90",
+    "bright_red": "91",
+    "bright_green": "92",
+    "bright_yellow": "93",
+    "bright_blue": "94",
+    "bright_magenta": "95",
+    "bright_cyan": "96",
+    "bright_white": "97",
+}
+
+# Pre-compiled regexes used for line-level colourisation
+_TIMESTAMP_LINE_RE = re.compile(r"^(\s*\*?\s*Timestamp:\s+)(.*)$")
+_MSG_WITH_USER_RE = re.compile(r"^\[(.+?)\] (.*)$")
+_FROM_TO_COUNT_RE = re.compile(r"(from\s+)(\d+)(\s+to\s+)(\d+)")
+_DIFF_COUNT_UP_RE = re.compile(r"(\(\+\d+\))")
+_DIFF_COUNT_DOWN_RE = re.compile(r"(\(-\d+\))")
+_USER_TAG_RE = re.compile(r"((?:for|by|of|Session|Initial|Monitoring\s+Instagram)\s+user:?|Username:|Target:|Tracking:?|(?:Starting\s+)?check\s+#\d+\s+(?:completed\s+)?for|paused\s+for|resuming\s+for|Firefox\s+for:|User(?=\s+[\w._-]+\s+has))([\t ]+)([\w._-]+)", re.IGNORECASE)
+_STATUS_LINE_RE = re.compile(r"^(\*?\s*(?:STATUS|Status):\s+)(.*)$")
+_DURATION_RE = re.compile(r"(\d+\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?))", re.IGNORECASE)
+_LONG_DATE_RE = re.compile(r"\b(?:\w{3}\s+)?\d{1,2}\s+\w{3}(?:\s+\d{2,4})?[\s,]*\d{2}:\d{2}(:\d{2})?\b")
+_TIME_ONLY_RE = re.compile(r"(~?\d{2}:\d{2}(:\d{2})?)")
+_SHORT_RANGE_DATE_RE = re.compile(r"\(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\)")
+_DATE_RANGE_RE = re.compile(r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\b")
+_URL_RE = re.compile(r"(https?://[^\s\]]+)")
+_ONLINE_WORD_RE = re.compile(r"(\b(?!stop\s+)(?:online|Yes)\b)", re.IGNORECASE)
+_OFFLINE_WORD_RE = re.compile(r"(\b(?:offline|No)\b)", re.IGNORECASE)
+_BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b")
+_BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b")
+_STORY_URL_RE = re.compile(r"(https?://\S+)")
+_QUOTED_CONTENT_RE = re.compile(r"(['\"])((?![^'\"]*[._/])[^'\"]+)\1")
+_STATUS_CHANGE_RE = re.compile(r"^(.*? changed (?:status|mode|bio|followers|followings|profile picture) from\s+)(.+?)(\s+to\s+)(.+?)(.*)$")
+_ACTIVITY_HEADER_RE = re.compile(r"(?i).*(story for user|Newest post|Followers number changed|Followings number changed|Bio changed for|New post for user|number changed|number of|Followings changed|Followers changed|name changed to|has changed for user|has been updated for user|changed profile picture|removed profile picture|set profile picture|update date changed|has new story item|has\s+\d+\s+story\s+items?|story items:|disappeared)(er|ing)?s?.*", re.IGNORECASE)
+_CHECK_INTERVAL_RE = re.compile(r"^(\s*\*?\s*Check interval:\s+)(.*?)(\s+\(.*?\)\s*)$")
+
+
+# Builds ANSI escape sequence from a style description string
+def _build_ansi_sequence(style_str):
+    if not style_str:
+        return ""
+    parts = re.split(r"[+ ]+", style_str.strip().lower())
+    codes = []
+    for p in parts:
+        code = _STYLE_CODES.get(p)
+        if code:
+            codes.append(code)
+    if not codes:
+        return ""
+    return f"\033[{';'.join(codes)}m"
+
+
+# Detects whether the given output stream likely supports ANSI colours
+def _stream_supports_color(stream):
+    if not hasattr(stream, "isatty") or not stream.isatty():
+        return False
+    if os.getenv("NO_COLOR"):
+        return False
+    term = os.getenv("TERM", "")
+    if term.lower() in ("", "dumb", "unknown"):
+        return False
+    # If stdin is a pipe, we're likely being piped (e.g. via tee), so disable colors to avoid writing ANSI codes to files
+    if hasattr(sys.stdin, "isatty") and not sys.stdin.isatty():
+        return False
+    return True
+
+
+# Initializes colour handling based on config and terminal capabilities
+def init_color_output(stream):
+    global COLOR_ENABLED, _COLOR_STYLES
+
+    COLOR_ENABLED = bool(globals().get("COLORED_OUTPUT", False)) and _stream_supports_color(stream)
+
+    if not COLOR_ENABLED:
+        _COLOR_STYLES = {}
+        return
+
+    # Best effort: on Windows, enable ANSI support if colorama is installed
+    if colorama_init:
+        try:
+            colorama_init(autoreset=False)
+        except Exception:
+            pass
+
+    user_theme = globals().get("COLOR_THEME") if isinstance(globals().get("COLOR_THEME"), dict) else {}
+    theme = {**DEFAULT_COLOR_THEME, **(user_theme or {})}
+
+    styles = {}
+    for name, style_str in theme.items():
+        seq = _build_ansi_sequence(style_str)
+        if seq:
+            styles[name] = seq
+    _COLOR_STYLES = styles
+
+
+# Applies a configured colour style (by logical part name) to the given text
+def colorize(part, text):
+    if not COLOR_ENABLED:
+        return text
+    start = _COLOR_STYLES.get(part)
+    if not start:
+        return text
+    return f"{start}{text}{ANSI_RESET}"
+
+
+# Returns coloured representation of a textual status string
+def colorize_status(status_text):
+    status = (status_text or "").strip().lower()
+    if status in ("online", "yes"):
+        key = "status_online"
+    elif status in ("offline", "no"):
+        key = "status_offline"
+    else:
+        key = "status_other"
+    return colorize(key, status_text)
+
+
+# Helper to apply a block style while preserving internal highlights
+def _apply_style_nested(line, style_name):
+    start_style = _COLOR_STYLES.get(style_name)
+    if not start_style:
+        return line
+    # Wrap the line in the style, but ensure internal resets (\033[0m), return to the style immediately instead of resetting to plain
+    line = f"{start_style}{line}{ANSI_RESET}"
+    line = line.replace(ANSI_RESET, f"{ANSI_RESET}{start_style}")
+    # Fix double trailing reset
+    if line.endswith(f"{ANSI_RESET}{start_style}"):
+        line = line[:-len(start_style)]
+    return line
+
+
+# Applies colour rules to a single output line
+def _colorize_line(line):
+    original = line
+    lowered = line.lower()
+
+    # Skip block coloring (yellow/info/warning), but allow internal highlights (booleans etc.) except for "Sending email"
+    # lines which remain plain
+    if line.startswith("* Sending email"):
+        return line
+
+    is_summary_line = any(line.startswith(p) for p in ("* Output directory:", "* Hours for fetching:", "* Skip fetching:", "* Email notifications:", "* Recheck All:", "* Followers: reported", "* Followings: reported", "* Followers (", "* Followings (", "User ID:", "* Browser user agent:", "* Mobile user agent:"))
+
+    # Case for list items (e.g. - username [ link ]) - color username yellow
+    if line.strip().startswith("- ") and " [ http" in line:
+        # Highlight the part before the bracket in yellow
+        line = re.sub(r"^(- +)([^ \[\]]+)( +\[)", lambda mo: f"{mo.group(1)}{colorize('status_change', mo.group(2))}{mo.group(3)}", line)
+
+    # Check interval lines (special formatting) - checked before general timestamp
+    m = _CHECK_INTERVAL_RE.match(line.strip("\n"))
+    if m:
+        label, duration, date_range = m.groups()
+        colored = f"{colorize('timestamp_label', label)}{colorize('count_up', duration)}{colorize('date_range', date_range)}"
+        return colored + ("\n" if line.endswith("\n") else "")
+
+    # Timestamp lines
+    m = _TIMESTAMP_LINE_RE.match(line.strip("\n"))
+    if m:
+        label, rest = m.groups()
+        colored = f"{colorize('timestamp_label', label)}{colorize('timestamp_value', rest)}"
+        return colored + ("\n" if line.endswith("\n") else "")
+
+    # Monitoring status lines (e.g. * Status: Waiting for targets...)
+    m = _STATUS_LINE_RE.match(line.strip("\n"))
+    if m:
+        label, status = m.groups()
+        colored = f"{label}{colorize_status(status)}"
+        return colored + ("\n" if line.endswith("\n") else "")
+
+    if not is_summary_line:
+        # [user] message lines
+        m = _MSG_WITH_USER_RE.match(line)
+        if m:
+            user, rest = m.groups()
+            line = f"[{colorize('username', user)}] {rest}"
+
+        # Highlight usernames in various phrases
+        line = _USER_TAG_RE.sub(lambda mo: f"{mo.group(1)}{mo.group(2)}{colorize('username', mo.group(3))}", line)
+
+    # Status change long line
+    m = _STATUS_CHANGE_RE.match(line)
+    if m:
+        pfx, old_s, mid, new_s, tail = m.groups()
+        return f"{pfx}{colorize_status(old_s)}{mid}{colorize_status(new_s)}{tail}"
+
+    # Content types (using more specific keywords to avoid matching labels/counts)
+    if any(k in lowered for k in ("new post for", "details for post", "fetching posts for")):
+        line = colorize("post", line)
+    elif any(k in lowered for k in ("new reel for", "details for reel", "fetching reels for")):
+        line = colorize("reel", line)
+    elif any(k in lowered for k in ("new story items", "new story for", "details for story", "fetching story for")):
+        line = colorize("story", line)
+    elif "sending email" in lowered:
+        line = colorize("email", line)
+    elif "sending webhook" in lowered:
+        line = colorize("webhook", line)
+
+    # Highlight counters (from X to Y)
+    line = _FROM_TO_COUNT_RE.sub(lambda mo: f"{mo.group(1)}{colorize('count_up' if int(mo.group(4)) >= int(mo.group(2)) else 'count_down', mo.group(2))}{mo.group(3)}{colorize('count_up' if int(mo.group(4)) >= int(mo.group(2)) else 'count_down', mo.group(4))}", line)
+    line = _DIFF_COUNT_UP_RE.sub(lambda mo: colorize("count_up", mo.group(0)), line)
+    line = _DIFF_COUNT_DOWN_RE.sub(lambda mo: colorize("count_down", mo.group(0)), line)
+
+    # Highlight durations
+    line = _DURATION_RE.sub(lambda mo: colorize("duration", mo.group(0)), line)
+
+    # Highlight long date strings
+    line = _LONG_DATE_RE.sub(lambda mo: colorize("date", mo.group(0)), line)
+    # Highlight time-only strings (e.g. ~21:07:39)
+    line = _TIME_ONLY_RE.sub(lambda mo: colorize("date", mo.group(0)), line)
+    # Highlight short date ranges in parentheses
+    line = _SHORT_RANGE_DATE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
+    # Highlight date ranges without year
+    line = _DATE_RANGE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
+
+    # Highlight URLs / links
+    line = _URL_RE.sub(lambda mo: colorize("link", mo.group(0)), line)
+
+    # Highlight quoted content (captions etc.)
+    line = _QUOTED_CONTENT_RE.sub(lambda mo: f"{mo.group(1)}{colorize('username', mo.group(2))}{mo.group(1)}", line)
+
+    # Highlight boolean values
+    line = _BOOLEAN_TRUE_RE.sub(lambda mo: colorize("boolean_true", mo.group(0)), line)
+    line = _BOOLEAN_FALSE_RE.sub(lambda mo: colorize("boolean_false", mo.group(0)), line)
+
+    # Highlight online/offline keywords
+    line = _ONLINE_WORD_RE.sub(lambda mo: colorize("status_online", mo.group(0)), line)
+    line = _OFFLINE_WORD_RE.sub(lambda mo: colorize("status_offline", mo.group(0)), line)
+
+    # If it's a summary line, we return after internal highlights
+    if is_summary_line:
+        return line
+
+    # If it's a summary line, we return after internal highlights
+    if is_summary_line:
+        return line
+
+    # Block highlighting (activity headers, errors, warnings)
+    # Applied last to ensure internal colors are preserved via nesting logic
+    is_error = any(w in lowered for w in ("failure", "forbidden", "timeout", "critical:", "failed")) or (
+        "* error" in lowered and "[errors =" not in lowered
+    )
+    is_warning = any(w in lowered for w in ("* warning:", "caution:")) and "[warnings =" not in lowered
+    is_info = any(k in lowered for k in ("* session login:", "* mode:", "session created", "* info:"))
+
+    if _ACTIVITY_HEADER_RE.match(line):
+        line = _apply_style_nested(line, "status_change")
+    elif is_error:
+        line = _apply_style_nested(line, "error")
+    elif is_warning:
+        line = _apply_style_nested(line, "warning")
+    elif is_info:
+        line = _apply_style_nested(line, "info")
+
+    return line
+
+
+# Applies colourisation to multi-line text, preserving line breaks
+def apply_color_to_text(text):
+    if not COLOR_ENABLED or not isinstance(text, str):
+        return text
+
+    # Skip coloring if terminal dashboard is active to prevent interference with Rich tags/layout
+    if DASHBOARD_ENABLED and RICH_AVAILABLE:
+        return text
+
+    parts = []
+    for chunk in text.splitlines(keepends=True):
+        if chunk.endswith(("\n", "\r")):
+            stripped = chunk.rstrip("\r\n")
+            newline = chunk[len(stripped):]
+            parts.append(_colorize_line(stripped) + newline)
+        else:
+            parts.append(_colorize_line(chunk))
+    return "".join(parts)
 
 
 # Logger class to output messages to stdout and log files
@@ -2006,7 +2384,7 @@ class Logger(object):
     def __init__(self, main_filename=None):
         self.terminal = sys.stdout
         self.target_logs = {}  # target -> file_handle
-        self.target_paths = {} # target -> filename
+        self.target_paths = {}  # target -> filename
         self.main_log = None
         if main_filename:
             try:
@@ -2045,37 +2423,41 @@ class Logger(object):
     def write(self, message):
         global last_output
         with STDOUT_LOCK:
+            # Apply color for terminal
+            colorized_message = apply_color_to_text(message)
+
             if message != '\n':
                 last_output.append(message)
                 tid = _thread_key()
                 if tid not in LAST_OUTPUT_BY_THREAD:
                     LAST_OUTPUT_BY_THREAD[tid] = []
+                # Keep plain version for internal tracking
                 LAST_OUTPUT_BY_THREAD[tid].append(message)
 
             if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
-                self.terminal.write(message)
+                self.terminal.write(colorized_message)
                 self.terminal.flush()
 
-            # Expand tabs for file output (stdout remains untouched)
-            expanded_message = message.expandtabs(8)
+            # Expand tabs for file output and ensure ANSI codes are stripped
+            clean_message = ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8)
 
             # Always log to main log if available
             if self.main_log:
-                self.main_log.write(expanded_message)
+                self.main_log.write(clean_message)
                 self.main_log.flush()
 
             target = self._get_current_target()
             if target:
                 handle = self._ensure_log_open(target)
                 if handle:
-                    handle.write(expanded_message)
+                    handle.write(clean_message)
                     handle.flush()
             else:
                 # Common message (e.g. summary screen from MainThread): log to ALL target logs
                 for t in list(self.target_paths.keys()):
                     handle = self._ensure_log_open(t)
                     if handle:
-                        handle.write(expanded_message)
+                        handle.write(clean_message)
                         handle.flush()
 
     def flush(self):
@@ -2091,6 +2473,21 @@ class Logger(object):
 
     def isatty(self):
         return self.terminal.isatty()
+
+
+# Simple colour-aware stdout wrapper used when logging is disabled
+# Applies the same line-based colouring rules as Logger, but does not write anything to a log file
+class ColorStream(object):
+    def __init__(self, stream):
+        self.terminal = stream
+
+    def write(self, message):
+        coloured = apply_color_to_text(message)
+        self.terminal.write(coloured)
+        self.terminal.flush()
+
+    def flush(self):
+        self.terminal.flush()
 
 
 # Signal handler when user presses Ctrl+C
@@ -2110,7 +2507,7 @@ def signal_handler(sig, frame, message=None):
     if message is None:
         message = '* You pressed Ctrl+C, tool is terminated.'
     if message:
-        print(f'\n{message}')
+        print(apply_color_to_text(f'\n{message}'))
 
     # Use sys.exit in main thread to allow proper cleanup (prevents semaphore leaks)
     # Use os._exit in background threads since sys.exit() won't work there
@@ -2346,6 +2743,10 @@ def validate_webhook_url(url):
 
 
 # Helper function to compare follower/following lists and log changes
+def show_follow_info(followers_reported: int, followers_actual: int, followings_reported: int, followings_actual: int) -> None:
+    print(f"* Followers: reported ({followers_reported}) actual ({followers_actual}). Followings: reported ({followings_reported}) actual ({followings_actual})")
+
+
 def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_file_name):
     a, b = set(old_list), set(new_list)
     removed = list(a - b)
@@ -4653,10 +5054,21 @@ def close_pbar():
         # Close the progress bar (writes to terminal)
         thread_pbar.close()
 
-        # Write final state to log file if logging is enabled
-        if stdout_bck is not None and isinstance(sys.stdout, Logger) and sys.stdout.main_log:
-            sys.stdout.main_log.write(final_str + "\n")
-            sys.stdout.main_log.flush()
+        # Write final state to log files if logging is enabled
+        if isinstance(sys.stdout, Logger):
+            # We want to write to logs but NOT the terminal again (pbar.close already did that), so we strip colors and
+            # write to main/target logs manually or use a flag
+            clean_final = ANSI_ESCAPE_RE.sub("", final_str).expandtabs(8) + "\n"
+            if sys.stdout.main_log:
+                sys.stdout.main_log.write(clean_final)
+                sys.stdout.main_log.flush()
+
+            target = sys.stdout._get_current_target()
+            if target:
+                handle = sys.stdout._ensure_log_open(target)
+                if handle:
+                    handle.write(clean_final)
+                    handle.flush()
 
         _thread_local.pbar = None  # type: ignore[misc]
         # Also clear global for backward compatibility
@@ -6655,9 +7067,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                             print(f"* User {user} has new story item:\n")
                             log_activity(f"New story item: {story_type}", user=user, level='update', details={'url': f"https://www.instagram.com/stories/{user}/", 'is_story': True})
-                            print(f"Date:\t\t\t{get_date_from_ts(local_dt)}")
-                            print(f"Expiry:\t\t\t{get_date_from_ts(expire_local_dt)}")
-                            print(f"Type:\t\t\t{story_type}")
+                            print(f"Date:\t\t\t\t\t{get_date_from_ts(local_dt)}")
+                            print(f"Expiry:\t\t\t\t\t{get_date_from_ts(expire_local_dt)}")
+                            print(f"Type:\t\t\t\t\t{story_type}")
 
                             story_mentions = story_item.caption_mentions
                             story_hashtags = story_item.caption_hashtags
@@ -7225,7 +7637,7 @@ def get_target_paths(user):
 def run_main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, DETAILED_FOLLOWER_LOGGING, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA
-    global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB
+    global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -7236,6 +7648,18 @@ def run_main():
         sys.exit(0)
 
     stdout_bck = sys.stdout
+
+    # Initialise colour handling based on CLI args (early check) and terminal capabilities
+    if "--no-color" in sys.argv:
+        globals()["COLORED_OUTPUT"] = False
+
+    init_color_output(stdout_bck)
+
+    # Resolve dashboard mode early to decide whether to print version header
+    early_dashboard_enabled = "--dashboard" in sys.argv and "--no-dashboard" not in sys.argv
+
+    if not (early_dashboard_enabled and RICH_AVAILABLE):
+        print(colorize("header", f"Instagram Monitoring Tool v{VERSION}\n"))
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -7488,6 +7912,13 @@ def run_main():
         action="store_true",
         default=None,
         help="Disable logging to instagram_monitor_<username>.log"
+    )
+    opts.add_argument(
+        "--no-color",
+        dest="no_color",
+        action="store_true",
+        default=None,
+        help="Disable coloured output in the terminal"
     )
     opts.add_argument(
         "--verbose",
@@ -7844,6 +8275,7 @@ def run_main():
     DASHBOARD_DATA['targets_list'] = targets
 
     # Terminal Dashboard handling
+    # (Resolved early for header display, keeping structure for clarity)
     if getattr(args, 'dashboard', None) is True:
         DASHBOARD_ENABLED = True
 
@@ -7864,10 +8296,18 @@ def run_main():
         # Resolve to absolute path immediately
         WEB_DASHBOARD_TEMPLATE_DIR = os.path.abspath(os.path.expanduser(args.web_dashboard_template_dir))
 
-    # Allow empty targets if web dashboard is enabled
+    # Allow empty targets with specific flags
     if not targets and not WEB_DASHBOARD_ENABLED:
-        print("* Error: At least one TARGET_USERNAME argument is required !")
-        parser.print_help()
+        utility_flags = {
+            "--no-color", "-h", "--help",
+            "--web-dashboard", "--version"
+        }
+        complex_args = [a for a in sys.argv[1:] if a not in utility_flags]
+
+        if complex_args:
+            print("\n* Error: At least one TARGET_USERNAME argument is required !\n", flush=True)
+
+        parser.print_help(sys.stderr)
         sys.exit(1)
 
     if args.skip_session is True:
@@ -7967,22 +8407,26 @@ def run_main():
         except Exception:
             pass
 
-    # Print version header after arguments are parsed and DASHBOARD_ENABLED is set
-    if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
-        print(f"Instagram Monitoring Tool v{VERSION}\n")
-
     if args.csv_file:
         CSV_FILE = os.path.expanduser(args.csv_file)
     else:
         if CSV_FILE:
             CSV_FILE = os.path.expanduser(CSV_FILE)
 
+    if args.no_color is True:
+        COLORED_OUTPUT = False
+
     if args.disable_logging is True:
         DISABLE_LOGGING = True
+
+    # Re-initialize colour output to pick up any theme changes from config/dotenv
+    init_color_output(stdout_bck)
 
     # Initialize Logger
     if not DISABLE_LOGGING:
         sys.stdout = Logger()  # type: ignore[assignment]
+    else:
+        sys.stdout = ColorStream(stdout_bck)  # type: ignore[assignment]
 
     # Resolve CSV and Log paths for each target
     csv_files_by_user: dict = {}
