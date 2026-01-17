@@ -5006,6 +5006,7 @@ def close_pbar():
     global pbar
     # Use thread-local storage for multi-target safety
     thread_pbar = getattr(_thread_local, 'pbar', None)
+    debug_print(f"[close_pbar] ENTRY - thread_pbar is None: {thread_pbar is None}")
     if thread_pbar is not None:
         # Get the final progress bar string before closing
         # Use format_dict to get current values and format the progress bar string
@@ -5019,15 +5020,20 @@ def close_pbar():
         n_fmt = f"{n:,}" if n >= 1000 else str(n)
         total_fmt = f"{total:,}" if total >= 1000 else str(total)
 
+        # Calculate percentage
+        percentage = f"{int(n / total * 100 if total > 0 else 0)}%"
+
         # Calculate bar visualization
         if total > 0:
             # Calculate available space for bar:
-            # Total width (HORIZONTAL_LINE) - desc - stats - separators
+            # Total width (HORIZONTAL_LINE) - desc - stats - separators - percentage
 
             overhead = 0
             if desc:
                 overhead += len(desc) + 2  # ": "
 
+            overhead += len(percentage)
+            overhead += 1  # "|"
             overhead += 1  # "|"
             overhead += 1  # " "
             overhead += len(n_fmt)
@@ -5046,29 +5052,57 @@ def close_pbar():
             bar = '░' * 40
 
         # Build final string matching the format: "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
+        # tqdm's l_bar usually includes {desc}: {percentage}
         if desc:
-            final_str = f"{desc}: {bar}| {n_fmt}/{total_fmt} [{unit}]"
+            final_str = f"{desc}: {percentage}|{bar}| {n_fmt}/{total_fmt} [{unit}]"
         else:
-            final_str = f"{bar}| {n_fmt}/{total_fmt} [{unit}]"
+            final_str = f"{percentage}|{bar}| {n_fmt}/{total_fmt} [{unit}]"
 
         # Close the progress bar (writes to terminal)
         thread_pbar.close()
 
         # Write final state to log files if logging is enabled
+        # Check if sys.stdout is a Logger or if it's wrapped (e.g. by FilteredWriter)
+        logger_instance = None
         if isinstance(sys.stdout, Logger):
+            logger_instance = sys.stdout
+        elif hasattr(sys.stdout, 'original') and isinstance(sys.stdout.original, Logger):  # type: ignore[union-attr]
+            # FilteredWriter wraps the Logger in .original
+            logger_instance = sys.stdout.original  # type: ignore[union-attr]
+
+        debug_print(f"[close_pbar] logger_instance found: {logger_instance is not None}, type: {type(sys.stdout).__name__}")
+        if logger_instance is not None:
             # We want to write to logs but NOT the terminal again (pbar.close already did that), so we strip colors and
             # write to main/target logs manually or use a flag
             clean_final = ANSI_ESCAPE_RE.sub("", final_str).expandtabs(8) + "\n"
-            if sys.stdout.main_log:
-                sys.stdout.main_log.write(clean_final)
-                sys.stdout.main_log.flush()
+            debug_print(f"[close_pbar] clean_final: {clean_final.strip()}")
 
-            target = sys.stdout._get_current_target()
-            if target:
-                handle = sys.stdout._ensure_log_open(target)
-                if handle:
-                    handle.write(clean_final)
-                    handle.flush()
+            with STDOUT_LOCK:
+                if logger_instance.main_log:
+                    debug_print(f"[close_pbar] Writing to main_log")
+                    logger_instance.main_log.write(clean_final)
+                    logger_instance.main_log.flush()
+                else:
+                    debug_print(f"[close_pbar] main_log is None")
+
+                target = logger_instance._get_current_target()
+                debug_print(f"[close_pbar] target: {target}, target_paths: {list(logger_instance.target_paths.keys())}")
+                if target:
+                    handle = logger_instance._ensure_log_open(target)
+                    if handle:
+                        debug_print(f"[close_pbar] Writing to target log for {target}")
+                        handle.write(clean_final)
+                        handle.flush()
+                    else:
+                        debug_print(f"[close_pbar] Failed to open handle for {target}")
+                else:
+                    # Common message (e.g. from MainThread): log to ALL target logs, matching Logger.write behavior
+                    debug_print(f"[close_pbar] No target, writing to all logs")
+                    for t in list(logger_instance.target_paths.keys()):
+                        handle = logger_instance._ensure_log_open(t)
+                        if handle:
+                            handle.write(clean_final)
+                            handle.flush()
 
         _thread_local.pbar = None  # type: ignore[misc]
         # Also clear global for backward compatibility
