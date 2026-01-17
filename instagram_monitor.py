@@ -566,7 +566,6 @@ from dateutil.parser import isoparse, parse
 import calendar
 import requests as req
 import shutil
-import shutil
 import smtplib
 import ssl
 from email.header import Header
