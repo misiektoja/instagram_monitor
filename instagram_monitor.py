@@ -973,7 +973,7 @@ def create_web_dashboard_app():
             DASHBOARD_MODE = data['mode']
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                 WEB_DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
-            msg = f"Dashboard mode set to: {DASHBOARD_MODE}"
+            msg = f"Web Dashboard mode changed to: {DASHBOARD_MODE}"
             log_activity(msg)
             print(f"\n* {msg}")
             print_cur_ts("\nTimestamp:\t\t\t\t")
@@ -3845,7 +3845,7 @@ def dashboard_input_handler():
                     # Update DASHBOARD_DATA with new mode
                     global DASHBOARD_DATA
                     DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
-                    log_activity(f"Dashboard Mode changed to: {DASHBOARD_MODE.upper()}")
+                    log_activity(f"Terminal Dashboard mode changed to: {DASHBOARD_MODE}")
                     # Update web dashboard mode if enabled
                     if WEB_DASHBOARD_ENABLED:
                         WEB_DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
