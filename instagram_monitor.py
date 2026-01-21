@@ -5476,6 +5476,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     followings_count = 0
     r_sleep_time = 0
     followers_followings_fetched = False
+    followers_baseline_available = False
+    followings_baseline_available = False
     stories_count = 0
     stories_old_count = 0
     reels_count = 0
@@ -5799,6 +5801,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         if followers_read:
             followers_old_count = followers_read[0]
             followers_old = followers_read[1]
+            followers_baseline_available = True
             if followers_count == followers_old_count:
                 followers = followers_old
             followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file)), pytz.timezone(LOCAL_TIMEZONE))
@@ -5876,11 +5879,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 print(f"* Cannot save list of followers to '{insta_followers_file}' file: {e}")
 
     # Compare followers: either count changed OR detailed logging detected a difference
-    should_compare_followers = ((followers_count != followers_old_count) or (FOLLOWERS_CHURN_DETECTION and followers != followers_old))
+    should_compare_followers = followers_baseline_available and ((followers_count != followers_old_count) or (FOLLOWERS_CHURN_DETECTION and followers != followers_old))
     if should_compare_followers and (followers != followers_old) and not skip_session and not skip_followers and can_view and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
         added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
             user, "followers", followers_old, followers, csv_file_name
         )
+
+    # Establish baseline after first successful fetch if it wasn't available
+    if not followers_baseline_available and not skip_session and not skip_followers and can_view and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
+        followers_baseline_available = True
 
     if os.path.isfile(insta_followings_file):
         try:
@@ -5891,6 +5898,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         if followings_read:
             followings_old_count = followings_read[0]
             followings_old = followings_read[1]
+            followings_baseline_available = True
             if followings_count == followings_old_count:
                 followings = followings_old
             following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file)), pytz.timezone(LOCAL_TIMEZONE))
@@ -5966,11 +5974,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             except Exception as e:
                 print(f"* Cannot save list of followings to '{insta_followings_file}' file: {e}")
 
-    should_compare_followings = ((followings_count != followings_old_count) or (FOLLOWERS_CHURN_DETECTION and followings != followings_old))
+    should_compare_followings = followings_baseline_available and ((followings_count != followings_old_count) or (FOLLOWERS_CHURN_DETECTION and followings != followings_old))
     if should_compare_followings and (followings != followings_old) and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
         added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
             user, "followings", followings_old, followings, csv_file_name
         )
+
+    # Establish baseline after first successful fetch if it wasn't available
+    if not followings_baseline_available and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
+        followings_baseline_available = True
 
     if not skip_session and not skip_followers and can_view:
         followers_old = followers
@@ -6724,9 +6736,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             print(f"* Followings list changed for user {user} (count: {followings_count})")
                             log_activity(f"Followings list changed: count remained same ({followings_count})", user=user)
 
-                        added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
-                            user, "followings", followings_old, followings, csv_file_name
-                        )
+                        if followings_baseline_available:
+                            added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
+                                user, "followings", followings_old, followings, csv_file_name
+                            )
+                        else:
+                            # If baseline wasn't available (e.g. initial fetch failed), establish it now
+                            followings_baseline_available = True
 
                         followings_old = followings
 
@@ -6846,9 +6862,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             print(f"* Followers list changed for user {user} (count: {followers_count})")
                             log_activity(f"Followers list changed: count remained same ({followers_count})", user=user)
 
-                        added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
-                            user, "followers", followers_old, followers, csv_file_name
-                        )
+                        if followers_baseline_available:
+                            added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
+                                user, "followers", followers_old, followers, csv_file_name
+                            )
+                        else:
+                            # If baseline wasn't available (e.g. initial fetch failed), establish it now
+                            followers_baseline_available = True
 
                         followers_old = followers
 
