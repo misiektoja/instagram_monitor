@@ -105,6 +105,10 @@ DETECT_CHANGED_PROFILE_PIC = True
 DOWNLOAD_THUMBNAILS = True
 
 # Location of the optional file with the empty profile picture template
+#
+# Path resolution logic (if relative path):
+#   1. Current working directory
+#   2. Script/Package directory (pip-installed location)
 PROFILE_PIC_FILE_EMPTY = "instagram_profile_pic_empty.jpg"
 
 # If you have 'imgcat' installed, you can set its path below to display profile pictures directly in your terminal
@@ -349,8 +353,9 @@ WEB_DASHBOARD_PORT = 8000
 WEB_DASHBOARD_HOST = '127.0.0.1'
 
 # Template directory for web dashboard
-# If empty, the tool will auto-detect the templates directory relative to the script location
-# For pip-installed packages, templates should be in the package directory
+# If empty, the tool will auto-detect the templates directory in this order:
+#   1. Current working directory
+#   2. Script/Package directory (pip-installed location)
 # Can also be set via --web-dashboard-template-dir flag
 WEB_DASHBOARD_TEMPLATE_DIR = ""
 
@@ -844,9 +849,10 @@ def create_web_dashboard_app():
             print("*" * HORIZONTAL_LINE)
             return None
     else:
-        # Auto-detect: try script directory first (for direct execution)
+        # Auto-detect: try CWD and script/package directory
         script_dir = os.path.dirname(os.path.abspath(__file__))
         candidate_dirs = [
+            os.path.join(os.getcwd(), 'templates'),
             os.path.join(script_dir, 'templates'),
         ]
 
@@ -8435,7 +8441,23 @@ def run_main():
         DETECT_CHANGED_PROFILE_PIC = False
 
     if PROFILE_PIC_FILE_EMPTY:
-        PROFILE_PIC_FILE_EMPTY = os.path.expanduser(PROFILE_PIC_FILE_EMPTY)
+        # Expand user and resolve absolute/relative paths
+        initial_path = os.path.expanduser(PROFILE_PIC_FILE_EMPTY)
+
+        if not os.path.isabs(initial_path):
+            # Search in current working directory first (for overrides)
+            cwd_path = os.path.abspath(initial_path)
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            pip_path = os.path.join(script_dir, initial_path)
+
+            if os.path.exists(cwd_path):
+                PROFILE_PIC_FILE_EMPTY = cwd_path
+            elif os.path.exists(pip_path):
+                PROFILE_PIC_FILE_EMPTY = pip_path
+            # else keep initial_path (will fail gracefully later)
+        else:
+            PROFILE_PIC_FILE_EMPTY = initial_path
+
         # Bidirectional backwards compatibility fallback (.jpg <-> .jpeg)
         if not os.path.exists(PROFILE_PIC_FILE_EMPTY):
             if PROFILE_PIC_FILE_EMPTY.lower().endswith('.jpg'):
