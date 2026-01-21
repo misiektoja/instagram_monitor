@@ -5925,9 +5925,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         try:
             update_ui_data(targets={user: {'status': 'Downloading Followers'}})
+            log_activity(f"Started downloading followers ({followers_count})", user=user)
             setup_pbar(total_expected=followers_count, title="* Downloading Followers")
+            start_time_dl = time.time()
             followers = [follower.username for follower in profile.get_followers()]
+            end_time_dl = time.time()
             close_pbar()
+            duration_dl = end_time_dl - start_time_dl
+            log_activity(f"Finished downloading followers: {len(followers)} fetched in {display_time(duration_dl)}", user=user)
             followers_count = profile.followers
         except Exception as e:
             close_pbar()
@@ -6010,9 +6015,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         try:
             update_ui_data(targets={user: {'status': 'Downloading Followings'}})
+            log_activity(f"Started downloading followings ({followings_count})", user=user)
             setup_pbar(total_expected=followings_count, title="* Downloading Followings")
+            start_time_dl = time.time()
             followings = [followee.username for followee in profile.get_followees()]
+            end_time_dl = time.time()
             close_pbar()
+            duration_dl = end_time_dl - start_time_dl
+            log_activity(f"Finished downloading followings: {len(followings)} fetched in {display_time(duration_dl)}", user=user)
             followings_count = profile.followees
         except Exception as e:
             close_pbar()
@@ -6751,11 +6761,16 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 if not skip_session and not skip_followings and can_view:
                     try:
+                        log_activity(f"Started downloading followings ({followings_count})", user=user)
                         setup_pbar(total_expected=followings_count, title="* Downloading Followings")
+                        start_time_dl = time.time()
                         followings = []
                         followings = [followee.username for followee in profile.get_followees()]
                         followings_to_save = []
+                        end_time_dl = time.time()
                         close_pbar()
+                        duration_dl = end_time_dl - start_time_dl
+                        log_activity(f"Finished downloading followings: {len(followings)} fetched in {display_time(duration_dl)}", user=user)
                         # Refresh profile to get current reported counts for comparison
                         profile = instaloader.Profile.from_username(bot.context, user)
                         followings_count = profile.followees
@@ -6849,11 +6864,16 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 if not skip_session and not skip_followers and can_view:
                     try:
+                        log_activity(f"Started downloading followers ({followers_count})", user=user)
                         setup_pbar(total_expected=followers_count, title="* Downloading Followers")
+                        start_time_dl = time.time()
                         followers = []
                         followers = [follower.username for follower in profile.get_followers()]
                         followers_to_save = []
+                        end_time_dl = time.time()
                         close_pbar()
+                        duration_dl = end_time_dl - start_time_dl
+                        log_activity(f"Finished downloading followers: {len(followers)} fetched in {display_time(duration_dl)}", user=user)
                         # Refresh profile to get current reported counts for comparison
                         profile = instaloader.Profile.from_username(bot.context, user)
                         followers_count = profile.followers
