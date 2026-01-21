@@ -1,0 +1,4 @@
+include templates/index.html
+include instagram_profile_pic_empty.jpg
+include README.md
+include LICENSE
