@@ -144,9 +144,9 @@ SKIP_GETTING_POSTS_DETAILS = False
 GET_MORE_POST_DETAILS = False
 
 # When enabled, fetches the full list of followers and followings every check (not just when the count changes) and
-# compares usernames to detect who followed/unfollowed even when counts remain the same
+# compares usernames to detect who followed/unfollowed even when counts remain the same (churn detection)
 # This is useful for detecting when someone unfollows and someone else follows in the same interval, keeping the count unchanged
-DETAILED_FOLLOWER_LOGGING = False
+FOLLOWERS_CHURN_DETECTION = False
 
 # Make the tool behave more like a human by performing random feed / profile / hashtag / followee actions
 # Used only with session login (mode 2), always disabled without login (anonymous mode 1)
@@ -517,7 +517,7 @@ WEB_DASHBOARD_PORT = 8000
 WEB_DASHBOARD_HOST = '127.0.0.1'
 WEB_DASHBOARD_TEMPLATE_DIR = ""
 THUMBNAILS_FORCED_BY_WEB = False
-DETAILED_FOLLOWER_LOGGING = False
+FOLLOWERS_CHURN_DETECTION = False
 mode_of_the_tool = "Unknown"
 
 exec(CONFIG_BLOCK, globals())
@@ -1151,7 +1151,7 @@ def create_web_dashboard_app():
     def api_settings():  # type: ignore[return]
         global INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
         global STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_URL
-        global DETAILED_FOLLOWER_LOGGING, DEBUG_MODE, SESSION_USERNAME
+        global FOLLOWERS_CHURN_DETECTION, DEBUG_MODE, SESSION_USERNAME
         global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SSL, SENDER_EMAIL, RECEIVER_EMAIL
         global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS
         global ENABLE_JITTER, DETECT_CHANGED_PROFILE_PIC, SKIP_SESSION, CLI_CONFIG_PATH
@@ -1173,7 +1173,7 @@ def create_web_dashboard_app():
                 'webhook_status': WEBHOOK_STATUS_NOTIFICATION,
                 'webhook_followers': WEBHOOK_FOLLOWERS_NOTIFICATION,
                 'webhook_errors': WEBHOOK_ERROR_NOTIFICATION,
-                'detailed_logging': DETAILED_FOLLOWER_LOGGING,
+                'followers_churn': FOLLOWERS_CHURN_DETECTION,
                 'verbose_mode': VERBOSE_MODE,
                 'debug_mode': DEBUG_MODE,
                 'session_username': SESSION_USERNAME,
@@ -1248,7 +1248,7 @@ def create_web_dashboard_app():
             WEBHOOK_STATUS_NOTIFICATION = bool(update_setting('webhook_status', WEBHOOK_STATUS_NOTIFICATION, data.get('webhook_status'), bool))
             WEBHOOK_FOLLOWERS_NOTIFICATION = bool(update_setting('webhook_followers', WEBHOOK_FOLLOWERS_NOTIFICATION, data.get('webhook_followers'), bool))
             WEBHOOK_ERROR_NOTIFICATION = bool(update_setting('webhook_errors', WEBHOOK_ERROR_NOTIFICATION, data.get('webhook_errors'), bool))
-            DETAILED_FOLLOWER_LOGGING = bool(update_setting('detailed_logging', DETAILED_FOLLOWER_LOGGING, data.get('detailed_logging'), bool))
+            FOLLOWERS_CHURN_DETECTION = bool(update_setting('followers_churn', FOLLOWERS_CHURN_DETECTION, data.get('followers_churn'), bool))
             VERBOSE_MODE = bool(update_setting('verbose_mode', VERBOSE_MODE, data.get('verbose_mode'), bool))
             DEBUG_MODE = bool(update_setting('debug_mode', DEBUG_MODE, data.get('debug_mode'), bool))
             BE_HUMAN = bool(update_setting('be_human', BE_HUMAN, data.get('be_human'), bool))
@@ -5253,7 +5253,7 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'skip_stories': SKIP_GETTING_STORY_DETAILS,
         'skip_posts': SKIP_GETTING_POSTS_DETAILS,
         'get_more_post_details': GET_MORE_POST_DETAILS,
-        'detailed_logging': DETAILED_FOLLOWER_LOGGING,
+        'followers_churn': FOLLOWERS_CHURN_DETECTION,
         'verbose_mode': VERBOSE_MODE,
         'debug_mode': DEBUG_MODE,
         'hours_range': hours_ranges_str,
@@ -5733,7 +5733,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         if not skip_session and can_view:
             print(f"Reels:\t\t\t\t\t{reels_count}")
 
-        if DETAILED_FOLLOWER_LOGGING:
+        if FOLLOWERS_CHURN_DETECTION:
             print(f"\nFollowers:\t\t\t\t- (to be determined later)")
             print(f"Followings:\t\t\t\t- (to be determined later)")
         else:
@@ -5748,8 +5748,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     # Populate initial Dashboard data immediately after first fetch (regardless of print mode)
     target_data_unified = {
-        'followers': None if DETAILED_FOLLOWER_LOGGING else followers_count,
-        'following': None if DETAILED_FOLLOWER_LOGGING else followings_count,
+        'followers': None if FOLLOWERS_CHURN_DETECTION else followers_count,
+        'following': None if FOLLOWERS_CHURN_DETECTION else followings_count,
         'posts': posts_count,
         'reels': reels_count,
         'has_story': has_story,
@@ -5804,7 +5804,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file)), pytz.timezone(LOCAL_TIMEZONE))
             update_ui_data(targets={user: {'status': 'Loading Followers'}})
 
-            if DETAILED_FOLLOWER_LOGGING:
+            if FOLLOWERS_CHURN_DETECTION:
                 print(f"* Followers ({len(followers_old)}) loaded from file '{insta_followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
                 log_activity(f"Followers loaded from file: {len(followers_old)}", user=user)
             else:
@@ -5829,9 +5829,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         except Exception as e:
             print(f"* Error: {e}")
 
-    if ((followers_count != followers_old_count) or (followers_count > 0 and not followers) or DETAILED_FOLLOWER_LOGGING) and not skip_session and not skip_followers and can_view:
+    if ((followers_count != followers_old_count) or (followers_count > 0 and not followers) or FOLLOWERS_CHURN_DETECTION) and not skip_session and not skip_followers and can_view:
         # Fetch followers if count changed, list is empty or detailed logging is enabled
-        if DETAILED_FOLLOWER_LOGGING and followers_count > 5000:
+        if FOLLOWERS_CHURN_DETECTION and followers_count > 5000:
             warning = f"High follower count ({followers_count})! This may increase rate limit risk with detailed logging."
             log_activity(warning, user=user, level='system')
             print(f"* Warning: {warning}")
@@ -5868,7 +5868,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 os.makedirs(os.path.dirname(os.path.abspath(insta_followers_file)), exist_ok=True)
                 with open(insta_followers_file, 'w', encoding="utf-8") as f:
                     json.dump(followers_to_save, f, indent=2)
-                    if DETAILED_FOLLOWER_LOGGING:
+                    if FOLLOWERS_CHURN_DETECTION:
                         print(f"* Followers ({len(followers)}) saved to file '{insta_followers_file}'")
                     else:
                         print(f"* Followers ({followers_count}) actual ({len(followers)}) saved to file '{insta_followers_file}'")
@@ -5876,7 +5876,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 print(f"* Cannot save list of followers to '{insta_followers_file}' file: {e}")
 
     # Compare followers: either count changed OR detailed logging detected a difference
-    should_compare_followers = ((followers_count != followers_old_count) or (DETAILED_FOLLOWER_LOGGING and followers != followers_old))
+    should_compare_followers = ((followers_count != followers_old_count) or (FOLLOWERS_CHURN_DETECTION and followers != followers_old))
     if should_compare_followers and (followers != followers_old) and not skip_session and not skip_followers and can_view and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
         added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
             user, "followers", followers_old, followers, csv_file_name
@@ -5896,7 +5896,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file)), pytz.timezone(LOCAL_TIMEZONE))
             update_ui_data(targets={user: {'status': 'Loading Followings'}})
 
-            if DETAILED_FOLLOWER_LOGGING:
+            if FOLLOWERS_CHURN_DETECTION:
                 print(f"\n* Followings ({len(followings_old)}) loaded from file '{insta_followings_file}' ({get_short_date_from_ts(following_mdate, show_weekday=False, always_show_year=True)})")
                 log_activity(f"Followings loaded from file: {len(followings_old)}", user=user)
             else:
@@ -5920,9 +5920,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         except Exception as e:
             print(f"* Error: {e}")
 
-    if ((followings_count != followings_old_count) or (followings_count > 0 and not followings) or DETAILED_FOLLOWER_LOGGING) and not skip_session and not skip_followings and can_view:
+    if ((followings_count != followings_old_count) or (followings_count > 0 and not followings) or FOLLOWERS_CHURN_DETECTION) and not skip_session and not skip_followings and can_view:
         # Fetch followings if count changed, list is empty or detailed logging is enabled
-        if DETAILED_FOLLOWER_LOGGING and followings_count > 5000:
+        if FOLLOWERS_CHURN_DETECTION and followings_count > 5000:
             warning = f"High following count ({followings_count})! This may increase rate limit risk with detailed logging."
             log_activity(warning, user=user, level='system')
             print(f"* Warning: {warning}")
@@ -5959,14 +5959,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 os.makedirs(os.path.dirname(os.path.abspath(insta_followings_file)), exist_ok=True)
                 with open(insta_followings_file, 'w', encoding="utf-8") as f:
                     json.dump(followings_to_save, f, indent=2)
-                    if DETAILED_FOLLOWER_LOGGING:
+                    if FOLLOWERS_CHURN_DETECTION:
                         print(f"* Followings ({len(followings)}) saved to file '{insta_followings_file}'")
                     else:
                         print(f"* Followings ({followings_count}) actual ({len(followings)}) saved to file '{insta_followings_file}'")
             except Exception as e:
                 print(f"* Cannot save list of followings to '{insta_followings_file}' file: {e}")
 
-    should_compare_followings = ((followings_count != followings_old_count) or (DETAILED_FOLLOWER_LOGGING and followings != followings_old))
+    should_compare_followings = ((followings_count != followings_old_count) or (FOLLOWERS_CHURN_DETECTION and followings != followings_old))
     if should_compare_followings and (followings != followings_old) and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
         added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
             user, "followings", followings_old, followings, csv_file_name
@@ -5988,7 +5988,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     if followers_followings_fetched:
         print_cur_ts("\nTimestamp:\t\t\t\t")
         # Update dashboard with actual counts after download in detailed logging mode
-        if DETAILED_FOLLOWER_LOGGING:
+        if FOLLOWERS_CHURN_DETECTION:
             update_ui_data(targets={user: {'followers': len(followers) if followers else followers_count, 'following': len(followings) if followings else followings_count}})
 
     # Profile pic
@@ -6534,7 +6534,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     'human_mode': BE_HUMAN,
                     'enable_jitter': ENABLE_JITTER,
                     'debug_mode': DEBUG_MODE,
-                    'detailed_log': DETAILED_FOLLOWER_LOGGING,
+                    'followers_churn': FOLLOWERS_CHURN_DETECTION,
                     'start_time': DASHBOARD_DATA.get('start_time', datetime.now())
                 }
 
@@ -6653,8 +6653,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 time.sleep(r_sleep_time)
                 continue
 
-            if followings_count != followings_old_count or DETAILED_FOLLOWER_LOGGING:
-                if DETAILED_FOLLOWER_LOGGING and followings_count > 5000:
+            if followings_count != followings_old_count or FOLLOWERS_CHURN_DETECTION:
+                if FOLLOWERS_CHURN_DETECTION and followings_count > 5000:
                     warning = f"High following count ({followings_count})! Detailed logging may increase rate limit risk."
                     log_activity(warning, user=user, level='system')
                     print(f"* Warning: {warning}")
@@ -6698,7 +6698,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         profile = instaloader.Profile.from_username(bot.context, user)
                         followings_count = profile.followees
                         followers_count_reported = profile.followers
-                        if not DETAILED_FOLLOWER_LOGGING:
+                        if not FOLLOWERS_CHURN_DETECTION:
                             show_follow_info(followers_count_reported, len(followers), followings_count, len(followings))
                         if not followings and followings_count > 0:
                             print("* Empty followings list returned, not saved to file")
@@ -6707,7 +6707,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             followings_to_save.append(followings)
                             with open(insta_followings_file, 'w', encoding="utf-8") as f:
                                 json.dump(followings_to_save, f, indent=2)
-                                if DETAILED_FOLLOWER_LOGGING:
+                                if FOLLOWERS_CHURN_DETECTION:
                                     print(f"* Followings ({len(followings)}) saved to file '{insta_followings_file}'")
                                 else:
                                     print(f"* Followings ({followings_count}) actual ({len(followings)}) saved to file '{insta_followings_file}'")
@@ -6774,8 +6774,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
 
-            if followers_count != followers_old_count or DETAILED_FOLLOWER_LOGGING:
-                if DETAILED_FOLLOWER_LOGGING and followers_count > 5000:
+            if followers_count != followers_old_count or FOLLOWERS_CHURN_DETECTION:
+                if FOLLOWERS_CHURN_DETECTION and followers_count > 5000:
                     warning = f"High follower count ({followers_count})! Detailed logging may increase rate limit risk."
                     log_activity(warning, user=user, level='system')
                     print(f"* Warning: {warning}")
@@ -6820,7 +6820,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         profile = instaloader.Profile.from_username(bot.context, user)
                         followers_count = profile.followers
                         followings_count_reported = profile.followees
-                        if not DETAILED_FOLLOWER_LOGGING:
+                        if not FOLLOWERS_CHURN_DETECTION:
                             show_follow_info(followers_count, len(followers), followings_count_reported, len(followings))
                         if not followers and followers_count > 0:
                             print("* Empty followers list returned, not saved to file")
@@ -6829,7 +6829,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             followers_to_save.append(followers)
                             with open(insta_followers_file, 'w', encoding="utf-8") as f:
                                 json.dump(followers_to_save, f, indent=2)
-                                if DETAILED_FOLLOWER_LOGGING:
+                                if FOLLOWERS_CHURN_DETECTION:
                                     print(f"* Followers ({len(followers)}) saved to file '{insta_followers_file}'")
                                 else:
                                     print(f"* Followers ({followers_count}) actual ({len(followers)}) saved to file '{insta_followers_file}'")
@@ -7676,7 +7676,7 @@ def get_target_paths(user):
 
 def run_main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
-    global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, DETAILED_FOLLOWER_LOGGING, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA
+    global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME
 
     if "--generate-config" in sys.argv:
@@ -7927,11 +7927,11 @@ def run_main():
         help="Disable detection of changed profile picture"
     )
     opts.add_argument(
-        "--detailed-followers",
-        dest="detailed_follower_logging",
+        "--followers-churn",
+        dest="followers_churn",
         action="store_true",
         default=None,
-        help="Store detailed follower info (user_id, full_name, profile_pic_url) in JSON files"
+        help="Enable detailed follower and following monitoring (churn detection) by fetching full lists every check"
     )
     opts.add_argument(
         "-b", "--csv-file",
@@ -8231,8 +8231,8 @@ def run_main():
     if args.verbose_mode is True:
         VERBOSE_MODE = True
 
-    if args.detailed_follower_logging is True:
-        DETAILED_FOLLOWER_LOGGING = True
+    if args.followers_churn is True:
+        FOLLOWERS_CHURN_DETECTION = True
 
     # Webhook configuration
     if args.webhook_url:
@@ -8550,7 +8550,7 @@ def run_main():
     print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
     print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
     print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
-    print(f"* Detailed follower logging:\t\t{DETAILED_FOLLOWER_LOGGING}")
+    print(f"* Follower churn detection:\t\t{FOLLOWERS_CHURN_DETECTION}")
     print(f"* Browser user agent:\t\t\t{USER_AGENT}")
     print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
     print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")

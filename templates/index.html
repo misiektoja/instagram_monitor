@@ -1305,11 +1305,11 @@
                     </div>
                     <div class="setting-row" style="padding: 8px 0;">
                         <div class="setting-info">
-                            <h4>Detailed Follower Logging</h4>
-                            <p>Log all follower IDs periodically</p>
+                            <h4>Follower Churn Detection</h4>
+                            <p>Detect additions/removals even if count is same</p>
                         </div>
                         <label class="toggle-switch">
-                            <input type="checkbox" id="detailed-logging">
+                            <input type="checkbox" id="followers-churn">
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
@@ -1791,7 +1791,7 @@
                 { l: 'Skip Stories Details', v: config.skip_stories },
                 { l: 'Skip Posts Details', v: config.skip_posts },
                 { l: 'Get More Posts Details', v: config.get_more_post_details },
-                { l: 'Detailed Follower Logging', v: config.detailed_logging },
+                { l: 'Follower Churn Detection', v: config.followers_churn },
                 { l: 'Jitter/Back-off', v: config.enable_jitter },
                 { l: 'Liveness', v: config.liveness_check },
                 { l: 'Profile Pic Detect', v: config.profile_pic_changes },
@@ -2041,7 +2041,7 @@
             document.getElementById('get-more-post-details').checked = s.get_more_post_details || false;
 
             document.getElementById('logging-enabled').checked = s.logging_enabled || false;
-            document.getElementById('detailed-logging').checked = s.detailed_logging || false;
+            document.getElementById('followers-churn').checked = s.followers_churn || false;
             document.getElementById('csv-filename').value = s.csv_file || '';
             document.getElementById('verbose-mode').checked = s.verbose_mode || false;
             document.getElementById('debug-mode').checked = s.debug_mode || false;
@@ -2239,7 +2239,7 @@
                 get_more_post_details: document.getElementById('get-more-post-details').checked,
 
                 logging_enabled: document.getElementById('logging-enabled').checked,
-                detailed_logging: document.getElementById('detailed-logging').checked,
+                followers_churn: document.getElementById('followers-churn').checked,
                 csv_filename: document.getElementById('csv-filename').value,
                 verbose_mode: document.getElementById('verbose-mode').checked,
                 debug_mode: document.getElementById('debug-mode').checked,
