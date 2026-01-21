@@ -23,6 +23,7 @@
 - **Monitor multiple users** in a single process with automatic request staggering to avoid detection
 - Various mechanisms to **prevent captcha and detection of automated tools**, including **Be Human mode** (simulates random user actions), **Jitter mode** (adds human-like delays and back-off to HTTP requests) and **hour-range checking** (limits fetching updates to specific hours of the day)
 - **Flexible configuration** - support for config files, dotenv files, environment variables and command-line arguments
+- **Configurable color themes** - customizable terminal output colors and styles
 - Possibility to **control the running copy** of the script via signals
 - **Functional, procedural Python** (minimal OOP)
 
@@ -673,8 +674,8 @@ If a change is detected, the old picture is moved to `instagram_<username>_profi
 The tool also has built-in detection of empty profile pictures. Instagram does not indicate an empty user's profile image in their API; that's why the tool detects it by using an empty profile image template (which appears to be identical on a binary level for all users).
 
 To enable this:
-- download the [instagram_profile_pic_empty.jpg](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_profile_pic_empty.jpg) file
-- place it in the directory where you run the tool (or change the path via `PROFILE_PIC_FILE_EMPTY` configuration option)
+- download the [instagram_profile_pic_empty.jpg](https://raw.githubusercontent.com/misiektoja/instagram_profile_pic_empty.jpg) file
+- place it in the directory where you run the tool. **Note**: If installed via `pip`, this file is already bundled; however, any local file in your working directory will take **priority** over the bundled default.
 
 Without this file, the tool will treat an empty profile picture as a regular image. For example, if a user removes their profile picture, it would be treated as a change rather than a removal.
 
@@ -742,13 +743,13 @@ As Windows supports limited number of signals, this functionality is available o
 <a id="coloring-log-output-with-grc"></a>
 ### Coloring Log Output with GRC
 
-You can use [GRC](https://github.com/garabik/grc) to color logs.
+The tool has native **color output** support for terminal since v2.1 (see `COLORED_OUTPUT` and `COLOR_THEME` config options), but you can also use [GRC](https://github.com/garabik/grc) to color logs.
 
 Add to your GRC config (`~/.grc/grc.conf`):
 
 ```
 # monitoring log file
-.*_monitor_.*\.log
+.*_monitor.*\.log
 conf.monitor_logs
 ```
 
