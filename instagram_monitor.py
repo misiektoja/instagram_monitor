@@ -5909,18 +5909,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"* Error: {e}")
 
     if ((followers_count != followers_old_count) or (followers_count > 0 and not followers) or DETAILED_FOLLOWER_LOGGING) and not skip_session and not skip_followers and can_view:
-        # Fetch followers if count changed, list is empty, or detailed logging is enabled
-        if DETAILED_FOLLOWER_LOGGING:
-            message = "Detailed follower logging: fetching followers..."
-            if followers_count > 5000:
-                warning = f"High follower count ({followers_count})! This may increase rate limit risk with detailed logging."
-                log_activity(warning, user=user, level='system')
-                print(f"* Warning: {warning}")
-            if DEBUG_MODE:
-                debug_print(message)
-            else:
-                print("* " + message)
-                print_cur_ts("\nTimestamp:\t\t\t\t")
+        # Fetch followers if count changed, list is empty or detailed logging is enabled
+        if DETAILED_FOLLOWER_LOGGING and followers_count > 5000:
+            warning = f"High follower count ({followers_count})! This may increase rate limit risk with detailed logging."
+            log_activity(warning, user=user, level='system')
+            print(f"* Warning: {warning}")
         followers_followings_fetched = True
 
         try:
@@ -5999,18 +5992,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print(f"* Error: {e}")
 
     if ((followings_count != followings_old_count) or (followings_count > 0 and not followings) or DETAILED_FOLLOWER_LOGGING) and not skip_session and not skip_followings and can_view:
-        # Fetch followings if count changed, list is empty, or detailed logging is enabled
-        if DETAILED_FOLLOWER_LOGGING:
-            message = "Detailed followings logging: fetching followings..."
-            if followings_count > 5000:
-                warning = f"High following count ({followings_count})! This may increase rate limit risk with detailed logging."
-                log_activity(warning, user=user, level='system')
-                print(f"* Warning: {warning}")
-            if DEBUG_MODE:
-                debug_print(message)
-            else:
-                print("* " + message)
-                print_cur_ts("\nTimestamp:\t\t\t\t")
+        # Fetch followings if count changed, list is empty or detailed logging is enabled
+        if DETAILED_FOLLOWER_LOGGING and followings_count > 5000:
+            warning = f"High following count ({followings_count})! This may increase rate limit risk with detailed logging."
+            log_activity(warning, user=user, level='system')
+            print(f"* Warning: {warning}")
         followers_followings_fetched = True
 
         try:
