@@ -7888,6 +7888,13 @@ def run_main():
         help="Do not fetch followings list"
     )
     session_opts.add_argument(
+        "--followers-churn",
+        dest="followers_churn",
+        action="store_true",
+        default=None,
+        help="Enable detailed follower and following monitoring (churn detection) by fetching full lists every check"
+    )
+    session_opts.add_argument(
         "-r", "--skip-story-details",
         dest="skip_getting_story_details",
         action="store_true",
@@ -7945,13 +7952,6 @@ def run_main():
         action="store_false",
         default=None,
         help="Disable detection of changed profile picture"
-    )
-    opts.add_argument(
-        "--followers-churn",
-        dest="followers_churn",
-        action="store_true",
-        default=None,
-        help="Enable detailed follower and following monitoring (churn detection) by fetching full lists every check"
     )
     opts.add_argument(
         "-b", "--csv-file",
