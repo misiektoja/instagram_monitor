@@ -56,7 +56,7 @@
    * [Monitoring Mode](#monitoring-mode)
    * [Email Notifications](#email-notifications)
    * [Webhook Notifications](#webhook-notifications)
-   * [Detailed Follower Logging](#detailed-follower-logging)
+   * [Follower Churn Detection](#follower-churn-detection)
    * [CSV Export](#csv-export)
    * [Output Directory](#output-directory)
    * [Detection of Changed Profile Pictures](#detection-of-changed-profile-pictures)
@@ -570,21 +570,21 @@ WEBHOOK_FOLLOWERS_NOTIFICATION = False
 WEBHOOK_ERROR_NOTIFICATION = False
 ```
 
-<a id="detailed-follower-logging"></a>
-### Detailed Follower Logging
+<a id="follower-churn-detection"></a>
+### Follower Churn Detection
 
 When enabled, the tool fetches the full list of followers and followings on **every check** (not just when counts change) and compares usernames to detect changes. This is useful for scenarios where:
 
 - Someone unfollows and someone else follows at the same time (count stays the same)
 - You want to track exactly who followed/unfollowed even without count changes
-- You need comprehensive logging of all follower/following activity
+- You need comprehensive monitoring of all follower/following activity
 
-To enable detailed follower logging:
-- set `DETAILED_FOLLOWER_LOGGING` to `True`
-- or use the `--detailed-followers` flag
+To enable follower churn detection:
+- set `FOLLOWERS_CHURN_DETECTION` to `True`
+- or use the `--followers-churn` flag
 
 ```sh
-instagram_monitor <target_insta_user> --detailed-followers
+instagram_monitor <target_insta_user> --followers-churn
 ```
 
 **Note**: This feature requires [Session Mode 2](#session-mode-2-with-logged-in-instagram-account-session-login) (session login) to access the Instagram API. It will increase API calls since it fetches the full follower/following lists every check interval.
