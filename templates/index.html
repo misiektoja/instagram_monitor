@@ -1199,6 +1199,63 @@
                     </div>
                 </div>
 
+                <!-- Fetch Hours Range Card -->
+                <div class="card">
+                    <div class="card-title">Fetch Hours Range</div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Limit fetching to specific hours</h4>
+                            <p>Only fetch updates within the defined ranges</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="check-posts-in-hours-range">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <div style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h5 style="margin: 0; color: #888;">Range 1</h5>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="h1-enabled">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-row" id="h1-inputs">
+                            <div class="form-group">
+                                <label class="form-label">Min Hour (0-23)</label>
+                                <input type="number" class="form-input" id="min-h1" min="0" max="23">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Max Hour (0-23)</label>
+                                <input type="number" class="form-input" id="max-h1" min="0" max="23">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h5 style="margin: 0; color: #888;">Range 2</h5>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="h2-enabled">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-row" id="h2-inputs">
+                            <div class="form-group">
+                                <label class="form-label">Min Hour (0-23)</label>
+                                <input type="number" class="form-input" id="min-h2" min="0" max="23">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Max Hour (0-23)</label>
+                                <input type="number" class="form-input" id="max-h2" min="0" max="23">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- SMTP Settings Card -->
                 <div class="card">
                     <div class="card-title">SMTP Settings</div>
@@ -1323,6 +1380,15 @@
                         </div>
                         <label class="toggle-switch">
                             <input type="checkbox" id="verbose-mode">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Hours Verbose</h4>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="hours-verbose">
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
@@ -1792,6 +1858,8 @@
                 { l: 'Skip Posts Details', v: config.skip_posts },
                 { l: 'Get More Posts Details', v: config.get_more_post_details },
                 { l: 'Follower Churn Detection', v: config.followers_churn },
+                { l: 'Hours Range', v: config.hours_range },
+                { l: 'Hours Verbose', v: config.hours_verbose },
                 { l: 'Jitter/Back-off', v: config.enable_jitter },
                 { l: 'Liveness', v: config.liveness_check },
                 { l: 'Profile Pic Detect', v: config.profile_pic_changes },
@@ -2044,7 +2112,17 @@
             document.getElementById('followers-churn').checked = s.followers_churn || false;
             document.getElementById('csv-filename').value = s.csv_file || '';
             document.getElementById('verbose-mode').checked = s.verbose_mode || false;
+            document.getElementById('hours-verbose').checked = s.hours_verbose || false;
             document.getElementById('debug-mode').checked = s.debug_mode || false;
+
+            document.getElementById('check-posts-in-hours-range').checked = s.check_posts_in_hours_range || false;
+            document.getElementById('min-h1').value = s.min_h1 !== undefined ? s.min_h1 : 0;
+            document.getElementById('max-h1').value = s.max_h1 !== undefined ? s.max_h1 : 0;
+            document.getElementById('min-h2').value = s.min_h2 !== undefined ? s.min_h2 : 0;
+            document.getElementById('max-h2').value = s.max_h2 !== undefined ? s.max_h2 : 0;
+
+            document.getElementById('h1-enabled').checked = (s.min_h1 !== 0 || s.max_h1 !== 0);
+            document.getElementById('h2-enabled').checked = (s.min_h2 !== 0 || s.max_h2 !== 0);
 
             if (s.session_username) {
                 const sessionUser = document.getElementById('session-username');
@@ -2242,7 +2320,14 @@
                 followers_churn: document.getElementById('followers-churn').checked,
                 csv_filename: document.getElementById('csv-filename').value,
                 verbose_mode: document.getElementById('verbose-mode').checked,
+                hours_verbose: document.getElementById('hours-verbose').checked,
                 debug_mode: document.getElementById('debug-mode').checked,
+
+                check_posts_in_hours_range: document.getElementById('check-posts-in-hours-range').checked,
+                min_h1: document.getElementById('h1-enabled').checked ? parseInt(document.getElementById('min-h1').value) : 0,
+                max_h1: document.getElementById('h1-enabled').checked ? parseInt(document.getElementById('max-h1').value) : 0,
+                min_h2: document.getElementById('h2-enabled').checked ? parseInt(document.getElementById('min-h2').value) : 0,
+                max_h2: document.getElementById('h2-enabled').checked ? parseInt(document.getElementById('max-h2').value) : 0,
 
                 smtp_host: document.getElementById('smtp-host').value,
                 smtp_port: parseInt(document.getElementById('smtp-port').value) || 0,

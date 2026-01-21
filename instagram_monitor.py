@@ -1151,14 +1151,14 @@ def create_web_dashboard_app():
     def api_settings():  # type: ignore[return]
         global INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
         global STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_URL
-        global FOLLOWERS_CHURN_DETECTION, DEBUG_MODE, SESSION_USERNAME
+        global FOLLOWERS_CHURN_DETECTION, DEBUG_MODE, SESSION_USERNAME, VERBOSE_MODE
         global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SSL, SENDER_EMAIL, RECEIVER_EMAIL
         global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS
         global ENABLE_JITTER, DETECT_CHANGED_PROFILE_PIC, SKIP_SESSION, CLI_CONFIG_PATH
         global DOTENV_FILE, WEB_DASHBOARD_TEMPLATE_DIR, LOCAL_TIMEZONE, OUTPUT_DIR, CSV_FILE
-        global VERBOSE_MODE, BE_HUMAN, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, LIVENESS_CHECK_INTERVAL
+        global BE_HUMAN, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, LIVENESS_CHECK_INTERVAL
         global WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
-        global DISABLE_LOGGING
+        global DISABLE_LOGGING, CHECK_POSTS_IN_HOURS_RANGE, HOURS_VERBOSE, MIN_H1, MAX_H1, MIN_H2, MAX_H2
 
         if flask_request.method == 'GET':  # type: ignore
             return jsonify({  # type: ignore
@@ -1201,7 +1201,13 @@ def create_web_dashboard_app():
                 'smtp_ssl': SMTP_SSL,
                 'sender_email': SENDER_EMAIL,
                 'receiver_email': RECEIVER_EMAIL,
-                'smtp_password_set': bool(SMTP_PASSWORD and SMTP_PASSWORD != "your_smtp_password")
+                'smtp_password_set': bool(SMTP_PASSWORD and SMTP_PASSWORD != "your_smtp_password"),
+                'check_posts_in_hours_range': CHECK_POSTS_IN_HOURS_RANGE,
+                'hours_verbose': HOURS_VERBOSE,
+                'min_h1': MIN_H1,
+                'max_h1': MAX_H1,
+                'min_h2': MIN_H2,
+                'max_h2': MAX_H2
             })
         elif flask_request.method == 'POST':  # type: ignore
             data = flask_request.get_json()  # type: ignore
@@ -1261,6 +1267,12 @@ def create_web_dashboard_app():
             SKIP_SESSION = bool(update_setting('skip_session_login', SKIP_SESSION, data.get('skip_session_login'), bool))
             LIVENESS_CHECK_INTERVAL = int(update_setting('liveness_check_interval', LIVENESS_CHECK_INTERVAL, data.get('liveness_check_interval'), int))
             DISABLE_LOGGING = not bool(update_setting('logging_enabled', not DISABLE_LOGGING, data.get('logging_enabled'), bool))
+            CHECK_POSTS_IN_HOURS_RANGE = bool(update_setting('check_posts_in_hours_range', CHECK_POSTS_IN_HOURS_RANGE, data.get('check_posts_in_hours_range'), bool))
+            HOURS_VERBOSE = bool(update_setting('hours_verbose', HOURS_VERBOSE, data.get('hours_verbose'), bool))
+            MIN_H1 = int(update_setting('min_h1', MIN_H1, data.get('min_h1'), int))
+            MAX_H1 = int(update_setting('max_h1', MAX_H1, data.get('max_h1'), int))
+            MIN_H2 = int(update_setting('min_h2', MIN_H2, data.get('min_h2'), int))
+            MAX_H2 = int(update_setting('max_h2', MAX_H2, data.get('max_h2'), int))
 
             SMTP_HOST = str(update_setting('smtp_host', SMTP_HOST, data.get('smtp_host'), str))
             SMTP_PORT = int(update_setting('smtp_port', SMTP_PORT, data.get('smtp_port'), int))
@@ -5256,6 +5268,7 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'followers_churn': FOLLOWERS_CHURN_DETECTION,
         'verbose_mode': VERBOSE_MODE,
         'debug_mode': DEBUG_MODE,
+        'hours_verbose': HOURS_VERBOSE,
         'hours_range': hours_ranges_str,
         'user_agent': USER_AGENT,
         'user_agent_mobile': USER_AGENT_MOBILE,
