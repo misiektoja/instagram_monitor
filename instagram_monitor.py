@@ -2750,7 +2750,10 @@ def validate_webhook_url(url):
 
 # Helper function to compare follower/following lists and log changes
 def show_follow_info(followers_reported: int, followers_actual: int, followings_reported: int, followings_actual: int) -> None:
-    print(f"* Followers: reported ({followers_reported}) actual ({followers_actual}). Followings: reported ({followings_reported}) actual ({followings_actual})")
+    if VERBOSE_MODE:
+        print(f"* Followers: reported ({followers_reported}) actual ({followers_actual}). Followings: reported ({followings_reported}) actual ({followings_actual})")
+    elif DEBUG_MODE:
+        debug_print(f"* Followers: reported ({followers_reported}) actual ({followers_actual}). Followings: reported ({followings_reported}) actual ({followings_actual})")
 
 
 def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_file_name):
@@ -5821,8 +5824,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         if not skip_session and can_view:
             print(f"Reels:\t\t\t\t\t{reels_count}")
 
-        print(f"\nFollowers:\t\t\t\t{followers_count}")
-        print(f"Followings:\t\t\t\t{followings_count}")
+        if DETAILED_FOLLOWER_LOGGING:
+            print(f"\nFollowers:\t\t\t\t- (to be determined later)")
+            print(f"Followings:\t\t\t\t- (to be determined later)")
+        else:
+            print(f"\nFollowers:\t\t\t\t{followers_count}")
+            print(f"Followings:\t\t\t\t{followings_count}")
 
         if bot.context.is_logged_in:
             print(f"\nStory available:\t\t\t{has_story}")
@@ -5832,8 +5839,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     # Populate initial Dashboard data immediately after first fetch (regardless of print mode)
     target_data_unified = {
-        'followers': followers_count,
-        'following': followings_count,
+        'followers': None if DETAILED_FOLLOWER_LOGGING else followers_count,
+        'following': None if DETAILED_FOLLOWER_LOGGING else followings_count,
         'posts': posts_count,
         'reels': reels_count,
         'has_story': has_story,
@@ -5888,8 +5895,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file)), pytz.timezone(LOCAL_TIMEZONE))
             update_ui_data(targets={user: {'status': 'Loading Followers'}})
 
-            print(f"* Followers ({followers_old_count}) actual ({len(followers_old)}) loaded from file '{insta_followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
-            log_activity(f"Followers loaded from file: {len(followers_old)}", user=user)
+            if DETAILED_FOLLOWER_LOGGING:
+                print(f"* Followers ({len(followers_old)}) loaded from file '{insta_followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
+                log_activity(f"Followers loaded from file: {len(followers_old)}", user=user)
+            else:
+                print(f"* Followers ({followers_old_count}) actual ({len(followers_old)}) loaded from file '{insta_followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
+                log_activity(f"Followers ({followers_old_count}) actual ({len(followers_old)}) loaded from file", user=user)
+
             followers_followings_fetched = True
 
     if followers_count != followers_old_count:
@@ -5918,14 +5930,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         try:
             update_ui_data(targets={user: {'status': 'Downloading Followers'}})
-            log_activity(f"Started downloading followers ({followers_count})", user=user)
+            log_activity(f"Started downloading followers", user=user)
             setup_pbar(total_expected=followers_count, title="* Downloading Followers")
             start_time_dl = time.time()
             followers = [follower.username for follower in profile.get_followers()]
             end_time_dl = time.time()
             close_pbar()
             duration_dl = end_time_dl - start_time_dl
-            log_activity(f"Finished downloading followers: {len(followers)} fetched in {display_time(duration_dl)}", user=user)
+            log_activity(f"Finished downloading followers: {len(followers)}, fetched in {display_time(duration_dl)}", user=user)
             followers_count = profile.followers
         except Exception as e:
             close_pbar()
@@ -5947,7 +5959,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 os.makedirs(os.path.dirname(os.path.abspath(insta_followers_file)), exist_ok=True)
                 with open(insta_followers_file, 'w', encoding="utf-8") as f:
                     json.dump(followers_to_save, f, indent=2)
-                    print(f"* Followers ({followers_count}) actual ({len(followers)}) saved to file '{insta_followers_file}'")
+                    if DETAILED_FOLLOWER_LOGGING:
+                        print(f"* Followers ({len(followers)}) saved to file '{insta_followers_file}'")
+                    else:
+                        print(f"* Followers ({followers_count}) actual ({len(followers)}) saved to file '{insta_followers_file}'")
             except Exception as e:
                 print(f"* Cannot save list of followers to '{insta_followers_file}' file: {e}")
 
@@ -5972,8 +5987,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file)), pytz.timezone(LOCAL_TIMEZONE))
             update_ui_data(targets={user: {'status': 'Loading Followings'}})
 
-            print(f"\n* Followings ({followings_old_count}) actual ({len(followings_old)}) loaded from file '{insta_followings_file}' ({get_short_date_from_ts(following_mdate, show_weekday=False, always_show_year=True)})")
-            log_activity(f"Followings loaded from file: {len(followings_old)}", user=user)
+            if DETAILED_FOLLOWER_LOGGING:
+                print(f"\n* Followings ({len(followings_old)}) loaded from file '{insta_followings_file}' ({get_short_date_from_ts(following_mdate, show_weekday=False, always_show_year=True)})")
+                log_activity(f"Followings loaded from file: {len(followings_old)}", user=user)
+            else:
+                print(f"\n* Followings ({followings_old_count}) actual ({len(followings_old)}) loaded from file '{insta_followings_file}' ({get_short_date_from_ts(following_mdate, show_weekday=False, always_show_year=True)})")
+                log_activity(f"Followings ({followings_old_count}) actual ({len(followings_old)}) loaded from file", user=user)
+
             followers_followings_fetched = True
 
     if followings_count != followings_old_count:
@@ -6001,14 +6021,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         try:
             update_ui_data(targets={user: {'status': 'Downloading Followings'}})
-            log_activity(f"Started downloading followings ({followings_count})", user=user)
+            log_activity(f"Started downloading followings", user=user)
             setup_pbar(total_expected=followings_count, title="* Downloading Followings")
             start_time_dl = time.time()
             followings = [followee.username for followee in profile.get_followees()]
             end_time_dl = time.time()
             close_pbar()
             duration_dl = end_time_dl - start_time_dl
-            log_activity(f"Finished downloading followings: {len(followings)} fetched in {display_time(duration_dl)}", user=user)
+            log_activity(f"Finished downloading followings: {len(followings)}, fetched in {display_time(duration_dl)}", user=user)
             followings_count = profile.followees
         except Exception as e:
             close_pbar()
@@ -6030,7 +6050,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 os.makedirs(os.path.dirname(os.path.abspath(insta_followings_file)), exist_ok=True)
                 with open(insta_followings_file, 'w', encoding="utf-8") as f:
                     json.dump(followings_to_save, f, indent=2)
-                    print(f"* Followings ({followings_count}) actual ({len(followings)}) saved to file '{insta_followings_file}'")
+                    if DETAILED_FOLLOWER_LOGGING:
+                        print(f"* Followings ({len(followings)}) saved to file '{insta_followings_file}'")
+                    else:
+                        print(f"* Followings ({followings_count}) actual ({len(followings)}) saved to file '{insta_followings_file}'")
             except Exception as e:
                 print(f"* Cannot save list of followings to '{insta_followings_file}' file: {e}")
 
@@ -6055,6 +6078,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     if followers_followings_fetched:
         print_cur_ts("\nTimestamp:\t\t\t\t")
+        # Update dashboard with actual counts after download in detailed logging mode
+        if DETAILED_FOLLOWER_LOGGING:
+            update_ui_data(targets={user: {'followers': len(followers) if followers else followers_count, 'following': len(followings) if followings else followings_count}})
 
     # Profile pic
 
@@ -6730,13 +6756,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     followings_diff_str = "+" + str(followings_diff)
                 else:
                     followings_diff_str = str(followings_diff)
-                print(f"* Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})")
-                log_activity(f"Followings changed: {followings_old_count} -> {followings_count}", user=user)
-                try:
-                    if csv_file_name:
-                        write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
-                except Exception as e:
-                    print(f"* Error: {e}")
+
+                if followings_count != followings_old_count:
+                    print(f"* Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})")
+                    log_activity(f"Followings changed: {followings_old_count} -> {followings_count}", user=user)
+                    try:
+                        if csv_file_name:
+                            write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
+                    except Exception as e:
+                        print(f"* Error: {e}")
 
                 added_followings_list = ""
                 removed_followings_list = ""
@@ -6747,7 +6775,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 if not skip_session and not skip_followings and can_view:
                     try:
-                        log_activity(f"Started downloading followings ({followings_count})", user=user)
+                        log_activity(f"Started downloading followings", user=user)
                         setup_pbar(total_expected=followings_count, title="* Downloading Followings")
                         start_time_dl = time.time()
                         followings = []
@@ -6756,12 +6784,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         end_time_dl = time.time()
                         close_pbar()
                         duration_dl = end_time_dl - start_time_dl
-                        log_activity(f"Finished downloading followings: {len(followings)} fetched in {display_time(duration_dl)}", user=user)
+                        log_activity(f"Finished downloading followings: {len(followings)}, fetched in {display_time(duration_dl)}", user=user)
                         # Refresh profile to get current reported counts for comparison
                         profile = instaloader.Profile.from_username(bot.context, user)
                         followings_count = profile.followees
                         followers_count_reported = profile.followers
-                        show_follow_info(followers_count_reported, len(followers), followings_count, len(followings))
+                        if not DETAILED_FOLLOWER_LOGGING:
+                            show_follow_info(followers_count_reported, len(followers), followings_count, len(followings))
                         if not followings and followings_count > 0:
                             print("* Empty followings list returned, not saved to file")
                         else:
@@ -6769,7 +6798,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             followings_to_save.append(followings)
                             with open(insta_followings_file, 'w', encoding="utf-8") as f:
                                 json.dump(followings_to_save, f, indent=2)
-                                print(f"* Followings ({followings_count}) actual ({len(followings)}) saved to file '{insta_followings_file}'")
+                                if DETAILED_FOLLOWER_LOGGING:
+                                    print(f"* Followings ({len(followings)}) saved to file '{insta_followings_file}'")
+                                else:
+                                    print(f"* Followings ({followings_count}) actual ({len(followings)}) saved to file '{insta_followings_file}'")
                     except Exception as e:
                         close_pbar()
                         followings = followings_old
@@ -6779,6 +6811,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     if not followings and followings_count > 0:
                         followings = followings_old
                     else:
+                        if followings_count == followings_old_count and (added_followings_list or removed_followings_list):
+                            print(f"* Followings list changed for user {user} (count: {followings_count})")
+                            log_activity(f"Followings list changed: count remained same ({followings_count})", user=user)
+
                         added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
                             user, "followings", followings_old, followings, csv_file_name
                         )
@@ -6786,17 +6822,26 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         followings_old = followings
 
                 if STATUS_NOTIFICATION and (followings_count != followings_old_count or added_followings_list or removed_followings_list):
-                    m_subject = f"Instagram user {user} followings number has changed! ({followings_diff_str}, {followings_old_count} -> {followings_count})"
+                    if followings_count != followings_old_count:
+                        m_subject = f"Instagram user {user} followings number has changed! ({followings_diff_str}, {followings_old_count} -> {followings_count})"
+                    else:
+                        m_subject = f"Instagram user {user} followings list has changed! (count: {followings_count})"
 
                     if not skip_session and not skip_followings and can_view:
-
-                        m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                        if followings_count != followings_old_count:
+                            m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                        else:
+                            m_body = f"Followings list changed for user {user} (count: {followings_count})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                     else:
-
                         m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+
                     print(f"* Sending email notification to {RECEIVER_EMAIL}")
                     if not skip_session and not skip_followings and can_view:
-                        m_body_html_parts = [f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})"]
+                        if followings_count != followings_old_count:
+                            m_body_html_parts = [f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})"]
+                        else:
+                            m_body_html_parts = [f"Followings list changed for user <b>{user}</b> (count: <b>{followings_count}</b>)"]
+
                         if removed_followings_list_html:
                             m_body_html_parts.append(f"<br><br><b>{removed_followings_mbody.strip()}</b><br>{removed_followings_list_html.strip().replace(chr(10), '<br>')}")
                         if added_followings_list_html:
@@ -6832,14 +6877,16 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     followers_diff_str = "+" + str(followers_diff)
                 else:
                     followers_diff_str = str(followers_diff)
-                print(f"* Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})")
-                log_activity(f"Followers changed: {followers_old_count} -> {followers_count}", user=user, level='update')
 
-                try:
-                    if csv_file_name:
-                        write_csv_entry(csv_file_name, now_local_naive(), "Followers Count", followers_old_count, followers_count)
-                except Exception as e:
-                    print(f"* Error: {e}")
+                if followers_count != followers_old_count:
+                    print(f"* Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})")
+                    log_activity(f"Followers changed: {followers_old_count} -> {followers_count}", user=user, level='update')
+
+                    try:
+                        if csv_file_name:
+                            write_csv_entry(csv_file_name, now_local_naive(), "Followers Count", followers_old_count, followers_count)
+                    except Exception as e:
+                        print(f"* Error: {e}")
 
                 added_followers_list = ""
                 removed_followers_list = ""
@@ -6850,7 +6897,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 if not skip_session and not skip_followers and can_view:
                     try:
-                        log_activity(f"Started downloading followers ({followers_count})", user=user)
+                        log_activity(f"Started downloading followers", user=user)
                         setup_pbar(total_expected=followers_count, title="* Downloading Followers")
                         start_time_dl = time.time()
                         followers = []
@@ -6859,12 +6906,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         end_time_dl = time.time()
                         close_pbar()
                         duration_dl = end_time_dl - start_time_dl
-                        log_activity(f"Finished downloading followers: {len(followers)} fetched in {display_time(duration_dl)}", user=user)
+                        log_activity(f"Finished downloading followers: {len(followers)}, fetched in {display_time(duration_dl)}", user=user)
                         # Refresh profile to get current reported counts for comparison
                         profile = instaloader.Profile.from_username(bot.context, user)
                         followers_count = profile.followers
                         followings_count_reported = profile.followees
-                        show_follow_info(followers_count, len(followers), followings_count_reported, len(followings))
+                        if not DETAILED_FOLLOWER_LOGGING:
+                            show_follow_info(followers_count, len(followers), followings_count_reported, len(followings))
                         if not followers and followers_count > 0:
                             print("* Empty followers list returned, not saved to file")
                         else:
@@ -6872,7 +6920,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             followers_to_save.append(followers)
                             with open(insta_followers_file, 'w', encoding="utf-8") as f:
                                 json.dump(followers_to_save, f, indent=2)
-                                print(f"* Followers ({followers_count}) actual ({len(followers)}) saved to file '{insta_followers_file}'")
+                                if DETAILED_FOLLOWER_LOGGING:
+                                    print(f"* Followers ({len(followers)}) saved to file '{insta_followers_file}'")
+                                else:
+                                    print(f"* Followers ({followers_count}) actual ({len(followers)}) saved to file '{insta_followers_file}'")
                     except Exception as e:
                         close_pbar()
                         followers = followers_old
@@ -6882,6 +6933,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     if not followers and followers_count > 0:
                         followers = followers_old
                     else:
+                        if followers_count == followers_old_count and (added_followers_list or removed_followers_list):
+                            print(f"* Followers list changed for user {user} (count: {followers_count})")
+                            log_activity(f"Followers list changed: count remained same ({followers_count})", user=user)
+
                         added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
                             user, "followers", followers_old, followers, csv_file_name
                         )
@@ -6889,15 +6944,26 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         followers_old = followers
 
                 if STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION and (followers_count != followers_old_count or added_followers_list or removed_followers_list):
-                    m_subject = f"Instagram user {user} followers number has changed! ({followers_diff_str}, {followers_old_count} -> {followers_count})"
+                    if followers_count != followers_old_count:
+                        m_subject = f"Instagram user {user} followers number has changed! ({followers_diff_str}, {followers_old_count} -> {followers_count})"
+                    else:
+                        m_subject = f"Instagram user {user} followers list has changed! (count: {followers_count})"
 
                     if not skip_session and not skip_followers and can_view:
-                        m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                        if followers_count != followers_old_count:
+                            m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                        else:
+                            m_body = f"Followers list changed for user {user} (count: {followers_count})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                     else:
                         m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+
                     print(f"* Sending email notification to {RECEIVER_EMAIL}")
                     if not skip_session and not skip_followers and can_view:
-                        m_body_html_parts = [f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})"]
+                        if followers_count != followers_old_count:
+                            m_body_html_parts = [f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})"]
+                        else:
+                            m_body_html_parts = [f"Followers list changed for user <b>{user}</b> (count: <b>{followers_count}</b>)"]
+
                         if removed_followers_list_html:
                             m_body_html_parts.append(f"<br><br><b>{removed_followers_mbody.strip()}</b><br>{removed_followers_list_html.strip().replace(chr(10), '<br>')}")
                         if added_followers_list_html:
