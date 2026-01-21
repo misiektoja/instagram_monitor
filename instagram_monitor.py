@@ -4637,7 +4637,7 @@ def generate_user_dashboard(target_data):
             # Fallback to url if post_url is not available
             last_fetched_text.append(f"URL: {url_value}", style="blue underline")
     else:
-        last_fetched_text.append("No posts/stories fetched yet.", style="dim italic")
+        last_fetched_text.append("No posts, reels or stories fetched yet.", style="dim italic")
 
     last_fetched_panel = Panel(last_fetched_text, title="Last Fetched", box=box.ROUNDED, border_style="green")
 
