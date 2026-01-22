@@ -92,6 +92,11 @@ RANDOM_SLEEP_DIFF_HIGH = 180  # +3 min (-j)
 # If set to 'Auto', the tool will try to detect your local time zone automatically (requires tzlocal)
 LOCAL_TIMEZONE = 'Auto'
 
+# Time format settings
+# Set to True to use 12-hour format (AM/PM) instead of default 24-hour format
+# Can be also toggled via Web Dashboard
+TIME_FORMAT_12H = True
+
 # Notify when the user's profile picture changes? (via console and email if STATUS_NOTIFICATION / -s is enabled).
 # If enabled, the current profile picture is saved as:
 #   - instagram_<username>_profile_pic.jpg (initial)
@@ -534,6 +539,7 @@ WEB_DASHBOARD_TEMPLATE_DIR = ""
 DASHBOARD_SHOW_CHECK_SECONDS = True
 THUMBNAILS_FORCED_BY_WEB = False
 FOLLOWERS_CHURN_DETECTION = False
+TIME_FORMAT_12H = False
 mode_of_the_tool = "Unknown"
 
 exec(CONFIG_BLOCK, globals())
@@ -983,7 +989,7 @@ def create_web_dashboard_app():
                     stat = os.stat(session_file)
                     data['file_size'] = stat.st_size
                     data['file_size_human'] = f"{stat.st_size / 1024:.2f} KB" if stat.st_size < 1024 * 1024 else f"{stat.st_size / (1024 * 1024):.2f} MB"
-                    data['last_modified'] = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                    data['last_modified'] = get_hour_min_from_ts(stat.st_mtime, show_seconds=True)
                     last_modified_dt = datetime.fromtimestamp(stat.st_mtime)
                     data['last_modified_relative'] = calculate_timespan(datetime.now(), last_modified_dt, show_seconds=False, granularity=2)
                 except (OSError, Exception):
@@ -1134,7 +1140,7 @@ def create_web_dashboard_app():
                     'following': None,
                     'posts': None,
                     'status': 'Pending',
-                    'added': datetime.now().strftime('%a %d %b %H:%M'),
+                    'added': get_short_date_from_ts(datetime.now(), show_year=False, show_seconds=False),
                     'last_checked': None
                 }
 
@@ -1212,13 +1218,14 @@ def create_web_dashboard_app():
         global BE_HUMAN, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, LIVENESS_CHECK_INTERVAL, SKIP_FOLLOW_CHANGES
         global WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
         global DISABLE_LOGGING, CHECK_POSTS_IN_HOURS_RANGE, HOURS_VERBOSE, MIN_H1, MAX_H1, MIN_H2, MAX_H2
-        global DASHBOARD_SHOW_CHECK_SECONDS
+        global DASHBOARD_SHOW_CHECK_SECONDS, TIME_FORMAT_12H
 
         if flask_request.method == 'GET':  # type: ignore
             return jsonify({  # type: ignore
                 'check_interval': INSTA_CHECK_INTERVAL,
                 'random_low': RANDOM_SLEEP_DIFF_LOW,
                 'random_high': RANDOM_SLEEP_DIFF_HIGH,
+                'time_format_12h': TIME_FORMAT_12H,
                 'email_notifications': STATUS_NOTIFICATION,
                 'follower_notifications': FOLLOWERS_NOTIFICATION,
                 'error_notifications': ERROR_NOTIFICATION,
@@ -1331,6 +1338,7 @@ def create_web_dashboard_app():
             MIN_H2 = int(update_setting('min_h2', MIN_H2, data.get('min_h2'), int))
             MAX_H2 = int(update_setting('max_h2', MAX_H2, data.get('max_h2'), int))
             DASHBOARD_SHOW_CHECK_SECONDS = bool(update_setting('dashboard_show_check_seconds', DASHBOARD_SHOW_CHECK_SECONDS, data.get('dashboard_show_check_seconds'), bool))
+            TIME_FORMAT_12H = bool(update_setting('time_format_12h', TIME_FORMAT_12H, data.get('time_format_12h'), bool))
 
             SMTP_HOST = str(update_setting('smtp_host', SMTP_HOST, data.get('smtp_host'), str))
             SMTP_PORT = int(update_setting('smtp_port', SMTP_PORT, data.get('smtp_port'), int))
@@ -1481,7 +1489,7 @@ def create_web_dashboard_app():
             if test_username:
                 with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                     WEB_DASHBOARD_DATA['session']['active'] = True
-                    WEB_DASHBOARD_DATA['session']['last_tested'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    WEB_DASHBOARD_DATA['session']['last_tested'] = get_hour_min_from_ts(datetime.now(), show_seconds=True)
 
                 msg = f"Session test successful for: {SESSION_USERNAME}"
                 log_activity(msg)
@@ -1542,7 +1550,7 @@ def create_web_dashboard_app():
                 if test_username:
                     with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                         WEB_DASHBOARD_DATA['session']['active'] = True
-                        WEB_DASHBOARD_DATA['session']['last_refreshed'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        WEB_DASHBOARD_DATA['session']['last_refreshed'] = get_hour_min_from_ts(datetime.now(), show_seconds=True)
 
                     msg = f"Session refreshed successfully for: {SESSION_USERNAME}"
                     log_activity(msg)
@@ -1559,7 +1567,7 @@ def create_web_dashboard_app():
                         L.save_session_to_file()
                         with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                             WEB_DASHBOARD_DATA['session']['active'] = True
-                            WEB_DASHBOARD_DATA['session']['last_refreshed'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            WEB_DASHBOARD_DATA['session']['last_refreshed'] = get_hour_min_from_ts(datetime.now(), show_seconds=True)
 
                         msg = f"Session re-authenticated and refreshed for: {SESSION_USERNAME}"
                         log_activity(msg)
@@ -1578,7 +1586,7 @@ def create_web_dashboard_app():
                     L.save_session_to_file()
                     with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                         WEB_DASHBOARD_DATA['session']['active'] = True
-                        WEB_DASHBOARD_DATA['session']['last_refreshed'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        WEB_DASHBOARD_DATA['session']['last_refreshed'] = get_hour_min_from_ts(datetime.now(), show_seconds=True)
                     log_activity(f"Session created and saved", user=SESSION_USERNAME, level='system')
                     print(f"* Session created and saved for: {SESSION_USERNAME}")
                     print_cur_ts("\nTimestamp:\t\t\t\t")
@@ -1825,7 +1833,8 @@ def start_all_monitoring():
                 planned = adjusted
                 delay = max(0, int((planned - now).total_seconds()))
         planned_actions.append((u, delay, planned))
-        print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
+        msg_time = planned.strftime('%I:%M:%S %p' if TIME_FORMAT_12H else '%H:%M:%S')
+        print(f"  - {u} @ ~{msg_time} (in {display_time(delay)})")
         # Pre-populate dashboards with the correct next check time
         update_check_times(next_time=planned, user=u, increment_count=False)
 
@@ -1839,7 +1848,8 @@ def start_all_monitoring():
         time.sleep(1.5)
         for idx, (u, delay, planned) in enumerate(planned_actions):
             # Activity log
-            msg = f"check planned @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})"
+            msg_time = planned.strftime('%I:%M:%S %p' if TIME_FORMAT_12H else '%H:%M:%S')
+            msg = f"check planned @ ~{msg_time} (in {display_time(delay)})"
             log_activity(msg, user=u)
 
             # Start monitoring
@@ -1882,7 +1892,8 @@ def recheck_all_targets():
         delay = base_delay + add_jitter
         planned = now + timedelta(seconds=delay)
         planned_actions.append((u, delay, planned))
-        print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
+        msg_time = planned.strftime('%I:%M:%S %p' if TIME_FORMAT_12H else '%H:%M:%S')
+        print(f"  - {u} @ ~{msg_time} (in {display_time(delay)})")
 
     print_cur_ts("\nTimestamp:\t\t\t\t")
 
@@ -1891,7 +1902,8 @@ def recheck_all_targets():
         time.sleep(1.5)
         for idx, (u, delay, planned) in enumerate(planned_actions):
             # Activity log
-            msg = f"Recheck planned @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})"
+            msg_time = planned.strftime('%I:%M:%S %p' if TIME_FORMAT_12H else '%H:%M:%S')
+            msg = f"Recheck planned @ ~{msg_time} (in {display_time(delay)})"
             log_activity(msg, user=u)
 
             def _single_rechecker(target_user, delay_s):
@@ -2067,7 +2079,7 @@ def log_activity(message, user=None, level='system', details=None, to_web=True):
     global DASHBOARD_DATA, WEB_DASHBOARD_DATA
 
     timestamp_full = datetime.now()
-    timestamp_str = timestamp_full.strftime("%H:%M:%S")
+    timestamp_str = get_hour_min_from_ts(timestamp_full, show_seconds=True)
 
     # Format message with user if provided
     display_message = f"[{user}] {message}" if user else message
@@ -2209,10 +2221,11 @@ _DIFF_COUNT_DOWN_RE = re.compile(r"(\(-\d+\))")
 _USER_TAG_RE = re.compile(r"((?:for|by|of|Session|Initial|Monitoring\s+Instagram)\s+user:?|Username:|Target:|Tracking:?|(?:Starting\s+)?check\s+#\d+\s+(?:completed\s+)?for|paused\s+for|resuming\s+for|Firefox\s+for:|User(?=\s+[\w._-]+\s+has))([\t ]+)([\w._-]+)", re.IGNORECASE)
 _STATUS_LINE_RE = re.compile(r"^(\*?\s*(?:STATUS|Status):\s+)(.*)$")
 _DURATION_RE = re.compile(r"(\d+\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?))", re.IGNORECASE)
-_LONG_DATE_RE = re.compile(r"\b(?:\w{3}\s+)?\d{1,2}\s+\w{3}(?:\s+\d{2,4})?[\s,]*\d{2}:\d{2}(:\d{2})?\b")
-_TIME_ONLY_RE = re.compile(r"(~?\d{2}:\d{2}(:\d{2})?)")
-_SHORT_RANGE_DATE_RE = re.compile(r"\(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\)")
-_DATE_RANGE_RE = re.compile(r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\b")
+_LONG_DATE_RE = re.compile(r"\b(?:\w{3}\s+)?\d{1,2}\s+\w{3}(?:\s+\d{2,4})?[\s,]*\d{2}:\d{2}(:\d{2})?(\s*[AP]M)?\b", re.IGNORECASE)
+_TIME_ONLY_RE = re.compile(r"(~?\d{2}:\d{2}(:\d{2})?(\s*[AP]M)?)", re.IGNORECASE)
+_SHORT_RANGE_DATE_RE = re.compile(r"\(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\)", re.IGNORECASE)
+_DATE_RANGE_RE = re.compile(r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
+_HOUR_RANGE_RE = re.compile(r"\b\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
 _URL_RE = re.compile(r"(https?://[^\s\]]+)")
 _ONLINE_WORD_RE = re.compile(r"(\b(?!stop\s+)(?:online|Yes)\b)", re.IGNORECASE)
 _OFFLINE_WORD_RE = re.compile(r"(\b(?:offline|No)\b)", re.IGNORECASE)
@@ -2393,14 +2406,15 @@ def _colorize_line(line):
     # Highlight durations
     line = _DURATION_RE.sub(lambda mo: colorize("duration", mo.group(0)), line)
 
+    # Highlight date ranges
+    line = _SHORT_RANGE_DATE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
+    line = _DATE_RANGE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
+    line = _HOUR_RANGE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
+
     # Highlight long date strings
     line = _LONG_DATE_RE.sub(lambda mo: colorize("date", mo.group(0)), line)
     # Highlight time-only strings (e.g. ~21:07:39)
     line = _TIME_ONLY_RE.sub(lambda mo: colorize("date", mo.group(0)), line)
-    # Highlight short date ranges in parentheses
-    line = _SHORT_RANGE_DATE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
-    # Highlight date ranges without year
-    line = _DATE_RANGE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
 
     # Highlight URLs / links
     line = _URL_RE.sub(lambda mo: colorize("link", mo.group(0)), line)
@@ -3023,7 +3037,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
 # Debug print helper - only prints if DEBUG_MODE is enabled
 def debug_print(message):
     if DEBUG_MODE:
-        timestamp = now_local_naive().strftime("%H:%M:%S")
+        timestamp = get_hour_min_from_ts(now_local_naive(), show_seconds=True)
         user = getattr(_thread_local, 'user', None)
         user_prefix = f" [{user}]" if user else ""
 
@@ -3128,7 +3142,8 @@ def convert_utc_str_to_tz_datetime(dt_str):
 
 # Returns the current date/time in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
-    return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]} {now_local_naive().strftime("%d %b %Y, %H:%M:%S")}')
+    fmt = "%d %b %Y, %I:%M:%S %p" if TIME_FORMAT_12H else "%d %b %Y, %H:%M:%S"
+    return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]} {now_local_naive().strftime(fmt)}')
 
 
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
@@ -3137,6 +3152,34 @@ def print_cur_ts(ts_str=""):
     print(get_cur_ts(str(ts_str)))
     print("─" * HORIZONTAL_LINE)
 
+
+# Helper to format an hour (0-23) to a string based on TIME_FORMAT_12H
+def format_hour(h, with_minutes=True):
+    if TIME_FORMAT_12H:
+        suffix = "AM" if h < 12 else "PM"
+        h12 = h % 12
+        if h12 == 0:
+            h12 = 12
+        return f"{h12:02d}:00 {suffix}" if with_minutes else f"{h12:02d} {suffix}"
+    else:
+        return f"{h:02d}:00" if with_minutes else f"{h:02d}:00"
+
+# Helper to format an hour range to a string based on TIME_FORMAT_12H
+def format_hour_range(h_min, h_max):
+    if TIME_FORMAT_12H:
+        min_suffix = "AM" if h_min < 12 else "PM"
+        min_h12 = h_min % 12
+        if min_h12 == 0:
+            min_h12 = 12
+
+        max_suffix = "AM" if h_max < 12 else "PM"
+        max_h12 = h_max % 12
+        if max_h12 == 0:
+            max_h12 = 12
+
+        return f"{min_h12:02d}:00 {min_suffix} - {max_h12:02d}:59 {max_suffix}"
+    else:
+        return f"{h_min:02d}:00 - {h_max:02d}:59"
 
 # Recomputes cycle-based liveness counter after INSTA_CHECK_INTERVAL changes
 def recompute_liveness_check_counter() -> None:
@@ -3172,7 +3215,8 @@ def get_date_from_ts(ts):
     else:
         return ""
 
-    return (f'{calendar.day_abbr[ts_new.weekday()]} {ts_new.strftime("%d %b %Y, %H:%M:%S")}')
+    fmt = "%d %b %Y, %I:%M:%S %p" if TIME_FORMAT_12H else "%d %b %Y, %H:%M:%S"
+    return (f'{calendar.day_abbr[ts_new.weekday()]} {ts_new.strftime(fmt)}')
 
 
 # Returns the timestamp/datetime object in human readable format (short version); eg.
@@ -3209,7 +3253,10 @@ def get_short_date_from_ts(ts, show_year=False, show_hour=True, show_weekday=Tru
         return ""
 
     if show_hour:
-        hour_strftime = " %H:%M:%S" if show_seconds else " %H:%M"
+        if TIME_FORMAT_12H:
+            hour_strftime = " %I:%M:%S %p" if show_seconds else " %I:%M %p"
+        else:
+            hour_strftime = " %H:%M:%S" if show_seconds else " %H:%M"
     else:
         hour_strftime = ""
 
@@ -3250,16 +3297,25 @@ def get_squeezed_date_from_ts(ts, show_seconds: bool = True):
         return "-"
 
     ts_date = ts_dt.date()
-    time_str = ts_dt.strftime("%H:%M:%S" if show_seconds else "%H:%M")
+    if TIME_FORMAT_12H:
+        time_str = ts_dt.strftime("%I:%M:%S %p" if show_seconds else "%I:%M %p")
+    else:
+        time_str = ts_dt.strftime("%H:%M:%S" if show_seconds else "%H:%M")
 
     if ts_date == today:
         return time_str
     elif ts_date == tomorrow:
         return f"Tom. {time_str}"
     elif ts_date.year == today.year:
-        return ts_dt.strftime("%d %b %H:%M:%S" if show_seconds else "%d %b %H:%M")
+        if TIME_FORMAT_12H:
+            return ts_dt.strftime("%d %b %I:%M:%S %p" if show_seconds else "%d %b %I:%M %p")
+        else:
+            return ts_dt.strftime("%d %b %H:%M:%S" if show_seconds else "%d %b %H:%M")
     else:
-        return ts_dt.strftime("%d %b %y %H:%M:%S" if show_seconds else "%d %b %y %H:%M")
+        if TIME_FORMAT_12H:
+            return ts_dt.strftime("%d %b %y %I:%M:%S %p" if show_seconds else "%d %b %y %I:%M %p")
+        else:
+            return ts_dt.strftime("%d %b %y %H:%M:%S" if show_seconds else "%d %b %y %H:%M")
 
 
 # Returns the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
@@ -3287,7 +3343,10 @@ def get_hour_min_from_ts(ts, show_seconds=False):
     else:
         return ""
 
-    out_strf = "%H:%M:%S" if show_seconds else "%H:%M"
+    if TIME_FORMAT_12H:
+        out_strf = "%I:%M:%S %p" if show_seconds else "%I:%M %p"
+    else:
+        out_strf = "%H:%M:%S" if show_seconds else "%H:%M"
     return ts_new.strftime(out_strf)  # type: ignore[arg-type]
 
 
@@ -4775,6 +4834,7 @@ def generate_config_dashboard(target_data, config_data):
         ("Templates", config_data.get('template_dir', '-')),
         ("Verbose Mode", str(config_data.get('verbose_mode', '-'))),
         ("Debug Mode", str(config_data.get('debug_mode', '-'))),
+        ("12h Time Format", str(config_data.get('time_format_12h', '-'))),
     ]
 
     for setting, value in left_items:
@@ -5017,7 +5077,8 @@ def print_check_timing(r_sleep_time, prefix="", user=None):
         # Calculate next check time from now + sleep time
         now = now_local_naive()
         next_check = now + timedelta(seconds=r_sleep_time)
-        next_check_str = f'{calendar.day_abbr[next_check.weekday()]} {next_check.strftime("%d %b %Y, %H:%M:%S")}'
+        check_fmt = "%d %b %Y, %I:%M:%S %p" if TIME_FORMAT_12H else "%d %b %Y, %H:%M:%S"
+        next_check_str = f'{calendar.day_abbr[next_check.weekday()]} {next_check.strftime(check_fmt)}'
 
         if user:
             print(f"{prefix}Target:\t\t\t\t\t{user}")
@@ -5362,16 +5423,16 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
     if CHECK_POSTS_IN_HOURS_RANGE:
         ranges = []
         if not (MIN_H1 == 0 and MAX_H1 == 0):
-            ranges.append(f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59")
+            ranges.append(format_hour_range(MIN_H1, MAX_H1))
         if not (MIN_H2 == 0 and MAX_H2 == 0):
-            ranges.append(f"{MIN_H2:02d}:00 - {MAX_H2:02d}:59")
+            ranges.append(format_hour_range(MIN_H2, MAX_H2))
 
         if ranges:
             hours_ranges_str = ", ".join(ranges)
         else:
             hours_ranges_str = "None (both ranges disabled)"
     else:
-        hours_ranges_str = "00:00 - 23:59"
+        hours_ranges_str = format_hour_range(0, 23)
 
     # Use arguments or fall back to defaults
     targets_list = targets if targets is not None else DASHBOARD_DATA.get('targets_list', [])
@@ -5442,6 +5503,7 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'dashboard_show_check_seconds': DASHBOARD_SHOW_CHECK_SECONDS,
         'logging_enabled': "True" if not DISABLE_LOGGING else "False",
         'log_file': final_log_path if final_log_path and not DISABLE_LOGGING else "",
+        'time_format_12h': TIME_FORMAT_12H,
         'config_file': cfg_path or CLI_CONFIG_PATH or 'None',
         'dotenv_file': env_path or DOTENV_FILE or 'None',
         'output_dir': OUTPUT_DIR or "-",
@@ -5465,7 +5527,8 @@ def sleep_message(sleeptime, user=None):
     now = now_local_naive()
     next_check = now + timedelta(seconds=sleeptime)
     user_suffix = f" for {user}" if user else ""
-    message = f"Sleeping {display_time(sleeptime)}{user_suffix}, resumes at ~{next_check.strftime('%H:%M:%S')}"
+    msg_time = next_check.strftime('%I:%M:%S %p' if TIME_FORMAT_12H else '%H:%M:%S')
+    message = f"Sleeping {display_time(sleeptime)}{user_suffix}, resumes at ~{msg_time}"
     if DEBUG_MODE:
         debug_print(message)
     elif HOURS_VERBOSE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE):
@@ -6742,11 +6805,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     now = now_local_naive()
     next_check = now + timedelta(seconds=r_sleep_time) if not isinstance(next_check_val, datetime) else next_check_val
 
+    msg_time = next_check.strftime('%I:%M:%S %p' if TIME_FORMAT_12H else '%H:%M:%S')
     # Only print tracking message if Dashboard is not enabled
     if threading.current_thread() is not threading.main_thread():
-        print(f"* Tracking {user} (and others)... next check for {user} planned at ~{next_check.strftime('%H:%M:%S')} (in {display_time(r_sleep_time)})\n")
+        print(f"* Tracking {user} (and others)... next check for {user} planned at ~{msg_time} (in {display_time(r_sleep_time)})\n")
     else:
-        print(f"* Tracking {user}... next check planned at ~{next_check.strftime('%H:%M:%S')} (in {display_time(r_sleep_time)})\n")
+        print(f"* Tracking {user}... next check planned at ~{msg_time} (in {display_time(r_sleep_time)})\n")
 
     print_cur_ts("Timestamp:\t\t\t\t")
 
@@ -8075,7 +8139,7 @@ def get_target_paths(user):
 def run_main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
-    global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME
+    global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -8953,16 +9017,16 @@ def run_main():
     if CHECK_POSTS_IN_HOURS_RANGE:
         ranges = []
         if not (MIN_H1 == 0 and MAX_H1 == 0):
-            ranges.append(f"{MIN_H1:02d}:00 - {MAX_H1:02d}:59")
+            ranges.append(format_hour_range(MIN_H1, MAX_H1))
         if not (MIN_H2 == 0 and MAX_H2 == 0):
-            ranges.append(f"{MIN_H2:02d}:00 - {MAX_H2:02d}:59")
+            ranges.append(format_hour_range(MIN_H2, MAX_H2))
 
         if ranges:
             hours_ranges_str = ", ".join(ranges)
         else:
             hours_ranges_str = "None (both ranges disabled)"
     else:
-        hours_ranges_str = "00:00 - 23:59"
+        hours_ranges_str = format_hour_range(0, 23)
     print("* Hours for fetching updates:\t\t" + hours_ranges_str)
     print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
     print(f"* Session Mode:\t\t\t\t{mode_of_the_tool}")
@@ -9029,8 +9093,8 @@ def run_main():
         print(f"*   Webhook on errors:\t\t\t{WEBHOOK_ERROR_NOTIFICATION}")
     print(f"* Verbose mode:\t\t\t\t{VERBOSE_MODE}")
     print(f"* Debug mode:\t\t\t\t{DEBUG_MODE}")
-
     print(f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}")
+    print(f"* 12h time format:\t\t\t{TIME_FORMAT_12H}")
 
     # More visible warnings if requested features are missing (still only printed to terminal when dashboard is not active)
     if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
@@ -9087,7 +9151,7 @@ def run_main():
                 'posts': None,
                 'reels': None,
                 'status': 'Pending',
-                'added': datetime.now().strftime('%a %d %b %H:%M'),
+                'added': get_short_date_from_ts(datetime.now(), show_year=False, show_seconds=False),
                 'last_checked': None
             } for u in targets
         }
@@ -9197,7 +9261,8 @@ def run_main():
                     planned = adjusted
                     delay = max(0, int((planned - now).total_seconds()))
             planned_actions.append((u, delay, planned))
-            print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
+            msg_time = planned.strftime('%I:%M:%S %p' if TIME_FORMAT_12H else '%H:%M:%S')
+            print(f"  - {u} @ ~{msg_time} (in {display_time(delay)})")
             debug_print(f"Target {u} scheduled with delay_s={delay}")
 
             # Populate initial dashboard check times

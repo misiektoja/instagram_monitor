@@ -1382,6 +1382,16 @@
                     </div>
                     <div class="setting-row" style="padding: 8px 0;">
                         <div class="setting-info">
+                            <h4>12-hour Time Format</h4>
+                            <p>Use AM/PM format instead of 24h</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="time-format-12h">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
                             <h4>Output Logging</h4>
                             <p>Enable logging to instagram_monitor.log</p>
                         </div>
@@ -2138,6 +2148,7 @@
             document.getElementById('hours-verbose').checked = s.hours_verbose || false;
             document.getElementById('debug-mode').checked = s.debug_mode || false;
             document.getElementById('dashboard-show-check-seconds').checked = (s.dashboard_show_check_seconds !== undefined) ? s.dashboard_show_check_seconds : true;
+            document.getElementById('time-format-12h').checked = (s.time_format_12h !== undefined) ? s.time_format_12h : false;
 
             document.getElementById('check-posts-in-hours-range').checked = s.check_posts_in_hours_range || false;
             document.getElementById('min-h1').value = s.min_h1 !== undefined ? s.min_h1 : 0;
@@ -2346,6 +2357,7 @@
                 hours_verbose: document.getElementById('hours-verbose').checked,
                 debug_mode: document.getElementById('debug-mode').checked,
                 dashboard_show_check_seconds: document.getElementById('dashboard-show-check-seconds').checked,
+                time_format_12h: document.getElementById('time-format-12h').checked,
 
                 check_posts_in_hours_range: document.getElementById('check-posts-in-hours-range').checked,
                 min_h1: document.getElementById('h1-enabled').checked ? parseInt(document.getElementById('min-h1').value) : 0,
