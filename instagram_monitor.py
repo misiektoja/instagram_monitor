@@ -5910,6 +5910,41 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 user, "followers", followers_old, followers, csv_file_name
             )
 
+            # Send email notification for followers change detected at startup
+            if STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION and (added_followers_list or removed_followers_list):
+                followers_diff = followers_count - followers_old_count
+                if followers_diff > 0:
+                    followers_diff_str = "+" + str(followers_diff)
+                else:
+                    followers_diff_str = str(followers_diff)
+
+                if followers_count != followers_old_count:
+                    m_subject = f"Instagram user {user} followers number has changed! ({followers_diff_str}, {followers_old_count} -> {followers_count})"
+                    m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nNote: Change detected at startup{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body_html_parts = [f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})"]
+                else:
+                    m_subject = f"Instagram user {user} followers list has changed! (count: {followers_count})"
+                    m_body = f"Followers list changed for user {user} (count: {followers_count})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nNote: Change detected at startup{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body_html_parts = [f"Followers list changed for user <b>{user}</b> (count: <b>{followers_count}</b>)"]
+
+                if removed_followers_list_html:
+                    m_body_html_parts.append(f"<br><br><b>{removed_followers_mbody.strip()}</b><br>{removed_followers_list_html.strip().replace(chr(10), '<br>')}")
+                if added_followers_list_html:
+                    m_body_html_parts.append(f"<br><br><b>{added_followers_mbody.strip()}</b><br>{added_followers_list_html.strip().replace(chr(10), '<br>')}")
+                m_body_html_parts.append(f"<br><br><i>Note: Change detected at startup</i>{get_cur_ts('<br>Timestamp: ')}")
+                m_body_html = "".join(m_body_html_parts)
+
+                print(f"* Sending email notification to {RECEIVER_EMAIL}")
+                send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+
+            # Send webhook notification for followers change detected at startup
+            webhook_result = send_follower_change_webhook(
+                user, "followers", followers_old_count, followers_count,
+                added_followers_list, removed_followers_list
+            )
+            if webhook_result != 0 and DEBUG_MODE:
+                print(f"* Warning: Webhook notification for followers change failed")
+
     # Establish baseline after first successful fetch if it wasn't available
     if not skip_follow_changes and not followers_baseline_available and not skip_session and not skip_followers and can_view and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
         followers_baseline_available = True
@@ -6007,6 +6042,41 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
                 user, "followings", followings_old, followings, csv_file_name
             )
+
+            # Send email notification for followings change detected at startup
+            if STATUS_NOTIFICATION and (added_followings_list or removed_followings_list):
+                followings_diff = followings_count - followings_old_count
+                if followings_diff > 0:
+                    followings_diff_str = "+" + str(followings_diff)
+                else:
+                    followings_diff_str = str(followings_diff)
+
+                if followings_count != followings_old_count:
+                    m_subject = f"Instagram user {user} followings number has changed! ({followings_diff_str}, {followings_old_count} -> {followings_count})"
+                    m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nNote: Change detected at startup{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body_html_parts = [f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})"]
+                else:
+                    m_subject = f"Instagram user {user} followings list has changed! (count: {followings_count})"
+                    m_body = f"Followings list changed for user {user} (count: {followings_count})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nNote: Change detected at startup{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body_html_parts = [f"Followings list changed for user <b>{user}</b> (count: <b>{followings_count}</b>)"]
+
+                if removed_followings_list_html:
+                    m_body_html_parts.append(f"<br><br><b>{removed_followings_mbody.strip()}</b><br>{removed_followings_list_html.strip().replace(chr(10), '<br>')}")
+                if added_followings_list_html:
+                    m_body_html_parts.append(f"<br><br><b>{added_followings_mbody.strip()}</b><br>{added_followings_list_html.strip().replace(chr(10), '<br>')}")
+                m_body_html_parts.append(f"<br><br><i>Note: Change detected at startup</i>{get_cur_ts('<br>Timestamp: ')}")
+                m_body_html = "".join(m_body_html_parts)
+
+                print(f"* Sending email notification to {RECEIVER_EMAIL}")
+                send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+
+            # Send webhook notification for followings change detected at startup
+            webhook_result = send_follower_change_webhook(
+                user, "followings", followings_old_count, followings_count,
+                added_followings_list, removed_followings_list
+            )
+            if webhook_result != 0 and DEBUG_MODE:
+                print(f"* Warning: Webhook notification for followings change failed")
 
     # Establish baseline after first successful fetch if it wasn't available
     if not skip_follow_changes and not followings_baseline_available and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
