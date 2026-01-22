@@ -5625,7 +5625,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     # Only print if Dashboard is not enabled (Dashboard will show this information)
     print(f"Target:\t\t\t\t\t{user}")
-    print("─" * HORIZONTAL_LINE)
 
     # Resolve output directory for this user
     user_root_dir = ""
