@@ -1104,10 +1104,13 @@ def create_web_dashboard_app():
                 data['targets'] = {}
 
             # Recompute time labels dynamically from timestamps
+            now_ts = datetime.now().timestamp()
             try:
                 if LAST_CHECK_TIME:
                     data['last_check'] = get_squeezed_date_from_ts(LAST_CHECK_TIME, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
-                if NEXT_CHECK_TIME:
+                # Only expose a timestamp-based global next check when it is in the future
+                # Otherwise keep a meaningful label (e.g. "In Progress") to avoid showing stale times
+                if NEXT_CHECK_TIME and NEXT_CHECK_TIME > now_ts:
                     data['next_check'] = get_squeezed_date_from_ts(NEXT_CHECK_TIME, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
                 elif NEXT_CHECK_DISPLAY:
                     data['next_check'] = NEXT_CHECK_DISPLAY
@@ -1123,7 +1126,8 @@ def create_web_dashboard_app():
                     next_ts = t_data.get('next_check_ts')
                     if isinstance(last_ts, (int, float)) and last_ts > 0:
                         t_data['last_checked'] = get_squeezed_date_from_ts(last_ts, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
-                    if isinstance(next_ts, (int, float)) and next_ts > 0:
+                    # Only format next_check from ts when it is in the future, otherwise keep the label (e.g. "In Progress")
+                    if isinstance(next_ts, (int, float)) and next_ts > now_ts:
                         t_data['next_check'] = get_squeezed_date_from_ts(next_ts, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
             except Exception:
                 # Keep output best-effort; don't break dashboard on edge cases
