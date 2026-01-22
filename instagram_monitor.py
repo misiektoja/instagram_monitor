@@ -81,7 +81,7 @@ ERROR_NOTIFICATION = True
 INSTA_CHECK_INTERVAL = 5400  # 1,5 hours
 
 # To avoid captcha checks and bot detection, the actual INSTA_CHECK_INTERVAL interval is randomized using the values below
-# Final interval = INSTA_CHECK_INTERVAL ± RANDOM_SLEEP_DIFF
+# Final interval = INSTA_CHECK_INTERVAL +/- RANDOM_SLEEP_DIFF
 # Can also be set using -i (low) and -j (high) flags
 RANDOM_SLEEP_DIFF_LOW = 900  # -15 min (-i)
 RANDOM_SLEEP_DIFF_HIGH = 180  # +3 min (-j)
