@@ -4282,7 +4282,13 @@ def update_check_times(last_time=None, next_time=None, user=None, increment_coun
 
     # Format the timestamps for display
     last_str = get_squeezed_date_from_ts(last_time.timestamp()) if last_time else None
-    next_str = get_squeezed_date_from_ts(next_time.timestamp()) if next_time else None
+
+    if isinstance(next_time, str):
+        next_str = next_time
+        next_ts = None
+    else:
+        next_str = get_squeezed_date_from_ts(next_time.timestamp()) if next_time else None
+        next_ts = next_time.timestamp() if next_time else None
 
     # Update per-target data
     if user:
@@ -4298,7 +4304,7 @@ def update_check_times(last_time=None, next_time=None, user=None, increment_coun
                 WEB_DASHBOARD_DATA['targets'][user]['last_checked_ts'] = last_time.timestamp()
             if next_time:
                 WEB_DASHBOARD_DATA['targets'][user]['next_check'] = next_str
-                WEB_DASHBOARD_DATA['targets'][user]['next_check_ts'] = next_time.timestamp()
+                WEB_DASHBOARD_DATA['targets'][user]['next_check_ts'] = next_ts
 
         # Update Terminal Dashboard target data
         if 'targets' not in DASHBOARD_DATA:
@@ -4311,7 +4317,7 @@ def update_check_times(last_time=None, next_time=None, user=None, increment_coun
             DASHBOARD_DATA['targets'][user]['last_checked_ts'] = last_time.timestamp()
         if next_time:
             DASHBOARD_DATA['targets'][user]['next_check'] = next_str
-            DASHBOARD_DATA['targets'][user]['next_check_ts'] = next_time.timestamp()
+            DASHBOARD_DATA['targets'][user]['next_check_ts'] = next_ts
 
     # Recalculate global times
     now_ts = datetime.now().timestamp()
@@ -4340,7 +4346,7 @@ def update_check_times(last_time=None, next_time=None, user=None, increment_coun
 
     if all_nexts:
         NEXT_CHECK_TIME = min(all_nexts)
-    elif next_time:
+    elif next_time and not isinstance(next_time, str):
         if next_time.timestamp() > now_ts:
             NEXT_CHECK_TIME = next_time.timestamp()
         else:
@@ -7459,6 +7465,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 try:
                     if WEB_DASHBOARD_ENABLED:
                         update_ui_data(targets={user: {'status': 'Fetching...'}})
+
+                    # Update next check to "In Progress"
+                    update_check_times(next_time="In Progress", user=user, increment_count=False)
+
                     if bot.context.is_logged_in:  # GraphQL helper when logged in
                         last_post_reel = latest_post_reel(user, bot)
                     else:  # fallback to mobile helper when anonymous
