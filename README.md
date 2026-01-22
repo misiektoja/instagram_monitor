@@ -597,7 +597,7 @@ To enable follower churn detection:
 instagram_monitor <target_insta_user> --followers-churn
 ```
 
-**Note**: This feature requires [Session Mode 2](#session-mode-2-with-logged-in-instagram-account-session-login) (session login) to access the Instagram API. It will increase API calls since it fetches the full follower/following lists every check interval.
+**Note**: This feature requires [Session Mode 2](#session-mode-2-with-logged-in-instagram-account-session-login) (session login) to access the Instagram API and it will increase API calls since it fetches the full follower/following lists every check interval, so the risk of account suspension is higher.
 
 <a id="skipping-follow-changes"></a>
 ### Skipping Follow Changes
