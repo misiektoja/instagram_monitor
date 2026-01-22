@@ -2291,11 +2291,9 @@
                 });
                 const data = await response.json();
                 if (data.success) {
-                    if (username) {
-                        showToast(`Check triggered for ${username}`);
-                    } else {
-                        showToast('Recheck all triggered');
-                    }
+                    showToast(data.message || (username ? `Recheck triggered for ${username}` : 'Recheck all triggered'));
+                } else {
+                    showToast(data.message || 'Failed to trigger check', 'error');
                 }
             } catch (err) {
                 showToast('Failed to trigger check', 'error');

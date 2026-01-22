@@ -1055,7 +1055,10 @@ def create_web_dashboard_app():
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                 if target in WEB_DASHBOARD_RECHECK_EVENTS:
                     WEB_DASHBOARD_RECHECK_EVENTS[target].set()
-                    msg = f"Recheck triggered"
+                    if CHECK_POSTS_IN_HOURS_RANGE:
+                        msg = "Recheck triggered (will override hours range for the next cycle)"
+                    else:
+                        msg = "Recheck triggered"
                     success = True
                 else:
                     msg = f"Recheck failed: target not running"
@@ -1064,7 +1067,10 @@ def create_web_dashboard_app():
         else:
             # Trigger all
             recheck_all_targets()
-            msg = "Recheck all triggered"
+            if CHECK_POSTS_IN_HOURS_RANGE:
+                msg = "Recheck all triggered (will override hours range for the next cycle)"
+            else:
+                msg = "Recheck all triggered"
             success = True
             log_activity(msg)
 
@@ -5609,6 +5615,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     _thread_local.in_partial_line = False  # Track partial line prints
     update_ui_data(targets={user: {'status': 'Starting'}})
 
+    # When True, bypass CHECK_POSTS_IN_HOURS_RANGE for exactly one cycle (Web Dashboard recheck override)
+    manual_recheck_active = bool(manual_recheck)
+    manual_override_active = bool(manual_recheck)
+
     # Wait for previous user's initial loading to complete (to avoid progress bar overlap)
     if wait_for_prev_user is not None:
         wait_for_prev_user.wait()
@@ -5753,8 +5763,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print("* Proceeding with the default Instaloader mobile user-agent")
 
         # If hour-range gating is enabled and we're currently outside allowed hours, wait until the next allowed window
-        # before fetching any target data
-        if CHECK_POSTS_IN_HOURS_RANGE:
+        # before fetching any target data, manual rechecks (manual_override_active) bypass this gating
+        if CHECK_POSTS_IN_HOURS_RANGE and not manual_override_active:
             allowed = hours_to_check()
             if not allowed:
                 update_check_times(next_time="No allowed hours (hour ranges disabled or misconfigured)", user=user, increment_count=False)
@@ -5782,6 +5792,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                     if user in WEB_DASHBOARD_RECHECK_EVENTS and WEB_DASHBOARD_RECHECK_EVENTS[user].is_set():
                                         WEB_DASHBOARD_RECHECK_EVENTS[user].clear()
+                                        manual_recheck_active = True
+                                        manual_override_active = True
+                                        log_activity("Manual recheck requested (overriding hours range)", user=user, level='system')
+                                        update_ui_data(targets={user: {'status': 'Recheck requested'}})
                                         break
                             wait_chunk = min(1, sleep_remaining)
                             if stop_event:
@@ -6688,9 +6702,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         sleep_message(r_sleep_time, user)
         debug_print(f"Next check scheduled for: {get_date_from_ts(NEXT_CHECK_TIME)}")
 
-    # Track whether the current check was triggered manually by the user
-    manual_recheck_active = manual_recheck
-
     # Use interruptible sleep if stop_event is provided (allows immediate stop)
     if stop_event or DEBUG_MODE or WEB_DASHBOARD_ENABLED:
         # Sleep in smaller increments to allow stop event or manual check trigger
@@ -6715,6 +6726,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 print(f"* Recheck requested for {user}! Breaking sleep early...\n")
                 print_cur_ts("Timestamp:\t\t\t\t")
                 manual_recheck_active = True
+                manual_override_active = True
                 break
 
             # Sleep in 1-second increments for responsiveness
@@ -6755,7 +6767,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         cur_h = now_local_naive().strftime("%H")
 
-        in_allowed_hours = (CHECK_POSTS_IN_HOURS_RANGE and (int(cur_h) in hours_to_check())) or not CHECK_POSTS_IN_HOURS_RANGE
+        # Manual rechecks (Web Dashboard) should override CHECK_POSTS_IN_HOURS_RANGE for this cycle
+        if manual_override_active:
+            in_allowed_hours = True
+            if HOURS_VERBOSE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE) or DEBUG_MODE:
+                print(f"* Manual recheck override active for {user} (hour ranges bypassed)")
+        else:
+            in_allowed_hours = (CHECK_POSTS_IN_HOURS_RANGE and (int(cur_h) in hours_to_check())) or not CHECK_POSTS_IN_HOURS_RANGE
 
         if in_allowed_hours:
             if HOURS_VERBOSE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE) or DEBUG_MODE:
@@ -7884,6 +7902,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print_cur_ts("Timestamp:\t\t\t\t")
             log_activity("Check completed", user=user)
             manual_recheck_active = False
+            manual_override_active = False
         elif VERBOSE_MODE or DEBUG_MODE:
             print(f"* Check #{CHECK_COUNT} completed for {user} ...\n")
             print_cur_ts("Timestamp:\t\t\t\t")
@@ -7937,6 +7956,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     print(f"* Recheck requested for {user}! Breaking sleep early...\n")
                     print_cur_ts("Timestamp:\t\t\t\t")
                     manual_recheck_active = True
+                    manual_override_active = True
                     break
 
                 # Sleep in 1-second increments for responsiveness
