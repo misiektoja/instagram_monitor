@@ -1130,6 +1130,16 @@
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Skip Follow Changes</h4>
+                            <p>Do not report followers/followings changes</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="skip-follow-changes">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
                     <div style="margin-top: 15px; grid-template-columns: 1fr 1fr; display: grid; gap: 10px;">
                         <div class="setting-row" style="padding: 5px 0;">
                             <span style="font-size: 13px;">Skip Followers</span>
@@ -1858,6 +1868,7 @@
                 { l: 'Skip Posts Details', v: config.skip_posts },
                 { l: 'Get More Posts Details', v: config.get_more_post_details },
                 { l: 'Follower Churn Detection', v: config.followers_churn },
+                { l: 'Skip Follow Changes', v: config.skip_follow_changes },
                 { l: 'Hours Range', v: config.hours_range },
                 { l: 'Hours Verbose', v: config.hours_verbose },
                 { l: 'Jitter/Back-off', v: config.enable_jitter },
@@ -2110,6 +2121,7 @@
 
             document.getElementById('logging-enabled').checked = s.logging_enabled || false;
             document.getElementById('followers-churn').checked = s.followers_churn || false;
+            document.getElementById('skip-follow-changes').checked = s.skip_follow_changes || false;
             document.getElementById('csv-filename').value = s.csv_file || '';
             document.getElementById('verbose-mode').checked = s.verbose_mode || false;
             document.getElementById('hours-verbose').checked = s.hours_verbose || false;
@@ -2318,6 +2330,7 @@
 
                 logging_enabled: document.getElementById('logging-enabled').checked,
                 followers_churn: document.getElementById('followers-churn').checked,
+                skip_follow_changes: document.getElementById('skip-follow-changes').checked,
                 csv_filename: document.getElementById('csv-filename').value,
                 verbose_mode: document.getElementById('verbose-mode').checked,
                 hours_verbose: document.getElementById('hours-verbose').checked,

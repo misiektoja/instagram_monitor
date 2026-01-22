@@ -148,6 +148,10 @@ GET_MORE_POST_DETAILS = False
 # This is useful for detecting when someone unfollows and someone else follows in the same interval, keeping the count unchanged
 FOLLOWERS_CHURN_DETECTION = False
 
+# Whether to skip reporting and notifications for follower and following changes
+# (new follows, unfollows and count changes)
+SKIP_FOLLOW_CHANGES = False
+
 # Make the tool behave more like a human by performing random feed / profile / hashtag / followee actions
 # Used only with session login (mode 2), always disabled without login (anonymous mode 1)
 BE_HUMAN = False
@@ -464,6 +468,7 @@ IMGCAT_PATH = ""
 SKIP_SESSION = False
 SKIP_FOLLOWERS = False
 SKIP_FOLLOWINGS = False
+SKIP_FOLLOW_CHANGES = False
 FOLLOWERS_CHURN_AUTODISABLED = False
 FOLLOWERS_CHURN_AUTODISABLED_REASON = ""
 SKIP_GETTING_STORY_DETAILS = False
@@ -1158,7 +1163,7 @@ def create_web_dashboard_app():
         global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS
         global ENABLE_JITTER, DETECT_CHANGED_PROFILE_PIC, SKIP_SESSION, CLI_CONFIG_PATH
         global DOTENV_FILE, WEB_DASHBOARD_TEMPLATE_DIR, LOCAL_TIMEZONE, OUTPUT_DIR, CSV_FILE
-        global BE_HUMAN, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, LIVENESS_CHECK_INTERVAL
+        global BE_HUMAN, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, LIVENESS_CHECK_INTERVAL, SKIP_FOLLOW_CHANGES
         global WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
         global DISABLE_LOGGING, CHECK_POSTS_IN_HOURS_RANGE, HOURS_VERBOSE, MIN_H1, MAX_H1, MIN_H2, MAX_H2
 
@@ -1182,6 +1187,7 @@ def create_web_dashboard_app():
                 'be_human': BE_HUMAN,
                 'skip_followers': SKIP_FOLLOWERS,
                 'skip_followings': SKIP_FOLLOWINGS,
+                'skip_follow_changes': SKIP_FOLLOW_CHANGES,
                 'liveness_check_interval': LIVENESS_CHECK_INTERVAL,
                 'skip_stories': SKIP_GETTING_STORY_DETAILS,
                 'skip_posts': SKIP_GETTING_POSTS_DETAILS,
@@ -1262,6 +1268,7 @@ def create_web_dashboard_app():
             BE_HUMAN = bool(update_setting('be_human', BE_HUMAN, data.get('be_human'), bool))
             SKIP_FOLLOWERS = bool(update_setting('skip_followers', SKIP_FOLLOWERS, data.get('skip_followers'), bool))
             SKIP_FOLLOWINGS = bool(update_setting('skip_followings', SKIP_FOLLOWINGS, data.get('skip_followings'), bool))
+            SKIP_FOLLOW_CHANGES = bool(update_setting('skip_follow_changes', SKIP_FOLLOW_CHANGES, data.get('skip_follow_changes'), bool))
             SKIP_GETTING_STORY_DETAILS = bool(update_setting('skip_stories', SKIP_GETTING_STORY_DETAILS, data.get('skip_stories'), bool))
             SKIP_GETTING_POSTS_DETAILS = bool(update_setting('skip_posts', SKIP_GETTING_POSTS_DETAILS, data.get('skip_posts'), bool))
             GET_MORE_POST_DETAILS = bool(update_setting('get_more_post_details', GET_MORE_POST_DETAILS, data.get('get_more_post_details'), bool))
@@ -5456,7 +5463,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
 
 
 # Monitors activity of the specified Instagram user
-def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None, manual_recheck=False):  # type: ignore[reportComplexity]
+def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None, manual_recheck=False, skip_follow_changes=False):  # type: ignore[reportComplexity]
     global pbar, DASHBOARD_DATA, VERBOSE_MODE, CHECK_COUNT
     _thread_local.user = user  # Store user in thread-local storage for debug_print
     _thread_local.in_partial_line = False  # Track partial line prints
@@ -5563,7 +5570,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             log_activity("Session refresh detected, resuming setup...", user=user)
                             print(f"* Session refresh detected for {user}, resuming setup...")
                             print_cur_ts("\nTimestamp:\t\t\t\t")
-                            return instagram_monitor_user(user, csv_file_name, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, wait_for_prev_user, signal_loading_complete, stop_event, user_root_path, manual_recheck)
+                            return instagram_monitor_user(user, csv_file_name, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, wait_for_prev_user, signal_loading_complete, stop_event, user_root_path, manual_recheck, skip_follow_changes=SKIP_FOLLOW_CHANGES)
 
                     if stop_event and stop_event.is_set():
                         return
@@ -5838,14 +5845,16 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             followers_diff_str = "+" + str(followers_diff)
         else:
             followers_diff_str = str(followers_diff)
-        print(f"* Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})")
+        if not skip_follow_changes:
+            print(f"* Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})")
         followers_followings_fetched = True
 
-        try:
-            if csv_file_name:
-                write_csv_entry(csv_file_name, now_local_naive(), "Followers Count", followers_old_count, followers_count)
-        except Exception as e:
-            print(f"* Error: {e}")
+        if not skip_follow_changes:
+            try:
+                if csv_file_name:
+                    write_csv_entry(csv_file_name, now_local_naive(), "Followers Count", followers_old_count, followers_count)
+            except Exception as e:
+                print(f"* Error: {e}")
 
     if ((followers_count != followers_old_count) or (followers_count > 0 and not followers) or FOLLOWERS_CHURN_DETECTION) and not skip_session and not skip_followers and can_view:
         # Fetch followers if count changed, list is empty or detailed logging is enabled
@@ -5896,12 +5905,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     # Compare followers: either count changed OR detailed logging detected a difference
     should_compare_followers = followers_baseline_available and ((followers_count != followers_old_count) or (FOLLOWERS_CHURN_DETECTION and followers != followers_old))
     if should_compare_followers and (followers != followers_old) and not skip_session and not skip_followers and can_view and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
-        added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
-            user, "followers", followers_old, followers, csv_file_name
-        )
+        if not skip_follow_changes:
+            added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
+                user, "followers", followers_old, followers, csv_file_name
+            )
 
     # Establish baseline after first successful fetch if it wasn't available
-    if not followers_baseline_available and not skip_session and not skip_followers and can_view and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
+    if not skip_follow_changes and not followers_baseline_available and not skip_session and not skip_followers and can_view and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
         followers_baseline_available = True
 
     if os.path.isfile(insta_followings_file):
@@ -5935,13 +5945,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             followings_diff_str = "+" + str(followings_diff)
         else:
             followings_diff_str = str(followings_diff)
-        print(f"* Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})")
+        if not skip_follow_changes:
+            print(f"* Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})")
         followers_followings_fetched = True
-        try:
-            if csv_file_name:
-                write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
-        except Exception as e:
-            print(f"* Error: {e}")
+        if not skip_follow_changes:
+            try:
+                if csv_file_name:
+                    write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
+            except Exception as e:
+                print(f"* Error: {e}")
 
     if ((followings_count != followings_old_count) or (followings_count > 0 and not followings) or FOLLOWERS_CHURN_DETECTION) and not skip_session and not skip_followings and can_view:
         # Fetch followings if count changed, list is empty or detailed logging is enabled
@@ -5991,20 +6003,21 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     should_compare_followings = followings_baseline_available and ((followings_count != followings_old_count) or (FOLLOWERS_CHURN_DETECTION and followings != followings_old))
     if should_compare_followings and (followings != followings_old) and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
-        added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
-            user, "followings", followings_old, followings, csv_file_name
-        )
+        if not skip_follow_changes:
+            added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
+                user, "followings", followings_old, followings, csv_file_name
+            )
 
     # Establish baseline after first successful fetch if it wasn't available
-    if not followings_baseline_available and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
+    if not skip_follow_changes and not followings_baseline_available and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
         followings_baseline_available = True
 
-    if not skip_session and not skip_followers and can_view:
+    if not skip_follow_changes and not skip_session and not skip_followers and can_view:
         followers_old = followers
     else:
         followers = followers_old
 
-    if not skip_session and not skip_followings and can_view:
+    if not skip_follow_changes and not skip_session and not skip_followings and can_view:
         followings_old = followings
     else:
         followings = followings_old
@@ -6694,13 +6707,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     followings_diff_str = str(followings_diff)
 
                 if followings_count != followings_old_count:
-                    print(f"* Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})")
-                    log_activity(f"Followings changed: {followings_old_count} -> {followings_count}", user=user)
-                    try:
-                        if csv_file_name:
-                            write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
-                    except Exception as e:
-                        print(f"* Error: {e}")
+                    if not skip_follow_changes:
+                        print(f"* Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})")
+                        log_activity(f"Followings changed: {followings_old_count} -> {followings_count}", user=user)
+                    if not skip_follow_changes:
+                        try:
+                            if csv_file_name:
+                                write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
+                        except Exception as e:
+                            print(f"* Error: {e}")
 
                 added_followings_list = ""
                 removed_followings_list = ""
@@ -6709,7 +6724,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 added_followings_mbody = ""
                 removed_followings_mbody = ""
 
-                if not skip_session and not skip_followings and can_view:
+                if not skip_follow_changes and not skip_session and not skip_followings and can_view:
                     try:
                         log_activity(f"Started downloading followings", user=user)
                         setup_pbar(total_expected=followings_count, title="* Downloading Followings")
@@ -6752,53 +6767,55 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             log_activity(f"Followings list changed: count remained same ({followings_count})", user=user)
 
                         if followings_baseline_available:
-                            added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
-                                user, "followings", followings_old, followings, csv_file_name
-                            )
+                            if not skip_follow_changes:
+                                added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
+                                    user, "followings", followings_old, followings, csv_file_name
+                                )
                         else:
                             # If baseline wasn't available (e.g. initial fetch failed), establish it now
                             followings_baseline_available = True
 
                         followings_old = followings
 
-                if STATUS_NOTIFICATION and (followings_count != followings_old_count or added_followings_list or removed_followings_list):
-                    if followings_count != followings_old_count:
-                        m_subject = f"Instagram user {user} followings number has changed! ({followings_diff_str}, {followings_old_count} -> {followings_count})"
-                    else:
-                        m_subject = f"Instagram user {user} followings list has changed! (count: {followings_count})"
-
-                    if not skip_session and not skip_followings and can_view:
+                if not skip_follow_changes:
+                    if STATUS_NOTIFICATION and (followings_count != followings_old_count or added_followings_list or removed_followings_list):
                         if followings_count != followings_old_count:
-                            m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                            m_subject = f"Instagram user {user} followings number has changed! ({followings_diff_str}, {followings_old_count} -> {followings_count})"
                         else:
-                            m_body = f"Followings list changed for user {user} (count: {followings_count})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    else:
-                        m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                            m_subject = f"Instagram user {user} followings list has changed! (count: {followings_count})"
 
-                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                    if not skip_session and not skip_followings and can_view:
-                        if followings_count != followings_old_count:
-                            m_body_html_parts = [f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})"]
+                        if not skip_session and not skip_followings and can_view:
+                            if followings_count != followings_old_count:
+                                m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                            else:
+                                m_body = f"Followings list changed for user {user} (count: {followings_count})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                         else:
-                            m_body_html_parts = [f"Followings list changed for user <b>{user}</b> (count: <b>{followings_count}</b>)"]
+                            m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
 
-                        if removed_followings_list_html:
-                            m_body_html_parts.append(f"<br><br><b>{removed_followings_mbody.strip()}</b><br>{removed_followings_list_html.strip().replace(chr(10), '<br>')}")
-                        if added_followings_list_html:
-                            m_body_html_parts.append(f"<br><br><b>{added_followings_mbody.strip()}</b><br>{added_followings_list_html.strip().replace(chr(10), '<br>')}")
-                        m_body_html_parts.append(f"<br><br>Check interval: <b>{display_time(r_sleep_time) if r_sleep_time else 'N/A'}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}")
-                        m_body_html = "".join(m_body_html_parts)
-                    else:
-                        m_body_html = f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                        print(f"* Sending email notification to {RECEIVER_EMAIL}")
+                        if not skip_session and not skip_followings and can_view:
+                            if followings_count != followings_old_count:
+                                m_body_html_parts = [f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})"]
+                            else:
+                                m_body_html_parts = [f"Followings list changed for user <b>{user}</b> (count: <b>{followings_count}</b>)"]
 
-                # Send webhook notification for followings change
-                webhook_result = send_follower_change_webhook(
-                    user, "followings", followings_old_count, followings_count,
-                    added_followings_list, removed_followings_list
-                )
-                if webhook_result != 0 and DEBUG_MODE:
-                    print(f"* Warning: Webhook notification for followings change failed")
+                            if removed_followings_list_html:
+                                m_body_html_parts.append(f"<br><br><b>{removed_followings_mbody.strip()}</b><br>{removed_followings_list_html.strip().replace(chr(10), '<br>')}")
+                            if added_followings_list_html:
+                                m_body_html_parts.append(f"<br><br><b>{added_followings_mbody.strip()}</b><br>{added_followings_list_html.strip().replace(chr(10), '<br>')}")
+                            m_body_html_parts.append(f"<br><br>Check interval: <b>{display_time(r_sleep_time) if r_sleep_time else 'N/A'}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}")
+                            m_body_html = "".join(m_body_html_parts)
+                        else:
+                            m_body_html = f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+
+                    # Send webhook notification for followings change
+                    webhook_result = send_follower_change_webhook(
+                        user, "followings", followings_old_count, followings_count,
+                        added_followings_list, removed_followings_list
+                    )
+                    if webhook_result != 0 and DEBUG_MODE:
+                        print(f"* Warning: Webhook notification for followings change failed")
 
                 followings_old_count = followings_count
 
@@ -6819,14 +6836,16 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     followers_diff_str = str(followers_diff)
 
                 if followers_count != followers_old_count:
-                    print(f"* Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})")
-                    log_activity(f"Followers changed: {followers_old_count} -> {followers_count}", user=user, level='update')
+                    if not skip_follow_changes:
+                        print(f"* Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})")
+                        log_activity(f"Followers changed: {followers_old_count} -> {followers_count}", user=user, level='update')
 
-                    try:
-                        if csv_file_name:
-                            write_csv_entry(csv_file_name, now_local_naive(), "Followers Count", followers_old_count, followers_count)
-                    except Exception as e:
-                        print(f"* Error: {e}")
+                    if not skip_follow_changes:
+                        try:
+                            if csv_file_name:
+                                write_csv_entry(csv_file_name, now_local_naive(), "Followers Count", followers_old_count, followers_count)
+                        except Exception as e:
+                            print(f"* Error: {e}")
 
                 added_followers_list = ""
                 removed_followers_list = ""
@@ -6835,7 +6854,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 added_followers_mbody = ""
                 removed_followers_mbody = ""
 
-                if not skip_session and not skip_followers and can_view:
+                if not skip_follow_changes and not skip_session and not skip_followers and can_view:
                     try:
                         log_activity(f"Started downloading followers", user=user)
                         setup_pbar(total_expected=followers_count, title="* Downloading Followers")
@@ -6878,53 +6897,55 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             log_activity(f"Followers list changed: count remained same ({followers_count})", user=user)
 
                         if followers_baseline_available:
-                            added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
-                                user, "followers", followers_old, followers, csv_file_name
-                            )
+                            if not skip_follow_changes:
+                                added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
+                                    user, "followers", followers_old, followers, csv_file_name
+                                )
                         else:
                             # If baseline wasn't available (e.g. initial fetch failed), establish it now
                             followers_baseline_available = True
 
                         followers_old = followers
 
-                if STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION and (followers_count != followers_old_count or added_followers_list or removed_followers_list):
-                    if followers_count != followers_old_count:
-                        m_subject = f"Instagram user {user} followers number has changed! ({followers_diff_str}, {followers_old_count} -> {followers_count})"
-                    else:
-                        m_subject = f"Instagram user {user} followers list has changed! (count: {followers_count})"
-
-                    if not skip_session and not skip_followers and can_view:
+                if not skip_follow_changes:
+                    if STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION and (followers_count != followers_old_count or added_followers_list or removed_followers_list):
                         if followers_count != followers_old_count:
-                            m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                            m_subject = f"Instagram user {user} followers number has changed! ({followers_diff_str}, {followers_old_count} -> {followers_count})"
                         else:
-                            m_body = f"Followers list changed for user {user} (count: {followers_count})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    else:
-                        m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                            m_subject = f"Instagram user {user} followers list has changed! (count: {followers_count})"
 
-                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                    if not skip_session and not skip_followers and can_view:
-                        if followers_count != followers_old_count:
-                            m_body_html_parts = [f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})"]
+                        if not skip_session and not skip_followers and can_view:
+                            if followers_count != followers_old_count:
+                                m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                            else:
+                                m_body = f"Followers list changed for user {user} (count: {followers_count})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                         else:
-                            m_body_html_parts = [f"Followers list changed for user <b>{user}</b> (count: <b>{followers_count}</b>)"]
+                            m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
 
-                        if removed_followers_list_html:
-                            m_body_html_parts.append(f"<br><br><b>{removed_followers_mbody.strip()}</b><br>{removed_followers_list_html.strip().replace(chr(10), '<br>')}")
-                        if added_followers_list_html:
-                            m_body_html_parts.append(f"<br><br><b>{added_followers_mbody.strip()}</b><br>{added_followers_list_html.strip().replace(chr(10), '<br>')}")
-                        m_body_html_parts.append(f"<br><br>Check interval: <b>{display_time(r_sleep_time) if r_sleep_time else 'N/A'}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}")
-                        m_body_html = "".join(m_body_html_parts)
-                    else:
-                        m_body_html = f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                        print(f"* Sending email notification to {RECEIVER_EMAIL}")
+                        if not skip_session and not skip_followers and can_view:
+                            if followers_count != followers_old_count:
+                                m_body_html_parts = [f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})"]
+                            else:
+                                m_body_html_parts = [f"Followers list changed for user <b>{user}</b> (count: <b>{followers_count}</b>)"]
 
-                # Send webhook notification for followers change
-                webhook_result = send_follower_change_webhook(
-                    user, "followers", followers_old_count, followers_count,
-                    added_followers_list, removed_followers_list
-                )
-                if webhook_result != 0 and DEBUG_MODE:
-                    print(f"* Warning: Webhook notification for followers change failed")
+                            if removed_followers_list_html:
+                                m_body_html_parts.append(f"<br><br><b>{removed_followers_mbody.strip()}</b><br>{removed_followers_list_html.strip().replace(chr(10), '<br>')}")
+                            if added_followers_list_html:
+                                m_body_html_parts.append(f"<br><br><b>{added_followers_mbody.strip()}</b><br>{added_followers_list_html.strip().replace(chr(10), '<br>')}")
+                            m_body_html_parts.append(f"<br><br>Check interval: <b>{display_time(r_sleep_time) if r_sleep_time else 'N/A'}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}")
+                            m_body_html = "".join(m_body_html_parts)
+                        else:
+                            m_body_html = f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+
+                    # Send webhook notification for followers change
+                    webhook_result = send_follower_change_webhook(
+                        user, "followers", followers_old_count, followers_count,
+                        added_followers_list, removed_followers_list
+                    )
+                    if webhook_result != 0 and DEBUG_MODE:
+                        print(f"* Warning: Webhook notification for followers change failed")
 
                 followers_old_count = followers_count
 
@@ -7710,7 +7731,7 @@ def get_target_paths(user):
 
 
 def run_main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME
 
@@ -7908,6 +7929,13 @@ def run_main():
         action="store_true",
         default=None,
         help="Enable detailed follower and following monitoring (churn detection) by fetching full lists every check"
+    )
+    session_opts.add_argument(
+        "--skip-follow-changes",
+        dest="skip_follow_changes",
+        action="store_true",
+        default=None,
+        help="Do not report or notify when follower or following change is detected"
     )
     session_opts.add_argument(
         "-r", "--skip-story-details",
@@ -8269,6 +8297,9 @@ def run_main():
     if args.followers_churn is True:
         FOLLOWERS_CHURN_DETECTION = True
 
+    if args.skip_follow_changes is True:
+        SKIP_FOLLOW_CHANGES = True
+
     # Webhook configuration
     if args.webhook_url:
         if not validate_webhook_url(args.webhook_url):
@@ -8458,6 +8489,10 @@ def run_main():
             FOLLOWERS_CHURN_DETECTION = False
             FOLLOWERS_CHURN_AUTODISABLED = True
             FOLLOWERS_CHURN_AUTODISABLED_REASON = "autodisabled due to SKIP_FOLLOWERS and SKIP_FOLLOWINGS"
+        elif SKIP_FOLLOW_CHANGES:
+            FOLLOWERS_CHURN_DETECTION = False
+            FOLLOWERS_CHURN_AUTODISABLED = True
+            FOLLOWERS_CHURN_AUTODISABLED_REASON = "autodisabled due to SKIP_FOLLOW_CHANGES"
 
     if INSTA_CHECK_INTERVAL <= RANDOM_SLEEP_DIFF_LOW:
         check_interval_low = INSTA_CHECK_INTERVAL
@@ -8593,6 +8628,7 @@ def run_main():
     print(f"* Skip session login:\t\t\t{SKIP_SESSION}")
     print(f"* Skip fetching followers:\t\t{SKIP_FOLLOWERS}")
     print(f"* Skip fetching followings:\t\t{SKIP_FOLLOWINGS}")
+    print(f"* Skip reporting follows changes:\t{SKIP_FOLLOW_CHANGES}")
     print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
     print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
     print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
@@ -8784,7 +8820,7 @@ def run_main():
         if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
             WEB_DASHBOARD_STOP_EVENTS[targets[0]] = stop_event
 
-        instagram_monitor_user(targets[0], csv_files_by_user.get(targets[0], CSV_FILE), SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, user_root_path=OUTPUT_DIR, stop_event=stop_event)
+        instagram_monitor_user(targets[0], csv_files_by_user.get(targets[0], CSV_FILE), SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, user_root_path=OUTPUT_DIR, stop_event=stop_event, skip_follow_changes=SKIP_FOLLOW_CHANGES)
     else:
         stagger = args.targets_stagger if args.targets_stagger is not None else MULTI_TARGET_STAGGER
         jitter = args.targets_stagger_jitter if args.targets_stagger_jitter is not None else MULTI_TARGET_STAGGER_JITTER
@@ -8887,7 +8923,8 @@ def run_main():
                     signal_loading_complete=signal_event,
                     user_root_path=user_root,
                     stop_event=stop_event,
-                    manual_recheck=manual_startup_recheck
+                    manual_recheck=manual_startup_recheck,
+                    skip_follow_changes=SKIP_FOLLOW_CHANGES
                 )
             except Exception as e:
                 # Surface thread exceptions so the user sees them
