@@ -1009,6 +1009,32 @@ def create_web_dashboard_app():
             if data.get('targets') is None:
                 data['targets'] = {}
 
+            # Recompute time labels dynamically from timestamps
+            try:
+                if LAST_CHECK_TIME:
+                    data['last_check'] = get_squeezed_date_from_ts(LAST_CHECK_TIME)
+                if NEXT_CHECK_TIME:
+                    data['next_check'] = get_squeezed_date_from_ts(NEXT_CHECK_TIME)
+                elif NEXT_CHECK_DISPLAY:
+                    data['next_check'] = NEXT_CHECK_DISPLAY
+            except Exception:
+                # Never fail the status endpoint due to formatting issues
+                pass
+
+            try:
+                for _user, t_data in (data.get('targets') or {}).items():
+                    if not isinstance(t_data, dict):
+                        continue
+                    last_ts = t_data.get('last_checked_ts')
+                    next_ts = t_data.get('next_check_ts')
+                    if isinstance(last_ts, (int, float)) and last_ts > 0:
+                        t_data['last_checked'] = get_squeezed_date_from_ts(last_ts)
+                    if isinstance(next_ts, (int, float)) and next_ts > 0:
+                        t_data['next_check'] = get_squeezed_date_from_ts(next_ts)
+            except Exception:
+                # Keep output best-effort; don't break dashboard on edge cases
+                pass
+
             return jsonify(data)  # type: ignore
 
     # Catch TemplateNotFound specifically to show friendly error
@@ -4422,8 +4448,9 @@ def generate_dashboard_targets_table(target_data):
     assert box is not None
     assert Text is not None
 
-    table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan")
-    table.add_column("Target", style="green", width=18)
+    table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan", expand=True)
+    # Let Target expand to use the full terminal width (avoids unused space on the right)
+    table.add_column("Target", style="green", ratio=2, no_wrap=True, overflow="ellipsis")
     table.add_column("Vis.", width=5)  # Visibility: PUB/PRI
     table.add_column("Followers", justify="right", width=10)
     table.add_column("Following", justify="right", width=10)
@@ -4431,7 +4458,8 @@ def generate_dashboard_targets_table(target_data):
     table.add_column("Reels", justify="right", width=7)
     table.add_column("Story", width=6)
     table.add_column("Last Chk", width=12)
-    table.add_column("Next Chk", width=12)
+    # Needs to fit "Tom. HH:MM:SS" (13 chars) without wrapping
+    table.add_column("Next Chk", width=13)
     table.add_column("Status", width=12)
 
     for target, data in target_data.items():
@@ -4450,6 +4478,16 @@ def generate_dashboard_targets_table(target_data):
         elif has_story is False:
             story_str = "  No"
 
+        # Prefer timestamps for time labels so they stay correct after midnight
+        last_chk = data.get('last_checked') or '-'
+        next_chk = data.get('next_check') or '-'
+        last_ts = data.get('last_checked_ts')
+        next_ts = data.get('next_check_ts')
+        if isinstance(last_ts, (int, float)) and last_ts > 0:
+            last_chk = get_squeezed_date_from_ts(last_ts)
+        if isinstance(next_ts, (int, float)) and next_ts > 0:
+            next_chk = get_squeezed_date_from_ts(next_ts)
+
         table.add_row(
             target,
             visibility,
@@ -4458,8 +4496,8 @@ def generate_dashboard_targets_table(target_data):
             str(data.get('posts') if data.get('posts') is not None else '-'),
             str(data.get('reels') if data.get('reels') is not None else '-'),
             story_str,
-            str(data.get('last_checked') or '-'),
-            str(data.get('next_check') or '-'),
+            str(last_chk),
+            str(next_chk),
             Text(status_val, style=status_style)
         )
     return table
