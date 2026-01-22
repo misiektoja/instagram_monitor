@@ -57,6 +57,7 @@
    * [Email Notifications](#email-notifications)
    * [Webhook Notifications](#webhook-notifications)
    * [Follower Churn Detection](#follower-churn-detection)
+   * [Skipping Follow Changes](#skipping-follow-changes)
    * [CSV Export](#csv-export)
    * [Output Directory](#output-directory)
    * [Detection of Changed Profile Pictures](#detection-of-changed-profile-pictures)
@@ -583,11 +584,33 @@ To enable follower churn detection:
 - set `FOLLOWERS_CHURN_DETECTION` to `True`
 - or use the `--followers-churn` flag
 
+**Note**: This feature is automatically disabled if `SKIP_FOLLOW_CHANGES` is active, as detailed tracking is not possible when follow-related reporting is suppressed. It also requires [Session Mode 2](#session-mode-2-with-logged-in-instagram-account-session-login).
+
 ```sh
 instagram_monitor <target_insta_user> --followers-churn
 ```
 
 **Note**: This feature requires [Session Mode 2](#session-mode-2-with-logged-in-instagram-account-session-login) (session login) to access the Instagram API. It will increase API calls since it fetches the full follower/following lists every check interval.
+
+<a id="skipping-follow-changes"></a>
+### Skipping Follow Changes
+
+If you want to track followers/followings counts in the dashboards, but don't want to get any notifications or logs when they change, you can enable the "Skip Follow Changes" mode.
+
+When enabled:
+- **Notifications**: Email and Webhook alerts for follower/following changes are suppressed.
+- **Reporting**: Console prints and activity logs for these changes are disabled.
+- **CSV Export**: No "Followers Count" or "Followings Count" entries are written to the CSV file.
+- **Performance**: High-overhead downloading of full lists is skipped, saving bandwidth and reducing API call volume.
+
+To enable skipping follow changes:
+- set `SKIP_FOLLOW_CHANGES` to `True` in your config
+- or use the `--skip-follow-changes` flag
+- or toggle it via the **Settings** menu in the **Web Dashboard**
+
+```sh
+instagram_monitor <target_insta_user> --skip-follow-changes
+```
 
 <a id="csv-export"></a>
 ### CSV Export
