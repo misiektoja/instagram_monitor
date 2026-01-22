@@ -151,6 +151,12 @@ instagram_monitor --import-firefox-session
 instagram_monitor -u <your_insta_user> <target_insta_user>
 ```
 
+- You can also launch the **[Web Dashboard](#web-dashboard-mode)** along with tracking:
+
+```sh
+instagram_monitor <target_insta_user> --web-dashboard
+```
+
 To get the list of all supported command-line arguments / flags:
 
 ```sh
@@ -174,7 +180,7 @@ instagram_monitor --generate-config > instagram_monitor.conf
 
 Edit the `instagram_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
-**Note**: Since **v2.1**, you can also change nearly all configuration settings temporarily while the tool is running via the **[Web Dashboard](#web-dashboard-mode)**.
+**Note**: Since **v3.0**, you can also change nearly all configuration settings temporarily while the tool is running via the **[Web Dashboard](#web-dashboard-mode)**.
 
 <a id="session-mode-1-without-logged-in-instagram-account-no-session-login"></a>
 ### Session Mode 1: Without Logged-In Instagram Account (No Session Login)
@@ -223,7 +229,7 @@ Log in to your account (`your_insta_user`) in Firefox, then run:
 instagram_monitor --import-firefox-session
 ```
 
-Since **v2.1**, you can also perform this import easily via the **[Web Dashboard](#web-dashboard-mode)** (no command line required). Simply open the dashboard, go to the **Session** page and click **Detect Firefox Profiles**.
+Since **v3.0**, you can also perform this import easily via the **[Web Dashboard](#web-dashboard-mode)** (no command line required). Simply open the dashboard, go to the **Session** page and click **Detect Firefox Profiles**.
 
 The tool will detect available Firefox profiles with a `cookies.sqlite` file. If multiple profiles are found, it will prompt you to select one, then import the session and save it via Instaloader.
 
@@ -796,7 +802,7 @@ As Windows supports limited number of signals, this functionality is available o
 <a id="coloring-log-output-with-grc"></a>
 ### Coloring Log Output with GRC
 
-The tool has native **color output** support for terminal since v2.1 (see `COLORED_OUTPUT` and `COLOR_THEME` config options), but you can also use [GRC](https://github.com/garabik/grc) to color logs.
+The tool has native **color output** support for terminal since v3.0 (see `COLORED_OUTPUT` and `COLOR_THEME` config options), but you can also use [GRC](https://github.com/garabik/grc) to color logs.
 
 Add to your GRC config (`~/.grc/grc.conf`):
 
