@@ -5733,7 +5733,7 @@ def instagram_wrap_send(orig_send):
 
 
 # Returns a dictionary containing all current configuration settings
-def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_file_exists=False, cfg_path=None, env_path=None, check_interval_low=None, targets=None):
+def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_file_exists=None, cfg_path=None, env_path=None, check_interval_low=None, targets=None):
     # Prepare hours/ranges string
     hours_ranges_str = ""
     if CHECK_POSTS_IN_HOURS_RANGE:
@@ -5783,6 +5783,12 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         interval_str = f"[ {display_time(check_interval_low)} - {display_time(int(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH))} ]"
     except Exception:
         interval_str = f"[ {INSTA_CHECK_INTERVAL}s +/- ]"
+
+    if profile_pic_file_exists is None:
+        try:
+            profile_pic_file_exists = bool(PROFILE_PIC_FILE_EMPTY) and os.path.exists(PROFILE_PIC_FILE_EMPTY)
+        except Exception:
+            profile_pic_file_exists = False
 
     return {
         'check_interval': INSTA_CHECK_INTERVAL,
