@@ -44,5 +44,6 @@ instagram_monitor = "instagram_monitor:main"
 py-modules = ["instagram_monitor"]
 include-package-data = true
 
-[tool.setuptools.package-data]
-"*" = ["templates/*.html", "instagram_profile_pic_empty.jpg"]
+[tool.setuptools.data-files]
+"instagram_monitor_data/templates" = ["templates/*.html"]
+"instagram_monitor_data" = ["instagram_profile_pic_empty.jpg"]
