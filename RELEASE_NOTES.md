@@ -1,6 +1,6 @@
 # instagram_monitor release notes
 
-# Changes in 3.0 (22 Jan 2026)
+# Changes in 3.0 (23 Jan 2026)
 
 Welcome to version **3.0** — our biggest and most ambitious release to date! This update introduces a completely redesigned experience with a powerful new **Dual Dashboard system** (Web and Terminal), **Webhook / Discord notifications**, native **Color support**, custom **Output directory** feature and advanced **Follower Churn detection**.
 
