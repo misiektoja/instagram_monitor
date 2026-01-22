@@ -2547,18 +2547,19 @@ def _stream_supports_color(stream):
 def init_color_output(stream):
     global COLOR_ENABLED, _COLOR_STYLES
 
+    # On Windows, initialize colorama before checking color support
+    # This allows colorama to enable ANSI support, which may affect the isatty() check
+    if colorama_init and system() == 'Windows':
+        try:
+            colorama_init(autoreset=False)
+        except Exception:
+            pass
+
     COLOR_ENABLED = bool(globals().get("COLORED_OUTPUT", False)) and _stream_supports_color(stream)
 
     if not COLOR_ENABLED:
         _COLOR_STYLES = {}
         return
-
-    # Best effort: on Windows, enable ANSI support if colorama is installed
-    if colorama_init:
-        try:
-            colorama_init(autoreset=False)
-        except Exception:
-            pass
 
     user_theme = globals().get("COLOR_THEME") if isinstance(globals().get("COLOR_THEME"), dict) else {}
     theme = {**DEFAULT_COLOR_THEME, **(user_theme or {})}
