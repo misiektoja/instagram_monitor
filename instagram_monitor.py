@@ -8073,9 +8073,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     print(f"Tagged users:\t\t\t\t{tagged_users}")
 
                     location_mbody = ""
+                    location_mbody_html = ""
                     location_mbody_str = ""
                     if location:
                         location_mbody = "\nLocation: "
+                        location_mbody_html = "<br>Location: "
                         location_mbody_str = location
                         print(f"Location:\t\t\t\t{location}")
 
@@ -8138,7 +8140,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         m_subject = f"Instagram user {user} has a new {last_source.lower()} - {get_short_date_from_ts(highestinsta_dt)} (after {calculate_timespan(highestinsta_dt, highestinsta_dt_old, show_seconds=False)} - {get_short_date_from_ts(highestinsta_dt_old)})"
 
                         m_body = f"Instagram user {user} has a new {last_source.lower()} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n\nDate: {get_date_from_ts(highestinsta_dt)}\n{last_source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nLikes: {likes}\nComments: {comments}\nTagged: {tagged_users}{location_mbody}{location_mbody_str}\nDescription:\n\n{caption}\n{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{post_comments_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"Instagram user <b>{user}</b> has a new {last_source.lower()} after <b>{calculate_timespan(highestinsta_dt, highestinsta_dt_old)}</b> ({get_date_from_ts(highestinsta_dt_old)}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(highestinsta_dt)}</b><br>{last_source.capitalize()} URL: <a href=\"{post_url}\">{post_url}</a><br>Profile URL: <a href=\"https://www.instagram.com/{insta_username}/\">https://www.instagram.com/{insta_username}/</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {tagged_users}{location_mbody}{location_mbody_str}<br>Description:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                        m_body_html = f"Instagram user <b>{user}</b> has a new {last_source.lower()} after <b>{calculate_timespan(highestinsta_dt, highestinsta_dt_old)}</b> ({get_date_from_ts(highestinsta_dt_old)}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(highestinsta_dt)}</b><br>{last_source.capitalize()} URL: <a href=\"{post_url}\">{post_url}</a><br>Profile URL: <a href=\"https://www.instagram.com/{insta_username}/\">https://www.instagram.com/{insta_username}/</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {tagged_users}{location_mbody_html}{location_mbody_str}<br>Description:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
                         print(f"\n* Sending email notification to {RECEIVER_EMAIL}")
                         if m_body_html_pic_saved_text:
