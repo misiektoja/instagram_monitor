@@ -361,7 +361,7 @@ instagram_monitor target1 target2 --dashboard
 ```
 
 <p align="center">
-   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_terminal_dashboard.png" alt="instagram_monitor_terminal_dashboard_screenshot" width="90%"/>
+   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_terminal_dashboard.png" alt="instagram_monitor_terminal_dashboard_screenshot" width="100%"/>
 </p>
 
 ---
@@ -536,7 +536,7 @@ Example email:
 The tool supports webhook notifications (compatible with Discord and other webhook services) for all monitored events (posts, reels, stories, followings, followers, bio, profile visibility, profile picture changes and errors).
 
 <p align="center">
-   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_discord.png" alt="instagram_monitor_discord_screenshot" width="90%"/>
+   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_discord.png" alt="instagram_monitor_discord_screenshot" width="80%"/>
 </p>
 
 #### 1. Configure Discord Webhook
