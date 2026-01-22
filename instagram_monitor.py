@@ -4929,7 +4929,7 @@ def generate_user_dashboard(target_data):
         Layout(log_panel, size=12)
     )
     layout["main"].split_row(
-        Layout(table, ratio=2),
+        Layout(table, ratio=4),
         Layout(name="right", ratio=1)
     )
     layout["main"]["right"].split_column(
