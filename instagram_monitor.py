@@ -2140,6 +2140,25 @@ def update_terminal_dashboard_data(targets=None, config=None, is_monitoring=None
                         DASHBOARD_DATA['targets'][user]['next_check_ts'] = preserved_next_check_ts
                 else:
                     DASHBOARD_DATA['targets'][user] = data
+        # Handle history list for fetched updates (terminal dashboard)
+        if targets is not None:
+            for user, data in targets.items():
+                target_obj = DASHBOARD_DATA['targets'][user]
+                new_update = data.get('new_update')
+                if new_update:
+                    if 'fetched_updates' not in target_obj:
+                        target_obj['fetched_updates'] = []
+
+                    # Robust deduplication: Check unique combination of type + timestamp + url
+                    def get_key(update):
+                        return f"{update.get('type')}_{update.get('timestamp')}_{update.get('url')}"
+
+                    new_key = get_key(new_update)
+                    exists = any(get_key(u) == new_key for u in target_obj['fetched_updates'])
+
+                    if not exists:
+                        target_obj['fetched_updates'].insert(0, new_update)
+                        target_obj['fetched_updates'] = target_obj['fetched_updates'][:10]  # Keep last 10
         if config is not None:
             if 'config' not in DASHBOARD_DATA:
                 DASHBOARD_DATA['config'] = {}
@@ -4828,31 +4847,17 @@ def generate_user_dashboard(target_data):
 
     # Last Fetched Panel
     last_fetched_text = Text()
-    # Find the most recently updated target with last_post/last_story
-    latest_update = None
-    latest_ts = 0
-    latest_user = None
 
-    for user, t_data in target_data.items():
-        # Prefer most recent update if available
-        if t_data.get('new_update'):
-            latest_update = t_data['new_update']
-            latest_user = user
-            break
-        if t_data.get('last_post'):
-            # Simple check, in reality would parse timestamp
-            latest_update = t_data['last_post']
-            latest_user = user
-            break  # Just take the first one found for now/single user
-        if t_data.get('last_story'):
-            latest_update = t_data['last_story']
-            latest_user = user
-            break
+    def get_update_sort_ts(update):
+        ts_val = update.get('timestamp_ts')
+        return ts_val if isinstance(ts_val, (int, float)) else 0
 
-    if latest_update:
-        last_fetched_text.append(f"Type: {latest_update.get('type', 'Unknown')}\n", style="bold cyan")
-        last_fetched_text.append(f"Date: {latest_update.get('timestamp', '-')}\n", style="dim")
-        caption = latest_update.get('caption', '')
+    def append_update_entry(update, fallback_user):
+        user_label = update.get('user') or fallback_user or "Unknown"
+        last_fetched_text.append(f"User: {user_label}\n", style="bold green")
+        last_fetched_text.append(f"Type: {update.get('type', 'Unknown')}\n", style="bold cyan")
+        last_fetched_text.append(f"Date: {update.get('timestamp', '-')}\n", style="dim")
+        caption = update.get('caption', '')
         if caption:
             caption = caption.replace('\n', ' ')
             if len(caption) > 60:
@@ -4860,10 +4865,10 @@ def generate_user_dashboard(target_data):
             last_fetched_text.append(f"Caption: {caption}\n")
 
         # Get URL value for potential fallbacks
-        url_value = latest_update.get('url', '')
+        url_value = update.get('url', '')
 
         # Get file path from the update data (stored directly in file_path field)
-        file_path = latest_update.get('file_path')
+        file_path = update.get('file_path')
         if not file_path:
             # Fallback: try to extract from url field (for backwards compatibility)
             if url_value.startswith('/media/'):
@@ -4891,10 +4896,10 @@ def generate_user_dashboard(target_data):
                 last_fetched_text.append(f"File: {file_path}\n", style="dim yellow")
 
         # Add Instagram URL
-        post_url = latest_update.get('post_url', '')
-        is_story = latest_update.get('is_story')
+        post_url = update.get('post_url', '')
+        is_story = update.get('is_story')
         if is_story is None:
-            is_story = latest_update.get('type', '').lower().startswith('story')
+            is_story = update.get('type', '').lower().startswith('story')
         if post_url:
             if is_story:
                 # Add anonymity warning for stories
@@ -4905,6 +4910,28 @@ def generate_user_dashboard(target_data):
         elif url_value and url_value.startswith('http'):
             # Fallback to url if post_url is not available
             last_fetched_text.append(f"URL: {url_value}", style="blue underline")
+
+    updates = []
+    for user, t_data in target_data.items():
+        fetched_updates = t_data.get('fetched_updates') or []
+        if fetched_updates:
+            for update in fetched_updates[:2]:
+                updates.append((get_update_sort_ts(update), update, user))
+            continue
+        for key in ("new_update", "last_post", "last_story"):
+            update = t_data.get(key)
+            if update:
+                updates.append((get_update_sort_ts(update), update, user))
+                break
+
+    updates.sort(key=lambda item: item[0], reverse=True)
+    updates = updates[:2]
+
+    if updates:
+        for idx, (_, update, user) in enumerate(updates):
+            if idx > 0:
+                last_fetched_text.append("\n")
+            append_update_entry(update, user)
     else:
         last_fetched_text.append("No posts, reels or stories fetched yet.", style="dim italic")
 
@@ -6645,7 +6672,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             'caption': story_item.caption[:50] + "..." if story_item.caption and len(story_item.caption) > 50 else (story_item.caption or ""),
                             'url': story_item.url,
                             'post_url': f"https://www.instagram.com/stories/{user}/",
-                            'timestamp': get_short_date_from_ts(local_dt, show_year=True)
+                            'timestamp': get_short_date_from_ts(local_dt, show_year=True),
+                            'timestamp_ts': int(local_dt.timestamp()) if isinstance(local_dt, datetime) else None
                         }
                         print(f"Type:\t\t\t\t\t{story_type}")
 
@@ -6726,7 +6754,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             'url': display_url,
                             'file_path': saved_file_path if saved_file_path else None,
                             'post_url': f"https://www.instagram.com/stories/{user}/",
-                            'timestamp': get_short_date_from_ts(local_dt)
+                            'timestamp': get_short_date_from_ts(local_dt),
+                            'timestamp_ts': int(local_dt.timestamp()) if isinstance(local_dt, datetime) else None
                         }
 
                         if i == stories_count:
@@ -6910,7 +6939,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             'url': display_url,
             'file_path': saved_file_path if saved_file_path else None,
             'post_url': post_url,
-            'timestamp': get_short_date_from_ts(highestinsta_dt, show_year=True)
+            'timestamp': get_short_date_from_ts(highestinsta_dt, show_year=True),
+            'timestamp_ts': int(highestinsta_dt.timestamp()) if isinstance(highestinsta_dt, datetime) else None
         }
 
         print_cur_ts("\nTimestamp:\t\t\t\t")
@@ -7875,6 +7905,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                     'file_path': saved_file_path if saved_file_path else None,
                                     'post_url': f"https://www.instagram.com/stories/{user}/",
                                     'timestamp': get_short_date_from_ts(local_dt),
+                                    'timestamp_ts': int(local_dt.timestamp()) if isinstance(local_dt, datetime) else None,
                                     'user': user,
                                     'is_story': True
                                 }
@@ -8152,6 +8183,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             'file_path': saved_file_path if saved_file_path else None,
                             'post_url': post_url,
                             'timestamp': get_short_date_from_ts(highestinsta_dt, show_year=True),
+                            'timestamp_ts': int(highestinsta_dt.timestamp()) if isinstance(highestinsta_dt, datetime) else None,
                             'user': user,
                             'is_story': False
                         }
