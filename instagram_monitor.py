@@ -561,6 +561,8 @@ pbar = None
 # Global tracking for last/next check times
 LAST_CHECK_TIME = None
 NEXT_CHECK_TIME = None
+# Human-friendly global next-check display (used when NEXT_CHECK_TIME is not available)
+NEXT_CHECK_DISPLAY = None
 CHECK_COUNT = 0
 
 # Global state for debug mode manual check trigger (thread-safe Event)
@@ -1771,8 +1773,17 @@ def start_all_monitoring():
         add_jitter = int(random.uniform(0, jitter)) if jitter else 0
         delay = base_delay + add_jitter
         planned = now + timedelta(seconds=delay)
+        # If hour ranges are enabled, show/schedule the real planned time (first allowed time >= planned)
+        if CHECK_POSTS_IN_HOURS_RANGE:
+            allowed = hours_to_check()
+            adjusted = _next_allowed_datetime_at_or_after(planned, allowed) if allowed else None
+            if adjusted:
+                planned = adjusted
+                delay = max(0, int((planned - now).total_seconds()))
         planned_actions.append((u, delay, planned))
         print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
+        # Pre-populate dashboards with the correct next check time
+        update_check_times(next_time=planned, user=u, increment_count=False)
 
     print_cur_ts("\nTimestamp:\t\t\t\t")
 
@@ -4265,7 +4276,11 @@ def print_status_summary():
     print("─" * HORIZONTAL_LINE)
     print("Current Monitoring Status:")
     print(f"  Last check: {get_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else 'Not yet'}")
-    print(f"  Next check: {get_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else 'Calculating...'}")
+    if NEXT_CHECK_TIME:
+        next_disp = get_date_from_ts(NEXT_CHECK_TIME)
+    else:
+        next_disp = NEXT_CHECK_DISPLAY or "Calculating..."
+    print(f"  Next check: {next_disp}")
     print(f"  Total checks: {CHECK_COUNT}")
     print(f"  Debug mode: {DEBUG_MODE}")
     print("─" * HORIZONTAL_LINE)
@@ -4274,7 +4289,7 @@ def print_status_summary():
 # Update global tracking for last/next check times
 
 def update_check_times(last_time=None, next_time=None, user=None, increment_count=True):
-    global LAST_CHECK_TIME, NEXT_CHECK_TIME, CHECK_COUNT, DASHBOARD_DATA, WEB_DASHBOARD_DATA
+    global LAST_CHECK_TIME, NEXT_CHECK_TIME, NEXT_CHECK_DISPLAY, CHECK_COUNT, DASHBOARD_DATA, WEB_DASHBOARD_DATA
 
     # Update counts
     if increment_count:
@@ -4337,23 +4352,42 @@ def update_check_times(last_time=None, next_time=None, user=None, increment_coun
 
     # Recalculate Global NEXT_CHECK_TIME
     all_nexts = []
+    all_next_labels = []
     with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
         for t_data in WEB_DASHBOARD_DATA.get('targets', {}).values():
             ts = t_data.get('next_check_ts')
             # Only consider future check times for global "Next Check"
             if ts and ts > now_ts:
                 all_nexts.append(ts)
+            else:
+                label = t_data.get('next_check')
+                # Prefer meaningful labels; skip transient "In Progress" for global aggregation
+                if label and isinstance(label, str) and label != "In Progress":
+                    all_next_labels.append(label)
 
     if all_nexts:
         NEXT_CHECK_TIME = min(all_nexts)
+        NEXT_CHECK_DISPLAY = get_squeezed_date_from_ts(NEXT_CHECK_TIME)
     elif next_time and not isinstance(next_time, str):
         if next_time.timestamp() > now_ts:
             NEXT_CHECK_TIME = next_time.timestamp()
+            NEXT_CHECK_DISPLAY = get_squeezed_date_from_ts(NEXT_CHECK_TIME)
         else:
             NEXT_CHECK_TIME = None
+            NEXT_CHECK_DISPLAY = None
     else:
         # Keep existing NEXT_CHECK_TIME during active checks
         pass
+
+    # If no timestamp-based next check is available, fall back to an informative label (if any)
+    if not NEXT_CHECK_TIME:
+        if isinstance(next_time, str) and next_time:
+            NEXT_CHECK_DISPLAY = next_time
+        elif all_next_labels:
+            # Use the first informative label (they should all be equivalent in practice)
+            NEXT_CHECK_DISPLAY = all_next_labels[0]
+        else:
+            NEXT_CHECK_DISPLAY = None
 
     # Update dashboard displays
     if DASHBOARD_ENABLED and RICH_AVAILABLE:
@@ -4362,7 +4396,7 @@ def update_check_times(last_time=None, next_time=None, user=None, increment_coun
 
     if WEB_DASHBOARD_ENABLED:
         last_display = get_squeezed_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else None
-        next_display = get_squeezed_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else None
+        next_display = get_squeezed_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else (NEXT_CHECK_DISPLAY or None)
 
         update_ui_data(
             check_count=CHECK_COUNT,
@@ -4447,7 +4481,7 @@ def generate_global_stats_panel():
         active_count = len(WEB_DASHBOARD_DATA.get('targets', {}))
 
     last_check_str = get_squeezed_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else "Never"
-    next_check_str = get_squeezed_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else "-"
+    next_check_str = get_squeezed_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else (NEXT_CHECK_DISPLAY or "-")
 
     stats_table.add_row(
         Text.assemble(("Active Targets: ", "cyan"), (str(active_count), "bold yellow")),
@@ -5411,6 +5445,52 @@ def hours_to_check():
     return sorted(hours)
 
 
+# Given a planned datetime (local, naive), returns the first datetime >= planned_dt that falls within allowed hours
+def _next_allowed_datetime_at_or_after(planned_dt: datetime, allowed_hours: List[int]) -> Optional[datetime]:
+    if not allowed_hours:
+        return None
+
+    if planned_dt.hour in allowed_hours:
+        return planned_dt
+
+    # Entire current hour is disallowed -> move to next allowed hour, preserving within-hour offset
+    hour_start = planned_dt.replace(minute=0, second=0, microsecond=0)
+    offset = planned_dt - hour_start
+
+    cursor = hour_start + timedelta(hours=1)
+    # Search up to 48 hours ahead to guarantee finding a match for any non-empty allowed_hours
+    for _ in range(48):
+        if cursor.hour in allowed_hours:
+            return cursor + offset
+        cursor += timedelta(hours=1)
+
+    # Fallback (should never happen if allowed_hours is non-empty)
+    return planned_dt
+
+
+# Computes the next sleep duration and next_check value, factoring in CHECK_POSTS_IN_HOURS_RANGE
+def compute_next_check_with_hours_range(now_dt: datetime, base_sleep_seconds: int) -> Tuple[int, Any]:
+    if base_sleep_seconds < 0:
+        base_sleep_seconds = 0
+
+    if not CHECK_POSTS_IN_HOURS_RANGE:
+        next_dt = now_dt + timedelta(seconds=base_sleep_seconds)
+        return max(1, int((next_dt - now_dt).total_seconds())), next_dt
+
+    allowed = hours_to_check()
+    if not allowed:
+        # Misconfiguration / both ranges disabled -> don't busy-loop; keep an informative label
+        return 300, "No allowed hours (hour ranges disabled or misconfigured)"
+
+    planned_dt = now_dt + timedelta(seconds=base_sleep_seconds)
+    adjusted = _next_allowed_datetime_at_or_after(planned_dt, allowed)
+    if adjusted is None:
+        return 300, "No allowed hours (hour ranges disabled or misconfigured)"
+
+    sleep_s = int((adjusted - now_dt).total_seconds())
+    return max(1, sleep_s), adjusted
+
+
 # Formats a list of hours as compact ranges (e.g., [0, 1, 2, 3, 11, 12, 13] -> "0-3, 11-13")
 def format_hours_as_ranges(hours_list):
     if not hours_list:
@@ -5671,6 +5751,44 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         except Exception as e:
             print(f"* Warning: Could not apply custom mobile user-agent patch due to an unexpected error: {e}")
             print("* Proceeding with the default Instaloader mobile user-agent")
+
+        # If hour-range gating is enabled and we're currently outside allowed hours, wait until the next allowed window
+        # before fetching any target data
+        if CHECK_POSTS_IN_HOURS_RANGE:
+            allowed = hours_to_check()
+            if not allowed:
+                update_check_times(next_time="No allowed hours (hour ranges disabled or misconfigured)", user=user, increment_count=False)
+                if WEB_DASHBOARD_ENABLED:
+                    update_ui_data(targets={user: {'status': 'Paused: No allowed hours'}})
+                time.sleep(5)
+            else:
+                now_hr = now_local_naive()
+                if now_hr.hour not in allowed:
+                    next_allowed = _next_allowed_datetime_at_or_after(now_hr, allowed)
+                    if next_allowed:
+                        sleep_s = max(1, int((next_allowed - now_hr).total_seconds()))
+                        update_check_times(next_time=next_allowed, user=user, increment_count=False)
+                        if WEB_DASHBOARD_ENABLED:
+                            update_ui_data(targets={user: {'status': 'Waiting (hours range)'}})
+                        if HOURS_VERBOSE or DEBUG_MODE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE):
+                            sleep_message(sleep_s, user)
+                        # Interruptible wait (stop/recheck aware) similar to the main sleep loop
+                        sleep_remaining = sleep_s
+                        while sleep_remaining > 0:
+                            if stop_event and stop_event.is_set():
+                                return
+                            # Allow Web Dashboard "recheck" to break the wait early (still hour-gated later)
+                            if WEB_DASHBOARD_ENABLED:
+                                with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                                    if user in WEB_DASHBOARD_RECHECK_EVENTS and WEB_DASHBOARD_RECHECK_EVENTS[user].is_set():
+                                        WEB_DASHBOARD_RECHECK_EVENTS[user].clear()
+                                        break
+                            wait_chunk = min(1, sleep_remaining)
+                            if stop_event:
+                                stop_event.wait(wait_chunk)
+                            else:
+                                time.sleep(wait_chunk)
+                            sleep_remaining -= wait_chunk
 
         # Always print and log activity; Logger handles terminal suppression
         _thread_local.in_partial_line = True
@@ -6499,10 +6617,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     # Initialize check timing and update last check time for dashboard
     # Don't increment CHECK_COUNT here - it will be incremented in the main loop
+    now = now_local_naive()
     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
+    r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
     update_check_times(
-        last_time=now_local_naive(),
-        next_time=now_local_naive() + timedelta(seconds=r_sleep_time),
+        last_time=now,
+        next_time=next_check_val,
         user=user,
         increment_count=False
     )
@@ -6554,7 +6674,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     # Monitoring active message
     now = now_local_naive()
-    next_check = now + timedelta(seconds=r_sleep_time)
+    next_check = now + timedelta(seconds=r_sleep_time) if not isinstance(next_check_val, datetime) else next_check_val
 
     # Only print tracking message if Dashboard is not enabled
     if threading.current_thread() is not threading.main_thread():
@@ -6633,7 +6753,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         elif DEBUG_MODE:
             debug_print(f"Starting check #{CHECK_COUNT}")
 
-        cur_h = datetime.now().strftime("%H")
+        cur_h = now_local_naive().strftime("%H")
 
         in_allowed_hours = (CHECK_POSTS_IN_HOURS_RANGE and (int(cur_h) in hours_to_check())) or not CHECK_POSTS_IN_HOURS_RANGE
 
@@ -6797,6 +6917,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         notification_type="error"
                     )
 
+                # Respect hour-range gating for retries as well
+                now = now_local_naive()
+                r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
+                update_check_times(next_time=next_check_val, user=user, increment_count=False)
                 print_cur_ts("\nTimestamp:\t\t\t\t")
                 time.sleep(r_sleep_time)
                 continue
@@ -6821,6 +6945,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     color=0x1f1f1f,  # Dark/Black
                     notification_type="error"
                 )
+                # Respect hour-range gating for retries as well
+                now = now_local_naive()
+                r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
+                update_check_times(next_time=next_check_val, user=user, increment_count=False)
                 print_cur_ts("\nTimestamp:\t\t\t\t")
                 time.sleep(r_sleep_time)
                 continue
@@ -7520,12 +7648,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             raise Exception("Failed to get last post/reel details")
 
                     # Prepare next check timing (don't increment count, already done at check start)
+                    now = now_local_naive()
                     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
-                    next_check = now_local_naive() + timedelta(seconds=r_sleep_time)
-                    update_check_times(next_time=next_check, user=user, increment_count=False)
+                    r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
+                    update_check_times(next_time=next_check_val, user=user, increment_count=False)
 
                 except Exception as e:
+                    now = now_local_naive()
                     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
+                    r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
                     error_msg = format_error_message(e)
                     print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
                     if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
@@ -7549,6 +7680,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                     print_cur_ts("Timestamp:\t\t\t\t")
 
+                    update_check_times(next_time=next_check_val, user=user, increment_count=False)
                     time.sleep(r_sleep_time)
                     continue
 
@@ -7759,10 +7891,12 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         if WEB_DASHBOARD_ENABLED:
             update_ui_data(targets={user: {'status': 'OK'}})
 
+        now = now_local_naive()
         r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
+        r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
 
         # Update next check time tracking (don't increment count, already done at check start)
-        update_check_times(next_time=now_local_naive() + timedelta(seconds=r_sleep_time), user=user, increment_count=False)
+        update_check_times(next_time=next_check_val, user=user, increment_count=False)
 
         # Print timing information (includes last check and next check in debug mode)
         print_check_timing(r_sleep_time, user=user)
@@ -8977,11 +9111,20 @@ def run_main():
         now = now_local_naive()
         print(f"* Multi-target staggering:\t\t{display_time(stagger)} between targets (jitter: {display_time(jitter)})")
         print("\n* Planned first poll times (processed alphabetically):")
+        planned_actions = []
         for idx, u in enumerate(targets):
             base_delay = idx * stagger
             add_jitter = int(random.uniform(0, jitter)) if jitter else 0
             delay = base_delay + add_jitter
             planned = now + timedelta(seconds=delay)
+            # If hour ranges are enabled, show the real planned time (first allowed time >= planned)
+            if CHECK_POSTS_IN_HOURS_RANGE:
+                allowed = hours_to_check()
+                adjusted = _next_allowed_datetime_at_or_after(planned, allowed) if allowed else None
+                if adjusted:
+                    planned = adjusted
+                    delay = max(0, int((planned - now).total_seconds()))
+            planned_actions.append((u, delay, planned))
             print(f"  - {u} @ ~{planned.strftime('%H:%M:%S')} (in {display_time(delay)})")
             debug_print(f"Target {u} scheduled with delay_s={delay}")
 
@@ -9075,10 +9218,7 @@ def run_main():
                         del WEB_DASHBOARD_RECHECK_EVENTS[u]
 
         threads = []
-        for idx, u in enumerate(targets):
-            base_delay = idx * stagger
-            add_jitter = int(random.uniform(0, jitter)) if jitter else 0
-            delay = base_delay + add_jitter
+        for idx, (u, delay, _planned) in enumerate(planned_actions):
             stop_event = threading.Event()
             if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
                 WEB_DASHBOARD_STOP_EVENTS[u] = stop_event
