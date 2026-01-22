@@ -4818,8 +4818,7 @@ def generate_config_dashboard(target_data, config_data):
     stats_panel = generate_global_stats_panel()
 
     # Dynamic height calculation to prevent cutoff
-    # Base height + number of rows + padding
-    config_height = max(len(left_items), len(right_items)) + 2
+    config_height = max(len(left_items), len(right_items)) + 4
 
     # Build layout
     layout = Layout()
