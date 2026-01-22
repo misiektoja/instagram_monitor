@@ -1,29 +1,33 @@
 # instagram_monitor release notes
 
-# Changes in 2.1 (TBD)
+# Changes in 3.0 (22 Jan 2026)
+
+Welcome to version **3.0** — our biggest and most ambitious release to date! This update introduces a completely redesigned experience with a powerful new **Dual Dashboard system** (Web and Terminal), **Webhook / Discord notifications**, native **Color support**, custom **Output directory** feature and advanced **Follower Churn detection**.
+
+A huge thank you to our amazing contributors [@Sha-Dox](https://github.com/Sha-Dox), [@tomballgithub](https://github.com/tomballgithub), [@YouveGotMeowxy](https://github.com/YouveGotMeowxy) and [@jl-nr](https://github.com/jl-nr) for their invaluable code, ideas and testing that made this release possible.
 
 **Features and Improvements**:
 
-- **NEW:** Added a comprehensive **dashboard system** accessible in terminal and web, including a Rich-powered **Terminal Dashboard** and a Flask-powered **Web Dashboard** with real-time stats, activity feeds and interactive controls; check the [Terminal Dashboard](https://github.com/misiektoja/instagram_monitor#terminal-dashboard-mode) and [Web Dashboard](https://github.com/misiektoja/instagram_monitor#web-dashboard-mode) for more info (thanks [@Sha-Dox](https://github.com/Sha-Dox) for initial implementation and [@tomballgithub](https://github.com/tomballgithub) for tests and remarks)
-- **NEW:** Added **webhook notifications** system compatible with **Discord** and other webhook services for all monitored events with support for sending local image files; check the [Webhook Notifications](https://github.com/misiektoja/instagram_monitor#webhook-notifications) for more info (thanks [@Sha-Dox](https://github.com/Sha-Dox) for initial implementation)
+- **NEW:** Added a comprehensive **dashboard system** accessible in terminal and web, including a Rich-powered **Terminal Dashboard** and a Flask-powered **Web Dashboard** with real-time stats, activity feeds and interactive controls; check the [Terminal Dashboard](https://github.com/misiektoja/instagram_monitor#terminal-dashboard-mode) and [Web Dashboard](https://github.com/misiektoja/instagram_monitor#web-dashboard-mode) for more info
+- **NEW:** Added **webhook notifications** system compatible with **Discord** and other webhook services for all monitored events with support for sending local image files; check the [Webhook Notifications](https://github.com/misiektoja/instagram_monitor#webhook-notifications) for more info
 - **NEW:** Implemented native **color output** support for terminal, enhancing user experience with customizable **color themes** (see `COLORED_OUTPUT` and `COLOR_THEME` config options). You can still use the old **grc** method if you prefer to only color the logs
-- **NEW:** Added **follower churn detection** (`--followers-churn` flag or `FOLLOWERS_CHURN_DETECTION` config option) - forces the tool to download and compare the full list of followers/followings even if the total count hasn't changed, allowing the detection of user handle changes or simultaneous additions and removals (thanks [@tomballgithub](https://github.com/tomballgithub) for the idea and [@Sha-Dox](https://github.com/Sha-Dox) for initial implementation)
-- **NEW:** Added **custom output directory** feature to organize all files into target-specific subdirectories (**images**, **videos**, **logs**, **json**, **csvs**) which significantly improves organization for multi-target monitoring; check the [Output Directory](https://github.com/misiektoja/instagram_monitor##output-directory) for more info (closes [#35](https://github.com/misiektoja/instagram_monitor/issues/35), thanks [@YouveGotMeowxy](https://github.com/YouveGotMeowxy) for ideas and tests)
+- **NEW:** Added **follower churn detection** (`--followers-churn` flag or `FOLLOWERS_CHURN_DETECTION` config option) - forces the tool to download and compare the full list of followers/followings even if the total count hasn't changed, allowing the detection of user handle changes or simultaneous additions and removals
+- **NEW:** Added **custom output directory** feature to organize all files into target-specific subdirectories (**images**, **videos**, **logs**, **json**, **csvs**) which significantly improves organization for multi-target monitoring; check the [Output Directory](https://github.com/misiektoja/instagram_monitor##output-directory) for more info (closes [#35](https://github.com/misiektoja/instagram_monitor/issues/35))
 - **NEW:** Added **skip follow changes** option (`--skip-follow-changes` flag or `SKIP_FOLLOW_CHANGES` config option) - allows to completely silence and disable follow-related tracking (console prints, activity logs, email/webhook notifications and CSV saving) while still maintaining live statistics in the dashboards; note that enabling this automatically disables **follower churn detection** as detailed tracking is suppressed
 - **NEW:** Implemented **debug mode** (`--debug` flag or `DEBUG_MODE` config option) - provides full technical logging including every API request and internal state changes
-- **NEW:** Introduced **verbose mode** (`--verbose` flag or `VERBOSE_MODE` config option) - provides a middle-ground logging level that shows timing details, next check schedule and loop completion messages without the exhaustive detail of Debug Mode (thanks [@Sha-Dox](https://github.com/Sha-Dox) for initial implementation)
+- **NEW:** Introduced **verbose mode** (`--verbose` flag or `VERBOSE_MODE` config option) - provides a middle-ground logging level that shows timing details, next check schedule and loop completion messages without the exhaustive detail of Debug Mode
 - **NEW:** Added support for **12-hour time format** (`TIME_FORMAT_12H` config option) across the entire tool including dashboards, console output, activity logs and email notifications
-- **NEW:** Implemented HTML formatting for email notifications for better readability
-- **NEW:** Added **dashboard view modes** - toggle between **'User'** and **'Config'** modes across both dashboards with a single keypress ('m') or button click; includes synchronized state throughout the tool (thanks [@Sha-Dox](https://github.com/Sha-Dox) for initial implementation)
-- **NEW:** Implemented **per-target logging** - in multi-target mode, each user gets their own log file; common messages (like the summary screen) are automatically broadcasted to all active logs (thanks [@YouveGotMeowxy](https://github.com/YouveGotMeowxy) for ideas and tests)
-- **IMPROVE:** Enhanced **CSV path resolution** - CSV files are now automatically placed in a `csvs/` subdirectory when `OUTPUT_DIR` and relative path is used. In **multi-target mode**, the tool always enforces **per-user files** (even with absolute paths) to ensure data isolation (thanks [@YouveGotMeowxy](https://github.com/YouveGotMeowxy) for ideas and tests)
+- **NEW:** Implemented **HTML formatting** for **email notifications** for better readability
+- **NEW:** Added **dashboard view modes** - toggle between **'User'** and **'Config'** modes across both dashboards with a single keypress ('m') or button click; includes synchronized state throughout the tool
+- **NEW:** Implemented **per-target logging** - in multi-target mode, each user gets their own log file; common messages (like the summary screen) are automatically broadcasted to all active logs
+- **IMPROVE:** Enhanced **CSV path resolution** - CSV files are now automatically placed in a `csvs/` subdirectory when `OUTPUT_DIR` and relative path is used. In **multi-target mode**, the tool always enforces **per-user files** (even with absolute paths) to ensure data isolation
 - **IMPROVE:** Enhanced `CHECK_POSTS_IN_HOURS_RANGE` logic to support **disabling hour ranges** and updated status message (to disable any range, set both `MIN` and `MAX`to 0);
 
 ... and many other improvements (check the list of commits for the release if you are interested)
 
 **Bug fixes**:
 
-- **BUGFIX:** Fixed recent post detection logic in anonymous mode (fixes [#34](https://github.com/misiektoja/instagram_monitor/issues/34), thanks [@jl-nr](https://github.com/jl-nr) for reporting)
+- **BUGFIX:** Fixed recent post detection logic in anonymous mode (fixes [#34](https://github.com/misiektoja/instagram_monitor/issues/34))
 - **BUGFIX:** Expanded tabs to spaces in log files for consistent alignment
 
 # Changes in 2.0.4 (04 Jan 2026)
