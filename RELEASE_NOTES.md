@@ -6,6 +6,8 @@ Welcome to version **3.0** — our biggest and most ambitious release to date! T
 
 A huge thank you to our amazing contributors [@Sha-Dox](https://github.com/Sha-Dox), [@tomballgithub](https://github.com/tomballgithub), [@YouveGotMeowxy](https://github.com/YouveGotMeowxy) and [@jl-nr](https://github.com/jl-nr) for their invaluable code, ideas and testing that made this release possible.
 
+![Web dashboard screenshot](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png)
+
 **Features and Improvements**:
 
 - **NEW:** Added a comprehensive **dashboard system** accessible in terminal and web, including a Rich-powered **Terminal Dashboard** and a Flask-powered **Web Dashboard** with real-time stats, activity feeds and interactive controls; check the [Terminal Dashboard](https://github.com/misiektoja/instagram_monitor#terminal-dashboard-mode) and [Web Dashboard](https://github.com/misiektoja/instagram_monitor#web-dashboard-mode) for more info
