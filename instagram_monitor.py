@@ -4637,6 +4637,10 @@ def update_check_times(last_time=None, next_time=None, user=None, increment_coun
     # Recalculate global times
     now_ts = datetime.now().timestamp()
 
+    # Never keep a stale (past) global next-check timestamp
+    if isinstance(NEXT_CHECK_TIME, (int, float)) and NEXT_CHECK_TIME <= now_ts:
+        NEXT_CHECK_TIME = None
+
     # Recalculate Global LAST_CHECK_TIME
     all_lasts = []
     # Use WEB_DASHBOARD_DATA as source for aggregation
@@ -4653,6 +4657,7 @@ def update_check_times(last_time=None, next_time=None, user=None, increment_coun
     # Recalculate Global NEXT_CHECK_TIME
     all_nexts = []
     all_next_labels = []
+    any_in_progress = False
     with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
         for t_data in WEB_DASHBOARD_DATA.get('targets', {}).values():
             ts = t_data.get('next_check_ts')
@@ -4661,9 +4666,11 @@ def update_check_times(last_time=None, next_time=None, user=None, increment_coun
                 all_nexts.append(ts)
             else:
                 label = t_data.get('next_check')
-                # Prefer meaningful labels; skip transient "In Progress" for global aggregation
-                if label and isinstance(label, str) and label != "In Progress":
-                    all_next_labels.append(label)
+                if label and isinstance(label, str):
+                    if label == "In Progress":
+                        any_in_progress = True
+                    else:
+                        all_next_labels.append(label)
 
     if all_nexts:
         NEXT_CHECK_TIME = min(all_nexts)
@@ -4683,6 +4690,8 @@ def update_check_times(last_time=None, next_time=None, user=None, increment_coun
     if not NEXT_CHECK_TIME:
         if isinstance(next_time, str) and next_time:
             NEXT_CHECK_DISPLAY = next_time
+        elif any_in_progress:
+            NEXT_CHECK_DISPLAY = "In Progress"
         elif all_next_labels:
             # Use the first informative label (they should all be equivalent in practice)
             NEXT_CHECK_DISPLAY = all_next_labels[0]
@@ -4730,6 +4739,7 @@ def generate_dashboard_targets_table(target_data):
     table.add_column("Next Chk", ratio=1, no_wrap=True, overflow="ellipsis", min_width=9)
     table.add_column("Status", ratio=1, no_wrap=True, overflow="ellipsis", min_width=7)
 
+    now_ts = datetime.now().timestamp()
     for target, data in target_data.items():
         status_val = data.get('status', 'Unknown')
         status_style = "green" if status_val == 'OK' else "yellow" if status_val in ('Checking', 'Starting', 'Loading Profile', 'Fetching Reels') else "blue"
@@ -4753,7 +4763,8 @@ def generate_dashboard_targets_table(target_data):
         next_ts = data.get('next_check_ts')
         if isinstance(last_ts, (int, float)) and last_ts > 0:
             last_chk = get_squeezed_date_from_ts(last_ts, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
-        if isinstance(next_ts, (int, float)) and next_ts > 0:
+        # Only render a timestamp-based "Next Chk" when it is in the future
+        if isinstance(next_ts, (int, float)) and next_ts > now_ts:
             next_chk = get_squeezed_date_from_ts(next_ts, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
 
         table.add_row(
@@ -5944,6 +5955,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     if wait_for_prev_user is not None:
         wait_for_prev_user.wait()
 
+    update_check_times(next_time="In Progress", user=user, increment_count=False)
+
     # Only print if Dashboard is not enabled (Dashboard will show this information)
     print(f"Target:\t\t\t\t\t{user}")
 
@@ -7081,6 +7094,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         # Update last check time
         update_check_times(last_time=now_local_naive(), user=user)
+        update_check_times(next_time="In Progress", user=user, increment_count=False)
 
         # Debug/Verbose: show check start
         if VERBOSE_MODE:
