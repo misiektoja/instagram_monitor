@@ -812,6 +812,92 @@ except ImportError:
     FLASK_AVAILABLE = False
 
 
+# Locates installed data files (wheel / pip)
+def _locate_installed_dist_file(target_filename: str) -> Optional[str]:
+    try:
+        from importlib import metadata as importlib_metadata
+    except Exception:
+        return None
+
+    try:
+        dist = importlib_metadata.distribution("instagram_monitor")
+    except importlib_metadata.PackageNotFoundError:
+        return None
+
+    files = dist.files or []
+    for f in files:
+        if f.name == target_filename:
+            try:
+                return str(Path(str(dist.locate_file(f))).resolve(strict=False))
+            except Exception:
+                return None
+    return None
+
+
+# Tries to locate the installed Web Dashboard templates directory by finding index.html within the installed distribution file list
+def _locate_installed_templates_dir() -> Optional[str]:
+    try:
+        from importlib import metadata as importlib_metadata
+    except Exception:
+        return None
+
+    try:
+        dist = importlib_metadata.distribution("instagram_monitor")
+    except importlib_metadata.PackageNotFoundError:
+        return None
+
+    files = dist.files or []
+    for f in files:
+        rel = str(f).replace("\\", "/")
+        if rel.endswith("/templates/index.html") or rel == "templates/index.html":
+            try:
+                index_path = Path(str(dist.locate_file(f))).resolve(strict=False)
+                templates_dir = index_path.parent
+                if templates_dir.is_dir():
+                    return str(templates_dir.resolve(strict=False))
+            except Exception:
+                return None
+    return None
+
+
+# Determines which templates dir would be used in auto-detect mode
+def _peek_web_dashboard_template_dir_autodetect() -> Optional[str]:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidate_dirs = [
+        os.path.join(os.getcwd(), 'templates'),
+        os.path.join(script_dir, 'templates'),
+    ]
+
+    # For editable installs / direct file installs, check module origin dir
+    try:
+        import importlib.util
+        spec = importlib.util.find_spec('instagram_monitor')
+        if spec and spec.origin:
+            package_dir = os.path.dirname(spec.origin)
+            package_template_dir = os.path.join(package_dir, 'templates')
+            if package_template_dir not in candidate_dirs:
+                candidate_dirs.append(package_template_dir)
+    except (ImportError, AttributeError, ValueError):
+        pass
+
+    # For wheel installs where templates are shipped as distribution data-files
+    try:
+        dist_templates_dir = _locate_installed_templates_dir()
+        if dist_templates_dir and dist_templates_dir not in candidate_dirs:
+            candidate_dirs.append(dist_templates_dir)
+    except Exception:
+        pass
+
+    for candidate in candidate_dirs:
+        try:
+            index_path = os.path.join(candidate, 'index.html')
+            if os.path.isdir(candidate) and os.path.isfile(index_path):
+                return os.path.abspath(candidate)
+        except Exception:
+            continue
+    return None
+
+
 # Global lock to avoid interleaved output when using multi-target threading
 STDOUT_LOCK = threading.Lock()
 
@@ -973,6 +1059,15 @@ def create_web_dashboard_app():
                 if package_template_dir not in candidate_dirs:  # Avoid duplicates
                     candidate_dirs.append(package_template_dir)
         except (ImportError, AttributeError, ValueError):
+            pass
+
+        # If installed via pip and templates are shipped as distribution data-files,
+        # resolve the actual installed path from the dist metadata (wheel-safe)
+        try:
+            dist_templates_dir = _locate_installed_templates_dir()
+            if dist_templates_dir and dist_templates_dir not in candidate_dirs:
+                candidate_dirs.append(dist_templates_dir)
+        except Exception:
             pass
 
         # Try each candidate directory
@@ -9157,6 +9252,11 @@ def run_main():
                 PROFILE_PIC_FILE_EMPTY = cwd_path
             elif os.path.exists(pip_path):
                 PROFILE_PIC_FILE_EMPTY = pip_path
+            else:
+                # If shipped with the wheel as a distribution data file, locate it
+                dist_path = _locate_installed_dist_file(os.path.basename(initial_path))
+                if dist_path and os.path.exists(dist_path):
+                    PROFILE_PIC_FILE_EMPTY = dist_path
             # else keep initial_path (will fail gracefully later)
         else:
             PROFILE_PIC_FILE_EMPTY = initial_path
@@ -9320,7 +9420,12 @@ def run_main():
     print(f"* Configuration file:\t\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t\t{env_path or 'None'}")
     if WEB_DASHBOARD_ENABLED:
-        print(f"* Web Dashboard templates:\t\t{WEB_DASHBOARD_TEMPLATE_DIR or 'Auto-detect'}")
+        if WEB_DASHBOARD_TEMPLATE_DIR:
+            templates_display = WEB_DASHBOARD_TEMPLATE_DIR
+        else:
+            detected = _peek_web_dashboard_template_dir_autodetect()
+            templates_display = "Auto-detect" + (f" ({detected})" if detected else "")
+        print(f"* Web Dashboard templates:\t\t{templates_display}")
     print(f"* Webhook notifications:\t\t{WEBHOOK_ENABLED}" + (f" ({str(WEBHOOK_URL)[:50]}...)" if WEBHOOK_ENABLED and WEBHOOK_URL and len(str(WEBHOOK_URL)) > 50 else (f" ({WEBHOOK_URL})" if WEBHOOK_ENABLED and WEBHOOK_URL else "")))
     if WEBHOOK_ENABLED:
         print(f"*   Webhook on status/profile changes:\t{WEBHOOK_STATUS_NOTIFICATION}")
