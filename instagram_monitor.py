@@ -363,6 +363,14 @@ WEB_DASHBOARD_HOST = '127.0.0.1'
 # Can also be set via --web-dashboard-template-dir flag
 WEB_DASHBOARD_TEMPLATE_DIR = ""
 
+# ---------------------------------
+# Terminal + Web Dashboard Settings
+# ---------------------------------
+
+# Show seconds in dashboard "Last Check" / "Next Check" fields (global + per-target)
+# Set to False if you prefer more compact times (HH:MM) without seconds
+DASHBOARD_SHOW_CHECK_SECONDS = False
+
 # ----------------------------
 # Webhook Integration
 # ----------------------------
@@ -523,6 +531,7 @@ WEB_DASHBOARD_ENABLED = False
 WEB_DASHBOARD_PORT = 8000
 WEB_DASHBOARD_HOST = '127.0.0.1'
 WEB_DASHBOARD_TEMPLATE_DIR = ""
+DASHBOARD_SHOW_CHECK_SECONDS = True
 THUMBNAILS_FORCED_BY_WEB = False
 FOLLOWERS_CHURN_DETECTION = False
 mode_of_the_tool = "Unknown"
@@ -1012,9 +1021,9 @@ def create_web_dashboard_app():
             # Recompute time labels dynamically from timestamps
             try:
                 if LAST_CHECK_TIME:
-                    data['last_check'] = get_squeezed_date_from_ts(LAST_CHECK_TIME)
+                    data['last_check'] = get_squeezed_date_from_ts(LAST_CHECK_TIME, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
                 if NEXT_CHECK_TIME:
-                    data['next_check'] = get_squeezed_date_from_ts(NEXT_CHECK_TIME)
+                    data['next_check'] = get_squeezed_date_from_ts(NEXT_CHECK_TIME, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
                 elif NEXT_CHECK_DISPLAY:
                     data['next_check'] = NEXT_CHECK_DISPLAY
             except Exception:
@@ -1028,9 +1037,9 @@ def create_web_dashboard_app():
                     last_ts = t_data.get('last_checked_ts')
                     next_ts = t_data.get('next_check_ts')
                     if isinstance(last_ts, (int, float)) and last_ts > 0:
-                        t_data['last_checked'] = get_squeezed_date_from_ts(last_ts)
+                        t_data['last_checked'] = get_squeezed_date_from_ts(last_ts, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
                     if isinstance(next_ts, (int, float)) and next_ts > 0:
-                        t_data['next_check'] = get_squeezed_date_from_ts(next_ts)
+                        t_data['next_check'] = get_squeezed_date_from_ts(next_ts, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
             except Exception:
                 # Keep output best-effort; don't break dashboard on edge cases
                 pass
@@ -1203,6 +1212,7 @@ def create_web_dashboard_app():
         global BE_HUMAN, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, LIVENESS_CHECK_INTERVAL, SKIP_FOLLOW_CHANGES
         global WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
         global DISABLE_LOGGING, CHECK_POSTS_IN_HOURS_RANGE, HOURS_VERBOSE, MIN_H1, MAX_H1, MIN_H2, MAX_H2
+        global DASHBOARD_SHOW_CHECK_SECONDS
 
         if flask_request.method == 'GET':  # type: ignore
             return jsonify({  # type: ignore
@@ -1252,7 +1262,8 @@ def create_web_dashboard_app():
                 'min_h1': MIN_H1,
                 'max_h1': MAX_H1,
                 'min_h2': MIN_H2,
-                'max_h2': MAX_H2
+                'max_h2': MAX_H2,
+                'dashboard_show_check_seconds': DASHBOARD_SHOW_CHECK_SECONDS,
             })
         elif flask_request.method == 'POST':  # type: ignore
             data = flask_request.get_json()  # type: ignore
@@ -1319,6 +1330,7 @@ def create_web_dashboard_app():
             MAX_H1 = int(update_setting('max_h1', MAX_H1, data.get('max_h1'), int))
             MIN_H2 = int(update_setting('min_h2', MIN_H2, data.get('min_h2'), int))
             MAX_H2 = int(update_setting('max_h2', MAX_H2, data.get('max_h2'), int))
+            DASHBOARD_SHOW_CHECK_SECONDS = bool(update_setting('dashboard_show_check_seconds', DASHBOARD_SHOW_CHECK_SECONDS, data.get('dashboard_show_check_seconds'), bool))
 
             SMTP_HOST = str(update_setting('smtp_host', SMTP_HOST, data.get('smtp_host'), str))
             SMTP_PORT = int(update_setting('smtp_port', SMTP_PORT, data.get('smtp_port'), int))
@@ -3214,7 +3226,7 @@ def get_short_date_from_ts(ts, show_year=False, show_hour=True, show_weekday=Tru
 # - HH:MM if today
 # - Tom. HH:MM if tomorrow
 # - DD MMM HH:MM if other
-def get_squeezed_date_from_ts(ts):
+def get_squeezed_date_from_ts(ts, show_seconds: bool = True):
     tz = pytz.timezone(LOCAL_TIMEZONE)
     now = datetime.now(tz)
     today = now.date()
@@ -3238,16 +3250,16 @@ def get_squeezed_date_from_ts(ts):
         return "-"
 
     ts_date = ts_dt.date()
-    time_str = ts_dt.strftime("%H:%M:%S")
+    time_str = ts_dt.strftime("%H:%M:%S" if show_seconds else "%H:%M")
 
     if ts_date == today:
         return time_str
     elif ts_date == tomorrow:
         return f"Tom. {time_str}"
     elif ts_date.year == today.year:
-        return ts_dt.strftime("%d %b %H:%M:%S")
+        return ts_dt.strftime("%d %b %H:%M:%S" if show_seconds else "%d %b %H:%M")
     else:
-        return ts_dt.strftime("%d %b %y %H:%M:%S")
+        return ts_dt.strftime("%d %b %y %H:%M:%S" if show_seconds else "%d %b %y %H:%M")
 
 
 # Returns the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
@@ -4328,13 +4340,13 @@ def update_check_times(last_time=None, next_time=None, user=None, increment_coun
         CHECK_COUNT += 1
 
     # Format the timestamps for display
-    last_str = get_squeezed_date_from_ts(last_time.timestamp()) if last_time else None
+    last_str = get_squeezed_date_from_ts(last_time.timestamp(), show_seconds=DASHBOARD_SHOW_CHECK_SECONDS) if last_time else None
 
     if isinstance(next_time, str):
         next_str = next_time
         next_ts = None
     else:
-        next_str = get_squeezed_date_from_ts(next_time.timestamp()) if next_time else None
+        next_str = get_squeezed_date_from_ts(next_time.timestamp(), show_seconds=DASHBOARD_SHOW_CHECK_SECONDS) if next_time else None
         next_ts = next_time.timestamp() if next_time else None
 
     # Update per-target data
@@ -4399,11 +4411,11 @@ def update_check_times(last_time=None, next_time=None, user=None, increment_coun
 
     if all_nexts:
         NEXT_CHECK_TIME = min(all_nexts)
-        NEXT_CHECK_DISPLAY = get_squeezed_date_from_ts(NEXT_CHECK_TIME)
+        NEXT_CHECK_DISPLAY = get_squeezed_date_from_ts(NEXT_CHECK_TIME, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
     elif next_time and not isinstance(next_time, str):
         if next_time.timestamp() > now_ts:
             NEXT_CHECK_TIME = next_time.timestamp()
-            NEXT_CHECK_DISPLAY = get_squeezed_date_from_ts(NEXT_CHECK_TIME)
+            NEXT_CHECK_DISPLAY = get_squeezed_date_from_ts(NEXT_CHECK_TIME, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
         else:
             NEXT_CHECK_TIME = None
             NEXT_CHECK_DISPLAY = None
@@ -4427,8 +4439,8 @@ def update_check_times(last_time=None, next_time=None, user=None, increment_coun
         update_dashboard()
 
     if WEB_DASHBOARD_ENABLED:
-        last_display = get_squeezed_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else None
-        next_display = get_squeezed_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else (NEXT_CHECK_DISPLAY or None)
+        last_display = get_squeezed_date_from_ts(LAST_CHECK_TIME, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS) if LAST_CHECK_TIME else None
+        next_display = get_squeezed_date_from_ts(NEXT_CHECK_TIME, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS) if NEXT_CHECK_TIME else (NEXT_CHECK_DISPLAY or None)
 
         update_ui_data(
             check_count=CHECK_COUNT,
@@ -4484,9 +4496,9 @@ def generate_dashboard_targets_table(target_data):
         last_ts = data.get('last_checked_ts')
         next_ts = data.get('next_check_ts')
         if isinstance(last_ts, (int, float)) and last_ts > 0:
-            last_chk = get_squeezed_date_from_ts(last_ts)
+            last_chk = get_squeezed_date_from_ts(last_ts, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
         if isinstance(next_ts, (int, float)) and next_ts > 0:
-            next_chk = get_squeezed_date_from_ts(next_ts)
+            next_chk = get_squeezed_date_from_ts(next_ts, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
 
         table.add_row(
             target,
@@ -4524,8 +4536,8 @@ def generate_global_stats_panel():
     with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
         active_count = len(WEB_DASHBOARD_DATA.get('targets', {}))
 
-    last_check_str = get_squeezed_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else "Never"
-    next_check_str = get_squeezed_date_from_ts(NEXT_CHECK_TIME) if NEXT_CHECK_TIME else (NEXT_CHECK_DISPLAY or "-")
+    last_check_str = get_squeezed_date_from_ts(LAST_CHECK_TIME, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS) if LAST_CHECK_TIME else "Never"
+    next_check_str = get_squeezed_date_from_ts(NEXT_CHECK_TIME, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS) if NEXT_CHECK_TIME else (NEXT_CHECK_DISPLAY or "-")
 
     stats_table.add_row(
         Text.assemble(("Active Targets: ", "cyan"), (str(active_count), "bold yellow")),
@@ -5425,6 +5437,7 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'empty_profile_pic': f"{bool(profile_pic_file_exists)}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""),
         'dashboard_status': f"{dashboard_status}{dashboard_reason}",
         'web_dashboard_status': f"{web_dashboard_status}{web_dashboard_reason}",
+        'dashboard_show_check_seconds': DASHBOARD_SHOW_CHECK_SECONDS,
         'logging_enabled': "True" if not DISABLE_LOGGING else "False",
         'log_file': final_log_path if final_log_path and not DISABLE_LOGGING else "",
         'config_file': cfg_path or CLI_CONFIG_PATH or 'None',

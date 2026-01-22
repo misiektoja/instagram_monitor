@@ -1372,6 +1372,16 @@
                     <div class="card-title">Logging & Advanced</div>
                     <div class="setting-row" style="padding: 8px 0;">
                         <div class="setting-info">
+                            <h4>Show seconds in check times</h4>
+                            <p>Applies to dashboard Last/Next Check (global + per-target)</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="dashboard-show-check-seconds">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
                             <h4>Output Logging</h4>
                             <p>Enable logging to instagram_monitor.log</p>
                         </div>
@@ -2126,6 +2136,7 @@
             document.getElementById('verbose-mode').checked = s.verbose_mode || false;
             document.getElementById('hours-verbose').checked = s.hours_verbose || false;
             document.getElementById('debug-mode').checked = s.debug_mode || false;
+            document.getElementById('dashboard-show-check-seconds').checked = (s.dashboard_show_check_seconds !== undefined) ? s.dashboard_show_check_seconds : true;
 
             document.getElementById('check-posts-in-hours-range').checked = s.check_posts_in_hours_range || false;
             document.getElementById('min-h1').value = s.min_h1 !== undefined ? s.min_h1 : 0;
@@ -2333,6 +2344,7 @@
                 verbose_mode: document.getElementById('verbose-mode').checked,
                 hours_verbose: document.getElementById('hours-verbose').checked,
                 debug_mode: document.getElementById('debug-mode').checked,
+                dashboard_show_check_seconds: document.getElementById('dashboard-show-check-seconds').checked,
 
                 check_posts_in_hours_range: document.getElementById('check-posts-in-hours-range').checked,
                 min_h1: document.getElementById('h1-enabled').checked ? parseInt(document.getElementById('min-h1').value) : 0,
