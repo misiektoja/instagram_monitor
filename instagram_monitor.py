@@ -9276,10 +9276,22 @@ def run_main():
                 fallback = PROFILE_PIC_FILE_EMPTY.rsplit('.jpg', 1)[0] + '.jpeg'
                 if os.path.exists(fallback):
                     PROFILE_PIC_FILE_EMPTY = fallback
+                else:
+                    # Also check pip-installed location for the fallback extension
+                    fallback_basename = os.path.basename(fallback)
+                    dist_fallback = _locate_installed_dist_file(fallback_basename)
+                    if dist_fallback and os.path.exists(dist_fallback):
+                        PROFILE_PIC_FILE_EMPTY = dist_fallback
             elif PROFILE_PIC_FILE_EMPTY.lower().endswith('.jpeg'):
                 fallback = PROFILE_PIC_FILE_EMPTY.rsplit('.jpeg', 1)[0] + '.jpg'
                 if os.path.exists(fallback):
                     PROFILE_PIC_FILE_EMPTY = fallback
+                else:
+                    # Also check pip-installed location for the fallback extension
+                    fallback_basename = os.path.basename(fallback)
+                    dist_fallback = _locate_installed_dist_file(fallback_basename)
+                    if dist_fallback and os.path.exists(dist_fallback):
+                        PROFILE_PIC_FILE_EMPTY = dist_fallback
 
     profile_pic_file_exists = os.path.exists(PROFILE_PIC_FILE_EMPTY) if PROFILE_PIC_FILE_EMPTY else False
 
