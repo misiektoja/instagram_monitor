@@ -31,6 +31,10 @@
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor.png" alt="instagram_monitor_screenshot" width="90%"/>
 </p>
 
+<p align="center">
+   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="90%"/>
+</p>
+
 <a id="table-of-contents"></a>
 ## Table of Contents
 
@@ -356,6 +360,10 @@ To enable the terminal dashboard, use the `--dashboard` flag (or set `DASHBOARD_
 instagram_monitor target1 target2 --dashboard
 ```
 
+<p align="center">
+   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_terminal_dashboard.png" alt="instagram_monitor_terminal_dashboard_screenshot" width="90%"/>
+</p>
+
 ---
 
 <a id="web-dashboard-mode"></a>
@@ -387,6 +395,14 @@ instagram_monitor --web-dashboard
 ```
 
 The web dashboard requires `flask`. If flask is missing, it will be disabled while the console output remains active.
+
+<p align="center">
+   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="90%"/>
+</p>
+
+<p align="center">
+   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard_settings.png" alt="instagram_monitor_web_dashboard_settings_screenshot" width="90%"/>
+</p>
 
 ---
 
@@ -518,6 +534,10 @@ Example email:
 ### Webhook Notifications
 
 The tool supports webhook notifications (compatible with Discord and other webhook services) for all monitored events (posts, reels, stories, followings, followers, bio, profile visibility, profile picture changes and errors).
+
+<p align="center">
+   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_discord.png" alt="instagram_monitor_discord_screenshot" width="90%"/>
+</p>
 
 #### 1. Configure Discord Webhook
 If you are new to Discord, follow these steps to get your **Webhook URL**:
