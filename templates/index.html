@@ -1052,9 +1052,14 @@
         <div id="page-settings" class="page">
             <div class="page-header">
                 <h1 class="page-title">Settings</h1>
-                <button class="btn btn-primary" onclick="saveSettings()">
-                    <span>💾</span> Save Settings
-                </button>
+                <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <button class="btn btn-primary" onclick="saveSettings()">
+                        <span>💾</span> Save Settings
+                    </button>
+                    <button class="btn btn-secondary" onclick="generateConfig()">
+                        <span>📝</span> Generate Config
+                    </button>
+                </div>
             </div>
 
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
@@ -2323,8 +2328,8 @@
             }
         }
 
-        async function saveSettings() {
-            const newSettings = {
+        function getSettingsFromForm() {
+            return {
                 check_interval: parseInt(document.getElementById('check-interval').value),
                 liveness_check_interval: parseInt(document.getElementById('liveness-check-interval').value),
                 random_low: parseInt(document.getElementById('random-low').value),
@@ -2373,6 +2378,10 @@
                 sender_email: document.getElementById('sender-email').value,
                 receiver_email: document.getElementById('receiver-email').value
             };
+        }
+
+        async function saveSettings() {
+            const newSettings = getSettingsFromForm();
 
             try {
                 const response = await fetch('/api/settings', {
@@ -2399,6 +2408,33 @@
                 }
             } catch (err) {
                 showToast('Failed to save settings', 'error');
+            }
+        }
+
+        async function generateConfig() {
+            const defaultFilename = 'instagram_monitor.conf';
+            const filename = prompt('Config filename (will be created in the current working directory):', defaultFilename);
+            if (!filename) return;
+
+            const settings = getSettingsFromForm();
+
+            try {
+                showToast('Generating config...');
+                const response = await fetch('/api/generate-config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename, settings })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showToast(`Config generated: ${data.filename}`);
+                    // Refresh values from backend to reflect any server-side adjustments (like limits)
+                    fetchSettings();
+                } else {
+                    showToast(data.error || 'Failed to generate config', 'error');
+                }
+            } catch (err) {
+                showToast('Failed to generate config', 'error');
             }
         }
 

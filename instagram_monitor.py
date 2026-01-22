@@ -95,7 +95,7 @@ LOCAL_TIMEZONE = 'Auto'
 # Time format settings
 # Set to True to use 12-hour format (AM/PM) instead of default 24-hour format
 # Can be also toggled via Web Dashboard
-TIME_FORMAT_12H = True
+TIME_FORMAT_12H = False
 
 # Notify when the user's profile picture changes? (via console and email if STATUS_NOTIFICATION / -s is enabled).
 # If enabled, the current profile picture is saved as:
@@ -374,7 +374,7 @@ WEB_DASHBOARD_TEMPLATE_DIR = ""
 
 # Show seconds in dashboard "Last Check" / "Next Check" fields (global + per-target)
 # Set to False if you prefer more compact times (HH:MM) without seconds
-DASHBOARD_SHOW_CHECK_SECONDS = False
+DASHBOARD_SHOW_CHECK_SECONDS = True
 
 # ----------------------------
 # Webhook Integration
@@ -455,6 +455,85 @@ COLOR_THEME = {
 # -------------------------
 # CONFIGURATION SECTION END
 # -------------------------
+
+
+# Splits 'value  # comment' into ('value', '# comment'), ignoring # inside quotes
+def _split_inline_comment_preserving_strings(rhs: str) -> tuple[str, str]:
+    in_single = False
+    in_double = False
+    escaped = False
+    for i, ch in enumerate(rhs):
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if ch == "'" and not in_double:
+            in_single = not in_single
+            continue
+        if ch == '"' and not in_single:
+            in_double = not in_double
+            continue
+        if ch == "#" and not in_single and not in_double:
+            return rhs[:i].rstrip(), rhs[i:].rstrip()
+    return rhs.rstrip(), ""
+
+
+# Formats python literals for config file assignments
+def _format_config_value(value, prefer_double_quotes: bool) -> str:
+    if isinstance(value, str):
+        if prefer_double_quotes:
+            escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+            return f'"{escaped}"'
+        escaped = value.replace("\\", "\\\\").replace("'", "\\'")
+        return f"'{escaped}'"
+    if value is None:
+        return "None"
+    return repr(value)
+
+
+# Renders CONFIG_BLOCK with current runtime globals substituted into simple one-line assignments
+def generate_config_with_current_values() -> str:
+    import re
+
+    assign_re = re.compile(r"^([A-Z][A-Z0-9_]*)\s*=\s*(.*)$")
+    out_lines: list[str] = []
+
+    for line in CONFIG_BLOCK.strip("\n").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            out_lines.append(line)
+            continue
+
+        m = assign_re.match(line)
+        if not m:
+            out_lines.append(line)
+            continue
+
+        var = m.group(1)
+        rhs = m.group(2)
+        expr, comment = _split_inline_comment_preserving_strings(rhs)
+        expr_stripped = expr.strip()
+
+        # Avoid rewriting multiline structures (keep template as-is)
+        if expr_stripped.endswith(("{", "[", "(")) and not any(c in expr_stripped for c in ("}", "]", ")")):
+            out_lines.append(line)
+            continue
+
+        if var not in globals():
+            out_lines.append(line)
+            continue
+
+        prefer_double_quotes = expr_stripped.startswith('"')
+        new_expr = _format_config_value(globals()[var], prefer_double_quotes=prefer_double_quotes)
+        new_line = f"{var} = {new_expr}"
+        if comment:
+            new_line = f"{new_line}  {comment}"
+        out_lines.append(new_line)
+
+    return "\n".join(out_lines) + "\n"
+
 
 # Default dummy values so linters shut up
 # Do not change values below - modify them in the configuration section or config file instead
@@ -1206,6 +1285,133 @@ def create_web_dashboard_app():
         update_ui_data(is_monitoring=active)
         return jsonify({'success': True})  # type: ignore
 
+    def apply_settings_update(data: dict):
+        """
+        Apply settings from Web UI payload to globals
+        """
+        global INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
+        global STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_URL
+        global FOLLOWERS_CHURN_DETECTION, DEBUG_MODE, SESSION_USERNAME, VERBOSE_MODE
+        global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SSL, SENDER_EMAIL, RECEIVER_EMAIL
+        global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS
+        global ENABLE_JITTER, DETECT_CHANGED_PROFILE_PIC, SKIP_SESSION, CLI_CONFIG_PATH
+        global DOTENV_FILE, WEB_DASHBOARD_TEMPLATE_DIR, LOCAL_TIMEZONE, OUTPUT_DIR, CSV_FILE
+        global BE_HUMAN, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, LIVENESS_CHECK_INTERVAL, SKIP_FOLLOW_CHANGES
+        global WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
+        global DISABLE_LOGGING, CHECK_POSTS_IN_HOURS_RANGE, HOURS_VERBOSE, MIN_H1, MAX_H1, MIN_H2, MAX_H2
+        global DASHBOARD_SHOW_CHECK_SECONDS, TIME_FORMAT_12H
+
+        if data is None:
+            return False, [], 'No data provided', 400
+        if not isinstance(data, dict):
+            return False, [], 'Invalid data format', 400
+
+        changes: list[str] = []
+
+        def update_setting(key, current_val, cast_func=None):
+            nonlocal changes
+            if key not in data:
+                return current_val
+
+            try:
+                processed_val = cast_func(data[key]) if cast_func else data[key]
+            except (ValueError, TypeError):
+                return current_val
+
+            if processed_val != current_val:
+                # Special validation for some fields
+                note = ""
+                if key == 'check_interval':
+                    if processed_val < 300:
+                        processed_val = 300
+                        note = " (min 300s limit)"
+                elif key in ['random_low', 'random_high']:
+                    processed_val = max(0, processed_val)
+                elif key == 'webhook_url':
+                    if processed_val and not validate_webhook_url(processed_val):
+                        return current_val
+
+                changes.append(f"'{key}' changed from {current_val} to {processed_val}{note}")
+                return processed_val
+            return current_val
+
+        # Intervals
+        INSTA_CHECK_INTERVAL = int(update_setting('check_interval', INSTA_CHECK_INTERVAL, int))
+        RANDOM_SLEEP_DIFF_LOW = int(update_setting('random_low', RANDOM_SLEEP_DIFF_LOW, int))
+        RANDOM_SLEEP_DIFF_HIGH = int(update_setting('random_high', RANDOM_SLEEP_DIFF_HIGH, int))
+
+        # Notifications
+        STATUS_NOTIFICATION = bool(update_setting('email_notifications', STATUS_NOTIFICATION, bool))
+        FOLLOWERS_NOTIFICATION = bool(update_setting('follower_notifications', FOLLOWERS_NOTIFICATION, bool))
+        ERROR_NOTIFICATION = bool(update_setting('error_notifications', ERROR_NOTIFICATION, bool))
+
+        WEBHOOK_ENABLED = bool(update_setting('webhook_enabled', WEBHOOK_ENABLED, bool))
+        WEBHOOK_URL = str(update_setting('webhook_url', WEBHOOK_URL, str))
+        WEBHOOK_STATUS_NOTIFICATION = bool(update_setting('webhook_status', WEBHOOK_STATUS_NOTIFICATION, bool))
+        WEBHOOK_FOLLOWERS_NOTIFICATION = bool(update_setting('webhook_followers', WEBHOOK_FOLLOWERS_NOTIFICATION, bool))
+        WEBHOOK_ERROR_NOTIFICATION = bool(update_setting('webhook_errors', WEBHOOK_ERROR_NOTIFICATION, bool))
+
+        # Behavior
+        FOLLOWERS_CHURN_DETECTION = bool(update_setting('followers_churn', FOLLOWERS_CHURN_DETECTION, bool))
+        VERBOSE_MODE = bool(update_setting('verbose_mode', VERBOSE_MODE, bool))
+        DEBUG_MODE = bool(update_setting('debug_mode', DEBUG_MODE, bool))
+        BE_HUMAN = bool(update_setting('be_human', BE_HUMAN, bool))
+        SKIP_FOLLOWERS = bool(update_setting('skip_followers', SKIP_FOLLOWERS, bool))
+        SKIP_FOLLOWINGS = bool(update_setting('skip_followings', SKIP_FOLLOWINGS, bool))
+        SKIP_FOLLOW_CHANGES = bool(update_setting('skip_follow_changes', SKIP_FOLLOW_CHANGES, bool))
+        SKIP_GETTING_STORY_DETAILS = bool(update_setting('skip_stories', SKIP_GETTING_STORY_DETAILS, bool))
+        SKIP_GETTING_POSTS_DETAILS = bool(update_setting('skip_posts', SKIP_GETTING_POSTS_DETAILS, bool))
+        GET_MORE_POST_DETAILS = bool(update_setting('get_more_post_details', GET_MORE_POST_DETAILS, bool))
+        DETECT_CHANGED_PROFILE_PIC = bool(update_setting('profile_pic_changes', DETECT_CHANGED_PROFILE_PIC, bool))
+        SKIP_SESSION = bool(update_setting('skip_session_login', SKIP_SESSION, bool))
+        LIVENESS_CHECK_INTERVAL = int(update_setting('liveness_check_interval', LIVENESS_CHECK_INTERVAL, int))
+        DISABLE_LOGGING = not bool(update_setting('logging_enabled', not DISABLE_LOGGING, bool))
+        CHECK_POSTS_IN_HOURS_RANGE = bool(update_setting('check_posts_in_hours_range', CHECK_POSTS_IN_HOURS_RANGE, bool))
+        HOURS_VERBOSE = bool(update_setting('hours_verbose', HOURS_VERBOSE, bool))
+        MIN_H1 = int(update_setting('min_h1', MIN_H1, int))
+        MAX_H1 = int(update_setting('max_h1', MAX_H1, int))
+        MIN_H2 = int(update_setting('min_h2', MIN_H2, int))
+        MAX_H2 = int(update_setting('max_h2', MAX_H2, int))
+        DASHBOARD_SHOW_CHECK_SECONDS = bool(update_setting('dashboard_show_check_seconds', DASHBOARD_SHOW_CHECK_SECONDS, bool))
+        TIME_FORMAT_12H = bool(update_setting('time_format_12h', TIME_FORMAT_12H, bool))
+
+        # SMTP
+        SMTP_HOST = str(update_setting('smtp_host', SMTP_HOST, str))
+        SMTP_PORT = int(update_setting('smtp_port', SMTP_PORT, int))
+        SMTP_USER = str(update_setting('smtp_user', SMTP_USER, str))
+        SMTP_SSL = bool(update_setting('smtp_ssl', SMTP_SSL, bool))
+        SENDER_EMAIL = str(update_setting('sender_email', SENDER_EMAIL, str))
+        RECEIVER_EMAIL = str(update_setting('receiver_email', RECEIVER_EMAIL, str))
+
+        # Special case for SMTP_PASSWORD
+        if 'smtp_password' in data and data['smtp_password']:
+            if data['smtp_password'] != '********':
+                if data['smtp_password'] != SMTP_PASSWORD:
+                    changes.append("'smtp_password' updated")
+                    SMTP_PASSWORD = data['smtp_password']
+
+        # CSV
+        if 'csv_filename' in data and data['csv_filename'] != CSV_FILE:
+            changes.append(f"'csv_filename' changed from {CSV_FILE} to {data['csv_filename']}")
+            CSV_FILE = data['csv_filename']
+
+        if changes:
+            msg = "Settings updated: " + "; ".join(changes)
+            try:
+                log_activity(msg)
+            except Exception:
+                # Never break the Web UI on logging/formatting edge cases
+                pass
+            print(f"* {msg}")
+            try:
+                print_cur_ts("\nTimestamp:\t\t\t\t")
+            except Exception:
+                pass
+            SESSION_REFRESHED_EVENT.set()
+            SESSION_REFRESHED_EVENT.clear()
+
+        return True, changes, None, 200
+
     @app.route('/api/settings', methods=['GET', 'POST'])  # type: ignore[misc]
     def api_settings():  # type: ignore[return]
         global INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
@@ -1273,101 +1479,52 @@ def create_web_dashboard_app():
                 'dashboard_show_check_seconds': DASHBOARD_SHOW_CHECK_SECONDS,
             })
         elif flask_request.method == 'POST':  # type: ignore
-            data = flask_request.get_json()  # type: ignore
-            if not data:
-                return jsonify({'success': False, 'error': 'No data provided'}), 400  # type: ignore
+            data = flask_request.get_json(silent=True) or {}  # type: ignore
+            ok, changes, err, code = apply_settings_update(data)
+            if not ok:
+                return jsonify({'success': False, 'error': err}), code  # type: ignore
+            return jsonify({'success': True, 'changes': changes})  # type: ignore
 
-            changes = []
+    @app.route('/api/generate-config', methods=['POST'])  # type: ignore[misc]
+    def api_generate_config():  # type: ignore[return]
+        data = flask_request.get_json(silent=True) or {}  # type: ignore
+        filename = str(data.get('filename') or DEFAULT_CONFIG_FILENAME).strip()
+        settings_payload = data.get('settings') or {}
 
-            def update_setting(key, current_val, new_val, cast_func=None):
-                nonlocal changes
-                if key not in data:
-                    return current_val
+        # Validate filename (filename only; no paths)
+        if not filename:
+            filename = DEFAULT_CONFIG_FILENAME
+        if os.path.basename(filename) != filename or "/" in filename or "\\" in filename:
+            return jsonify({'success': False, 'error': 'Invalid filename (paths are not allowed)'}), 400  # type: ignore
+        if len(filename) > 255:
+            return jsonify({'success': False, 'error': 'Filename too long'}), 400  # type: ignore
 
-                try:
-                    processed_val = cast_func(data[key]) if cast_func else data[key]
-                except (ValueError, TypeError):
-                    return current_val
+        if not isinstance(settings_payload, dict):
+            return jsonify({'success': False, 'error': 'Invalid settings payload'}), 400  # type: ignore
 
-                if processed_val != current_val:
-                    # Special validation for some fields
-                    note = ""
-                    if key == 'check_interval':
-                        if processed_val < 300:
-                            processed_val = 300
-                            note = " (min 300s limit)"
-                    elif key in ['random_low', 'random_high']:
-                        processed_val = max(0, processed_val)
-                    elif key == 'webhook_url':
-                        if processed_val and not validate_webhook_url(processed_val):
-                            return current_val
+        ok, changes, err, code = apply_settings_update(settings_payload)
+        if not ok:
+            return jsonify({'success': False, 'error': err}), code  # type: ignore
 
-                    changes.append(f"'{key}' changed from {current_val} to {processed_val}{note}")
-                    return processed_val
-                return current_val
+        cfg_text = generate_config_with_current_values()
+        out_path = os.path.abspath(os.path.join(os.getcwd(), filename))
+        try:
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(cfg_text)
+        except Exception as e:
+            return jsonify({'success': False, 'error': f'Failed to write config: {e}'}), 500  # type: ignore
 
-            INSTA_CHECK_INTERVAL = int(update_setting('check_interval', INSTA_CHECK_INTERVAL, data.get('check_interval'), int))
-            RANDOM_SLEEP_DIFF_LOW = int(update_setting('random_low', RANDOM_SLEEP_DIFF_LOW, data.get('random_low'), int))
-            RANDOM_SLEEP_DIFF_HIGH = int(update_setting('random_high', RANDOM_SLEEP_DIFF_HIGH, data.get('random_high'), int))
-            STATUS_NOTIFICATION = bool(update_setting('email_notifications', STATUS_NOTIFICATION, data.get('email_notifications'), bool))
-            FOLLOWERS_NOTIFICATION = bool(update_setting('follower_notifications', FOLLOWERS_NOTIFICATION, data.get('follower_notifications'), bool))
-            ERROR_NOTIFICATION = bool(update_setting('error_notifications', ERROR_NOTIFICATION, data.get('error_notifications'), bool))
-            WEBHOOK_ENABLED = bool(update_setting('webhook_enabled', WEBHOOK_ENABLED, data.get('webhook_enabled'), bool))
-            WEBHOOK_URL = str(update_setting('webhook_url', WEBHOOK_URL, data.get('webhook_url'), str))
-            WEBHOOK_STATUS_NOTIFICATION = bool(update_setting('webhook_status', WEBHOOK_STATUS_NOTIFICATION, data.get('webhook_status'), bool))
-            WEBHOOK_FOLLOWERS_NOTIFICATION = bool(update_setting('webhook_followers', WEBHOOK_FOLLOWERS_NOTIFICATION, data.get('webhook_followers'), bool))
-            WEBHOOK_ERROR_NOTIFICATION = bool(update_setting('webhook_errors', WEBHOOK_ERROR_NOTIFICATION, data.get('webhook_errors'), bool))
-            FOLLOWERS_CHURN_DETECTION = bool(update_setting('followers_churn', FOLLOWERS_CHURN_DETECTION, data.get('followers_churn'), bool))
-            VERBOSE_MODE = bool(update_setting('verbose_mode', VERBOSE_MODE, data.get('verbose_mode'), bool))
-            DEBUG_MODE = bool(update_setting('debug_mode', DEBUG_MODE, data.get('debug_mode'), bool))
-            BE_HUMAN = bool(update_setting('be_human', BE_HUMAN, data.get('be_human'), bool))
-            SKIP_FOLLOWERS = bool(update_setting('skip_followers', SKIP_FOLLOWERS, data.get('skip_followers'), bool))
-            SKIP_FOLLOWINGS = bool(update_setting('skip_followings', SKIP_FOLLOWINGS, data.get('skip_followings'), bool))
-            SKIP_FOLLOW_CHANGES = bool(update_setting('skip_follow_changes', SKIP_FOLLOW_CHANGES, data.get('skip_follow_changes'), bool))
-            SKIP_GETTING_STORY_DETAILS = bool(update_setting('skip_stories', SKIP_GETTING_STORY_DETAILS, data.get('skip_stories'), bool))
-            SKIP_GETTING_POSTS_DETAILS = bool(update_setting('skip_posts', SKIP_GETTING_POSTS_DETAILS, data.get('skip_posts'), bool))
-            GET_MORE_POST_DETAILS = bool(update_setting('get_more_post_details', GET_MORE_POST_DETAILS, data.get('get_more_post_details'), bool))
-            DETECT_CHANGED_PROFILE_PIC = bool(update_setting('profile_pic_changes', DETECT_CHANGED_PROFILE_PIC, data.get('profile_pic_changes'), bool))
-            SKIP_SESSION = bool(update_setting('skip_session_login', SKIP_SESSION, data.get('skip_session_login'), bool))
-            LIVENESS_CHECK_INTERVAL = int(update_setting('liveness_check_interval', LIVENESS_CHECK_INTERVAL, data.get('liveness_check_interval'), int))
-            DISABLE_LOGGING = not bool(update_setting('logging_enabled', not DISABLE_LOGGING, data.get('logging_enabled'), bool))
-            CHECK_POSTS_IN_HOURS_RANGE = bool(update_setting('check_posts_in_hours_range', CHECK_POSTS_IN_HOURS_RANGE, data.get('check_posts_in_hours_range'), bool))
-            HOURS_VERBOSE = bool(update_setting('hours_verbose', HOURS_VERBOSE, data.get('hours_verbose'), bool))
-            MIN_H1 = int(update_setting('min_h1', MIN_H1, data.get('min_h1'), int))
-            MAX_H1 = int(update_setting('max_h1', MAX_H1, data.get('max_h1'), int))
-            MIN_H2 = int(update_setting('min_h2', MIN_H2, data.get('min_h2'), int))
-            MAX_H2 = int(update_setting('max_h2', MAX_H2, data.get('max_h2'), int))
-            DASHBOARD_SHOW_CHECK_SECONDS = bool(update_setting('dashboard_show_check_seconds', DASHBOARD_SHOW_CHECK_SECONDS, data.get('dashboard_show_check_seconds'), bool))
-            TIME_FORMAT_12H = bool(update_setting('time_format_12h', TIME_FORMAT_12H, data.get('time_format_12h'), bool))
+        try:
+            log_activity(f"Generated config file: {out_path}")
+        except Exception:
+            pass
+        print(f"* Generated config file: {out_path}")
+        try:
+            print_cur_ts("\nTimestamp:\t\t\t\t")
+        except Exception:
+            pass
 
-            SMTP_HOST = str(update_setting('smtp_host', SMTP_HOST, data.get('smtp_host'), str))
-            SMTP_PORT = int(update_setting('smtp_port', SMTP_PORT, data.get('smtp_port'), int))
-            SMTP_USER = str(update_setting('smtp_user', SMTP_USER, data.get('smtp_user'), str))
-            SMTP_SSL = bool(update_setting('smtp_ssl', SMTP_SSL, data.get('smtp_ssl'), bool))
-            SENDER_EMAIL = str(update_setting('sender_email', SENDER_EMAIL, data.get('sender_email'), str))
-            RECEIVER_EMAIL = str(update_setting('receiver_email', RECEIVER_EMAIL, data.get('receiver_email'), str))
-
-            # Special case for SMTP_PASSWORD
-            if 'smtp_password' in data and data['smtp_password']:
-                # Only update if it's not the placeholder masked value
-                if data['smtp_password'] != '********':
-                    if data['smtp_password'] != SMTP_PASSWORD:
-                        changes.append("'smtp_password' updated")
-                        SMTP_PASSWORD = data['smtp_password']
-
-            if 'csv_filename' in data and data['csv_filename'] != CSV_FILE:
-                changes.append(f"'csv_filename' changed from {CSV_FILE} to {data['csv_filename']}")
-                CSV_FILE = data['csv_filename']
-
-            if changes:
-                msg = "Settings updated: " + "; ".join(changes)
-                log_activity(msg)
-                print(f"* {msg}")
-                print_cur_ts("\nTimestamp:\t\t\t\t")
-
-                SESSION_REFRESHED_EVENT.set()
-                SESSION_REFRESHED_EVENT.clear()
-                return jsonify({'success': True, 'changes': changes})  # type: ignore
+        return jsonify({'success': True, 'path': out_path, 'filename': filename, 'changes': changes})  # type: ignore
 
     @app.route('/api/session', methods=['GET', 'POST'])  # type: ignore[misc]
     def api_session():  # type: ignore[return]
@@ -3164,6 +3321,7 @@ def format_hour(h, with_minutes=True):
     else:
         return f"{h:02d}:00" if with_minutes else f"{h:02d}:00"
 
+
 # Helper to format an hour range to a string based on TIME_FORMAT_12H
 def format_hour_range(h_min, h_max):
     if TIME_FORMAT_12H:
@@ -3180,6 +3338,7 @@ def format_hour_range(h_min, h_max):
         return f"{min_h12:02d}:00 {min_suffix} - {max_h12:02d}:59 {max_suffix}"
     else:
         return f"{h_min:02d}:00 - {h_max:02d}:59"
+
 
 # Recomputes cycle-based liveness counter after INSTA_CHECK_INTERVAL changes
 def recompute_liveness_check_counter() -> None:
