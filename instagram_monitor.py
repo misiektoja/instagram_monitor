@@ -8478,7 +8478,10 @@ def run_main():
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H
 
     if "--generate-config" in sys.argv:
-        print(CONFIG_BLOCK.strip("\n"))
+        # Write directly to binary stdout with UTF-8 encoding to prevent Windows PowerShell from encoding the output as UTF-16 (with null bytes) when redirecting to a file
+        sys.stdout.buffer.write(CONFIG_BLOCK.strip("\n").encode("utf-8"))
+        sys.stdout.buffer.write(b"\n")
+        sys.stdout.buffer.flush()
         sys.exit(0)
 
     if "--version" in sys.argv:
