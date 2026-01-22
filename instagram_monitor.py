@@ -2998,6 +2998,21 @@ def validate_webhook_url(url):
         return False
 
 
+# Escapes Discord markdown for display-only text
+def escape_discord_markdown(text: str) -> str:
+    if not text:
+        return ""
+    escape_map = {
+        "\\": "\\\\",
+        "*": "\\*",
+        "_": "\\_",
+        "~": "\\~",
+        "`": "\\`",
+        "|": "\\|",
+    }
+    return "".join(escape_map.get(ch, ch) for ch in text)
+
+
 # Helper function to compare follower/following lists and log changes
 def show_follow_info(followers_reported: int, followers_actual: int, followings_reported: int, followings_actual: int) -> None:
     if VERBOSE_MODE:
@@ -3015,6 +3030,8 @@ def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_
     removed_list = ""
     added_list_html = ""
     removed_list_html = ""
+    added_list_webhook = ""
+    removed_list_webhook = ""
     added_mbody = ""
     removed_mbody = ""
 
@@ -3031,6 +3048,7 @@ def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_
                              user=user, level='update', details={'url': url})
                 removed_list += f"- {item} [ {url} ]\n"
                 removed_list_html += f"- {item} [ <a href=\"{url}\">{url}</a> ]\n"
+                removed_list_webhook += f"- {escape_discord_markdown(item)} (<{url}>)\n"
                 try:
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), f"Removed {change_type.capitalize()}", item, "")
@@ -3048,6 +3066,7 @@ def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_
                              user=user, level='update', details={'url': url})
                 added_list += f"- {item} [ {url} ]\n"
                 added_list_html += f"- {item} [ <a href=\"{url}\">{url}</a> ]\n"
+                added_list_webhook += f"- {escape_discord_markdown(item)} (<{url}>)\n"
                 try:
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), f"Added {change_type.capitalize()}", "", item)
@@ -3055,11 +3074,11 @@ def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_
                     print(f"* Error: {e}")
             print()
 
-    return added_list, removed_list, added_list_html, removed_list_html, added_mbody, removed_mbody
+    return (added_list, removed_list, added_list_html, removed_list_html, added_list_webhook, removed_list_webhook, added_mbody, removed_mbody)
 
 
 # Helper function to send follower/following change webhooks
-def send_follower_change_webhook(user, change_type, old_count, new_count, added_list, removed_list):
+def send_follower_change_webhook(user, change_type, old_count, new_count, added_list_webhook, removed_list_webhook):
     diff = new_count - old_count
     diff_str = f"+{diff}" if diff > 0 else str(diff)
 
@@ -3069,18 +3088,18 @@ def send_follower_change_webhook(user, change_type, old_count, new_count, added_
         {"name": "Change", "value": diff_str, "inline": True},
     ]
 
-    if added_list:
+    if added_list_webhook:
         field_name = "**Added followers:**" if change_type == "followers" else "**Added followings:**"
         webhook_fields.append({
             "name": field_name,
-            "value": added_list[:DISCORD_FIELD_VALUE_LIMIT]  # type: ignore
+            "value": added_list_webhook[:DISCORD_FIELD_VALUE_LIMIT]  # type: ignore
         })
 
-    if removed_list:
+    if removed_list_webhook:
         field_name = "**Removed followers:**" if change_type == "followers" else "**Removed followings:**"
         webhook_fields.append({
             "name": field_name,
-            "value": removed_list[:DISCORD_FIELD_VALUE_LIMIT]  # type: ignore
+            "value": removed_list_webhook[:DISCORD_FIELD_VALUE_LIMIT]  # type: ignore
         })
 
     # Use different emojis/colors for followers vs followings
@@ -6373,7 +6392,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     should_compare_followers = followers_baseline_available and ((followers_count != followers_old_count) or (FOLLOWERS_CHURN_DETECTION and followers != followers_old))
     if should_compare_followers and (followers != followers_old) and not skip_session and not skip_followers and can_view and ((followers and followers_count > 0) or (not followers and followers_count == 0)):
         if not skip_follow_changes:
-            added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
+            added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_list_webhook, removed_followers_list_webhook, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
                 user, "followers", followers_old, followers, csv_file_name
             )
 
@@ -6407,7 +6426,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             # Send webhook notification for followers change detected at startup
             webhook_result = send_follower_change_webhook(
                 user, "followers", followers_old_count, followers_count,
-                added_followers_list, removed_followers_list
+                added_followers_list_webhook, removed_followers_list_webhook
             )
             if webhook_result != 0 and DEBUG_MODE:
                 print(f"* Warning: Webhook notification for followers change failed")
@@ -6507,7 +6526,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     should_compare_followings = followings_baseline_available and ((followings_count != followings_old_count) or (FOLLOWERS_CHURN_DETECTION and followings != followings_old))
     if should_compare_followings and (followings != followings_old) and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
         if not skip_follow_changes:
-            added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
+            added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_list_webhook, removed_followings_list_webhook, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
                 user, "followings", followings_old, followings, csv_file_name
             )
 
@@ -6541,7 +6560,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             # Send webhook notification for followings change detected at startup
             webhook_result = send_follower_change_webhook(
                 user, "followings", followings_old_count, followings_count,
-                added_followings_list, removed_followings_list
+                added_followings_list_webhook, removed_followings_list_webhook
             )
             if webhook_result != 0 and DEBUG_MODE:
                 print(f"* Warning: Webhook notification for followings change failed")
@@ -7274,6 +7293,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 removed_followings_list = ""
                 added_followings_list_html = ""
                 removed_followings_list_html = ""
+                added_followings_list_webhook = ""
+                removed_followings_list_webhook = ""
                 added_followings_mbody = ""
                 removed_followings_mbody = ""
 
@@ -7321,7 +7342,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                         if followings_baseline_available:
                             if not skip_follow_changes:
-                                added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
+                                added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_list_webhook, removed_followings_list_webhook, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
                                     user, "followings", followings_old, followings, csv_file_name
                                 )
                         else:
@@ -7365,7 +7386,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     # Send webhook notification for followings change
                     webhook_result = send_follower_change_webhook(
                         user, "followings", followings_old_count, followings_count,
-                        added_followings_list, removed_followings_list
+                        added_followings_list_webhook, removed_followings_list_webhook
                     )
                     if webhook_result != 0 and DEBUG_MODE:
                         print(f"* Warning: Webhook notification for followings change failed")
@@ -7404,6 +7425,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 removed_followers_list = ""
                 added_followers_list_html = ""
                 removed_followers_list_html = ""
+                added_followers_list_webhook = ""
+                removed_followers_list_webhook = ""
                 added_followers_mbody = ""
                 removed_followers_mbody = ""
 
@@ -7451,7 +7474,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                         if followers_baseline_available:
                             if not skip_follow_changes:
-                                added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
+                                added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_list_webhook, removed_followers_list_webhook, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
                                     user, "followers", followers_old, followers, csv_file_name
                                 )
                         else:
@@ -7495,7 +7518,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     # Send webhook notification for followers change
                     webhook_result = send_follower_change_webhook(
                         user, "followers", followers_old_count, followers_count,
-                        added_followers_list, removed_followers_list
+                        added_followers_list_webhook, removed_followers_list_webhook
                     )
                     if webhook_result != 0 and DEBUG_MODE:
                         print(f"* Warning: Webhook notification for followers change failed")
