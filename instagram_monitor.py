@@ -4726,18 +4726,19 @@ def generate_dashboard_targets_table(target_data):
     assert Text is not None
 
     table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan", expand=True)
-    # Give Target the highest priority in tight widths
-    table.add_column("Target", style="green", ratio=5, no_wrap=True, overflow="ellipsis", min_width=12)
+    # Keep most columns at their natural fixed widths and give remaining space to Target
+    table.add_column("Target", style="green", ratio=2, no_wrap=True, overflow="ellipsis")
     table.add_column("Vis.", width=4, no_wrap=True)  # Visibility: PUB/PRI
     table.add_column("Followers", justify="right", width=9, no_wrap=True)
     table.add_column("Following", justify="right", width=9, no_wrap=True)
     table.add_column("Posts", justify="right", width=6, no_wrap=True)
     table.add_column("Reels", justify="right", width=6, no_wrap=True)
     table.add_column("Story", width=6, no_wrap=True, overflow="ellipsis")
-    table.add_column("Last Chk", ratio=1, no_wrap=True, overflow="ellipsis", min_width=8)
+    table.add_column("Last Chk", width=12, no_wrap=True, overflow="ellipsis")
     # Needs to fit "Tom. HH:MM:SS" (13 chars) without wrapping
-    table.add_column("Next Chk", ratio=1, no_wrap=True, overflow="ellipsis", min_width=9)
-    table.add_column("Status", ratio=1, no_wrap=True, overflow="ellipsis", min_width=7)
+    table.add_column("Next Chk", width=13, no_wrap=True, overflow="ellipsis")
+    # Allow wrapping so long statuses (e.g. "Loading Profile") are readable
+    table.add_column("Status", width=16, no_wrap=False, overflow="fold")
 
     now_ts = datetime.now().timestamp()
     for target, data in target_data.items():
