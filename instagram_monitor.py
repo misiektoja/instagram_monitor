@@ -4957,32 +4957,37 @@ def setup_pbar(total_expected, title):
     PROGRESS_BAR_LOCK.acquire()
     _thread_local.pbar_lock_acquired = True  # type: ignore[misc]
 
-    # Wrap the output stream so tqdm redraws are also synchronized with other stdout writes.
-    class _LockedStream:
-        def __init__(self, stream, lock):
-            self._stream = stream
-            self._lock = lock
+    try:
+        # Wrap the output stream so tqdm redraws are also synchronized with other stdout writes.
+        class _LockedStream:
+            def __init__(self, stream, lock):
+                self._stream = stream
+                self._lock = lock
 
-        def write(self, s):
-            with self._lock:
-                return self._stream.write(s)
+            def write(self, s):
+                with self._lock:
+                    return self._stream.write(s)
 
-        def flush(self):
-            with self._lock:
-                return self._stream.flush()
+            def flush(self):
+                with self._lock:
+                    return self._stream.flush()
 
-        def __getattr__(self, name):
-            return getattr(self._stream, name)
+            def __getattr__(self, name):
+                return getattr(self._stream, name)
 
-    custom_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
-    # Write progress bar updates to terminal only (not log file) to avoid cluttering logs
-    terminal_out = stdout_bck if stdout_bck is not None else sys.stdout
-    locked_terminal_out = _LockedStream(terminal_out, STDOUT_LOCK)
-    # Use HORIZONTAL_LINE (default 113) as the fixed width for consistent behavior across environments
-    _thread_local.pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=locked_terminal_out, ncols=HORIZONTAL_LINE)  # type: ignore[misc]
+        custom_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
+        # Write progress bar updates to terminal only (not log file) to avoid cluttering logs
+        terminal_out = stdout_bck if stdout_bck is not None else sys.stdout
+        locked_terminal_out = _LockedStream(terminal_out, STDOUT_LOCK)
+        # Use HORIZONTAL_LINE (default 113) as the fixed width for consistent behavior across environments
+        _thread_local.pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=locked_terminal_out, ncols=HORIZONTAL_LINE)  # type: ignore[misc]
 
-    # Also set global for backward compatibility (single-threaded mode)
-    pbar = _thread_local.pbar
+        # Also set global for backward compatibility (single-threaded mode)
+        pbar = _thread_local.pbar
+    except Exception:
+        # If setup fails, ensure the lock is released
+        close_pbar()
+        raise
 
 
 # Closes progress bar and write final state to log file if logging is enabled
@@ -4991,8 +4996,8 @@ def close_pbar():
     # Use thread-local storage for multi-target safety
     thread_pbar = getattr(_thread_local, 'pbar', None)
     debug_print(f"[close_pbar] ENTRY - thread_pbar is None: {thread_pbar is None}")
-    if thread_pbar is not None:
-        try:
+    try:
+        if thread_pbar is not None:
             # Get the final progress bar string before closing
             # Use format_dict to get current values and format the progress bar string
             d = thread_pbar.format_dict
@@ -5092,14 +5097,14 @@ def close_pbar():
             _thread_local.pbar = None  # type: ignore[misc]
             # Also clear global for backward compatibility
             pbar = None
-        finally:
-            if getattr(_thread_local, 'pbar_lock_acquired', False):
-                _thread_local.pbar_lock_acquired = False  # type: ignore[misc]
-                try:
-                    PROGRESS_BAR_LOCK.release()
-                except RuntimeError:
-                    # If release is called without a matching acquire, ignore (defensive)
-                    pass
+    finally:
+        if getattr(_thread_local, 'pbar_lock_acquired', False):
+            _thread_local.pbar_lock_acquired = False  # type: ignore[misc]
+            try:
+                PROGRESS_BAR_LOCK.release()
+            except RuntimeError:
+                # If release is called without a matching acquire, ignore (defensive)
+                pass
 
 
 # Monkey-patches Instagram request to add human-like jitter and back-off
