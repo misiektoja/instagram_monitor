@@ -444,6 +444,8 @@ You can monitor multiple Instagram users in **one process** by passing multiple 
 instagram_monitor target_user_1 target_user_2 target_user_3
 ```
 
+**Note**: You can also add and remove monitoring targets directly via the **[Web Dashboard](#web-dashboard-mode)** without restarting the tool.
+
 To reduce the chance of triggering Instagram anti-bot mechanisms, the tool will **stagger** the start of each target's monitoring loop (auto-spread across your `INSTA_CHECK_INTERVAL` by default). You can override it with:
 
 ```sh
@@ -480,6 +482,7 @@ And downloaded stories images & videos to:
 To enable email notifications for various events (such as new posts, reels and stories, changes in followings, bio updates, changes in profile picture and visibility):
 - set `STATUS_NOTIFICATION` to `True`
 - or use the `-s` flag
+- or toggle it via the **Settings** menu in the **Web Dashboard**
 
 ```sh
 instagram_monitor <target_insta_user> -s
@@ -488,6 +491,7 @@ instagram_monitor <target_insta_user> -s
 To also get email notifications about changed followers:
 - set `FOLLOWERS_NOTIFICATION` to `True`
 - or use the `-m` flag
+- or toggle it via the **Settings** menu in the **Web Dashboard**
 
 ```sh
 instagram_monitor <target_insta_user> -m
@@ -496,6 +500,7 @@ instagram_monitor <target_insta_user> -m
 To disable sending an email on errors (enabled by default):
 - set `ERROR_NOTIFICATION` to `False`
 - or use the `-e` flag
+- or toggle it via the **Settings** menu in the **Web Dashboard**
 
 ```sh
 instagram_monitor <target_insta_user> -e
@@ -526,6 +531,7 @@ If you are new to Discord, follow these steps to get your **Webhook URL**:
 - set `WEBHOOK_ENABLED` to `True` and `WEBHOOK_URL` to your copied URL in `instagram_monitor.conf`
 - or use an [environment variable](#storing-secrets) or a dotenv file for `WEBHOOK_URL`
 - or use the `--webhook-url` flag (alternatively use the `--webhook` flag if URL is already in config)
+- or toggle it via the **Settings** menu in the **Web Dashboard**
 
 ```sh
 # Enable with URL
@@ -583,6 +589,7 @@ When enabled, the tool fetches the full list of followers and followings on **ev
 To enable follower churn detection:
 - set `FOLLOWERS_CHURN_DETECTION` to `True`
 - or use the `--followers-churn` flag
+- or toggle it via the **Settings** menu in the **Web Dashboard**
 
 **Note**: This feature is automatically disabled if `SKIP_FOLLOW_CHANGES` is active, as detailed tracking is not possible when follow-related reporting is suppressed. It also requires [Session Mode 2](#session-mode-2-with-logged-in-instagram-account-session-login).
 
@@ -677,6 +684,7 @@ This feature is enabled by default. To disable it, either:
 
 - set the `DETECT_CHANGED_PROFILE_PIC` to `False`
 - or use the `-k` flag
+- or toggle it via the **Settings** menu in the **Web Dashboard**
 
 <a id="how-it-works"></a>
 #### How It Works
@@ -721,6 +729,8 @@ If you want to customize polling interval, use `-c` flag (or `INSTA_CHECK_INTERV
 ```sh
 instagram_monitor <target_insta_user> -c 3600
 ```
+
+**Note**: You can also adjust check intervals and randomization timers live via the **Settings** menu in the **Web Dashboard**.
 
 It is generally not recommended to use values lower than 1 hour as it will be quickly picked up by Instagram automated tool detection mechanisms.
 
@@ -806,7 +816,7 @@ Always pass the exact web browser user agent string from your Firefox web browse
 
 Since v1.7, the tool includes a new experimental **Be Human** mode that makes it behave more like a real user to reduce bot detection.
 
-It is disabled by default, but you can enable it via `BE_HUMAN` configuration option or `--be-human` flag.
+It is disabled by default, but you can enable it via `BE_HUMAN` configuration option, `--be-human` flag or by toggling it via the **Settings** menu in the **Web Dashboard**.
 
 It is used only with session login (session mode 2).
 
@@ -855,6 +865,8 @@ To enable this feature, set `CHECK_POSTS_IN_HOURS_RANGE` to `True` and configure
 
 You can define up to two non-overlapping or overlapping ranges. To disable any range, set both MIN and MAX to 0.
 
+**Note**: You can also enable this feature and configure the allowed hour ranges live via the **Settings** menu in the **Web Dashboard**.
+
 For example, to only allow checks during business hours (9 AM to 5 PM / 17:00), you could set:
 - `MIN_H1 = 9`
 - `MAX_H1 = 17`
@@ -878,6 +890,8 @@ It is recommended to limit the number of users monitored by a single account, es
 Frequent updates to certain data types, such as new stories or posts/reels, are more likely to flag the account as an automated tool compared to profile changes or lists of followers/followings.
 
 If certain data isn't essential for your use case, consider disabling its retrieval. The tool provides fine-grained control, for example you can skip fetching stories details (`-r`), posts/reels details (`-w`), the list of followings (`-g` flag) and followers (`-f`).
+
+**Note**: All of these fine-grained tracking options can also be toggled live via the **Settings** menu in the **Web Dashboard**.
 
 <a id="use-two-factor-authentication-2fa"></a>
 ### Use Two-Factor Authentication (2FA)
@@ -906,6 +920,8 @@ In case of issues, run the tool with the `--debug` flag. It shows full HTTP traf
 - **Default Mode**: Silent and clean. Only logs changes (new posts, bio updates, etc.) and critical errors. Best for long-term production use.
 - **Verbose Mode (`--verbose`)**: Recommended for most users. Shows when the next check is scheduled and confirms that the loop is running correctly.
 - **Debug Mode (`--debug`)**: For developers or fixing issues. Shows full HTTP traffic, internal script logic
+
+**Note**: Both **Verbose** and **Debug** modes can be toggled live via the **Settings** menu in the **Web Dashboard**.
 
 <a id="change-log"></a>
 ## Change Log
