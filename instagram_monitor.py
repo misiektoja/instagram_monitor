@@ -723,6 +723,9 @@ STDOUT_LOCK = threading.Lock()
 # Must be re-entrant because requests' request() calls send() internally and we may wrap both
 HTTP_SERIAL_LOCK = threading.RLock()
 
+# Global lock for serializing tqdm progress-bar output across threads
+PROGRESS_BAR_LOCK = threading.RLock()
+
 # Global lock for session file load/save (Instaloader session file is shared across targets)
 SESSION_FILE_LOCK = threading.Lock()
 
@@ -4937,6 +4940,7 @@ def setup_pbar(total_expected, title):
         _thread_local.START_TIME = 0  # type: ignore[misc]
         _thread_local.NAME_COUNT = 0  # type: ignore[misc]
         _thread_local.WRAPPER_COUNT = 0  # type: ignore[misc]
+        _thread_local.pbar_lock_acquired = False  # type: ignore[misc]
 
     _thread_local.START_TIME = datetime.now()  # type: ignore[misc]
     _thread_local.NAME_COUNT = 0  # type: ignore[misc]
@@ -4949,11 +4953,33 @@ def setup_pbar(total_expected, title):
     if DASHBOARD_ENABLED and RICH_AVAILABLE:
         return
 
+    # Ensure only one progress bar writes to the terminal at a time in multi-target mode
+    PROGRESS_BAR_LOCK.acquire()
+    _thread_local.pbar_lock_acquired = True  # type: ignore[misc]
+
+    # Wrap the output stream so tqdm redraws are also synchronized with other stdout writes.
+    class _LockedStream:
+        def __init__(self, stream, lock):
+            self._stream = stream
+            self._lock = lock
+
+        def write(self, s):
+            with self._lock:
+                return self._stream.write(s)
+
+        def flush(self):
+            with self._lock:
+                return self._stream.flush()
+
+        def __getattr__(self, name):
+            return getattr(self._stream, name)
+
     custom_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
     # Write progress bar updates to terminal only (not log file) to avoid cluttering logs
     terminal_out = stdout_bck if stdout_bck is not None else sys.stdout
+    locked_terminal_out = _LockedStream(terminal_out, STDOUT_LOCK)
     # Use HORIZONTAL_LINE (default 113) as the fixed width for consistent behavior across environments
-    _thread_local.pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=terminal_out, ncols=HORIZONTAL_LINE)  # type: ignore[misc]
+    _thread_local.pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=locked_terminal_out, ncols=HORIZONTAL_LINE)  # type: ignore[misc]
 
     # Also set global for backward compatibility (single-threaded mode)
     pbar = _thread_local.pbar
@@ -4966,105 +4992,114 @@ def close_pbar():
     thread_pbar = getattr(_thread_local, 'pbar', None)
     debug_print(f"[close_pbar] ENTRY - thread_pbar is None: {thread_pbar is None}")
     if thread_pbar is not None:
-        # Get the final progress bar string before closing
-        # Use format_dict to get current values and format the progress bar string
-        d = thread_pbar.format_dict
-        desc = thread_pbar.desc if thread_pbar.desc else ""
-        unit = thread_pbar.unit if thread_pbar.unit else ""
+        try:
+            # Get the final progress bar string before closing
+            # Use format_dict to get current values and format the progress bar string
+            d = thread_pbar.format_dict
+            desc = thread_pbar.desc if thread_pbar.desc else ""
+            unit = thread_pbar.unit if thread_pbar.unit else ""
 
-        # Format the progress bar string to match the custom_bar_format: "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
-        n = d.get('n', 0)
-        total = d.get('total', 0)
-        n_fmt = f"{n:,}" if n >= 1000 else str(n)
-        total_fmt = f"{total:,}" if total >= 1000 else str(total)
+            # Format the progress bar string to match the custom_bar_format: "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
+            n = d.get('n', 0)
+            total = d.get('total', 0)
+            n_fmt = f"{n:,}" if n >= 1000 else str(n)
+            total_fmt = f"{total:,}" if total >= 1000 else str(total)
 
-        # Calculate percentage
-        percentage = f"{int(n / total * 100 if total > 0 else 0)}%"
+            # Calculate percentage
+            percentage = f"{int(n / total * 100 if total > 0 else 0)}%"
 
-        # Calculate bar visualization
-        if total > 0:
-            # Calculate available space for bar:
-            # Total width (HORIZONTAL_LINE) - desc - stats - separators - percentage
+            # Calculate bar visualization
+            if total > 0:
+                # Calculate available space for bar:
+                # Total width (HORIZONTAL_LINE) - desc - stats - separators - percentage
 
-            overhead = 0
+                overhead = 0
+                if desc:
+                    overhead += len(desc) + 2  # ": "
+
+                overhead += len(percentage)
+                overhead += 1  # "|"
+                overhead += 1  # "|"
+                overhead += 1  # " "
+                overhead += len(n_fmt)
+                overhead += 1  # "/"
+                overhead += len(total_fmt)
+                overhead += 2  # " ["
+                overhead += len(unit)
+                overhead += 1  # "]"
+
+                avail_for_bar = HORIZONTAL_LINE - overhead
+                bar_length = max(10, avail_for_bar)  # Ensure at least 10 chars
+
+                filled = int(bar_length * n / total)
+                bar = '█' * filled + '░' * (bar_length - filled)
+            else:
+                bar = '░' * 40
+
+            # Build final string matching the format: "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
+            # tqdm's l_bar usually includes {desc}: {percentage}
             if desc:
-                overhead += len(desc) + 2  # ": "
+                final_str = f"{desc}: {percentage}|{bar}| {n_fmt}/{total_fmt} [{unit}]"
+            else:
+                final_str = f"{percentage}|{bar}| {n_fmt}/{total_fmt} [{unit}]"
 
-            overhead += len(percentage)
-            overhead += 1  # "|"
-            overhead += 1  # "|"
-            overhead += 1  # " "
-            overhead += len(n_fmt)
-            overhead += 1  # "/"
-            overhead += len(total_fmt)
-            overhead += 2  # " ["
-            overhead += len(unit)
-            overhead += 1  # "]"
+            # Close the progress bar (writes to terminal)
+            thread_pbar.close()
 
-            avail_for_bar = HORIZONTAL_LINE - overhead
-            bar_length = max(10, avail_for_bar)  # Ensure at least 10 chars
+            # Write final state to log files if logging is enabled
+            # Check if sys.stdout is a Logger or if it's wrapped (e.g. by FilteredWriter)
+            logger_instance = None
+            if isinstance(sys.stdout, Logger):
+                logger_instance = sys.stdout
+            elif hasattr(sys.stdout, 'original') and isinstance(sys.stdout.original, Logger):  # type: ignore[union-attr]
+                # FilteredWriter wraps the Logger in .original
+                logger_instance = sys.stdout.original  # type: ignore[union-attr]
 
-            filled = int(bar_length * n / total)
-            bar = '█' * filled + '░' * (bar_length - filled)
-        else:
-            bar = '░' * 40
+            debug_print(f"[close_pbar] logger_instance found: {logger_instance is not None}, type: {type(sys.stdout).__name__}")
+            if logger_instance is not None:
+                # We want to write to logs but NOT the terminal again (pbar.close already did that), so we strip colors and
+                # write to main/target logs manually or use a flag
+                clean_final = ANSI_ESCAPE_RE.sub("", final_str).expandtabs(8) + "\n"
+                debug_print(f"[close_pbar] clean_final: {clean_final.strip()}")
 
-        # Build final string matching the format: "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
-        # tqdm's l_bar usually includes {desc}: {percentage}
-        if desc:
-            final_str = f"{desc}: {percentage}|{bar}| {n_fmt}/{total_fmt} [{unit}]"
-        else:
-            final_str = f"{percentage}|{bar}| {n_fmt}/{total_fmt} [{unit}]"
-
-        # Close the progress bar (writes to terminal)
-        thread_pbar.close()
-
-        # Write final state to log files if logging is enabled
-        # Check if sys.stdout is a Logger or if it's wrapped (e.g. by FilteredWriter)
-        logger_instance = None
-        if isinstance(sys.stdout, Logger):
-            logger_instance = sys.stdout
-        elif hasattr(sys.stdout, 'original') and isinstance(sys.stdout.original, Logger):  # type: ignore[union-attr]
-            # FilteredWriter wraps the Logger in .original
-            logger_instance = sys.stdout.original  # type: ignore[union-attr]
-
-        debug_print(f"[close_pbar] logger_instance found: {logger_instance is not None}, type: {type(sys.stdout).__name__}")
-        if logger_instance is not None:
-            # We want to write to logs but NOT the terminal again (pbar.close already did that), so we strip colors and
-            # write to main/target logs manually or use a flag
-            clean_final = ANSI_ESCAPE_RE.sub("", final_str).expandtabs(8) + "\n"
-            debug_print(f"[close_pbar] clean_final: {clean_final.strip()}")
-
-            with STDOUT_LOCK:
-                if logger_instance.main_log:
-                    debug_print(f"[close_pbar] Writing to main_log")
-                    logger_instance.main_log.write(clean_final)
-                    logger_instance.main_log.flush()
-                else:
-                    debug_print(f"[close_pbar] main_log is None")
-
-                target = logger_instance._get_current_target()
-                debug_print(f"[close_pbar] target: {target}, target_paths: {list(logger_instance.target_paths.keys())}")
-                if target:
-                    handle = logger_instance._ensure_log_open(target)
-                    if handle:
-                        debug_print(f"[close_pbar] Writing to target log for {target}")
-                        handle.write(clean_final)
-                        handle.flush()
+                with STDOUT_LOCK:
+                    if logger_instance.main_log:
+                        debug_print(f"[close_pbar] Writing to main_log")
+                        logger_instance.main_log.write(clean_final)
+                        logger_instance.main_log.flush()
                     else:
-                        debug_print(f"[close_pbar] Failed to open handle for {target}")
-                else:
-                    # Common message (e.g. from MainThread): log to ALL target logs, matching Logger.write behavior
-                    debug_print(f"[close_pbar] No target, writing to all logs")
-                    for t in list(logger_instance.target_paths.keys()):
-                        handle = logger_instance._ensure_log_open(t)
+                        debug_print(f"[close_pbar] main_log is None")
+
+                    target = logger_instance._get_current_target()
+                    debug_print(f"[close_pbar] target: {target}, target_paths: {list(logger_instance.target_paths.keys())}")
+                    if target:
+                        handle = logger_instance._ensure_log_open(target)
                         if handle:
+                            debug_print(f"[close_pbar] Writing to target log for {target}")
                             handle.write(clean_final)
                             handle.flush()
+                        else:
+                            debug_print(f"[close_pbar] Failed to open handle for {target}")
+                    else:
+                        # Common message (e.g. from MainThread): log to ALL target logs, matching Logger.write behavior
+                        debug_print(f"[close_pbar] No target, writing to all logs")
+                        for t in list(logger_instance.target_paths.keys()):
+                            handle = logger_instance._ensure_log_open(t)
+                            if handle:
+                                handle.write(clean_final)
+                                handle.flush()
 
-        _thread_local.pbar = None  # type: ignore[misc]
-        # Also clear global for backward compatibility
-        pbar = None
+            _thread_local.pbar = None  # type: ignore[misc]
+            # Also clear global for backward compatibility
+            pbar = None
+        finally:
+            if getattr(_thread_local, 'pbar_lock_acquired', False):
+                _thread_local.pbar_lock_acquired = False  # type: ignore[misc]
+                try:
+                    PROGRESS_BAR_LOCK.release()
+                except RuntimeError:
+                    # If release is called without a matching acquire, ignore (defensive)
+                    pass
 
 
 # Monkey-patches Instagram request to add human-like jitter and back-off
