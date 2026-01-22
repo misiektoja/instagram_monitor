@@ -180,7 +180,7 @@ instagram_monitor --generate-config > instagram_monitor.conf
 
 Edit the `instagram_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
-**Note**: Since **v3.0**, you can also change nearly all configuration settings temporarily while the tool is running via the **[Web Dashboard](#web-dashboard-mode)**.
+**Note**: Since **v3.0**, you can also change nearly all configuration settings and generate config file via the **[Web Dashboard](#web-dashboard-mode)**.
 
 <a id="session-mode-1-without-logged-in-instagram-account-no-session-login"></a>
 ### Session Mode 1: Without Logged-In Instagram Account (No Session Login)
@@ -249,7 +249,7 @@ The session login method using Firefox cookies has the added benefit of blending
 It is also recommended to use the exact user agent string from your Firefox web browser:
 - open Firefox and type `about:support` in the address bar
 - find the `User Agent` value under the `Application Basics` section and copy it
-- set this value via the `USER_AGENT` configuration option or by using the `--user-agent` flag
+- set this value via the `USER_AGENT` configuration option or by using the `--user-agent` flag (since **v3.0**, you can also do it easily via the **[Web Dashboard](#web-dashboard-mode)**)
 
 <a id="time-zone"></a>
 ### Time Zone
@@ -265,6 +265,8 @@ You can get the list of all time zones supported by pytz like this:
 ```sh
 python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 ```
+
+Since **v3.0** you can also change from the default 24-hour time format to a 12-hour format via the `TIME_FORMAT_12H` config option.
 
 <a id="smtp-settings"></a>
 ### SMTP Settings
@@ -389,7 +391,7 @@ A modern, real-time web interface running on your local machine (default: `http:
 To enable the web dashboard, use the `--web-dashboard` flag (or set `WEB_DASHBOARD_ENABLED = True` in your config).
 
 **Flexible Usage:**
-- **Standard Monitoring**: Provide targets on the CLI, and the dashboard acts as a live mirror and remote management interface.
+- **Standard Monitoring**: Provide targets on the CLI and the dashboard acts as a live mirror and remote management interface.
 - **Control Panel Mode**: Start the tool with **only** the `--web-dashboard` flag (no initial targets). The script will wait for you to add users through the browser.
 
 ```sh
@@ -445,6 +447,12 @@ To monitor specific user activity in [session mode 2](#session-mode-2-with-logge
 
 ```sh
 instagram_monitor -u <your_insta_user> <target_insta_user>
+```
+
+Since **v3.0** you can also launch the **[Web Dashboard](#web-dashboard-mode)** along with tracking:
+
+```sh
+instagram_monitor -u <your_insta_user> <target_insta_user> --web-dashboard
 ```
 
 By default, the tool looks for a configuration file named `instagram_monitor.conf` in:
@@ -539,7 +547,7 @@ Example email:
 <a id="webhook-notifications"></a>
 ### Webhook Notifications
 
-The tool supports webhook notifications (compatible with Discord and other webhook services) for all monitored events (posts, reels, stories, followings, followers, bio, profile visibility, profile picture changes and errors).
+The tool supports webhook notifications (compatible with **Discord** and other webhook services) for all monitored events (posts, reels, stories, followings, followers, bio, profile visibility, profile picture changes and errors).
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_discord.png" alt="instagram_monitor_discord_screenshot" width="80%"/>
