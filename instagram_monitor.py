@@ -5832,6 +5832,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if FOLLOWERS_CHURN_DETECTION:
                 print(f"* Followers ({len(followers_old)}) loaded from file '{insta_followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
                 log_activity(f"Followers loaded from file: {len(followers_old)}", user=user)
+                followers_old_count = len(followers_old)
             else:
                 print(f"* Followers ({followers_old_count}) actual ({len(followers_old)}) loaded from file '{insta_followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
                 log_activity(f"Followers ({followers_old_count}) actual ({len(followers_old)}) loaded from file", user=user)
@@ -5967,6 +5968,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if FOLLOWERS_CHURN_DETECTION:
                 print(f"\n* Followings ({len(followings_old)}) loaded from file '{insta_followings_file}' ({get_short_date_from_ts(following_mdate, show_weekday=False, always_show_year=True)})")
                 log_activity(f"Followings loaded from file: {len(followings_old)}", user=user)
+                followings_old_count = len(followings_old)
             else:
                 print(f"\n* Followings ({followings_old_count}) actual ({len(followings_old)}) loaded from file '{insta_followings_file}' ({get_short_date_from_ts(following_mdate, show_weekday=False, always_show_year=True)})")
                 log_activity(f"Followings ({followings_old_count}) actual ({len(followings_old)}) loaded from file", user=user)
@@ -6763,7 +6765,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 time.sleep(r_sleep_time)
                 continue
 
-            if followings_count != followings_old_count or FOLLOWERS_CHURN_DETECTION:
+            if int(followings_count) != int(followings_old_count) or FOLLOWERS_CHURN_DETECTION:
                 if FOLLOWERS_CHURN_DETECTION and followings_count > 5000:
                     warning = f"High following count ({followings_count})! Detailed logging may increase rate limit risk."
                     log_activity(warning, user=user, level='system')
@@ -6776,7 +6778,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 else:
                     followings_diff_str = str(followings_diff)
 
-                if followings_count != followings_old_count:
+                if int(followings_count) != int(followings_old_count):
                     if not skip_follow_changes:
                         print(f"* Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})")
                         log_activity(f"Followings changed: {followings_old_count} -> {followings_count}", user=user)
@@ -6892,7 +6894,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t\t")
 
-            if followers_count != followers_old_count or FOLLOWERS_CHURN_DETECTION:
+            if int(followers_count) != int(followers_old_count) or FOLLOWERS_CHURN_DETECTION:
                 if FOLLOWERS_CHURN_DETECTION and followers_count > 5000:
                     warning = f"High follower count ({followers_count})! Detailed logging may increase rate limit risk."
                     log_activity(warning, user=user, level='system')
@@ -6905,7 +6907,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 else:
                     followers_diff_str = str(followers_diff)
 
-                if followers_count != followers_old_count:
+                if int(followers_count) != int(followers_old_count):
                     if not skip_follow_changes:
                         print(f"* Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})")
                         log_activity(f"Followers changed: {followers_old_count} -> {followers_count}", user=user, level='update')
