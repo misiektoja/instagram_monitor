@@ -8482,7 +8482,22 @@ def run_main():
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H
 
     if "--generate-config" in sys.argv:
-        print(CONFIG_BLOCK.strip("\n"))
+        config_content = CONFIG_BLOCK.strip("\n") + "\n"
+        # Check if a filename was provided after --generate-config
+        try:
+            idx = sys.argv.index("--generate-config")
+            if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("-"):
+                # Write directly to file (bypasses PowerShell UTF-16 encoding issue on Windows)
+                output_file = sys.argv[idx + 1]
+                with open(output_file, "w", encoding="utf-8") as f:
+                    f.write(config_content)
+                print(f"Config written to: {output_file}")
+                sys.exit(0)
+        except (ValueError, IndexError):
+            pass
+        # No filename provided - write to stdout
+        sys.stdout.buffer.write(config_content.encode("utf-8"))
+        sys.stdout.buffer.flush()
         sys.exit(0)
 
     if "--version" in sys.argv:
@@ -8540,8 +8555,11 @@ def run_main():
     )
     conf.add_argument(
         "--generate-config",
-        action="store_true",
-        help="Print default config template and exit",
+        dest="generate_config",
+        nargs="?",
+        const=True,
+        metavar="FILENAME",
+        help="Print default config template and exit (on Windows PowerShell, specify a filename to avoid redirect encoding issues)",
     )
     conf.add_argument(
         "--env-file",
