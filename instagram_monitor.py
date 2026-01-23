@@ -2534,9 +2534,12 @@ def _stream_supports_color(stream):
         return False
     if os.getenv("NO_COLOR"):
         return False
-    term = os.getenv("TERM", "")
-    if term.lower() in ("", "dumb", "unknown"):
-        return False
+    # On Windows with colorama, skip TERM check since colorama handles ANSI translation
+    # Windows Terminal and Command Prompt often don't set TERM, but colorama works fine
+    if not (colorama_init and system() == 'Windows'):
+        term = os.getenv("TERM", "")
+        if term.lower() in ("", "dumb", "unknown"):
+            return False
     # If stdin is a pipe, we're likely being piped (e.g. via tee), so disable colors to avoid writing ANSI codes to files
     if hasattr(sys.stdin, "isatty") and not sys.stdin.isatty():
         return False
