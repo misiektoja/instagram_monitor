@@ -8500,13 +8500,14 @@ def run_main():
     # Resolve dashboard mode early to decide whether to print version header
     early_dashboard_enabled = "--dashboard" in sys.argv and "--no-dashboard" not in sys.argv
 
+    # Clear screen BEFORE printing the header
+    clear_screen(CLEAR_SCREEN)
+
     if not (early_dashboard_enabled and RICH_AVAILABLE):
         print(colorize("header", f"Instagram Monitoring Tool v{VERSION}\n"))
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-
-    clear_screen(CLEAR_SCREEN)
 
     parser = argparse.ArgumentParser(
         prog="instagram_monitor",
