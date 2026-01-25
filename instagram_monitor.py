@@ -436,7 +436,7 @@ WEBHOOK_TEMPLATE = {
 # Some examples:
 #   {
 #       "Content-Type": "application/json",
-#       "Authorization": "Bearer tk_gbwlo1wzlcmbwvsay561rd0ciigns"
+#       "Authorization": "Bearer tk_redacted"
 #   }
 WEBHOOK_HEADERS = {}
 
