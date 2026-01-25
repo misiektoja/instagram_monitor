@@ -380,11 +380,11 @@ DASHBOARD_SHOW_CHECK_SECONDS = True
 # Webhook Integration
 # ----------------------------
 # Discord API limits (for reference and validation)
-DISCORD_FIELD_VALUE_LIMIT = 1024
-DISCORD_FIELD_NAME_LIMIT = 256
-DISCORD_EMBED_DESCRIPTION_LIMIT = 4096
-DISCORD_EMBED_TITLE_LIMIT = 256
-DISCORD_MAX_FIELDS = 25
+WEBHOOK_FIELD_VALUE_LIMIT = 1024
+WEBHOOK_FIELD_NAME_LIMIT = 256
+WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
+WEBHOOK_EMBED_TITLE_LIMIT = 256
+WEBHOOK_MAX_FIELDS = 25
 
 # Enable webhook notifications (Discord-compatible)
 # Can also be enabled via the --webhook flag
@@ -411,6 +411,45 @@ WEBHOOK_FOLLOWERS_NOTIFICATION = False
 # Send webhook on errors
 # Can also be enabled via the --webhook-errors flag
 WEBHOOK_ERROR_NOTIFICATION = False
+
+# Webhook request payload template
+# Substitutions will apply for items in {}, which can include title, description, version, image_url, fields, fields_str, color, timestamp, username, avatar_url
+#
+# The default template is for Discord:
+WEBHOOK_TEMPLATE = {
+    "username": "Instagram Monitor",
+    "embeds": [{
+        "title": "{title}",
+        "description": "{description}",
+        "color": "{color}",
+        "fields": "{fields}",
+        "footer": {
+            "text": "Instagram Monitor v{version}"
+        },
+        "image": {
+            "url": "{image_url}"
+        }
+    }]
+}
+
+# Webhook request headers as a dictionary, but it can be empty.
+# Some examples:
+#   {
+#       "Content-Type": "application/json",
+#       "Authorization": "Bearer tk_redacted"
+#   }
+WEBHOOK_HEADERS = {}
+
+# Transformations to apply to WEBHOOK_TEMPLATE and WEBHOOK_HEADERS as a list of tuples, but it can be empty
+# tuple format is: (field_to_target, method_name, *optional_arguments)
+#
+# Some examples:
+#   [
+#       ("title", "upper"),                       # Make title all uppercase
+#       ("description", "replace", "**", ""),     # Remove bold markdown in description
+#       ("description", "strip")                  # Remove leading/trailing whitespace
+#   ]
+WEBHOOK_TRANSFORMS = []
 
 # Whether to use coloured output in the terminal (auto-disabled if the terminal
 # does not appear to support colours or when output is redirected to a file)
@@ -3116,12 +3155,12 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
 def validate_webhook_url(url):
     if not url:
         return False
-    if not url.startswith('https://'):
+    if not (url.startswith('https://') or url.startswith('http://')):
         return False
     try:
         from urllib.parse import urlparse
         parsed = urlparse(url)
-        if not parsed.netloc or not parsed.scheme == 'https':
+        if not parsed.netloc or parsed.scheme not in ('https', 'http'):
             return False
         return True
     except Exception:
@@ -3222,14 +3261,14 @@ def send_follower_change_webhook(user, change_type, old_count, new_count, added_
         field_name = "**Added followers:**" if change_type == "followers" else "**Added followings:**"
         webhook_fields.append({
             "name": field_name,
-            "value": added_list_webhook[:DISCORD_FIELD_VALUE_LIMIT]  # type: ignore
+            "value": added_list_webhook[:WEBHOOK_FIELD_VALUE_LIMIT]  # type: ignore
         })
 
     if removed_list_webhook:
         field_name = "**Removed followers:**" if change_type == "followers" else "**Removed followings:**"
         webhook_fields.append({
             "name": field_name,
-            "value": removed_list_webhook[:DISCORD_FIELD_VALUE_LIMIT]  # type: ignore
+            "value": removed_list_webhook[:WEBHOOK_FIELD_VALUE_LIMIT]  # type: ignore
         })
 
     # Use different emojis/colors for followers vs followings
@@ -3254,6 +3293,24 @@ def send_follower_change_webhook(user, change_type, old_count, new_count, added_
 
 
 # Sends webhook notification (Discord-compatible)
+def format_payload(template, payload):
+    if isinstance(template, dict):
+        return {k: format_payload(v, payload) for k, v in template.items()}
+    elif isinstance(template, list):
+        return [format_payload(i, payload) for i in template]
+    elif isinstance(template, str):
+        if template == "{fields}":
+            return payload.get("fields", [])
+        if template == "{color}":
+            return payload.get("color", 0x7289DA)
+        try:
+            return template.format(**payload)
+        except KeyError:
+            # Return template as-is if placeholder key is missing from payload
+            return template
+    return template
+
+
 def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status"):
     if not WEBHOOK_ENABLED or not WEBHOOK_URL:
         return 1
@@ -3272,9 +3329,14 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         return 1
 
     try:
-        embed = {
-            "title": title[:DISCORD_EMBED_TITLE_LIMIT] if title else "Instagram Monitor",  # type: ignore
-            "description": description[:DISCORD_EMBED_DESCRIPTION_LIMIT] if description else "",  # type: ignore
+        # Load all possible items into payload for use in formatting the WEBHOOK_TEMPLATE and WEBHOOK_HEADERS
+        payload = {
+            "title": title[:WEBHOOK_EMBED_TITLE_LIMIT] if title else "Instagram Monitor",  # type: ignore
+            "description": description[:WEBHOOK_EMBED_DESCRIPTION_LIMIT] if description else "",  # type: ignore
+            "version": VERSION,
+            "image_url": image_url if image_url else "",
+            "fields": fields if fields else [],
+            "fields_str": "\n".join([f"{f['name']}: {f['value']}" for f in fields]) if fields else "",
             "color": color,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "footer": {
@@ -3283,24 +3345,20 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         }
 
         if fields:
-            embed["fields"] = []
-            for field in fields[:DISCORD_MAX_FIELDS]:  # type: ignore
-                embed["fields"].append({
-                    "name": str(field.get("name", ""))[:DISCORD_FIELD_NAME_LIMIT],  # type: ignore
-                    "value": str(field.get("value", ""))[:DISCORD_FIELD_VALUE_LIMIT],  # type: ignore
+            payload["fields"] = []
+            for field in fields[:WEBHOOK_MAX_FIELDS]:  # type: ignore
+                payload["fields"].append({
+                    "name": str(field.get("name", ""))[:WEBHOOK_FIELD_NAME_LIMIT],  # type: ignore
+                    "value": str(field.get("value", ""))[:WEBHOOK_FIELD_VALUE_LIMIT],  # type: ignore
                     "inline": field.get("inline", False)
                 })
 
         if image_url:
-            embed["image"] = {"url": image_url}
+            payload["image"] = {"url": image_url}
         elif local_image_file and os.path.isfile(local_image_file):
             # If using local file, use attachment:// syntax
             filename = os.path.basename(local_image_file)
-            embed["image"] = {"url": f"attachment://{filename}"}
-
-        payload: dict = {
-            "embeds": [embed]
-        }
+            payload["image"] = {"url": f"attachment://{filename}"}
 
         if WEBHOOK_USERNAME:
             payload["username"] = WEBHOOK_USERNAME
@@ -3308,25 +3366,45 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         if WEBHOOK_AVATAR_URL:
             payload["avatar_url"] = WEBHOOK_AVATAR_URL
 
-        if local_image_file and os.path.isfile(local_image_file):
+        # Apply optional transformations to payload, primarily the title and description
+        for transform in WEBHOOK_TRANSFORMS:
+            field = transform[0]
+            method_name = transform[1]
+            args = transform[2:] # Remaining items are method arguments
+
+            if field in payload and isinstance(payload[field], str):
+                try:
+                    # Get the method (e.g., .replace) from the string object
+                    method = getattr(payload[field], method_name)
+                    # Call it with the provided arguments
+                    payload[field] = method(*args)
+                except (AttributeError, TypeError) as e:
+                    print(f"* Transformation error on {field}.{method_name}: {e}")
+
+        # Apply substitutions to WEBHOOK_TEMPLATE and WEBHOOK_HEADERS
+        final_payload = format_payload(WEBHOOK_TEMPLATE, payload)
+        final_headers = format_payload(WEBHOOK_HEADERS, payload)
+
+        # Handle Discord-style Local Files (embeds with image attachment)
+        if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
             filename = os.path.basename(local_image_file)
+            try:
+                final_payload["embeds"][0]["image"]["url"] = f"attachment://{filename}"
+            except (KeyError, IndexError, TypeError):
+                # Template doesn't have expected Discord embed structure, skip image attachment
+                pass
             with open(local_image_file, 'rb') as f:
                 files = {
                     "file": (filename, f, "image/jpeg"),
-                    "payload_json": (None, json.dumps(payload))
+                    "payload_json": (None, json.dumps(final_payload))
                 }
-                response = req.post(
-                    str(WEBHOOK_URL),
-                    files=files,
-                    timeout=10
-                )
+                response = req.post(str(WEBHOOK_URL), headers=final_headers, files=files, timeout=10)
+        # Handle other types
         else:
-            response = req.post(
-                str(WEBHOOK_URL),
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=10
-            )
+            if isinstance(final_payload, str):
+                response = req.post(WEBHOOK_URL, headers=final_headers, data=final_payload, timeout=10)
+            else:
+                response = req.post(WEBHOOK_URL, headers=final_headers, json=final_payload, timeout=10)
 
         if response.status_code in (200, 204):
             print("* Webhook notification sent successfully")
@@ -7728,8 +7806,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     f"User **{user}** has updated their bio",
                     color=0x9b59b6,  # Purple
                     fields=[
-                        {"name": "Old Bio", "value": (bio_old[:DISCORD_FIELD_VALUE_LIMIT - 4] + "...") if len(bio_old) > DISCORD_FIELD_VALUE_LIMIT else bio_old or "(empty)"},
-                        {"name": "New Bio", "value": (bio[:DISCORD_FIELD_VALUE_LIMIT - 4] + "...") if len(bio) > DISCORD_FIELD_VALUE_LIMIT else bio or "(empty)"},
+                        {"name": "Old Bio", "value": (bio_old[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(bio_old) > WEBHOOK_FIELD_VALUE_LIMIT else bio_old or "(empty)"},
+                        {"name": "New Bio", "value": (bio[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(bio) > WEBHOOK_FIELD_VALUE_LIMIT else bio or "(empty)"},
                     ],
                     notification_type="status"
                 )
@@ -7998,7 +8076,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 if story_hashtags:
                                     story_webhook_fields.append({"name": "Hashtags", "value": str(story_hashtags)})
                                 if story_caption:
-                                    story_webhook_fields.append({"name": "Description", "value": (story_caption[:DISCORD_FIELD_VALUE_LIMIT - 4] + "...") if len(story_caption) > DISCORD_FIELD_VALUE_LIMIT else story_caption})
+                                    story_webhook_fields.append({"name": "Description", "value": (story_caption[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(story_caption) > WEBHOOK_FIELD_VALUE_LIMIT else story_caption})
 
                                 send_webhook(
                                     f"📖 {user} New Story Item",
@@ -8279,7 +8357,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     if tagged_users:
                         webhook_fields.append({"name": "Tagged", "value": str(tagged_users)})
                     if caption:
-                        webhook_fields.append({"name": "Description", "value": (caption[:DISCORD_FIELD_VALUE_LIMIT - 4] + "...") if len(caption) > DISCORD_FIELD_VALUE_LIMIT else caption})
+                        webhook_fields.append({"name": "Description", "value": (caption[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(caption) > WEBHOOK_FIELD_VALUE_LIMIT else caption})
 
                     webhook_result = send_webhook(
                         f"{emoji} {user} New {last_source.capitalize()}",
