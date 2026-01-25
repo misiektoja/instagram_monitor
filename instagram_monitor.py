@@ -3367,10 +3367,10 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
             payload["avatar_url"] = WEBHOOK_AVATAR_URL
 
         # Apply optional transformations to payload, primarily the title and description
-        for transform in WEBHOOK_TRANSFORMS:
+        for transform in WEBHOOK_TRANSFORMS:  # type: ignore
             field = transform[0]
             method_name = transform[1]
-            args = transform[2:] # Remaining items are method arguments
+            args = transform[2:]  # Remaining items are method arguments
 
             if field in payload and isinstance(payload[field], str):
                 try:
@@ -3382,14 +3382,14 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                     print(f"* Transformation error on {field}.{method_name}: {e}")
 
         # Apply substitutions to WEBHOOK_TEMPLATE and WEBHOOK_HEADERS
-        final_payload = format_payload(WEBHOOK_TEMPLATE, payload)
-        final_headers = format_payload(WEBHOOK_HEADERS, payload)
+        final_payload = format_payload(WEBHOOK_TEMPLATE, payload)  # type: ignore
+        final_headers: dict = format_payload(WEBHOOK_HEADERS, payload)  # type: ignore
 
         # Handle Discord-style Local Files (embeds with image attachment)
         if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
             filename = os.path.basename(local_image_file)
             try:
-                final_payload["embeds"][0]["image"]["url"] = f"attachment://{filename}"
+                final_payload["embeds"][0]["image"]["url"] = f"attachment://{filename}"  # type: ignore
             except (KeyError, IndexError, TypeError):
                 # Template doesn't have expected Discord embed structure, skip image attachment
                 pass
