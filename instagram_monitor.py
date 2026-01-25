@@ -432,7 +432,7 @@ WEBHOOK_TEMPLATE = {
     }]
 }
 
-# Webhook request headers as a dictionary, but it can be empty. 
+# Webhook request headers as a dictionary, but it can be empty.
 # Some examples:
 #   {
 #       "Content-Type": "application/json",
@@ -3301,6 +3301,19 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     if not WEBHOOK_ENABLED or not WEBHOOK_URL:
         return 1
 
+    # Validate webhook URL
+    if not validate_webhook_url(WEBHOOK_URL):
+        debug_print("* Webhook error: Invalid webhook URL format")
+        return 1
+
+    # Check if this notification type is enabled
+    if notification_type == "status" and not WEBHOOK_STATUS_NOTIFICATION:
+        return 1
+    elif notification_type == "followers" and not WEBHOOK_FOLLOWERS_NOTIFICATION:
+        return 1
+    elif notification_type == "error" and not WEBHOOK_ERROR_NOTIFICATION:
+        return 1
+
     try:
         # Load all possible items into payload for use in formatting the WEBHOOK_TEMPLATE and WEBHOOK_HEADERS
         payload = {
@@ -3364,9 +3377,9 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
             final_payload["embeds"][0]["image"]["url"] = f"attachment://{filename}"
             with open(local_image_file, 'rb') as f:
                 files = {
-                    "file": (filename, f, "image/jpeg"), 
+                    "file": (filename, f, "image/jpeg"),
                     "payload_json": (None, json.dumps(final_payload))
-				}              
+				}
                 response = req.post(str(WEBHOOK_URL), headers=final_headers, files=files, timeout=10)
         # Handle other types
         else:
