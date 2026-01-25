@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.0
+v3.0.1
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -20,7 +20,7 @@ flask (optional - for web dashboard)
 rich (optional - for terminal dashboard)
 """
 
-VERSION = "3.0"
+VERSION = "3.0.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -1424,8 +1424,13 @@ def create_web_dashboard_app():
                     if processed_val < 300:
                         processed_val = 300
                         note = " (min 300s limit)"
+                    elif processed_val > 86400:  # Max 1 day to prevent excessive sleep
+                        processed_val = 86400
+                        note = " (max 86400s limit)"
                 elif key in ['random_low', 'random_high']:
-                    processed_val = max(0, processed_val)
+                    processed_val = max(0, min(processed_val, 3600))  # Max 1 hour to prevent excessive randomization
+                    if processed_val == 3600:
+                        note = " (max 3600s limit)"
                 elif key == 'webhook_url':
                     if processed_val and not validate_webhook_url(processed_val):
                         return current_val
@@ -2034,8 +2039,11 @@ def stop_monitoring_for_target(username):
             log_activity(f"Stopping monitoring", user=username, level='warning')
         update_ui_data(targets={username: {'status': 'Stopped'}})
 
-    # Clean up thread reference
+    # Clean up thread reference - wait for thread to finish with timeout
     if username in WEB_DASHBOARD_MONITOR_THREADS:
+        thread = WEB_DASHBOARD_MONITOR_THREADS[username]
+        if thread.is_alive():
+            thread.join(timeout=5.0)  # Wait up to 5 seconds for clean shutdown
         del WEB_DASHBOARD_MONITOR_THREADS[username]
     if username in WEB_DASHBOARD_STOP_EVENTS:
         del WEB_DASHBOARD_STOP_EVENTS[username]
@@ -7271,7 +7279,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         'followers': followers_count,
                         'following': followings_count,
                         'posts': posts_count,
-                        'reels': reels_count if 'reels_count' in dir() else 0,
+                        'reels': reels_count if ('reels_count' in dir() and reels_count is not None) else 0,
                         'has_story': has_story,
                         'is_private': is_private,
                         'bio_changed': False
