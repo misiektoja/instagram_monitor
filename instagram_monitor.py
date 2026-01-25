@@ -421,7 +421,7 @@ WEBHOOK_TEMPLATE = {
     "embeds": [{
         "title": "{title}",
         "description": "{description}",
-        "color": 7506394,
+        "color": "{color}",
         "fields": "{fields}",
         "footer": {
             "text": "Instagram Monitor v{version}"
@@ -3293,7 +3293,13 @@ def format_payload(template, payload):
     elif isinstance(template, str):
         if template == "{fields}":
             return payload.get("fields", [])
-        return template.format(**payload)
+        if template == "{color}":
+            return payload.get("color", 0x7289DA)
+        try:
+            return template.format(**payload)
+        except KeyError:
+            # Return template as-is if placeholder key is missing from payload
+            return template
     return template
 
 
@@ -3327,7 +3333,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "footer": {
                 "text": f"Instagram Monitor v{VERSION}"
-			}
+            }
         }
 
         if fields:
@@ -3371,15 +3377,19 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         final_payload = format_payload(WEBHOOK_TEMPLATE, payload)
         final_headers = format_payload(WEBHOOK_HEADERS, payload)
 
-        # Handle Discord-style Local Files
+        # Handle Discord-style Local Files (embeds with image attachment)
         if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
             filename = os.path.basename(local_image_file)
-            final_payload["embeds"][0]["image"]["url"] = f"attachment://{filename}"
+            try:
+                final_payload["embeds"][0]["image"]["url"] = f"attachment://{filename}"
+            except (KeyError, IndexError, TypeError):
+                # Template doesn't have expected Discord embed structure, skip image attachment
+                pass
             with open(local_image_file, 'rb') as f:
                 files = {
                     "file": (filename, f, "image/jpeg"),
                     "payload_json": (None, json.dumps(final_payload))
-				}
+                }
                 response = req.post(str(WEBHOOK_URL), headers=final_headers, files=files, timeout=10)
         # Handle other types
         else:
