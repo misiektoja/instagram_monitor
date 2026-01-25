@@ -3147,12 +3147,12 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
 def validate_webhook_url(url):
     if not url:
         return False
-    if not url.startswith('https://'):
+    if not (url.startswith('https://') or url.startswith('http://')):
         return False
     try:
         from urllib.parse import urlparse
         parsed = urlparse(url)
-        if not parsed.netloc or not parsed.scheme == 'https':
+        if not parsed.netloc or parsed.scheme not in ('https', 'http'):
             return False
         return True
     except Exception:
