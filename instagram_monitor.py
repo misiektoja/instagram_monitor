@@ -3338,10 +3338,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
             "fields": fields if fields else [],
             "fields_str": "\n".join([f"{f['name']}: {f['value']}" for f in fields]) if fields else "",
             "color": color,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "footer": {
-                "text": f"Instagram Monitor v{VERSION}"
-            }
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
         if fields:
