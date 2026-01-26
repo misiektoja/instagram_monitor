@@ -3328,91 +3328,111 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     elif notification_type == "error" and not WEBHOOK_ERROR_NOTIFICATION:
         return 1
 
-    try:
-        # Load all possible items into payload for use in formatting the WEBHOOK_TEMPLATE and WEBHOOK_HEADERS
-        payload = {
-            "title": title[:WEBHOOK_EMBED_TITLE_LIMIT] if title else "Instagram Monitor",  # type: ignore
-            "description": description[:WEBHOOK_EMBED_DESCRIPTION_LIMIT] if description else "",  # type: ignore
-            "version": VERSION,
-            "image_url": image_url if image_url else "",
-            "fields": fields if fields else [],
-            "fields_str": "\n".join([f"{f['name']}: {f['value']}" for f in fields]) if fields else "",
-            "color": color,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+    max_retries = 3
+    retry_delay = 2
 
-        if fields:
-            payload["fields"] = []
-            for field in fields[:WEBHOOK_MAX_FIELDS]:  # type: ignore
-                payload["fields"].append({
-                    "name": str(field.get("name", ""))[:WEBHOOK_FIELD_NAME_LIMIT],  # type: ignore
-                    "value": str(field.get("value", ""))[:WEBHOOK_FIELD_VALUE_LIMIT],  # type: ignore
-                    "inline": field.get("inline", False)
-                })
+    for attempt in range(max_retries):
+        try:
+            # Load all possible items into payload for use in formatting the WEBHOOK_TEMPLATE and WEBHOOK_HEADERS
+            payload = {
+                "title": title[:WEBHOOK_EMBED_TITLE_LIMIT] if title else "Instagram Monitor",  # type: ignore
+                "description": description[:WEBHOOK_EMBED_DESCRIPTION_LIMIT] if description else "",  # type: ignore
+                "version": VERSION,
+                "image_url": image_url if image_url else "",
+                "fields": fields if fields else [],
+                "fields_str": "\n".join([f"{f['name']}: {f['value']}" for f in fields]) if fields else "",
+                "color": color,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
 
-        if image_url:
-            payload["image"] = {"url": image_url}
-        elif local_image_file and os.path.isfile(local_image_file):
-            # If using local file, use attachment:// syntax
-            filename = os.path.basename(local_image_file)
-            payload["image"] = {"url": f"attachment://{filename}"}
+            if fields:
+                payload["fields"] = []
+                for field in fields[:WEBHOOK_MAX_FIELDS]:  # type: ignore
+                    payload["fields"].append({
+                        "name": str(field.get("name", ""))[:WEBHOOK_FIELD_NAME_LIMIT],  # type: ignore
+                        "value": str(field.get("value", ""))[:WEBHOOK_FIELD_VALUE_LIMIT],  # type: ignore
+                        "inline": field.get("inline", False)
+                    })
 
-        if WEBHOOK_USERNAME:
-            payload["username"] = WEBHOOK_USERNAME
+            if image_url:
+                payload["image"] = {"url": image_url}
+            elif local_image_file and os.path.isfile(local_image_file):
+                # If using local file, use attachment:// syntax
+                filename = os.path.basename(local_image_file)
+                payload["image"] = {"url": f"attachment://{filename}"}
 
-        if WEBHOOK_AVATAR_URL:
-            payload["avatar_url"] = WEBHOOK_AVATAR_URL
+            if WEBHOOK_USERNAME:
+                payload["username"] = WEBHOOK_USERNAME
 
-        # Apply optional transformations to payload, primarily the title and description
-        for transform in WEBHOOK_TRANSFORMS:  # type: ignore
-            field = transform[0]
-            method_name = transform[1]
-            args = transform[2:]  # Remaining items are method arguments
+            if WEBHOOK_AVATAR_URL:
+                payload["avatar_url"] = WEBHOOK_AVATAR_URL
 
-            if field in payload and isinstance(payload[field], str):
+            # Apply optional transformations to payload, primarily the title and description
+            for transform in WEBHOOK_TRANSFORMS:  # type: ignore
+                field = transform[0]
+                method_name = transform[1]
+                args = transform[2:]  # Remaining items are method arguments
+
+                if field in payload and isinstance(payload[field], str):
+                    try:
+                        # Get the method (e.g. .replace) from the string object
+                        method = getattr(payload[field], method_name)
+                        # Call it with the provided arguments
+                        payload[field] = method(*args)
+                    except (AttributeError, TypeError) as e:
+                        print(f"* Transformation error on {field}.{method_name}: {e}")
+
+            # Apply substitutions to WEBHOOK_TEMPLATE and WEBHOOK_HEADERS
+            final_payload = format_payload(WEBHOOK_TEMPLATE, payload)  # type: ignore
+            final_headers: dict = format_payload(WEBHOOK_HEADERS, payload)  # type: ignore
+
+            # Ensure we have a proper User-Agent to avoid being blocked by some services
+            if 'User-Agent' not in final_headers:
+                final_headers['User-Agent'] = f"InstagramMonitor/{VERSION}"
+
+            # Handle Discord-style Local Files (embeds with image attachment)
+            if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
+                filename = os.path.basename(local_image_file)
                 try:
-                    # Get the method (e.g., .replace) from the string object
-                    method = getattr(payload[field], method_name)
-                    # Call it with the provided arguments
-                    payload[field] = method(*args)
-                except (AttributeError, TypeError) as e:
-                    print(f"* Transformation error on {field}.{method_name}: {e}")
-
-        # Apply substitutions to WEBHOOK_TEMPLATE and WEBHOOK_HEADERS
-        final_payload = format_payload(WEBHOOK_TEMPLATE, payload)  # type: ignore
-        final_headers: dict = format_payload(WEBHOOK_HEADERS, payload)  # type: ignore
-
-        # Handle Discord-style Local Files (embeds with image attachment)
-        if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
-            filename = os.path.basename(local_image_file)
-            try:
-                final_payload["embeds"][0]["image"]["url"] = f"attachment://{filename}"  # type: ignore
-            except (KeyError, IndexError, TypeError):
-                # Template doesn't have expected Discord embed structure, skip image attachment
-                pass
-            with open(local_image_file, 'rb') as f:
-                files = {
-                    "file": (filename, f, "image/jpeg"),
-                    "payload_json": (None, json.dumps(final_payload))
-                }
-                response = req.post(str(WEBHOOK_URL), headers=final_headers, files=files, timeout=10)
-        # Handle other types
-        else:
-            if isinstance(final_payload, str):
-                response = req.post(WEBHOOK_URL, headers=final_headers, data=final_payload, timeout=10)
+                    final_payload["embeds"][0]["image"]["url"] = f"attachment://{filename}"  # type: ignore
+                except (KeyError, IndexError, TypeError):
+                    # Template doesn't have expected Discord embed structure, skip image attachment
+                    pass
+                with open(local_image_file, 'rb') as f:
+                    files = {
+                        "file": (filename, f, "image/jpeg"),
+                        "payload_json": (None, json.dumps(final_payload))
+                    }
+                    response = req.post(str(WEBHOOK_URL), headers=final_headers, files=files, timeout=10)
+            # Handle other types
             else:
-                response = req.post(WEBHOOK_URL, headers=final_headers, json=final_payload, timeout=10)
+                if isinstance(final_payload, str):
+                    response = req.post(WEBHOOK_URL, headers=final_headers, data=final_payload, timeout=10)
+                else:
+                    response = req.post(WEBHOOK_URL, headers=final_headers, json=final_payload, timeout=10)
 
-        if response.status_code in (200, 204):
-            print("* Webhook notification sent successfully")
-            return 0
-        else:
-            print(f"* Webhook error: HTTP {response.status_code} - {response.text[:200]}")
+            if response.status_code in (200, 204):
+                print("* Webhook notification sent successfully")
+                return 0
+            else:
+                print(f"* Webhook error: HTTP {response.status_code} - {response.text[:200]}")
+                # Don't retry on client errors (4xx) unless it's 429
+                if response.status_code != 429:
+                    return 1
+
+        except (req.exceptions.RequestException, req.exceptions.ConnectionError, req.exceptions.Timeout) as e:
+            if attempt < max_retries - 1:
+                debug_print(f"* Webhook attempt {attempt + 1} failed: {e}. Retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
+                continue
+            else:
+                print(f"* Error sending webhook: {e}")
+                return 1
+        except Exception as e:
+            print(f"* Unexpected error sending webhook: {e}")
             return 1
 
-    except Exception as e:
-        print(f"* Error sending webhook: {e}")
-        return 1
+    return 1
 
 
 # Debug print helper - only prints if DEBUG_MODE is enabled
