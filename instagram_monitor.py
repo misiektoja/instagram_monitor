@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.0.1
+v3.1
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -20,7 +20,7 @@ flask (optional - for web dashboard)
 rich (optional - for terminal dashboard)
 """
 
-VERSION = "3.0.1"
+VERSION = "3.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -5709,8 +5709,10 @@ def instagram_wrap_request(orig_request):
         global NAME_COUNT, START_TIME, WRAPPER_COUNT, pbar
         method = kwargs.get("method") or (args[1] if len(args) > 1 else None)
         url = kwargs.get("url") or (args[2] if len(args) > 2 else None)
-        if JITTER_VERBOSE or DEBUG_MODE:
+        if DEBUG_MODE:
             debug_print(f"[WRAP-REQ] {method} {url}")
+        elif JITTER_VERBOSE:
+            print(f"* [WRAP-REQ] {method} {url}")
 
         def _do_request():
             # If jitter is disabled, just perform the request (but still optionally serialized by the outer lock)
@@ -5744,9 +5746,10 @@ def instagram_wrap_request(orig_request):
                         thread_pbar = getattr(_thread_local, 'pbar', None)
                         if thread_pbar:
                             tqdm.write(f"* Back-off {wait:.0f}s after {resp.status_code}")
+                        if DEBUG_MODE:
                             debug_print(f"* Back-off {wait:.0f}s after {resp.status_code}")
-                        else:
-                            debug_print(f"* Back-off {wait:.0f}s after {resp.status_code}")
+                        elif JITTER_VERBOSE and not thread_pbar:
+                            print(f"* Back-off {wait:.0f}s after {resp.status_code}")
                     time.sleep(wait)
                     backoff *= 2
                     continue
@@ -5824,8 +5827,10 @@ def instagram_wrap_send(orig_send):
         req_obj = args[1] if len(args) > 1 else kwargs.get("request")
         method = getattr(req_obj, "method", None)
         url = getattr(req_obj, "url", None)
-        if JITTER_VERBOSE or DEBUG_MODE:
+        if DEBUG_MODE:
             debug_print(f"[WRAP-SEND] {method} {url}")
+        elif JITTER_VERBOSE:
+            print(f"* [WRAP-SEND] {method} {url}")
 
         def _do_send():
             if ENABLE_JITTER:
@@ -6090,31 +6095,41 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
     ctx = bot.context
     prob = probability_for_cycle(sleep_seconds)
 
-    if BE_HUMAN_VERBOSE or DEBUG_MODE:
+    if DEBUG_MODE:
         debug_print("BeHuman: simulation start")
+    elif BE_HUMAN_VERBOSE:
+        print("* BeHuman: simulation start")
 
     # Explore feed
     if ctx.is_logged_in and random.random() < prob:
         try:
             posts = bot.get_explore_posts()
             post = next(posts)
-            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+            if DEBUG_MODE:
                 debug_print("BeHuman #1: explore feed peek OK")
+            elif BE_HUMAN_VERBOSE:
+                print("* BeHuman #1: explore feed peek OK")
             time.sleep(random.uniform(2, 6))
         except Exception as e:
-            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+            if DEBUG_MODE:
                 debug_print(f"BeHuman #1 error: explore peek failed ({e})")
+            elif BE_HUMAN_VERBOSE:
+                print(f"* BeHuman #1 error: explore peek failed ({e})")
 
     # View your own profile
     if ctx.is_logged_in and random.random() < prob:
         try:
             _ = instaloader.Profile.own_profile(ctx)
-            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+            if DEBUG_MODE:
                 debug_print("BeHuman #2: viewed own profile OK")
+            elif BE_HUMAN_VERBOSE:
+                print("* BeHuman #2: viewed own profile OK")
             time.sleep(random.uniform(1, 4))
         except Exception as e:
-            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+            if DEBUG_MODE:
                 debug_print(f"BeHuman #2 error: cannot view own profile: {e}")
+            elif BE_HUMAN_VERBOSE:
+                print(f"* BeHuman #2 error: cannot view own profile: {e})")
 
     # Browse a random hashtag
     if random.random() < prob / 2:
@@ -6122,35 +6137,50 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
         try:
             posts = bot.get_hashtag_posts(tag)
             post = next(posts)
-            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+            if DEBUG_MODE:
                 debug_print(f"BeHuman #3: browsed one post from #{tag} OK")
+            elif BE_HUMAN_VERBOSE:
+                print(f"* BeHuman #3: browsed one post from #{tag} OK")
             time.sleep(random.uniform(2, 5))
         except StopIteration:
-            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+            if DEBUG_MODE:
                 debug_print(f"BeHuman #3 warning: no posts for #{tag}")
+            elif BE_HUMAN_VERBOSE:
+                print(f"* BeHuman #3 warning: no posts for #{tag}")
         except Exception as e:
-            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+            if DEBUG_MODE:
                 debug_print(f"BeHuman #3 error: cannot browse #{tag}: {e}")
+            elif BE_HUMAN_VERBOSE:
+                print(f"* BeHuman #3 error: cannot browse #{tag}: {e}")
 
     # Visit a random followee profile
     if ctx.is_logged_in and random.random() < prob / 2:
         try:
             me = instaloader.Profile.own_profile(ctx)
             followees = list(me.get_followees())
-            if not followees and (BE_HUMAN_VERBOSE or DEBUG_MODE):
-                debug_print("BeHuman #4 warning: you follow 0 accounts, skipping visit")
+            if not followees:
+                if DEBUG_MODE:
+                    debug_print("BeHuman #4 warning: you follow 0 accounts, skipping visit")
+                elif BE_HUMAN_VERBOSE:
+                    print("* BeHuman #4 warning: you follow 0 accounts, skipping visit")
             else:
                 someone = random.choice(followees)
                 _ = instaloader.Profile.from_username(ctx, someone.username)
-                if BE_HUMAN_VERBOSE or DEBUG_MODE:
+                if DEBUG_MODE:
                     debug_print(f"BeHuman #4: visited followee {someone.username} OK")
+                elif BE_HUMAN_VERBOSE:
+                    print(f"* BeHuman #4: visited followee {someone.username} OK")
                 time.sleep(random.uniform(2, 5))
         except Exception as e:
-            if BE_HUMAN_VERBOSE or DEBUG_MODE:
+            if DEBUG_MODE:
                 debug_print(f"BeHuman #4 error: cannot visit followee: {e}")
+            elif BE_HUMAN_VERBOSE:
+                print(f"* BeHuman #4 error: cannot visit followee: {e}")
 
-    if BE_HUMAN_VERBOSE or DEBUG_MODE:
+    if DEBUG_MODE:
         debug_print("BeHuman: simulation stop")
+    elif BE_HUMAN_VERBOSE:
+        print("* BeHuman: simulation stop")
 
 
 # Monitors activity of the specified Instagram user
