@@ -938,7 +938,9 @@ def _peek_web_dashboard_template_dir_autodetect() -> Optional[str]:
 
 
 # Global lock to avoid interleaved output when using multi-target threading
-STDOUT_LOCK = threading.Lock()
+# Must be re-entrant because close_pbar() can call tqdm.close() (which writes via _LockedStream
+# acquiring this lock) and then acquire it again for logging to files
+STDOUT_LOCK = threading.RLock()
 
 # Global lock for serializing HTTP calls (used by multi-target mode / optional)
 # Must be re-entrant because requests' request() calls send() internally and we may wrap both
