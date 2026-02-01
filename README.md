@@ -1,8 +1,8 @@
 # instagram_monitor
 
 <p align="left">
-  <img src="https://img.shields.io/pypi/v/instagram_monitor?style=flat-square&color=orange" alt="PyPI Version" />
   <img src="https://img.shields.io/github/v/release/misiektoja/instagram_monitor?style=flat-square&color=blue" alt="GitHub Release" />
+  <img src="https://img.shields.io/pypi/v/instagram_monitor?style=flat-square&color=orange" alt="PyPI Version" />
   <img src="https://img.shields.io/github/stars/misiektoja/instagram_monitor?style=flat-square&color=yellow" alt="GitHub Stars" />
   <img src="https://img.shields.io/github/last-commit/misiektoja/instagram_monitor?style=flat-square&color=green" alt="Last Commit" />
   <img src="https://img.shields.io/github/license/misiektoja/instagram_monitor?style=flat-square&color=blue" alt="License" />
