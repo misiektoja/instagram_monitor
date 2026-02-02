@@ -17,19 +17,23 @@
 pip install instagram_monitor
 ```
 
+<p align="center">
+   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="100%"/>
+</p>
+
 <a id="features"></a>
 ## Features
 
 ### 🔍 Real-time Tracking
-- **Profile Activity**: Monitor new posts, reels and stories in real-time.
-- **Audience Insights**: Track changes in followings and followers.
-- **Visual Changes**: Detect updates to profile pictures and visibility (public/private).
-- **Bio Updates**: Stay informed about changes to user bios.
+- **Profile Activity**: Monitor **new posts, reels** and **stories** in real-time.
+- **Audience Insights**: Track changes in **followings** and **followers**.
+- **Visual Changes**: Detect updates to **profile pictures** and **visibility** (public/private).
+- **Bio Updates**: Stay informed about changes to **user bio**.
 
 ### 📥 Media Download
-- **Anonymous Stories**: Download story images and videos without leaving traces.
+- **Anonymous Stories**: Download story images and videos **without leaving traces**.
 - **High-Quality Media**: Save post images, reel videos and profile pictures.
-- **Batch Support**: Monitor and download media for multiple users simultaneously.
+- **Batch Support**: Monitor and download media for **multiple users simultaneously**.
 
 ### 📱 Interactive Dashboards
 - **Terminal Dashboard**: Beautiful, live-updating CLI interface with real-time stats.
@@ -37,7 +41,7 @@ pip install instagram_monitor
 - **Image Support**: View profile pictures and media directly in your terminal (via `imgcat`).
 
 ### 🔔 Smart Notifications
-- **Multi-Channel**: Instant alerts via Email and Webhooks (Discord etc.).
+- **Multi-Channel**: Instant alerts via **Email** and **Webhooks** (**Discord** etc.).
 - **Rich Alerts**: Attached media (profile pics, stories, posts) directly in notifications.
 - **Error Reporting**: Be notified if the monitoring process hits a snag.
 
@@ -48,14 +52,10 @@ pip install instagram_monitor
 - **Account Flexibility**: Works with or without a logged-in Instagram account.
 
 ### ⚙️ Power Features
-- **CSV Export**: Log all activities and profile changes with timestamps.
+- **CSV Logging**: Log all activities and profile changes with timestamps.
 - **Flexible Config**: Support for files, dotenv and environment variables.
 - **Follower Churn**: Detailed tracking of exactly who followed or unfollowed.
-- **Remote Control**: Manage tracking loops via signals or the web UI.
-
-<p align="center">
-   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="100%"/>
-</p>
+- **Remote Control**: Manage tracking features via signals or the web UI.
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_terminal_dashboard.png" alt="instagram_monitor_terminal_dashboard" width="100%"/>
