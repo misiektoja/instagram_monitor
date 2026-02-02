@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square" alt="Maintenance" />
 </p>
 
-**instagram_monitor** is a powerful, real-time OSINT suite for tracking every activity on Instagram — from story updates and bio changes to follower shifts — providing stunning dashboards and instant alerts to keep you in the loop.
+**instagram_monitor** is a powerful, real-time OSINT suite for tracking every activity on Instagram - from story updates and bio changes to follower shifts, providing stunning dashboards and instant alerts to keep you in the loop.
 
 ### 🚀 Quick Install
 ```sh
