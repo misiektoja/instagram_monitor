@@ -4172,7 +4172,23 @@ def latest_post_mobile(user: str, bot: instaloader.Instaloader):
         mediaid: str
 
     data = bot.context.get_iphone_json(f"api/v1/users/web_profile_info/?username={user}", {})
-    edges = data["data"]["user"].get("edge_owner_to_timeline_media", {}).get("edges", [])
+
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Instagram returned unexpected response type: {type(data).__name__}")
+
+    if data.get("status") == "fail":
+        ig_message = data.get("message", "unknown error")
+        hint = " (try using Firefox session login with --import-firefox-session)" if not bot.context.is_logged_in else ""
+        raise RuntimeError(f"Instagram API error: {ig_message}{hint}")
+
+    if "data" not in data or not isinstance(data.get("data"), dict):
+        raise RuntimeError(f"Instagram returned malformed response (missing 'data' field)")
+
+    user_data = data["data"].get("user")
+    if not user_data:
+        raise RuntimeError(f"Instagram returned empty user data for '{user}' (profile may be unavailable or blocked)")
+
+    edges = user_data.get("edge_owner_to_timeline_media", {}).get("edges", [])
 
     if not edges:
         return None
@@ -4193,19 +4209,32 @@ def latest_post_mobile(user: str, bot: instaloader.Instaloader):
     if not best_node:
         return None
 
+    if DEBUG_MODE:
+        debug_print(f"[{user}] latest_post_mobile raw data keys: {list(data.keys())}")
+        if "data" in data and isinstance(data["data"], dict) and "user" in data["data"]:
+            debug_print(f"[{user}] latest_post_mobile user keys: {list(data['data']['user'].keys())}")
+
     p = P()
     p.mediaid = best_node.get("id", "")
-    p.date_utc = datetime.fromtimestamp(best_node["taken_at_timestamp"], timezone.utc)
-    p.likes = best_node["edge_liked_by"]["count"]
-    p.comments = best_node["edge_media_to_comment"]["count"]
-    p.caption = best_node.get("edge_media_to_caption", {}).get("edges", [{}])[0].get("node", {}).get("text", "")
+    p.date_utc = datetime.fromtimestamp(best_node.get("taken_at_timestamp", 0), timezone.utc)
+    p.likes = best_node.get("edge_liked_by", {}).get("count", 0)
+    p.comments = best_node.get("edge_media_to_comment", {}).get("count", 0)
+
+    # Safely get caption
+    caption_edges = best_node.get("edge_media_to_caption", {}).get("edges", [])
+    if caption_edges and len(caption_edges) > 0 and "node" in caption_edges[0]:
+         p.caption = caption_edges[0]["node"].get("text", "")
+    else:
+         p.caption = ""
+
     p.pcaption = ""
     p.tagged_users = []
-    p.shortcode = best_node["shortcode"]
+    p.shortcode = best_node.get("shortcode", "")
     p.url = best_node.get("display_url", "")
     p.video_url = best_node.get("video_url")
 
     return p, "post"
+
 
 
 # Returns reels count by using Instaloader's iPhone API (requires session login)
@@ -4342,12 +4371,26 @@ def get_real_reel_code(bot: instaloader.Instaloader, username: str) -> Optional[
         ctx: Any = bot.context  # type: ignore
 
         data = ctx.get_iphone_json(f"api/v1/users/web_profile_info/?username={username}", {})
-        user = data["data"]["user"]
+
+        if isinstance(data, dict) and data.get("status") == "fail":
+            debug_print(f"[{username}] get_real_reel_code failed: Instagram API error - {data.get('message', 'unknown')}")
+            return None
+
+        if not isinstance(data, dict) or "data" not in data:
+            debug_print(f"[{username}] get_real_reel_code failed: malformed response")
+            return None
+
+        user = data["data"].get("user")
+        if not user:
+            debug_print(f"[{username}] get_real_reel_code failed: empty user data")
+            return None
+
         edges = user.get("edge_reels_media", {}).get("edges", [])
         if not edges:
             return None
         return edges[0]["node"].get("shortcode")
-    except Exception:
+    except Exception as e:
+        debug_print(f"[{username}] get_real_reel_code exception: {e}")
         return None
 
 
@@ -5710,6 +5753,8 @@ def instagram_wrap_request(orig_request):
     def wrapper(*args, **kwargs):
         global NAME_COUNT, START_TIME, WRAPPER_COUNT, pbar
         method = kwargs.get("method") or (args[1] if len(args) > 1 else None)
+        if method and isinstance(method, str):
+            method = method.upper()
         url = kwargs.get("url") or (args[2] if len(args) > 2 else None)
         if DEBUG_MODE:
             debug_print(f"[WRAP-REQ] {method} {url}")
@@ -5828,6 +5873,8 @@ def instagram_wrap_send(orig_send):
     def wrapper(*args, **kwargs):
         req_obj = args[1] if len(args) > 1 else kwargs.get("request")
         method = getattr(req_obj, "method", None)
+        if method and isinstance(method, str):
+            method = method.upper()
         url = getattr(req_obj, "url", None)
         if DEBUG_MODE:
             debug_print(f"[WRAP-SEND] {method} {url}")
