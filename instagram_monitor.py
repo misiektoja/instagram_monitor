@@ -4223,9 +4223,9 @@ def latest_post_mobile(user: str, bot: instaloader.Instaloader):
     # Safely get caption
     caption_edges = best_node.get("edge_media_to_caption", {}).get("edges", [])
     if caption_edges and len(caption_edges) > 0 and "node" in caption_edges[0]:
-         p.caption = caption_edges[0]["node"].get("text", "")
+        p.caption = caption_edges[0]["node"].get("text", "")
     else:
-         p.caption = ""
+        p.caption = ""
 
     p.pcaption = ""
     p.tagged_users = []
@@ -4234,7 +4234,6 @@ def latest_post_mobile(user: str, bot: instaloader.Instaloader):
     p.video_url = best_node.get("video_url")
 
     return p, "post"
-
 
 
 # Returns reels count by using Instaloader's iPhone API (requires session login)
@@ -5770,7 +5769,12 @@ def instagram_wrap_request(orig_request):
                 return resp
 
             # Human-like jitter + back-off on checkpoint/429
-            time.sleep(random.uniform(0.8, 3.0))
+            # Use exponential distribution for sleep time (more natural), capped at 6s
+            sleep_time = min(random.expovariate(0.6), 6.0)
+            if sleep_time < 0.8:
+                sleep_time = 0.8 + random.uniform(0, 1.0)
+            time.sleep(sleep_time)
+
             attempt = 0
             backoff = 60
             while True:
@@ -5779,7 +5783,8 @@ def instagram_wrap_request(orig_request):
                 # Update progress bar for follower/following requests
                 _update_progress_bar(resp)
 
-                if resp.status_code in (429, 400) and "checkpoint" in resp.text:
+                # Back-off on any 429 (Too Many Requests) or 400 with "checkpoint"
+                if resp.status_code == 429 or (resp.status_code == 400 and "checkpoint" in resp.text):
                     attempt += 1
                     if attempt > 3:
                         thread_pbar = getattr(_thread_local, 'pbar', None)
