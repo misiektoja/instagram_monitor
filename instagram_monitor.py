@@ -9593,7 +9593,7 @@ def run_main():
     print("* Hours for fetching updates:\t\t" + hours_ranges_str)
     print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
     print(f"* Session Mode:\t\t\t\t{mode_of_the_tool}")
-    print(f"* Human mode:\t\t\t\t{BE_HUMAN}")
+    print(f"* Human mode:\t\t\t\t{BE_HUMAN}" + (f" (Verbose)" if BE_HUMAN_VERBOSE else ""))
     print(f"* Skip session login:\t\t\t{SKIP_SESSION}")
     print(f"* Skip fetching followers:\t\t{SKIP_FOLLOWERS}")
     print(f"* Skip fetching followings:\t\t{SKIP_FOLLOWINGS}")
