@@ -1,5 +1,23 @@
 # instagram_monitor release notes
 
+# Changes in 3.1 (TBD)
+
+**Features and Improvements**:
+
+- **NEW:** Implemented custom **webhook configuration support** allowing custom templates and headers, defaults to Discord compatibility (thanks [@tomballgithub](https://github.com/tomballgithub));
+- **IMPROVE:** Enhanced **request jitter** with **exponential backoff** and improved **429 error handling**
+- **IMPROVE:** Improved **webhook robustness** with retries and custom User-Agent
+- **IMPROVE:** Updated **human mode display** to include verbosity option
+- **IMPROVE:** Updated **webhook URL validation** to accept both HTTP and HTTPS schemes
+
+**Bug fixes**:
+
+- **BUGFIX:** Corrected **timestamp issue** in debug mode (fixes [#62](https://github.com/misiektoja/instagram_monitor/issues/62))
+- **BUGFIX:** Prevented **deadlock** in `close_pbar` by making STDOUT_LOCK re-entrant (fixes [#60](https://github.com/misiektoja/instagram_monitor/issues/60))
+- **BUGFIX:** Ensured **verbose flags** display messages independently of debug mode (fixes [#59](https://github.com/misiektoja/instagram_monitor/issues/59))
+- **BUGFIX:** Handled **empty caption edges** in mobile API to prevent index error in anonymous mode
+- **BUGFIX:** Added **input validation bounds**, safe thread cleanup and reels_count null checks
+
 # Changes in 3.0 (23 Jan 2026)
 
 Welcome to version **3.0** — our biggest and most ambitious release to date! This update introduces a completely redesigned experience with a powerful new **Dual Dashboard system** (Web and Terminal), **Webhook / Discord notifications**, native **Color support**, custom **Output directory** feature and advanced **Follower Churn detection**.
