@@ -1,6 +1,6 @@
 # instagram_monitor release notes
 
-# Changes in 3.1 (TBD)
+# Changes in 3.1 (07 Feb 2026)
 
 **Features and Improvements**:
 
