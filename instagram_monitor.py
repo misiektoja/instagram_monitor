@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.1
+v3.2
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -20,7 +20,7 @@ flask (optional - for web dashboard)
 rich (optional - for terminal dashboard)
 """
 
-VERSION = "3.1"
+VERSION = "3.2"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -75,6 +75,11 @@ FOLLOWERS_NOTIFICATION = False
 # Whether to send an email on errors
 # Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
+
+# Number of consecutive errors required before triggering an alert
+# Useful to avoid spamming on transient network glitches
+# Can also be set via the --error-threshold flag
+ERROR_FAILURE_THRESHOLD = 2
 
 # How often to check for user activity; in seconds
 # Can also be set using the -c flag
@@ -588,6 +593,7 @@ RECEIVER_EMAIL: str = ""
 STATUS_NOTIFICATION = False
 FOLLOWERS_NOTIFICATION = False
 ERROR_NOTIFICATION = False
+ERROR_FAILURE_THRESHOLD = 0
 INSTA_CHECK_INTERVAL = 0
 RANDOM_SLEEP_DIFF_LOW = 0
 RANDOM_SLEEP_DIFF_HIGH = 0
@@ -6165,6 +6171,8 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
                 print("* BeHuman #1: explore feed peek OK")
             time.sleep(random.uniform(2, 6))
         except Exception as e:
+            if "429" in str(e) or "checkpoint" in str(e) or "challenge" in str(e):
+                raise e
             if DEBUG_MODE:
                 debug_print(f"BeHuman #1 error: explore peek failed ({e})")
             elif BE_HUMAN_VERBOSE:
@@ -6180,6 +6188,8 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
                 print("* BeHuman #2: viewed own profile OK")
             time.sleep(random.uniform(1, 4))
         except Exception as e:
+            if "429" in str(e) or "checkpoint" in str(e) or "challenge" in str(e):
+                raise e
             if DEBUG_MODE:
                 debug_print(f"BeHuman #2 error: cannot view own profile: {e}")
             elif BE_HUMAN_VERBOSE:
@@ -6202,6 +6212,8 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
             elif BE_HUMAN_VERBOSE:
                 print(f"* BeHuman #3 warning: no posts for #{tag}")
         except Exception as e:
+            if "429" in str(e) or "checkpoint" in str(e) or "challenge" in str(e):
+                raise e
             if DEBUG_MODE:
                 debug_print(f"BeHuman #3 error: cannot browse #{tag}: {e}")
             elif BE_HUMAN_VERBOSE:
@@ -6226,6 +6238,8 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
                     print(f"* BeHuman #4: visited followee {someone.username} OK")
                 time.sleep(random.uniform(2, 5))
         except Exception as e:
+            if "429" in str(e) or "checkpoint" in str(e) or "challenge" in str(e):
+                raise e
             if DEBUG_MODE:
                 debug_print(f"BeHuman #4 error: cannot visit followee: {e}")
             elif BE_HUMAN_VERBOSE:
@@ -7378,6 +7392,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     email_sent = False
 
     # Primary loop
+    consecutive_errors = 0
     while True:
         # Check stop event at the start of each loop iteration
         if stop_event and stop_event.is_set():
@@ -7431,6 +7446,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 posts_count = profile.mediacount
 
                 debug_print(f"Profile loaded: followers={followers_count}, following={followings_count}, posts={posts_count}")
+                consecutive_errors = 0
 
                 if not skip_session and can_view:
                     reels_count = get_total_reels_count(user, bot, skip_session)
@@ -7505,6 +7521,23 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
                 log_activity(f"Error: {error_msg}", user=user)
                 debug_print(f"Full exception: {type(e).__name__}: {e}")
+
+                consecutive_errors += 1
+                if ERROR_NOTIFICATION and consecutive_errors >= ERROR_FAILURE_THRESHOLD:
+                    alert_subject = f"instagram_monitor: error for {user} ({consecutive_errors}/{ERROR_FAILURE_THRESHOLD})"
+                    alert_body = f"An error occurred for user {user} (attempt {consecutive_errors}/{ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    alert_body_html = f"An error occurred for user <b>{user}</b> (attempt {consecutive_errors}/{ERROR_FAILURE_THRESHOLD}):<br><br><b>{error_msg}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+
+                    print(f"* Sending error notification to {RECEIVER_EMAIL} (failure {consecutive_errors}/{ERROR_FAILURE_THRESHOLD})")
+                    send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
+
+                    if WEBHOOK_ENABLED and WEBHOOK_ERROR_NOTIFICATION:
+                        send_webhook(
+                            title=f"Error for {user}",
+                            description=f"{error_msg}\n(failure {consecutive_errors}/{ERROR_FAILURE_THRESHOLD})",
+                            color=0xFF0000,
+                            notification_type="error"
+                        )
 
                 if "detected automated checks" in error_msg and WEB_DASHBOARD_ENABLED:
                     update_ui_data(targets={user: {'status': 'Paused: Session re-login required'}})
@@ -8569,7 +8602,25 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if BE_HUMAN and in_allowed_hours:
                 simulate_human_actions(bot, r_sleep_time)
         except Exception as e:
+
+            consecutive_errors += 1
             print(f"* Warning: It is not easy to be a human, our simulation failed: {e}")
+            if ERROR_NOTIFICATION and consecutive_errors >= ERROR_FAILURE_THRESHOLD:
+                error_msg = format_error_message(e)
+                alert_subject = f"instagram_monitor: BeHuman mode error for {user} ({consecutive_errors}/{ERROR_FAILURE_THRESHOLD})"
+                alert_body = f"A BeHuman simulation error occurred for user {user} (attempt {consecutive_errors}/{ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                alert_body_html = f"A BeHuman simulation error occurred for user <b>{user}</b> (attempt {consecutive_errors}/{ERROR_FAILURE_THRESHOLD}):<br><br><b>{error_msg}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+
+                print(f"* Sending BeHuman error notification to {RECEIVER_EMAIL} (failure {consecutive_errors}/{ERROR_FAILURE_THRESHOLD})")
+                send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
+
+                if WEBHOOK_ENABLED and WEBHOOK_ERROR_NOTIFICATION:
+                    send_webhook(
+                        title=f"BeHuman Error for {user}",
+                        description=f"{error_msg}\n(failure {consecutive_errors}/{ERROR_FAILURE_THRESHOLD})",
+                        color=0xFF0000,
+                        notification_type="error"
+                    )
             print_cur_ts("\nTimestamp:\t\t\t\t")
 
         if HOURS_VERBOSE or DEBUG_MODE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE):
@@ -8989,6 +9040,14 @@ def run_main():
         default=None,
         help="Enable debug mode (full API traces, internal logic logs)"
     )
+    opts.add_argument(
+        "--error-threshold",
+        dest="error_threshold",
+        metavar="NUM",
+        type=int,
+        default=None,
+        help="Number of consecutive errors required to trigger an alert (default: 2)"
+    )
 
     # Terminal dashboard options
     term_opts = parser.add_argument_group("Terminal dashboard")
@@ -9251,6 +9310,12 @@ def run_main():
 
     if args.skip_follow_changes is True:
         SKIP_FOLLOW_CHANGES = True
+
+    if args.error_threshold is not None:
+        ERROR_FAILURE_THRESHOLD = int(args.error_threshold)
+        if ERROR_FAILURE_THRESHOLD < 1:
+            print("* Warning: Error threshold must be at least 1, setting to 1")
+            ERROR_FAILURE_THRESHOLD = 1
 
     # Webhook configuration
     if args.webhook_url:
