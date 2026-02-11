@@ -8587,8 +8587,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             update_ui_data(targets={user: {'status': 'OK'}})
 
         now = now_local_naive()
-        r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
-        r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
+        target_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
+        r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, target_sleep_time)
 
         # Update next check time tracking (don't increment count, already done at check start)
         update_check_times(next_time=next_check_val, user=user, increment_count=False)
@@ -8600,7 +8600,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         # Be human please
         try:
             if BE_HUMAN and in_allowed_hours:
-                simulate_human_actions(bot, r_sleep_time)
+                simulate_human_actions(bot, target_sleep_time)
         except Exception as e:
 
             consecutive_errors += 1
