@@ -5607,12 +5607,34 @@ def setup_pbar(total_expected, title):
             def __getattr__(self, name):
                 return getattr(self._stream, name)
 
+        import shutil, sys
+
+        def _get_actual_console_width(fallback=80):
+            try:
+                if sys.platform == 'win32':
+                    import ctypes, struct
+                    handle = ctypes.windll.kernel32.GetStdHandle(-11)
+                    csbi = ctypes.create_string_buffer(22)
+                    if ctypes.windll.kernel32.GetConsoleScreenBufferInfo(handle, csbi):
+                        left, top, right, bottom = struct.unpack_from('hhhh', csbi.raw, 10)
+                        width = right - left + 1
+                        if width > 0:
+                            return width
+            except Exception:
+                pass
+            # Non-Windows or fallback: shutil is reliable on Linux/Mac
+            return shutil.get_terminal_size(fallback=(fallback, 24)).columns
+
+        actual_width = _get_actual_console_width()
+        safe_ncols = min(HORIZONTAL_LINE, actual_width - 1)
+        # print(f"DEBUG: terminal width is {safe_ncols}")
+
         custom_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
         # Write progress bar updates to terminal only (not log file) to avoid cluttering logs
         terminal_out = stdout_bck if stdout_bck is not None else sys.stdout
         locked_terminal_out = _LockedStream(terminal_out, STDOUT_LOCK)
         # Use HORIZONTAL_LINE (default 113) as the fixed width for consistent behavior across environments
-        _thread_local.pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=locked_terminal_out, ncols=HORIZONTAL_LINE)  # type: ignore[misc]
+        _thread_local.pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=locked_terminal_out, ncols=safe_ncols)  # type: ignore[misc]
 
         # Also set global for backward compatibility (single-threaded mode)
         pbar = _thread_local.pbar
