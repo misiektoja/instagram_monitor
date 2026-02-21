@@ -5883,7 +5883,7 @@ def instagram_wrap_request(orig_request):
                 # Calculate Remaining Minutes
                 d = thread_pbar.format_dict
                 rate = d['rate'] if d['rate'] else 0
-                remaining_items = d['total'] - d['n']
+                remaining_items = d['total'] - (d['n'] + increment)
 
                 # Calculate remaining seconds, then minutes
                 rem_s = remaining_items / rate if rate > 0 else 0
