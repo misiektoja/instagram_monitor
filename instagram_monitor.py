@@ -2868,8 +2868,9 @@ class Logger(object):
                 LAST_OUTPUT_BY_THREAD[tid].append(message)
 
             if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
-                self.terminal.write(colorized_message)
-                self.terminal.flush()
+                if not pbar:
+                    self.terminal.write(colorized_message)
+                    self.terminal.flush()
 
             # Expand tabs for file output and ensure ANSI codes are stripped
             clean_message = ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8)
