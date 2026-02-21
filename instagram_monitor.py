@@ -5649,7 +5649,10 @@ def close_pbar():
     global pbar
     # Use thread-local storage for multi-target safety
     thread_pbar = getattr(_thread_local, 'pbar', None)
-    debug_print(f"[close_pbar] ENTRY - thread_pbar is None: {thread_pbar is None}")
+    if thread_pbar:
+        tqdm.write(f"\n[close_pbar] ENTRY - thread_pbar is None: {thread_pbar is None}")
+    else:
+        debug_print(f"\n[close_pbar] ENTRY - thread_pbar is None: {thread_pbar is None}")
     try:
         if thread_pbar is not None:
             final_str = None
