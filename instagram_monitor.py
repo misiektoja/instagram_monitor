@@ -5893,6 +5893,11 @@ def instagram_wrap_request(orig_request):
 
                 # Update Stats - use float division for precision
                 names_per_req = (d['n'] + increment) / thread_wrapper_count if thread_wrapper_count > 0 else 0
+                total_reqs = d['n'] + increment
+                if not rate and (total_reqs and names_per_req): # intended only for first iteration where rate = 0, or an error condition where rate is 0
+                    mins_per_req = elapsed_m / total_reqs
+                    rem_m = remaining_items * mins_per_req
+                    
                 stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}"
                 thread_pbar.unit = stats_string
                 thread_pbar.update(increment)
