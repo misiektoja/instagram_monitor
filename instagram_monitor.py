@@ -995,6 +995,9 @@ def run_flask_quietly(app, host, port, debug=False, use_reloader=False, threaded
                 # Suppress Flask's port-in-use message, but not our formatted version (which contains asterisks)
                 if "is in use by another program" in s and "*" not in s:
                     return
+                # Suppress noisy TLS-to-HTTP handshake parse errors
+                if ("code 400, message Bad request version" in s or "code 400, message Bad request syntax" in s):
+                    return
                 # Allow everything else (errors, warnings, etc.) through
             self.original.write(s)
 
