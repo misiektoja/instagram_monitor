@@ -974,8 +974,6 @@ _thread_local = threading.local()
 
 # Helper function to run Flask app with suppressed startup messages
 def run_flask_quietly(app, host, port, debug=False, use_reloader=False, threaded=True):
-    import sys
-
     # Filter class that suppresses Flask startup messages but allows errors through
     class FilteredWriter:
         def __init__(self, original_stream):
@@ -2868,8 +2866,10 @@ class Logger(object):
                 LAST_OUTPUT_BY_THREAD[tid].append(message)
 
             if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
-                self.terminal.write(colorized_message)
-                self.terminal.flush()
+                # Suppress terminal writes only for the thread that currently owns a progress bar
+                if getattr(_thread_local, 'pbar', None) is None:
+                    self.terminal.write(colorized_message)
+                    self.terminal.flush()
 
             # Expand tabs for file output and ensure ANSI codes are stripped
             clean_message = ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8)
@@ -4687,7 +4687,6 @@ def dashboard_input_handler():
     # This toggles the dashboard mode for both the Terminal Dashboard and the Web-based dashboard
     global MANUAL_CHECK_TRIGGERED, DASHBOARD_MODE
 
-    import sys
     is_windows = platform.system() == "Windows"
 
     if is_windows:
@@ -5606,12 +5605,33 @@ def setup_pbar(total_expected, title):
             def __getattr__(self, name):
                 return getattr(self._stream, name)
 
+        def _get_actual_console_width(fallback=80):
+            try:
+                if sys.platform == 'win32':
+                    import ctypes
+                    import struct
+                    handle = ctypes.windll.kernel32.GetStdHandle(-11)
+                    csbi = ctypes.create_string_buffer(22)
+                    if ctypes.windll.kernel32.GetConsoleScreenBufferInfo(handle, csbi):
+                        left, top, right, bottom = struct.unpack_from('hhhh', csbi.raw, 10)
+                        width = right - left + 1
+                        if width > 0:
+                            return width
+            except Exception:
+                pass
+            # Non-Windows or fallback: shutil is reliable on Linux/Mac
+            return shutil.get_terminal_size(fallback=(fallback, 24)).columns
+
+        actual_width = _get_actual_console_width()
+        safe_ncols = max(20, min(HORIZONTAL_LINE, actual_width - 1))
+        # print(f"DEBUG: terminal width is {safe_ncols}")
+
         custom_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
         # Write progress bar updates to terminal only (not log file) to avoid cluttering logs
         terminal_out = stdout_bck if stdout_bck is not None else sys.stdout
         locked_terminal_out = _LockedStream(terminal_out, STDOUT_LOCK)
         # Use HORIZONTAL_LINE (default 113) as the fixed width for consistent behavior across environments
-        _thread_local.pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=locked_terminal_out, ncols=HORIZONTAL_LINE)  # type: ignore[misc]
+        _thread_local.pbar = tqdm(total=total_expected, bar_format=custom_bar_format, unit="Initializing...", desc=title, file=locked_terminal_out, ncols=safe_ncols)  # type: ignore[misc]
 
         # Also set global for backward compatibility (single-threaded mode)
         pbar = _thread_local.pbar
@@ -5857,7 +5877,7 @@ def instagram_wrap_request(orig_request):
                 # Calculate Remaining Minutes
                 d = thread_pbar.format_dict
                 rate = d['rate'] if d['rate'] else 0
-                remaining_items = d['total'] - d['n']
+                remaining_items = d['total'] - (d['n'] + increment)
 
                 # Calculate remaining seconds, then minutes
                 rem_s = remaining_items / rate if rate > 0 else 0
@@ -5866,7 +5886,12 @@ def instagram_wrap_request(orig_request):
                 elapsed_m = d['elapsed'] / 60
 
                 # Update Stats - use float division for precision
-                names_per_req = d['n'] / thread_wrapper_count if thread_wrapper_count > 0 else 0
+                names_per_req = (d['n'] + increment) / thread_wrapper_count if thread_wrapper_count > 0 else 0
+                total_reqs = d['n'] + increment
+                if not rate and (total_reqs and names_per_req):  # intended only for first iteration where rate = 0, or an error condition where rate is 0
+                    mins_per_req = elapsed_m / total_reqs
+                    rem_m = remaining_items * mins_per_req
+
                 stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}"
                 thread_pbar.unit = stats_string
                 thread_pbar.update(increment)
