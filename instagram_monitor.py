@@ -974,8 +974,6 @@ _thread_local = threading.local()
 
 # Helper function to run Flask app with suppressed startup messages
 def run_flask_quietly(app, host, port, debug=False, use_reloader=False, threaded=True):
-    import sys
-
     # Filter class that suppresses Flask startup messages but allows errors through
     class FilteredWriter:
         def __init__(self, original_stream):
@@ -2868,7 +2866,8 @@ class Logger(object):
                 LAST_OUTPUT_BY_THREAD[tid].append(message)
 
             if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
-                if not pbar:
+                # Suppress terminal writes only for the thread that currently owns a progress bar
+                if getattr(_thread_local, 'pbar', None) is None:
                     self.terminal.write(colorized_message)
                     self.terminal.flush()
 
@@ -4688,7 +4687,6 @@ def dashboard_input_handler():
     # This toggles the dashboard mode for both the Terminal Dashboard and the Web-based dashboard
     global MANUAL_CHECK_TRIGGERED, DASHBOARD_MODE
 
-    import sys
     is_windows = platform.system() == "Windows"
 
     if is_windows:
@@ -5607,12 +5605,11 @@ def setup_pbar(total_expected, title):
             def __getattr__(self, name):
                 return getattr(self._stream, name)
 
-        import shutil, sys
-
         def _get_actual_console_width(fallback=80):
             try:
                 if sys.platform == 'win32':
-                    import ctypes, struct
+                    import ctypes
+                    import struct
                     handle = ctypes.windll.kernel32.GetStdHandle(-11)
                     csbi = ctypes.create_string_buffer(22)
                     if ctypes.windll.kernel32.GetConsoleScreenBufferInfo(handle, csbi):
@@ -5626,7 +5623,7 @@ def setup_pbar(total_expected, title):
             return shutil.get_terminal_size(fallback=(fallback, 24)).columns
 
         actual_width = _get_actual_console_width()
-        safe_ncols = min(HORIZONTAL_LINE, actual_width - 1)
+        safe_ncols = max(20, min(HORIZONTAL_LINE, actual_width - 1))
         # print(f"DEBUG: terminal width is {safe_ncols}")
 
         custom_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{unit}]"
@@ -5649,10 +5646,7 @@ def close_pbar():
     global pbar
     # Use thread-local storage for multi-target safety
     thread_pbar = getattr(_thread_local, 'pbar', None)
-    if thread_pbar:
-        tqdm.write(f"\n[close_pbar] ENTRY - thread_pbar is None: {thread_pbar is None}")
-    else:
-        debug_print(f"\n[close_pbar] ENTRY - thread_pbar is None: {thread_pbar is None}")
+    debug_print(f"[close_pbar] ENTRY - thread_pbar is None: {thread_pbar is None}")
     try:
         if thread_pbar is not None:
             final_str = None
@@ -5894,10 +5888,10 @@ def instagram_wrap_request(orig_request):
                 # Update Stats - use float division for precision
                 names_per_req = (d['n'] + increment) / thread_wrapper_count if thread_wrapper_count > 0 else 0
                 total_reqs = d['n'] + increment
-                if not rate and (total_reqs and names_per_req): # intended only for first iteration where rate = 0, or an error condition where rate is 0
+                if not rate and (total_reqs and names_per_req):  # intended only for first iteration where rate = 0, or an error condition where rate is 0
                     mins_per_req = elapsed_m / total_reqs
                     rem_m = remaining_items * mins_per_req
-                    
+
                 stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}"
                 thread_pbar.unit = stats_string
                 thread_pbar.update(increment)
