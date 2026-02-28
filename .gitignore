@@ -204,6 +204,7 @@ tmp/
 *.bak
 *.old
 *.orig
+*tokens.json
 
 # macOS metadata
 .DS_Store
