@@ -102,7 +102,8 @@ pip install instagram_monitor
 6. [How to Prevent Getting Challenged and Account Suspension](#how-to-prevent-getting-challenged-and-account-suspension)
 7. [Troubleshooting](#troubleshooting)
 8. [Change Log](#change-log)
-9. [License](#license)
+9. [Maintainers](#maintainers)
+10. [License](#license)
 
 <a id="requirements"></a>
 ## Requirements
@@ -996,6 +997,12 @@ In case of issues, run the tool with the `--debug` flag. It shows full HTTP traf
 ## Change Log
 
 See [RELEASE_NOTES.md](https://github.com/misiektoja/instagram_monitor/blob/main/RELEASE_NOTES.md) for details.
+
+<a id="maintainers"></a>
+## Maintainers
+
+- 👤 **misiektoja** ([@misiektoja](https://github.com/misiektoja))
+- 👤 **tomballgithub** ([@tomballgithub](https://github.com/tomballgithub))
 
 <a id="license"></a>
 ## License
