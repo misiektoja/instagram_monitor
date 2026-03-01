@@ -1333,13 +1333,15 @@ def create_web_dashboard_app():
             log_activity(msg, user=target)
         else:
             # Trigger all
-            recheck_all_targets()
-            if CHECK_POSTS_IN_HOURS_RANGE:
-                msg = "Recheck all triggered (will override hours range for the next cycle)"
+            success = recheck_all_targets()
+            if success:
+                if CHECK_POSTS_IN_HOURS_RANGE:
+                    msg = "Recheck all triggered (will override hours range for the next cycle)"
+                else:
+                    msg = "Recheck all triggered"
+                log_activity(msg)
             else:
-                msg = "Recheck all triggered"
-            success = True
-            log_activity(msg)
+                msg = "Recheck failed: requires at least 1 monitored user"
 
         return jsonify({'success': success, 'message': msg})  # type: ignore
 
@@ -2181,7 +2183,7 @@ def recheck_all_targets():
     if not targets:
         log_activity("Recheck All: Recheck requires at least 1 monitored user")
         update_ui_data(config={'status_msg': "Recheck requires at least 1 monitored user"})
-        return
+        return False
 
     stagger = MULTI_TARGET_STAGGER
     jitter = MULTI_TARGET_STAGGER_JITTER
@@ -2235,6 +2237,7 @@ def recheck_all_targets():
             threading.Thread(target=_single_rechecker, args=(u, delay), daemon=True, name=f"rechecker:{u}").start()
 
     threading.Thread(target=_staggered_rechecker_thread, daemon=True, name="recheck_all_launcher").start()
+    return True
 
 
 # Starts the Flask web server in a background thread
@@ -9418,7 +9421,7 @@ def run_main():
     seen = set()
     normalized: List[str] = []
     for u in targets:
-        u = u.strip()
+        u = u.strip().lower()
         if not u:
             continue
         if u not in seen:
@@ -9886,10 +9889,21 @@ def run_main():
     elif len(targets) == 1:
         # Integrated Mode Stop Event registration
         stop_event = threading.Event()
+        user = targets[0]
         if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
-            WEB_DASHBOARD_STOP_EVENTS[targets[0]] = stop_event
+            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                WEB_DASHBOARD_STOP_EVENTS[user] = stop_event
+                WEB_DASHBOARD_RECHECK_EVENTS[user] = threading.Event()
+                WEB_DASHBOARD_MONITOR_THREADS[user] = threading.current_thread()
 
-        instagram_monitor_user(targets[0], csv_files_by_user.get(targets[0], CSV_FILE), SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, user_root_path=OUTPUT_DIR, stop_event=stop_event, skip_follow_changes=SKIP_FOLLOW_CHANGES)
+        try:
+            instagram_monitor_user(user, csv_files_by_user.get(user, CSV_FILE), SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, user_root_path=OUTPUT_DIR, stop_event=stop_event, skip_follow_changes=SKIP_FOLLOW_CHANGES)
+        finally:
+            if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
+                with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                    WEB_DASHBOARD_STOP_EVENTS.pop(user, None)
+                    WEB_DASHBOARD_RECHECK_EVENTS.pop(user, None)
+                    WEB_DASHBOARD_MONITOR_THREADS.pop(user, None)
     else:
         stagger = args.targets_stagger if args.targets_stagger is not None else MULTI_TARGET_STAGGER
         jitter = args.targets_stagger_jitter if args.targets_stagger_jitter is not None else MULTI_TARGET_STAGGER_JITTER
