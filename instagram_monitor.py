@@ -7552,18 +7552,18 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 debug_print(f"Full exception: {type(e).__name__}: {e}")
 
                 consecutive_main_errors += 1
-                if ERROR_NOTIFICATION and consecutive_main_errors >= ERROR_FAILURE_THRESHOLD:
-                    alert_subject = f"instagram_monitor: error for {user} ({consecutive_main_errors}/{ERROR_FAILURE_THRESHOLD})"
-                    alert_body = f"An error occurred for user {user} (attempt {consecutive_main_errors}/{ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    alert_body_html = f"An error occurred for user <b>{user}</b> (attempt {consecutive_main_errors}/{ERROR_FAILURE_THRESHOLD}):<br><br><b>{error_msg}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                if ERROR_NOTIFICATION and consecutive_main_errors == ERROR_FAILURE_THRESHOLD:
+                    alert_subject = f"instagram_monitor: error for {user} (failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD})"
+                    alert_body = f"An error occurred for user {user} (failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    alert_body_html = f"An error occurred for user <b>{user}</b> (failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):<br><br><b>{error_msg}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
-                    print(f"* Sending error notification to {RECEIVER_EMAIL} (failure {consecutive_main_errors}/{ERROR_FAILURE_THRESHOLD})")
+                    print(f"* Sending error notification to {RECEIVER_EMAIL} (failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD})")
                     send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
 
                     if WEBHOOK_ENABLED and WEBHOOK_ERROR_NOTIFICATION:
                         send_webhook(
                             title=f"Error for {user}",
-                            description=f"{error_msg}\n(failure {consecutive_main_errors}/{ERROR_FAILURE_THRESHOLD})",
+                            description=f"{error_msg}\n(failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD})",
                             color=0xFF0000,
                             notification_type="error"
                         )
@@ -8635,19 +8635,19 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
             consecutive_behuman_errors += 1
             print(f"* Warning: It is not easy to be a human, our simulation failed: {e}")
-            if ERROR_NOTIFICATION and consecutive_behuman_errors >= ERROR_FAILURE_THRESHOLD:
+            if ERROR_NOTIFICATION and consecutive_behuman_errors == ERROR_FAILURE_THRESHOLD:
                 error_msg = format_error_message(e)
-                alert_subject = f"instagram_monitor: BeHuman mode error for {user} ({consecutive_behuman_errors}/{ERROR_FAILURE_THRESHOLD})"
-                alert_body = f"A BeHuman simulation error occurred for user {user} (attempt {consecutive_behuman_errors}/{ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                alert_body_html = f"A BeHuman simulation error occurred for user <b>{user}</b> (attempt {consecutive_behuman_errors}/{ERROR_FAILURE_THRESHOLD}):<br><br><b>{error_msg}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                alert_subject = f"instagram_monitor: BeHuman mode error for {user} (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD})"
+                alert_body = f"A BeHuman simulation error occurred for user {user} (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                alert_body_html = f"A BeHuman simulation error occurred for user <b>{user}</b> (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):<br><br><b>{error_msg}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
-                print(f"* Sending BeHuman error notification to {RECEIVER_EMAIL} (failure {consecutive_behuman_errors}/{ERROR_FAILURE_THRESHOLD})")
+                print(f"* Sending BeHuman error notification to {RECEIVER_EMAIL} (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD})")
                 send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
 
                 if WEBHOOK_ENABLED and WEBHOOK_ERROR_NOTIFICATION:
                     send_webhook(
                         title=f"BeHuman Error for {user}",
-                        description=f"{error_msg}\n(failure {consecutive_behuman_errors}/{ERROR_FAILURE_THRESHOLD})",
+                        description=f"{error_msg}\n(failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD})",
                         color=0xFF0000,
                         notification_type="error"
                     )
