@@ -190,6 +190,7 @@ tmp/
 .abstra/
 *.swp
 *.swo
+.claude/
 
 # Credentials, certs, pkeys and config snapshots
 *.pem
