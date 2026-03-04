@@ -2092,7 +2092,8 @@ def stop_monitoring_for_target(username):
     # Clean up thread reference - wait for thread to finish with timeout
     if username in WEB_DASHBOARD_MONITOR_THREADS:
         thread = WEB_DASHBOARD_MONITOR_THREADS[username]
-        if thread.is_alive():
+        can_join = (thread is not None and thread.is_alive() and thread is not threading.current_thread() and thread is not threading.main_thread())
+        if can_join:
             thread.join(timeout=5.0)  # Wait up to 5 seconds for clean shutdown
         del WEB_DASHBOARD_MONITOR_THREADS[username]
     if username in WEB_DASHBOARD_STOP_EVENTS:
