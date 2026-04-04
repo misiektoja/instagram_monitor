@@ -5569,7 +5569,14 @@ def print_check_timing(r_sleep_time, prefix="", user=None):
 
 # Initializes and sets up a progress bar for displaying download progress
 def setup_pbar(total_expected, title):
-    global START_TIME, NAME_COUNT, WRAPPER_COUNT, pbar
+    global START_TIME, NAME_COUNT, WRAPPER_COUNT, pbar, REQUESTS_PATCHED
+
+    # Ensure the request monkey-patch is in place so _update_progress_bar runs;
+    # without this the bar only updates when ENABLE_JITTER or MULTI_TARGET_SERIALIZE_HTTP is set
+    if not REQUESTS_PATCHED:
+        req.Session.request = instagram_wrap_request(req.Session.request)
+        req.Session.send = instagram_wrap_send(req.Session.send)
+        REQUESTS_PATCHED = True
 
     # Use thread-local storage for multi-target safety
     if not hasattr(_thread_local, 'pbar'):
