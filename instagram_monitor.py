@@ -958,6 +958,9 @@ PROGRESS_BAR_LOCK = threading.RLock()
 # Global lock for session file load/save (Instaloader session file is shared across targets)
 SESSION_FILE_LOCK = threading.Lock()
 
+# Global lock to guard one-time requests monkey-patching across threads
+REQUESTS_PATCH_LOCK = threading.Lock()
+
 # Whether requests Session methods have already been monkey-patched
 REQUESTS_PATCHED = False
 
@@ -5569,14 +5572,10 @@ def print_check_timing(r_sleep_time, prefix="", user=None):
 
 # Initializes and sets up a progress bar for displaying download progress
 def setup_pbar(total_expected, title):
-    global START_TIME, NAME_COUNT, WRAPPER_COUNT, pbar, REQUESTS_PATCHED
+    global START_TIME, NAME_COUNT, WRAPPER_COUNT, pbar
 
-    # Ensure the request monkey-patch is in place so _update_progress_bar runs;
-    # without this the bar only updates when ENABLE_JITTER or MULTI_TARGET_SERIALIZE_HTTP is set
-    if not REQUESTS_PATCHED:
-        req.Session.request = instagram_wrap_request(req.Session.request)
-        req.Session.send = instagram_wrap_send(req.Session.send)
-        REQUESTS_PATCHED = True
+    # Ensure request hooks are active so progress updates are tracked even without jitter or serialization
+    ensure_requests_monkey_patched()
 
     # Use thread-local storage for multi-target safety
     if not hasattr(_thread_local, 'pbar'):
@@ -5941,6 +5940,19 @@ def instagram_wrap_send(orig_send):
                 return _do_send()
         return _do_send()
     return wrapper
+
+
+# Ensures requests Session monkey-patch is applied once in a thread-safe way
+def ensure_requests_monkey_patched():
+    global REQUESTS_PATCHED
+    if REQUESTS_PATCHED:
+        return
+    with REQUESTS_PATCH_LOCK:
+        if REQUESTS_PATCHED:
+            return
+        req.Session.request = instagram_wrap_request(req.Session.request)
+        req.Session.send = instagram_wrap_send(req.Session.send)
+        REQUESTS_PATCHED = True
 
 
 # Returns a dictionary containing all current configuration settings
@@ -6338,12 +6350,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     reels_count = 0
 
     try:
-        global REQUESTS_PATCHED
-        # Monkey-patch requests only once (it is global), even if we run multi-target threads
-        if (ENABLE_JITTER or MULTI_TARGET_SERIALIZE_HTTP) and not REQUESTS_PATCHED:
-            req.Session.request = instagram_wrap_request(req.Session.request)
-            req.Session.send = instagram_wrap_send(req.Session.send)
-            REQUESTS_PATCHED = True
+        # Apply request monkey-patch for jitter or serialized HTTP mode even when no progress bar is created
+        if ENABLE_JITTER or MULTI_TARGET_SERIALIZE_HTTP:
+            ensure_requests_monkey_patched()
 
         bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True, quiet=True)
 
