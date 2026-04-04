@@ -4154,9 +4154,43 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
             print_cur_ts("\nTimestamp:\t\t\t\t")
 
 
+# Builds a Profile object from the mobile web_profile_info response
+def _profile_from_web_profile_info(bot: instaloader.Instaloader, username: str) -> Optional[instaloader.Profile]:
+    data = bot.context.get_iphone_json(f"api/v1/users/web_profile_info/?username={username}", {})
+    if not isinstance(data, dict):
+        return None
+
+    user_data = data.get("data", {}).get("user")
+    if not isinstance(user_data, dict):
+        return None
+
+    normalized = dict(user_data)
+    if "username" not in normalized:
+        normalized["username"] = username
+    if "id" not in normalized and "pk" in normalized:
+        normalized["id"] = str(normalized["pk"])
+    if "pk" not in normalized and "id" in normalized:
+        normalized["pk"] = str(normalized["id"])
+    if "id" not in normalized and "pk" not in normalized:
+        return None
+
+    return instaloader.Profile(bot.context, normalized)
+
+
+# Resolves a profile by username by trying web_profile_info first in anonymous mode then Instaloader
+def profile_from_username_resilient(bot: instaloader.Instaloader, username: str) -> instaloader.Profile:
+    ctx = bot.context
+    if not ctx.is_logged_in:
+        fallback_profile = _profile_from_web_profile_info(bot, username)
+        if fallback_profile is not None:
+            return fallback_profile
+
+    return instaloader.Profile.from_username(ctx, username)
+
+
 # Return the most recent post and/or reel for the user (GraphQL helper when logged in)
 def latest_post_reel(user: str, bot: instaloader.Instaloader) -> Optional[Tuple[instaloader.Post, str]]:
-    profile = instaloader.Profile.from_username(bot.context, user)
+    profile = profile_from_username_resilient(bot, user)
 
     # Max 3 pinned posts + the latest one
     posts = [(p, "post") for p in islice(profile.get_posts(), 4)]
@@ -4254,7 +4288,7 @@ def latest_post_mobile(user: str, bot: instaloader.Instaloader):
 
 # Returns reels count by using Instaloader's iPhone API (requires session login)
 def get_reels_count_mobile(user: str, bot: instaloader.Instaloader):
-    profile = instaloader.Profile.from_username(bot.context, user)
+    profile = profile_from_username_resilient(bot, user)
     user_id = profile.userid
 
     # Fetch mobile JSON
@@ -4282,7 +4316,7 @@ def get_total_reels_count(user: str, bot: instaloader.Instaloader, skip_session=
 
     # Anonymous fallback: count every reel in the feed, might be API intensive
     try:
-        profile = instaloader.Profile.from_username(bot.context, user)
+        profile = profile_from_username_resilient(bot, user)
         count = 0
         for _ in profile.get_reels():
             count += 1
@@ -6282,7 +6316,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
                     print("* BeHuman #4 warning: you follow 0 accounts, skipping visit")
             else:
                 someone = random.choice(followees)
-                _ = instaloader.Profile.from_username(ctx, someone.username)
+                _ = profile_from_username_resilient(bot, someone.username)
                 if DEBUG_MODE:
                     debug_print(f"BeHuman #4: visited followee {someone.username} OK")
                 elif BE_HUMAN_VERBOSE:
@@ -6502,7 +6536,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         log_activity(f"Loading profile: {user}", user=user)
         update_ui_data(targets={user: {'status': 'Loading Profile'}})
 
-        profile = instaloader.Profile.from_username(bot.context, user)
+        profile = profile_from_username_resilient(bot, user)
 
         time.sleep(NEXT_OPERATION_DELAY)
         insta_username = profile.username
@@ -7483,7 +7517,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             debug_print(f"Fetching profile data from Instagram API...")
 
             try:
-                profile = instaloader.Profile.from_username(bot.context, user)
+                profile = profile_from_username_resilient(bot, user)
                 time.sleep(NEXT_OPERATION_DELAY)
                 new_post = False
                 followers_count = profile.followers
@@ -7734,7 +7768,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         duration_dl = end_time_dl - start_time_dl
                         log_activity(f"Finished downloading followings: {len(followings)}, fetched in {display_time(duration_dl)}", user=user)
                         # Refresh profile to get current reported counts for comparison
-                        profile = instaloader.Profile.from_username(bot.context, user)
+                        profile = profile_from_username_resilient(bot, user)
                         followings_count = profile.followees
                         followers_count_reported = profile.followers
                         if not FOLLOWERS_CHURN_DETECTION:
@@ -7866,7 +7900,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         duration_dl = end_time_dl - start_time_dl
                         log_activity(f"Finished downloading followers: {len(followers)}, fetched in {display_time(duration_dl)}", user=user)
                         # Refresh profile to get current reported counts for comparison
-                        profile = instaloader.Profile.from_username(bot.context, user)
+                        profile = profile_from_username_resilient(bot, user)
                         followers_count = profile.followers
                         followings_count_reported = profile.followees
                         if not FOLLOWERS_CHURN_DETECTION:
