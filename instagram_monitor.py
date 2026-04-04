@@ -5421,17 +5421,17 @@ def update_dashboard():
         else:
             loading_text.append("⏳ Initializing and fetching profile data...\n\n", style="yellow")
             loading_text.append("This may take a moment while we:\n", style="dim")
-            loading_text.append("  • Load Instagram session\n", style="dim")
-            loading_text.append("  • Fetch profile information\n", style="dim")
-            loading_text.append("  • Count posts, reels, and stories\n", style="dim")
-            loading_text.append("  • Retrieve follower/following data\n\n", style="dim")
+            loading_text.append("  - Load Instagram session\n", style="dim")
+            loading_text.append("  - Fetch profile information\n", style="dim")
+            loading_text.append("  - Count posts, reels, and stories\n", style="dim")
+            loading_text.append("  - Retrieve follower/following data\n\n", style="dim")
 
             # Show which users are being monitored
             targets_list = DASHBOARD_DATA.get('targets_list', [])
             if targets_list:
                 loading_text.append("Monitored targets:\n", style="bold cyan")
                 for target in targets_list:
-                    loading_text.append(f"  • {target}\n", style="cyan")
+                    loading_text.append(f"  - {target}\n", style="cyan")
 
             loading_text.append("\n💡 Please wait patiently...\n\n", style="italic green")
 
@@ -5484,17 +5484,17 @@ def init_dashboard():
     else:
         loading_text.append("⏳ Initializing and fetching profile data...\n\n", style="yellow")
         loading_text.append("This may take a moment while we:\n", style="dim")
-        loading_text.append("  • Load Instagram session\n", style="dim")
-        loading_text.append("  • Fetch profile information\n", style="dim")
-        loading_text.append("  • Count posts, reels, and stories\n", style="dim")
-        loading_text.append("  • Retrieve follower/following data\n\n", style="dim")
+        loading_text.append("  - Load Instagram session\n", style="dim")
+        loading_text.append("  - Fetch profile information\n", style="dim")
+        loading_text.append("  - Count posts, reels, and stories\n", style="dim")
+        loading_text.append("  - Retrieve follower/following data\n\n", style="dim")
 
         # Show which users are being monitored
         targets_list = DASHBOARD_DATA.get('targets_list', [])
         if targets_list:
             loading_text.append("Monitored targets:\n", style="bold cyan")
             for target in targets_list:
-                loading_text.append(f"  • {target}\n", style="cyan")
+                loading_text.append(f"  - {target}\n", style="cyan")
 
         loading_text.append("\n💡 Please wait patiently...", style="italic green")
 
@@ -8937,8 +8937,8 @@ def run_main():
         help="Random jitter (seconds) added to each target start time"
     )
 
-    # Session‐related options
-    session_opts = parser.add_argument_group("Session‐related options")
+    # Session-related options
+    session_opts = parser.add_argument_group("Session-related options")
     session_opts.add_argument(
         "-l", "--skip-session",
         dest="skip_session",
