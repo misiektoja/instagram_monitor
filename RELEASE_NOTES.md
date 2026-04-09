@@ -1,5 +1,28 @@
 # instagram_monitor release notes
 
+# Changes in 3.2 (TBD)
+
+**Features and Improvements**:
+
+- **NEW:** Added Docker support with a slim runtime image (closes [#13](https://github.com/misiektoja/instagram_monitor/issues/13) and [#75](https://github.com/misiektoja/instagram_monitor/issues/75))
+- **NEW:** Added configurable failure threshold and improved alerting for Instagram human mode issues (closes [#63](https://github.com/misiektoja/instagram_monitor/issues/63))
+- **NEW:** Implemented separate error counters for BeHuman simulation and the main monitoring loop
+- **IMPROVE:** Improved progress bar stability and output handling with thread-safe suppression and safer width bounds (thanks [@tomballgithub](https://github.com/tomballgithub), from [#69](https://github.com/misiektoja/instagram_monitor/pull/69))
+- **IMPROVE:** Improved progress bar ETA and rate calculations for early updates (thanks [@tomballgithub](https://github.com/tomballgithub), from [#69](https://github.com/misiektoja/instagram_monitor/pull/69))
+- **IMPROVE:** Added GitHub Actions workflow for publishing packages to PyPI
+- **IMPROVE:** Suppressed noisy TLS-on-HTTP Werkzeug parse logs in console output (fixes [#67](https://github.com/misiektoja/instagram_monitor/issues/67))
+
+**Bug fixes**:
+
+- **BUGFIX:** Used nominal interval for human-mode probability on restricted schedules (fixes [#64](https://github.com/misiektoja/instagram_monitor/issues/64))
+- **BUGFIX:** Triggered error notifications exactly at the configured failure threshold (fixes [#71](https://github.com/misiektoja/instagram_monitor/issues/71))
+- **BUGFIX:** Made single-target recheck state consistent and returned accurate recheck-all status (fixes [#68](https://github.com/misiektoja/instagram_monitor/issues/68))
+- **BUGFIX:** Avoided joining current or main thread in target stop path (fixes [#73](https://github.com/misiektoja/instagram_monitor/issues/73))
+- **BUGFIX:** Normalized non-ASCII characters to avoid output issues (fixes [#76](https://github.com/misiektoja/instagram_monitor/issues/76))
+- **BUGFIX:** Ensured request monkey-patch is applied when progress bar setup is initialized (fixes [#77](https://github.com/misiektoja/instagram_monitor/issues/77))
+- **BUGFIX:** Made requests monkey-patch setup thread-safe for progress bar jitter and serialized HTTP paths
+- **BUGFIX:** Restored anonymous profile lookup on Instaloader 4.15.1 via `web_profile_info` fallback
+
 # Changes in 3.1 (07 Feb 2026)
 
 **Features and Improvements**:
