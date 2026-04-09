@@ -1,0 +1,11 @@
+.git
+.github
+.gitignore
+.venv
+__pycache__/
+*.py[cod]
+*.log
+assets/
+dist/
+instagram_monitor.egg-info/
+local/
