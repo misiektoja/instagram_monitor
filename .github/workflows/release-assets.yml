@@ -1,0 +1,39 @@
+name: Build release archives
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-and-upload-assets:
+    name: Build zip and tar.gz and upload to release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build archives from release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.release.tag_name }}"
+          PREFIX="instagram_monitor_${TAG}"
+
+          git archive --format=zip --output "${PREFIX}.zip" "${TAG}"
+          git archive --format=tar.gz --output "${PREFIX}.tar.gz" "${TAG}"
+
+          ls -lh "${PREFIX}.zip" "${PREFIX}.tar.gz"
+
+      - name: Upload archives to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            instagram_monitor_${{ github.event.release.tag_name }}.zip
+            instagram_monitor_${{ github.event.release.tag_name }}.tar.gz
+          fail_on_unmatched_files: true
+          overwrite_files: true
