@@ -13,8 +13,15 @@
 Powerful, real-time OSINT suite for tracking every activity on Instagram - from story updates and bio changes to follower shifts, providing stunning dashboards and instant alerts to keep you in the loop.
 
 ### 🚀 Quick Install
+
+Python
 ```sh
 pip install instagram_monitor
+```
+
+Docker
+```sh
+docker pull misiektoja/instagram-monitor:latest
 ```
 
 <p align="center">
@@ -56,6 +63,7 @@ pip install instagram_monitor
 - **Flexible Config**: Support for files, dotenv and environment variables.
 - **Follower Churn**: Detailed tracking of exactly who followed or unfollowed.
 - **Remote Control**: Manage tracking features via signals or the web UI.
+- **Docker Ready**: Run via Docker Hub image or local image build with persisted config, dotenv and sessions.
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_terminal_dashboard.png" alt="instagram_monitor_terminal_dashboard" width="100%"/>
@@ -71,6 +79,7 @@ pip install instagram_monitor
 1. [Requirements](#requirements)
 2. [Installation](#installation)
    * [Install from PyPI](#install-from-pypi)
+   * [Install from Docker Hub](#install-from-docker-hub)
    * [Manual Installation](#manual-installation)
    * [Upgrading](#upgrading)
 3. [Quick Start](#quick-start)
@@ -87,6 +96,10 @@ pip install instagram_monitor
    * [Web Dashboard](#web-dashboard-mode)
    * [Dashboard View Modes](#dashboard-view-modes)
 6. [Usage](#usage)
+   * [Docker Usage (Recommended)](#docker-usage-recommended)
+      * [Docker Hub Image](#docker-hub-image-recommended)
+      * [Build Image Locally](#build-image-locally)
+      * [Common Run Scenarios](#common-run-scenarios)
    * [Monitoring Mode](#monitoring-mode)
    * [Email Notifications](#email-notifications)
    * [Webhook Notifications](#webhook-notifications)
@@ -99,17 +112,27 @@ pip install instagram_monitor
    * [Check Intervals](#check-intervals)
    * [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix)
    * [Coloring Log Output with GRC](#coloring-log-output-with-grc)
-6. [How to Prevent Getting Challenged and Account Suspension](#how-to-prevent-getting-challenged-and-account-suspension)
-7. [Troubleshooting](#troubleshooting)
-8. [Change Log](#change-log)
-9. [Maintainers](#maintainers)
-10. [License](#license)
+7. [How to Prevent Getting Challenged and Account Suspension](#how-to-prevent-getting-challenged-and-account-suspension)
+8. [Troubleshooting](#troubleshooting)
+9. [Change Log](#change-log)
+10. [Maintainers](#maintainers)
+11. [License](#license)
 
 <a id="requirements"></a>
 ## Requirements
 
-* Python 3.9 or higher
-* Libraries: [instaloader](https://github.com/instaloader/instaloader), `requests`, `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich` (for Terminal Dashboard), `flask` (for Web Dashboard)
+Choose one runtime path:
+
+* **Python path**:
+  * [Python](https://www.python.org/downloads/) 3.9 or higher
+  * Libraries: [instaloader](https://github.com/instaloader/instaloader), `requests`, `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich` (for Terminal Dashboard), `flask` (for Web Dashboard)
+* **Container path** (Python is not required on host):
+  * Any Docker-compatible runtime such as:
+    * [Docker Desktop](https://docs.docker.com/get-started/get-docker/) (macOS, Windows, Linux)
+    * [Docker Engine](https://docs.docker.com/engine/install/) (Linux)
+    * [Colima](https://colima.run/docs/installation/) with Docker CLI (macOS)
+    * [OrbStack](https://docs.orbstack.dev/quick-start) (macOS)
+    * [Rancher Desktop](https://docs.rancherdesktop.io/getting-started/installation/) with Moby or Docker CLI enabled (macOS, Windows, Linux)
 
 Tested on:
 
@@ -128,6 +151,15 @@ It should work on other versions of macOS, Linux, Unix and Windows as well.
 ```sh
 pip install instagram_monitor
 ```
+
+<a id="install-from-docker-hub"></a>
+### Install from Docker Hub
+
+```sh
+docker pull misiektoja/instagram-monitor:latest
+```
+
+For run examples and key scenarios see 🐳 [Docker Usage (Recommended)](#docker-usage-recommended).
 
 <a id="manual-installation"></a>
 ### Manual Installation
@@ -159,8 +191,28 @@ pip install instagram_monitor -U
 
 If you installed manually, download the newest *[instagram_monitor.py](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py)* file to replace your existing installation.
 
+If you run from Docker Hub, pull the newer image tag:
+
+```sh
+docker pull misiektoja/instagram-monitor:latest
+```
+
+If you prefer pinned releases instead of `latest`, pull a specific version tag:
+
+```sh
+docker pull misiektoja/instagram-monitor:<version>
+```
+
+If you run a locally built image, rebuild it to pick up new changes:
+
+```sh
+docker build --pull -t instagram_monitor:local .
+```
+
 <a id="quick-start"></a>
 ## Quick Start
+
+If you prefer to run it in a container, jump to 🐳 [Docker Usage (Recommended)](#docker-usage-recommended).
 
 - Track the `target_insta_user` in [session mode 1](#session-mode-1-without-logged-in-instagram-account-no-session-login) (no session login - anonymous):
 
@@ -470,6 +522,77 @@ Toggle seamlessly between modes using the **'m'** key or the web dashboard toggl
 <a id="usage"></a>
 ## Usage
 
+<a id="docker-usage-recommended"></a>
+### Docker Usage (Recommended)
+
+Running via [Docker](https://www.docker.com) is the easiest setup for most users and avoids local Python dependency management.
+
+<a id="docker-hub-image-recommended"></a>
+#### Docker Hub Image
+
+A prebuilt multi-architecture image is available on Docker Hub: [`misiektoja/instagram-monitor`](https://hub.docker.com/r/misiektoja/instagram-monitor)
+
+Run and show help:
+
+```sh
+docker run --rm -it misiektoja/instagram-monitor --help
+```
+
+<a id="build-image-locally"></a>
+#### Build Image Locally
+
+If you want to build from source:
+
+```sh
+docker build -t instagram_monitor:local .
+docker run --rm -it instagram_monitor:local --help
+```
+
+If you prefer the local image, replace `misiektoja/instagram-monitor` with `instagram_monitor:local` in the Docker commands below.
+
+<a id="common-run-scenarios"></a>
+#### Common Run Scenarios
+
+**Shell note:** The examples below use Bash/Zsh variables (`$PWD`, `$HOME`). In PowerShell use `${PWD}` and `${HOME}` or replace them with absolute paths in `-v` mounts.
+
+1. Basic monitoring with persistent data and session storage:
+
+```sh
+docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor <target_insta_user>
+```
+
+This keeps generated files in your current directory and keeps Instaloader sessions in the Docker volume `instagram_monitor_session`.
+
+2. Use config file and dotenv from your current directory:
+
+```sh
+docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor <target_insta_user> --config-file /data/instagram_monitor.conf --env-file /data/.env
+```
+
+3. Run Web Dashboard and access it from host browser:
+
+Set `WEB_DASHBOARD_HOST = "0.0.0.0"` in `instagram_monitor.conf`, then run:
+
+```sh
+docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -p 8000:8000 misiektoja/instagram-monitor <target_insta_user> --web-dashboard
+```
+
+Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) on your host.
+
+4. Import Firefox session cookies on Linux host:
+
+```sh
+docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor --import-firefox-session
+```
+
+5. Import Firefox session cookies on macOS host from explicit cookie file:
+
+```sh
+docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/Library/Application Support/Firefox/Profiles/<profile>/cookies.sqlite:/cookies/cookies.sqlite:ro" misiektoja/instagram-monitor --import-firefox-session --cookie-file /cookies/cookies.sqlite
+```
+
+Once imported, run with `-u <your_insta_user>` as usual and the session file from the persistent volume will be reused.
+
 <a id="monitoring-mode"></a>
 ### Monitoring Mode
 
@@ -775,7 +898,7 @@ If a change is detected, the old picture is moved to `instagram_<username>_profi
 The tool also has built-in detection of empty profile pictures. Instagram does not indicate an empty user's profile image in their API; that's why the tool detects it by using an empty profile image template (which appears to be identical on a binary level for all users).
 
 To enable this:
-- download the [instagram_profile_pic_empty.jpg](https://raw.githubusercontent.com/misiektoja/instagram_profile_pic_empty.jpg) file
+- download the [instagram_profile_pic_empty.jpg](https://raw.githubusercontent.com/misiektoja/instagram_monitor/main/instagram_profile_pic_empty.jpg) file
 - place it in the directory where you run the tool. **Note**: If installed via `pip`, this file is already bundled; however, any local file in your working directory will take **priority** over the bundled default.
 
 Without this file, the tool will treat an empty profile picture as a regular image. For example, if a user removes their profile picture, it would be treated as a change rather than a removal.
