@@ -12,7 +12,7 @@ license-files = ["LICEN[CS]E*"]
 authors = [{ name = "Michal Szymanski", email = "misiektoja-pypi@rm-rf.ninja" }]
 requires-python = ">=3.9"
 dependencies = [
-  "instaloader>=4.12",
+  "instaloader>=4.15.1",
   "requests>=2.0",
   "python-dateutil>=2.8",
   "pytz>=2020.1",
