@@ -1,16 +1,16 @@
 # instagram_monitor release notes
 
-# Changes in 3.2 (TBD)
+# Changes in 3.2 (10 Apr 2026)
 
 **Features and Improvements**:
 
 - **NEW:** Added Docker support with a slim runtime image (closes [#13](https://github.com/misiektoja/instagram_monitor/issues/13) and [#75](https://github.com/misiektoja/instagram_monitor/issues/75))
-- **NEW:** Added configurable failure threshold and improved alerting for Instagram human mode issues (closes [#63](https://github.com/misiektoja/instagram_monitor/issues/63))
 - **NEW:** Implemented separate error counters for BeHuman simulation and the main monitoring loop
+- **IMPROVE:** Added configurable failure threshold and improved alerting for Instagram human mode issues (closes [#63](https://github.com/misiektoja/instagram_monitor/issues/63))
 - **IMPROVE:** Improved progress bar stability and output handling with thread-safe suppression and safer width bounds (thanks [@tomballgithub](https://github.com/tomballgithub), from [#69](https://github.com/misiektoja/instagram_monitor/pull/69))
 - **IMPROVE:** Improved progress bar ETA and rate calculations for early updates (thanks [@tomballgithub](https://github.com/tomballgithub), from [#69](https://github.com/misiektoja/instagram_monitor/pull/69))
-- **IMPROVE:** Added GitHub Actions workflow for publishing packages to PyPI
 - **IMPROVE:** Suppressed noisy TLS-on-HTTP Werkzeug parse logs in console output (fixes [#67](https://github.com/misiektoja/instagram_monitor/issues/67))
+- **IMPROVE:** Added GitHub Actions workflow for publishing packages to PyPI and auto-building/attaching zip and tar.gz assets to published releases
 
 **Bug fixes**:
 
