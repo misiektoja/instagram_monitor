@@ -183,7 +183,7 @@ JITTER_VERBOSE = False
 
 # Optional: Enable proxy suppport for networking traffic
 PROXY_ENABLED = False
-# URL for proxy (required)
+# URL for proxy (required if using proxies)
 PROXY_URL = ""
 # Provide a local SSL certificate to use with proxy
 PROXY_CERT_PATH = ""
@@ -1544,18 +1544,28 @@ def create_web_dashboard_app():
         WEBHOOK_ERROR_NOTIFICATION = bool(update_setting('webhook_errors', WEBHOOK_ERROR_NOTIFICATION, bool))
 
         # Proxies
+        old_proxy_enabled = PROXY_ENABLED
+        old_proxy_webhooks = PROXY_WEBHOOKS
+        old_proxy_url = PROXY_URL
+        old_proxy_cert = PROXY_CERT_PATH
         PROXY_ENABLED = bool(update_setting('proxy_enabled', PROXY_ENABLED, bool))
         PROXY_URL = str(update_setting('proxy_url', PROXY_URL, str))
         PROXY_CERT_PATH = str(update_setting('proxy_cert', PROXY_CERT_PATH, str))
         PROXY_WEBHOOKS = bool(update_setting('proxy_webhooks', PROXY_WEBHOOKS, bool))
 
-        # Signal proxy refresh to all monitoring threads
-        if any(key in data for key in ['proxy_enabled', 'proxy_url', 'proxy_cert', 'proxy_webhooks']):
+        # Signal refresh if at least one proxy-related setting was successfully changed
+        proxy_settings_changed = (
+            PROXY_ENABLED != old_proxy_enabled or
+            PROXY_URL != old_proxy_url or
+            PROXY_CERT_PATH != old_proxy_cert or
+            PROXY_WEBHOOKS != old_proxy_webhooks
+        )
+        if proxy_settings_changed:
             with PROXY_REFRESH_LOCK:
                 global PROXY_REFRESH_VERSION
                 PROXY_REFRESH_VERSION += 1
             print(f"* Proxy settings changed via web dashboard (new version: {PROXY_REFRESH_VERSION})")
-        
+
         # Behavior
         FOLLOWERS_CHURN_DETECTION = bool(update_setting('followers_churn', FOLLOWERS_CHURN_DETECTION, bool))
         VERBOSE_MODE = bool(update_setting('verbose_mode', VERBOSE_MODE, bool))
@@ -3539,6 +3549,7 @@ def get_ip_address(max_retries=3, timeout=10):
                 # debug_print(f"get_ip_address failed after {max_retries} attempts: {e}")
     return "(unavailable: timeout)"
 
+
 def get_proxies():
     if PROXY_ENABLED:
         return {'http': PROXY_URL, 'https': PROXY_URL}
@@ -3554,7 +3565,28 @@ def get_proxies_ssl():
 def set_instaloader_proxies(instabot):
     instabot.context._session.proxies.update(get_proxies())
     instabot.context._session.verify = get_proxies_ssl()
-       
+
+
+def refresh_proxy_if_needed(bot, user):
+    global PROXY_REFRESH_VERSION
+
+    # proxies can only change during runtime if web dashboard is used to make a settings change
+    if WEB_DASHBOARD_ENABLED:
+        with PROXY_REFRESH_LOCK:
+            current_version = PROXY_REFRESH_VERSION
+
+        if getattr(_thread_local, 'last_proxy_version', 0) != current_version:
+            _thread_local.last_proxy_version = current_version
+
+            try:
+                print(f"* Proxy configuration refreshed for user {user} due to web dashboard settings change (version {current_version})")
+                log_activity(f"Proxy configuration refreshed via web dashboard (version {current_version})", user=user)
+                set_instaloader_proxies(bot)
+            except Exception as e:
+                error_msg = format_error_message(e)
+                print(f"* Error refreshing proxies for {user}: {error_msg}")
+                log_activity(f"Proxy refresh failed: {error_msg}", user=user, level='error')
+
 
 # Debug print helper - only prints if DEBUG_MODE is enabled
 def debug_print(message):
@@ -5434,6 +5466,10 @@ def generate_config_dashboard(target_data, config_data):
         ("Webhook Status", str(config_data.get('webhook_status', '-'))),
         ("Webhook Followers", str(config_data.get('webhook_followers', '-'))),
         ("Webhook Errors", str(config_data.get('webhook_errors', '-'))),
+        ("Proxy for Instagram", str(config_data.get('proxy_enabled', '-'))),
+        ("Proxy for Webhooks", str(config_data.get('proxy_webhooks', '-'))),
+        ("Proxy URL", str(config_data.get('proxy_url', '-'))[:50]),
+        ("Proxy Certificate", str(config_data.get('proxy_cert', '-'))),
     ]
 
     # Right column items
@@ -6634,6 +6670,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                         log_activity("Manual recheck requested (overriding hours range)", user=user, level='system')
                                         update_ui_data(targets={user: {'status': 'Recheck requested'}})
                                         break
+
+                            # Check for proxy changes from web dashboard
+                            refresh_proxy_if_needed(bot, user)
+
                             wait_chunk = min(1, sleep_remaining)
                             if stop_event:
                                 stop_event.wait(wait_chunk)
@@ -7575,6 +7615,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 manual_override_active = True
                 break
 
+            # Check for proxy changes from web dashboard
+            refresh_proxy_if_needed(bot, user)
+
             # Sleep in 1-second increments for responsiveness
             sleep_chunk = min(1, sleep_remaining)
             if stop_event:
@@ -7600,20 +7643,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             return
 
         # Check for proxy changes via web dashboard at start of each loop iteration
-        with PROXY_REFRESH_LOCK:
-            current_version = PROXY_REFRESH_VERSION
-
-        if getattr(_thread_local, 'last_proxy_version', -1) != current_version:
-            _thread_local.last_proxy_version = current_version
-
-            try:
-                print(f"* Proxy configuration refreshed for user {user} due to web dashboard settings change ({current_version})")
-                log_activity(f"Proxy configuration refreshed via web dashboard ({current_version})", user=user)
-                set_instaloader_proxies(bot)
-            except Exception as e:
-                error_msg = format_error_message(e)
-                print(f"* Error refreshing proxies for {user}: {error_msg}")
-                log_activity(f"Proxy refresh failed: {error_msg}", user=user, level='error')
+        refresh_proxy_if_needed(bot, user)
 
         reset_thread_output()
         if WEB_DASHBOARD_ENABLED:
@@ -8874,20 +8904,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     manual_override_active = True
                     break
 
-                # Process proxy refresh
-                with PROXY_REFRESH_LOCK:
-                    current_version = PROXY_REFRESH_VERSION
-
-                if getattr(_thread_local, 'last_proxy_version', -1) != current_version:
-                    _thread_local.last_proxy_version = current_version
-                    try:
-                        print(f"* Proxy configuration refreshed for user {user} due to web dashboard settings change ({current_version})")
-                        log_activity(f"Proxy configuration refreshed via web dashboard ({current_version})", user=user)
-                        set_instaloader_proxies(bot)
-                    except Exception as e:
-                        error_msg = format_error_message(e)
-                        print(f"* Error refreshing proxies for {user}: {error_msg}")
-                        log_activity(f"Proxy refresh failed: {error_msg}", user=user, level='error')
+                # Check for proxy changes from web dashboard
+                refresh_proxy_if_needed(bot, user)
                     
                 # Sleep in 1-second increments for responsiveness
                 sleep_chunk = min(1, sleep_remaining)
