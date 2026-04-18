@@ -1438,6 +1438,41 @@
                     </div>
                 </div>
 
+                <!-- Proxy Settings Card -->
+                <div class="card">
+                    <div class="card-title">Proxy Settings</div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Proxies Enabled for Instagram</h4>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="proxy-enabled">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Proxies Enabled for Webhooks</h4>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="proxy-webhooks">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin: 10px 0;">
+                        <label class="form-label">Proxy URL</label>
+                        <input type="text" class="form-input" id="proxy-url"
+                            placeholder="">
+                    </div>
+                    <div class="form-group" style="margin: 10px 0;">
+                        <label class="form-label">Proxy Certificate (optional)</label>
+                        <input type="text" class="form-input" id="proxy-cert"
+                            placeholder="">
+                    </div>
+                    <div class="form-group" style="margin: 10px 0;">
+                        <label class="form-label"><BR><b>Note:</b><BR>Proxy changes take place after existing network activity completes.</label>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1908,12 +1943,16 @@
                 { l: 'Output Logging', v: config.logging_enabled },
                 { l: 'Output Dir', v: (config.output_dir === '.' || !config.output_dir) ? '-' : config.output_dir },
                 { l: 'Templates', v: config.template_dir },
-                { l: 'Webhook', v: config.webhook_enabled },
-                { l: 'Webhook Status', v: config.webhook_status ? 'Enabled' : 'Disabled' },
-                { l: 'Webhook Followers', v: config.webhook_followers ? 'Enabled' : 'Disabled' },
-                { l: 'Webhook Errors', v: config.webhook_errors ? 'Enabled' : 'Disabled' },
-                { l: 'Verbose Mode', v: config.verbose_mode },
                 { l: 'Debug Mode', v: config.debug_mode },
+                { l: 'Verbose Mode', v: config.verbose_mode },
+                { l: 'Webhook', v: config.webhook_enabled },
+                { l: 'Proxy for Instagram', v: config.proxy_enabled ? 'Enabled' : 'Disabled'  },
+                { l: 'Webhook Status', v: config.webhook_status ? 'Enabled' : 'Disabled' },
+                { l: 'Proxy for Webhooks', v: config.proxy_webhooks ? 'Enabled' : 'Disabled' },
+                { l: 'Webhook Followers', v: config.webhook_followers ? 'Enabled' : 'Disabled' },
+				{ l: 'Proxy URL', v: config.proxy_url ? config.proxy_url.substring(0, 50) + (config.proxy_url.length > 50 ? '...' : '') : '' },
+                { l: 'Webhook Errors', v: config.webhook_errors ? 'Enabled' : 'Disabled' },
+                { l: 'Proxy Certificate', v: config.proxy_cert },
             ];
 
             // Environment specific items
@@ -2136,6 +2175,11 @@
             document.getElementById('webhook-followers').checked = s.webhook_followers || false;
             document.getElementById('webhook-errors').checked = s.webhook_errors || false;
 
+            document.getElementById('proxy-enabled').checked = s.proxy_enabled || false;
+            document.getElementById('proxy-url').value = s.proxy_url || '';
+            document.getElementById('proxy-cert').value = s.proxy_cert || '';
+            document.getElementById('proxy-webhooks').checked = s.proxy_webhooks || false;
+
             document.getElementById('be-human').checked = s.be_human || false;
             document.getElementById('skip-session-login').checked = s.skip_session_login || false;
             document.getElementById('profile-pic-changes').checked = s.profile_pic_changes || false;
@@ -2344,6 +2388,11 @@
                 webhook_status: document.getElementById('webhook-status').checked,
                 webhook_followers: document.getElementById('webhook-followers').checked,
                 webhook_errors: document.getElementById('webhook-errors').checked,
+
+                proxy_enabled: document.getElementById('proxy-enabled').checked,
+                proxy_url: document.getElementById('proxy-url').value,
+                proxy_cert: document.getElementById('proxy-cert').value,
+                proxy_webhooks: document.getElementById('proxy-webhooks').checked,
 
                 be_human: document.getElementById('be-human').checked,
                 skip_session_login: document.getElementById('skip-session-login').checked,
