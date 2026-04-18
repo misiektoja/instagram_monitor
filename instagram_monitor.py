@@ -3484,7 +3484,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                 final_headers['User-Agent'] = f"InstagramMonitor/{VERSION}"
 
             # Some proxies don't have support for POST
-            if PROXY_ENABLED and not PROXY_WEBHOOKS:
+            if PROXY_ENABLED and PROXY_WEBHOOKS:
                 final_post_proxy = get_proxies()
                 final_post_proxy_ssl = get_proxies_ssl()
             else:
