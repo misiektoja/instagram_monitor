@@ -6134,6 +6134,9 @@ def hours_to_check():
     # - Ranges can overlap; we de-duplicate
     # - Misconfigured ranges (e.g., MAX < MIN) will produce an empty list
     # - Invalid hours (outside 0-23) are ignored
+    if not CHECK_POSTS_IN_HOURS_RANGE:
+        return list(range(24))
+
     hours = set()
 
     # If MIN and MAX are both 0, we consider the range disabled
