@@ -181,7 +181,7 @@ ENABLE_JITTER = False
 # Set to True to enable verbose output for HTTP jitter/back-off wrappers
 JITTER_VERBOSE = False
 
-# Optional: Enable proxy suppport for networking traffic
+# Optional: Enable proxy support for networking traffic
 PROXY_ENABLED = False
 # URL for proxy (required if using proxies)
 PROXY_URL = ""
@@ -1510,15 +1510,15 @@ def create_web_dashboard_app():
                     processed_val = max(0, min(processed_val, 3600))  # Max 1 hour to prevent excessive randomization
                     if processed_val == 3600:
                         note = " (max 3600s limit)"
-                elif key =='webhook_url':
+                elif key == 'webhook_url':
                     if processed_val and not validate_webhook_url(processed_val):
                         print(f"* Error: Invalid webhook URL format. Must be HTTPS or HTTP URL. '{processed_val}'")
                         return current_val
-                elif key =='proxy_url':
+                elif key == 'proxy_url':
                     if processed_val and not validate_webhook_url(processed_val):
                         print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{processed_val}'")
                         return current_val
-                elif key =='proxy_cert':
+                elif key == 'proxy_cert':
                     if processed_val and not os.path.isfile(processed_val):
                         print(f"* Error: Proxy certificate file does not exist. '{processed_val}'")
                         return current_val
@@ -1548,17 +1548,20 @@ def create_web_dashboard_app():
         old_proxy_webhooks = PROXY_WEBHOOKS
         old_proxy_url = PROXY_URL
         old_proxy_cert = PROXY_CERT_PATH
-        PROXY_ENABLED = bool(update_setting('proxy_enabled', PROXY_ENABLED, bool))
+        # Apply URL/cert first so we can validate before honoring an enable toggle
         PROXY_URL = str(update_setting('proxy_url', PROXY_URL, str))
         PROXY_CERT_PATH = str(update_setting('proxy_cert', PROXY_CERT_PATH, str))
         PROXY_WEBHOOKS = bool(update_setting('proxy_webhooks', PROXY_WEBHOOKS, bool))
+        requested_proxy_enabled = bool(update_setting('proxy_enabled', PROXY_ENABLED, bool))
+        if requested_proxy_enabled and not (PROXY_URL and validate_webhook_url(PROXY_URL)):
+            print("* Error: Cannot enable proxy without a valid PROXY_URL. Keeping proxy disabled.")
+            PROXY_ENABLED = False
+        else:
+            PROXY_ENABLED = requested_proxy_enabled
 
         # Signal refresh if at least one proxy-related setting was successfully changed
         proxy_settings_changed = (
-            PROXY_ENABLED != old_proxy_enabled or
-            PROXY_URL != old_proxy_url or
-            PROXY_CERT_PATH != old_proxy_cert or
-            PROXY_WEBHOOKS != old_proxy_webhooks
+            PROXY_ENABLED != old_proxy_enabled or PROXY_URL != old_proxy_url or PROXY_CERT_PATH != old_proxy_cert or PROXY_WEBHOOKS != old_proxy_webhooks
         )
         if proxy_settings_changed:
             with PROXY_REFRESH_LOCK:
@@ -2643,6 +2646,7 @@ _CHECK_INTERVAL_RE = re.compile(r"^(\s*\*?\s*Check interval:\s+)(.*?)(\s+\(.*?\)
 _PROXY_IP_RE = re.compile(r"proxy IP address of [\d.]+", re.IGNORECASE)
 _IP_ADDRESS_RE = re.compile(r"(?<!://)\b(\d{1,3}\.){3}\d{1,3}\b(?!:\d+/?)")
 
+
 # Builds ANSI escape sequence from a style description string
 def _build_ansi_sequence(style_str):
     if not style_str:
@@ -2760,7 +2764,7 @@ def _colorize_line(line):
             return line
         else:
             return _apply_style_nested(line, "proxy_ip")
-        
+
     # Case for list items (e.g. - username [ link ]) - color username yellow
     if line.strip().startswith("- ") and " [ http" in line:
         # Highlight the part before the bracket in yellow
@@ -3490,7 +3494,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
             else:
                 final_post_proxy = {}
                 final_post_proxy_ssl = True
-            
+
             # Handle Discord-style Local Files (embeds with image attachment)
             if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
                 filename = os.path.basename(local_image_file)
@@ -3543,26 +3547,23 @@ def get_ip_address(max_retries=3, timeout=10):
             return ip_response.json()['origin']
         except Exception as e:
             pass
-            # if attempt < max_retries:
-                # debug_print(f"get_ip_address attempt {attempt}/{max_retries} failed: {e}, retrying...")
-            # else:
-                # debug_print(f"get_ip_address failed after {max_retries} attempts: {e}")
     return "(unavailable: timeout)"
 
 
 def get_proxies():
     if PROXY_ENABLED:
         return {'http': PROXY_URL, 'https': PROXY_URL}
-    return({})
+    return ({})
 
 
 def get_proxies_ssl():
     if PROXY_ENABLED and PROXY_CERT_PATH:
         return PROXY_CERT_PATH
-    return(True)
+    return (True)
 
 
 def set_instaloader_proxies(instabot):
+    instabot.context._session.proxies.clear()
     instabot.context._session.proxies.update(get_proxies())
     instabot.context._session.verify = get_proxies_ssl()
 
@@ -8906,7 +8907,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 # Check for proxy changes from web dashboard
                 refresh_proxy_if_needed(bot, user)
-                    
+
                 # Sleep in 1-second increments for responsiveness
                 sleep_chunk = min(1, sleep_remaining)
                 time.sleep(sleep_chunk)
@@ -9270,7 +9271,7 @@ def run_main():
         dest="proxy_webhooks",
         action="store_true",
         default=None,
-        help="Disable use of proxy for post requests"
+        help="Enable use of proxy for webhook POST requests"
     )
 
     # Features & output
@@ -9584,7 +9585,7 @@ def run_main():
     if args.proxy_url:
         PROXY_URL = str(args.proxy_url or "")
 
-    if args.proxy_cert_path is True:
+    if args.proxy_cert_path:
         PROXY_CERT_PATH = str(args.proxy_cert_path or "")
 
     if args.proxy_webhooks is True:
@@ -9983,11 +9984,11 @@ def run_main():
     print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
     print(f"* Proxies:\t\t\t\t" + ("Enabled" if PROXY_ENABLED else "Disabled"))
     if PROXY_ENABLED:
-	    ipaddr = get_ip_address()
-	    print(f"*   Proxy IP Address:\t\t\t{ipaddr}")
-	    print(f"*   Proxy URL:\t\t\t\t" + (f"{PROXY_URL[:50]}" if PROXY_ENABLED else "Disabled"))
-	    print(f"*   Proxy Certificate:\t\t\t" + (f"{PROXY_CERT_PATH}" if PROXY_ENABLED else "Disabled"))
-	    print(f"*   Proxy for Webhooks:\t\t\t" + ("Enabled" if PROXY_ENABLED else "Disabled"))
+        ipaddr = get_ip_address()
+        print(f"*   Proxy IP Address:\t\t\t{ipaddr}")
+        print(f"*   Proxy URL:\t\t\t\t{PROXY_URL[:50]}")
+        print(f"*   Proxy Certificate:\t\t\t{PROXY_CERT_PATH or '-'}")
+        print(f"*   Proxy for Webhooks:\t\t\t" + ("Enabled" if PROXY_WEBHOOKS else "Disabled"))
     print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}")
     print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
