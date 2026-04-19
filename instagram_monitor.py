@@ -182,7 +182,7 @@ ENABLE_JITTER = False
 JITTER_VERBOSE = False
 
 # Optional Privacy Substitutions
-# This allows you to substitute any string for another in all messaging, logging, and emailing.
+# This allows you to substitute any string for another in all messaging, logging, webhooks, and emails.
 # For instance, you may want to change a particular Instagram username to a more friendy name, or you could mask a name.
 # 
 # Provide a list of (search, replace) tuples. Any search term will be substituted with the replace term.
