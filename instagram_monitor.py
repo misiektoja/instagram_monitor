@@ -8651,7 +8651,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         else:
             if HOURS_VERBOSE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE) or DEBUG_MODE:
                 print(f"* Skipping updates for {user}, current hour: {int(cur_h)}, allowed: [{format_hours_as_ranges(hours_to_check())}]")
-                # print("─" * HORIZONTAL_LINE) #jmk
+                # print("─" * HORIZONTAL_LINE)
 
         alive_counter += 1
 
