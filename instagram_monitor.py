@@ -3564,7 +3564,7 @@ def convert_utc_str_to_tz_datetime(dt_str):
 # Returns the current date/time in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
     fmt = "%d %b %Y, %I:%M:%S %p" if TIME_FORMAT_12H else "%d %b %Y, %H:%M:%S"
-    elapsed_time_script = time.time() - start_time_script
+    elapsed_time_script = int(time.time() - start_time_script)
     return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]} {now_local_naive().strftime(fmt)} (elapsed: {display_time(elapsed_time_script)})')
 
 
