@@ -1945,13 +1945,15 @@
                 { l: 'Templates', v: config.template_dir },
                 { l: 'Debug Mode', v: config.debug_mode },
                 { l: 'Verbose Mode', v: config.verbose_mode },
+                // Webhook/Proxy rows are alternated intentionally so the 2-column
+                // settings-grid pairs each webhook row with its proxy counterpart
                 { l: 'Webhook', v: config.webhook_enabled },
-                { l: 'Webhook Status', v: config.webhook_status ? 'Enabled' : 'Disabled' },
-                { l: 'Webhook Followers', v: config.webhook_followers ? 'Enabled' : 'Disabled' },
-                { l: 'Webhook Errors', v: config.webhook_errors ? 'Enabled' : 'Disabled' },
                 { l: 'Proxy for Instagram', v: config.proxy_enabled ? 'Enabled' : 'Disabled' },
+                { l: 'Webhook Status', v: config.webhook_status ? 'Enabled' : 'Disabled' },
                 { l: 'Proxy for Webhooks', v: config.proxy_webhooks ? 'Enabled' : 'Disabled' },
+                { l: 'Webhook Followers', v: config.webhook_followers ? 'Enabled' : 'Disabled' },
                 { l: 'Proxy URL', v: config.proxy_url ? config.proxy_url.substring(0, 50) + (config.proxy_url.length > 50 ? '...' : '') : '' },
+                { l: 'Webhook Errors', v: config.webhook_errors ? 'Enabled' : 'Disabled' },
                 { l: 'Proxy Certificate', v: config.proxy_cert || '' },
             ];
 
