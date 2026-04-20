@@ -641,6 +641,7 @@ JITTER_VERBOSE = False
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
+IP_ADDRESS_URL = ""
 CHECK_POSTS_IN_HOURS_RANGE = False
 HOURS_VERBOSE = False
 MIN_H1 = 0
@@ -3541,13 +3542,36 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
 
 
 def get_ip_address(max_retries=3, timeout=10):
+    last_err = None
     for attempt in range(1, max_retries + 1):
         try:
             ip_response = req.get(IP_ADDRESS_URL, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
             return ip_response.json()['origin']
         except Exception as e:
-            pass
-    return "(unavailable: timeout)"
+            last_err = e
+            if attempt < max_retries:
+                debug_print(f"get_ip_address attempt {attempt}/{max_retries} failed: {e}, retrying...")
+            else:
+                debug_print(f"get_ip_address failed after {max_retries} attempts: {e}")
+    return f"(unavailable: {format_error_message(last_err) if last_err else 'unknown error'})"
+
+
+# Returns a display-safe copy of a URL with any userinfo (user:password@) masked
+def mask_url_credentials(url):
+    if not url:
+        return url
+    try:
+        from urllib.parse import urlparse, urlunparse
+        parsed = urlparse(url)
+        if not parsed.username and not parsed.password:
+            return url
+        host = parsed.hostname or ""
+        if parsed.port:
+            host = f"{host}:{parsed.port}"
+        netloc = f"***:***@{host}" if parsed.password else f"***@{host}"
+        return urlunparse(parsed._replace(netloc=netloc))
+    except Exception:
+        return "***"
 
 
 def get_proxies():
@@ -5469,7 +5493,7 @@ def generate_config_dashboard(target_data, config_data):
         ("Webhook Errors", str(config_data.get('webhook_errors', '-'))),
         ("Proxy for Instagram", str(config_data.get('proxy_enabled', '-'))),
         ("Proxy for Webhooks", str(config_data.get('proxy_webhooks', '-'))),
-        ("Proxy URL", str(config_data.get('proxy_url', '-'))[:50]),
+        ("Proxy URL", mask_url_credentials(str(config_data.get('proxy_url', '-')))[:50]),
         ("Proxy Certificate", str(config_data.get('proxy_cert', '-'))),
     ]
 
@@ -7567,8 +7591,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     if signal_loading_complete is not None:
         signal_loading_complete.set()
 
-    # Show proxy IP at startup
-    if PROXY_ENABLED:
+    # Show proxy IP at per-user startup only in verbose/debug (the run_main banner already shows it once)
+    if PROXY_ENABLED and (VERBOSE_MODE or DEBUG_MODE):
         ipaddr = get_ip_address()
         print(f"* Proxy IP address is {ipaddr}")
 
@@ -9985,8 +10009,9 @@ def run_main():
     print(f"* Proxies:\t\t\t\t" + ("Enabled" if PROXY_ENABLED else "Disabled"))
     if PROXY_ENABLED:
         ipaddr = get_ip_address()
+        masked_proxy_url = mask_url_credentials(PROXY_URL)
         print(f"*   Proxy IP Address:\t\t\t{ipaddr}")
-        print(f"*   Proxy URL:\t\t\t\t{PROXY_URL[:50]}")
+        print(f"*   Proxy URL:\t\t\t\t{masked_proxy_url[:50]}")
         print(f"*   Proxy Certificate:\t\t\t{PROXY_CERT_PATH or '-'}")
         print(f"*   Proxy for Webhooks:\t\t\t" + ("Enabled" if PROXY_WEBHOOKS else "Disabled"))
     print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
