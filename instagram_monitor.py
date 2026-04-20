@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.2
+v3.3
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -20,7 +20,7 @@ flask (optional - for web dashboard)
 rich (optional - for terminal dashboard)
 """
 
-VERSION = "3.2"
+VERSION = "3.3"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -182,6 +182,11 @@ ENABLE_JITTER = False
 JITTER_VERBOSE = False
 
 # Optional: Enable proxy support for networking traffic
+#
+# Note: even when PROXY_ENABLED is False, the underlying 'requests' library still
+# honors HTTP_PROXY / HTTPS_PROXY / NO_PROXY environment variables by default.
+# If those are set in your shell or systemd unit, they will silently be applied.
+# Unset them (or run with env -i) to guarantee a direct connection
 PROXY_ENABLED = False
 # URL for proxy (required if using proxies)
 PROXY_URL = ""
@@ -1469,7 +1474,7 @@ def create_web_dashboard_app():
         """
         global INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
         global STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_URL
-        global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS
+        global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, PROXY_REFRESH_VERSION
         global FOLLOWERS_CHURN_DETECTION, DEBUG_MODE, SESSION_USERNAME, VERBOSE_MODE
         global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SSL, SENDER_EMAIL, RECEIVER_EMAIL
         global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS
@@ -1517,12 +1522,14 @@ def create_web_dashboard_app():
                         return current_val
                 elif key == 'proxy_url':
                     if processed_val and not validate_webhook_url(processed_val):
-                        print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{processed_val}'")
+                        print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{mask_url_credentials(processed_val)}'")
                         return current_val
                 elif key == 'proxy_cert':
-                    if processed_val and not os.path.isfile(processed_val):
-                        print(f"* Error: Proxy certificate file does not exist. '{processed_val}'")
-                        return current_val
+                    if processed_val:
+                        processed_val = os.path.expanduser(processed_val)
+                        if not os.path.isfile(processed_val):
+                            print(f"* Error: Proxy certificate file does not exist. '{processed_val}'")
+                            return current_val
 
                 changes.append(f"'{key}' changed from {current_val} to {processed_val}{note}")
                 return processed_val
@@ -1566,7 +1573,6 @@ def create_web_dashboard_app():
         )
         if proxy_settings_changed:
             with PROXY_REFRESH_LOCK:
-                global PROXY_REFRESH_VERSION
                 PROXY_REFRESH_VERSION += 1
             print(f"* Proxy settings changed via web dashboard (new version: {PROXY_REFRESH_VERSION})")
 
@@ -3546,7 +3552,20 @@ def get_ip_address(max_retries=3, timeout=10):
     for attempt in range(1, max_retries + 1):
         try:
             ip_response = req.get(IP_ADDRESS_URL, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
-            return ip_response.json()['origin']
+            ip_response.raise_for_status()
+            try:
+                data = ip_response.json()
+            except ValueError:
+                data = None
+            if isinstance(data, dict):
+                for key in ('origin', 'ip', 'ip_addr', 'address', 'query'):
+                    val = data.get(key)
+                    if isinstance(val, str) and val.strip():
+                        return val.strip().split(',')[0].strip()
+            text = (ip_response.text or "").strip()
+            if text:
+                return text.splitlines()[0].strip()
+            raise ValueError(f"empty response body from {IP_ADDRESS_URL}")
         except Exception as e:
             last_err = e
             if attempt < max_retries:
@@ -3577,13 +3596,13 @@ def mask_url_credentials(url):
 def get_proxies():
     if PROXY_ENABLED:
         return {'http': PROXY_URL, 'https': PROXY_URL}
-    return ({})
+    return {}
 
 
 def get_proxies_ssl():
     if PROXY_ENABLED and PROXY_CERT_PATH:
         return PROXY_CERT_PATH
-    return (True)
+    return True
 
 
 def set_instaloader_proxies(instabot):
@@ -5493,7 +5512,7 @@ def generate_config_dashboard(target_data, config_data):
         ("Webhook Errors", str(config_data.get('webhook_errors', '-'))),
         ("Proxy for Instagram", str(config_data.get('proxy_enabled', '-'))),
         ("Proxy for Webhooks", str(config_data.get('proxy_webhooks', '-'))),
-        ("Proxy URL", mask_url_credentials(str(config_data.get('proxy_url', '-')))[:50]),
+        ("Proxy URL", str(config_data.get('proxy_url', '-'))[:50]),
         ("Proxy Certificate", str(config_data.get('proxy_cert', '-'))),
     ]
 
@@ -6258,7 +6277,7 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'webhook_followers': WEBHOOK_FOLLOWERS_NOTIFICATION,
         'webhook_errors': WEBHOOK_ERROR_NOTIFICATION,
         'proxy_enabled': PROXY_ENABLED,
-        'proxy_url': PROXY_URL,
+        'proxy_url': mask_url_credentials(PROXY_URL),
         'proxy_cert': PROXY_CERT_PATH,
         'proxy_webhooks': PROXY_WEBHOOKS,
         'email_notifications': STATUS_NOTIFICATION,
@@ -9620,7 +9639,7 @@ def run_main():
             print(f"* Error: Proxies are enabled but PROXY_URL is missing! Please set it in config file or via --proxy-url flag")
             sys.exit(1)
         if not validate_webhook_url(PROXY_URL):
-            print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{PROXY_URL}'")
+            print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{mask_url_credentials(PROXY_URL)}'")
             sys.exit(1)
         if PROXY_CERT_PATH:
             PROXY_CERT_PATH = os.path.expanduser(PROXY_CERT_PATH)
