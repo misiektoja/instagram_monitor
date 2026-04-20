@@ -1946,13 +1946,13 @@
                 { l: 'Debug Mode', v: config.debug_mode },
                 { l: 'Verbose Mode', v: config.verbose_mode },
                 { l: 'Webhook', v: config.webhook_enabled },
-                { l: 'Proxy for Instagram', v: config.proxy_enabled ? 'Enabled' : 'Disabled'  },
                 { l: 'Webhook Status', v: config.webhook_status ? 'Enabled' : 'Disabled' },
-                { l: 'Proxy for Webhooks', v: config.proxy_webhooks ? 'Enabled' : 'Disabled' },
                 { l: 'Webhook Followers', v: config.webhook_followers ? 'Enabled' : 'Disabled' },
-				{ l: 'Proxy URL', v: config.proxy_url ? config.proxy_url.substring(0, 50) + (config.proxy_url.length > 50 ? '...' : '') : '' },
                 { l: 'Webhook Errors', v: config.webhook_errors ? 'Enabled' : 'Disabled' },
-                { l: 'Proxy Certificate', v: config.proxy_cert },
+                { l: 'Proxy for Instagram', v: config.proxy_enabled ? 'Enabled' : 'Disabled' },
+                { l: 'Proxy for Webhooks', v: config.proxy_webhooks ? 'Enabled' : 'Disabled' },
+                { l: 'Proxy URL', v: config.proxy_url ? config.proxy_url.substring(0, 50) + (config.proxy_url.length > 50 ? '...' : '') : '' },
+                { l: 'Proxy Certificate', v: config.proxy_cert || '' },
             ];
 
             // Environment specific items
