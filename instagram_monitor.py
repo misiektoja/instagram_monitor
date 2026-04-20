@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.2
+v3.3
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -20,7 +20,7 @@ flask (optional - for web dashboard)
 rich (optional - for terminal dashboard)
 """
 
-VERSION = "3.2"
+VERSION = "3.3"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -181,6 +181,20 @@ ENABLE_JITTER = False
 # Set to True to enable verbose output for HTTP jitter/back-off wrappers
 JITTER_VERBOSE = False
 
+# Optional: Enable proxy support for networking traffic
+#
+# Note: even when PROXY_ENABLED is False, the underlying 'requests' library still
+# honors HTTP_PROXY / HTTPS_PROXY / NO_PROXY environment variables by default.
+# If those are set in your shell or systemd unit, they will silently be applied.
+# Unset them (or run with env -i) to guarantee a direct connection
+PROXY_ENABLED = False
+# URL for proxy (required if using proxies)
+PROXY_URL = ""
+# Provide a local SSL certificate to use with proxy
+PROXY_CERT_PATH = ""
+# Enables use of proxy for Webhooks (some proxies don't support POST requests)
+PROXY_WEBHOOKS = False
+
 # Optional: specify web browser user agent manually
 #
 # For session login using Firefox cookies, ensure this matches your Firefox web browser's user agent
@@ -212,6 +226,9 @@ CHECK_INTERNET_URL = 'https://www.instagram.com/'
 
 # Timeout used when checking initial internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
+
+# URL used to determine IP address
+IP_ADDRESS_URL = 'https://httpbin.org/ip'
 
 # Limit fetching updates to specific hours of the day?
 # If True, the tool will only fetch updates within the defined hour ranges below
@@ -493,6 +510,13 @@ COLOR_THEME = {
     # Boolean values
     "boolean_true": "green",
     "boolean_false": "red",
+    # Counters / Diffs
+    "count_up": "green",
+    "count_down": "red",
+    "link": "blue underline",
+    # Proxies
+    "proxy_ip": "yellow",
+    "ip_address": "yellow",
 }
 """
 
@@ -622,6 +646,7 @@ JITTER_VERBOSE = False
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
+IP_ADDRESS_URL = ""
 CHECK_POSTS_IN_HOURS_RANGE = False
 HOURS_VERBOSE = False
 MIN_H1 = 0
@@ -651,6 +676,10 @@ WEBHOOK_AVATAR_URL = ""
 WEBHOOK_STATUS_NOTIFICATION = True
 WEBHOOK_FOLLOWERS_NOTIFICATION = True
 WEBHOOK_ERROR_NOTIFICATION = False
+PROXY_ENABLED = False
+PROXY_URL = ""
+PROXY_CERT_PATH = ""
+PROXY_WEBHOOKS = False
 COLORED_OUTPUT = False
 COLOR_THEME = {}
 DEBUG_MODE = False
@@ -672,7 +701,7 @@ exec(CONFIG_BLOCK, globals())
 DEFAULT_CONFIG_FILENAME = "instagram_monitor.conf"
 
 # List of secret keys to load from env/config
-SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD", "WEBHOOK_URL")
+SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD", "WEBHOOK_URL", "PROXY_URL")
 
 # Default value for network-related timeouts in functions
 FUNCTION_TIMEOUT = 15
@@ -793,6 +822,8 @@ import hashlib
 WEB_DASHBOARD_DATA_LOCK = threading.RLock()
 DASHBOARD_DATA_LOCK = threading.RLock()
 SESSION_REFRESHED_EVENT = threading.Event()  # Signals monitoring threads to reload session
+PROXY_REFRESH_VERSION = 0
+PROXY_REFRESH_LOCK = threading.Lock()
 
 # Initialize manual check trigger event (thread-safe)
 MANUAL_CHECK_TRIGGERED: threading.Event = threading.Event()
@@ -1443,6 +1474,7 @@ def create_web_dashboard_app():
         """
         global INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
         global STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_URL
+        global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, PROXY_REFRESH_VERSION
         global FOLLOWERS_CHURN_DETECTION, DEBUG_MODE, SESSION_USERNAME, VERBOSE_MODE
         global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SSL, SENDER_EMAIL, RECEIVER_EMAIL
         global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS
@@ -1486,7 +1518,18 @@ def create_web_dashboard_app():
                         note = " (max 3600s limit)"
                 elif key == 'webhook_url':
                     if processed_val and not validate_webhook_url(processed_val):
+                        print(f"* Error: Invalid webhook URL format. Must be HTTPS or HTTP URL. '{processed_val}'")
                         return current_val
+                elif key == 'proxy_url':
+                    if processed_val and not validate_webhook_url(processed_val):
+                        print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{mask_url_credentials(processed_val)}'")
+                        return current_val
+                elif key == 'proxy_cert':
+                    if processed_val:
+                        processed_val = os.path.expanduser(processed_val)
+                        if not os.path.isfile(processed_val):
+                            print(f"* Error: Proxy certificate file does not exist. '{processed_val}'")
+                            return current_val
 
                 changes.append(f"'{key}' changed from {current_val} to {processed_val}{note}")
                 return processed_val
@@ -1507,6 +1550,31 @@ def create_web_dashboard_app():
         WEBHOOK_STATUS_NOTIFICATION = bool(update_setting('webhook_status', WEBHOOK_STATUS_NOTIFICATION, bool))
         WEBHOOK_FOLLOWERS_NOTIFICATION = bool(update_setting('webhook_followers', WEBHOOK_FOLLOWERS_NOTIFICATION, bool))
         WEBHOOK_ERROR_NOTIFICATION = bool(update_setting('webhook_errors', WEBHOOK_ERROR_NOTIFICATION, bool))
+
+        # Proxies
+        old_proxy_enabled = PROXY_ENABLED
+        old_proxy_webhooks = PROXY_WEBHOOKS
+        old_proxy_url = PROXY_URL
+        old_proxy_cert = PROXY_CERT_PATH
+        # Apply URL/cert first so we can validate before honoring an enable toggle
+        PROXY_URL = str(update_setting('proxy_url', PROXY_URL, str))
+        PROXY_CERT_PATH = str(update_setting('proxy_cert', PROXY_CERT_PATH, str))
+        PROXY_WEBHOOKS = bool(update_setting('proxy_webhooks', PROXY_WEBHOOKS, bool))
+        requested_proxy_enabled = bool(update_setting('proxy_enabled', PROXY_ENABLED, bool))
+        if requested_proxy_enabled and not (PROXY_URL and validate_webhook_url(PROXY_URL)):
+            print("* Error: Cannot enable proxy without a valid PROXY_URL. Keeping proxy disabled.")
+            PROXY_ENABLED = False
+        else:
+            PROXY_ENABLED = requested_proxy_enabled
+
+        # Signal refresh if at least one proxy-related setting was successfully changed
+        proxy_settings_changed = (
+            PROXY_ENABLED != old_proxy_enabled or PROXY_URL != old_proxy_url or PROXY_CERT_PATH != old_proxy_cert or PROXY_WEBHOOKS != old_proxy_webhooks
+        )
+        if proxy_settings_changed:
+            with PROXY_REFRESH_LOCK:
+                PROXY_REFRESH_VERSION += 1
+            print(f"* Proxy settings changed via web dashboard (new version: {PROXY_REFRESH_VERSION})")
 
         # Behavior
         FOLLOWERS_CHURN_DETECTION = bool(update_setting('followers_churn', FOLLOWERS_CHURN_DETECTION, bool))
@@ -1573,6 +1641,7 @@ def create_web_dashboard_app():
     def api_settings():  # type: ignore[return]
         global INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
         global STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_URL
+        global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS
         global FOLLOWERS_CHURN_DETECTION, DEBUG_MODE, SESSION_USERNAME, VERBOSE_MODE
         global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SSL, SENDER_EMAIL, RECEIVER_EMAIL
         global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS
@@ -1597,6 +1666,10 @@ def create_web_dashboard_app():
                 'webhook_status': WEBHOOK_STATUS_NOTIFICATION,
                 'webhook_followers': WEBHOOK_FOLLOWERS_NOTIFICATION,
                 'webhook_errors': WEBHOOK_ERROR_NOTIFICATION,
+                'proxy_enabled': PROXY_ENABLED,
+                'proxy_url': PROXY_URL,
+                'proxy_cert': PROXY_CERT_PATH,
+                'proxy_webhooks': PROXY_WEBHOOKS,
                 'followers_churn': FOLLOWERS_CHURN_DETECTION,
                 'verbose_mode': VERBOSE_MODE,
                 'debug_mode': DEBUG_MODE,
@@ -2522,6 +2595,9 @@ DEFAULT_COLOR_THEME = {
     "count_up": "green",
     "count_down": "red",
     "link": "blue underline",
+    # Proxies
+    "proxy_ip": "yellow",
+    "ip_address": "yellow",
 }
 
 ANSI_RESET = "\033[0m"
@@ -2567,13 +2643,15 @@ _HOUR_RANGE_RE = re.compile(r"\b\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]
 _URL_RE = re.compile(r"(https?://[^\s\]]+)")
 _ONLINE_WORD_RE = re.compile(r"(\b(?!stop\s+)(?:online|Yes)\b)", re.IGNORECASE)
 _OFFLINE_WORD_RE = re.compile(r"(\b(?:offline|No)\b)", re.IGNORECASE)
-_BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b")
-_BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b")
+_BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
+_BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
 _STORY_URL_RE = re.compile(r"(https?://\S+)")
 _QUOTED_CONTENT_RE = re.compile(r"(['\"])((?![^'\"]*[._/])[^'\"]+)\1")
 _STATUS_CHANGE_RE = re.compile(r"^(.*? changed (?:status|mode|bio|followers|followings|profile picture) from\s+)(.+?)(\s+to\s+)(.+?)(.*)$")
 _ACTIVITY_HEADER_RE = re.compile(r"(?i).*(story for user|Newest post|Followers number changed|Followings number changed|Bio changed for|New post for user|number changed|number of|Followings changed|Followers changed|name changed to|has changed for user|has been updated for user|changed profile picture|removed profile picture|set profile picture|update date changed|has new story item|has\s+\d+\s+story\s+items?|story items:|disappeared)(er|ing)?s?.*", re.IGNORECASE)
 _CHECK_INTERVAL_RE = re.compile(r"^(\s*\*?\s*Check interval:\s+)(.*?)(\s+\(.*?\)\s*)$")
+_PROXY_IP_RE = re.compile(r"proxy IP address of [\d.]+", re.IGNORECASE)
+_IP_ADDRESS_RE = re.compile(r"(?<!://)\b(\d{1,3}\.){3}\d{1,3}\b(?!:\d+/?)")
 
 
 # Builds ANSI escape sequence from a style description string
@@ -2686,6 +2764,14 @@ def _colorize_line(line):
 
     is_summary_line = any(line.startswith(p) for p in ("* Output directory:", "* Hours for fetching:", "* Skip fetching:", "* Email notifications:", "* Recheck All:", "* Followers: reported", "* Followings: reported", "* Followers (", "* Followings (", "User ID:", "* Browser user agent:", "* Mobile user agent:"))
 
+    if line.startswith(("* IP Address:", "*   Proxy", "* Proxy")):
+        parts = line.rsplit("\t", 1)
+        if len(parts) == 2:
+            line = parts[0] + "\t" + colorize("proxy_ip", parts[1])
+            return line
+        else:
+            return _apply_style_nested(line, "proxy_ip")
+
     # Case for list items (e.g. - username [ link ]) - color username yellow
     if line.strip().startswith("- ") and " [ http" in line:
         # Highlight the part before the bracket in yellow
@@ -2772,9 +2858,9 @@ def _colorize_line(line):
     line = _ONLINE_WORD_RE.sub(lambda mo: colorize("status_online", mo.group(0)), line)
     line = _OFFLINE_WORD_RE.sub(lambda mo: colorize("status_offline", mo.group(0)), line)
 
-    # If it's a summary line, we return after internal highlights
-    if is_summary_line:
-        return line
+    # Highlight proxy information
+    line = _PROXY_IP_RE.sub(lambda mo: colorize('proxy_ip', mo.group(0)), line)
+    line = _IP_ADDRESS_RE.sub(lambda mo: colorize('ip_address', mo.group(0)), line)
 
     # If it's a summary line, we return after internal highlights
     if is_summary_line:
@@ -2877,7 +2963,7 @@ class Logger(object):
 
             if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
                 # Suppress terminal writes only for the thread that currently owns a progress bar
-                if getattr(_thread_local, 'pbar', None) is None:
+                if (getattr(_thread_local, 'pbar', None) is None) and not pbar:
                     self.terminal.write(colorized_message)
                     self.terminal.flush()
 
@@ -2964,7 +3050,7 @@ def signal_handler(sig, frame, message=None):
 # Checks internet connectivity
 def check_internet(url=CHECK_INTERNET_URL, timeout=CHECK_INTERNET_TIMEOUT):
     try:
-        _ = req.get(url, headers={'User-Agent': USER_AGENT}, timeout=timeout)
+        _ = req.get(url, headers={'User-Agent': USER_AGENT}, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
         return True
     except req.RequestException as e:
         print(f"* No connectivity, please check your network:\n\n{e}")
@@ -3408,6 +3494,14 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
             if 'User-Agent' not in final_headers:
                 final_headers['User-Agent'] = f"InstagramMonitor/{VERSION}"
 
+            # Some proxies don't have support for POST
+            if PROXY_ENABLED and PROXY_WEBHOOKS:
+                final_post_proxy = get_proxies()
+                final_post_proxy_ssl = get_proxies_ssl()
+            else:
+                final_post_proxy = {}
+                final_post_proxy_ssl = True
+
             # Handle Discord-style Local Files (embeds with image attachment)
             if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
                 filename = os.path.basename(local_image_file)
@@ -3421,13 +3515,13 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                         "file": (filename, f, "image/jpeg"),
                         "payload_json": (None, json.dumps(final_payload))
                     }
-                    response = req.post(str(WEBHOOK_URL), headers=final_headers, files=files, timeout=10)
+                    response = req.post(str(WEBHOOK_URL), headers=final_headers, files=files, timeout=10, verify=final_post_proxy_ssl, proxies=final_post_proxy)
             # Handle other types
             else:
                 if isinstance(final_payload, str):
-                    response = req.post(WEBHOOK_URL, headers=final_headers, data=final_payload, timeout=10)
+                    response = req.post(WEBHOOK_URL, headers=final_headers, data=final_payload, timeout=10, verify=final_post_proxy_ssl, proxies=final_post_proxy)
                 else:
-                    response = req.post(WEBHOOK_URL, headers=final_headers, json=final_payload, timeout=10)
+                    response = req.post(WEBHOOK_URL, headers=final_headers, json=final_payload, timeout=10, verify=final_post_proxy_ssl, proxies=final_post_proxy)
 
             if response.status_code in (200, 204):
                 print("* Webhook notification sent successfully")
@@ -3451,6 +3545,91 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
             return 1
 
     return 1
+
+
+def get_ip_address(max_retries=3, timeout=10):
+    last_err = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            ip_response = req.get(IP_ADDRESS_URL, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
+            ip_response.raise_for_status()
+            try:
+                data = ip_response.json()
+            except ValueError:
+                data = None
+            if isinstance(data, dict):
+                for key in ('origin', 'ip', 'ip_addr', 'address', 'query'):
+                    val = data.get(key)
+                    if isinstance(val, str) and val.strip():
+                        return val.strip().split(',')[0].strip()
+            text = (ip_response.text or "").strip()
+            if text:
+                return text.splitlines()[0].strip()
+            raise ValueError(f"empty response body from {IP_ADDRESS_URL}")
+        except Exception as e:
+            last_err = e
+            if attempt < max_retries:
+                debug_print(f"get_ip_address attempt {attempt}/{max_retries} failed: {e}, retrying...")
+            else:
+                debug_print(f"get_ip_address failed after {max_retries} attempts: {e}")
+    return f"(unavailable: {format_error_message(last_err) if last_err else 'unknown error'})"
+
+
+# Returns a display-safe copy of a URL with any userinfo (user:password@) masked
+def mask_url_credentials(url):
+    if not url:
+        return url
+    try:
+        from urllib.parse import urlparse, urlunparse
+        parsed = urlparse(url)
+        if not parsed.username and not parsed.password:
+            return url
+        host = parsed.hostname or ""
+        if parsed.port:
+            host = f"{host}:{parsed.port}"
+        netloc = f"***:***@{host}" if parsed.password else f"***@{host}"
+        return urlunparse(parsed._replace(netloc=netloc))
+    except Exception:
+        return "***"
+
+
+def get_proxies():
+    if PROXY_ENABLED:
+        return {'http': PROXY_URL, 'https': PROXY_URL}
+    return {}
+
+
+def get_proxies_ssl():
+    if PROXY_ENABLED and PROXY_CERT_PATH:
+        return PROXY_CERT_PATH
+    return True
+
+
+def set_instaloader_proxies(instabot):
+    instabot.context._session.proxies.clear()
+    instabot.context._session.proxies.update(get_proxies())
+    instabot.context._session.verify = get_proxies_ssl()
+
+
+def refresh_proxy_if_needed(bot, user):
+    global PROXY_REFRESH_VERSION
+
+    # proxies can only change during runtime if web dashboard is used to make a settings change
+    if WEB_DASHBOARD_ENABLED:
+        with PROXY_REFRESH_LOCK:
+            current_version = PROXY_REFRESH_VERSION
+
+        if getattr(_thread_local, 'last_proxy_version', 0) != current_version:
+            _thread_local.last_proxy_version = current_version
+
+            try:
+                print(f"* Proxy configuration refreshed for user {user} due to web dashboard settings change (version {current_version})")
+                log_activity(f"Proxy configuration refreshed via web dashboard (version {current_version})", user=user)
+                set_instaloader_proxies(bot)
+            except Exception as e:
+                error_msg = format_error_message(e)
+                print(f"* Error refreshing proxies for {user}: {error_msg}")
+                log_activity(f"Proxy refresh failed: {error_msg}", user=user, level='error')
 
 
 # Debug print helper - only prints if DEBUG_MODE is enabled
@@ -3904,7 +4083,7 @@ def reload_secrets_signal_handler(sig, frame):
 # Saves user's image / video to selected file name
 def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0):
     try:
-        image_video_response = req.get(image_video_url, headers={'User-Agent': USER_AGENT}, timeout=FUNCTION_TIMEOUT, stream=True)
+        image_video_response = req.get(image_video_url, headers={'User-Agent': USER_AGENT}, timeout=FUNCTION_TIMEOUT, stream=True, verify=get_proxies_ssl(), proxies=get_proxies())
         image_video_response.raise_for_status()
         url_time = image_video_response.headers.get('last-modified')
         url_time_in_tz_ts = 0
@@ -5331,6 +5510,10 @@ def generate_config_dashboard(target_data, config_data):
         ("Webhook Status", str(config_data.get('webhook_status', '-'))),
         ("Webhook Followers", str(config_data.get('webhook_followers', '-'))),
         ("Webhook Errors", str(config_data.get('webhook_errors', '-'))),
+        ("Proxy for Instagram", str(config_data.get('proxy_enabled', '-'))),
+        ("Proxy for Webhooks", str(config_data.get('proxy_webhooks', '-'))),
+        ("Proxy URL", str(config_data.get('proxy_url', '-'))[:50]),
+        ("Proxy Certificate", str(config_data.get('proxy_cert', '-'))),
     ]
 
     # Right column items
@@ -6093,6 +6276,10 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'webhook_status': WEBHOOK_STATUS_NOTIFICATION,
         'webhook_followers': WEBHOOK_FOLLOWERS_NOTIFICATION,
         'webhook_errors': WEBHOOK_ERROR_NOTIFICATION,
+        'proxy_enabled': PROXY_ENABLED,
+        'proxy_url': mask_url_credentials(PROXY_URL),
+        'proxy_cert': PROXY_CERT_PATH,
+        'proxy_webhooks': PROXY_WEBHOOKS,
         'email_notifications': STATUS_NOTIFICATION,
         'follower_notifications': FOLLOWERS_NOTIFICATION,
         'error_notifications': ERROR_NOTIFICATION
@@ -6390,6 +6577,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True, quiet=True)
 
+        # Inject proxy and cert into Instaloader's session
+        if PROXY_ENABLED:
+            set_instaloader_proxies(bot)
+
         ctx = bot.context
 
         orig_request = ctx._session.request
@@ -6523,6 +6714,10 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                         log_activity("Manual recheck requested (overriding hours range)", user=user, level='system')
                                         update_ui_data(targets={user: {'status': 'Recheck requested'}})
                                         break
+
+                            # Check for proxy changes from web dashboard
+                            refresh_proxy_if_needed(bot, user)
+
                             wait_chunk = min(1, sleep_remaining)
                             if stop_event:
                                 stop_event.wait(wait_chunk)
@@ -7415,6 +7610,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     if signal_loading_complete is not None:
         signal_loading_complete.set()
 
+    # Show proxy IP at per-user startup only in verbose/debug (the run_main banner already shows it once)
+    if PROXY_ENABLED and (VERBOSE_MODE or DEBUG_MODE):
+        ipaddr = get_ip_address()
+        print(f"* Proxy IP address is {ipaddr}")
+
     # Monitoring active message
     now = now_local_naive()
     next_check = now + timedelta(seconds=r_sleep_time) if not isinstance(next_check_val, datetime) else next_check_val
@@ -7459,6 +7659,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 manual_override_active = True
                 break
 
+            # Check for proxy changes from web dashboard
+            refresh_proxy_if_needed(bot, user)
+
             # Sleep in 1-second increments for responsiveness
             sleep_chunk = min(1, sleep_remaining)
             if stop_event:
@@ -7483,6 +7686,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             print_cur_ts("Timestamp:\t\t\t\t")
             return
 
+        # Check for proxy changes via web dashboard at start of each loop iteration
+        refresh_proxy_if_needed(bot, user)
+
         reset_thread_output()
         if WEB_DASHBOARD_ENABLED:
             update_ui_data(targets={user: {'status': 'Checking'}})
@@ -7492,11 +7698,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         update_check_times(next_time="In Progress", user=user, increment_count=False)
 
         # Debug/Verbose: show check start
+        ip_str = ""
+        if PROXY_ENABLED and (VERBOSE_MODE or DEBUG_MODE):
+            ipaddr = get_ip_address()
+            ip_str = f" with proxy IP address of {ipaddr}"
         if VERBOSE_MODE:
-            print(f"* Starting check #{CHECK_COUNT} for {user} ...")
+            print(f"* Starting check #{CHECK_COUNT} for {user} ...{ip_str}")
             print_cur_ts("\nTimestamp:\t\t\t\t")
         elif DEBUG_MODE:
-            debug_print(f"Starting check #{CHECK_COUNT}")
+            debug_print(f"Starting check #{CHECK_COUNT}{ip_str}")
 
         cur_h = now_local_naive().strftime("%H")
 
@@ -7575,6 +7785,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     'follower_notif': FOLLOWERS_NOTIFICATION,
                     'error_notif': ERROR_NOTIFICATION,
                     'webhook_enabled': WEBHOOK_ENABLED,
+                    'proxy_enabled': PROXY_ENABLED,
                     'human_mode': BE_HUMAN,
                     'enable_jitter': ENABLE_JITTER,
                     'debug_mode': DEBUG_MODE,
@@ -8737,6 +8948,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     manual_override_active = True
                     break
 
+                # Check for proxy changes from web dashboard
+                refresh_proxy_if_needed(bot, user)
+
                 # Sleep in 1-second increments for responsiveness
                 sleep_chunk = min(1, sleep_remaining)
                 time.sleep(sleep_chunk)
@@ -8802,6 +9016,7 @@ def run_main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H
+    global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS
 
     if "--generate-config" in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -9072,6 +9287,34 @@ def run_main():
         action="store_true",
         default=None,
         help="Enable human-like HTTP jitter and back-off wrapper"
+    )
+    session_opts.add_argument(
+        "--enable-proxy",
+        dest="proxy_enabled",
+        action="store_true",
+        default=None,
+        help="Enables proxy support for Instagram traffic"
+    )
+    session_opts.add_argument(
+        "--proxy-url",
+        dest="proxy_url",
+        metavar="PROXY_URL",
+        type=str,
+        help="Set URL to be used for proxy"
+    )
+    session_opts.add_argument(
+        "--proxy-cert",
+        dest="proxy_cert_path",
+        metavar="PROXY_CERT_PATH",
+        type=str,
+        help="Set optional PATH to local certificate to be used for proxy traffic"
+    )
+    session_opts.add_argument(
+        "--enable-proxy-webhooks",
+        dest="proxy_webhooks",
+        action="store_true",
+        default=None,
+        help="Enable use of proxy for webhook POST requests"
     )
 
     # Features & output
@@ -9379,6 +9622,31 @@ def run_main():
     if not USER_AGENT_MOBILE:
         USER_AGENT_MOBILE = get_random_mobile_user_agent()
 
+    if args.proxy_enabled is True:
+        PROXY_ENABLED = True
+
+    if args.proxy_url:
+        PROXY_URL = str(args.proxy_url or "")
+
+    if args.proxy_cert_path:
+        PROXY_CERT_PATH = str(args.proxy_cert_path or "")
+
+    if args.proxy_webhooks is True:
+        PROXY_WEBHOOKS = True
+
+    if PROXY_ENABLED:
+        if not PROXY_URL:
+            print(f"* Error: Proxies are enabled but PROXY_URL is missing! Please set it in config file or via --proxy-url flag")
+            sys.exit(1)
+        if not validate_webhook_url(PROXY_URL):
+            print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{mask_url_credentials(PROXY_URL)}'")
+            sys.exit(1)
+        if PROXY_CERT_PATH:
+            PROXY_CERT_PATH = os.path.expanduser(PROXY_CERT_PATH)
+            if not os.path.isfile(PROXY_CERT_PATH):
+                print(f"* Error: Proxy certificate file does not exist. '{PROXY_CERT_PATH}'")
+                sys.exit(1)
+
     if not check_internet():
         sys.exit(1)
 
@@ -9404,7 +9672,7 @@ def run_main():
     # Webhook configuration
     if args.webhook_url:
         if not validate_webhook_url(args.webhook_url):
-            print(f"* Error: Invalid webhook URL format. Must be HTTPS URL.")
+            print(f"* Error: Invalid webhook URL format. Must be HTTPS or HTTP URL.")
             sys.exit(1)
         WEBHOOK_URL = str(args.webhook_url or "")
         WEBHOOK_ENABLED = True
@@ -9757,6 +10025,14 @@ def run_main():
     print(f"* Browser user agent:\t\t\t{USER_AGENT}")
     print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
     print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
+    print(f"* Proxies:\t\t\t\t" + ("Enabled" if PROXY_ENABLED else "Disabled"))
+    if PROXY_ENABLED:
+        ipaddr = get_ip_address()
+        masked_proxy_url = mask_url_credentials(PROXY_URL)
+        print(f"*   Proxy IP Address:\t\t\t{ipaddr}")
+        print(f"*   Proxy URL:\t\t\t\t{masked_proxy_url[:50]}")
+        print(f"*   Proxy Certificate:\t\t\t{PROXY_CERT_PATH or '-'}")
+        print(f"*   Proxy for Webhooks:\t\t\t" + ("Enabled" if PROXY_WEBHOOKS else "Disabled"))
     print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}")
     print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
