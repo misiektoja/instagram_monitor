@@ -3547,6 +3547,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     return 1
 
 
+# Fetches the current outbound IP via IP_ADDRESS_URL, tolerating JSON and plain-text responses
 def get_ip_address(max_retries=3, timeout=10):
     last_err = None
     for attempt in range(1, max_retries + 1):
@@ -3593,24 +3594,28 @@ def mask_url_credentials(url):
         return "***"
 
 
+# Returns the requests-compatible proxies dict when PROXY_ENABLED, otherwise an empty dict
 def get_proxies():
     if PROXY_ENABLED:
         return {'http': PROXY_URL, 'https': PROXY_URL}
     return {}
 
 
+# Returns the requests verify arg: cert path when PROXY_CERT_PATH is set under an enabled proxy, else True
 def get_proxies_ssl():
     if PROXY_ENABLED and PROXY_CERT_PATH:
         return PROXY_CERT_PATH
     return True
 
 
+# Applies current proxy and SSL-verify settings to the instaloader bot's underlying requests session
 def set_instaloader_proxies(instabot):
     instabot.context._session.proxies.clear()
     instabot.context._session.proxies.update(get_proxies())
     instabot.context._session.verify = get_proxies_ssl()
 
 
+# Reapplies proxy settings on the bot when the web dashboard has bumped PROXY_REFRESH_VERSION since last check
 def refresh_proxy_if_needed(bot, user):
     global PROXY_REFRESH_VERSION
 
