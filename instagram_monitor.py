@@ -2346,10 +2346,9 @@ def update_ui_data(targets=None, config=None, check_count=None, last_check=None,
             parts.append(f"last_check={last_check}")
         if next_check is not None:
             parts.append(f"next_check={next_check}")
-        if config:
-            if 'status_msg' in config:
-                parts.append(f"status_msg='{config['status_msg']}'")
-        if targets:
+        if isinstance(config, dict) and 'status_msg' in config:
+            parts.append(f"status_msg='{config['status_msg']}'")
+        if isinstance(targets, dict):
             for tgt_user, tgt_data in targets.items():
                 tgt_parts = [tgt_user]
                 if isinstance(tgt_data, dict):
@@ -2371,7 +2370,10 @@ def update_ui_data(targets=None, config=None, check_count=None, last_check=None,
                         tgt_parts.append(f"following={tgt_data['following']}")
                     if 'session' in tgt_data:
                         s = tgt_data['session']
-                        tgt_parts.append(f"session={s.get('username', '?')}(active={s.get('active')})")
+                        if isinstance(s, dict):
+                            tgt_parts.append(f"session={s.get('username', '?')}(active={s.get('active')})")
+                        else:
+                            tgt_parts.append(f"session={s}")
                 parts.append(f"[{', '.join(tgt_parts)}]")
         if parts:
             debug_print(f"UI Data Update: {', '.join(parts)}")
