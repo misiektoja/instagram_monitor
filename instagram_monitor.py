@@ -700,9 +700,12 @@ pbar = None
 # Global tracking for last/next check times
 LAST_CHECK_TIME = None
 NEXT_CHECK_TIME = None
+
 # Human-friendly global next-check display (used when NEXT_CHECK_TIME is not available)
 NEXT_CHECK_DISPLAY = None
 CHECK_COUNT = 0
+
+START_TIME_SCRIPT = 0.0
 
 # Global state for debug mode manual check trigger (thread-safe Event)
 # Will be initialized after threading is imported
@@ -786,8 +789,6 @@ from itertools import zip_longest
 import subprocess
 import threading
 import hashlib
-
-start_time_script = time.time()
 
 # Initialize the web dashboard data lock now that threading is imported
 # Important: this lock is acquired from multiple call-sites that can nest (e.g. helpers called inside other locked
@@ -3564,7 +3565,7 @@ def convert_utc_str_to_tz_datetime(dt_str):
 # Returns the current date/time in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
     fmt = "%d %b %Y, %I:%M:%S %p" if TIME_FORMAT_12H else "%d %b %Y, %H:%M:%S"
-    elapsed_time_script = int(time.time() - start_time_script)
+    elapsed_time_script = int(time.monotonic() - START_TIME_SCRIPT) if START_TIME_SCRIPT else 0
     return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]} {now_local_naive().strftime(fmt)} (elapsed: {display_time(elapsed_time_script)})')
 
 
@@ -8804,7 +8805,7 @@ def get_target_paths(user):
 
 
 def run_main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H
 
@@ -8831,6 +8832,7 @@ def run_main():
         print(f"{os.path.basename(sys.argv[0])} v{VERSION}")
         sys.exit(0)
 
+    START_TIME_SCRIPT = time.monotonic()
     stdout_bck = sys.stdout
 
     # Initialise colour handling based on CLI args (early check) and terminal capabilities
