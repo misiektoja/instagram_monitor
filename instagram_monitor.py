@@ -2411,12 +2411,43 @@ def update_ui_data(targets=None, config=None, check_count=None, last_check=None,
     global DEBUG_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED
     if DEBUG_MODE:
         parts = []
-        if targets:
-            parts.append(f"targets={list(targets.keys())}")
         if check_count is not None:
             parts.append(f"check_count={check_count}")
         if is_monitoring is not None:
             parts.append(f"monitoring={is_monitoring}")
+        if last_check is not None:
+            parts.append(f"last_check={last_check}")
+        if next_check is not None:
+            parts.append(f"next_check={next_check}")
+        if isinstance(config, dict) and 'status_msg' in config:
+            parts.append(f"status_msg='{config['status_msg']}'")
+        if isinstance(targets, dict):
+            for tgt_user, tgt_data in targets.items():
+                tgt_parts = [tgt_user]
+                if isinstance(tgt_data, dict):
+                    if 'status' in tgt_data:
+                        tgt_parts.append(f"status='{tgt_data['status']}'")
+                    if 'new_update' in tgt_data:
+                        tgt_parts.append(f"new_update='{tgt_data['new_update']}'")
+                    if 'last_story' in tgt_data:
+                        tgt_parts.append(f"last_story='{tgt_data['last_story']}'")
+                    if 'last_post' in tgt_data:
+                        tgt_parts.append(f"last_post='{tgt_data['last_post']}'")
+                    if 'stories_count' in tgt_data:
+                        tgt_parts.append(f"stories_count={tgt_data['stories_count']}")
+                    if 'posts' in tgt_data:
+                        tgt_parts.append(f"posts={tgt_data['posts']}")
+                    if 'followers' in tgt_data:
+                        tgt_parts.append(f"followers={tgt_data['followers']}")
+                    if 'following' in tgt_data:
+                        tgt_parts.append(f"following={tgt_data['following']}")
+                    if 'session' in tgt_data:
+                        s = tgt_data['session']
+                        if isinstance(s, dict):
+                            tgt_parts.append(f"session={s.get('username', '?')}(active={s.get('active')})")
+                        else:
+                            tgt_parts.append(f"session={s}")
+                parts.append(f"[{', '.join(tgt_parts)}]")
         if parts:
             debug_print(f"UI Data Update: {', '.join(parts)}")
     if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
