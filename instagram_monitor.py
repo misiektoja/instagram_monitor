@@ -729,9 +729,12 @@ pbar = None
 # Global tracking for last/next check times
 LAST_CHECK_TIME = None
 NEXT_CHECK_TIME = None
+
 # Human-friendly global next-check display (used when NEXT_CHECK_TIME is not available)
 NEXT_CHECK_DISPLAY = None
 CHECK_COUNT = 0
+
+START_TIME_SCRIPT = 0.0
 
 # Global state for debug mode manual check trigger (thread-safe Event)
 # Will be initialized after threading is imported
@@ -3777,7 +3780,8 @@ def convert_utc_str_to_tz_datetime(dt_str):
 # Returns the current date/time in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
     fmt = "%d %b %Y, %I:%M:%S %p" if TIME_FORMAT_12H else "%d %b %Y, %H:%M:%S"
-    return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]} {now_local_naive().strftime(fmt)}')
+    elapsed_time_script = int(time.monotonic() - START_TIME_SCRIPT) if START_TIME_SCRIPT else 0
+    return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]} {now_local_naive().strftime(fmt)} (elapsed: {display_time(elapsed_time_script)})')
 
 
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
@@ -5991,7 +5995,7 @@ def close_pbar():
                         # We want to write to logs but NOT the terminal again (pbar.close already did that), so we strip colors and
                         # write to main/target logs manually
                         clean_final = ANSI_ESCAPE_RE.sub("", final_str).expandtabs(8) + "\n"
-                        debug_print(f"[close_pbar] clean_final: {clean_final.strip()}")
+                        # debug_print(f"[close_pbar] clean_final: {clean_final.strip()}")
 
                         with STDOUT_LOCK:
                             if logger_instance.main_log:
@@ -6457,7 +6461,8 @@ def probability_for_cycle(sleep_seconds: int) -> float:
         day_seconds = 3600 * allowed_hours
     else:
         day_seconds = 86400  # 1 day
-
+    calculation = DAILY_HUMAN_HITS * sleep_seconds / day_seconds
+    debug_print(f"Probability Calculation: {calculation:.7f}")
     return min(1.0, DAILY_HUMAN_HITS * sleep_seconds / day_seconds)
 
 
@@ -6467,7 +6472,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
     prob = probability_for_cycle(sleep_seconds)
 
     if DEBUG_MODE:
-        debug_print("BeHuman: simulation start")
+        debug_print(f"BeHuman: simulation start with probability {prob:.7f} for sleep_seconds of {sleep_seconds}")
     elif BE_HUMAN_VERBOSE:
         print("* BeHuman: simulation start")
 
@@ -6853,7 +6858,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             # Wait for session refresh or stop event
             while not (stop_event and stop_event.is_set()):
                 if SESSION_REFRESHED_EVENT.wait(timeout=1.0):
-                    # Session refreshed! Reload and retry
                     # Session refreshed! Reload and retry
                     log_activity("Session/Mode change detected, resuming monitoring...", user=user)
                     print(f"* Session/Mode change detected for {user}, resuming...")
@@ -7718,6 +7722,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     # Primary loop
     consecutive_main_errors = 0
     consecutive_behuman_errors = 0
+    debug_print("Entering primary loop")
     while True:
         # Check stop event at the start of each loop iteration
         if stop_event and stop_event.is_set():
@@ -7778,6 +7783,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 posts_count = profile.mediacount
 
                 debug_print(f"Profile loaded: followers={followers_count}, following={followings_count}, posts={posts_count}")
+                debug_print(f"Previous load : followers={followers_old_count}, following={followings_old_count}, posts={posts_count_old}")
                 consecutive_main_errors = 0
 
                 if not skip_session and can_view:
@@ -8896,7 +8902,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         else:
             if HOURS_VERBOSE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE) or DEBUG_MODE:
                 print(f"* Skipping updates for {user}, current hour: {int(cur_h)}, allowed: [{format_hours_as_ranges(hours_to_check())}]")
-                print("─" * HORIZONTAL_LINE)
+                # print("─" * HORIZONTAL_LINE)
 
         alive_counter += 1
 
@@ -9052,7 +9058,7 @@ def get_target_paths(user):
 
 
 def run_main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS
@@ -9080,6 +9086,7 @@ def run_main():
         print(f"{os.path.basename(sys.argv[0])} v{VERSION}")
         sys.exit(0)
 
+    START_TIME_SCRIPT = time.monotonic()
     stdout_bck = sys.stdout
 
     # Initialise colour handling based on CLI args (early check) and terminal capabilities
