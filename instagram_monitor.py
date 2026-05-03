@@ -3601,24 +3601,6 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     return 1
 
 
-def process_message_substitutions(message: str) -> str:
-    """
-    Perform search/replace on a message using the PRIVACY_SUBSTITIONS global variable.
-    PRIVACY_SUBSTITIONS should be a list of (search, replace) tuples.
-    Returns the original message if PRIVACY_SUBSTITIONS doesn't exist or is empty.
-    """
-    try:
-        if not PRIVACY_SUBSTITIONS:
-            return message
-    except NameError:
-        return message
-
-    for search, replace in PRIVACY_SUBSTITIONS:
-        message = message.replace(search, replace)
-
-    return message
-
-   
 # Fetches the current outbound IP via IP_ADDRESS_URL, tolerating JSON and plain-text responses
 def get_ip_address(max_retries=3, timeout=10):
     last_err = None
