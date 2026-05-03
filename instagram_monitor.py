@@ -6190,6 +6190,8 @@ def instagram_wrap_request(orig_request):
                 increment = len(user_list)
                 _thread_local.NAME_COUNT = thread_name_count + increment  # type: ignore[misc]
                 thread_name_count = _thread_local.NAME_COUNT  # type: ignore[misc]
+                if (thread_pbar.n + increment) > thread_pbar.total:
+                    thread_pbar.total = thread_pbar.n + increment
 
                 # Calculate remaining time
                 d = thread_pbar.format_dict
