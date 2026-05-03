@@ -3494,6 +3494,8 @@ def process_message_substitutions(message: str) -> str:
 # Debug print helper - only prints if DEBUG_MODE is enabled
 def debug_print(message):
     if DEBUG_MODE:
+        if not isinstance(message, str):
+            message = str(message)
         message = process_message_substitutions(message)
         timestamp = get_hour_min_from_ts(now_local(), show_seconds=True)
         user = getattr(_thread_local, 'user', None)
