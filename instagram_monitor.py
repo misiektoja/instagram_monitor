@@ -181,6 +181,26 @@ ENABLE_JITTER = False
 # Set to True to enable verbose output for HTTP jitter/back-off wrappers
 JITTER_VERBOSE = False
 
+# Optional Follower and Followee Adjustments
+#
+# This allows control of the fetching of followers and followees, which may be beneficial in avoiding account flagging by Instagram.
+# It breaks up fetching into batches with a delay in between up to a total maximum.
+#   *_PER_BATCH       = number of accounts to fetch at one time before pausing (0 to disable [no limit])
+#   *_DELAY_PER_BATCH = delay between batches (0 to disable [no delay])
+#   *_LIMIT_TO_FETCH  = total accounts to fetch via multiple batches (0 to disable [no limit])
+#
+# There are 4 valid configurations, and script will indicate if incorrectly configured:
+#   Disabled
+#   Maximum of XXX accounts
+#   Maximum of XXX accounts in batches of YYY accounts with ZZZ second delay
+#   Batches of YYY acounts with ZZZ second delay
+FOLLOWERS_PER_BATCH      = 0
+FOLLOWEES_PER_BATCH      = 0
+FOLLOWER_LIMIT_TO_FETCH  = 0
+FOLLOWER_DELAY_PER_BATCH = 0
+FOLLOWEE_LIMIT_TO_FETCH  = 0
+FOLLOWEE_DELAY_PER_BATCH = 0
+
 # Optional: Enable proxy support for networking traffic
 #
 # Note: even when PROXY_ENABLED is False, the underlying 'requests' library still
@@ -643,6 +663,14 @@ MY_HASHTAGS = []
 BE_HUMAN_VERBOSE = False
 ENABLE_JITTER = False
 JITTER_VERBOSE = False
+FOLLOWERS_PER_BATCH = 0
+FOLLOWEES_PER_BATCH = 0
+FOLLOWER_LIMIT_TO_FETCH = 0
+FOLLOWEE_LIMIT_TO_FETCH = 0
+FOLLOWER_DELAY_PER_BATCH = 0
+FOLLOWEE_DELAY_PER_BATCH = 0
+ADVANCED_FOLLOWER_FETCH = False
+ADVANCED_FOLLOWEE_FETCH = False
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
@@ -724,6 +752,7 @@ nl_ch = "\n"
 START_TIME = 0
 NAME_COUNT = 1
 WRAPPER_COUNT = 0
+FETCH_TYPE = None
 pbar = None
 
 # Global tracking for last/next check times
@@ -853,6 +882,7 @@ from pathlib import Path
 from functools import wraps
 import traceback
 import copy
+import math
 try:
     from tqdm import tqdm
 except ModuleNotFoundError:
@@ -2686,7 +2716,7 @@ _ACTIVITY_HEADER_RE = re.compile(r"(?i).*(story for user|Newest post|Followers n
 _CHECK_INTERVAL_RE = re.compile(r"^(\s*\*?\s*Check interval:\s+)(.*?)(\s+\(.*?\)\s*)$")
 _PROXY_IP_RE = re.compile(r"proxy IP address of [\d.]+", re.IGNORECASE)
 _IP_ADDRESS_RE = re.compile(r"(?<!://)\b(\d{1,3}\.){3}\d{1,3}\b(?!:\d+/?)")
-
+_ACCOUNT_LIMIT_RE = re.compile(r"(\d+)\s+(accounts?)", re.IGNORECASE)
 
 # Builds ANSI escape sequence from a style description string
 def _build_ansi_sequence(style_str):
@@ -2895,6 +2925,9 @@ def _colorize_line(line):
     # Highlight proxy information
     line = _PROXY_IP_RE.sub(lambda mo: colorize('proxy_ip', mo.group(0)), line)
     line = _IP_ADDRESS_RE.sub(lambda mo: colorize('ip_address', mo.group(0)), line)
+
+    # Highlight advanced fetch settings for follower/followee
+    line = _ACCOUNT_LIMIT_RE.sub(lambda mo: f"{colorize('count_up', mo.group(1))} {colorize('count_up', mo.group(2))}", line)
 
     # If it's a summary line, we return after internal highlights
     if is_summary_line:
@@ -5829,7 +5862,7 @@ def print_check_timing(r_sleep_time, prefix="", user=None):
 
 # Initializes and sets up a progress bar for displaying download progress
 def setup_pbar(total_expected, title):
-    global START_TIME, NAME_COUNT, WRAPPER_COUNT, pbar
+    global START_TIME, NAME_COUNT, WRAPPER_COUNT, FETCH_TYPE, pbar
 
     # Ensure request hooks are active so progress updates are tracked even without jitter or serialization
     ensure_requests_monkey_patched()
@@ -5840,11 +5873,13 @@ def setup_pbar(total_expected, title):
         _thread_local.START_TIME = 0  # type: ignore[misc]
         _thread_local.NAME_COUNT = 0  # type: ignore[misc]
         _thread_local.WRAPPER_COUNT = 0  # type: ignore[misc]
+        _thread_local.FETCH_TYPE = None  # type: ignore[misc]
         _thread_local.pbar_lock_acquired = False  # type: ignore[misc]
 
     _thread_local.START_TIME = datetime.now()  # type: ignore[misc]
     _thread_local.NAME_COUNT = 0  # type: ignore[misc]
     _thread_local.WRAPPER_COUNT = 0  # type: ignore[misc]
+    _thread_local.FETCH_TYPE = None  # type: ignore[misc]
 
     # If a bar exists for this thread, close it first
     if _thread_local.pbar is not None:  # type: ignore[misc]
@@ -6046,7 +6081,7 @@ def close_pbar():
 def instagram_wrap_request(orig_request):
     @wraps(orig_request)
     def wrapper(*args, **kwargs):
-        global NAME_COUNT, START_TIME, WRAPPER_COUNT, pbar
+        global NAME_COUNT, START_TIME, WRAPPER_COUNT, FETCH_TYPE, pbar
         method = kwargs.get("method") or (args[1] if len(args) > 1 else None)
         if method and isinstance(method, str):
             method = method.upper()
@@ -6113,6 +6148,20 @@ def instagram_wrap_request(orig_request):
             thread_name_count = getattr(_thread_local, 'NAME_COUNT', 0)
             thread_wrapper_count = getattr(_thread_local, 'WRAPPER_COUNT', 0)
 
+            # Determine which config vars to use based on fetch type and advanced fetch flags
+            fetch_type = getattr(_thread_local, 'FETCH_TYPE', 'none')
+            if fetch_type == 'followee':
+                per_batch      = FOLLOWEES_PER_BATCH       if ADVANCED_FOLLOWEE_FETCH else 0
+                batch_delay    = FOLLOWEE_DELAY_PER_BATCH  if ADVANCED_FOLLOWEE_FETCH else 0
+                limit          = FOLLOWEE_LIMIT_TO_FETCH   if ADVANCED_FOLLOWEE_FETCH else 0
+                advanced_fetch = ADVANCED_FOLLOWEE_FETCH
+            elif fetch_type == 'follower':
+                per_batch    = FOLLOWERS_PER_BATCH       if ADVANCED_FOLLOWER_FETCH else 0
+                batch_delay  = FOLLOWER_DELAY_PER_BATCH  if ADVANCED_FOLLOWER_FETCH else 0
+                limit        = FOLLOWER_LIMIT_TO_FETCH   if ADVANCED_FOLLOWER_FETCH else 0
+                advanced_fetch = ADVANCED_FOLLOWER_FETCH
+            else:
+                return
             # Only process and count requests that are likely follower/following related
             # Check if response is successful and JSON before processing
             user_list = []
@@ -6141,28 +6190,44 @@ def instagram_wrap_request(orig_request):
                 increment = len(user_list)
                 _thread_local.NAME_COUNT = thread_name_count + increment  # type: ignore[misc]
                 thread_name_count = _thread_local.NAME_COUNT  # type: ignore[misc]
-                if (thread_pbar.n + increment) > thread_pbar.total:
-                    thread_pbar.total = thread_pbar.n + increment
 
-                # Calculate Remaining Minutes
+                # Calculate remaining time
                 d = thread_pbar.format_dict
                 rate = d['rate'] if d['rate'] else 0
-                remaining_items = d['total'] - (d['n'] + increment)
-
-                # Calculate remaining seconds, then minutes
-                rem_s = remaining_items / rate if rate > 0 else 0
-                rem_m = rem_s / 60
-
+                fetched_so_far = d['n'] + increment
+                remaining_items = d['total'] - fetched_so_far
                 elapsed_m = d['elapsed'] / 60
 
-                # Update Stats - use float division for precision
-                names_per_req = (d['n'] + increment) / thread_wrapper_count if thread_wrapper_count > 0 else 0
-                total_reqs = d['n'] + increment
-                if not rate and (total_reqs and names_per_req):  # intended only for first iteration where rate = 0, or an error condition where rate is 0
-                    mins_per_req = elapsed_m / total_reqs
-                    rem_m = remaining_items * mins_per_req
+                # Compute remaining time, separating fetch time from batch delay time
+                if per_batch and batch_delay:
+                    # Subtract accumulated delay time from elapsed to get pure fetch time.
+                    # This avoids double-counting delays since tqdm's rate includes pause time.
+                    completed_batches = fetched_so_far // per_batch
+                    accumulated_delay_s = completed_batches * batch_delay
+                    pure_fetch_s = max(d['elapsed'] - accumulated_delay_s, 1)  # avoid div/0
+                    pure_fetch_rate = fetched_so_far / pure_fetch_s  # items/sec, delays excluded
 
-                stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}"
+                    # Base fetch time for remaining items using delay-free rate
+                    rem_s = remaining_items / pure_fetch_rate if pure_fetch_rate > 0 else 0
+
+                    # Use ceil so a partial remaining batch still counts as one full delay
+                    remaining_batches = math.ceil(remaining_items / per_batch)
+                    rem_s += remaining_batches * batch_delay
+                else:
+                    # No batching — use tqdm rate directly
+                    rem_s = remaining_items / rate if rate > 0 else 0
+
+                rem_m = rem_s / 60
+                names_per_req = fetched_so_far / thread_wrapper_count if thread_wrapper_count > 0 else 0
+                if not rate and (fetched_so_far and names_per_req):  # first iteration or error condition where rate = 0
+                    mins_per_req = elapsed_m / fetched_so_far
+                    delay_per_batch_m = (batch_delay / 60) if batch_delay and per_batch else 0
+                    batches_remaining = math.ceil(remaining_items / per_batch) if per_batch else 0
+                    rem_m = remaining_items * mins_per_req + batches_remaining * delay_per_batch_m
+
+                batch_info = f", fetch={limit}/{per_batch}/{batch_delay}s" if advanced_fetch else ""
+                stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}{batch_info}"
+                debug_print(f"{fetched_so_far}/{d['total']} [{stats_string}]")
                 thread_pbar.unit = stats_string
                 thread_pbar.update(increment)
 
@@ -6565,6 +6630,95 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
         debug_print("BeHuman: simulation stop")
     elif BE_HUMAN_VERBOSE:
         print("* BeHuman: simulation stop")
+
+
+def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, user):
+    """Fetch usernames in batches using a fresh generator per call.
+
+    Args:
+        get_generator_fn: Callable that returns a new instaloader generator
+                          (e.g. lambda: profile.get_followers())
+        max_per_batch:    Max accounts to pull per iteration (FOLLOWERS_PER_BATCH /
+                          FOLLOWEES_PER_BATCH). 0 = fetch everything in one shot.
+        total_limit:      Stop after this many total accounts (FOLLOWER_LIMIT_TO_FETCH /
+                          FOLLOWEE_LIMIT_TO_FETCH). 0 = no limit.
+        fetch_delay:      Seconds to sleep between batches.
+        label:            Human-readable label used in log messages ("followers"
+                          or "followings").
+        user:             Instagram username, forwarded to log_activity.
+
+    Returns:
+        List of username strings.
+    """
+    results = []
+    gen = get_generator_fn()  # single generator — keeps cursor position across batches
+    while True:
+        batch = []
+        for f in gen:
+            batch.append(f.username)
+            if advanced_fetch and max_per_batch and (len(batch) >= max_per_batch):
+                break  # pause; generator retains its position
+
+        if not batch:
+            break  # generator fully exhausted
+
+        results.extend(batch)
+
+        if advanced_fetch and total_limit and len(results) >= total_limit:
+            # results = results[:total_limit] # don't drop if already fetched
+            break
+
+        # advanced fetching feature disabled or generator ran out mid-batch
+        if not advanced_fetch or (max_per_batch and len(batch) < max_per_batch):
+            break  
+
+        # advanced fetching feature enabled if here
+        if fetch_delay:
+            # log_activity(f"Fetched {len(results)} {label} so far, waiting before next batch...", user=user)
+            # if WEB_DASHBOARD_ENABLED:
+                # update_ui_data(targets={user: {'status': 'Waiting (hours range)'}})
+            # Use thread-local storage for multi-target safety
+            thread_pbar = getattr(_thread_local, 'pbar', None)
+            stop_event = threading.Event()
+            # if DEBUG_MODE or stop_event or WEB_DASHBOARD_ENABLED:
+            # Interruptible wait (stop/recheck aware) similar to the main sleep loop
+            sleep_remaining = fetch_delay
+            if thread_pbar:
+                batch_info_orig = thread_pbar.unit
+            while sleep_remaining > 0:
+                if thread_pbar:
+                    batch_info = batch_info_orig + f" - PAUSED for {sleep_remaining}s"
+                    thread_pbar.unit = batch_info
+                    thread_pbar.refresh()
+                    # debug_print(f"batch info: {batch_info}")
+                    # debug_print(f"thread_pbar.unit: {thread_pbar.unit}")
+                    # debug_print(f"remaining: {sleep_remaining}")
+                if stop_event and stop_event.is_set():
+                    return
+                # Allow Web Dashboard "recheck" to break the wait early (still hour-gated later)
+                if WEB_DASHBOARD_ENABLED:
+                    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                        if user in WEB_DASHBOARD_RECHECK_EVENTS and WEB_DASHBOARD_RECHECK_EVENTS[user].is_set():
+                            WEB_DASHBOARD_RECHECK_EVENTS[user].clear()
+                            manual_recheck_active = True
+                            manual_override_active = True
+                            log_activity("Manual recheck requested", user=user, level='system')
+                            update_ui_data(targets={user: {'status': 'Recheck requested'}})
+                            break
+                    # Check for proxy changes from web dashboard
+                    refresh_proxy_if_needed(bot, user)
+
+                wait_chunk = min(1, sleep_remaining)
+                # debug_print(wait_chunk)
+                if stop_event:
+                    stop_event.wait(wait_chunk)
+                else:
+                    time.sleep(wait_chunk)
+                sleep_remaining -= wait_chunk
+            # else:
+                # time.sleep(fetch_delay)
+
+    return results
 
 
 # Monitors activity of the specified Instagram user
@@ -7024,9 +7178,20 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         try:
             update_ui_data(targets={user: {'status': 'Downloading Followers'}})
             log_activity(f"Started downloading followers", user=user)
-            setup_pbar(total_expected=followers_count, title="* Downloading Followers")
+            follower_limit = min(FOLLOWER_LIMIT_TO_FETCH, followers_count) if (ADVANCED_FOLLOWER_FETCH and FOLLOWER_LIMIT_TO_FETCH) else followers_count
+            setup_pbar(total_expected=follower_limit, title="* Downloading Followers")
             start_time_dl = time.time()
-            followers = [follower.username for follower in profile.get_followers()]
+            _thread_local.FETCH_TYPE = 'follower'
+            followers = fetch_usernames_paginated(
+                bot,
+                get_generator_fn=lambda: profile.get_followers(),
+                max_per_batch=FOLLOWERS_PER_BATCH,
+                total_limit=FOLLOWER_LIMIT_TO_FETCH,
+                fetch_delay=FOLLOWER_DELAY_PER_BATCH,
+                advanced_fetch=ADVANCED_FOLLOWER_FETCH,
+                user=user,
+            )
+            _thread_local.FETCH_TYPE = None
             end_time_dl = time.time()
             close_pbar()
             duration_dl = end_time_dl - start_time_dl
@@ -7159,9 +7324,20 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         try:
             update_ui_data(targets={user: {'status': 'Downloading Followings'}})
             log_activity(f"Started downloading followings", user=user)
-            setup_pbar(total_expected=followings_count, title="* Downloading Followings")
+            followee_limit = min(FOLLOWEE_LIMIT_TO_FETCH, followees_count) if (ADVANCED_FOLLOWEE_FETCH and FOLLOWEE_LIMIT_TO_FETCH) else followees_count
+            setup_pbar(total_expected=followee_limit, title="* Downloading Followings")
             start_time_dl = time.time()
-            followings = [followee.username for followee in profile.get_followees()]
+            _thread_local.FETCH_TYPE = 'followee'
+            followings = fetch_usernames_paginated(
+                bot,
+                get_generator_fn=lambda: profile.get_followees(),
+                max_per_batch=FOLLOWEES_PER_BATCH,
+                total_limit=FOLLOWEE_LIMIT_TO_FETCH,
+                fetch_delay=FOLLOWEE_DELAY_PER_BATCH,
+                advanced_fetch=ADVANCED_FOLLOWEE_FETCH,
+                user=user,
+            )
+            _thread_local.FETCH_TYPE = None
             end_time_dl = time.time()
             close_pbar()
             duration_dl = end_time_dl - start_time_dl
@@ -8014,10 +8190,21 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 if not skip_follow_changes and not skip_session and not skip_followings and can_view:
                     try:
                         log_activity(f"Started downloading followings", user=user)
-                        setup_pbar(total_expected=followings_count, title="* Downloading Followings")
+                        followee_limit = min(FOLLOWEE_LIMIT_TO_FETCH, followees_count) if (ADVANCED_FOLLOWEE_FETCH and FOLLOWEE_LIMIT_TO_FETCH) else followees_count
+                        setup_pbar(total_expected=followee_limit, title="* Downloading Followings")
                         start_time_dl = time.time()
                         followings = []
-                        followings = [followee.username for followee in profile.get_followees()]
+                        _thread_local.FETCH_TYPE = 'followee'
+                        followings = fetch_usernames_paginated(
+                            bot,
+                            get_generator_fn=lambda: profile.get_followees(),
+                            max_per_batch=FOLLOWEES_PER_BATCH,
+                            total_limit=FOLLOWEE_LIMIT_TO_FETCH,
+                            fetch_delay=FOLLOWEE_DELAY_PER_BATCH,
+                            advanced_fetch=ADVANCED_FOLLOWEE_FETCH,
+                            user=user,
+                        )
+                        _thread_local.FETCH_TYPE = None
                         followings_to_save = []
                         end_time_dl = time.time()
                         close_pbar()
@@ -8146,10 +8333,21 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 if not skip_follow_changes and not skip_session and not skip_followers and can_view:
                     try:
                         log_activity(f"Started downloading followers", user=user)
-                        setup_pbar(total_expected=followers_count, title="* Downloading Followers")
+                        follower_limit = min(FOLLOWER_LIMIT_TO_FETCH, followers_count) if (ADVANCED_FOLLOWER_FETCH and FOLLOWER_LIMIT_TO_FETCH) else followers_count
+                        setup_pbar(total_expected=follower_limit, title="* Downloading Followers")
                         start_time_dl = time.time()
                         followers = []
-                        followers = [follower.username for follower in profile.get_followers()]
+                        _thread_local.FETCH_TYPE = 'follower'
+                        followers = fetch_usernames_paginated(
+                            bot,
+                            get_generator_fn=lambda: profile.get_followers(),
+                            max_per_batch=FOLLOWERS_PER_BATCH,
+                            total_limit=FOLLOWER_LIMIT_TO_FETCH,
+                            fetch_delay=FOLLOWER_DELAY_PER_BATCH,
+                            advanced_fetch=ADVANCED_FOLLOWER_FETCH,
+                            user=user,
+                        )
+                        _thread_local.FETCH_TYPE = None
                         followers_to_save = []
                         end_time_dl = time.time()
                         close_pbar()
@@ -9061,7 +9259,7 @@ def run_main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H
-    global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS
+    global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
 
     if "--generate-config" in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -9696,6 +9894,19 @@ def run_main():
     if not check_internet():
         sys.exit(1)
 
+    # Advanced Follower/Followee Fetching Settings
+    if any([FOLLOWERS_PER_BATCH, FOLLOWER_LIMIT_TO_FETCH, FOLLOWER_DELAY_PER_BATCH]):
+        ADVANCED_FOLLOWER_FETCH = (FOLLOWERS_PER_BATCH and FOLLOWER_DELAY_PER_BATCH) or (FOLLOWER_LIMIT_TO_FETCH and not FOLLOWERS_PER_BATCH and not FOLLOWER_DELAY_PER_BATCH)
+        if not ADVANCED_FOLLOWER_FETCH:
+            print(f"* Error: Invalid configuration for advanced follower fetching: FOLLOWER_LIMIT_TO_FETCH: {FOLLOWER_LIMIT_TO_FETCH}, FOLLOWERS_PER_BATCH: {FOLLOWERS_PER_BATCH}, FOLLOWER_DELAY_PER_BATCH: {FOLLOWER_DELAY_PER_BATCH}")
+            sys.exit(1)
+
+    if any([FOLLOWEES_PER_BATCH, FOLLOWEE_LIMIT_TO_FETCH, FOLLOWEE_DELAY_PER_BATCH]):
+        ADVANCED_FOLLOWEE_FETCH = (FOLLOWEES_PER_BATCH and FOLLOWEE_DELAY_PER_BATCH) or (FOLLOWEE_LIMIT_TO_FETCH and not FOLLOWEES_PER_BATCH and not FOLLOWEE_DELAY_PER_BATCH)
+        if not ADVANCED_FOLLOWEE_FETCH:
+            print(f"* Error: Invalid configuration for advanced followee fetching: FOLLOWEE_LIMIT_TO_FETCH: {FOLLOWEE_LIMIT_TO_FETCH}, FOLLOWEES_PER_BATCH: {FOLLOWEES_PER_BATCH}, FOLLOWEE_DELAY_PER_BATCH: {FOLLOWEE_DELAY_PER_BATCH}")
+            sys.exit(1)
+    
     # Handle new debug, dashboard, and webhook arguments
     if args.debug_mode is True:
         DEBUG_MODE = True
@@ -10079,6 +10290,26 @@ def run_main():
         print(f"*   Proxy URL:\t\t\t\t{masked_proxy_url[:50]}")
         print(f"*   Proxy Certificate:\t\t\t{PROXY_CERT_PATH or '-'}")
         print(f"*   Proxy for Webhooks:\t\t\t" + ("Enabled" if PROXY_WEBHOOKS else "Disabled"))
+    if ADVANCED_FOLLOWER_FETCH:
+        if FOLLOWER_LIMIT_TO_FETCH and not FOLLOWERS_PER_BATCH and not FOLLOWER_DELAY_PER_BATCH:
+            follower_str = f"Maximum of {FOLLOWER_LIMIT_TO_FETCH} accounts"
+        elif FOLLOWER_LIMIT_TO_FETCH:
+            follower_str = f"Maximum of {FOLLOWER_LIMIT_TO_FETCH} accounts in batches of {FOLLOWERS_PER_BATCH} accounts with a {FOLLOWER_DELAY_PER_BATCH} second delay"
+        else:
+            follower_str = f"Batches of {FOLLOWERS_PER_BATCH} accounts with a {FOLLOWER_DELAY_PER_BATCH} second delay"
+    else:
+        follower_str = "False"
+    if ADVANCED_FOLLOWEE_FETCH:
+        if FOLLOWEE_LIMIT_TO_FETCH and not FOLLOWEES_PER_BATCH and not FOLLOWEE_DELAY_PER_BATCH:
+            followee_str = f"Maximum of {FOLLOWEE_LIMIT_TO_FETCH} accounts"
+        elif FOLLOWEE_LIMIT_TO_FETCH:
+            followee_str = f"Maximum of {FOLLOWEE_LIMIT_TO_FETCH} accounts in batches of {FOLLOWEES_PER_BATCH} accounts with a {FOLLOWEE_DELAY_PER_BATCH} second delay"
+        else:
+            followee_str = f"Batches of {FOLLOWEES_PER_BATCH} accounts with a {FOLLOWEE_DELAY_PER_BATCH} second delay"
+    else:
+        followee_str = "False"
+    print(f"* Advanced Follower Fetching:\t\t{follower_str}")
+    print(f"* Advanced Followee Fetching:\t\t{followee_str}")
     print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}")
     print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
