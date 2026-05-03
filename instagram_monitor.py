@@ -6229,7 +6229,7 @@ def instagram_wrap_request(orig_request):
 
                 batch_info = f", fetch={limit}/{per_batch}/{batch_delay}s" if advanced_fetch else ""
                 stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}{batch_info}"
-                debug_print(f"{fetched_so_far}/{d['total']} [{stats_string}]")
+                # debug_print(f"{fetched_so_far}/{d['total']} [{stats_string}]")
                 thread_pbar.unit = stats_string
                 thread_pbar.update(increment)
 
@@ -6638,15 +6638,11 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
     """Fetch usernames in batches using a fresh generator per call.
 
     Args:
-        get_generator_fn: Callable that returns a new instaloader generator
-                          (e.g. lambda: profile.get_followers())
-        max_per_batch:    Max accounts to pull per iteration (FOLLOWERS_PER_BATCH /
-                          FOLLOWEES_PER_BATCH). 0 = fetch everything in one shot.
-        total_limit:      Stop after this many total accounts (FOLLOWER_LIMIT_TO_FETCH /
-                          FOLLOWEE_LIMIT_TO_FETCH). 0 = no limit.
+        get_generator_fn: Callable that returns a new instaloader generator (e.g. lambda: profile.get_followers())
+        max_per_batch:    Max accounts to pull per iteration (FOLLOWERS_PER_BATCH / FOLLOWEES_PER_BATCH). 0 = no limit
+        total_limit:      Stop after this many total accounts (FOLLOWER_LIMIT_TO_FETCH / FOLLOWEE_LIMIT_TO_FETCH). 0 = no limit.
         fetch_delay:      Seconds to sleep between batches.
-        label:            Human-readable label used in log messages ("followers"
-                          or "followings").
+        advanced_fetch:   Indicates if advanced_fetch is enabled (valid configuration of above 3 items)
         user:             Instagram username, forwarded to log_activity.
 
     Returns:
@@ -6667,7 +6663,6 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
         results.extend(batch)
 
         if advanced_fetch and total_limit and len(results) >= total_limit:
-            # results = results[:total_limit] # don't drop if already fetched
             break
 
         # advanced fetching feature disabled or generator ran out mid-batch
@@ -6676,13 +6671,9 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
 
         # advanced fetching feature enabled if here
         if fetch_delay:
-            # log_activity(f"Fetched {len(results)} {label} so far, waiting before next batch...", user=user)
-            # if WEB_DASHBOARD_ENABLED:
-                # update_ui_data(targets={user: {'status': 'Waiting (hours range)'}})
             # Use thread-local storage for multi-target safety
             thread_pbar = getattr(_thread_local, 'pbar', None)
             stop_event = threading.Event()
-            # if DEBUG_MODE or stop_event or WEB_DASHBOARD_ENABLED:
             # Interruptible wait (stop/recheck aware) similar to the main sleep loop
             sleep_remaining = fetch_delay
             if thread_pbar:
@@ -6692,9 +6683,6 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
                     batch_info = batch_info_orig + f" - PAUSED for {sleep_remaining}s"
                     thread_pbar.unit = batch_info
                     thread_pbar.refresh()
-                    # debug_print(f"batch info: {batch_info}")
-                    # debug_print(f"thread_pbar.unit: {thread_pbar.unit}")
-                    # debug_print(f"remaining: {sleep_remaining}")
                 if stop_event and stop_event.is_set():
                     return
                 # Allow Web Dashboard "recheck" to break the wait early (still hour-gated later)
