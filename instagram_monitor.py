@@ -3702,7 +3702,6 @@ def process_message_substitutions(message: str) -> str:
             message = str(message)
         for search, replace in PRIVACY_SUBSTITIONS:
             message = message.replace(search, replace)
-
     return message
 
    
