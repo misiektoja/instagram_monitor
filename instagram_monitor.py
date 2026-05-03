@@ -3709,11 +3709,24 @@ def refresh_proxy_if_needed(bot, user):
                 log_activity(f"Proxy refresh failed: {error_msg}", user=user, level='error')
 
 
+def process_message_substitutions(message: str) -> str:
+    """
+    Perform search/replace on a message using the PRIVACY_SUBSTITIONS global variable.
+    PRIVACY_SUBSTITIONS should be a list of (search, replace) tuples.
+    Returns the original message if PRIVACY_SUBSTITIONS doesn't exist or is empty.
+    """
+    if PRIVACY_SUBSTITIONS:
+        if not isinstance(message, str):
+            message = str(message)
+        for search, replace in PRIVACY_SUBSTITIONS:
+            message = message.replace(search, replace)
+
+    return message
+
+   
 # Debug print helper - only prints if DEBUG_MODE is enabled
 def debug_print(message):
     if DEBUG_MODE:
-        if not isinstance(message, str):
-            message = str(message)
         message = process_message_substitutions(message)
         timestamp = get_hour_min_from_ts(now_local(), show_seconds=True)
         user = getattr(_thread_local, 'user', None)
