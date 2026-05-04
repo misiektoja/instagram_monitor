@@ -6646,7 +6646,7 @@ def build_follow_string(enabled, limit, batch, delay, alt_format=False):
         else:
             follow_str = (f"Batches " if not alt_format else "batches ") + (f"of {batch} accounts with a {delay} second delay")
     else:
-        follow_str = "False"       
+        follow_str = "False"
     return follow_str
 
 
