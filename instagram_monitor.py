@@ -2558,6 +2558,7 @@ def log_activity(message, user=None, level='system', details=None, to_web=True):
 
     # Format message with user if provided
     display_message = f"[{user}] {message}" if user else message
+    debug_print(f"Dashboard Update: {display_message}")
 
     activity_item_rich = {
         'time': timestamp_str,
@@ -3139,6 +3140,7 @@ def clear_screen(enabled=True):
 
 # Converts absolute value of seconds to human readable format
 def display_time(seconds, granularity=2):
+    seconds = int(seconds)
     intervals = (
         ('years', 31556952),  # approximation
         ('months', 2629746),  # approximation
@@ -6227,8 +6229,9 @@ def instagram_wrap_request(orig_request):
                     batches_remaining = math.ceil(remaining_items / per_batch) if per_batch else 0
                     rem_m = remaining_items * mins_per_req + batches_remaining * delay_per_batch_m
 
-                batch_info = f", fetch={limit}/{per_batch}/{batch_delay}s" if advanced_fetch else ""
-                stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}{batch_info}"
+                # batch_info = f", fetch={limit}/{per_batch}/{batch_delay}s" if advanced_fetch else ""
+                # stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}{batch_info}"
+                stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}"
                 # debug_print(f"{fetched_so_far}/{d['total']} [{stats_string}]")
                 thread_pbar.unit = stats_string
                 thread_pbar.update(increment)
@@ -6634,6 +6637,19 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
         print("* BeHuman: simulation stop")
 
 
+def build_follow_string(enabled, limit, batch, delay, alt_format=False):
+    if enabled:
+        if limit and not batch and not delay:
+            follow_str = (f"Maximum of " if not alt_format else "") + (f"{limit} accounts")
+        elif limit:
+            follow_str = (f"Maximum of " if not alt_format else "") + (f"{limit} accounts in batches of {batch} accounts with a {delay} second delay")
+        else:
+            follow_str = (f"Batches " if not alt_format else "batches ") + (f"of {batch} accounts with a {delay} second delay")
+    else:
+        follow_str = "False"       
+    return follow_str
+
+
 def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, user):
     """Fetch usernames in batches using a fresh generator per call.
 
@@ -6650,6 +6666,15 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
     """
     results = []
     gen = get_generator_fn()  # single generator — keeps cursor position across batches
+
+    thread_pbar = getattr(_thread_local, 'pbar', None)
+    if advanced_fetch:
+        msg = f"Fetching {build_follow_string(advanced_fetch, total_limit, max_per_batch, fetch_delay, alt_format=True)}"
+        if thread_pbar:
+            thread_pbar.write(f"* {msg}", file=thread_pbar.fp)
+        print(f"* {msg}") # if pbar, this will go to log, while the thread_pbar.write only goes to screen
+        log_activity(msg, user=user)
+
     while True:
         batch = []
         for f in gen:
@@ -6672,7 +6697,6 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
         # advanced fetching feature enabled if here
         if fetch_delay:
             # Use thread-local storage for multi-target safety
-            thread_pbar = getattr(_thread_local, 'pbar', None)
             stop_event = threading.Event()
             # Interruptible wait (stop/recheck aware) similar to the main sleep loop
             sleep_remaining = fetch_delay
@@ -6705,8 +6729,6 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
                 else:
                     time.sleep(wait_chunk)
                 sleep_remaining -= wait_chunk
-            # else:
-                # time.sleep(fetch_delay)
 
     return results
 
@@ -10280,24 +10302,8 @@ def run_main():
         print(f"*   Proxy URL:\t\t\t\t{masked_proxy_url[:50]}")
         print(f"*   Proxy Certificate:\t\t\t{PROXY_CERT_PATH or '-'}")
         print(f"*   Proxy for Webhooks:\t\t\t" + ("Enabled" if PROXY_WEBHOOKS else "Disabled"))
-    if ADVANCED_FOLLOWER_FETCH:
-        if FOLLOWER_LIMIT_TO_FETCH and not FOLLOWERS_PER_BATCH and not FOLLOWER_DELAY_PER_BATCH:
-            follower_str = f"Maximum of {FOLLOWER_LIMIT_TO_FETCH} accounts"
-        elif FOLLOWER_LIMIT_TO_FETCH:
-            follower_str = f"Maximum of {FOLLOWER_LIMIT_TO_FETCH} accounts in batches of {FOLLOWERS_PER_BATCH} accounts with a {FOLLOWER_DELAY_PER_BATCH} second delay"
-        else:
-            follower_str = f"Batches of {FOLLOWERS_PER_BATCH} accounts with a {FOLLOWER_DELAY_PER_BATCH} second delay"
-    else:
-        follower_str = "False"
-    if ADVANCED_FOLLOWEE_FETCH:
-        if FOLLOWEE_LIMIT_TO_FETCH and not FOLLOWEES_PER_BATCH and not FOLLOWEE_DELAY_PER_BATCH:
-            followee_str = f"Maximum of {FOLLOWEE_LIMIT_TO_FETCH} accounts"
-        elif FOLLOWEE_LIMIT_TO_FETCH:
-            followee_str = f"Maximum of {FOLLOWEE_LIMIT_TO_FETCH} accounts in batches of {FOLLOWEES_PER_BATCH} accounts with a {FOLLOWEE_DELAY_PER_BATCH} second delay"
-        else:
-            followee_str = f"Batches of {FOLLOWEES_PER_BATCH} accounts with a {FOLLOWEE_DELAY_PER_BATCH} second delay"
-    else:
-        followee_str = "False"
+    follower_str = build_follow_string(ADVANCED_FOLLOWER_FETCH, FOLLOWER_LIMIT_TO_FETCH, FOLLOWERS_PER_BATCH, FOLLOWER_DELAY_PER_BATCH)
+    followee_str = build_follow_string(ADVANCED_FOLLOWEE_FETCH, FOLLOWEE_LIMIT_TO_FETCH, FOLLOWEES_PER_BATCH, FOLLOWEE_DELAY_PER_BATCH)
     print(f"* Advanced Follower Fetching:\t\t{follower_str}")
     print(f"* Advanced Followee Fetching:\t\t{followee_str}")
     print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
