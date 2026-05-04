@@ -6650,7 +6650,7 @@ def build_follow_string(enabled, limit, batch, delay, alt_format=False):
     return follow_str
 
 
-def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, user):
+def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user):
     """Fetch usernames in batches using a fresh generator per call.
 
     Args:
@@ -6659,6 +6659,7 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
         total_limit:      Stop after this many total accounts (FOLLOWER_LIMIT_TO_FETCH / FOLLOWEE_LIMIT_TO_FETCH). 0 = no limit.
         fetch_delay:      Seconds to sleep between batches.
         advanced_fetch:   Indicates if advanced_fetch is enabled (valid configuration of above 3 items)
+        estimated_limit:  Estimated number of itesm to fetch. Used for messaging.
         user:             Instagram username, forwarded to log_activity.
 
     Returns:
@@ -6669,7 +6670,7 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
 
     thread_pbar = getattr(_thread_local, 'pbar', None)
     if advanced_fetch:
-        msg = f"Fetching {build_follow_string(advanced_fetch, total_limit, max_per_batch, fetch_delay, alt_format=True)}"
+        msg = f"Fetching {build_follow_string(advanced_fetch, estimated_limit, max_per_batch, fetch_delay, alt_format=True)}"
         if thread_pbar:
             thread_pbar.write(f"* {msg}", file=thread_pbar.fp)
         print(f"* {msg}") # if pbar, this will go to log, while the thread_pbar.write only goes to screen
@@ -7201,6 +7202,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 total_limit=FOLLOWER_LIMIT_TO_FETCH,
                 fetch_delay=FOLLOWER_DELAY_PER_BATCH,
                 advanced_fetch=ADVANCED_FOLLOWER_FETCH,
+                estimated_limit=follower_limit,
                 user=user,
             )
             _thread_local.FETCH_TYPE = None
@@ -7347,6 +7349,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 total_limit=FOLLOWEE_LIMIT_TO_FETCH,
                 fetch_delay=FOLLOWEE_DELAY_PER_BATCH,
                 advanced_fetch=ADVANCED_FOLLOWEE_FETCH,
+                estimated_limit=followee_limit,
                 user=user,
             )
             _thread_local.FETCH_TYPE = None
@@ -8214,6 +8217,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             total_limit=FOLLOWEE_LIMIT_TO_FETCH,
                             fetch_delay=FOLLOWEE_DELAY_PER_BATCH,
                             advanced_fetch=ADVANCED_FOLLOWEE_FETCH,
+                            estimated_limit=followee_limit,
                             user=user,
                         )
                         _thread_local.FETCH_TYPE = None
@@ -8357,6 +8361,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             total_limit=FOLLOWER_LIMIT_TO_FETCH,
                             fetch_delay=FOLLOWER_DELAY_PER_BATCH,
                             advanced_fetch=ADVANCED_FOLLOWER_FETCH,
+                            estimated_limit=follower_limit,
                             user=user,
                         )
                         _thread_local.FETCH_TYPE = None
