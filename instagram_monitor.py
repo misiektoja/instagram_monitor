@@ -7338,7 +7338,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         try:
             update_ui_data(targets={user: {'status': 'Downloading Followings'}})
             log_activity(f"Started downloading followings", user=user)
-            followee_limit = min(FOLLOWEE_LIMIT_TO_FETCH, followees_count) if (ADVANCED_FOLLOWEE_FETCH and FOLLOWEE_LIMIT_TO_FETCH) else followees_count
+            followee_limit = min(FOLLOWEE_LIMIT_TO_FETCH, followings_count) if (ADVANCED_FOLLOWEE_FETCH and FOLLOWEE_LIMIT_TO_FETCH) else followings_count
             setup_pbar(total_expected=followee_limit, title="* Downloading Followings")
             start_time_dl = time.time()
             _thread_local.FETCH_TYPE = 'followee'
@@ -8205,7 +8205,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 if not skip_follow_changes and not skip_session and not skip_followings and can_view:
                     try:
                         log_activity(f"Started downloading followings", user=user)
-                        followee_limit = min(FOLLOWEE_LIMIT_TO_FETCH, followees_count) if (ADVANCED_FOLLOWEE_FETCH and FOLLOWEE_LIMIT_TO_FETCH) else followees_count
+                        followee_limit = min(FOLLOWEE_LIMIT_TO_FETCH, followings_count) if (ADVANCED_FOLLOWEE_FETCH and FOLLOWEE_LIMIT_TO_FETCH) else followings_count
                         setup_pbar(total_expected=followee_limit, title="* Downloading Followings")
                         start_time_dl = time.time()
                         followings = []
