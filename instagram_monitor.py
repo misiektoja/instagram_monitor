@@ -189,11 +189,11 @@ JITTER_VERBOSE = False
 #   *_DELAY_PER_BATCH = delay between batches (0 to disable [no delay])
 #   *_LIMIT_TO_FETCH  = total accounts to fetch via multiple batches (0 to disable [no limit])
 #
-# There are 4 valid configurations, and script will indicate if incorrectly configured:
+# There are 4 valid configurations, and the script will indicate if incorrectly configured:
 #   Disabled
 #   Maximum of XXX accounts
 #   Maximum of XXX accounts in batches of YYY accounts with ZZZ second delay
-#   Batches of YYY acounts with ZZZ second delay
+#   Batches of YYY accounts with ZZZ second delay
 FOLLOWERS_PER_BATCH      = 0
 FOLLOWEES_PER_BATCH      = 0
 FOLLOWER_LIMIT_TO_FETCH  = 0
