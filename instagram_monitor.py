@@ -1325,6 +1325,7 @@ def create_web_dashboard_app():
                 # Keep output best-effort; don't break dashboard on edge cases
                 pass
 
+            data = apply_privacy_substitutions(data)
             return jsonify(data)  # type: ignore
 
     # Catch TemplateNotFound specifically to show friendly error
@@ -1668,7 +1669,7 @@ def create_web_dashboard_app():
         global DASHBOARD_SHOW_CHECK_SECONDS, TIME_FORMAT_12H
 
         if flask_request.method == 'GET':  # type: ignore
-            return jsonify({  # type: ignore
+            data = {  # type: ignore
                 'check_interval': INSTA_CHECK_INTERVAL,
                 'random_low': RANDOM_SLEEP_DIFF_LOW,
                 'random_high': RANDOM_SLEEP_DIFF_HIGH,
@@ -1722,7 +1723,9 @@ def create_web_dashboard_app():
                 'min_h2': MIN_H2,
                 'max_h2': MAX_H2,
                 'dashboard_show_check_seconds': DASHBOARD_SHOW_CHECK_SECONDS,
-            })
+            }
+            data = apply_privacy_substitutions(data)
+            return jsonify(data)
         elif flask_request.method == 'POST':  # type: ignore
             data = flask_request.get_json(silent=True) or {}  # type: ignore
             ok, changes, err, code = apply_settings_update(data)
@@ -2464,6 +2467,7 @@ def update_ui_data(targets=None, config=None, check_count=None, last_check=None,
                             tgt_parts.append(f"session={s}")
                 parts.append(f"[{', '.join(tgt_parts)}]")
         if parts:
+            parts = apply_privacy_substitutions(parts)
             debug_print(f"UI Data Update: {', '.join(parts)}")
     if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
         if DASHBOARD_ENABLED:
@@ -2540,6 +2544,7 @@ def log_activity(message, user=None, level='system', details=None, to_web=True):
 
     # Format message with user if provided
     display_message = f"[{user}] {message}" if user else message
+    display_message = apply_privacy_substitutions(display_message)
 
     activity_item_rich = {
         'time': timestamp_str,
@@ -2997,7 +3002,7 @@ class Logger(object):
         global last_output
         with STDOUT_LOCK:
             # Apply color for terminal
-            message = process_message_substitutions(message)
+            message = apply_privacy_substitutions(message)
             colorized_message = apply_color_to_text(message)
 
             if message != '\n':
@@ -3058,7 +3063,7 @@ class ColorStream(object):
         self.terminal = stream
 
     def write(self, message):
-        coloured = apply_color_to_text(message)
+        coloured = apply_color_to_text(apply_privacy_substitutions(message))
         self.terminal.write(coloured)
         self.terminal.flush()
 
@@ -3234,9 +3239,9 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
 
-    subject = process_message_substitutions(subject)
-    body = process_message_substitutions(body)
-    body_html = process_message_substitutions(body_html)
+    subject = apply_privacy_substitutions(subject)
+    body = apply_privacy_substitutions(body)
+    body_html = apply_privacy_substitutions(body_html)
 
     try:
         ipaddress.ip_address(str(SMTP_HOST))
@@ -3470,8 +3475,8 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     if not WEBHOOK_ENABLED or not WEBHOOK_URL:
         return 1
 
-    title = process_message_substitutions(title)
-    description = process_message_substitutions(description)
+    title = apply_privacy_substitutions(title)
+    description = apply_privacy_substitutions(description)
 
     # Validate webhook URL
     if not validate_webhook_url(WEBHOOK_URL):
@@ -3691,34 +3696,39 @@ def refresh_proxy_if_needed(bot, user):
                 log_activity(f"Proxy refresh failed: {error_msg}", user=user, level='error')
 
 
-def process_message_substitutions(message: str) -> str:
+def apply_privacy_substitutions(content):
     """
-    Perform search/replace on a message using the PRIVACY_SUBSTITIONS global variable.
-    PRIVACY_SUBSTITIONS should be a list of (search, replace) tuples.
-    Returns the original message if PRIVACY_SUBSTITIONS doesn't exist or is empty.
+    Apply PRIVACY_SUBSTITIONS to any content type.
+    - Recurses into dicts and lists
+    - For strings, performs search/replace using PRIVACY_SUBSTITIONS
+    - Non-string primitives are returned unchanged
     """
-    if PRIVACY_SUBSTITIONS:
-        if not isinstance(message, str):
-            message = str(message)
+    if not PRIVACY_SUBSTITIONS:
+        return content
+    if isinstance(content, str):
         for search, replace in PRIVACY_SUBSTITIONS:
-            message = message.replace(search, replace)
-    return message
+            content = content.replace(search, replace)
+        return content
+    if isinstance(content, dict):
+        return {apply_privacy_substitutions(k): apply_privacy_substitutions(v) for k, v in content.items()}
+    if isinstance(content, list):
+        return [apply_privacy_substitutions(item) for item in content]
+    return content
+    
 
-   
 # Debug print helper - only prints if DEBUG_MODE is enabled
 def debug_print(message):
     if DEBUG_MODE:
-        message = process_message_substitutions(message)
         timestamp = get_hour_min_from_ts(now_local(), show_seconds=True)
         user = getattr(_thread_local, 'user', None)
-        user_prefix = f" [{process_message_substitutions(user)}]" if user else ""
+        user_prefix = f" [{user}]" if user else ""
 
         # If we just printed a partial line (no newline), add one before the debug message to avoid clobbering
         if getattr(_thread_local, 'in_partial_line', False):
             print()
             _thread_local.in_partial_line = False
 
-        print(f"[DEBUG {timestamp}]{user_prefix} {message}")
+        print(apply_privacy_substitutions(f"[DEBUG {timestamp}]{user_prefix} {message}"))
 
 
 # Initializes the CSV file
@@ -5375,6 +5385,8 @@ def generate_user_dashboard(target_data):
     if not RICH_AVAILABLE:
         return None
 
+    target_data = apply_privacy_substitutions(target_data)
+
     # Type guard: Rich is available at this point
     assert Table is not None
     assert box is not None
@@ -5536,6 +5548,9 @@ def generate_user_dashboard(target_data):
 def generate_config_dashboard(target_data, config_data):
     if not RICH_AVAILABLE:
         return None
+
+    target_data = apply_privacy_substitutions(target_data)
+    config_data = apply_privacy_substitutions(config_data)
 
     # Type guard: Rich is available at this point
     assert Table is not None
