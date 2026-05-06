@@ -6705,7 +6705,8 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
                 batch_info_orig = thread_pbar.unit
             while sleep_remaining > 0:
                 if thread_pbar:
-                    batch_info = batch_info_orig + f" - PAUSED for {sleep_remaining}s"
+                    # need to remove part of string to make room, since entire PBAR needs to fit within HORIZONTAL_LINE width (safe_ncols)
+                    batch_info = re.sub(r'^.*?(mins=)', r'\1', batch_info_orig) + f" - PAUSED for {sleep_remaining}s"
                     thread_pbar.unit = batch_info
                     thread_pbar.refresh()
                 if stop_event and stop_event.is_set():
