@@ -3497,39 +3497,43 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
 
     for attempt in range(max_retries):
         try:
+            sanitized_fields = []
+            if fields:
+                for field in fields[:WEBHOOK_MAX_FIELDS]:  # type: ignore
+                    sanitized_name = apply_privacy_substitutions(str(field.get("name", "")))  # type: ignore
+                    sanitized_value = apply_privacy_substitutions(str(field.get("value", "")))  # type: ignore
+                    sanitized_fields.append({
+                        "name": sanitized_name[:WEBHOOK_FIELD_NAME_LIMIT],  # type: ignore
+                        "value": sanitized_value[:WEBHOOK_FIELD_VALUE_LIMIT],  # type: ignore
+                        "inline": field.get("inline", False)
+                    })
+
+            sanitized_image_url = apply_privacy_substitutions(str(image_url)) if image_url else ""
+
             # Load all possible items into payload for use in formatting the WEBHOOK_TEMPLATE and WEBHOOK_HEADERS
             payload = {
                 "title": title[:WEBHOOK_EMBED_TITLE_LIMIT] if title else "Instagram Monitor",  # type: ignore
                 "description": description[:WEBHOOK_EMBED_DESCRIPTION_LIMIT] if description else "",  # type: ignore
                 "version": VERSION,
-                "image_url": image_url if image_url else "",
-                "fields": fields if fields else [],
-                "fields_str": "\n".join([f"{f['name']}: {f['value']}" for f in fields]) if fields else "",
+                "image_url": sanitized_image_url,
+                "fields": sanitized_fields,
+                "fields_str": "\n".join([f"{f['name']}: {f['value']}" for f in sanitized_fields]) if sanitized_fields else "",
                 "color": color,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
-            if fields:
-                payload["fields"] = []
-                for field in fields[:WEBHOOK_MAX_FIELDS]:  # type: ignore
-                    payload["fields"].append({
-                        "name": str(field.get("name", ""))[:WEBHOOK_FIELD_NAME_LIMIT],  # type: ignore
-                        "value": str(field.get("value", ""))[:WEBHOOK_FIELD_VALUE_LIMIT],  # type: ignore
-                        "inline": field.get("inline", False)
-                    })
-
-            if image_url:
-                payload["image"] = {"url": image_url}
+            if sanitized_image_url:
+                payload["image"] = {"url": sanitized_image_url}
             elif local_image_file and os.path.isfile(local_image_file):
                 # If using local file, use attachment:// syntax
                 filename = os.path.basename(local_image_file)
                 payload["image"] = {"url": f"attachment://{filename}"}
 
             if WEBHOOK_USERNAME:
-                payload["username"] = WEBHOOK_USERNAME
+                payload["username"] = apply_privacy_substitutions(str(WEBHOOK_USERNAME))
 
             if WEBHOOK_AVATAR_URL:
-                payload["avatar_url"] = WEBHOOK_AVATAR_URL
+                payload["avatar_url"] = apply_privacy_substitutions(str(WEBHOOK_AVATAR_URL))
 
             # Apply optional transformations to payload, primarily the title and description
             for transform in WEBHOOK_TRANSFORMS:  # type: ignore
