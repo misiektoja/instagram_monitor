@@ -184,7 +184,7 @@ JITTER_VERBOSE = False
 # Optional Privacy Substitutions
 # This allows you to substitute any string for another in all messaging, logging, webhooks, emails, and both dashboards.
 # For instance, you may want to change a particular Instagram username to a more friendly name, or you could mask a name.
-# 
+#
 # Provide a list of (search, replace) tuples. Any search term will be substituted with the replace term.
 #
 # Example:
@@ -858,7 +858,7 @@ except ModuleNotFoundError:
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape
 from itertools import islice
-from typing import Optional, Tuple, Any, Callable, List
+from typing import Optional, Tuple, Any, Callable, List, TypeVar, cast
 from glob import glob
 import sqlite3
 from sqlite3 import OperationalError, connect
@@ -3701,9 +3701,12 @@ def refresh_proxy_if_needed(bot, user):
                 log_activity(f"Proxy refresh failed: {error_msg}", user=user, level='error')
 
 
-def apply_privacy_substitutions(content):
+TPrivacyContent = TypeVar("TPrivacyContent")
+
+
+# Apply PRIVACY_SUBSTITIONS to any content type
+def apply_privacy_substitutions(content: TPrivacyContent) -> TPrivacyContent:
     """
-    Apply PRIVACY_SUBSTITIONS to any content type.
     - Recurses into dict values and list items
     - For strings, performs search/replace using PRIVACY_SUBSTITIONS
     - Preserves dictionary keys to keep API object identity stable
@@ -3714,6 +3717,7 @@ def apply_privacy_substitutions(content):
     if not PRIVACY_SUBSTITIONS:
         return content
     if isinstance(content, str):
+        content_str = content
         for item in PRIVACY_SUBSTITIONS:
             if not isinstance(item, (list, tuple)) or len(item) != 2:
                 if not PRIVACY_SUBSTITIONS_INVALID_WARNED:
@@ -3728,14 +3732,14 @@ def apply_privacy_substitutions(content):
                         sys.__stderr__.write("* Warning: Ignoring invalid PRIVACY_SUBSTITIONS entry, expected non-empty string search and string replace values\n")
                     PRIVACY_SUBSTITIONS_INVALID_WARNED = True
                 continue
-            content = content.replace(search, replace)
-        return content
+            content_str = content_str.replace(search, replace)
+        return cast(TPrivacyContent, content_str)
     if isinstance(content, dict):
-        return {k: apply_privacy_substitutions(v) for k, v in content.items()}
+        return cast(TPrivacyContent, {k: apply_privacy_substitutions(v) for k, v in content.items()})
     if isinstance(content, list):
-        return [apply_privacy_substitutions(item) for item in content]
+        return cast(TPrivacyContent, [apply_privacy_substitutions(item) for item in content])
     return content
-    
+
 
 # Debug print helper - only prints if DEBUG_MODE is enabled
 def debug_print(message):
