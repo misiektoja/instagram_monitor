@@ -1726,7 +1726,8 @@ def create_web_dashboard_app():
                 'dashboard_show_check_seconds': DASHBOARD_SHOW_CHECK_SECONDS,
             }
             data = apply_privacy_substitutions(data)
-            return jsonify(data)
+            jsonify_func = cast(Callable[..., Any], jsonify)
+            return jsonify_func(data)
         elif flask_request.method == 'POST':  # type: ignore
             data = flask_request.get_json(silent=True) or {}  # type: ignore
             ok, changes, err, code = apply_settings_update(data)
@@ -2186,10 +2187,11 @@ def stop_monitoring_for_target(username):
 
     # Clean up thread reference - wait for thread to finish with timeout
     if username in WEB_DASHBOARD_MONITOR_THREADS:
-        thread = WEB_DASHBOARD_MONITOR_THREADS[username]
-        can_join = (thread is not None and thread.is_alive() and thread is not threading.current_thread() and thread is not threading.main_thread())
-        if can_join:
-            thread.join(timeout=5.0)  # Wait up to 5 seconds for clean shutdown
+        thread = WEB_DASHBOARD_MONITOR_THREADS.get(username)
+        if isinstance(thread, threading.Thread):
+            can_join = thread.is_alive() and thread is not threading.current_thread() and thread is not threading.main_thread()
+            if can_join:
+                thread.join(timeout=5.0)  # Wait up to 5 seconds for clean shutdown
         del WEB_DASHBOARD_MONITOR_THREADS[username]
     if username in WEB_DASHBOARD_STOP_EVENTS:
         del WEB_DASHBOARD_STOP_EVENTS[username]
