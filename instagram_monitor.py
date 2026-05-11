@@ -181,6 +181,17 @@ ENABLE_JITTER = False
 # Set to True to enable verbose output for HTTP jitter/back-off wrappers
 JITTER_VERBOSE = False
 
+# Optional Privacy Substitutions
+# This allows you to substitute any string for another in all messaging, logging, webhooks, emails, and both dashboards.
+# For instance, you may want to change a particular Instagram username to a more friendly name, or you could mask a name.
+#
+# Provide a list of (search, replace) tuples. Any search term will be substituted with the replace term.
+#
+# Example:
+# PRIVACY_SUBSTITIONS = [ ("a.username", "XXX"), ("sdfsdf747475475", "Bobby") ]
+#
+PRIVACY_SUBSTITIONS = [ ]
+
 # Optional: Enable proxy support for networking traffic
 #
 # Note: even when PROXY_ENABLED is False, the underlying 'requests' library still
@@ -693,6 +704,7 @@ DASHBOARD_SHOW_CHECK_SECONDS = True
 THUMBNAILS_FORCED_BY_WEB = False
 FOLLOWERS_CHURN_DETECTION = False
 TIME_FORMAT_12H = False
+PRIVACY_SUBSTITIONS = []
 mode_of_the_tool = "Unknown"
 
 exec(CONFIG_BLOCK, globals())
@@ -712,6 +724,7 @@ LIVENESS_CHECK_COUNTER = 0
 stdout_bck = None
 last_output = []
 csvfieldnames = ['Date', 'Type', 'Old', 'New']
+PRIVACY_SUBSTITIONS_INVALID_WARNED = False
 
 imgcat_exe = ""
 
@@ -845,7 +858,7 @@ except ModuleNotFoundError:
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape
 from itertools import islice
-from typing import Optional, Tuple, Any, Callable, List
+from typing import Optional, Tuple, Any, Callable, List, TypeVar, cast
 from glob import glob
 import sqlite3
 from sqlite3 import OperationalError, connect
@@ -1313,6 +1326,7 @@ def create_web_dashboard_app():
                 # Keep output best-effort; don't break dashboard on edge cases
                 pass
 
+            data = apply_privacy_substitutions(data)
             return jsonify(data)  # type: ignore
 
     # Catch TemplateNotFound specifically to show friendly error
@@ -1656,7 +1670,7 @@ def create_web_dashboard_app():
         global DASHBOARD_SHOW_CHECK_SECONDS, TIME_FORMAT_12H
 
         if flask_request.method == 'GET':  # type: ignore
-            return jsonify({  # type: ignore
+            data = {  # type: ignore
                 'check_interval': INSTA_CHECK_INTERVAL,
                 'random_low': RANDOM_SLEEP_DIFF_LOW,
                 'random_high': RANDOM_SLEEP_DIFF_HIGH,
@@ -1710,7 +1724,10 @@ def create_web_dashboard_app():
                 'min_h2': MIN_H2,
                 'max_h2': MAX_H2,
                 'dashboard_show_check_seconds': DASHBOARD_SHOW_CHECK_SECONDS,
-            })
+            }
+            data = apply_privacy_substitutions(data)
+            jsonify_func = cast(Callable[..., Any], jsonify)
+            return jsonify_func(data)
         elif flask_request.method == 'POST':  # type: ignore
             data = flask_request.get_json(silent=True) or {}  # type: ignore
             ok, changes, err, code = apply_settings_update(data)
@@ -2170,10 +2187,11 @@ def stop_monitoring_for_target(username):
 
     # Clean up thread reference - wait for thread to finish with timeout
     if username in WEB_DASHBOARD_MONITOR_THREADS:
-        thread = WEB_DASHBOARD_MONITOR_THREADS[username]
-        can_join = (thread is not None and thread.is_alive() and thread is not threading.current_thread() and thread is not threading.main_thread())
-        if can_join:
-            thread.join(timeout=5.0)  # Wait up to 5 seconds for clean shutdown
+        thread = WEB_DASHBOARD_MONITOR_THREADS.get(username)
+        if isinstance(thread, threading.Thread):
+            can_join = thread.is_alive() and thread is not threading.current_thread() and thread is not threading.main_thread()
+            if can_join:
+                thread.join(timeout=5.0)  # Wait up to 5 seconds for clean shutdown
         del WEB_DASHBOARD_MONITOR_THREADS[username]
     if username in WEB_DASHBOARD_STOP_EVENTS:
         del WEB_DASHBOARD_STOP_EVENTS[username]
@@ -2452,6 +2470,7 @@ def update_ui_data(targets=None, config=None, check_count=None, last_check=None,
                             tgt_parts.append(f"session={s}")
                 parts.append(f"[{', '.join(tgt_parts)}]")
         if parts:
+            parts = apply_privacy_substitutions(parts)
             debug_print(f"UI Data Update: {', '.join(parts)}")
     if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
         if DASHBOARD_ENABLED:
@@ -2528,6 +2547,7 @@ def log_activity(message, user=None, level='system', details=None, to_web=True):
 
     # Format message with user if provided
     display_message = f"[{user}] {message}" if user else message
+    display_message = apply_privacy_substitutions(display_message)
 
     activity_item_rich = {
         'time': timestamp_str,
@@ -2985,6 +3005,7 @@ class Logger(object):
         global last_output
         with STDOUT_LOCK:
             # Apply color for terminal
+            message = apply_privacy_substitutions(message)
             colorized_message = apply_color_to_text(message)
 
             if message != '\n':
@@ -3045,7 +3066,7 @@ class ColorStream(object):
         self.terminal = stream
 
     def write(self, message):
-        coloured = apply_color_to_text(message)
+        coloured = apply_color_to_text(apply_privacy_substitutions(message))
         self.terminal.write(coloured)
         self.terminal.flush()
 
@@ -3220,6 +3241,10 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
 def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15):
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
+
+    subject = apply_privacy_substitutions(subject)
+    body = apply_privacy_substitutions(body)
+    body_html = apply_privacy_substitutions(body_html)
 
     try:
         ipaddress.ip_address(str(SMTP_HOST))
@@ -3453,6 +3478,9 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     if not WEBHOOK_ENABLED or not WEBHOOK_URL:
         return 1
 
+    title = apply_privacy_substitutions(title)
+    description = apply_privacy_substitutions(description)
+
     # Validate webhook URL
     if not validate_webhook_url(WEBHOOK_URL):
         debug_print("* Webhook error: Invalid webhook URL format")
@@ -3471,39 +3499,43 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
 
     for attempt in range(max_retries):
         try:
+            sanitized_fields = []
+            if fields:
+                for field in fields[:WEBHOOK_MAX_FIELDS]:  # type: ignore
+                    sanitized_name = apply_privacy_substitutions(str(field.get("name", "")))  # type: ignore
+                    sanitized_value = apply_privacy_substitutions(str(field.get("value", "")))  # type: ignore
+                    sanitized_fields.append({
+                        "name": sanitized_name[:WEBHOOK_FIELD_NAME_LIMIT],  # type: ignore
+                        "value": sanitized_value[:WEBHOOK_FIELD_VALUE_LIMIT],  # type: ignore
+                        "inline": field.get("inline", False)
+                    })
+
+            sanitized_image_url = apply_privacy_substitutions(str(image_url)) if image_url else ""
+
             # Load all possible items into payload for use in formatting the WEBHOOK_TEMPLATE and WEBHOOK_HEADERS
             payload = {
                 "title": title[:WEBHOOK_EMBED_TITLE_LIMIT] if title else "Instagram Monitor",  # type: ignore
                 "description": description[:WEBHOOK_EMBED_DESCRIPTION_LIMIT] if description else "",  # type: ignore
                 "version": VERSION,
-                "image_url": image_url if image_url else "",
-                "fields": fields if fields else [],
-                "fields_str": "\n".join([f"{f['name']}: {f['value']}" for f in fields]) if fields else "",
+                "image_url": sanitized_image_url,
+                "fields": sanitized_fields,
+                "fields_str": "\n".join([f"{f['name']}: {f['value']}" for f in sanitized_fields]) if sanitized_fields else "",
                 "color": color,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
-            if fields:
-                payload["fields"] = []
-                for field in fields[:WEBHOOK_MAX_FIELDS]:  # type: ignore
-                    payload["fields"].append({
-                        "name": str(field.get("name", ""))[:WEBHOOK_FIELD_NAME_LIMIT],  # type: ignore
-                        "value": str(field.get("value", ""))[:WEBHOOK_FIELD_VALUE_LIMIT],  # type: ignore
-                        "inline": field.get("inline", False)
-                    })
-
-            if image_url:
-                payload["image"] = {"url": image_url}
+            if sanitized_image_url:
+                payload["image"] = {"url": sanitized_image_url}
             elif local_image_file and os.path.isfile(local_image_file):
                 # If using local file, use attachment:// syntax
                 filename = os.path.basename(local_image_file)
                 payload["image"] = {"url": f"attachment://{filename}"}
 
             if WEBHOOK_USERNAME:
-                payload["username"] = WEBHOOK_USERNAME
+                payload["username"] = apply_privacy_substitutions(str(WEBHOOK_USERNAME))
 
             if WEBHOOK_AVATAR_URL:
-                payload["avatar_url"] = WEBHOOK_AVATAR_URL
+                payload["avatar_url"] = apply_privacy_substitutions(str(WEBHOOK_AVATAR_URL))
 
             # Apply optional transformations to payload, primarily the title and description
             for transform in WEBHOOK_TRANSFORMS:  # type: ignore
@@ -3671,6 +3703,46 @@ def refresh_proxy_if_needed(bot, user):
                 log_activity(f"Proxy refresh failed: {error_msg}", user=user, level='error')
 
 
+TPrivacyContent = TypeVar("TPrivacyContent")
+
+
+# Apply PRIVACY_SUBSTITIONS to any content type
+def apply_privacy_substitutions(content: TPrivacyContent) -> TPrivacyContent:
+    """
+    - Recurses into dict values and list items
+    - For strings, performs search/replace using PRIVACY_SUBSTITIONS
+    - Preserves dictionary keys to keep API object identity stable
+    - Ignores invalid substitution entries to avoid runtime crashes
+    - Non-string primitives are returned unchanged
+    """
+    global PRIVACY_SUBSTITIONS_INVALID_WARNED
+    if not PRIVACY_SUBSTITIONS:
+        return content
+    if isinstance(content, str):
+        content_str = content
+        for item in PRIVACY_SUBSTITIONS:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                if not PRIVACY_SUBSTITIONS_INVALID_WARNED:
+                    if sys.__stderr__ is not None:
+                        sys.__stderr__.write("* Warning: Ignoring invalid PRIVACY_SUBSTITIONS entry, expected (search, replace) with both values as strings\n")
+                    PRIVACY_SUBSTITIONS_INVALID_WARNED = True
+                continue
+            search, replace = item
+            if not isinstance(search, str) or not isinstance(replace, str) or not search:
+                if not PRIVACY_SUBSTITIONS_INVALID_WARNED:
+                    if sys.__stderr__ is not None:
+                        sys.__stderr__.write("* Warning: Ignoring invalid PRIVACY_SUBSTITIONS entry, expected non-empty string search and string replace values\n")
+                    PRIVACY_SUBSTITIONS_INVALID_WARNED = True
+                continue
+            content_str = content_str.replace(search, replace)
+        return cast(TPrivacyContent, content_str)
+    if isinstance(content, dict):
+        return cast(TPrivacyContent, {k: apply_privacy_substitutions(v) for k, v in content.items()})
+    if isinstance(content, list):
+        return cast(TPrivacyContent, [apply_privacy_substitutions(item) for item in content])
+    return content
+
+
 # Debug print helper - only prints if DEBUG_MODE is enabled
 def debug_print(message):
     if DEBUG_MODE:
@@ -3683,7 +3755,7 @@ def debug_print(message):
             print()
             _thread_local.in_partial_line = False
 
-        print(f"[DEBUG {timestamp}]{user_prefix} {message}")
+        print(apply_privacy_substitutions(f"[DEBUG {timestamp}]{user_prefix} {message}"))
 
 
 # Initializes the CSV file
@@ -5340,6 +5412,8 @@ def generate_user_dashboard(target_data):
     if not RICH_AVAILABLE:
         return None
 
+    target_data = apply_privacy_substitutions(target_data)
+
     # Type guard: Rich is available at this point
     assert Table is not None
     assert box is not None
@@ -5501,6 +5575,9 @@ def generate_user_dashboard(target_data):
 def generate_config_dashboard(target_data, config_data):
     if not RICH_AVAILABLE:
         return None
+
+    target_data = apply_privacy_substitutions(target_data)
+    config_data = apply_privacy_substitutions(config_data)
 
     # Type guard: Rich is available at this point
     assert Table is not None
