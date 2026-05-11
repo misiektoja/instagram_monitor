@@ -3699,8 +3699,9 @@ def refresh_proxy_if_needed(bot, user):
 def apply_privacy_substitutions(content):
     """
     Apply PRIVACY_SUBSTITIONS to any content type.
-    - Recurses into dicts and lists
+    - Recurses into dict values and list items
     - For strings, performs search/replace using PRIVACY_SUBSTITIONS
+    - Preserves dictionary keys to keep API object identity stable
     - Non-string primitives are returned unchanged
     """
     if not PRIVACY_SUBSTITIONS:
@@ -3710,7 +3711,7 @@ def apply_privacy_substitutions(content):
             content = content.replace(search, replace)
         return content
     if isinstance(content, dict):
-        return {apply_privacy_substitutions(k): apply_privacy_substitutions(v) for k, v in content.items()}
+        return {k: apply_privacy_substitutions(v) for k, v in content.items()}
     if isinstance(content, list):
         return [apply_privacy_substitutions(item) for item in content]
     return content
