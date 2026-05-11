@@ -724,6 +724,7 @@ LIVENESS_CHECK_COUNTER = 0
 stdout_bck = None
 last_output = []
 csvfieldnames = ['Date', 'Type', 'Old', 'New']
+PRIVACY_SUBSTITIONS_INVALID_WARNED = False
 
 imgcat_exe = ""
 
@@ -3702,12 +3703,27 @@ def apply_privacy_substitutions(content):
     - Recurses into dict values and list items
     - For strings, performs search/replace using PRIVACY_SUBSTITIONS
     - Preserves dictionary keys to keep API object identity stable
+    - Ignores invalid substitution entries to avoid runtime crashes
     - Non-string primitives are returned unchanged
     """
+    global PRIVACY_SUBSTITIONS_INVALID_WARNED
     if not PRIVACY_SUBSTITIONS:
         return content
     if isinstance(content, str):
-        for search, replace in PRIVACY_SUBSTITIONS:
+        for item in PRIVACY_SUBSTITIONS:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                if not PRIVACY_SUBSTITIONS_INVALID_WARNED:
+                    if sys.__stderr__ is not None:
+                        sys.__stderr__.write("* Warning: Ignoring invalid PRIVACY_SUBSTITIONS entry, expected (search, replace) with both values as strings\n")
+                    PRIVACY_SUBSTITIONS_INVALID_WARNED = True
+                continue
+            search, replace = item
+            if not isinstance(search, str) or not isinstance(replace, str) or not search:
+                if not PRIVACY_SUBSTITIONS_INVALID_WARNED:
+                    if sys.__stderr__ is not None:
+                        sys.__stderr__.write("* Warning: Ignoring invalid PRIVACY_SUBSTITIONS entry, expected non-empty string search and string replace values\n")
+                    PRIVACY_SUBSTITIONS_INVALID_WARNED = True
+                continue
             content = content.replace(search, replace)
         return content
     if isinstance(content, dict):
