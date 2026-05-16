@@ -777,6 +777,7 @@ NEXT_CHECK_DISPLAY = None
 CHECK_COUNT = 0
 
 START_TIME_SCRIPT = 0.0
+MINS_CUTOFF = 120
 
 # Global state for debug mode manual check trigger (thread-safe Event)
 # Will be initialized after threading is imported
@@ -6305,9 +6306,21 @@ def instagram_wrap_request(orig_request):
                     batches_remaining = math.ceil(remaining_items / per_batch) if per_batch else 0
                     rem_m = remaining_items * mins_per_req + batches_remaining * delay_per_batch_m
 
+                if rem_m >= MINS_CUTOFF:
+                    rem_m = int(rem_m // 60)
+                    remain_str = "+" + str(rem_m) + "hrs"
+                else:
+                    remain_str = f"{rem_m:.1f}"
+
+                if elapsed_m >= MINS_CUTOFF:
+                    elapsed_m = int(elapsed_m // 60)
+                    elapsed_str = "+" + str(elapsed_m) + "hrs"
+                else:
+                    elapsed_str = f"{elapsed_m:.1f}"
+
                 # batch_info = f", fetch={limit}/{per_batch}/{batch_delay}s" if advanced_fetch else ""
                 # stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}{batch_info}"
-                stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}"
+                stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_str}, remain={remain_str}"
                 # debug_print(f"{fetched_so_far}/{d['total']} [{stats_string}]")
                 thread_pbar.unit = stats_string
                 thread_pbar.update(increment)
@@ -6782,7 +6795,9 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
             while sleep_remaining > 0:
                 if thread_pbar:
                     # need to remove part of string to make room, since entire PBAR needs to fit within HORIZONTAL_LINE width (safe_ncols)
-                    batch_info = re.sub(r'^.*?(mins=)', r'\1', batch_info_orig) + f" - PAUSED for {sleep_remaining}s"
+                    batch_info = re.sub(r'^.*?(mins=)', r'\1', batch_info_orig)
+                    # remove existing PAUSED messages. can occur if no accounts fetched for some reason
+                    batch_info = re.sub(r" - PAUSED.*$", "", batch_info) + f" - PAUSED for {sleep_remaining}s"
                     thread_pbar.unit = batch_info
                     thread_pbar.refresh()
                 if stop_event and stop_event.is_set():
