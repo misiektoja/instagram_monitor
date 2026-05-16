@@ -706,6 +706,7 @@ FOLLOWERS_CHURN_DETECTION = False
 TIME_FORMAT_12H = False
 PRIVACY_SUBSTITIONS = []
 mode_of_the_tool = "Unknown"
+SKIP_WRAP_MESSAGES = False
 
 exec(CONFIG_BLOCK, globals())
 
@@ -6128,10 +6129,11 @@ def instagram_wrap_request(orig_request):
         if method and isinstance(method, str):
             method = method.upper()
         url = kwargs.get("url") or (args[2] if len(args) > 2 else None)
-        if DEBUG_MODE:
-            debug_print(f"[WRAP-REQ] {method} {url}")
-        elif JITTER_VERBOSE:
-            print(f"* [WRAP-REQ] {method} {url}")
+        if not SKIP_WRAP_MESSAGES:
+            if DEBUG_MODE:
+                debug_print(f"[WRAP-REQ] {method} {url}")
+            elif JITTER_VERBOSE:
+                print(f"* [WRAP-REQ] {method} {url}")
 
         def _do_request():
             # If jitter is disabled, just perform the request (but still optionally serialized by the outer lock)
@@ -6259,10 +6261,11 @@ def instagram_wrap_send(orig_send):
         if method and isinstance(method, str):
             method = method.upper()
         url = getattr(req_obj, "url", None)
-        if DEBUG_MODE:
-            debug_print(f"[WRAP-SEND] {method} {url}")
-        elif JITTER_VERBOSE:
-            print(f"* [WRAP-SEND] {method} {url}")
+        if not SKIP_WRAP_MESSAGES:
+            if DEBUG_MODE:
+                debug_print(f"[WRAP-SEND] {method} {url}")
+            elif JITTER_VERBOSE:
+                print(f"* [WRAP-SEND] {method} {url}")
 
         def _do_send():
             if ENABLE_JITTER:
