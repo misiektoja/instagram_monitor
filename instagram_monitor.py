@@ -2739,6 +2739,7 @@ _PROXY_IP_RE = re.compile(r"proxy IP address of [\d.]+", re.IGNORECASE)
 _IP_ADDRESS_RE = re.compile(r"(?<!://)\b(\d{1,3}\.){3}\d{1,3}\b(?!:\d+/?)")
 _ACCOUNT_LIMIT_RE = re.compile(r"(\d+)\s+(accounts?)", re.IGNORECASE)
 
+
 # Builds ANSI escape sequence from a style description string
 def _build_ansi_sequence(style_str):
     if not style_str:
@@ -6230,14 +6231,14 @@ def instagram_wrap_request(orig_request):
             # Determine which config vars to use based on fetch type and advanced fetch flags
             fetch_type = getattr(_thread_local, 'FETCH_TYPE', 'none')
             if fetch_type == 'followee':
-                per_batch      = FOLLOWEES_PER_BATCH       if ADVANCED_FOLLOWEE_FETCH else 0
-                batch_delay    = FOLLOWEE_DELAY_PER_BATCH  if ADVANCED_FOLLOWEE_FETCH else 0
-                limit          = FOLLOWEE_LIMIT_TO_FETCH   if ADVANCED_FOLLOWEE_FETCH else 0
+                per_batch = FOLLOWEES_PER_BATCH if ADVANCED_FOLLOWEE_FETCH else 0
+                batch_delay = FOLLOWEE_DELAY_PER_BATCH if ADVANCED_FOLLOWEE_FETCH else 0
+                limit = FOLLOWEE_LIMIT_TO_FETCH if ADVANCED_FOLLOWEE_FETCH else 0
                 advanced_fetch = ADVANCED_FOLLOWEE_FETCH
             elif fetch_type == 'follower':
-                per_batch    = FOLLOWERS_PER_BATCH       if ADVANCED_FOLLOWER_FETCH else 0
-                batch_delay  = FOLLOWER_DELAY_PER_BATCH  if ADVANCED_FOLLOWER_FETCH else 0
-                limit        = FOLLOWER_LIMIT_TO_FETCH   if ADVANCED_FOLLOWER_FETCH else 0
+                per_batch = FOLLOWERS_PER_BATCH if ADVANCED_FOLLOWER_FETCH else 0
+                batch_delay = FOLLOWER_DELAY_PER_BATCH if ADVANCED_FOLLOWER_FETCH else 0
+                limit = FOLLOWER_LIMIT_TO_FETCH if ADVANCED_FOLLOWER_FETCH else 0
                 advanced_fetch = ADVANCED_FOLLOWER_FETCH
             else:
                 return
@@ -6764,7 +6765,7 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
         msg = f"Fetching {build_follow_string(advanced_fetch, estimated_limit, max_per_batch, fetch_delay, alt_format=True)}"
         if thread_pbar:
             thread_pbar.write(f"* {msg}", file=thread_pbar.fp)
-        print(f"* {msg}") # if pbar, this will go to log, while the thread_pbar.write only goes to screen
+        print(f"* {msg}")  # if pbar, this will go to log, while the thread_pbar.write only goes to screen
         log_activity(msg, user=user)
 
     while True:
@@ -6778,6 +6779,10 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
             batch.append(f.username)
             if advanced_fetch and max_per_batch and (len(batch) >= max_per_batch):
                 break  # pause; generator retains its position
+            # Stop mid-batch if the overall total_limit would be exceeded, otherwise a per_batch
+            # larger than total_limit (e.g. limit=30, per_batch=50) over-fetches by a full batch
+            if advanced_fetch and total_limit and (len(results) + len(batch) >= total_limit):
+                break
 
         if not batch:
             break  # generator fully exhausted
@@ -6795,8 +6800,7 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
         if fetch_delay:
             # Interruptible wait (stop/recheck aware) similar to the main sleep loop
             sleep_remaining = fetch_delay
-            if thread_pbar:
-                batch_info_orig = thread_pbar.unit
+            batch_info_orig = thread_pbar.unit if thread_pbar else ""
             while sleep_remaining > 0:
                 if thread_pbar:
                     # need to remove part of string to make room, since entire PBAR needs to fit within HORIZONTAL_LINE width (safe_ncols)
@@ -10013,13 +10017,13 @@ def run_main():
 
     # Advanced Follower/Followee Fetching Settings
     if any([FOLLOWERS_PER_BATCH, FOLLOWER_LIMIT_TO_FETCH, FOLLOWER_DELAY_PER_BATCH]):
-        ADVANCED_FOLLOWER_FETCH = (FOLLOWERS_PER_BATCH and FOLLOWER_DELAY_PER_BATCH) or (FOLLOWER_LIMIT_TO_FETCH and not FOLLOWERS_PER_BATCH and not FOLLOWER_DELAY_PER_BATCH)
+        ADVANCED_FOLLOWER_FETCH = bool((FOLLOWERS_PER_BATCH and FOLLOWER_DELAY_PER_BATCH) or (FOLLOWER_LIMIT_TO_FETCH and not FOLLOWERS_PER_BATCH and not FOLLOWER_DELAY_PER_BATCH))
         if not ADVANCED_FOLLOWER_FETCH:
             print(f"* Error: Invalid configuration for advanced follower fetching: FOLLOWER_LIMIT_TO_FETCH: {FOLLOWER_LIMIT_TO_FETCH}, FOLLOWERS_PER_BATCH: {FOLLOWERS_PER_BATCH}, FOLLOWER_DELAY_PER_BATCH: {FOLLOWER_DELAY_PER_BATCH}")
             sys.exit(1)
 
     if any([FOLLOWEES_PER_BATCH, FOLLOWEE_LIMIT_TO_FETCH, FOLLOWEE_DELAY_PER_BATCH]):
-        ADVANCED_FOLLOWEE_FETCH = (FOLLOWEES_PER_BATCH and FOLLOWEE_DELAY_PER_BATCH) or (FOLLOWEE_LIMIT_TO_FETCH and not FOLLOWEES_PER_BATCH and not FOLLOWEE_DELAY_PER_BATCH)
+        ADVANCED_FOLLOWEE_FETCH = bool((FOLLOWEES_PER_BATCH and FOLLOWEE_DELAY_PER_BATCH) or (FOLLOWEE_LIMIT_TO_FETCH and not FOLLOWEES_PER_BATCH and not FOLLOWEE_DELAY_PER_BATCH))
         if not ADVANCED_FOLLOWEE_FETCH:
             print(f"* Error: Invalid configuration for advanced followee fetching: FOLLOWEE_LIMIT_TO_FETCH: {FOLLOWEE_LIMIT_TO_FETCH}, FOLLOWEES_PER_BATCH: {FOLLOWEES_PER_BATCH}, FOLLOWEE_DELAY_PER_BATCH: {FOLLOWEE_DELAY_PER_BATCH}")
             sys.exit(1)
