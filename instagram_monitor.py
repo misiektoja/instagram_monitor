@@ -6739,7 +6739,7 @@ def build_follow_string(enabled, limit, batch, delay, alt_format=False):
     return follow_str
 
 
-def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user):
+def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user, stop_event=None):
     """Fetch usernames in batches using a fresh generator per call.
 
     Args:
@@ -6750,9 +6750,11 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
         advanced_fetch:   Indicates if advanced_fetch is enabled (valid configuration of above 3 items)
         estimated_limit:  Estimated number of itesm to fetch. Used for messaging.
         user:             Instagram username, forwarded to log_activity.
+        stop_event:       Optional threading.Event from the caller. If set, the inter-batch wait is
+                          aborted and the function returns whatever has been fetched so far.
 
     Returns:
-        List of username strings.
+        List of username strings (may be partial if stop_event fired).
     """
     results = []
     gen = get_generator_fn()  # single generator — keeps cursor position across batches
@@ -6766,6 +6768,11 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
         log_activity(msg, user=user)
 
     while True:
+        # Abort between batches if the caller (e.g. Ctrl-C, web-dashboard stop) requested shutdown
+        # Returns whatever has been fetched so far rather than None so the caller's len()/iteration is safe
+        if stop_event is not None and stop_event.is_set():
+            return results
+
         batch = []
         for f in gen:
             batch.append(f.username)
@@ -6786,8 +6793,6 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
 
         # advanced fetching feature enabled if here
         if fetch_delay:
-            # Use thread-local storage for multi-target safety
-            stop_event = threading.Event()
             # Interruptible wait (stop/recheck aware) similar to the main sleep loop
             sleep_remaining = fetch_delay
             if thread_pbar:
@@ -6800,8 +6805,8 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
                     batch_info = re.sub(r" - PAUSED.*$", "", batch_info) + f" - PAUSED for {sleep_remaining}s"
                     thread_pbar.unit = batch_info
                     thread_pbar.refresh()
-                if stop_event and stop_event.is_set():
-                    return
+                if stop_event is not None and stop_event.is_set():
+                    return results
                 # If a Web Dashboard "recheck" is pending, shorten the current inter-batch wait so the
                 # in-progress fetch completes sooner. Do not consume the event here: the recheck applies
                 # to the next check cycle and is handled by the main loop after this fetch returns
@@ -6816,8 +6821,7 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
                     break
 
                 wait_chunk = min(1, sleep_remaining)
-                # debug_print(wait_chunk)
-                if stop_event:
+                if stop_event is not None:
                     stop_event.wait(wait_chunk)
                 else:
                     time.sleep(wait_chunk)
@@ -7296,6 +7300,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 advanced_fetch=ADVANCED_FOLLOWER_FETCH,
                 estimated_limit=follower_limit,
                 user=user,
+                stop_event=stop_event,
             )
             _thread_local.FETCH_TYPE = None
             end_time_dl = time.time()
@@ -7443,6 +7448,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 advanced_fetch=ADVANCED_FOLLOWEE_FETCH,
                 estimated_limit=followee_limit,
                 user=user,
+                stop_event=stop_event,
             )
             _thread_local.FETCH_TYPE = None
             end_time_dl = time.time()
@@ -8311,6 +8317,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             advanced_fetch=ADVANCED_FOLLOWEE_FETCH,
                             estimated_limit=followee_limit,
                             user=user,
+                            stop_event=stop_event,
                         )
                         _thread_local.FETCH_TYPE = None
                         followings_to_save = []
@@ -8455,6 +8462,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             advanced_fetch=ADVANCED_FOLLOWER_FETCH,
                             estimated_limit=follower_limit,
                             user=user,
+                            stop_event=stop_event,
                         )
                         _thread_local.FETCH_TYPE = None
                         followers_to_save = []
