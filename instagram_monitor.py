@@ -765,7 +765,6 @@ nl_ch = "\n"
 START_TIME = 0
 NAME_COUNT = 1
 WRAPPER_COUNT = 0
-FETCH_TYPE = None
 pbar = None
 
 # Global tracking for last/next check times
@@ -5942,7 +5941,7 @@ def print_check_timing(r_sleep_time, prefix="", user=None):
 
 # Initializes and sets up a progress bar for displaying download progress
 def setup_pbar(total_expected, title):
-    global START_TIME, NAME_COUNT, WRAPPER_COUNT, FETCH_TYPE, pbar
+    global START_TIME, NAME_COUNT, WRAPPER_COUNT, pbar
 
     # Ensure request hooks are active so progress updates are tracked even without jitter or serialization
     ensure_requests_monkey_patched()
@@ -6161,7 +6160,7 @@ def close_pbar():
 def instagram_wrap_request(orig_request):
     @wraps(orig_request)
     def wrapper(*args, **kwargs):
-        global NAME_COUNT, START_TIME, WRAPPER_COUNT, FETCH_TYPE, pbar
+        global NAME_COUNT, START_TIME, WRAPPER_COUNT, pbar
         method = kwargs.get("method") or (args[1] if len(args) > 1 else None)
         if method and isinstance(method, str):
             method = method.upper()
@@ -6229,19 +6228,19 @@ def instagram_wrap_request(orig_request):
             thread_wrapper_count = getattr(_thread_local, 'WRAPPER_COUNT', 0)
 
             # Determine which config vars to use based on fetch type and advanced fetch flags
-            fetch_type = getattr(_thread_local, 'FETCH_TYPE', 'none')
+            # If no FETCH_TYPE is set (e.g. a future setup_pbar caller that does not flag a fetch kind),
+            # fall back to non-batched defaults so the wrapper still updates the bar via tqdm's rate
+            fetch_type = getattr(_thread_local, 'FETCH_TYPE', None)
             if fetch_type == 'followee':
                 per_batch = FOLLOWEES_PER_BATCH if ADVANCED_FOLLOWEE_FETCH else 0
                 batch_delay = FOLLOWEE_DELAY_PER_BATCH if ADVANCED_FOLLOWEE_FETCH else 0
-                limit = FOLLOWEE_LIMIT_TO_FETCH if ADVANCED_FOLLOWEE_FETCH else 0
                 advanced_fetch = ADVANCED_FOLLOWEE_FETCH
             elif fetch_type == 'follower':
                 per_batch = FOLLOWERS_PER_BATCH if ADVANCED_FOLLOWER_FETCH else 0
                 batch_delay = FOLLOWER_DELAY_PER_BATCH if ADVANCED_FOLLOWER_FETCH else 0
-                limit = FOLLOWER_LIMIT_TO_FETCH if ADVANCED_FOLLOWER_FETCH else 0
                 advanced_fetch = ADVANCED_FOLLOWER_FETCH
             else:
-                return
+                per_batch, batch_delay, advanced_fetch = 0, 0, False
             # Only process and count requests that are likely follower/following related
             # Check if response is successful and JSON before processing
             user_list = []
@@ -6319,10 +6318,7 @@ def instagram_wrap_request(orig_request):
                 else:
                     elapsed_str = f"{elapsed_m:.1f}"
 
-                # batch_info = f", fetch={limit}/{per_batch}/{batch_delay}s" if advanced_fetch else ""
-                # stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_m:.1f}, remain={rem_m:.1f}{batch_info}"
                 stats_string = f"{names_per_req:.1f} names/req, reqs={thread_wrapper_count:d}, mins={elapsed_str}, remain={remain_str}"
-                # debug_print(f"{fetched_so_far}/{d['total']} [{stats_string}]")
                 thread_pbar.unit = stats_string
                 thread_pbar.update(increment)
 
@@ -6727,6 +6723,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
         print("* BeHuman: simulation stop")
 
 
+# Formats an advanced follower/followee fetch config as a human-readable description
 def build_follow_string(enabled, limit, batch, delay, alt_format=False):
     if enabled:
         if limit and not batch and not delay:
