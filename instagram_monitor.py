@@ -7113,11 +7113,17 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         log_activity(f"Error: {error_msg}", user=user)
 
         # Handle session recovery for automated checks/challenge errors
-        if "detected automated checks" in error_msg and WEB_DASHBOARD_ENABLED:
+        if WEB_DASHBOARD_ENABLED and ("detected automated checks" in error_msg or "ProfileNotExistsException" in error_msg or "cannot access local variable" in error_msg):
             update_ui_data(targets={user: {'status': 'Paused: Session re-login required'}})
             log_activity("Monitoring paused: Session re-login required via Web Dashboard", user=user)
             print(f"* Monitoring paused for {user}. Please refresh/import session via Web Dashboard.")
+            if ("ProfileNotExistsException" in error_msg or "cannot access local variable" in error_msg):
+                log_activity(f"ProfileNotExistsException: If account '{user}' is correct, then '{SESSION_USERNAME or '<anonymous>'}' is likely shadowbanned and unusable.", user=user)
+                print(f"* ProfileNotExistsException: If account '{user}' is correct, then '{SESSION_USERNAME or '<anonymous>'}' is likely shadowbanned and unusable.")
             print_cur_ts("\nTimestamp:\t\t\t\t")
+
+            if threading.current_thread() is threading.main_thread():
+                sys.exit(1)
 
             # Wait for session refresh or stop event
             while not (stop_event and stop_event.is_set()):
@@ -8168,11 +8174,17 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             notification_type="error"
                         )
 
-                if "detected automated checks" in error_msg and WEB_DASHBOARD_ENABLED:
+                if WEB_DASHBOARD_ENABLED and ("detected automated checks" in error_msg or "ProfileNotExistsException" in error_msg or "cannot access local variable" in error_msg):
                     update_ui_data(targets={user: {'status': 'Paused: Session re-login required'}})
                     log_activity("Monitoring paused: Session re-login required via Web Dashboard", user=user)
                     print(f"* Monitoring paused for {user}. Please refresh/import session via Web Dashboard.")
+                    if ("ProfileNotExistsException" in error_msg or "cannot access local variable" in error_msg):
+                        log_activity(f"ProfileNotExistsException: If account '{user}' is correct, then '{SESSION_USERNAME or '<anonymous>'}' is likely shadowbanned and unusable.", user=user)
+                        print(f"* ProfileNotExistsException: If account '{user}' is correct, then '{SESSION_USERNAME or '<anonymous>'}' is likely shadowbanned and unusable.")
                     print_cur_ts("\nTimestamp:\t\t\t\t")
+
+                    if threading.current_thread() is threading.main_thread():
+                        sys.exit(1)
 
                     # Wait for session refresh or stop event
                     while not (stop_event and stop_event.is_set()):
