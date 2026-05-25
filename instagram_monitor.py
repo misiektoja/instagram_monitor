@@ -6782,7 +6782,7 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
 
         # advanced fetching feature disabled or generator ran out mid-batch
         if not advanced_fetch or (max_per_batch and len(batch) < max_per_batch):
-            break  
+            break
 
         # advanced fetching feature enabled if here
         if fetch_delay:
@@ -6802,18 +6802,18 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
                     thread_pbar.refresh()
                 if stop_event and stop_event.is_set():
                     return
-                # Allow Web Dashboard "recheck" to break the wait early (still hour-gated later)
+                # If a Web Dashboard "recheck" is pending, shorten the current inter-batch wait so the
+                # in-progress fetch completes sooner. Do not consume the event here: the recheck applies
+                # to the next check cycle and is handled by the main loop after this fetch returns
+                recheck_pending = False
                 if WEB_DASHBOARD_ENABLED:
                     with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                         if user in WEB_DASHBOARD_RECHECK_EVENTS and WEB_DASHBOARD_RECHECK_EVENTS[user].is_set():
-                            WEB_DASHBOARD_RECHECK_EVENTS[user].clear()
-                            manual_recheck_active = True
-                            manual_override_active = True
-                            log_activity("Manual recheck requested", user=user, level='system')
-                            update_ui_data(targets={user: {'status': 'Recheck requested'}})
-                            break
+                            recheck_pending = True
                     # Check for proxy changes from web dashboard
                     refresh_proxy_if_needed(bot, user)
+                if recheck_pending:
+                    break
 
                 wait_chunk = min(1, sleep_remaining)
                 # debug_print(wait_chunk)
@@ -10015,7 +10015,7 @@ def run_main():
         if not ADVANCED_FOLLOWEE_FETCH:
             print(f"* Error: Invalid configuration for advanced followee fetching: FOLLOWEE_LIMIT_TO_FETCH: {FOLLOWEE_LIMIT_TO_FETCH}, FOLLOWEES_PER_BATCH: {FOLLOWEES_PER_BATCH}, FOLLOWEE_DELAY_PER_BATCH: {FOLLOWEE_DELAY_PER_BATCH}")
             sys.exit(1)
-    
+
     # Handle new debug, dashboard, and webhook arguments
     if args.debug_mode is True:
         DEBUG_MODE = True
