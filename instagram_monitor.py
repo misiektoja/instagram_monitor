@@ -1811,7 +1811,7 @@ def create_web_dashboard_app():
         global SESSION_USERNAME, SKIP_SESSION
 
         if flask_request.method == 'GET':  # type: ignore
-            return jsonify(get_web_dashboard_session_data())  # type: ignore
+            return jsonify(apply_privacy_substitutions(get_web_dashboard_session_data()))  # type: ignore
         elif flask_request.method == 'POST':  # type: ignore
             data = flask_request.get_json()  # type: ignore
             if not data:
@@ -3772,7 +3772,10 @@ def apply_privacy_substitutions(content: TPrivacyContent) -> TPrivacyContent:
             content_str = content_str.replace(search, replace)
         return cast(TPrivacyContent, content_str)
     if isinstance(content, dict):
-        return cast(TPrivacyContent, {k: apply_privacy_substitutions(v) for k, v in content.items()})
+            return cast(TPrivacyContent, {
+                apply_privacy_substitutions(k) if isinstance(k, str) else k: apply_privacy_substitutions(v)
+                for k, v in content.items()
+            })
     if isinstance(content, list):
         return cast(TPrivacyContent, [apply_privacy_substitutions(item) for item in content])
     return content
