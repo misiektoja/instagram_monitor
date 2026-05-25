@@ -3545,32 +3545,32 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                         "inline": field.get("inline", False)
                     })
 
-            sanitized_image_url = apply_privacy_substitutions(str(image_url)) if image_url else ""
+            webhook_image_url = str(image_url) if image_url else ""
 
             # Load all possible items into payload for use in formatting the WEBHOOK_TEMPLATE and WEBHOOK_HEADERS
             payload = {
                 "title": title[:WEBHOOK_EMBED_TITLE_LIMIT] if title else "Instagram Monitor",  # type: ignore
                 "description": description[:WEBHOOK_EMBED_DESCRIPTION_LIMIT] if description else "",  # type: ignore
                 "version": VERSION,
-                "image_url": sanitized_image_url,
+                "image_url": webhook_image_url,
                 "fields": sanitized_fields,
                 "fields_str": "\n".join([f"{f['name']}: {f['value']}" for f in sanitized_fields]) if sanitized_fields else "",
                 "color": color,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
-            if sanitized_image_url:
-                payload["image"] = {"url": sanitized_image_url}
+            if webhook_image_url:
+                payload["image"] = {"url": webhook_image_url}
             elif local_image_file and os.path.isfile(local_image_file):
                 # If using local file, use attachment:// syntax
                 filename = os.path.basename(local_image_file)
                 payload["image"] = {"url": f"attachment://{filename}"}
 
             if WEBHOOK_USERNAME:
-                payload["username"] = apply_privacy_substitutions(str(WEBHOOK_USERNAME))
+                payload["username"] = WEBHOOK_USERNAME
 
             if WEBHOOK_AVATAR_URL:
-                payload["avatar_url"] = apply_privacy_substitutions(str(WEBHOOK_AVATAR_URL))
+                payload["avatar_url"] = WEBHOOK_AVATAR_URL
 
             # Apply optional transformations to payload, primarily the title and description
             for transform in WEBHOOK_TRANSFORMS:  # type: ignore
