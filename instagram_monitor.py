@@ -4666,11 +4666,15 @@ def check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
             send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
         # Send webhook notification for posts count change
-        diff = posts_count - posts_count_old
-        diff_str = f"+{diff}" if diff > 0 else str(diff)
+        if posts_count is not None and posts_count_old is not None:
+            diff = posts_count - posts_count_old
+            diff_str = f" ({'+' if diff > 0 else ''}{diff})"
+        else:
+            diff_str = ""
+
         send_webhook(
             f"📮 {user} Posts Count Changed",
-            f"User **{user}** posts count changed from **{posts_count_old}** to **{posts_count}** ({diff_str})",
+            f"User **{user}** posts count changed from **{posts_count_old}** to **{posts_count}** {diff_str}",
             color=0x34495e,  # Dark Blue
             notification_type="status"
         )
