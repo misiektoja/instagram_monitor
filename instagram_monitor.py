@@ -3649,7 +3649,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
 
 
 # Fetches the current outbound IP via IP_ADDRESS_URL, tolerating JSON and plain-text responses
-def get_ip_address(max_retries=3, timeout=10):
+def get_ip_address(max_retries=5, timeout=10, retry_delay=5):
     last_err = None
     for attempt in range(1, max_retries + 1):
         try:
@@ -3671,7 +3671,7 @@ def get_ip_address(max_retries=3, timeout=10):
         except Exception as e:
             last_err = e
             if attempt < max_retries:
-                debug_print(f"get_ip_address attempt {attempt}/{max_retries} failed: {e}, retrying...")
+                time.sleep(retry_delay)
             else:
                 debug_print(f"get_ip_address failed after {max_retries} attempts: {e}")
     return f"(unavailable: {format_error_message(last_err) if last_err else 'unknown error'})"
