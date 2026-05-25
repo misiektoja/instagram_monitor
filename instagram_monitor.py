@@ -6750,7 +6750,7 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
         total_limit:      Stop after this many total accounts (FOLLOWER_LIMIT_TO_FETCH / FOLLOWEE_LIMIT_TO_FETCH). 0 = no limit.
         fetch_delay:      Seconds to sleep between batches.
         advanced_fetch:   Indicates if advanced_fetch is enabled (valid configuration of above 3 items)
-        estimated_limit:  Estimated number of itesm to fetch. Used for messaging.
+        estimated_limit:  Estimated number of items to fetch. Used for messaging.
         user:             Instagram username, forwarded to log_activity.
         stop_event:       Optional threading.Event from the caller. If set, the inter-batch wait is
                           aborted and the function returns whatever has been fetched so far.
