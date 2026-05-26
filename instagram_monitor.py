@@ -7149,7 +7149,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         if WEB_DASHBOARD_ENABLED:
             update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
-        # traceback.print_exc()
+
         if threading.current_thread() is threading.main_thread():
             sys.exit(1)
         else:
