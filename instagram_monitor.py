@@ -743,6 +743,9 @@ DEFAULT_CONFIG_FILENAME = "instagram_monitor.conf"
 # List of secret keys to load from env/config
 SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD", "WEBHOOK_URL", "PROXY_URL")
 
+# List of error messages indicating an Instagram has been flagged for 'automation' or 'botting'
+FLAGGED_TRIGGERS = ("detected automated checks", "ProfileNotExistsException", "cannot access local variable", "checkpoint_required")
+
 # Default value for network-related timeouts in functions
 FUNCTION_TIMEOUT = 15
 
@@ -7113,16 +7116,19 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         log_activity(f"Error: {error_msg}", user=user)
 
         # Handle session recovery for automated checks/challenge errors
-        if WEB_DASHBOARD_ENABLED and ("detected automated checks" in error_msg or "ProfileNotExistsException" in error_msg or "cannot access local variable" in error_msg):
-            update_ui_data(targets={user: {'status': 'Paused: Session re-login required'}})
-            log_activity("Monitoring paused: Session re-login required via Web Dashboard", user=user)
-            print(f"* Monitoring paused for {user}. Please refresh/import session via Web Dashboard.")
-            if ("ProfileNotExistsException" in error_msg or "cannot access local variable" in error_msg):
-                log_activity(f"ProfileNotExistsException: If account '{user}' is correct, then '{SESSION_USERNAME or '<anonymous>'}' is likely shadowbanned and unusable.", user=user)
-                print(f"* ProfileNotExistsException: If account '{user}' is correct, then '{SESSION_USERNAME or '<anonymous>'}' is likely shadowbanned and unusable.")
-            print_cur_ts("\nTimestamp:\t\t\t\t")
-
-            if threading.current_thread() is threading.main_thread():
+        if WEB_DASHBOARD_ENABLED and any(t in error_msg for t in FLAGGED_TRIGGERS):
+            if threading.current_thread() is not threading.main_thread():
+                update_ui_data(targets={user: {'status': 'Paused: Session re-login required'}})
+                log_activity("Monitoring paused: Session re-login required via Web Dashboard", user=user)
+                print(f"* Monitoring paused for {user}. Please refresh/import session via Web Dashboard.")
+                log_activity(f"Account '{SESSION_USERNAME or '<anonymous>'}' is flagged by Instagram. You must log in and clear any warnings.", user=user)
+                print(f"* Error: Account '{SESSION_USERNAME or '<anonymous>'}' is flagged by Instagram. You must log in and clear any warnings.")
+                print_cur_ts("\nTimestamp:\t\t\t\t")
+            else:
+                update_ui_data(targets={user: {'status': 'Main Instagram account flagged for automation. Exiting script.'}})
+                log_activity(f"Account '{SESSION_USERNAME or '<anonymous>'}' is flagged by Instagram for automation. You must log in and clear any warnings.", user=user)
+                log_activity(f"Exiting script", user=user)
+                print(f"* Error: Account {SESSION_USERNAME} is flagged by Instagram for automation. You must log in and clear any warnings. Exiting script.")
                 sys.exit(1)
 
             # Wait for session refresh or stop event
@@ -8174,16 +8180,19 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             notification_type="error"
                         )
 
-                if WEB_DASHBOARD_ENABLED and ("detected automated checks" in error_msg or "ProfileNotExistsException" in error_msg or "cannot access local variable" in error_msg):
-                    update_ui_data(targets={user: {'status': 'Paused: Session re-login required'}})
-                    log_activity("Monitoring paused: Session re-login required via Web Dashboard", user=user)
-                    print(f"* Monitoring paused for {user}. Please refresh/import session via Web Dashboard.")
-                    if ("ProfileNotExistsException" in error_msg or "cannot access local variable" in error_msg):
-                        log_activity(f"ProfileNotExistsException: If account '{user}' is correct, then '{SESSION_USERNAME or '<anonymous>'}' is likely shadowbanned and unusable.", user=user)
-                        print(f"* ProfileNotExistsException: If account '{user}' is correct, then '{SESSION_USERNAME or '<anonymous>'}' is likely shadowbanned and unusable.")
-                    print_cur_ts("\nTimestamp:\t\t\t\t")
-
-                    if threading.current_thread() is threading.main_thread():
+                if WEB_DASHBOARD_ENABLED and any(t in error_msg for t in FLAGGED_TRIGGERS):
+                    if threading.current_thread() is not threading.main_thread():
+                        update_ui_data(targets={user: {'status': 'Paused: Session re-login required'}})
+                        log_activity("Monitoring paused: Session re-login required via Web Dashboard", user=user)
+                        print(f"* Monitoring paused for {user}. Please refresh/import session via Web Dashboard.")
+                        log_activity(f"Account '{SESSION_USERNAME or '<anonymous>'}' is flagged by Instagram. You must log in and clear any warnings.", user=user)
+                        print(f"* Error: Account '{SESSION_USERNAME or '<anonymous>'}' is flagged by Instagram. You must log in and clear any warnings.")
+                        print_cur_ts("\nTimestamp:\t\t\t\t")
+                    else:
+                        update_ui_data(targets={user: {'status': 'Main Instagram account flagged for automation. Exiting script.'}})
+                        log_activity(f"Account '{SESSION_USERNAME or '<anonymous>'}' is flagged by Instagram for automation. You must log in and clear any warnings.", user=user)
+                        log_activity(f"Exiting script", user=user)
+                        print(f"* Error: Account {SESSION_USERNAME} is flagged by Instagram for automation. You must log in and clear any warnings. Exiting script.")
                         sys.exit(1)
 
                     # Wait for session refresh or stop event
