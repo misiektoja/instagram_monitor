@@ -4849,7 +4849,7 @@ def import_session(cookiefile, sessionfile):
     print("")
     print(f"{RED}*********************************************************************{RESET}")
     print(f"{RED} Clear Instagram cookies in Firefox now to avoid duplicate activity. {RESET}")
-    print(f"{RED} Otherwise, the main account may get flagged by Instagram.           {RESET}")
+    print(f"{RED} Otherwise, the session account may get flagged by Instagram.        {RESET}")
     print(f"{RED}*********************************************************************{RESET}")
 
 
