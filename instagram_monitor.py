@@ -6516,7 +6516,7 @@ def sleep_message(sleeptime, user=None):
 def format_error_message(e: Exception) -> str:
     error_str = str(e)
     error_type = type(e).__name__
-    debug_print(f"Formatting error message for {error_type}: {error_str}")
+    # debug_print(f"Formatting error message for {error_type}: {error_str}")
 
     # Check for KeyError related to 'data' key - indicates Instagram challenge/shadow ban
     if error_type == "KeyError" and ("'data'" in error_str or '"data"' in error_str or error_str == "data"):
