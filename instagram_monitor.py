@@ -3793,7 +3793,7 @@ def debug_print(message):
             print()
             _thread_local.in_partial_line = False
 
-        print(apply_privacy_substitutions(f"[DEBUG {timestamp}]{user_prefix} {message}"))
+        print(f"[DEBUG {timestamp}]{user_prefix} {message}")  # substitution applied in LOGGER.write
 
 
 # Initializes the CSV file
