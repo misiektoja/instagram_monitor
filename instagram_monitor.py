@@ -934,6 +934,37 @@ except ImportError:
     FLASK_AVAILABLE = False
 
 
+class DynamicLog:
+    def __init__(self, activities):
+        self.activities = activities
+
+    def __rich_console__(self, console, options):
+        log_entries = options.max_height
+        text = Text()
+        if not self.activities:
+            text.append("Waiting for activity...", style="dim italic")
+        else:
+            for act in reversed(self.activities[:log_entries]):
+                text.append(f"{act['time']} ", style="dim")
+                text.append(f"{act['message']}\n")
+        yield text
+        
+        
+import io 
+class _FilteredStderr(io.TextIOBase):
+    def __init__(self, original):
+        self._original = original
+    def write(self, s):
+        if not s or not s.strip():
+            return len(s) if s else 0
+        if HIDE_403_ERRORS:
+            if "403" in s:
+                return len(s)
+        return self._original.write(s)
+    def flush(self):
+        self._original.flush()
+
+
 # Locates installed data files (wheel / pip)
 def _locate_installed_dist_file(target_filename: str) -> Optional[str]:
     try:
@@ -5473,16 +5504,7 @@ def generate_user_dashboard(target_data):
 
     # Activity Log Panel (Latest at bottom)
     activities = DASHBOARD_DATA.get('activities', [])
-    log_text = Text()
-    if not activities:
-        log_text.append("Waiting for activity...", style="dim italic")
-    else:
-        # Show last 10 activities, latest at bottom
-        for act in reversed(activities[:10]):
-            log_text.append(f"{act['time']} ", style="dim")
-            log_text.append(f"{act['message']}\n")
-
-    log_panel = Panel(log_text, title="Live Activity Log", box=box.ROUNDED, border_style="yellow")
+    log_panel = Panel(DynamicLog(activities), title="Live Activity Log", box=box.ROUNDED, border_style="yellow")
 
     # Last Fetched Panel
     last_fetched_text = Text()
@@ -5592,7 +5614,7 @@ def generate_user_dashboard(target_data):
         Layout(header_panel, size=3),
         Layout(stats_panel, size=3),
         Layout(name="main", ratio=1),
-        Layout(log_panel, size=12)
+        Layout(log_panel, ratio=1),
     )
     layout["main"].split_row(
         Layout(table, ratio=4),
@@ -5709,14 +5731,7 @@ def generate_config_dashboard(target_data, config_data):
 
     # Activity Log Panel (Latest at bottom)
     activities = DASHBOARD_DATA.get('activities', [])
-    log_text = Text()
-    if not activities:
-        log_text.append("Waiting for activity...", style="dim italic")
-    else:
-        for act in reversed(activities[:8]):
-            log_text.append(f"{act['time']} ", style="dim")
-            log_text.append(f"{act['message']}\n")
-    log_panel = Panel(log_text, title="Live Activity Log", box=box.ROUNDED, border_style="yellow")
+    log_panel = Panel(DynamicLog(activities), title="Live Activity Log", box=box.ROUNDED, border_style="yellow")
 
     # Actions panel
     mode_btn_text = Text()
