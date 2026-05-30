@@ -1356,7 +1356,18 @@ def create_web_dashboard_app():
                 # Keep output best-effort; don't break dashboard on edge cases
                 pass
 
-            data = apply_privacy_substitutions(data)
+            # Substitute values but preserve real username keys; add display_name for UI
+            if 'targets' in data:
+                raw_targets = data.pop('targets')  # remove before substituting data
+                data = apply_privacy_substitutions(data)  # substitute everything else
+                substituted_targets = {}
+                for username, t_data in raw_targets.items():
+                    substituted_t_data = apply_privacy_substitutions(t_data) if isinstance(t_data, dict) else t_data
+                    substituted_t_data['display_name'] = apply_privacy_substitutions(username)
+                    substituted_targets[username] = substituted_t_data
+                data['targets'] = substituted_targets
+            else:
+                data = apply_privacy_substitutions(data)
             return jsonify(data)  # type: ignore
 
     # Catch TemplateNotFound specifically to show friendly error
@@ -5450,7 +5461,7 @@ def generate_user_dashboard(target_data):
     if not RICH_AVAILABLE:
         return None
 
-    target_data = apply_privacy_substitutions(target_data)
+    display_target_data = apply_privacy_substitutions(target_data)
 
     # Type guard: Rich is available at this point
     assert Table is not None
@@ -5472,7 +5483,7 @@ def generate_user_dashboard(target_data):
     )
     header_panel = Panel(header_text, style="white on blue", box=box.SQUARE)
 
-    table = generate_dashboard_targets_table(target_data)
+    table = generate_dashboard_targets_table(display_target_data)
 
     # Activity Log Panel (Latest at bottom)
     activities = DASHBOARD_DATA.get('activities', [])
@@ -5614,7 +5625,7 @@ def generate_config_dashboard(target_data, config_data):
     if not RICH_AVAILABLE:
         return None
 
-    target_data = apply_privacy_substitutions(target_data)
+    display_target_data = apply_privacy_substitutions(target_data)
     config_data = apply_privacy_substitutions(config_data)
 
     # Type guard: Rich is available at this point
@@ -5634,7 +5645,7 @@ def generate_config_dashboard(target_data, config_data):
     header_panel = Panel(header_text, style="white on blue", box=box.SQUARE)
 
     # Main targets table - unified with user mode
-    targets_table = generate_dashboard_targets_table(target_data)
+    targets_table = generate_dashboard_targets_table(display_target_data)
 
     # Configuration tables (two columns for better space usage)
     config_table_left = Table(box=box.ROUNDED, show_header=False, header_style="bold magenta", border_style="magenta")
