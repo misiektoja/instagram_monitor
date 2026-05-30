@@ -3649,31 +3649,37 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
 
 
 # Fetches the current outbound IP via IP_ADDRESS_URL, tolerating JSON and plain-text responses
-def get_ip_address(max_retries=5, timeout=10, retry_delay=5):
+def get_ip_address(max_retries=5, timeout=10, retry_delay=5, long_retry=120, long_retry_attempts=3):
     last_err = None
-    for attempt in range(1, max_retries + 1):
-        try:
-            ip_response = req.get(IP_ADDRESS_URL, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
-            ip_response.raise_for_status()
+    for long_attempt in range(1, long_retry_attempts + 1):
+        for attempt in range(1, max_retries + 1):
             try:
-                data = ip_response.json()
-            except ValueError:
-                data = None
-            if isinstance(data, dict):
-                for key in ('origin', 'ip', 'ip_addr', 'address', 'query'):
-                    val = data.get(key)
-                    if isinstance(val, str) and val.strip():
-                        return val.strip().split(',')[0].strip()
-            text = (ip_response.text or "").strip()
-            if text:
-                return text.splitlines()[0].strip()
-            raise ValueError(f"empty response body from {IP_ADDRESS_URL}")
-        except Exception as e:
-            last_err = e
-            if attempt < max_retries:
-                time.sleep(retry_delay)
-            else:
-                debug_print(f"get_ip_address failed after {max_retries} attempts: {e}")
+                ip_response = req.get(IP_ADDRESS_URL, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
+                ip_response.raise_for_status()
+                try:
+                    data = ip_response.json()
+                except ValueError:
+                    data = None
+                if isinstance(data, dict):
+                    for key in ('origin', 'ip', 'ip_addr', 'address', 'query'):
+                        val = data.get(key)
+                        if isinstance(val, str) and val.strip():
+                            return val.strip().split(',')[0].strip()
+                text = (ip_response.text or "").strip()
+                if text:
+                    return text.splitlines()[0].strip()
+                raise ValueError(f"empty response body from {IP_ADDRESS_URL}")
+            except Exception as e:
+                last_err = e
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+                else:
+                    debug_print(f"get_ip_address failed after {max_retries} attempts: {e}")
+        if long_attempt < long_retry_attempts:
+            debug_print(f"get_ip_address retrying in {long_retry} seconds")
+            time.sleep(long_retry)
+        else:
+            debug_print(f"get_ip_address failed after {long_retry_attempts} loops")
     return f"(unavailable: {format_error_message(last_err) if last_err else 'unknown error'})"
 
 
