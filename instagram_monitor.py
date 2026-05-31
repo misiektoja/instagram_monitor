@@ -8419,7 +8419,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             m_body_html = f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
                         send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
-                        # Send webhook notification for followings change
+                    # Send webhook notification for followings change (independent of email notifications) only if something changed
+                    if followings_count != followings_old_count or added_followings_list or removed_followings_list:
                         webhook_result = send_follower_change_webhook(
                             user, "followings", followings_old_count, followings_count,
                             added_followings_list_webhook, removed_followings_list_webhook
@@ -8564,7 +8565,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             m_body_html = f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
                         send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
-                        # Send webhook notification for followers change
+                    # Send webhook notification for followers change (independent of email notifications) only if something changed
+                    if followers_count != followers_old_count or added_followers_list or removed_followers_list:
                         webhook_result = send_follower_change_webhook(
                             user, "followers", followers_old_count, followers_count,
                             added_followers_list_webhook, removed_followers_list_webhook
