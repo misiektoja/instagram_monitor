@@ -1362,8 +1362,12 @@ def create_web_dashboard_app():
                 data = apply_privacy_substitutions(data)  # substitute everything else
                 substituted_targets = {}
                 for username, t_data in raw_targets.items():
-                    substituted_t_data = apply_privacy_substitutions(t_data) if isinstance(t_data, dict) else t_data
-                    substituted_t_data['display_name'] = apply_privacy_substitutions(username)
+                    if isinstance(t_data, dict):
+                        substituted_t_data = apply_privacy_substitutions(t_data)
+                        substituted_t_data['display_name'] = apply_privacy_substitutions(username)
+                    else:
+                        # Non-dict target payload: pass through unchanged, can't attach display_name
+                        substituted_t_data = t_data
                     substituted_targets[username] = substituted_t_data
                 data['targets'] = substituted_targets
             else:
@@ -3757,7 +3761,9 @@ def apply_privacy_substitutions(content: TPrivacyContent) -> TPrivacyContent:
     """
     - Recurses into dict values and list items
     - For strings, performs search/replace using PRIVACY_SUBSTITIONS
-    - Preserves dictionary keys to keep API object identity stable
+    - Preserves dict keys so JSON and object keys stay stable for API
+      consumers. Callers that display a key (e.g. terminal target tables)
+      must substitute it explicitly at the point of display
     - Ignores invalid substitution entries to avoid runtime crashes
     - Non-string primitives are returned unchanged
     """
@@ -3783,10 +3789,7 @@ def apply_privacy_substitutions(content: TPrivacyContent) -> TPrivacyContent:
             content_str = content_str.replace(search, replace)
         return cast(TPrivacyContent, content_str)
     if isinstance(content, dict):
-            return cast(TPrivacyContent, {
-                apply_privacy_substitutions(k) if isinstance(k, str) else k: apply_privacy_substitutions(v)
-                for k, v in content.items()
-            })
+        return cast(TPrivacyContent, {k: apply_privacy_substitutions(v) for k, v in content.items()})
     if isinstance(content, list):
         return cast(TPrivacyContent, [apply_privacy_substitutions(item) for item in content])
     return content
@@ -5381,6 +5384,8 @@ def generate_dashboard_targets_table(target_data):
 
     now_ts = datetime.now().timestamp()
     for target, data in target_data.items():
+        # Substitute the displayed target name here. Dict keys stay real upstream so API consumers keep stable keys
+        display_target = apply_privacy_substitutions(target)
         status_val = data.get('status', 'Unknown')
         status_style = "green" if status_val == 'OK' else "yellow" if status_val in ('Checking', 'Starting', 'Loading Profile', 'Fetching Reels') else "blue"
 
@@ -5408,7 +5413,7 @@ def generate_dashboard_targets_table(target_data):
             next_chk = get_squeezed_date_from_ts(next_ts, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
 
         table.add_row(
-            target,
+            display_target,
             visibility,
             str(data.get('followers') if data.get('followers') is not None else '-'),
             str(data.get('following') if data.get('following') is not None else '-'),
