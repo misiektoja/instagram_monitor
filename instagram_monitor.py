@@ -950,21 +950,6 @@ class DynamicLog:
         yield text
         
         
-import io 
-class _FilteredStderr(io.TextIOBase):
-    def __init__(self, original):
-        self._original = original
-    def write(self, s):
-        if not s or not s.strip():
-            return len(s) if s else 0
-        if HIDE_403_ERRORS:
-            if "403" in s:
-                return len(s)
-        return self._original.write(s)
-    def flush(self):
-        self._original.flush()
-
-
 # Locates installed data files (wheel / pip)
 def _locate_installed_dist_file(target_filename: str) -> Optional[str]:
     try:
