@@ -181,6 +181,10 @@ ENABLE_JITTER = False
 # Set to True to enable verbose output for HTTP jitter/back-off wrappers
 JITTER_VERBOSE = False
 
+# Set to True to skip the per-request WRAP-REQ/WRAP-SEND log lines from the HTTP jitter/back-off wrappers
+# These can be overwhelming in debug or jitter-verbose mode and are not needed in most cases
+SKIP_WRAP_MESSAGES = False
+
 # Optional Privacy Substitutions
 # This allows you to substitute any string for another in all messaging, logging, webhooks, emails, and both dashboards.
 # For instance, you may want to change a particular Instagram username to a more friendly name, or you could mask a name.
@@ -654,6 +658,7 @@ MY_HASHTAGS = []
 BE_HUMAN_VERBOSE = False
 ENABLE_JITTER = False
 JITTER_VERBOSE = False
+SKIP_WRAP_MESSAGES = False
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
@@ -706,7 +711,6 @@ FOLLOWERS_CHURN_DETECTION = False
 TIME_FORMAT_12H = False
 PRIVACY_SUBSTITIONS = []
 mode_of_the_tool = "Unknown"
-SKIP_WRAP_MESSAGES = False
 
 exec(CONFIG_BLOCK, globals())
 
