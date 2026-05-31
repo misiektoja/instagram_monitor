@@ -181,6 +181,9 @@ ENABLE_JITTER = False
 # Set to True to enable verbose output for HTTP jitter/back-off wrappers
 JITTER_VERBOSE = False
 
+# Set to True to skip the per-request WRAP-REQ/WRAP-SEND log lines from the HTTP jitter/back-off wrappers
+# These can be overwhelming in debug or jitter-verbose mode and are not needed in most cases
+SKIP_WRAP_MESSAGES = False
 # Optional Follower and Followee Adjustments
 #
 # This allows control of the fetching of followers and followees, which may be beneficial in avoiding account flagging by Instagram.
@@ -674,6 +677,7 @@ MY_HASHTAGS = []
 BE_HUMAN_VERBOSE = False
 ENABLE_JITTER = False
 JITTER_VERBOSE = False
+SKIP_WRAP_MESSAGES = False
 FOLLOWERS_PER_BATCH = 0
 FOLLOWEES_PER_BATCH = 0
 FOLLOWER_LIMIT_TO_FETCH = 0
@@ -6165,10 +6169,11 @@ def instagram_wrap_request(orig_request):
         if method and isinstance(method, str):
             method = method.upper()
         url = kwargs.get("url") or (args[2] if len(args) > 2 else None)
-        if DEBUG_MODE:
-            debug_print(f"[WRAP-REQ] {method} {url}")
-        elif JITTER_VERBOSE:
-            print(f"* [WRAP-REQ] {method} {url}")
+        if not SKIP_WRAP_MESSAGES:
+            if DEBUG_MODE:
+                debug_print(f"[WRAP-REQ] {method} {url}")
+            elif JITTER_VERBOSE:
+                print(f"* [WRAP-REQ] {method} {url}")
 
         def _do_request():
             # If jitter is disabled, just perform the request (but still optionally serialized by the outer lock)
@@ -6338,10 +6343,11 @@ def instagram_wrap_send(orig_send):
         if method and isinstance(method, str):
             method = method.upper()
         url = getattr(req_obj, "url", None)
-        if DEBUG_MODE:
-            debug_print(f"[WRAP-SEND] {method} {url}")
-        elif JITTER_VERBOSE:
-            print(f"* [WRAP-SEND] {method} {url}")
+        if not SKIP_WRAP_MESSAGES:
+            if DEBUG_MODE:
+                debug_print(f"[WRAP-SEND] {method} {url}")
+            elif JITTER_VERBOSE:
+                print(f"* [WRAP-SEND] {method} {url}")
 
         def _do_send():
             if ENABLE_JITTER:
