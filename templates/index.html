@@ -2045,8 +2045,8 @@
             }
 
             const renderRow = ([name, data], isSimple = false, isTargetsList = false) => {
-				const displayName = data.display_name || name;
-				const statusVal = data.status || 'Idle';
+                const displayName = data.display_name || name;
+                const statusVal = data.status || 'Idle';
                 const statusClass = getStatusBadge(statusVal);
                 const isPrivate = data.is_private;
                 const visibility = isPrivate === true ? 'PRI' : (isPrivate === false ? 'PUB' : '-');
