@@ -743,8 +743,8 @@ DEFAULT_CONFIG_FILENAME = "instagram_monitor.conf"
 # List of secret keys to load from env/config
 SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD", "WEBHOOK_URL", "PROXY_URL")
 
-# List of error messages indicating an Instagram has been flagged for 'automation' or 'botting'
-FLAGGED_TRIGGERS = ("detected automated checks", "ProfileNotExistsException", "cannot access local variable", "checkpoint_required")
+# List of error substrings that unambiguously indicate the session account or IP has been flagged (challenge/checkpoint/shadowban)
+FLAGGED_TRIGGERS = ("detected automated checks", "checkpoint_required")
 
 # Default value for network-related timeouts in functions
 FUNCTION_TIMEOUT = 15
@@ -7133,14 +7133,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 NEXT_CHECK_TIME = None  
                 NEXT_CHECK_DISPLAY = "Paused"
                 update_check_times(next_time="Paused", user=user, increment_count=False)
-                # Pause this thread also
                 log_activity("Stopping monitoring", user=user)
-                print_cur_ts("\nTimestamp:\t\t\t\t")
-            else:
-                print_cur_ts("\nTimestamp:\t\t\t\t")
+            print_cur_ts("\nTimestamp:\t\t\t\t")
+
+            # Without the Web Dashboard there is no in-place session recovery so exit since the flagged session is dead for every target
+            if not WEB_DASHBOARD_ENABLED:
                 signal_handler(signal.SIGINT, None, message='')
 
-            # Wait for session refresh or stop event
+            # Web Dashboard can re-import a session and resume, so wait for that or a stop event
             if WEB_DASHBOARD_ENABLED:
                 while not (stop_event and stop_event.is_set()):
                     if SESSION_REFRESHED_EVENT.wait(timeout=1.0):
@@ -8196,8 +8196,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 # Handle session recovery for automated checks/challenge errors
                 if any(t in error_msg for t in FLAGGED_TRIGGERS):
                     err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
-                    for i in range(50):
-                        log_activity(f"({i}) - {err_str}", user=user)
                     update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
                     print(f"* Error: {err_str}")
                     
@@ -8213,14 +8211,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         NEXT_CHECK_TIME = None  
                         NEXT_CHECK_DISPLAY = "Paused"
                         update_check_times(next_time="Paused", user=user, increment_count=False)
-                        # Pause this thread also
                         log_activity("Stopping monitoring", user=user)
-                        print_cur_ts("\nTimestamp:\t\t\t\t")
-                    else:
-                        print_cur_ts("\nTimestamp:\t\t\t\t")
+                    print_cur_ts("\nTimestamp:\t\t\t\t")
+
+                    # Without the Web Dashboard there is no in-place session recovery so exit since the flagged session is dead for every target
+                    if not WEB_DASHBOARD_ENABLED:
                         signal_handler(signal.SIGINT, None, message='')
 
-                    # Wait for session refresh or stop event
+                    # Web Dashboard can re-import a session and resume, so wait for that or a stop event
                     while not (stop_event and stop_event.is_set()):
                         if SESSION_REFRESHED_EVENT.wait(timeout=1.0):
                             # Session refreshed!
