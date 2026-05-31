@@ -810,6 +810,8 @@ except ModuleNotFoundError:
 
 # Instaloader 4.15.1 profile metadata GraphQL broke after Instagram API changes (May 2026).
 # Patch doc_id/variables until upstream ships the fix: https://github.com/instaloader/instaloader/issues/2695
+# Mirrors instaloader PR #2696. Self-deactivating: once instaloader ships the fixed doc_id the
+# stale one no longer appears, so the rewrite below never fires and becomes a transparent no-op.
 _INSTALOADER_GRAPHQL_PROFILE_PATCH_APPLIED = False
 
 
@@ -824,39 +826,10 @@ def _apply_instaloader_graphql_profile_patch() -> None:
     except ImportError:
         return
 
-    stale_doc_id = "25980296051578533"
-    fixed_doc_id = "27937681195819736"
-    extra_vars = {
-        "__relay_internal__pv__PolarisWebSchoolsEnabledrelayprovider": False,
-        "enable_integrity_filters": True,
-    }
-
-    original = InstaloaderContext.doc_id_graphql_query
-
-    def _patched_doc_id_graphql_query(self, doc_id, variables, referer=None):  # type: ignore[no-untyped-def]
-        if str(doc_id) == stale_doc_id:
-            doc_id = fixed_doc_id
-            variables = {**(variables or {}), **extra_vars}
-        return original(self, doc_id, variables, referer)
-
-    InstaloaderContext.doc_id_graphql_query = _patched_doc_id_graphql_query  # type: ignore[method-assign]
-    _INSTALOADER_GRAPHQL_PROFILE_PATCH_APPLIED = True
-
-
-_apply_instaloader_graphql_profile_patch()# Instaloader 4.15.1 profile metadata GraphQL broke after Instagram API changes (May 2026).
-# Patch doc_id/variables until upstream ships the fix: https://github.com/instaloader/instaloader/issues/2695
-_INSTALOADER_GRAPHQL_PROFILE_PATCH_APPLIED = False
-
-
-def _apply_instaloader_graphql_profile_patch() -> None:
-    """Monkey-patch Instaloader profile metadata GraphQL query (no site-packages edit)."""
-    global _INSTALOADER_GRAPHQL_PROFILE_PATCH_APPLIED
-    if _INSTALOADER_GRAPHQL_PROFILE_PATCH_APPLIED:
-        return
-
-    try:
-        from instaloader.instaloadercontext import InstaloaderContext
-    except ImportError:
+    # A future instaloader may rename or drop this method (e.g. migrate to /api/graphql); skip cleanly if so.
+    original = getattr(InstaloaderContext, "doc_id_graphql_query", None)
+    if original is None:
+        _INSTALOADER_GRAPHQL_PROFILE_PATCH_APPLIED = True
         return
 
     stale_doc_id = "25980296051578533"
@@ -866,12 +839,12 @@ def _apply_instaloader_graphql_profile_patch() -> None:
         "enable_integrity_filters": True,
     }
 
-    original = InstaloaderContext.doc_id_graphql_query
-
     def _patched_doc_id_graphql_query(self, doc_id, variables, referer=None):  # type: ignore[no-untyped-def]
         if str(doc_id) == stale_doc_id:
             doc_id = fixed_doc_id
             variables = {**(variables or {}), **extra_vars}
+            if DEBUG_MODE:
+                debug_print("instaloader profile metadata doc_id patch fired (stale doc_id rewritten)")
         return original(self, doc_id, variables, referer)
 
     InstaloaderContext.doc_id_graphql_query = _patched_doc_id_graphql_query  # type: ignore[method-assign]
@@ -1474,185 +1447,6 @@ def create_web_dashboard_app():
             log_activity(f"Removed target", user=username, level='warning')
             return jsonify({'success': True})  # type: ignore
         return jsonify({'success': False, 'error': 'Target not found'}), 404  # type: ignore
-
-    def _resolve_follow_files_for_user(username: str) -> tuple[str, str]:
-        """Resolve followers/followings JSON paths for a target user."""
-        followers_name = f"instagram_{username}_followers.json"
-        followings_name = f"instagram_{username}_followings.json"
-
-        default_followers = os.path.abspath(followers_name)
-        default_followings = os.path.abspath(followings_name)
-
-        # Prefer per-user OUTPUT_DIR location when configured and present.
-        if OUTPUT_DIR:
-            user_json_dir = os.path.join(OUTPUT_DIR, username, "json")
-            out_followers = os.path.abspath(os.path.join(user_json_dir, followers_name))
-            out_followings = os.path.abspath(os.path.join(user_json_dir, followings_name))
-            if os.path.isfile(out_followers) or os.path.isfile(out_followings):
-                return out_followers, out_followings
-
-        return default_followers, default_followings
-
-    def _read_user_list_json(path: str) -> list[str]:
-        """
-        Parse followers/followings JSON format.
-        Expected format is [count, ["user1", ...]], but keep this robust for list-only files.
-        """
-        with open(path, 'r', encoding='utf-8') as handle:
-            raw = json.load(handle)
-
-        usernames: list[str] = []
-        if isinstance(raw, list):
-            if len(raw) >= 2 and isinstance(raw[1], list):
-                candidates = raw[1]
-            else:
-                candidates = raw
-            for item in candidates:
-                if isinstance(item, str):
-                    username = item.strip().lower()
-                    if username:
-                        usernames.append(username)
-        return usernames
-
-    @app.route('/api/targets/<username>/mutuals', methods=['GET'])
-    def api_target_mutuals(username):  # type: ignore
-        target = username.strip().lower()
-        if not target:
-            return jsonify({'success': False, 'error': 'Username required'}), 400  # type: ignore
-
-        followers_path, followings_path = _resolve_follow_files_for_user(target)
-        if not os.path.isfile(followers_path) or not os.path.isfile(followings_path):
-            return jsonify({
-                'success': False,
-                'target': target,
-                'error': 'Followers/followings files are missing for this target. Run a check with session login enabled first.',
-                'followers_file': followers_path,
-                'followings_file': followings_path,
-                'followers_count': 0,
-                'followings_count': 0,
-                'mutual_count': 0,
-                'mutual_users': []
-            }), 404  # type: ignore
-
-        try:
-            followers = _read_user_list_json(followers_path)
-            followings = _read_user_list_json(followings_path)
-        except Exception as exc:
-            return jsonify({
-                'success': False,
-                'target': target,
-                'error': f'Failed to read followers/followings files: {exc}',
-                'followers_file': followers_path,
-                'followings_file': followings_path,
-                'followers_count': 0,
-                'followings_count': 0,
-                'mutual_count': 0,
-                'mutual_users': []
-            }), 500  # type: ignore
-
-        followers_set = set(followers)
-        followings_set = set(followings)
-        mutuals = sorted(followers_set.intersection(followings_set))
-
-        return jsonify({
-            'success': True,
-            'target': target,
-            'followers_file': followers_path,
-            'followings_file': followings_path,
-            'followers_count': len(followers_set),
-            'followings_count': len(followings_set),
-            'mutual_count': len(mutuals),
-            'mutual_users': mutuals
-        })  # type: ignore
-    def _resolve_follow_files_for_user(username: str) -> tuple[str, str]:
-        """Resolve followers/followings JSON paths for a target user."""
-        followers_name = f"instagram_{username}_followers.json"
-        followings_name = f"instagram_{username}_followings.json"
-
-        default_followers = os.path.abspath(followers_name)
-        default_followings = os.path.abspath(followings_name)
-
-        # Prefer per-user OUTPUT_DIR location when configured and present.
-        if OUTPUT_DIR:
-            user_json_dir = os.path.join(OUTPUT_DIR, username, "json")
-            out_followers = os.path.abspath(os.path.join(user_json_dir, followers_name))
-            out_followings = os.path.abspath(os.path.join(user_json_dir, followings_name))
-            if os.path.isfile(out_followers) or os.path.isfile(out_followings):
-                return out_followers, out_followings
-
-        return default_followers, default_followings
-
-    def _read_user_list_json(path: str) -> list[str]:
-        """
-        Parse followers/followings JSON format.
-        Expected format is [count, ["user1", ...]], but keep this robust for list-only files.
-        """
-        with open(path, 'r', encoding='utf-8') as handle:
-            raw = json.load(handle)
-
-        usernames: list[str] = []
-        if isinstance(raw, list):
-            if len(raw) >= 2 and isinstance(raw[1], list):
-                candidates = raw[1]
-            else:
-                candidates = raw
-            for item in candidates:
-                if isinstance(item, str):
-                    username = item.strip().lower()
-                    if username:
-                        usernames.append(username)
-        return usernames
-
-    @app.route('/api/targets/<username>/mutuals', methods=['GET'])
-    def api_target_mutuals(username):  # type: ignore
-        target = username.strip().lower()
-        if not target:
-            return jsonify({'success': False, 'error': 'Username required'}), 400  # type: ignore
-
-        followers_path, followings_path = _resolve_follow_files_for_user(target)
-        if not os.path.isfile(followers_path) or not os.path.isfile(followings_path):
-            return jsonify({
-                'success': False,
-                'target': target,
-                'error': 'Followers/followings files are missing for this target. Run a check with session login enabled first.',
-                'followers_file': followers_path,
-                'followings_file': followings_path,
-                'followers_count': 0,
-                'followings_count': 0,
-                'mutual_count': 0,
-                'mutual_users': []
-            }), 404  # type: ignore
-
-        try:
-            followers = _read_user_list_json(followers_path)
-            followings = _read_user_list_json(followings_path)
-        except Exception as exc:
-            return jsonify({
-                'success': False,
-                'target': target,
-                'error': f'Failed to read followers/followings files: {exc}',
-                'followers_file': followers_path,
-                'followings_file': followings_path,
-                'followers_count': 0,
-                'followings_count': 0,
-                'mutual_count': 0,
-                'mutual_users': []
-            }), 500  # type: ignore
-
-        followers_set = set(followers)
-        followings_set = set(followings)
-        mutuals = sorted(followers_set.intersection(followings_set))
-
-        return jsonify({
-            'success': True,
-            'target': target,
-            'followers_file': followers_path,
-            'followings_file': followings_path,
-            'followers_count': len(followers_set),
-            'followings_count': len(followings_set),
-            'mutual_count': len(mutuals),
-            'mutual_users': mutuals
-        })  # type: ignore
 
     @app.route('/api/monitoring/start', methods=['POST'])
     def api_start_monitoring():  # type: ignore
