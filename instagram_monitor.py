@@ -2515,7 +2515,6 @@ def update_ui_data(targets=None, config=None, check_count=None, last_check=None,
                             tgt_parts.append(f"session={s}")
                 parts.append(f"[{', '.join(tgt_parts)}]")
         if parts:
-            parts = apply_privacy_substitutions(parts)
             debug_print(f"UI Data Update: {', '.join(parts)}")
     if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
         if DASHBOARD_ENABLED:
