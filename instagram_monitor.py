@@ -1374,7 +1374,22 @@ def create_web_dashboard_app():
                 # Keep output best-effort; don't break dashboard on edge cases
                 pass
 
-            data = apply_privacy_substitutions(data)
+            # Substitute values but preserve real username keys; add display_name for UI
+            if 'targets' in data:
+                raw_targets = data.pop('targets')  # remove before substituting data
+                data = apply_privacy_substitutions(data)  # substitute everything else
+                substituted_targets = {}
+                for username, t_data in raw_targets.items():
+                    if isinstance(t_data, dict):
+                        substituted_t_data = apply_privacy_substitutions(t_data)
+                        substituted_t_data['display_name'] = apply_privacy_substitutions(username)
+                    else:
+                        # Non-dict target payload: pass through unchanged, can't attach display_name
+                        substituted_t_data = t_data
+                    substituted_targets[username] = substituted_t_data
+                data['targets'] = substituted_targets
+            else:
+                data = apply_privacy_substitutions(data)
             return jsonify(data)  # type: ignore
 
     # Catch TemplateNotFound specifically to show friendly error
@@ -1829,7 +1844,7 @@ def create_web_dashboard_app():
         global SESSION_USERNAME, SKIP_SESSION
 
         if flask_request.method == 'GET':  # type: ignore
-            return jsonify(get_web_dashboard_session_data())  # type: ignore
+            return jsonify(apply_privacy_substitutions(get_web_dashboard_session_data()))  # type: ignore
         elif flask_request.method == 'POST':  # type: ignore
             data = flask_request.get_json()  # type: ignore
             if not data:
@@ -2518,7 +2533,6 @@ def update_ui_data(targets=None, config=None, check_count=None, last_check=None,
                             tgt_parts.append(f"session={s}")
                 parts.append(f"[{', '.join(tgt_parts)}]")
         if parts:
-            parts = apply_privacy_substitutions(parts)
             debug_print(f"UI Data Update: {', '.join(parts)}")
     if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
         if DASHBOARD_ENABLED:
@@ -3779,7 +3793,9 @@ def apply_privacy_substitutions(content: TPrivacyContent) -> TPrivacyContent:
     """
     - Recurses into dict values and list items
     - For strings, performs search/replace using PRIVACY_SUBSTITIONS
-    - Preserves dictionary keys to keep API object identity stable
+    - Preserves dict keys so JSON and object keys stay stable for API
+      consumers. Callers that display a key (e.g. terminal target tables)
+      must substitute it explicitly at the point of display
     - Ignores invalid substitution entries to avoid runtime crashes
     - Non-string primitives are returned unchanged
     """
@@ -3823,7 +3839,7 @@ def debug_print(message):
             print()
             _thread_local.in_partial_line = False
 
-        print(apply_privacy_substitutions(f"[DEBUG {timestamp}]{user_prefix} {message}"))
+        print(f"[DEBUG {timestamp}]{user_prefix} {message}")  # substitution applied in LOGGER.write
 
 
 # Initializes the CSV file
@@ -5415,6 +5431,8 @@ def generate_dashboard_targets_table(target_data):
 
     now_ts = datetime.now().timestamp()
     for target, data in target_data.items():
+        # Substitute the displayed target name here. Dict keys stay real upstream so API consumers keep stable keys
+        display_target = apply_privacy_substitutions(target)
         status_val = data.get('status', 'Unknown')
         status_style = "green" if status_val == 'OK' else "yellow" if status_val in ('Checking', 'Starting', 'Loading Profile', 'Fetching Reels') else "blue"
 
@@ -5442,7 +5460,7 @@ def generate_dashboard_targets_table(target_data):
             next_chk = get_squeezed_date_from_ts(next_ts, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS)
 
         table.add_row(
-            target,
+            display_target,
             visibility,
             str(data.get('followers') if data.get('followers') is not None else '-'),
             str(data.get('following') if data.get('following') is not None else '-'),
@@ -5495,7 +5513,7 @@ def generate_user_dashboard(target_data):
     if not RICH_AVAILABLE:
         return None
 
-    target_data = apply_privacy_substitutions(target_data)
+    display_target_data = apply_privacy_substitutions(target_data)
 
     # Type guard: Rich is available at this point
     assert Table is not None
@@ -5517,7 +5535,7 @@ def generate_user_dashboard(target_data):
     )
     header_panel = Panel(header_text, style="white on blue", box=box.SQUARE)
 
-    table = generate_dashboard_targets_table(target_data)
+    table = generate_dashboard_targets_table(display_target_data)
 
     # Activity Log Panel (Latest at bottom)
     activities = DASHBOARD_DATA.get('activities', [])
@@ -5540,11 +5558,12 @@ def generate_user_dashboard(target_data):
         return ts_val if isinstance(ts_val, (int, float)) else 0
 
     def append_update_entry(update, fallback_user):
-        user_label = update.get('user') or fallback_user or "Unknown"
+        # Substitute display-only fields (name, caption) but keep file paths and URLs real so they stay locatable/clickable
+        user_label = apply_privacy_substitutions(update.get('user') or fallback_user or "Unknown")
         last_fetched_text.append(f"User: {user_label}\n", style="bold green")
         last_fetched_text.append(f"Type: {update.get('type', 'Unknown')}\n", style="bold cyan")
         last_fetched_text.append(f"Date: {update.get('timestamp', '-')}\n", style="dim")
-        caption = update.get('caption', '')
+        caption = apply_privacy_substitutions(update.get('caption', ''))
         if caption:
             caption = caption.replace('\n', ' ')
             if len(caption) > 60:
@@ -5659,7 +5678,7 @@ def generate_config_dashboard(target_data, config_data):
     if not RICH_AVAILABLE:
         return None
 
-    target_data = apply_privacy_substitutions(target_data)
+    display_target_data = apply_privacy_substitutions(target_data)
     config_data = apply_privacy_substitutions(config_data)
 
     # Type guard: Rich is available at this point
@@ -5679,7 +5698,7 @@ def generate_config_dashboard(target_data, config_data):
     header_panel = Panel(header_text, style="white on blue", box=box.SQUARE)
 
     # Main targets table - unified with user mode
-    targets_table = generate_dashboard_targets_table(target_data)
+    targets_table = generate_dashboard_targets_table(display_target_data)
 
     # Configuration tables (two columns for better space usage)
     config_table_left = Table(box=box.ROUNDED, show_header=False, header_style="bold magenta", border_style="magenta")
