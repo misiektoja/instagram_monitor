@@ -4870,8 +4870,9 @@ def import_session(cookiefile, sessionfile):
 
     print("")
     print(f"{RED}*********************************************************************{RESET}")
-    print(f"{RED} Clear Instagram cookies in Firefox now to avoid duplicate activity. {RESET}")
-    print(f"{RED} Otherwise, the session account may get flagged by Instagram.        {RESET}")
+    print(f"{RED} Do not use Instagram in Firefox while the script is running.         {RESET}")
+    print(f"{RED} Simultaneous browser and tool activity can get the account flagged.  {RESET}")
+    print(f"{RED} Tip: you might want to clear Instagram cookies in Firefox now.       {RESET}")
     print(f"{RED}*********************************************************************{RESET}")
 
 
@@ -7154,7 +7155,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
             update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
             print(f"* Error: {err_str}")
-            
+
             # Pause all other threads once the session account is flagged.
             if WEB_DASHBOARD_ENABLED or DASHBOARD_ENABLED:
                 for other_user in list(WEB_DASHBOARD_STOP_EVENTS.keys()):
@@ -7164,7 +7165,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         stop_monitoring_for_target(other_user)
                         update_ui_data(targets={other_user: {'status': f'Paused: {err_str}'}})
                 # Update next_check status for this thread
-                NEXT_CHECK_TIME = None  
+                NEXT_CHECK_TIME = None
                 NEXT_CHECK_DISPLAY = "Paused"
                 update_check_times(next_time="Paused", user=user, increment_count=False)
                 log_activity("Stopping monitoring", user=user)
@@ -8232,7 +8233,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
                     update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
                     print(f"* Error: {err_str}")
-                    
+
                     # Pause all other threads once the session account is flagged.
                     if WEB_DASHBOARD_ENABLED or DASHBOARD_ENABLED:
                         for other_user in list(WEB_DASHBOARD_STOP_EVENTS.keys()):
@@ -8242,7 +8243,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 stop_monitoring_for_target(other_user)
                                 update_ui_data(targets={other_user: {'status': f'Paused: {err_str}'}})
                         # Update next_check status for this thread
-                        NEXT_CHECK_TIME = None  
+                        NEXT_CHECK_TIME = None
                         NEXT_CHECK_DISPLAY = "Paused"
                         update_check_times(next_time="Paused", user=user, increment_count=False)
                         log_activity("Stopping monitoring", user=user)
@@ -10815,7 +10816,7 @@ def run_main():
             finally:
                 # next code line added per Claude to fix 'deadlock' in multi-threaded mode when an account gets flagged and goes idle
                 # reason: loading_events never signaled on early return (note: event.set() is idempotent so calling it twice is harmless)
-                loading_events[idx + 1].set()  
+                loading_events[idx + 1].set()
                 with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                     if u in WEB_DASHBOARD_RECHECK_EVENTS:
                         del WEB_DASHBOARD_RECHECK_EVENTS[u]
