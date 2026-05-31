@@ -750,6 +750,15 @@ SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD", "WEBHOOK_URL", "PROXY_URL")
 # List of error substrings that unambiguously indicate the session account or IP has been flagged (challenge/checkpoint/shadowban)
 FLAGGED_TRIGGERS = ("detected automated checks", "checkpoint_required")
 
+# Error substrings meaning a profile could not be found, which is ambiguous between a deleted/renamed target and a flagged session
+PROFILE_NOT_FOUND_TRIGGERS = ("ProfileNotExistsException",)
+
+# Canonical always-present public account used to probe whether the session/IP is flagged rather than a target being genuinely gone
+FLAGGED_PROBE_USERNAME = "instagram"
+
+# Seconds to reuse a flag-probe verdict so simultaneous target failures do not each hit the network
+FLAGGED_PROBE_TTL = 300
+
 # Default value for network-related timeouts in functions
 FUNCTION_TIMEOUT = 15
 
@@ -874,6 +883,8 @@ import hashlib
 WEB_DASHBOARD_DATA_LOCK = threading.RLock()
 DASHBOARD_DATA_LOCK = threading.RLock()
 SESSION_REFRESHED_EVENT = threading.Event()  # Signals monitoring threads to reload session
+FLAGGED_PROBE_LOCK = threading.Lock()  # Serializes and dedupes flag-probe network calls
+FLAGGED_PROBE_CACHE = {'ts': 0.0, 'flagged': False}  # Cached flag-probe verdict with its timestamp
 PROXY_REFRESH_VERSION = 0
 PROXY_REFRESH_LOCK = threading.Lock()
 
@@ -6549,6 +6560,47 @@ def format_error_message(e: Exception) -> str:
     return f"{error_type}: {error_str}"
 
 
+# Returns True when the formatted error indicates a profile could not be found (deleted/renamed target or a flagged session masking every profile)
+def is_profile_not_found_error(error_msg):
+    return any(t in error_msg for t in PROFILE_NOT_FOUND_TRIGGERS)
+
+
+# Performs a single probe of a canonical always-present public account and returns True if it also looks missing or blocked
+def _run_flagged_probe(bot):
+    try:
+        profile_from_username_resilient(bot, FLAGGED_PROBE_USERNAME)
+        return False
+    except Exception as probe_err:
+        probe_msg = format_error_message(probe_err)
+        return is_profile_not_found_error(probe_msg) or any(t in probe_msg for t in FLAGGED_TRIGGERS)
+
+
+# Probes whether the session/IP is flagged versus a single target being gone, caching the verdict briefly to avoid a probe storm
+def probe_session_flagged(bot):
+    if bot is None:
+        return False
+    now = time.time()
+    with FLAGGED_PROBE_LOCK:
+        last_ts = FLAGGED_PROBE_CACHE['ts']
+        if last_ts and (now - last_ts) < FLAGGED_PROBE_TTL:
+            return FLAGGED_PROBE_CACHE['flagged']
+        flagged = _run_flagged_probe(bot)
+        FLAGGED_PROBE_CACHE['ts'] = time.time()
+        FLAGGED_PROBE_CACHE['flagged'] = flagged
+        verdict = "also unresolved, treating session as flagged" if flagged else "resolved, treating target as genuinely gone"
+        debug_print(f"Flag probe: canonical account '{FLAGGED_PROBE_USERNAME}' {verdict}")
+        return flagged
+
+
+# Returns True when an error indicates the session account or IP itself is flagged rather than a single target being gone
+def is_session_flagged(error_msg, bot):
+    if any(t in error_msg for t in FLAGGED_TRIGGERS):
+        return True
+    if is_profile_not_found_error(error_msg):
+        return probe_session_flagged(bot)
+    return False
+
+
 # Returns unique, validated hours (0-23) from the configured ranges
 def hours_to_check():
     # Notes:
@@ -6915,6 +6967,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     stories_count = 0
     stories_old_count = 0
     reels_count = 0
+    bot = None
 
     try:
         # Apply request monkey-patch for jitter or serialized HTTP mode even when no progress bar is created
@@ -7151,7 +7204,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         log_activity(f"Error: {error_msg}", user=user)
 
         # Handle session recovery for automated checks/challenge errors
-        if any(t in error_msg for t in FLAGGED_TRIGGERS):
+        if is_session_flagged(error_msg, bot):
             err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
             update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
             print(f"* Error: {err_str}")
@@ -8229,7 +8282,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         )
 
                 # Handle session recovery for automated checks/challenge errors
-                if any(t in error_msg for t in FLAGGED_TRIGGERS):
+                if is_session_flagged(error_msg, bot):
                     err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
                     update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
                     print(f"* Error: {err_str}")
