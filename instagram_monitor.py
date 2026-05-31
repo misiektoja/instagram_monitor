@@ -3652,32 +3652,47 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     return 1
 
 
+# Sleeps for the given seconds but returns True early if stop_event becomes set
+def interruptible_sleep(seconds, stop_event=None):
+    if stop_event is None:
+        time.sleep(seconds)
+        return False
+    return stop_event.wait(seconds)
+
+
 # Fetches the current outbound IP via IP_ADDRESS_URL, tolerating JSON and plain-text responses
-def get_ip_address(max_retries=3, timeout=10):
+def get_ip_address(max_retries=5, timeout=10, retry_delay=5, long_retry=120, long_retry_attempts=3, stop_event=None):
     last_err = None
-    for attempt in range(1, max_retries + 1):
-        try:
-            ip_response = req.get(IP_ADDRESS_URL, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
-            ip_response.raise_for_status()
+    for long_attempt in range(1, long_retry_attempts + 1):
+        for attempt in range(1, max_retries + 1):
+            if stop_event is not None and stop_event.is_set():
+                return f"(unavailable: {format_error_message(last_err) if last_err else 'stopped'})"
             try:
-                data = ip_response.json()
-            except ValueError:
-                data = None
-            if isinstance(data, dict):
-                for key in ('origin', 'ip', 'ip_addr', 'address', 'query'):
-                    val = data.get(key)
-                    if isinstance(val, str) and val.strip():
-                        return val.strip().split(',')[0].strip()
-            text = (ip_response.text or "").strip()
-            if text:
-                return text.splitlines()[0].strip()
-            raise ValueError(f"empty response body from {IP_ADDRESS_URL}")
-        except Exception as e:
-            last_err = e
-            if attempt < max_retries:
-                debug_print(f"get_ip_address attempt {attempt}/{max_retries} failed: {e}, retrying...")
-            else:
-                debug_print(f"get_ip_address failed after {max_retries} attempts: {e}")
+                ip_response = req.get(IP_ADDRESS_URL, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
+                ip_response.raise_for_status()
+                try:
+                    data = ip_response.json()
+                except ValueError:
+                    data = None
+                if isinstance(data, dict):
+                    for key in ('origin', 'ip', 'ip_addr', 'address', 'query'):
+                        val = data.get(key)
+                        if isinstance(val, str) and val.strip():
+                            return val.strip().split(',')[0].strip()
+                text = (ip_response.text or "").strip()
+                if text:
+                    return text.splitlines()[0].strip()
+                raise ValueError(f"empty response body from {IP_ADDRESS_URL}")
+            except Exception as e:
+                last_err = e
+                if attempt < max_retries and interruptible_sleep(retry_delay, stop_event):
+                    return f"(unavailable: {format_error_message(last_err)})"
+        if long_attempt < long_retry_attempts:
+            debug_print(f"get_ip_address: all {max_retries} attempts failed in loop {long_attempt}/{long_retry_attempts}, retrying in {long_retry} seconds: {last_err}")
+            if interruptible_sleep(long_retry, stop_event):
+                return f"(unavailable: {format_error_message(last_err) if last_err else 'stopped'})"
+        else:
+            debug_print(f"get_ip_address failed after {long_retry_attempts} loops of {max_retries} attempts: {last_err}")
     return f"(unavailable: {format_error_message(last_err) if last_err else 'unknown error'})"
 
 
@@ -4670,11 +4685,15 @@ def check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
             send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
         # Send webhook notification for posts count change
-        diff = posts_count - posts_count_old
-        diff_str = f"+{diff}" if diff > 0 else str(diff)
+        if posts_count is not None and posts_count_old is not None:
+            diff = posts_count - posts_count_old
+            diff_str = f" ({'+' if diff > 0 else ''}{diff})"
+        else:
+            diff_str = ""
+
         send_webhook(
             f"📮 {user} Posts Count Changed",
-            f"User **{user}** posts count changed from **{posts_count_old}** to **{posts_count}** ({diff_str})",
+            f"User **{user}** posts count changed from **{posts_count_old}** to **{posts_count}**{diff_str}",
             color=0x34495e,  # Dark Blue
             notification_type="status"
         )
@@ -4841,6 +4860,16 @@ def import_session(cookiefile, sessionfile):
         instaloader.save_session_to_file(sessionfile)
     else:
         instaloader.save_session_to_file()
+
+    # Emit the warning in red only when colour output is enabled and supported, otherwise plain text
+    RED = f"\033[{_STYLE_CODES['red']}m" if COLOR_ENABLED else ""
+    RESET = ANSI_RESET if COLOR_ENABLED else ""
+
+    print("")
+    print(f"{RED}*********************************************************************{RESET}")
+    print(f"{RED} Clear Instagram cookies in Firefox now to avoid duplicate activity. {RESET}")
+    print(f"{RED} Otherwise, the session account may get flagged by Instagram.        {RESET}")
+    print(f"{RED}*********************************************************************{RESET}")
 
 
 # Finds an optional config file
@@ -6508,7 +6537,6 @@ def sleep_message(sleeptime, user=None):
 def format_error_message(e: Exception) -> str:
     error_str = str(e)
     error_type = type(e).__name__
-    debug_print(f"Formatting error message for {error_type}: {error_str}")
 
     # Check for KeyError related to 'data' key - indicates Instagram challenge/shadow ban
     if error_type == "KeyError" and ("'data'" in error_str or '"data"' in error_str or error_str == "data"):
@@ -6752,7 +6780,7 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
         total_limit:      Stop after this many total accounts (FOLLOWER_LIMIT_TO_FETCH / FOLLOWEE_LIMIT_TO_FETCH). 0 = no limit.
         fetch_delay:      Seconds to sleep between batches.
         advanced_fetch:   Indicates if advanced_fetch is enabled (valid configuration of above 3 items)
-        estimated_limit:  Estimated number of itesm to fetch. Used for messaging.
+        estimated_limit:  Estimated number of items to fetch. Used for messaging.
         user:             Instagram username, forwarded to log_activity.
         stop_event:       Optional threading.Event from the caller. If set, the inter-batch wait is
                           aborted and the function returns whatever has been fetched so far.
@@ -7951,7 +7979,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     # Show proxy IP at per-user startup only in verbose/debug (the run_main banner already shows it once)
     if PROXY_ENABLED and (VERBOSE_MODE or DEBUG_MODE):
-        ipaddr = get_ip_address()
+        ipaddr = get_ip_address(stop_event=stop_event)
         print(f"* Proxy IP address is {ipaddr}")
 
     # Monitoring active message
@@ -8040,7 +8068,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         # Debug/Verbose: show check start
         ip_str = ""
         if PROXY_ENABLED and (VERBOSE_MODE or DEBUG_MODE):
-            ipaddr = get_ip_address()
+            ipaddr = get_ip_address(stop_event=stop_event)
             ip_str = f" with proxy IP address of {ipaddr}"
         if VERBOSE_MODE:
             print(f"* Starting check #{CHECK_COUNT} for {user} ...{ip_str}")
@@ -8405,13 +8433,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             m_body_html = f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
                         send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
-                    # Send webhook notification for followings change
-                    webhook_result = send_follower_change_webhook(
-                        user, "followings", followings_old_count, followings_count,
-                        added_followings_list_webhook, removed_followings_list_webhook
-                    )
-                    if webhook_result != 0 and DEBUG_MODE:
-                        print(f"* Warning: Webhook notification for followings change failed")
+                    # Send webhook notification for followings change (independent of email notifications) only if something changed
+                    if followings_count != followings_old_count or added_followings_list or removed_followings_list:
+                        webhook_result = send_follower_change_webhook(
+                            user, "followings", followings_old_count, followings_count,
+                            added_followings_list_webhook, removed_followings_list_webhook
+                        )
+                        if webhook_result != 0 and DEBUG_MODE:
+                            print(f"* Warning: Webhook notification for followings change failed")
 
                 followings_old_count = followings_count
 
@@ -8550,13 +8579,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             m_body_html = f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
                         send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
-                    # Send webhook notification for followers change
-                    webhook_result = send_follower_change_webhook(
-                        user, "followers", followers_old_count, followers_count,
-                        added_followers_list_webhook, removed_followers_list_webhook
-                    )
-                    if webhook_result != 0 and DEBUG_MODE:
-                        print(f"* Warning: Webhook notification for followers change failed")
+                    # Send webhook notification for followers change (independent of email notifications) only if something changed
+                    if followers_count != followers_old_count or added_followers_list or removed_followers_list:
+                        webhook_result = send_follower_change_webhook(
+                            user, "followers", followers_old_count, followers_count,
+                            added_followers_list_webhook, removed_followers_list_webhook
+                        )
+                        if webhook_result != 0 and DEBUG_MODE:
+                            print(f"* Warning: Webhook notification for followers change failed")
 
                 followers_old_count = followers_count
 
