@@ -747,6 +747,9 @@ DEFAULT_CONFIG_FILENAME = "instagram_monitor.conf"
 # List of secret keys to load from env/config
 SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD", "WEBHOOK_URL", "PROXY_URL")
 
+# List of error substrings that unambiguously indicate the session account or IP has been flagged (challenge/checkpoint/shadowban)
+FLAGGED_TRIGGERS = ("detected automated checks", "checkpoint_required")
+
 # Default value for network-related timeouts in functions
 FUNCTION_TIMEOUT = 15
 
@@ -5361,7 +5364,7 @@ def update_check_times(last_time=None, next_time=None, user=None, increment_coun
         DASHBOARD_DATA['config'] = get_dashboard_config_data()
         update_dashboard()
 
-    if WEB_DASHBOARD_ENABLED:
+    if WEB_DASHBOARD_ENABLED or DASHBOARD_ENABLED:
         last_display = get_squeezed_date_from_ts(LAST_CHECK_TIME, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS) if LAST_CHECK_TIME else None
         next_display = get_squeezed_date_from_ts(NEXT_CHECK_TIME, show_seconds=DASHBOARD_SHOW_CHECK_SECONDS) if NEXT_CHECK_TIME else (NEXT_CHECK_DISPLAY or None)
 
@@ -6867,7 +6870,7 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
 
 # Monitors activity of the specified Instagram user
 def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None, manual_recheck=False, skip_follow_changes=False):  # type: ignore[reportComplexity]
-    global pbar, DASHBOARD_DATA, VERBOSE_MODE, CHECK_COUNT
+    global pbar, DASHBOARD_DATA, VERBOSE_MODE, CHECK_COUNT, NEXT_CHECK_TIME, NEXT_CHECK_DISPLAY
     _thread_local.user = user  # Store user in thread-local storage for debug_print
     _thread_local.in_partial_line = False  # Track partial line prints
     update_ui_data(targets={user: {'status': 'Starting'}})
@@ -7147,40 +7150,62 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         log_activity(f"Error: {error_msg}", user=user)
 
         # Handle session recovery for automated checks/challenge errors
-        if "detected automated checks" in error_msg and WEB_DASHBOARD_ENABLED:
-            update_ui_data(targets={user: {'status': 'Paused: Session re-login required'}})
-            log_activity("Monitoring paused: Session re-login required via Web Dashboard", user=user)
-            print(f"* Monitoring paused for {user}. Please refresh/import session via Web Dashboard.")
+        if any(t in error_msg for t in FLAGGED_TRIGGERS):
+            err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
+            update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
+            print(f"* Error: {err_str}")
+            
+            # Pause all other threads once the session account is flagged.
+            if WEB_DASHBOARD_ENABLED or DASHBOARD_ENABLED:
+                for other_user in list(WEB_DASHBOARD_STOP_EVENTS.keys()):
+                    if other_user != user:
+                        log_activity(err_str, user=other_user)
+                        update_check_times(next_time="Paused", user=other_user, increment_count=False)
+                        stop_monitoring_for_target(other_user)
+                        update_ui_data(targets={other_user: {'status': f'Paused: {err_str}'}})
+                # Update next_check status for this thread
+                NEXT_CHECK_TIME = None  
+                NEXT_CHECK_DISPLAY = "Paused"
+                update_check_times(next_time="Paused", user=user, increment_count=False)
+                log_activity("Stopping monitoring", user=user)
             print_cur_ts("\nTimestamp:\t\t\t\t")
 
-            # Wait for session refresh or stop event
-            while not (stop_event and stop_event.is_set()):
-                if SESSION_REFRESHED_EVENT.wait(timeout=1.0):
-                    # Session refreshed! Reload and retry
-                    log_activity("Session/Mode change detected, resuming monitoring...", user=user)
-                    print(f"* Session/Mode change detected for {user}, resuming...")
-                    print_cur_ts("\nTimestamp:\t\t\t\t")
+            # Without the Web Dashboard there is no in-place session recovery so exit since the flagged session is dead for every target
+            if not WEB_DASHBOARD_ENABLED:
+                signal_handler(signal.SIGINT, None, message='')
 
-                    # Refresh configuration from global settings
-                    skip_session = SKIP_SESSION
-                    skip_followers = SKIP_FOLLOWERS
-                    skip_followings = SKIP_FOLLOWINGS
-                    skip_getting_story_details = SKIP_GETTING_STORY_DETAILS
-                    skip_getting_posts_details = SKIP_GETTING_POSTS_DETAILS
-                    get_more_post_details = GET_MORE_POST_DETAILS
+            # Web Dashboard can re-import a session and resume, so wait for that or a stop event
+            if WEB_DASHBOARD_ENABLED:
+                while not (stop_event and stop_event.is_set()):
+                    if SESSION_REFRESHED_EVENT.wait(timeout=1.0):
+                        # Session refreshed! Reload and retry
+                        log_activity("Session/Mode change detected, resuming monitoring...", user=user)
+                        print(f"* Session/Mode change detected for {user}, resuming...")
+                        print_cur_ts("\nTimestamp:\t\t\t\t")
 
-                    # Re-run the function from the beginning to reset state with new settings
-                    return instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user, signal_loading_complete, stop_event, user_root_path, manual_recheck)
+                        # Refresh configuration from global settings
+                        skip_session = SKIP_SESSION
+                        skip_followers = SKIP_FOLLOWERS
+                        skip_followings = SKIP_FOLLOWINGS
+                        skip_getting_story_details = SKIP_GETTING_STORY_DETAILS
+                        skip_getting_posts_details = SKIP_GETTING_POSTS_DETAILS
+                        get_more_post_details = GET_MORE_POST_DETAILS
 
-            if stop_event and stop_event.is_set():
-                return
+                        # Re-run the function from the beginning to reset state with new settings
+                        return instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user, signal_loading_complete, stop_event, user_root_path, manual_recheck)
+
+                if stop_event and stop_event.is_set():
+                    return
+        else:
+            print_cur_ts("\nTimestamp:\t\t\t\t")
 
         if WEB_DASHBOARD_ENABLED:
             update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
-        # traceback.print_exc()
         if threading.current_thread() is threading.main_thread():
+            time.sleep(2)  # let terminal dashboard fully refresh logs/status in case this generates a script exit
             sys.exit(1)
         else:
+            time.sleep(2)  # let terminal dashboard fully refresh logs/status in case this generates a script exit
             return
 
     story_flag = False
@@ -8202,13 +8227,32 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             notification_type="error"
                         )
 
-                if "detected automated checks" in error_msg and WEB_DASHBOARD_ENABLED:
-                    update_ui_data(targets={user: {'status': 'Paused: Session re-login required'}})
-                    log_activity("Monitoring paused: Session re-login required via Web Dashboard", user=user)
-                    print(f"* Monitoring paused for {user}. Please refresh/import session via Web Dashboard.")
+                # Handle session recovery for automated checks/challenge errors
+                if any(t in error_msg for t in FLAGGED_TRIGGERS):
+                    err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
+                    update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
+                    print(f"* Error: {err_str}")
+                    
+                    # Pause all other threads once the session account is flagged.
+                    if WEB_DASHBOARD_ENABLED or DASHBOARD_ENABLED:
+                        for other_user in list(WEB_DASHBOARD_STOP_EVENTS.keys()):
+                            if other_user != user:
+                                log_activity(err_str, user=other_user)
+                                update_check_times(next_time="Paused", user=other_user, increment_count=False)
+                                stop_monitoring_for_target(other_user)
+                                update_ui_data(targets={other_user: {'status': f'Paused: {err_str}'}})
+                        # Update next_check status for this thread
+                        NEXT_CHECK_TIME = None  
+                        NEXT_CHECK_DISPLAY = "Paused"
+                        update_check_times(next_time="Paused", user=user, increment_count=False)
+                        log_activity("Stopping monitoring", user=user)
                     print_cur_ts("\nTimestamp:\t\t\t\t")
 
-                    # Wait for session refresh or stop event
+                    # Without the Web Dashboard there is no in-place session recovery so exit since the flagged session is dead for every target
+                    if not WEB_DASHBOARD_ENABLED:
+                        signal_handler(signal.SIGINT, None, message='')
+
+                    # Web Dashboard can re-import a session and resume, so wait for that or a stop event
                     while not (stop_event and stop_event.is_set()):
                         if SESSION_REFRESHED_EVENT.wait(timeout=1.0):
                             # Session refreshed!
@@ -10769,6 +10813,9 @@ def run_main():
                 # Still signal completion even on error, so next user can proceed
                 loading_events[idx + 1].set()
             finally:
+                # next code line added per Claude to fix 'deadlock' in multi-threaded mode when an account gets flagged and goes idle
+                # reason: loading_events never signaled on early return (note: event.set() is idempotent so calling it twice is harmless)
+                loading_events[idx + 1].set()  
                 with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                     if u in WEB_DASHBOARD_RECHECK_EVENTS:
                         del WEB_DASHBOARD_RECHECK_EVENTS[u]
@@ -10794,6 +10841,7 @@ def run_main():
                     # but if we're here, we ensure clean exit
                     signal_handler(signal.SIGINT, None)
 
+    # this is for main thread to handle the web interface
     if WEB_DASHBOARD_ENABLED:
         try:
             while True:
