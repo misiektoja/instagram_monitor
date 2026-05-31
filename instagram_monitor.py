@@ -5506,11 +5506,12 @@ def generate_user_dashboard(target_data):
         return ts_val if isinstance(ts_val, (int, float)) else 0
 
     def append_update_entry(update, fallback_user):
-        user_label = update.get('user') or fallback_user or "Unknown"
+        # Substitute display-only fields (name, caption) but keep file paths and URLs real so they stay locatable/clickable
+        user_label = apply_privacy_substitutions(update.get('user') or fallback_user or "Unknown")
         last_fetched_text.append(f"User: {user_label}\n", style="bold green")
         last_fetched_text.append(f"Type: {update.get('type', 'Unknown')}\n", style="bold cyan")
         last_fetched_text.append(f"Date: {update.get('timestamp', '-')}\n", style="dim")
-        caption = update.get('caption', '')
+        caption = apply_privacy_substitutions(update.get('caption', ''))
         if caption:
             caption = caption.replace('\n', ' ')
             if len(caption) > 60:
