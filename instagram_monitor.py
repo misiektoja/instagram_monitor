@@ -3681,17 +3681,14 @@ def get_ip_address(max_retries=5, timeout=10, retry_delay=5, long_retry=120, lon
                 raise ValueError(f"empty response body from {IP_ADDRESS_URL}")
             except Exception as e:
                 last_err = e
-                if attempt < max_retries:
-                    if interruptible_sleep(retry_delay, stop_event):
-                        return f"(unavailable: {format_error_message(last_err)})"
-                else:
-                    debug_print(f"get_ip_address failed after {max_retries} attempts: {e}")
+                if attempt < max_retries and interruptible_sleep(retry_delay, stop_event):
+                    return f"(unavailable: {format_error_message(last_err)})"
         if long_attempt < long_retry_attempts:
-            debug_print(f"get_ip_address retrying in {long_retry} seconds")
+            debug_print(f"get_ip_address: all {max_retries} attempts failed in loop {long_attempt}/{long_retry_attempts}, retrying in {long_retry} seconds: {last_err}")
             if interruptible_sleep(long_retry, stop_event):
                 return f"(unavailable: {format_error_message(last_err) if last_err else 'stopped'})"
         else:
-            debug_print(f"get_ip_address failed after {long_retry_attempts} loops")
+            debug_print(f"get_ip_address failed after {long_retry_attempts} loops of {max_retries} attempts: {last_err}")
     return f"(unavailable: {format_error_message(last_err) if last_err else 'unknown error'})"
 
 
@@ -4692,7 +4689,7 @@ def check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
 
         send_webhook(
             f"📮 {user} Posts Count Changed",
-            f"User **{user}** posts count changed from **{posts_count_old}** to **{posts_count}** {diff_str}",
+            f"User **{user}** posts count changed from **{posts_count_old}** to **{posts_count}**{diff_str}",
             color=0x34495e,  # Dark Blue
             notification_type="status"
         )
@@ -4860,9 +4857,9 @@ def import_session(cookiefile, sessionfile):
     else:
         instaloader.save_session_to_file()
 
-    # The sequence is: \033[ + {code} + m
-    RED = f"\033[{_STYLE_CODES['red']}m"
-    RESET = "\033[0m"
+    # Emit the warning in red only when colour output is enabled and supported, otherwise plain text
+    RED = f"\033[{_STYLE_CODES['red']}m" if COLOR_ENABLED else ""
+    RESET = ANSI_RESET if COLOR_ENABLED else ""
 
     print("")
     print(f"{RED}*********************************************************************{RESET}")
@@ -6534,7 +6531,6 @@ def sleep_message(sleeptime, user=None):
 def format_error_message(e: Exception) -> str:
     error_str = str(e)
     error_type = type(e).__name__
-    # debug_print(f"Formatting error message for {error_type}: {error_str}")
 
     # Check for KeyError related to 'data' key - indicates Instagram challenge/shadow ban
     if error_type == "KeyError" and ("'data'" in error_str or '"data"' in error_str or error_str == "data"):
