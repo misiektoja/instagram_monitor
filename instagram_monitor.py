@@ -3648,11 +3648,21 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     return 1
 
 
+# Sleeps for the given seconds but returns True early if stop_event becomes set
+def interruptible_sleep(seconds, stop_event=None):
+    if stop_event is None:
+        time.sleep(seconds)
+        return False
+    return stop_event.wait(seconds)
+
+
 # Fetches the current outbound IP via IP_ADDRESS_URL, tolerating JSON and plain-text responses
-def get_ip_address(max_retries=5, timeout=10, retry_delay=5, long_retry=120, long_retry_attempts=3):
+def get_ip_address(max_retries=5, timeout=10, retry_delay=5, long_retry=120, long_retry_attempts=3, stop_event=None):
     last_err = None
     for long_attempt in range(1, long_retry_attempts + 1):
         for attempt in range(1, max_retries + 1):
+            if stop_event is not None and stop_event.is_set():
+                return f"(unavailable: {format_error_message(last_err) if last_err else 'stopped'})"
             try:
                 ip_response = req.get(IP_ADDRESS_URL, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
                 ip_response.raise_for_status()
@@ -3672,12 +3682,14 @@ def get_ip_address(max_retries=5, timeout=10, retry_delay=5, long_retry=120, lon
             except Exception as e:
                 last_err = e
                 if attempt < max_retries:
-                    time.sleep(retry_delay)
+                    if interruptible_sleep(retry_delay, stop_event):
+                        return f"(unavailable: {format_error_message(last_err)})"
                 else:
                     debug_print(f"get_ip_address failed after {max_retries} attempts: {e}")
         if long_attempt < long_retry_attempts:
             debug_print(f"get_ip_address retrying in {long_retry} seconds")
-            time.sleep(long_retry)
+            if interruptible_sleep(long_retry, stop_event):
+                return f"(unavailable: {format_error_message(last_err) if last_err else 'stopped'})"
         else:
             debug_print(f"get_ip_address failed after {long_retry_attempts} loops")
     return f"(unavailable: {format_error_message(last_err) if last_err else 'unknown error'})"
@@ -7965,7 +7977,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     # Show proxy IP at per-user startup only in verbose/debug (the run_main banner already shows it once)
     if PROXY_ENABLED and (VERBOSE_MODE or DEBUG_MODE):
-        ipaddr = get_ip_address()
+        ipaddr = get_ip_address(stop_event=stop_event)
         print(f"* Proxy IP address is {ipaddr}")
 
     # Monitoring active message
@@ -8054,7 +8066,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         # Debug/Verbose: show check start
         ip_str = ""
         if PROXY_ENABLED and (VERBOSE_MODE or DEBUG_MODE):
-            ipaddr = get_ip_address()
+            ipaddr = get_ip_address(stop_event=stop_event)
             ip_str = f" with proxy IP address of {ipaddr}"
         if VERBOSE_MODE:
             print(f"* Starting check #{CHECK_COUNT} for {user} ...{ip_str}")
