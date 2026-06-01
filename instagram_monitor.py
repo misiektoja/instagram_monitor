@@ -902,6 +902,51 @@ try:
 except ModuleNotFoundError:
     raise SystemExit("Error: Couldn't find the instaloader library !\n\nTo install it, run:\n    pip3 install instaloader\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://instaloader.github.io/")
 
+# Instaloader 4.15.1 profile metadata GraphQL broke after Instagram API changes (May 2026).
+# Patch doc_id/variables until upstream ships the fix: https://github.com/instaloader/instaloader/issues/2695
+# Mirrors instaloader PR #2696. Self-deactivating: once instaloader ships the fixed doc_id the
+# stale one no longer appears, so the rewrite below never fires and becomes a transparent no-op.
+_INSTALOADER_GRAPHQL_PROFILE_PATCH_APPLIED = False
+
+
+def _apply_instaloader_graphql_profile_patch() -> None:
+    """Monkey-patch Instaloader profile metadata GraphQL query (no site-packages edit)."""
+    global _INSTALOADER_GRAPHQL_PROFILE_PATCH_APPLIED
+    if _INSTALOADER_GRAPHQL_PROFILE_PATCH_APPLIED:
+        return
+
+    try:
+        from instaloader.instaloadercontext import InstaloaderContext
+    except ImportError:
+        return
+
+    # A future instaloader may rename or drop this method (e.g. migrate to /api/graphql); skip cleanly if so.
+    original = getattr(InstaloaderContext, "doc_id_graphql_query", None)
+    if original is None:
+        _INSTALOADER_GRAPHQL_PROFILE_PATCH_APPLIED = True
+        return
+
+    stale_doc_id = "25980296051578533"
+    fixed_doc_id = "27937681195819736"
+    extra_vars = {
+        "__relay_internal__pv__PolarisWebSchoolsEnabledrelayprovider": False,
+        "enable_integrity_filters": True,
+    }
+
+    def _patched_doc_id_graphql_query(self, doc_id, variables, referer=None):  # type: ignore[no-untyped-def]
+        if str(doc_id) == stale_doc_id:
+            doc_id = fixed_doc_id
+            variables = {**(variables or {}), **extra_vars}
+            if DEBUG_MODE:
+                debug_print("instaloader profile metadata doc_id patch fired (stale doc_id rewritten)")
+        return original(self, doc_id, variables, referer)
+
+    InstaloaderContext.doc_id_graphql_query = _patched_doc_id_graphql_query  # type: ignore[method-assign]
+    _INSTALOADER_GRAPHQL_PROFILE_PATCH_APPLIED = True
+
+
+_apply_instaloader_graphql_profile_patch()
+
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape
 from itertools import islice
