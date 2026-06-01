@@ -11,7 +11,6 @@ Huge thanks to everyone who contributed to this release, with a special shout-ou
 - **NEW:** Added **shadowban and flagged-account detection**, including a canonical-account probe that distinguishes a removed or renamed account from a temporarily flagged one and smarter logic on whether to keep idling or exit while an account is flagged (closes [#78](https://github.com/misiektoja/instagram_monitor/issues/78))
 - **NEW:** Added **advanced control over fetching followers and followings**, with batched fetching, configurable total limits and correct handling of stop and recheck events during long fetches
 - **NEW:** Added a **`SKIP_WRAP_MESSAGES`** config option to suppress the wrap messages emitted during request monkey-patching
-- **IMPROVE:** Added a compatibility **patch for Instaloader GraphQL profile metadata** so profile lookups keep working after upstream Instaloader changes
 - **IMPROVE:** Hardened **IP-address lookups** with retries, interruptible backoff waits and credential masking, plus extra retries when the proxy is temporarily unavailable
 - **IMPROVE:** Switched elapsed-time tracking to a **monotonic timer** for accurate runtime statistics
 - **IMPROVE:** Refined the **progress bar**: fit its text during PAUSE, show remaining time above two hours in hours rather than minutes, drop decimals from minute and hour values and handle PAUSED states more robustly
@@ -21,6 +20,7 @@ Huge thanks to everyone who contributed to this release, with a special shout-ou
 
 **Bug fixes**:
 
+- **BUGFIX:** Added a compatibility **patch for Instaloader GraphQL profile metadata** to fix 400 Bad Request on GraphQL query: invalid request when using session mode
 - **BUGFIX:** Decoupled follower/following **webhook notifications** from the email notification flags so they fire independently and only when something actually changed
 - **BUGFIX:** Fixed **`hours_to_check()`** behavior when the feature is disabled (fixes [#80](https://github.com/misiektoja/instagram_monitor/issues/80))
 - **BUGFIX:** Guarded against **`posts_count`** being `None` during post-count comparisons
