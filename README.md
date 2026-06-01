@@ -58,11 +58,15 @@ docker pull misiektoja/instagram-monitor:latest
 - **Jitter Mode**: Adds human-like delays to HTTP requests.
 - **Hour-Range Checking**: Limits activity to specific hours of the day.
 - **Account Flexibility**: Works with or without a logged-in Instagram account.
+- **Proxy Support**: Route Instagram and webhook traffic through your own proxy.
+- **Privacy Substitutions**: Mask or rename identities across all output, logs and notifications.
+- **Block Awareness**: Detects shadowbans and flagged sessions to avoid false alerts.
 
 ### ⚙️ Power Features
 - **CSV Logging**: Log all activities and profile changes with timestamps.
 - **Flexible Config**: Support for files, dotenv and environment variables.
 - **Follower Churn**: Detailed tracking of exactly who followed or unfollowed.
+- **Batched Fetching**: Throttle follower/following downloads into delayed batches.
 - **Remote Control**: Manage tracking features via signals or the web UI.
 - **Docker Ready**: Run via Docker Hub image or local image build with persisted config, dotenv and sessions.
 
@@ -81,7 +85,7 @@ docker pull misiektoja/instagram-monitor:latest
 2. [Installation](#installation)
    * [Install from PyPI](#install-from-pypi)
    * [Install from Docker Hub](#install-from-docker-hub)
-   * [Manual Installation](#manual-installation)
+   * [Manual Python-based Installation](#manual-python-based-installation)
    * [Upgrading](#upgrading)
 3. [Quick Start](#quick-start)
 4. [Configuration](#configuration)
@@ -106,6 +110,11 @@ docker pull misiektoja/instagram-monitor:latest
    * [Webhook Notifications](#webhook-notifications)
    * [Follower Churn Detection](#follower-churn-detection)
    * [Skipping Follow Changes](#skipping-follow-changes)
+   * [Advanced Follower/Following Fetching](#advanced-followerfollowing-fetching)
+   * [Routing Traffic Through a Proxy](#routing-traffic-through-a-proxy)
+   * [Privacy Substitutions](#privacy-substitutions)
+   * [Shadowban and Flagged Account Detection](#shadowban-and-flagged-account-detection)
+   * [Reducing Jitter Log Noise](#reducing-jitter-log-noise)
    * [CSV Export](#csv-export)
    * [Output Directory](#output-directory)
    * [Detection of Changed Profile Pictures](#detection-of-changed-profile-pictures)
@@ -160,10 +169,8 @@ pip install instagram_monitor
 docker pull misiektoja/instagram-monitor:latest
 ```
 
-For run examples and key scenarios see 🐳 [Docker Usage (Recommended)](#docker-usage-recommended).
-
-<a id="manual-installation"></a>
-### Manual Installation
+<a id="manual-python-based-installation"></a>
+### Manual Python-based Installation
 
 Download the *[instagram_monitor.py](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py)* file to the desired location.
 
@@ -221,7 +228,7 @@ If you prefer to run it in a container, jump to 🐳 [Docker Usage (Recommended)
 instagram_monitor <target_insta_user>
 ```
 
-Or if you installed [manually](#manual-installation):
+Or if you installed [manually](#manual-python-based-installation):
 
 ```sh
 python3 instagram_monitor.py <target_insta_user>
@@ -371,7 +378,7 @@ instagram_monitor --send-test-email
 <a id="storing-secrets"></a>
 ### Storing Secrets
 
-It is recommended to store secrets like `SESSION_PASSWORD`, `SMTP_PASSWORD` or `WEBHOOK_URL` as either an environment variable or in a dotenv file.
+It is recommended to store secrets like `SESSION_PASSWORD`, `SMTP_PASSWORD`, `WEBHOOK_URL` or `PROXY_URL` as either an environment variable or in a dotenv file.
 
 Set the needed environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
 
@@ -713,6 +720,7 @@ The tool supports webhook notifications (compatible with **Discord** and other w
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_discord.png" alt="instagram_monitor_discord_screenshot" width="80%"/>
 </p>
 
+<a id="1-configure-discord-webhook"></a>
 #### 1. Configure Discord Webhook
 If you are new to Discord, follow these steps to get your **Webhook URL**:
 
@@ -721,6 +729,7 @@ If you are new to Discord, follow these steps to get your **Webhook URL**:
 3.  **Create Webhook**: Go to **Integrations** in the left menu -> **Webhooks** -> **New Webhook**.
 4.  **Copy URL**: Click on the new webhook (often named "Spidey Bot", you can rename it) and click **Copy Webhook URL**.
 
+<a id="2-enable-in-the-tool"></a>
 #### 2. Enable in the Tool
 - set `WEBHOOK_ENABLED` to `True` and `WEBHOOK_URL` to your copied URL in `instagram_monitor.conf`
 - or use an [environment variable](#storing-secrets) or a dotenv file for `WEBHOOK_URL`
@@ -736,6 +745,7 @@ instagram_monitor <target_insta_user> --webhook
 instagram_monitor <target_insta_user> --no-webhook
 ```
 
+<a id="3-test-your-settings"></a>
 #### 3. Test your settings
 You can verify your configuration by sending a test notification:
 
@@ -747,6 +757,7 @@ instagram_monitor --send-test-webhook
 instagram_monitor --webhook-url "https://discord.com/api/webhooks/..." --send-test-webhook
 ```
 
+<a id="4-advanced-configuration"></a>
 #### 4. Advanced Configuration
 By default, all webhook notification types (status, followers, errors) are **disabled**. You must explicitly enable what you want the tool to send:
 
@@ -811,6 +822,103 @@ To enable skipping follow changes:
 
 ```sh
 instagram_monitor <target_insta_user> --skip-follow-changes
+```
+
+<a id="advanced-followerfollowing-fetching"></a>
+### Advanced Follower/Following Fetching
+
+By default the tool fetches the full follower and following lists in one go. On large accounts this can be a strong signal to Instagram's automated detection. To reduce that risk you can fetch them gradually, in batches with a delay in between and up to an optional total cap.
+
+Configure it with these options in `instagram_monitor.conf`:
+
+```ini
+# Number of accounts to fetch before pausing (0 = no batching)
+FOLLOWERS_PER_BATCH = 0
+FOLLOWEES_PER_BATCH = 0
+
+# Delay in seconds between batches (0 = no delay)
+FOLLOWER_DELAY_PER_BATCH = 0
+FOLLOWEE_DELAY_PER_BATCH = 0
+
+# Total number of accounts to fetch across all batches (0 = no limit)
+FOLLOWER_LIMIT_TO_FETCH = 0
+FOLLOWEE_LIMIT_TO_FETCH = 0
+```
+
+Depending on which values you set, the tool runs in one of these modes (it prints the active mode on startup and warns if the combination is invalid):
+
+- **Disabled**: fetch everything at once (default)
+- **Maximum of N accounts**: only `*_LIMIT_TO_FETCH` is set
+- **Batches of Y accounts with Z second delay**: `*_PER_BATCH` and `*_DELAY_PER_BATCH` are set
+- **Maximum of N accounts in batches of Y with Z second delay**: all three are set
+
+**Note**: This feature requires [Session Mode 2](#session-mode-2-with-logged-in-instagram-account-session-login) (session login).
+
+<a id="routing-traffic-through-a-proxy"></a>
+### Routing Traffic Through a Proxy
+
+You can route the tool's Instagram traffic (and optionally webhook traffic) through an HTTP or HTTPS proxy. This is useful for pinning the monitor to a stable egress IP or for keeping it on the same network identity over time.
+
+To enable a proxy:
+- set `PROXY_ENABLED` to `True` and `PROXY_URL` to your proxy URL
+- or use the `--enable-proxy` and `--proxy-url` flags
+
+```sh
+instagram_monitor <target_insta_user> --enable-proxy --proxy-url "http://user:pass@host:port"
+```
+
+Additional options:
+- `PROXY_CERT_PATH` (or `--proxy-cert`): path to a local SSL certificate to use for the proxied connection
+- `PROXY_WEBHOOKS` (or `--enable-proxy-webhooks`): also send webhook POST requests through the proxy (some proxies do not allow POST, so this is off by default)
+
+`PROXY_URL` may contain credentials, so it is treated as a secret: the tool masks it in all output and you can store it via an [environment variable or dotenv file](#storing-secrets).
+
+```ini
+PROXY_ENABLED = True
+PROXY_URL = "http://user:pass@host:port"
+PROXY_CERT_PATH = ""
+PROXY_WEBHOOKS = False
+```
+
+**Note**: Even when `PROXY_ENABLED` is `False`, the underlying `requests` library still honors the `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` environment variables. If those are set in your shell or service unit they are applied silently, so unset them if you want a guaranteed direct connection.
+
+<a id="privacy-substitutions"></a>
+### Privacy Substitutions
+
+If you want to hide or rename identities in everything the tool produces (console output, logs, CSV, emails, webhooks and both dashboards), use privacy substitutions. For example you can replace a real Instagram username with a friendlier label or mask it entirely.
+
+Provide a list of `(search, replace)` tuples via the `PRIVACY_SUBSTITUTIONS` config option:
+
+```ini
+PRIVACY_SUBSTITUTIONS = [ ("a.username", "Sarah"), ("some.other.user", "XXX") ]
+```
+
+Every occurrence of a search term is replaced with its replacement before anything is displayed, logged or sent. Internal keys and file paths are kept intact, so the substitution affects only what you see, not how the tool locates data. Invalid entries are ignored with a warning.
+
+<a id="shadowban-and-flagged-account-detection"></a>
+### Shadowban and Flagged Account Detection
+
+Instagram sometimes flags a session or IP (challenge, checkpoint or shadowban) instead of a monitored target actually disappearing. When that happens, a profile lookup can fail in a way that looks identical to the target being deleted or renamed, which previously could trigger misleading alerts.
+
+To tell the two apart, the tool probes a canonical, always-present public account (by default `instagram`) whenever a target lookup fails ambiguously. If that probe also fails, the tool concludes the session/IP is flagged rather than the target being gone and it idles and recovers instead of reporting a false change. When the session can recover it keeps waiting, otherwise it exits cleanly.
+
+This runs automatically. The behavior can be tuned via these config options:
+
+```ini
+# Canonical public account used to probe whether the session/IP is flagged
+FLAGGED_PROBE_USERNAME = "instagram"
+
+# Seconds to reuse a flag-probe result so simultaneous target failures do not each hit the network
+FLAGGED_PROBE_TTL = 300
+```
+
+<a id="reducing-jitter-log-noise"></a>
+### Reducing Jitter Log Noise
+
+When **Jitter Mode** (or debug/verbose output) is enabled, the HTTP back-off wrapper prints a `WRAP-REQ` / `WRAP-SEND` line for every request, which can be overwhelming. Set `SKIP_WRAP_MESSAGES` to `True` to suppress those per-request lines while keeping the rest of the jitter behavior:
+
+```ini
+SKIP_WRAP_MESSAGES = True
 ```
 
 <a id="csv-export"></a>
@@ -1109,6 +1217,7 @@ Once you start using the tool, try to blend its actions with normal usage. Howev
 
 In case of issues, run the tool with the `--debug` flag. It shows full HTTP traffic and internal script logic. Create a new issue in Github if you cannot fix it yourself.
 
+<a id="choosing-the-right-logging-level"></a>
 ### Choosing the Right Logging Level
 
 - **Default Mode**: Silent and clean. Only logs changes (new posts, bio updates, etc.) and critical errors. Best for long-term production use.
