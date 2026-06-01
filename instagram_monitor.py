@@ -212,9 +212,9 @@ FOLLOWEE_DELAY_PER_BATCH = 0
 # Provide a list of (search, replace) tuples. Any search term will be substituted with the replace term.
 #
 # Example:
-# PRIVACY_SUBSTITIONS = [ ("a.username", "XXX"), ("sdfsdf747475475", "Bobby") ]
+# PRIVACY_SUBSTITUTIONS = [ ("a.username", "XXX"), ("sdfsdf747475475", "Bobby") ]
 #
-PRIVACY_SUBSTITIONS = [ ]
+PRIVACY_SUBSTITUTIONS = [ ]
 
 # Optional: Enable proxy support for networking traffic
 #
@@ -737,7 +737,7 @@ DASHBOARD_SHOW_CHECK_SECONDS = True
 THUMBNAILS_FORCED_BY_WEB = False
 FOLLOWERS_CHURN_DETECTION = False
 TIME_FORMAT_12H = False
-PRIVACY_SUBSTITIONS = []
+PRIVACY_SUBSTITUTIONS = []
 mode_of_the_tool = "Unknown"
 
 exec(CONFIG_BLOCK, globals())
@@ -769,7 +769,7 @@ LIVENESS_CHECK_COUNTER = 0
 stdout_bck = None
 last_output = []
 csvfieldnames = ['Date', 'Type', 'Old', 'New']
-PRIVACY_SUBSTITIONS_INVALID_WARNED = False
+PRIVACY_SUBSTITUTIONS_INVALID_WARNED = False
 
 imgcat_exe = ""
 
@@ -3834,35 +3834,35 @@ def refresh_proxy_if_needed(bot, user):
 TPrivacyContent = TypeVar("TPrivacyContent")
 
 
-# Apply PRIVACY_SUBSTITIONS to any content type
+# Apply PRIVACY_SUBSTITUTIONS to any content type
 def apply_privacy_substitutions(content: TPrivacyContent) -> TPrivacyContent:
     """
     - Recurses into dict values and list items
-    - For strings, performs search/replace using PRIVACY_SUBSTITIONS
+    - For strings, performs search/replace using PRIVACY_SUBSTITUTIONS
     - Preserves dict keys so JSON and object keys stay stable for API
       consumers. Callers that display a key (e.g. terminal target tables)
       must substitute it explicitly at the point of display
     - Ignores invalid substitution entries to avoid runtime crashes
     - Non-string primitives are returned unchanged
     """
-    global PRIVACY_SUBSTITIONS_INVALID_WARNED
-    if not PRIVACY_SUBSTITIONS:
+    global PRIVACY_SUBSTITUTIONS_INVALID_WARNED
+    if not PRIVACY_SUBSTITUTIONS:
         return content
     if isinstance(content, str):
         content_str = content
-        for item in PRIVACY_SUBSTITIONS:
+        for item in PRIVACY_SUBSTITUTIONS:
             if not isinstance(item, (list, tuple)) or len(item) != 2:
-                if not PRIVACY_SUBSTITIONS_INVALID_WARNED:
+                if not PRIVACY_SUBSTITUTIONS_INVALID_WARNED:
                     if sys.__stderr__ is not None:
-                        sys.__stderr__.write("* Warning: Ignoring invalid PRIVACY_SUBSTITIONS entry, expected (search, replace) with both values as strings\n")
-                    PRIVACY_SUBSTITIONS_INVALID_WARNED = True
+                        sys.__stderr__.write("* Warning: Ignoring invalid PRIVACY_SUBSTITUTIONS entry, expected (search, replace) with both values as strings\n")
+                    PRIVACY_SUBSTITUTIONS_INVALID_WARNED = True
                 continue
             search, replace = item
             if not isinstance(search, str) or not isinstance(replace, str) or not search:
-                if not PRIVACY_SUBSTITIONS_INVALID_WARNED:
+                if not PRIVACY_SUBSTITUTIONS_INVALID_WARNED:
                     if sys.__stderr__ is not None:
-                        sys.__stderr__.write("* Warning: Ignoring invalid PRIVACY_SUBSTITIONS entry, expected non-empty string search and string replace values\n")
-                    PRIVACY_SUBSTITIONS_INVALID_WARNED = True
+                        sys.__stderr__.write("* Warning: Ignoring invalid PRIVACY_SUBSTITUTIONS entry, expected non-empty string search and string replace values\n")
+                    PRIVACY_SUBSTITUTIONS_INVALID_WARNED = True
                 continue
             content_str = content_str.replace(search, replace)
         return cast(TPrivacyContent, content_str)
