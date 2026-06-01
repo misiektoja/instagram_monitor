@@ -184,6 +184,7 @@ JITTER_VERBOSE = False
 # Set to True to skip the per-request WRAP-REQ/WRAP-SEND log lines from the HTTP jitter/back-off wrappers
 # These can be overwhelming in debug or jitter-verbose mode and are not needed in most cases
 SKIP_WRAP_MESSAGES = False
+
 # Optional Follower and Followee Adjustments
 #
 # This allows control of the fetching of followers and followees, which may be beneficial in avoiding account flagging by Instagram.
