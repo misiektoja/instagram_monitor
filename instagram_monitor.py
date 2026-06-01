@@ -939,6 +939,7 @@ class DynamicLog:
         self.activities = activities
 
     def __rich_console__(self, console, options):
+        assert Text is not None
         log_entries = options.max_height
         text = Text()
         if not self.activities:
@@ -948,8 +949,8 @@ class DynamicLog:
                 text.append(f"{act['time']} ", style="dim")
                 text.append(f"{act['message']}\n")
         yield text
-        
-        
+
+
 # Locates installed data files (wheel / pip)
 def _locate_installed_dist_file(target_filename: str) -> Optional[str]:
     try:
