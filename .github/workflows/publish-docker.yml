@@ -19,8 +19,13 @@ env:
   IMAGE_NAME: misiektoja/instagram-monitor
 
 jobs:
+  test:
+    name: Tests
+    uses: ./.github/workflows/tests.yml
+
   publish-docker:
     name: Build and publish multi-arch image to Docker Hub
+    needs: test
     runs-on: ubuntu-latest
     environment:
       name: docker
