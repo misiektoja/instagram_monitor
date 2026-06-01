@@ -5,8 +5,13 @@ on:
     types: [published]
 
 jobs:
+  test:
+    name: Tests
+    uses: ./.github/workflows/tests.yml
+
   build-n-publish:
     name: Build and publish Python distribution to PyPI
+    needs: test
     runs-on: ubuntu-latest
     environment:
       name: pypi
