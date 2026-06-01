@@ -38,6 +38,9 @@ classifiers = [
 ]
 keywords = ["instagram", "monitoring", "tracking", "real-time", "osint", "instaloader"]
 
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
 [project.urls]
 Homepage = "https://github.com/misiektoja/instagram_monitor"
 Source   = "https://github.com/misiektoja/instagram_monitor"
@@ -53,3 +56,9 @@ include-package-data = true
 [tool.setuptools.data-files]
 "instagram_monitor_data/templates" = ["templates/*.html"]
 "instagram_monitor_data" = ["instagram_profile_pic_empty.jpg"]
+
+[tool.pytest.ini_options]
+# Run the in-repo source, never an installed copy, by putting the project root first on sys.path
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-ra"
