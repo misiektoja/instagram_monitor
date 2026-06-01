@@ -1,5 +1,31 @@
 # instagram_monitor release notes
 
+# Changes in 3.3 (01 Jun 2026)
+
+Huge thanks to everyone who contributed to this release, with a special shout-out to [@tomballgithub](https://github.com/tomballgithub) who drove most of the work behind these changes and to [@BlueXAyman](https://github.com/BlueXAyman) for the Instaloader GraphQL profile metadata patch.
+
+**Features and Improvements**:
+
+- **NEW:** Added **proxy support** for routing Instagram and webhook traffic through a proxy, with an optional client certificate, automatic masking of proxy credentials in output, runtime toggling without a restart and support for multiple IP-lookup services (`--enable-proxy` / `--proxy-url` / `--proxy-cert` / `--enable-proxy-webhooks` flags or the matching `PROXY_*` config options)
+- **NEW:** Added **privacy substitution** support to redact or replace monitored target identities (display names, usernames, captions) across console output, logs, dashboards and webhook payloads, applied at display time so the real identity is never leaked
+- **NEW:** Added **shadowban and flagged-account detection**, including a canonical-account probe that distinguishes a removed or renamed account from a temporarily flagged one and smarter logic on whether to keep idling or exit while an account is flagged (closes [#78](https://github.com/misiektoja/instagram_monitor/issues/78))
+- **NEW:** Added **advanced control over fetching followers and followings**, with batched fetching, configurable total limits and correct handling of stop and recheck events during long fetches
+- **NEW:** Added a **`SKIP_WRAP_MESSAGES`** config option to suppress the wrap messages emitted during request monkey-patching
+- **IMPROVE:** Added a compatibility **patch for Instaloader GraphQL profile metadata** so profile lookups keep working after upstream Instaloader changes
+- **IMPROVE:** Hardened **IP-address lookups** with retries, interruptible backoff waits and credential masking, plus extra retries when the proxy is temporarily unavailable
+- **IMPROVE:** Switched elapsed-time tracking to a **monotonic timer** for accurate runtime statistics
+- **IMPROVE:** Refined the **progress bar**: fit its text during PAUSE, show remaining time above two hours in hours rather than minutes, drop decimals from minute and hour values and handle PAUSED states more robustly
+- **IMPROVE:** Hardened type handling across the code base to satisfy static type checking with pyright
+- **IMPROVE:** Enforced **gitleaks secret scanning** in CI, added **Dependabot** version updates and bumped the Docker base image and GitHub Actions dependencies
+- **IMPROVE:** Added an **offline test suite** (pytest) covering config parsing, time formatting, scheduling windows, privacy substitutions, notification helpers, follower diffing, CSV writing and session-flag detection, with no network access, running automatically in CI across Python 3.9 to 3.14
+
+**Bug fixes**:
+
+- **BUGFIX:** Decoupled follower/following **webhook notifications** from the email notification flags so they fire independently and only when something actually changed
+- **BUGFIX:** Fixed **`hours_to_check()`** behavior when the feature is disabled (fixes [#80](https://github.com/misiektoja/instagram_monitor/issues/80))
+- **BUGFIX:** Guarded against **`posts_count`** being `None` during post-count comparisons
+- **BUGFIX:** Hardened **`update_ui_data`** debug formatting against non-dict payloads
+
 # Changes in 3.2 (10 Apr 2026)
 
 **Features and Improvements**:
