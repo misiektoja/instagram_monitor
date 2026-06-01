@@ -13,7 +13,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -30,7 +30,7 @@ jobs:
           ls -lh "${PREFIX}.zip" "${PREFIX}.tar.gz"
 
       - name: Upload archives to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             instagram_monitor_${{ github.event.release.tag_name }}.zip
