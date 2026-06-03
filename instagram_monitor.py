@@ -1120,7 +1120,34 @@ def _install_http_backend() -> None:
     _CURL_CFFI_BACKEND_INSTALLED = True
 
 
+# Patches instaloader.copy_session so the per-request iPhone-API session inherits the proxy and TLS-verify settings
+def _install_copy_session_proxy_patch() -> None:
+    try:
+        from instaloader import instaloadercontext as _ilc
+    except Exception:
+        return
+    original = getattr(_ilc, "copy_session", None)
+    if original is None or getattr(original, "_proxies_patched", False):
+        return
+
+    def _patched_copy_session(session, request_timeout=None):
+        new = original(session, request_timeout)
+        # instaloader's copy_session copies only cookies and headers, dropping proxies and verify,
+        # so the anonymous web_profile_info call would bypass a configured proxy and leak the real IP
+        try:
+            new.proxies.clear()
+            new.proxies.update(getattr(session, "proxies", None) or {})
+            new.verify = getattr(session, "verify", True)
+        except Exception:
+            pass
+        return new
+
+    _patched_copy_session._proxies_patched = True  # type: ignore
+    _ilc.copy_session = _patched_copy_session
+
+
 _install_http_backend()
+_install_copy_session_proxy_patch()
 
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape
