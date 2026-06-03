@@ -14,6 +14,7 @@ requires-python = ">=3.9"
 dependencies = [
   "instaloader>=4.15.1",
   "requests>=2.0",
+  "curl_cffi>=0.7",
   "python-dateutil>=2.8",
   "pytz>=2020.1",
   "tzlocal>=4.0",
