@@ -252,6 +252,19 @@ USER_AGENT = ""
 # Can also be set using the --user-agent-mobile flag
 USER_AGENT_MOBILE = ""
 
+# HTTP transport backend used for all Instagram traffic (anonymous and logged-in)
+# - "curl_cffi": route requests through curl_cffi with browser TLS (JA3/JA4) impersonation (default)
+#   This avoids TLS-fingerprint blocks (spurious HTTP 429) seen on some Linux/OpenSSL builds
+#   Requires the optional 'curl_cffi' package, otherwise it transparently falls back to "requests"
+# - "requests": use the stock requests/urllib3 transport with system TLS (the historical behavior)
+# Can also be set using the --http-backend flag
+HTTP_BACKEND = "curl_cffi"
+
+# Browser profile curl_cffi impersonates when HTTP_BACKEND is "curl_cffi"
+# Examples: "chrome", "safari", "safari_ios", "edge", "firefox" (see curl_cffi docs for the full list)
+# Can also be set using the --impersonate flag
+CURL_CFFI_IMPERSONATE = "chrome"
+
 # How often to print a "liveness check" message to the output; in seconds
 # Set to 0 to disable
 LIVENESS_CHECK_INTERVAL = 43200  # 12 hours
@@ -672,6 +685,8 @@ SKIP_GETTING_POSTS_DETAILS = False
 GET_MORE_POST_DETAILS = False
 USER_AGENT = ""
 USER_AGENT_MOBILE = ""
+HTTP_BACKEND = "curl_cffi"
+CURL_CFFI_IMPERSONATE = "chrome"
 BE_HUMAN = False
 DAILY_HUMAN_HITS = 0
 MY_HASHTAGS = []
@@ -947,6 +962,165 @@ def _apply_instaloader_graphql_profile_patch() -> None:
 
 
 _apply_instaloader_graphql_profile_patch()
+
+
+# ---------------------------------------------------------------------------
+# Pluggable HTTP transport backend (HTTP_BACKEND)
+#
+# Routing of all instaloader Instagram traffic through curl_cffi browser TLS
+# (JA3/JA4) impersonation works by shimming the requests module that
+# instaloader.instaloadercontext uses, so every requests.Session() it builds
+# (anonymous, login, load_session, copy_session for the iPhone API, downloads)
+# is mounted with a curl_cffi-backed transport adapter. The adapter is a
+# transparent pass-through when HTTP_BACKEND != "curl_cffi" or curl_cffi is not
+# installed, so the requests backend keeps its exact historical behavior.
+# Mirrors the doc_id monkeypatch style above (no site-packages edit).
+# ---------------------------------------------------------------------------
+
+import io as _io
+import http.client as _http_client
+from types import SimpleNamespace as _SimpleNamespace
+from requests.adapters import HTTPAdapter as _HTTPAdapter
+from requests.cookies import extract_cookies_to_jar as _extract_cookies_to_jar
+from requests.structures import CaseInsensitiveDict as _CaseInsensitiveDict
+from requests.utils import get_encoding_from_headers as _get_encoding_from_headers
+
+try:
+    from curl_cffi import requests as _curl_requests
+    from curl_cffi.requests import exceptions as _curl_exceptions
+    _CURL_CFFI_AVAILABLE = True
+except Exception:
+    _curl_requests = None
+    _curl_exceptions = None
+    _CURL_CFFI_AVAILABLE = False
+
+_CURL_CFFI_BACKEND_INSTALLED = False
+_CURL_CFFI_UNAVAILABLE_WARNED = False
+
+
+# Returns True when the curl_cffi transport should handle requests right now (reads the live config)
+def _curl_cffi_backend_active() -> bool:
+    global _CURL_CFFI_UNAVAILABLE_WARNED
+    if str(HTTP_BACKEND).strip().lower() != "curl_cffi":
+        return False
+    if not _CURL_CFFI_AVAILABLE:
+        if not _CURL_CFFI_UNAVAILABLE_WARNED:
+            print("* Warning: HTTP_BACKEND is 'curl_cffi' but the 'curl_cffi' package is not installed, falling back to 'requests'")
+            _CURL_CFFI_UNAVAILABLE_WARNED = True
+        return False
+    return True
+
+
+# Returns the configured curl_cffi impersonation target, falling back to chrome when empty
+def _curl_cffi_impersonate_target() -> str:
+    target = str(CURL_CFFI_IMPERSONATE or "chrome").strip()
+    return target or "chrome"
+
+
+# Minimal urllib3-style raw wrapper exposing the read/stream surface requests and instaloader downloads rely on
+class _CurlCffiRaw:
+    def __init__(self, body: bytes, header_pairs, status: int, reason: str):
+        self._buffer = _io.BytesIO(body)
+        self.status = status
+        self.reason = reason
+        self.decode_content = False
+        msg = _http_client.HTTPMessage()
+        for key, value in header_pairs:
+            msg[key] = value
+        self._original_response = _SimpleNamespace(msg=msg, closed=True, close=lambda: None, isclosed=lambda: True)
+
+    def read(self, amt=None) -> bytes:
+        return self._buffer.read() if amt is None else self._buffer.read(amt)
+
+    def stream(self, amt=8192, decode_content=None):
+        while True:
+            chunk = self._buffer.read(amt)
+            if not chunk:
+                break
+            yield chunk
+
+    def release_conn(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self._buffer.close()
+
+    @property
+    def closed(self) -> bool:
+        return self._buffer.closed
+
+
+# requests transport adapter that sends through curl_cffi browser impersonation when the backend is active
+class _CurlCffiHTTPAdapter(_HTTPAdapter):
+    def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):
+        if not _curl_cffi_backend_active():
+            return super().send(request, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
+        curl_proxies = proxies if proxies else None
+        headers = dict(request.headers)
+        # Never let the stock python-requests default UA ride on top of a browser TLS fingerprint
+        # (an obvious mismatch); drop it so curl_cffi supplies its coherent impersonation UA instead
+        for ua_key in [k for k in headers if k.lower() == "user-agent"]:
+            if str(headers[ua_key]).lower().startswith("python-requests"):
+                del headers[ua_key]
+        try:
+            curl_resp = _curl_requests.request(request.method or "GET", request.url, headers=headers, data=request.body, impersonate=_curl_cffi_impersonate_target(), proxies=curl_proxies, verify=verify, timeout=timeout, allow_redirects=False, stream=False)  # type: ignore
+        except _curl_exceptions.RequestException as err:  # type: ignore
+            raise req.exceptions.ConnectionError(str(err), request=request) from err
+        return self._build_response(request, curl_resp)
+
+    # Converts a curl_cffi response into the requests.Response shape instaloader expects
+    def _build_response(self, request, curl_resp):
+        response = req.Response()
+        response.status_code = curl_resp.status_code
+        header_pairs = list(curl_resp.headers.multi_items())
+        response.headers = _CaseInsensitiveDict(curl_resp.headers.items())
+        response.encoding = _get_encoding_from_headers(response.headers)
+        response.reason = getattr(curl_resp, "reason", "") or _http_client.responses.get(curl_resp.status_code, "")
+        response.url = str(getattr(curl_resp, "url", "") or request.url)
+        body = curl_resp.content
+        raw = _CurlCffiRaw(body, header_pairs, curl_resp.status_code, response.reason)
+        response.raw = raw
+        response._content = body
+        response._content_consumed = True  # type: ignore
+        response.request = request
+        response.connection = self
+        _extract_cookies_to_jar(response.cookies, request, raw)
+        return response
+
+
+# Module-like proxy over `requests` that yields curl_cffi-mounted sessions while forwarding everything else
+class _RequestsBackendShim:
+    def __init__(self, real_requests):
+        object.__setattr__(self, "_real_requests", real_requests)
+
+    def Session(self, *args, **kwargs):
+        session = self._real_requests.Session(*args, **kwargs)
+        session.mount("https://", _CurlCffiHTTPAdapter())
+        session.mount("http://", _CurlCffiHTTPAdapter())
+        return session
+
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, "_real_requests"), name)
+
+
+# Installs the pluggable transport once by shimming the requests module instaloader's context uses
+def _install_http_backend() -> None:
+    global _CURL_CFFI_BACKEND_INSTALLED
+    if _CURL_CFFI_BACKEND_INSTALLED:
+        return
+    try:
+        from instaloader import instaloadercontext as _ilc
+    except Exception:
+        return
+    real_requests = getattr(_ilc, "requests", None)
+    if real_requests is None or isinstance(real_requests, _RequestsBackendShim):
+        _CURL_CFFI_BACKEND_INSTALLED = True
+        return
+    _ilc.requests = _RequestsBackendShim(real_requests)
+    _CURL_CFFI_BACKEND_INSTALLED = True
+
+
+_install_http_backend()
 
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape
@@ -1610,6 +1784,7 @@ def create_web_dashboard_app():
         global WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
         global DISABLE_LOGGING, CHECK_POSTS_IN_HOURS_RANGE, HOURS_VERBOSE, MIN_H1, MAX_H1, MIN_H2, MAX_H2
         global DASHBOARD_SHOW_CHECK_SECONDS, TIME_FORMAT_12H
+        global HTTP_BACKEND, CURL_CFFI_IMPERSONATE
 
         if data is None:
             return False, [], 'No data provided', 400
@@ -1656,6 +1831,14 @@ def create_web_dashboard_app():
                         if not os.path.isfile(processed_val):
                             print(f"* Error: Proxy certificate file does not exist. '{processed_val}'")
                             return current_val
+                elif key == 'http_backend':
+                    processed_val = str(processed_val).strip().lower()
+                    if processed_val not in ('curl_cffi', 'requests'):
+                        print(f"* Error: Invalid HTTP backend '{processed_val}'. Must be 'curl_cffi' or 'requests'.")
+                        return current_val
+                    if processed_val == 'curl_cffi' and not _CURL_CFFI_AVAILABLE:
+                        print("* Error: Cannot select 'curl_cffi' backend because the 'curl_cffi' package is not installed.")
+                        return current_val
 
                 changes.append(f"'{key}' changed from {current_val} to {processed_val}{note}")
                 return processed_val
@@ -1726,6 +1909,10 @@ def create_web_dashboard_app():
         DASHBOARD_SHOW_CHECK_SECONDS = bool(update_setting('dashboard_show_check_seconds', DASHBOARD_SHOW_CHECK_SECONDS, bool))
         TIME_FORMAT_12H = bool(update_setting('time_format_12h', TIME_FORMAT_12H, bool))
 
+        # HTTP transport backend
+        HTTP_BACKEND = str(update_setting('http_backend', HTTP_BACKEND, str))
+        CURL_CFFI_IMPERSONATE = str(update_setting('impersonate', CURL_CFFI_IMPERSONATE, str))
+
         # SMTP
         SMTP_HOST = str(update_setting('smtp_host', SMTP_HOST, str))
         SMTP_PORT = int(update_setting('smtp_port', SMTP_PORT, int))
@@ -1777,6 +1964,7 @@ def create_web_dashboard_app():
         global WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
         global DISABLE_LOGGING, CHECK_POSTS_IN_HOURS_RANGE, HOURS_VERBOSE, MIN_H1, MAX_H1, MIN_H2, MAX_H2
         global DASHBOARD_SHOW_CHECK_SECONDS, TIME_FORMAT_12H
+        global HTTP_BACKEND, CURL_CFFI_IMPERSONATE
 
         if flask_request.method == 'GET':  # type: ignore
             data = {  # type: ignore
@@ -1811,6 +1999,8 @@ def create_web_dashboard_app():
                 'enable_jitter': ENABLE_JITTER,
                 'profile_pic_changes': DETECT_CHANGED_PROFILE_PIC,
                 'skip_session_login': SKIP_SESSION,
+                'http_backend': HTTP_BACKEND,
+                'impersonate': CURL_CFFI_IMPERSONATE,
                 'config_file': CLI_CONFIG_PATH or "None",
                 'dotenv_file': DOTENV_FILE or "None",
                 'template_dir': WEB_DASHBOARD_TEMPLATE_DIR or "Auto",
@@ -6554,6 +6744,8 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'session_mode': mode_val,
         'profile_pic_changes': DETECT_CHANGED_PROFILE_PIC,
         'skip_session_login': SKIP_SESSION,
+        'http_backend': HTTP_BACKEND,
+        'impersonate': CURL_CFFI_IMPERSONATE,
         'skip_followers': SKIP_FOLLOWERS,
         'skip_followings': SKIP_FOLLOWINGS,
         'skip_follow_changes': SKIP_FOLLOW_CHANGES,
@@ -9573,7 +9765,7 @@ def get_target_paths(user):
 
 
 def run_main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
@@ -9834,6 +10026,21 @@ def run_main():
         metavar="USER_AGENT_MOBILE",
         type=str,
         help="Specify a custom mobile user agent for Instagram API requests; leave empty to auto-generate it"
+    )
+    session_opts.add_argument(
+        "--http-backend",
+        dest="http_backend",
+        metavar="HTTP_BACKEND",
+        type=str,
+        choices=["curl_cffi", "requests"],
+        help="HTTP transport backend for Instagram traffic: 'curl_cffi' (browser TLS impersonation, default) or 'requests' (stock system TLS)"
+    )
+    session_opts.add_argument(
+        "--impersonate",
+        dest="impersonate",
+        metavar="TARGET",
+        type=str,
+        help="Browser profile curl_cffi impersonates when --http-backend is curl_cffi (e.g. chrome, safari, safari_ios)"
     )
     session_opts.add_argument(
         "--be-human",
@@ -10182,6 +10389,15 @@ def run_main():
 
     if not USER_AGENT_MOBILE:
         USER_AGENT_MOBILE = get_random_mobile_user_agent()
+
+    if args.http_backend:
+        HTTP_BACKEND = args.http_backend
+
+    if args.impersonate:
+        CURL_CFFI_IMPERSONATE = args.impersonate
+
+    if str(HTTP_BACKEND).strip().lower() == "curl_cffi" and not _CURL_CFFI_AVAILABLE:
+        print("* Warning: HTTP_BACKEND is 'curl_cffi' but the 'curl_cffi' package is not installed, using the 'requests' backend instead (run: pip3 install curl_cffi)")
 
     if args.proxy_enabled is True:
         PROXY_ENABLED = True
@@ -10598,6 +10814,10 @@ def run_main():
     print(f"* Follower churn detection:\t\t{churn_status}")
     print(f"* Browser user agent:\t\t\t{USER_AGENT}")
     print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
+    if _curl_cffi_backend_active():
+        print(f"* HTTP backend:\t\t\t\tcurl_cffi (impersonate: {_curl_cffi_impersonate_target()})")
+    else:
+        print(f"* HTTP backend:\t\t\t\trequests")
     print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
     print(f"* Proxies:\t\t\t\t" + ("Enabled" if PROXY_ENABLED else "Disabled"))
     if PROXY_ENABLED:
