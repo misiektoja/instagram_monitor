@@ -5,6 +5,8 @@
 **Features and Improvements**:
 
 - **NEW:** Added a **pluggable HTTP transport backend** with browser TLS (JA3/JA4) impersonation via [curl_cffi](https://github.com/lexiforest/curl_cffi), now the default, to avoid fingerprint-based blocks where Instagram returns a spurious `HTTP 429` on the very first request even from a clean IP (most often on Linux OS TLS stacks whose fingerprint Instagram treats as automation). Both the anonymous and logged-in paths use the selected backend and it transparently falls back to `requests` when curl_cffi is unavailable. Configurable via the `HTTP_BACKEND` / `CURL_CFFI_IMPERSONATE` config options or the `--http-backend` / `--impersonate` flags
+- **NEW:** Added **detection of leaked collab posts on private accounts** (enabled by default). When a private account co-authors a post with a public account, that post stays visible in the private account's timeline media via the public `web_profile_info` endpoint. The monitor surfaces these otherwise hidden posts (with owner, collaborators, media download and notifications) and reports new ones over time, even for accounts you do not follow. Only probes accounts whose posts are not otherwise viewable. Disable via the `DETECT_COLLAB_POSTS` config option or the `--no-detect-collab-posts` flag. Inspired by [InstagramPrivSniffer](https://github.com/obitouka/InstagramPrivSniffer)
+- **IMPROVE:** The anonymous post path now populates **tagged users and co-authors** from `web_profile_info` instead of leaving the list empty
 
 **Bug fixes**:
 
