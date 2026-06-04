@@ -153,6 +153,13 @@ SKIP_GETTING_POSTS_DETAILS = False
 # Can also be enabled via the -t flag
 GET_MORE_POST_DETAILS = False
 
+# Detect "collab" posts that leak from PRIVATE accounts via the public web_profile_info endpoint
+# When a private account co-authors a post with a public account that post stays visible in the
+# private account's timeline media. This probes for such leaked posts and reports new ones over time
+# Only kicks in for accounts whose posts are otherwise not viewable (private and not followed by you)
+# Can be disabled via the --no-detect-collab-posts flag
+DETECT_COLLAB_POSTS = True
+
 # When enabled, fetches the full list of followers and followings every check (not just when the count changes) and
 # compares usernames to detect who followed/unfollowed even when counts remain the same (churn detection)
 # This is useful for detecting when someone unfollows and someone else follows in the same interval, keeping the count unchanged
@@ -683,6 +690,7 @@ FOLLOWERS_CHURN_AUTODISABLED_REASON = ""
 SKIP_GETTING_STORY_DETAILS = False
 SKIP_GETTING_POSTS_DETAILS = False
 GET_MORE_POST_DETAILS = False
+DETECT_COLLAB_POSTS = True
 USER_AGENT = ""
 USER_AGENT_MOBILE = ""
 HTTP_BACKEND = "curl_cffi"
@@ -1152,7 +1160,7 @@ _install_copy_session_proxy_patch()
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape
 from itertools import islice
-from typing import Optional, Tuple, Any, Callable, List, TypeVar, cast
+from typing import Optional, Tuple, Any, Callable, Dict, List, TypeVar, cast
 from glob import glob
 import sqlite3
 from sqlite3 import OperationalError, connect
@@ -4916,12 +4924,156 @@ def latest_post_mobile(user: str, bot: instaloader.Instaloader):
         p.caption = ""
 
     p.pcaption = ""
-    p.tagged_users = []
+    p.tagged_users = _extract_collaborators(best_node, user)
     p.shortcode = best_node.get("shortcode", "")
     p.url = best_node.get("display_url", "")
     p.video_url = best_node.get("video_url")
 
     return p, "post"
+
+
+# Extracts collaborator usernames from a web_profile_info media node (tagged users plus co-authors)
+def _extract_collaborators(node: Dict[str, Any], owner_username: str = "") -> List[str]:
+    collaborators: List[str] = []
+    seen = set()
+    for edge in node.get("edge_media_to_tagged_user", {}).get("edges", []):
+        username = edge.get("node", {}).get("user", {}).get("username")
+        if username and username != owner_username and username not in seen:
+            seen.add(username)
+            collaborators.append(username)
+    for coauthor in node.get("coauthor_producers", []) or []:
+        username = coauthor.get("username")
+        if username and username != owner_username and username not in seen:
+            seen.add(username)
+            collaborators.append(username)
+    return collaborators
+
+
+# Returns posts leaking from a private account's timeline media via web_profile_info (collab posts shared with public accounts)
+def fetch_leaked_collab_posts(user: str, bot: instaloader.Instaloader) -> List[Dict[str, Any]]:
+    data = bot.context.get_iphone_json(f"api/v1/users/web_profile_info/?username={user}", {})
+    if not isinstance(data, dict):
+        return []
+    raw = data.get("data")
+    user_data = raw.get("user") if isinstance(raw, dict) else None
+    if not isinstance(user_data, dict):
+        return []
+    edges = user_data.get("edge_owner_to_timeline_media", {}).get("edges", [])
+    posts: List[Dict[str, Any]] = []
+    for edge in edges:
+        node = edge.get("node")
+        if not node:
+            continue
+        owner = node.get("owner", {}).get("username", "") or user
+        caption_edges = node.get("edge_media_to_caption", {}).get("edges", [])
+        caption = caption_edges[0]["node"].get("text", "") if caption_edges and "node" in caption_edges[0] else ""
+        posts.append({
+            "shortcode": node.get("shortcode", ""),
+            "owner": owner,
+            "is_video": bool(node.get("is_video")),
+            "ts": node.get("taken_at_timestamp", 0),
+            "likes": node.get("edge_liked_by", {}).get("count", 0),
+            "comments": node.get("edge_media_to_comment", {}).get("count", 0),
+            "caption": caption,
+            "collaborators": _extract_collaborators(node, owner),
+            "display_url": node.get("display_url", ""),
+            "video_url": node.get("video_url"),
+        })
+    return posts
+
+
+# Displays a leaked collab post from a private account with media download, sending notifications only when it is newly detected
+def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, Any], r_sleep_time: int, images_dir: str, videos_dir: str, user_root_path: Optional[str], is_new: bool = True) -> None:
+    source = "reel" if post.get("is_video") else "post"
+    shortcode = post.get("shortcode", "")
+    post_url = f"https://www.instagram.com/{'reel' if source == 'reel' else 'p'}/{shortcode}/"
+    ts = post.get("ts", 0)
+    post_dt = now_local()
+    if ts:
+        converted = convert_utc_datetime_to_tz_datetime(datetime.fromtimestamp(ts, timezone.utc))
+        if converted:
+            post_dt = converted
+    likes = post.get("likes", 0)
+    comments = post.get("comments", 0)
+    caption = post.get("caption", "") or "(empty)"
+    owner = post.get("owner", "") or user
+    collaborators = post.get("collaborators", []) or []
+    collab_str = ", ".join(collaborators) if collaborators else "(none reported)"
+
+    if is_new:
+        print(f"* New leaked collab {source} detected for private user {user} (revealed via a public collaborator) !\n")
+        log_activity(f"Leaked collab {source} detected", user=user, level='update', details={'url': post_url})
+    else:
+        print(f"* Newest leaked collab {source} for private user {user} (revealed via a public collaborator):\n")
+    print(f"Date:\t\t\t\t\t{get_date_from_ts(post_dt)} ({calculate_timespan(now_local(), post_dt)} ago)")
+    print(f"{source.capitalize()} URL:\t\t\t\t{post_url}")
+    print(f"Profile URL:\t\t\t\thttps://www.instagram.com/{insta_username}/")
+    print(f"Owner:\t\t\t\t\thttps://www.instagram.com/{owner}/")
+    print(f"Collaborators:\t\t\t\t{collab_str}")
+    print(f"Likes:\t\t\t\t\t{likes}")
+    print(f"Comments:\t\t\t\t{comments}")
+    print(f"Description:\n\n{caption}\n")
+
+    image_filename = ""
+    video_filename = ""
+    if post.get("video_url"):
+        video_filename = f'instagram_{user}_collab_{source}_{shortcode}.mp4'
+        if (user_root_path or OUTPUT_DIR) and videos_dir:
+            video_filename = os.path.join(videos_dir, video_filename)
+        if not os.path.isfile(video_filename):
+            if save_pic_video(post["video_url"], video_filename, ts):
+                print(f"Collab {source} video saved for {user} to '{video_filename}'")
+            else:
+                print(f"Error saving collab {source} video !")
+
+    pic_saved_html = ""
+    if DOWNLOAD_THUMBNAILS and post.get("display_url"):
+        image_filename = f'instagram_{user}_collab_{source}_{shortcode}.jpg'
+        if (user_root_path or OUTPUT_DIR) and images_dir:
+            image_filename = os.path.join(images_dir, image_filename)
+        if not os.path.isfile(image_filename):
+            if save_pic_video(post["display_url"], image_filename, ts):
+                pic_saved_html = '<br><br><img src="cid:collab_pic" width="50%">'
+                print(f"Collab {source} thumbnail image saved for {user} to '{image_filename}'")
+                try:
+                    if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
+                        subprocess.run(f"\"{imgcat_exe}\" \"{image_filename}\"", shell=True, check=True)
+                except Exception:
+                    pass
+
+    if is_new and STATUS_NOTIFICATION:
+        m_subject = f"Instagram private user {user} has a leaked collab {source} - {get_short_date_from_ts(post_dt)}"
+        m_body = f"Leaked collab {source} detected for private Instagram user {user} (revealed via a public collaborator)\n\nDate: {get_date_from_ts(post_dt)}\n{source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nOwner: https://www.instagram.com/{owner}/\nCollaborators: {collab_str}\nLikes: {likes}\nComments: {comments}\nDescription:\n\n{caption}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+        m_body_html = f"Leaked collab {source} detected for private Instagram user <b>{user}</b> (revealed via a public collaborator){pic_saved_html}<br><br>Date: <b>{get_date_from_ts(post_dt)}</b><br>{source.capitalize()} URL: <a href=\"{post_url}\">{post_url}</a><br>Profile URL: <a href=\"https://www.instagram.com/{insta_username}/\">https://www.instagram.com/{insta_username}/</a><br>Owner: <a href=\"https://www.instagram.com/{owner}/\">{owner}</a><br>Collaborators: {escape(collab_str)}<br>Likes: {likes}<br>Comments: {comments}<br>Description:<br><br>{escape(str(caption))}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+        print(f"\n* Sending email notification to {RECEIVER_EMAIL}")
+        if pic_saved_html and image_filename and os.path.isfile(image_filename):
+            send_email(m_subject, m_body, m_body_html, SMTP_SSL, image_filename, "collab_pic")
+        else:
+            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+
+    if is_new:
+        webhook_fields = [
+            {"name": "Date", "value": f"**{get_date_from_ts(post_dt)}**", "inline": True},
+            {"name": "Likes", "value": f"**{likes}**", "inline": True},
+            {"name": "Comments", "value": f"**{comments}**", "inline": True},
+            {"name": f"{source.capitalize()} URL", "value": post_url},
+            {"name": "Owner", "value": f"https://www.instagram.com/{owner}/"},
+        ]
+        if collaborators:
+            webhook_fields.append({"name": "Collaborators", "value": collab_str})
+        if caption and caption != "(empty)":
+            webhook_fields.append({"name": "Description", "value": (caption[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(caption) > WEBHOOK_FIELD_VALUE_LIMIT else caption})  # type: ignore
+
+        has_local_image = bool(image_filename and os.path.isfile(image_filename))
+        send_webhook(
+            f"🕵️ {user} Leaked Collab {source.capitalize()}",
+            f"Private user **{user}** has a leaked collab **{source}** (revealed via a public collaborator)",
+            color=0x9b59b6,  # Purple
+            fields=webhook_fields,
+            local_image_file=image_filename if has_local_image else None,
+            image_url=post.get("display_url") if (post.get("display_url") and not has_local_image) else None,
+            notification_type="status"
+        )
 
 
 # Returns reels count by using Instaloader's iPhone API (requires session login)
@@ -8126,6 +8278,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     last_source = "post"
     thumbnail_url = ""
     video_url = ""
+    highest_collab_ts_old = 0
 
     if int(posts_count + reels_count) >= 1 and can_view and not skip_getting_posts_details:
         if bot.context.is_logged_in:
@@ -8282,6 +8435,24 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     else:
         highestinsta_ts_old = int(time.time())
         highestinsta_dt_old = now_local()
+
+    # Baseline of leaked collab posts for private (otherwise not viewable) accounts; new ones are reported in the loop
+    if DETECT_COLLAB_POSTS and not can_view and int(posts_count + reels_count) >= 1:
+        update_ui_data(targets={user: {'status': 'Probing Collab Posts'}})
+        try:
+            time.sleep(NEXT_OPERATION_DELAY)
+            leaked_baseline = fetch_leaked_collab_posts(user, bot)
+        except Exception as e:
+            leaked_baseline = []
+            debug_print(f"[{user}] initial collab probe failed: {format_error_message(e)}")
+        if leaked_baseline:
+            highest_collab_ts_old = max(p.get("ts", 0) for p in leaked_baseline)
+            latest_collab = max(leaked_baseline, key=lambda item: item.get("ts", 0))
+            if len(leaked_baseline) > 1:
+                print(f"\n* {len(leaked_baseline)} leaked collab posts currently visible for private user {user} (showing the newest below):\n")
+            # r_sleep_time is unused when is_new is False, so 0 is a safe placeholder before the loop computes it
+            report_leaked_collab_post(user, insta_username, latest_collab, 0, images_dir, videos_dir, user_root_path, is_new=False)
+            print_cur_ts("\nTimestamp:\t\t\t\t")
 
     # Initialize check timing and update last check time for dashboard
     # Don't increment CHECK_COUNT here - it will be incremented in the main loop
@@ -9633,6 +9804,22 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 if check_reels_counts(user, reels_count, reels_count_old, r_sleep_time):
                     reels_count_old = reels_count
 
+                # Private (not viewable) account: probe for newly leaked collab posts revealed via public collaborators
+                if DETECT_COLLAB_POSTS and not can_view:
+                    try:
+                        leaked = fetch_leaked_collab_posts(user, bot)
+                    except Exception as e:
+                        leaked = []
+                        debug_print(f"[{user}] collab probe failed: {format_error_message(e)}")
+                    new_leaked = sorted([p for p in leaked if p.get("ts", 0) > highest_collab_ts_old], key=lambda item: item.get("ts", 0))
+                    for p in new_leaked:
+                        report_leaked_collab_post(user, insta_username, p, r_sleep_time, images_dir, videos_dir, user_root_path)
+                    if new_leaked:
+                        print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                        print_cur_ts("Timestamp:\t\t\t\t")
+                    if leaked:
+                        highest_collab_ts_old = max(highest_collab_ts_old, max(p.get("ts", 0) for p in leaked))
+
         else:
             if HOURS_VERBOSE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE) or DEBUG_MODE:
                 print(f"* Skipping updates for {user}, current hour: {int(cur_h)}, allowed: [{format_hours_as_ranges(hours_to_check())}]")
@@ -9792,7 +9979,7 @@ def get_target_paths(user):
 
 
 def run_main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
@@ -10120,6 +10307,13 @@ def run_main():
         action="store_false",
         default=None,
         help="Disable detection of changed profile picture"
+    )
+    opts.add_argument(
+        "--no-detect-collab-posts",
+        dest="detect_collab_posts",
+        action="store_false",
+        default=None,
+        help="Disable detection of collab posts leaking from private accounts via the public web_profile_info endpoint"
     )
     opts.add_argument(
         "-b", "--csv-file",
@@ -10620,6 +10814,9 @@ def run_main():
     if args.get_more_post_details is True:
         GET_MORE_POST_DETAILS = True
 
+    if args.detect_collab_posts is False:
+        DETECT_COLLAB_POSTS = False
+
     if args.be_human is True:
         BE_HUMAN = True
 
@@ -10835,6 +11032,7 @@ def run_main():
     print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
     print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
     print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
+    print(f"* Detect collab posts (private):\t{DETECT_COLLAB_POSTS}")
     churn_status = str(FOLLOWERS_CHURN_DETECTION)
     if FOLLOWERS_CHURN_AUTODISABLED:
         churn_status += f" ({FOLLOWERS_CHURN_AUTODISABLED_REASON})"
