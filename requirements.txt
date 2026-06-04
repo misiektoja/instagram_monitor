@@ -8,3 +8,4 @@ python-dotenv
 tqdm
 rich
 flask
+jinja2

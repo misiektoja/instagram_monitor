@@ -21,6 +21,7 @@ dependencies = [
   "python-dotenv>=0.19",
   "tqdm>=4.0",
   "flask>=2.0",
+  "jinja2>=3.0",
   "rich>=12.0",
   "colorama>=0.4.6; platform_system == 'Windows'",
 ]
