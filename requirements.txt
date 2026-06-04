@@ -1,5 +1,6 @@
 instaloader
 requests
+curl_cffi
 python-dateutil
 pytz
 tzlocal

@@ -58,6 +58,7 @@ docker pull misiektoja/instagram-monitor:latest
 - **Jitter Mode**: Adds human-like delays to HTTP requests.
 - **Hour-Range Checking**: Limits activity to specific hours of the day.
 - **Account Flexibility**: Works with or without a logged-in Instagram account.
+- **Browser TLS Impersonation**: Routes traffic through curl_cffi to mimic a real browser's TLS fingerprint and dodge fingerprint-based blocks.
 - **Proxy Support**: Route Instagram and webhook traffic through your own proxy.
 - **Privacy Substitutions**: Mask or rename identities across all output, logs and notifications.
 - **Block Awareness**: Detects shadowbans and flagged sessions to avoid false alerts.
@@ -112,6 +113,7 @@ docker pull misiektoja/instagram-monitor:latest
    * [Skipping Follow Changes](#skipping-follow-changes)
    * [Advanced Follower/Following Fetching](#advanced-followerfollowing-fetching)
    * [Routing Traffic Through a Proxy](#routing-traffic-through-a-proxy)
+   * [HTTP Transport Backend](#http-transport-backend)
    * [Privacy Substitutions](#privacy-substitutions)
    * [Shadowban and Flagged Account Detection](#shadowban-and-flagged-account-detection)
    * [Reducing Jitter Log Noise](#reducing-jitter-log-noise)
@@ -136,7 +138,7 @@ Choose one runtime path:
 
 * **Python path**:
   * [Python](https://www.python.org/downloads/) 3.9 or higher
-  * Libraries: [instaloader](https://github.com/instaloader/instaloader), `requests`, `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich` (for Terminal Dashboard), `flask` (for Web Dashboard)
+  * Libraries: [instaloader](https://github.com/instaloader/instaloader), `requests`, [curl_cffi](https://github.com/lexiforest/curl_cffi) (for browser TLS impersonation), `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich` (for Terminal Dashboard), `flask` (for Web Dashboard)
 * **Container path** (Python is not required on host):
   * Any Docker-compatible runtime such as:
     * [Docker Desktop](https://docs.docker.com/get-started/get-docker/) (macOS, Windows, Linux)
@@ -882,6 +884,29 @@ PROXY_WEBHOOKS = False
 ```
 
 **Note**: Even when `PROXY_ENABLED` is `False`, the underlying `requests` library still honors the `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` environment variables. If those are set in your shell or service unit they are applied silently, so unset them if you want a guaranteed direct connection.
+
+<a id="http-transport-backend"></a>
+### HTTP Transport Backend
+
+All Instagram traffic flows through a configurable HTTP transport backend:
+
+- `curl_cffi` (default): sends requests via [curl_cffi](https://github.com/lexiforest/curl_cffi), impersonating a real browser's TLS (JA3/JA4) and HTTP/2 fingerprint. This avoids fingerprint-based blocks where Instagram returns a spurious `HTTP 429` on the very first request even from a clean IP, a pattern most often seen on Linux builds (including Raspberry Pi OS) whose system TLS stack presents a fingerprint Instagram treats as automation.
+- `requests`: the stock `requests` / `urllib3` transport using the system TLS stack (the historical behavior).
+
+Both the anonymous and logged-in paths use the selected backend. If `curl_cffi` is selected but not installed, the tool prints a warning and transparently falls back to `requests`.
+
+Select the backend with `HTTP_BACKEND` (or `--http-backend`) and pick the impersonated browser with `CURL_CFFI_IMPERSONATE` (or `--impersonate`):
+
+```ini
+HTTP_BACKEND = "curl_cffi"
+CURL_CFFI_IMPERSONATE = "chrome"
+```
+
+```sh
+instagram_monitor <target_insta_user> --http-backend curl_cffi --impersonate chrome
+```
+
+Common impersonation targets are `chrome`, `safari`, `safari_ios`, `edge` and `firefox`. See the [curl_cffi documentation](https://github.com/lexiforest/curl_cffi) for the full list available in your installed version.
 
 <a id="privacy-substitutions"></a>
 ### Privacy Substitutions
