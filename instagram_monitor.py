@@ -7333,6 +7333,8 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
                     thread_pbar.unit = batch_info
                     thread_pbar.refresh()
                 if stop_event is not None and stop_event.is_set():
+                    if thread_pbar:
+                        thread_pbar.unit = batch_info_orig  # restore units back to original state to avoid observed problems
                     return results
                 # If a Web Dashboard "recheck" is pending, shorten the current inter-batch wait so the
                 # in-progress fetch completes sooner. Do not consume the event here: the recheck applies
@@ -7345,6 +7347,8 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
                     # Check for proxy changes from web dashboard
                     refresh_proxy_if_needed(bot, user)
                 if recheck_pending:
+                    if thread_pbar:
+                        thread_pbar.unit = batch_info_orig  # restore units back to original state to avoid observed problems
                     break
 
                 wait_chunk = min(1, sleep_remaining)
@@ -7353,6 +7357,8 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
                 else:
                     time.sleep(wait_chunk)
                 sleep_remaining -= wait_chunk
+            if thread_pbar:
+                thread_pbar.unit = batch_info_orig  # restore units back to original state to avoid observed problems
 
     return results
 
