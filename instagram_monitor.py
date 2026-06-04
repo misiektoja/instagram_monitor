@@ -3989,7 +3989,7 @@ def get_cur_ts(ts_str=""):
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str="Timestamp:\t\t\t\t", newline=False):
     # Always print; Logger handles terminal suppression while ensuring file logging
-    print(get_cur_ts(str(("\n" if newline else "") + ts_str)))
+    print(get_cur_ts(("\n" if newline else "") + str(ts_str)))
     print("─" * HORIZONTAL_LINE)
 
 
