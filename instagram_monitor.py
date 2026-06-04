@@ -4982,8 +4982,8 @@ def fetch_leaked_collab_posts(user: str, bot: instaloader.Instaloader) -> List[D
     return posts
 
 
-# Reports a newly detected leaked collab post from a private account (print, notify, optional media download)
-def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, Any], r_sleep_time: int, images_dir: str, videos_dir: str, user_root_path: Optional[str]) -> None:
+# Displays a leaked collab post from a private account with media download, sending notifications only when it is newly detected
+def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, Any], r_sleep_time: int, images_dir: str, videos_dir: str, user_root_path: Optional[str], is_new: bool = True) -> None:
     source = "reel" if post.get("is_video") else "post"
     shortcode = post.get("shortcode", "")
     post_url = f"https://www.instagram.com/{'reel' if source == 'reel' else 'p'}/{shortcode}/"
@@ -5000,9 +5000,12 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
     collaborators = post.get("collaborators", []) or []
     collab_str = ", ".join(collaborators) if collaborators else "(none reported)"
 
-    print(f"* Leaked collab {source} detected for private user {user} (revealed via a public collaborator) !\n")
-    log_activity(f"Leaked collab {source} detected", user=user, level='update', details={'url': post_url})
-    print(f"Date:\t\t\t\t\t{get_date_from_ts(post_dt)}")
+    if is_new:
+        print(f"* New leaked collab {source} detected for private user {user} (revealed via a public collaborator) !\n")
+        log_activity(f"Leaked collab {source} detected", user=user, level='update', details={'url': post_url})
+    else:
+        print(f"* Newest leaked collab {source} for private user {user} (revealed via a public collaborator):\n")
+    print(f"Date:\t\t\t\t\t{get_date_from_ts(post_dt)} ({calculate_timespan(now_local(), post_dt)} ago)")
     print(f"{source.capitalize()} URL:\t\t\t\t{post_url}")
     print(f"Profile URL:\t\t\t\thttps://www.instagram.com/{insta_username}/")
     print(f"Owner:\t\t\t\t\thttps://www.instagram.com/{owner}/")
@@ -5038,7 +5041,7 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
                 except Exception:
                     pass
 
-    if STATUS_NOTIFICATION:
+    if is_new and STATUS_NOTIFICATION:
         m_subject = f"Instagram private user {user} has a leaked collab {source} - {get_short_date_from_ts(post_dt)}"
         m_body = f"Leaked collab {source} detected for private Instagram user {user} (revealed via a public collaborator)\n\nDate: {get_date_from_ts(post_dt)}\n{source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nOwner: https://www.instagram.com/{owner}/\nCollaborators: {collab_str}\nLikes: {likes}\nComments: {comments}\nDescription:\n\n{caption}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
         m_body_html = f"Leaked collab {source} detected for private Instagram user <b>{user}</b> (revealed via a public collaborator){pic_saved_html}<br><br>Date: <b>{get_date_from_ts(post_dt)}</b><br>{source.capitalize()} URL: <a href=\"{post_url}\">{post_url}</a><br>Profile URL: <a href=\"https://www.instagram.com/{insta_username}/\">https://www.instagram.com/{insta_username}/</a><br>Owner: <a href=\"https://www.instagram.com/{owner}/\">{owner}</a><br>Collaborators: {escape(collab_str)}<br>Likes: {likes}<br>Comments: {comments}<br>Description:<br><br>{escape(str(caption))}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
@@ -5048,28 +5051,29 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
         else:
             send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
-    webhook_fields = [
-        {"name": "Date", "value": f"**{get_date_from_ts(post_dt)}**", "inline": True},
-        {"name": "Likes", "value": f"**{likes}**", "inline": True},
-        {"name": "Comments", "value": f"**{comments}**", "inline": True},
-        {"name": f"{source.capitalize()} URL", "value": post_url},
-        {"name": "Owner", "value": f"https://www.instagram.com/{owner}/"},
-    ]
-    if collaborators:
-        webhook_fields.append({"name": "Collaborators", "value": collab_str})
-    if caption and caption != "(empty)":
-        webhook_fields.append({"name": "Description", "value": (caption[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(caption) > WEBHOOK_FIELD_VALUE_LIMIT else caption})  # type: ignore
+    if is_new:
+        webhook_fields = [
+            {"name": "Date", "value": f"**{get_date_from_ts(post_dt)}**", "inline": True},
+            {"name": "Likes", "value": f"**{likes}**", "inline": True},
+            {"name": "Comments", "value": f"**{comments}**", "inline": True},
+            {"name": f"{source.capitalize()} URL", "value": post_url},
+            {"name": "Owner", "value": f"https://www.instagram.com/{owner}/"},
+        ]
+        if collaborators:
+            webhook_fields.append({"name": "Collaborators", "value": collab_str})
+        if caption and caption != "(empty)":
+            webhook_fields.append({"name": "Description", "value": (caption[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(caption) > WEBHOOK_FIELD_VALUE_LIMIT else caption})  # type: ignore
 
-    has_local_image = bool(image_filename and os.path.isfile(image_filename))
-    send_webhook(
-        f"🕵️ {user} Leaked Collab {source.capitalize()}",
-        f"Private user **{user}** has a leaked collab **{source}** (revealed via a public collaborator)",
-        color=0x9b59b6,  # Purple
-        fields=webhook_fields,
-        local_image_file=image_filename if has_local_image else None,
-        image_url=post.get("display_url") if (post.get("display_url") and not has_local_image) else None,
-        notification_type="status"
-    )
+        has_local_image = bool(image_filename and os.path.isfile(image_filename))
+        send_webhook(
+            f"🕵️ {user} Leaked Collab {source.capitalize()}",
+            f"Private user **{user}** has a leaked collab **{source}** (revealed via a public collaborator)",
+            color=0x9b59b6,  # Purple
+            fields=webhook_fields,
+            local_image_file=image_filename if has_local_image else None,
+            image_url=post.get("display_url") if (post.get("display_url") and not has_local_image) else None,
+            notification_type="status"
+        )
 
 
 # Returns reels count by using Instaloader's iPhone API (requires session login)
@@ -8443,14 +8447,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             debug_print(f"[{user}] initial collab probe failed: {format_error_message(e)}")
         if leaked_baseline:
             highest_collab_ts_old = max(p.get("ts", 0) for p in leaked_baseline)
-            print(f"\n* {len(leaked_baseline)} leaked collab post(s) currently visible for private user {user}:\n")
-            for p in sorted(leaked_baseline, key=lambda item: item.get("ts", 0)):
-                src = "reel" if p.get("is_video") else "post"
-                purl = f"https://www.instagram.com/{'reel' if src == 'reel' else 'p'}/{p.get('shortcode', '')}/"
-                collab_str = ", ".join(p.get("collaborators", []) or []) or "(none reported)"
-                p_ts = p.get("ts", 0)
-                p_dt = convert_utc_datetime_to_tz_datetime(datetime.fromtimestamp(p_ts, timezone.utc)) if p_ts else None
-                print(f"  - [{get_short_date_from_ts(p_dt) if p_dt else '-'}] {purl}  (collaborators: {collab_str})")
+            latest_collab = max(leaked_baseline, key=lambda item: item.get("ts", 0))
+            if len(leaked_baseline) > 1:
+                print(f"\n* {len(leaked_baseline)} leaked collab posts currently visible for private user {user} (showing the newest below):\n")
+            # r_sleep_time is unused when is_new is False, so 0 is a safe placeholder before the loop computes it
+            report_leaked_collab_post(user, insta_username, latest_collab, 0, images_dir, videos_dir, user_root_path, is_new=False)
             print_cur_ts("\nTimestamp:\t\t\t\t")
 
     # Initialize check timing and update last check time for dashboard
