@@ -6,6 +6,10 @@
 
 - **NEW:** Added a **pluggable HTTP transport backend** with browser TLS (JA3/JA4) impersonation via [curl_cffi](https://github.com/lexiforest/curl_cffi), now the default, to avoid fingerprint-based blocks where Instagram returns a spurious `HTTP 429` on the very first request even from a clean IP (most often on Linux OS TLS stacks whose fingerprint Instagram treats as automation). Both the anonymous and logged-in paths use the selected backend and it transparently falls back to `requests` when curl_cffi is unavailable. Configurable via the `HTTP_BACKEND` / `CURL_CFFI_IMPERSONATE` config options or the `--http-backend` / `--impersonate` flags
 
+**Bug fixes**:
+
+- **BUGFIX:** Fixed the configured proxy and TLS certificate settings being dropped on the anonymous mobile profile lookup (`web_profile_info`), which caused that request to bypass the proxy and go out over the real IP
+
 # Changes in 3.3 (01 Jun 2026)
 
 Huge thanks to everyone who contributed to this release, with a special shout-out to [@tomballgithub](https://github.com/tomballgithub) who drove most of the work behind these changes and to [@BlueXAyman](https://github.com/BlueXAyman) for the Instaloader GraphQL profile metadata patch.
