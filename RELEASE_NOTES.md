@@ -7,10 +7,13 @@
 - **NEW:** Added a **pluggable HTTP transport backend** with browser TLS (JA3/JA4) impersonation via [curl_cffi](https://github.com/lexiforest/curl_cffi), now the default, to avoid fingerprint-based blocks where Instagram returns a spurious `HTTP 429` on the very first request even from a clean IP (most often on Linux OS TLS stacks whose fingerprint Instagram treats as automation). Both the anonymous and logged-in paths use the selected backend and it transparently falls back to `requests` when curl_cffi is unavailable. Configurable via the `HTTP_BACKEND` / `CURL_CFFI_IMPERSONATE` config options or the `--http-backend` / `--impersonate` flags, with `CURL_CFFI_IMPERSONATE` defaulting to `auto` so the impersonated browser is aligned with the configured user agent, keeping the TLS and client-hint headers consistent (including with a Firefox-imported session)
 - **NEW:** Added **detection of leaked collab posts on private accounts** (enabled by default). When a private account co-authors a post with a public account, that post stays visible in the private account's timeline media via the public `web_profile_info` endpoint. The monitor surfaces these otherwise hidden posts (with owner, collaborators, media download and notifications) and reports new ones over time, even for accounts you do not follow. Only probes accounts whose posts are not otherwise viewable. Disable via the `DETECT_COLLAB_POSTS` config option or the `--no-detect-collab-posts` flag. Inspired by [InstagramPrivSniffer](https://github.com/obitouka/InstagramPrivSniffer)
 - **IMPROVE:** The anonymous post path now populates **tagged users and co-authors** from `web_profile_info` instead of leaving the list empty
+- **IMPROVE:** Centralized repeated timestamp label and newline handling in `print_cur_ts()` (thanks [@tomballgithub](https://github.com/tomballgithub), from [#100](https://github.com/misiektoja/instagram_monitor/pull/100))
+- **IMPROVE:** Added Jinja2 as a direct dependency for Web Dashboard template rendering
 
 **Bug fixes**:
 
 - **BUGFIX:** Fixed the configured proxy and TLS certificate settings being dropped on the anonymous mobile profile lookup (`web_profile_info`), which caused that request to bypass the proxy and go out over the real IP
+- **BUGFIX:** Restored the progress bar unit label after paused follower/following batch waits so later progress output keeps the expected label (thanks [@tomballgithub](https://github.com/tomballgithub), from [#103](https://github.com/misiektoja/instagram_monitor/pull/103))
 
 # Changes in 3.3 (01 Jun 2026)
 
