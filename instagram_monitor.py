@@ -912,6 +912,8 @@ DASHBOARD_DATA_LOCK = threading.RLock()
 SESSION_REFRESHED_EVENT = threading.Event()  # Signals monitoring threads to reload session
 FLAGGED_PROBE_LOCK = threading.Lock()  # Serializes and dedupes flag-probe network calls
 FLAGGED_PROBE_CACHE = {'ts': 0.0, 'flagged': False}  # Cached flag-probe verdict with its timestamp
+FLAGGED_NOTIFY_LOCK = threading.Lock()  # Serializes flag-alert de-dup across concurrent target threads
+FLAGGED_NOTIFY_STATE = {'ts': 0.0}  # Timestamp of the last flag alert so one shared session flag alerts once per window
 PROXY_REFRESH_VERSION = 0
 PROXY_REFRESH_LOCK = threading.Lock()
 
@@ -7089,6 +7091,31 @@ def is_session_flagged(error_msg, bot):
     return False
 
 
+# Sends a one-off email and webhook alert when the session account or IP is flagged, bypassing ERROR_FAILURE_THRESHOLD since a flag is terminal and operator-actionable
+def notify_session_flagged(user, err_str, error_msg):
+    # One shared session flag trips every target thread, so de-dupe within the flag-probe window to alert once instead of once per target
+    now = time.time()
+    with FLAGGED_NOTIFY_LOCK:
+        last_ts = FLAGGED_NOTIFY_STATE['ts']
+        if last_ts and (now - last_ts) < FLAGGED_PROBE_TTL:
+            return
+        FLAGGED_NOTIFY_STATE['ts'] = now
+
+    if ERROR_NOTIFICATION:
+        alert_subject = f"instagram_monitor: session account flagged (target: {user})"
+        alert_body = f"{err_str}\n\nTriggering error: {error_msg}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+        alert_body_html = f"{err_str}<br><br>Triggering error: <b>{error_msg}</b>{get_cur_ts('<br><br>Timestamp: ')}"
+        print(f"* Sending session flagged notification to {RECEIVER_EMAIL}")
+        send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
+
+    send_webhook(
+        title=f"🚩 Session account flagged (target: {user})",
+        description=f"{err_str}\n\nTriggering error: `{error_msg}`",
+        color=0xFF0000,
+        notification_type="error"
+    )
+
+
 # Returns unique, validated hours (0-23) from the configured ranges
 def hours_to_check():
     # Notes:
@@ -7702,6 +7729,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
             update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
             print(f"* Error: {err_str}")
+
+            # A flag is terminal for every target, so alert the operator immediately regardless of ERROR_FAILURE_THRESHOLD
+            notify_session_flagged(user, err_str, error_msg)
 
             # Pause all other threads once the session account is flagged.
             if WEB_DASHBOARD_ENABLED or DASHBOARD_ENABLED:
@@ -8780,7 +8810,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 debug_print(f"Full exception: {type(e).__name__}: {e}")
 
                 consecutive_main_errors += 1
-                if ERROR_NOTIFICATION and consecutive_main_errors == ERROR_FAILURE_THRESHOLD:
+
+                # A flagged session/IP is terminal and operator-actionable, so detect it up front to alert immediately and skip the generic threshold alert below
+                session_flagged = is_session_flagged(error_msg, bot)
+
+                if not session_flagged and ERROR_NOTIFICATION and consecutive_main_errors == ERROR_FAILURE_THRESHOLD:
                     alert_subject = f"instagram_monitor: error for {user} (failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD})"
                     alert_body = f"An error occurred for user {user} (failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                     alert_body_html = f"An error occurred for user <b>{user}</b> (failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):<br><br><b>{error_msg}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
@@ -8797,10 +8831,13 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         )
 
                 # Handle session recovery for automated checks/challenge errors
-                if is_session_flagged(error_msg, bot):
+                if session_flagged:
                     err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
                     update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
                     print(f"* Error: {err_str}")
+
+                    # A flag is terminal for every target, so alert the operator immediately regardless of ERROR_FAILURE_THRESHOLD
+                    notify_session_flagged(user, err_str, error_msg)
 
                     # Pause all other threads once the session account is flagged.
                     if WEB_DASHBOARD_ENABLED or DASHBOARD_ENABLED:
