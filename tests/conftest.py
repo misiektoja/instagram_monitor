@@ -60,4 +60,7 @@ def deterministic_globals(monkeypatch):
     with im.FLAGGED_PROBE_LOCK:
         im.FLAGGED_PROBE_CACHE["ts"] = 0.0
         im.FLAGGED_PROBE_CACHE["flagged"] = False
+    # Drop the flag-alert de-dup timestamp so each test starts able to alert
+    with im.FLAGGED_NOTIFY_LOCK:
+        im.FLAGGED_NOTIFY_STATE["ts"] = 0.0
     yield
