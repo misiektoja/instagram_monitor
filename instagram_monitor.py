@@ -1831,7 +1831,7 @@ def create_web_dashboard_app():
         global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, PROXY_REFRESH_VERSION
         global FOLLOWERS_CHURN_DETECTION, DEBUG_MODE, SESSION_USERNAME, VERBOSE_MODE
         global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SSL, SENDER_EMAIL, RECEIVER_EMAIL
-        global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS
+        global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS
         global ENABLE_JITTER, DETECT_CHANGED_PROFILE_PIC, SKIP_SESSION, CLI_CONFIG_PATH
         global DOTENV_FILE, WEB_DASHBOARD_TEMPLATE_DIR, LOCAL_TIMEZONE, OUTPUT_DIR, CSV_FILE
         global BE_HUMAN, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, LIVENESS_CHECK_INTERVAL, SKIP_FOLLOW_CHANGES
@@ -1950,6 +1950,7 @@ def create_web_dashboard_app():
         SKIP_GETTING_STORY_DETAILS = bool(update_setting('skip_stories', SKIP_GETTING_STORY_DETAILS, bool))
         SKIP_GETTING_POSTS_DETAILS = bool(update_setting('skip_posts', SKIP_GETTING_POSTS_DETAILS, bool))
         GET_MORE_POST_DETAILS = bool(update_setting('get_more_post_details', GET_MORE_POST_DETAILS, bool))
+        DETECT_COLLAB_POSTS = bool(update_setting('detect_collab_posts', DETECT_COLLAB_POSTS, bool))
         DETECT_CHANGED_PROFILE_PIC = bool(update_setting('profile_pic_changes', DETECT_CHANGED_PROFILE_PIC, bool))
         SKIP_SESSION = bool(update_setting('skip_session_login', SKIP_SESSION, bool))
         LIVENESS_CHECK_INTERVAL = int(update_setting('liveness_check_interval', LIVENESS_CHECK_INTERVAL, int))
@@ -2011,7 +2012,7 @@ def create_web_dashboard_app():
         global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS
         global FOLLOWERS_CHURN_DETECTION, DEBUG_MODE, SESSION_USERNAME, VERBOSE_MODE
         global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SSL, SENDER_EMAIL, RECEIVER_EMAIL
-        global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS
+        global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS
         global ENABLE_JITTER, DETECT_CHANGED_PROFILE_PIC, SKIP_SESSION, CLI_CONFIG_PATH
         global DOTENV_FILE, WEB_DASHBOARD_TEMPLATE_DIR, LOCAL_TIMEZONE, OUTPUT_DIR, CSV_FILE
         global BE_HUMAN, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, LIVENESS_CHECK_INTERVAL, SKIP_FOLLOW_CHANGES
@@ -2050,6 +2051,7 @@ def create_web_dashboard_app():
                 'skip_stories': SKIP_GETTING_STORY_DETAILS,
                 'skip_posts': SKIP_GETTING_POSTS_DETAILS,
                 'get_more_post_details': GET_MORE_POST_DETAILS,
+                'detect_collab_posts': DETECT_COLLAB_POSTS,
                 'enable_jitter': ENABLE_JITTER,
                 'profile_pic_changes': DETECT_CHANGED_PROFILE_PIC,
                 'skip_session_login': SKIP_SESSION,
@@ -5001,8 +5003,8 @@ def fetch_leaked_collab_posts(user: str, bot: instaloader.Instaloader) -> List[D
     return posts
 
 
-# Displays a leaked collab post from a private account with media download, sending notifications only when it is newly detected
-def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, Any], r_sleep_time: int, images_dir: str, videos_dir: str, user_root_path: Optional[str], is_new: bool = True) -> None:
+# Displays a leaked collab post from a private account with media download and returns dashboard metadata
+def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, Any], r_sleep_time: int, images_dir: str, videos_dir: str, user_root_path: Optional[str], is_new: bool = True, csv_file_name: str = "") -> Optional[Dict[str, Any]]:
     source = "reel" if post.get("is_video") else "post"
     shortcode = post.get("shortcode", "")
     post_url = f"https://www.instagram.com/{'reel' if source == 'reel' else 'p'}/{shortcode}/"
@@ -5070,6 +5072,12 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
         else:
             send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
+    if is_new and csv_file_name:
+        try:
+            write_csv_entry(csv_file_name, convert_to_local_naive(post_dt), f"New Leaked Collab {source.capitalize()}", "", caption if caption != "(empty)" else post_url)
+        except Exception as e:
+            print(f"* Error: {e}")
+
     if is_new:
         webhook_fields = [
             {"name": "Date", "value": f"**{get_date_from_ts(post_dt)}**", "inline": True},
@@ -5093,6 +5101,29 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
             image_url=post.get("display_url") if (post.get("display_url") and not has_local_image) else None,
             notification_type="status"
         )
+
+    saved_file_path = None
+    if video_filename and os.path.isfile(video_filename):
+        saved_file_path = video_filename
+    elif image_filename and os.path.isfile(image_filename):
+        saved_file_path = image_filename
+
+    display_url = post.get("display_url", "")
+    if image_filename and os.path.isfile(image_filename):
+        display_url = f"/media/{image_filename}"
+
+    return {
+        "type": f"Leaked Collab {source.capitalize()}",
+        "caption": caption[:50] + "..." if caption and len(caption) > 50 else caption,
+        "url": display_url,
+        "video_url": f"/media/{video_filename}" if video_filename and os.path.isfile(video_filename) else None,
+        "file_path": saved_file_path,
+        "post_url": post_url,
+        "timestamp": get_short_date_from_ts(post_dt, show_year=True),
+        "timestamp_ts": int(post_dt.timestamp()) if isinstance(post_dt, datetime) else None,
+        "user": user,
+        "is_story": False
+    }
 
 
 # Returns reels count by using Instaloader's iPhone API (requires session login)
@@ -6153,6 +6184,7 @@ def generate_config_dashboard(target_data, config_data):
         ("Skip Follow Changes", str(config_data.get('skip_follow_changes', '-'))),
         ("Skip Stories Details", str(config_data.get('skip_stories', '-'))),
         ("Get More Post Details", str(config_data.get('get_more_post_details', '-'))),
+        ("Detect Collab Posts", str(config_data.get('detect_collab_posts', '-'))),
         ("Liveness Check", str(config_data.get('liveness_check', '-'))),
         ("Display Profile Pics", config_data.get('imgcat', '-')),
         ("Show Check Seconds", str(config_data.get('dashboard_show_check_seconds', '-'))),
@@ -6950,6 +6982,7 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'skip_stories': SKIP_GETTING_STORY_DETAILS,
         'skip_posts': SKIP_GETTING_POSTS_DETAILS,
         'get_more_post_details': GET_MORE_POST_DETAILS,
+        'detect_collab_posts': DETECT_COLLAB_POSTS,
         'followers_churn': FOLLOWERS_CHURN_DETECTION,
         'verbose_mode': VERBOSE_MODE,
         'debug_mode': DEBUG_MODE,
@@ -8476,7 +8509,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             if len(leaked_baseline) > 1:
                 print(f"\n* {len(leaked_baseline)} leaked collab posts currently visible for private user {user} (showing the newest below):\n")
             # r_sleep_time is unused when is_new is False, so 0 is a safe placeholder before the loop computes it
-            report_leaked_collab_post(user, insta_username, latest_collab, 0, images_dir, videos_dir, user_root_path, is_new=False)
+            latest_collab_update = report_leaked_collab_post(user, insta_username, latest_collab, 0, images_dir, videos_dir, user_root_path, is_new=False)
+            if latest_collab_update:
+                last_post = latest_collab_update
             print_cur_ts("\nTimestamp:\t\t\t\t")
 
     # Initialize check timing and update last check time for dashboard
@@ -9838,7 +9873,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         debug_print(f"[{user}] collab probe failed: {format_error_message(e)}")
                     new_leaked = sorted([p for p in leaked if p.get("ts", 0) > highest_collab_ts_old], key=lambda item: item.get("ts", 0))
                     for p in new_leaked:
-                        report_leaked_collab_post(user, insta_username, p, r_sleep_time, images_dir, videos_dir, user_root_path)
+                        leaked_update = report_leaked_collab_post(user, insta_username, p, r_sleep_time, images_dir, videos_dir, user_root_path, csv_file_name=csv_file_name)
+                        if leaked_update:
+                            update_ui_data(targets={user: {'new_update': leaked_update, 'last_post': leaked_update, 'posts': posts_count, 'reels': reels_count}})
                     if new_leaked:
                         print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                         print_cur_ts("Timestamp:\t\t\t\t")
