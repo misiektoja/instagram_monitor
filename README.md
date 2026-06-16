@@ -897,18 +897,20 @@ All Instagram traffic flows through a configurable HTTP transport backend:
 
 Both the anonymous and logged-in paths use the selected backend. If `curl_cffi` is selected but not installed, the tool prints a warning and transparently falls back to `requests`.
 
-Select the backend with `HTTP_BACKEND` (or `--http-backend`) and pick the impersonated browser with `CURL_CFFI_IMPERSONATE` (or `--impersonate`):
+Select the backend with `HTTP_BACKEND` (or `--http-backend`) and choose which browser curl_cffi impersonates with `CURL_CFFI_IMPERSONATE` (or `--impersonate`):
 
 ```ini
 HTTP_BACKEND = "curl_cffi"
-CURL_CFFI_IMPERSONATE = "chrome"
+CURL_CFFI_IMPERSONATE = "auto"
 ```
+
+`CURL_CFFI_IMPERSONATE` defaults to `auto`, which picks the impersonation target that matches your `USER_AGENT` so the TLS, HTTP/2 and client-hint headers stay consistent with the browser identity. This matters when you import a Firefox session and set a matching Firefox `USER_AGENT`: `auto` then presents a Firefox TLS fingerprint instead of pairing a Firefox user agent with Chrome client-hint headers. You can also pin a specific target such as `chrome`, `safari`, `safari_ios`, `edge` or `firefox`:
 
 ```sh
-instagram_monitor <target_insta_user> --http-backend curl_cffi --impersonate chrome
+instagram_monitor <target_insta_user> --http-backend curl_cffi --impersonate firefox
 ```
 
-Common impersonation targets are `chrome`, `safari`, `safari_ios`, `edge` and `firefox`. See the [curl_cffi documentation](https://github.com/lexiforest/curl_cffi) for the full list available in your installed version.
+See the [curl_cffi documentation](https://github.com/lexiforest/curl_cffi) for the full list of impersonation targets available in your installed version.
 
 <a id="privacy-substitutions"></a>
 ### Privacy Substitutions
