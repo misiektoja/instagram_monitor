@@ -53,6 +53,40 @@ class TestWriteCsvEntry:
         assert rows[2][3] == ""
 
 
+class TestReportLeakedCollabPost:
+    def test_new_detection_writes_csv_and_returns_dashboard_update(self, im_module, monkeypatch, tmp_path):
+        monkeypatch.setattr(im_module, "DOWNLOAD_THUMBNAILS", False)
+        monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", False)
+        monkeypatch.setattr(im_module, "OUTPUT_DIR", "")
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        csv_path = str(tmp_path / "collab.csv")
+        post = {"shortcode": "ABC123", "owner": "public_owner", "is_video": False, "ts": 1710000000, "likes": 12, "comments": 3, "caption": "collab caption", "collaborators": ["private_user"], "display_url": "https://example.com/thumb.jpg"}
+
+        update = im_module.report_leaked_collab_post("private_user", "private_user", post, 300, "", "", None, csv_file_name=csv_path)
+
+        assert update["type"] == "Leaked Collab Post"
+        assert update["caption"] == "collab caption"
+        assert update["post_url"] == "https://www.instagram.com/p/ABC123/"
+        assert update["timestamp_ts"] == 1710000000
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+        assert rows[1] == ["2024-03-09 16:00:00", "New Leaked Collab Post", "", "collab caption"]
+
+    def test_startup_baseline_returns_update_without_csv(self, im_module, monkeypatch, tmp_path):
+        monkeypatch.setattr(im_module, "DOWNLOAD_THUMBNAILS", False)
+        monkeypatch.setattr(im_module, "OUTPUT_DIR", "")
+        csv_path = str(tmp_path / "collab.csv")
+        post = {"shortcode": "XYZ789", "owner": "public_owner", "is_video": True, "ts": 1710000000, "caption": "", "display_url": "https://example.com/thumb.jpg"}
+
+        update = im_module.report_leaked_collab_post("private_user", "private_user", post, 0, "", "", None, is_new=False, csv_file_name=csv_path)
+
+        assert update["type"] == "Leaked Collab Reel"
+        assert update["caption"] == "(empty)"
+        assert update["post_url"] == "https://www.instagram.com/reel/XYZ789/"
+        assert not os.path.exists(csv_path)
+
+
 class TestCompareImages:
     def test_identical_files_match(self, im_module, tmp_path):
         a = tmp_path / "a.bin"
