@@ -319,6 +319,8 @@ instaloader -l <your_insta_user>
 
 This saves the session locally. However, frequent follower/following/stories changes can still lead to detection, as Instagram may flag this as automated behavior.
 
+For device consistency, set `USER_AGENT` to match Instaloader's Chrome user agent (see [User Agent](#user-agent) below).
+
 <a id="option-3-session-login-using-firefox-cookies-recommended"></a>
 #### Option 3: Session Login Using Firefox Cookies (recommended)
 
@@ -351,6 +353,14 @@ It is also recommended to use the exact user agent string from your Firefox web 
 - open Firefox and type `about:support` in the address bar
 - find the `User Agent` value under the `Application Basics` section and copy it
 - set this value via the `USER_AGENT` configuration option or by using the `--user-agent` flag (since **v3.0**, you can also do it easily via the **[Web Dashboard](#web-dashboard-mode)**)
+
+If you created the session with Instaloader instead (Option 2 above), match Instaloader's user agent rather than Firefox's. Instaloader logs in with a Chrome user agent, so set `USER_AGENT` to a matching Chrome string to keep the same device consistency. You can print the exact value Instaloader uses with:
+
+```sh
+python3 -c "from instaloader.instaloadercontext import default_user_agent; print(default_user_agent())"
+```
+
+With the default `auto` impersonation (see [HTTP Transport Backend](#http-transport-backend)) the curl_cffi TLS fingerprint follows whichever user agent you set, so a Chrome user agent here yields a Chrome TLS fingerprint.
 
 <a id="time-zone"></a>
 ### Time Zone
