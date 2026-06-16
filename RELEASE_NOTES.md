@@ -14,6 +14,7 @@
 
 - **BUGFIX:** Fixed the configured proxy and TLS certificate settings being dropped on the anonymous mobile profile lookup (`web_profile_info`), which caused that request to bypass the proxy and go out over the real IP
 - **BUGFIX:** Restored the progress bar unit label after paused follower/following batch waits so later progress output keeps the expected label (thanks [@tomballgithub](https://github.com/tomballgithub), from [#103](https://github.com/misiektoja/instagram_monitor/pull/103))
+- **BUGFIX:** Fixed **flagged-account detection** not sending email or webhook alerts. The notification was gated behind `ERROR_FAILURE_THRESHOLD` so the script terminated before the count was reached. A flagged session or IP now alerts the operator immediately, bypassing the threshold and de-duped so one shared flag alerts once across all monitored targets (fixes [#108](https://github.com/misiektoja/instagram_monitor/issues/108))
 
 # Changes in 3.3 (01 Jun 2026)
 
