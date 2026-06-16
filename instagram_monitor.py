@@ -268,9 +268,12 @@ USER_AGENT_MOBILE = ""
 HTTP_BACKEND = "curl_cffi"
 
 # Browser profile curl_cffi impersonates when HTTP_BACKEND is "curl_cffi"
-# Examples: "chrome", "safari", "safari_ios", "edge", "firefox" (see curl_cffi docs for the full list)
+# - "auto" (default): pick the impersonation target that matches USER_AGENT, so the TLS, HTTP/2 and
+#   client-hint headers stay consistent with the browser identity (and with a Firefox-imported session)
+# - or pin a specific target, e.g. "chrome", "safari", "safari_ios", "edge", "firefox"
+#   (see curl_cffi docs for the full list)
 # Can also be set using the --impersonate flag
-CURL_CFFI_IMPERSONATE = "chrome"
+CURL_CFFI_IMPERSONATE = "auto"
 
 # How often to print a "liveness check" message to the output; in seconds
 # Set to 0 to disable
@@ -694,7 +697,7 @@ DETECT_COLLAB_POSTS = True
 USER_AGENT = ""
 USER_AGENT_MOBILE = ""
 HTTP_BACKEND = "curl_cffi"
-CURL_CFFI_IMPERSONATE = "chrome"
+CURL_CFFI_IMPERSONATE = "auto"
 BE_HUMAN = False
 DAILY_HUMAN_HITS = 0
 MY_HASHTAGS = []
@@ -1019,10 +1022,26 @@ def _curl_cffi_backend_active() -> bool:
     return True
 
 
-# Returns the configured curl_cffi impersonation target, falling back to chrome when empty
+# Maps a browser user agent string to the matching curl_cffi impersonation family, defaulting to chrome
+def _impersonate_target_from_ua(ua: str) -> str:
+    ua = str(ua or "").lower()
+    if "firefox" in ua:
+        return "firefox"
+    if "edg/" in ua or "edgios" in ua or "edga/" in ua:
+        return "edge"
+    if "chrome" in ua or "chromium" in ua or "crios" in ua:
+        return "chrome"
+    if "safari" in ua or "iphone" in ua or "ipad" in ua:
+        return "safari"
+    return "chrome"
+
+
+# Returns the curl_cffi impersonation target, resolving "auto" from USER_AGENT so TLS matches the browser identity
 def _curl_cffi_impersonate_target() -> str:
-    target = str(CURL_CFFI_IMPERSONATE or "chrome").strip()
-    return target or "chrome"
+    target = str(CURL_CFFI_IMPERSONATE or "auto").strip().lower()
+    if target in ("", "auto"):
+        return _impersonate_target_from_ua(USER_AGENT)
+    return target
 
 
 # Minimal urllib3-style raw wrapper exposing the read/stream surface requests and instaloader downloads rely on
@@ -10260,7 +10279,7 @@ def run_main():
         dest="impersonate",
         metavar="TARGET",
         type=str,
-        help="Browser profile curl_cffi impersonates when --http-backend is curl_cffi (e.g. chrome, safari, safari_ios)"
+        help="Browser profile curl_cffi impersonates when --http-backend is curl_cffi: 'auto' (match the user agent, default) or a pinned target like chrome, safari, safari_ios, edge, firefox"
     )
     session_opts.add_argument(
         "--be-human",
@@ -11046,7 +11065,9 @@ def run_main():
     print(f"* Browser user agent:\t\t\t{USER_AGENT}")
     print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
     if _curl_cffi_backend_active():
-        print(f"* HTTP backend:\t\t\t\tcurl_cffi (impersonate: {_curl_cffi_impersonate_target()})")
+        impersonate_resolved = _curl_cffi_impersonate_target()
+        impersonate_display = f"auto -> {impersonate_resolved}" if str(CURL_CFFI_IMPERSONATE or "auto").strip().lower() in ("", "auto") else impersonate_resolved
+        print(f"* HTTP backend:\t\t\t\tcurl_cffi (impersonate: {impersonate_display})")
     else:
         print(f"* HTTP backend:\t\t\t\trequests")
     print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
