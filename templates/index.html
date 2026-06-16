@@ -1177,6 +1177,16 @@
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
+                    <div class="setting-row" style="padding: 8px 0;">
+                        <div class="setting-info">
+                            <h4>Detect Collab Posts</h4>
+                            <p>Probe private accounts for visible collab posts</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="detect-collab-posts">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
                 </div>
 
                 <!-- Email Notifications Card -->
@@ -1928,6 +1938,7 @@
                 { l: 'Skip Stories Details', v: config.skip_stories },
                 { l: 'Skip Posts Details', v: config.skip_posts },
                 { l: 'Get More Posts Details', v: config.get_more_post_details },
+                { l: 'Detect Collab Posts', v: config.detect_collab_posts },
                 { l: 'Follower Churn Detection', v: config.followers_churn },
                 { l: 'Show Check Seconds', v: config.dashboard_show_check_seconds },
                 { l: 'Hours Range', v: config.hours_range },
@@ -2191,6 +2202,7 @@
             document.getElementById('skip-stories').checked = s.skip_stories || false;
             document.getElementById('skip-posts').checked = s.skip_posts || false;
             document.getElementById('get-more-post-details').checked = s.get_more_post_details || false;
+            document.getElementById('detect-collab-posts').checked = (s.detect_collab_posts !== undefined) ? s.detect_collab_posts : true;
 
             document.getElementById('logging-enabled').checked = s.logging_enabled || false;
             document.getElementById('followers-churn').checked = s.followers_churn || false;
@@ -2405,6 +2417,7 @@
                 skip_stories: document.getElementById('skip-stories').checked,
                 skip_posts: document.getElementById('skip-posts').checked,
                 get_more_post_details: document.getElementById('get-more-post-details').checked,
+                detect_collab_posts: document.getElementById('detect-collab-posts').checked,
 
                 logging_enabled: document.getElementById('logging-enabled').checked,
                 followers_churn: document.getElementById('followers-churn').checked,
