@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.4
+v3.5
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -20,7 +20,7 @@ flask (optional - for web dashboard)
 rich (optional - for terminal dashboard)
 """
 
-VERSION = "3.4"
+VERSION = "3.5"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -10077,6 +10077,298 @@ def get_target_paths(user):
     return target_csv, target_log
 
 
+# Detects how the tool was launched so the wizard can show matching commands
+def _wizard_install_method() -> str:
+    if os.path.exists("/.dockerenv") or os.environ.get("INSTAGRAM_MONITOR_DOCKER"):
+        return "docker"
+    prog = os.path.basename(sys.argv[0] or "")
+    if prog.endswith(".py"):
+        return "manual"
+    return "pip"
+
+
+# Returns the command prefix used to invoke the tool for the detected install method
+def _wizard_cmd_prefix(method: str) -> str:
+    if method == "docker":
+        return ('docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor')
+    if method == "manual":
+        return "python3 instagram_monitor.py"
+    return "instagram_monitor"
+
+
+# Reads a single line of input, exiting cleanly if the user aborts with Ctrl+C or Ctrl+D
+def _wizard_input(prompt_text: str) -> str:
+    try:
+        return input(prompt_text)
+    except (EOFError, KeyboardInterrupt):
+        print("\n" + colorize("warning", "Setup cancelled."))
+        sys.exit(1)
+
+
+# Prompts for a line of text, returning the default on empty input and re-asking when a required value is blank
+def _wizard_ask_text(question: str, default: str = "", required: bool = False) -> str:
+    suffix = f" [{default}]" if default else ""
+    while True:
+        raw = _wizard_input(colorize("info", f"{question}{suffix}: ")).strip()
+        if not raw:
+            raw = default
+        if raw or not required:
+            return raw
+        print(colorize("warning", "  This value is required."))
+
+
+# Prompts a yes/no question and returns the boolean answer
+def _wizard_ask_yes_no(question: str, default: bool = True) -> bool:
+    hint = "[Y/n]" if default else "[y/N]"
+    while True:
+        raw = _wizard_input(colorize("info", f"{question} {hint}: ")).strip().lower()
+        if not raw:
+            return default
+        if raw in ("y", "yes"):
+            return True
+        if raw in ("n", "no"):
+            return False
+        print(colorize("warning", "  Please answer 'y' or 'n'."))
+
+
+# Prints a numbered menu and returns the zero-based index the user selected
+def _wizard_ask_choice(question: str, options, default_index: int = 0) -> int:
+    print(colorize("info", question))
+    for i, (label, desc) in enumerate(options, start=1):
+        marker = colorize("info", " (default)") if (i - 1) == default_index else ""
+        print(f"  {colorize('username', str(i))}. {label}{marker}")
+        if desc:
+            print(f"     {desc}")
+    while True:
+        raw = _wizard_input(colorize("info", f"Choose [1-{len(options)}]: ")).strip()
+        if not raw:
+            return default_index
+        if raw.isdigit() and 1 <= int(raw) <= len(options):
+            return int(raw) - 1
+        print(colorize("warning", f"  Enter a number between 1 and {len(options)}."))
+
+
+# Writes or updates KEY=value secret lines in the given dotenv file, preserving existing entries
+def _wizard_write_env(secrets: dict, env_path: str) -> None:
+    existing: dict = {}
+    order: list = []
+    if os.path.isfile(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                s = line.strip()
+                if not s or s.startswith("#") or "=" not in s:
+                    continue
+                key = s.split("=", 1)[0].strip()
+                existing[key] = line.rstrip("\n")
+                if key not in order:
+                    order.append(key)
+    for key, value in secrets.items():
+        existing[key] = f"{key}={value}"
+        if key not in order:
+            order.append(key)
+    with open(env_path, "w", encoding="utf-8") as f:
+        for key in order:
+            f.write(existing[key] + "\n")
+
+
+# Runs the interactive first-run setup, writing config plus .env and optionally launching monitoring
+def run_setup_wizard() -> None:
+    global SESSION_USERNAME, SKIP_SESSION, TARGET_USERNAMES
+    global WEB_DASHBOARD_ENABLED, DASHBOARD_ENABLED, WEB_DASHBOARD_HOST, STATUS_NOTIFICATION
+    global SMTP_HOST, SMTP_PORT, SMTP_SSL, SMTP_USER, SENDER_EMAIL, RECEIVER_EMAIL
+    global WEBHOOK_ENABLED, WEBHOOK_STATUS_NOTIFICATION
+
+    if not sys.stdin.isatty():
+        print(colorize("warning", "The setup wizard needs an interactive terminal (TTY)."))
+        print("Run it from an interactive shell, or use --generate-config and edit the config file by hand.")
+        sys.exit(1)
+
+    method = _wizard_install_method()
+    prefix = _wizard_cmd_prefix(method)
+
+    print(colorize("header", f"\nInstagram Monitor v{VERSION} - Setup Wizard\n"))
+    print("This asks a few questions and writes a ready-to-run configuration.")
+    print("Press Enter to accept the default shown in [brackets]. Ctrl+C to cancel.\n")
+    print(f"Detected install method: {colorize('username', method)}\n")
+
+    # Q1: target username(s)
+    targets: list = []
+    while not targets:
+        targets_raw = _wizard_ask_text("Which Instagram account(s) do you want to monitor? (comma-separated for several)", required=True)
+        targets = [t.strip().lstrip("@") for t in targets_raw.split(",") if t.strip()]
+
+    # Q2: login mode
+    print()
+    logged_in = _wizard_ask_choice(
+        "Do you want to log in with an Instagram account?",
+        [
+            ("No - anonymous (no setup; sees new posts, bio and follower counts)", "Cannot see stories, reels or exactly who followed/unfollowed."),
+            ("Yes - logged in (full detail: stories, reels, follower churn)", "Use a DEDICATED account; Instagram may flag automation."),
+        ],
+        default_index=0,
+    ) == 1
+
+    session_username = ""
+    collected_secrets: dict = {}
+    do_firefox_import = False
+    if logged_in:
+        print()
+        session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
+        print()
+        login_method = _wizard_ask_choice(
+            "How do you want to provide the login session?",
+            [
+                ("Import from Firefox (recommended)", "Reuses your existing Firefox login; most reliable and least detectable."),
+                ("I already created a session with instaloader", "You previously ran 'instaloader -l <user>'."),
+                ("Username + password", "Least safe; full login each run. Password is stored in .env, never the config."),
+            ],
+            default_index=0,
+        )
+        if login_method == 0:
+            do_firefox_import = True
+        elif login_method == 2:
+            collected_secrets["SESSION_PASSWORD"] = _wizard_ask_text("Instagram password (stored in .env)", required=True)
+
+    # Q3: interface
+    print()
+    iface = _wizard_ask_choice(
+        "How do you want to view activity?",
+        [
+            ("Web dashboard - point and click in your browser", "Friendliest; add/remove targets and change settings without the command line."),
+            ("Terminal dashboard - live stats in your terminal", "Rich full-screen view; needs the 'rich' library."),
+            ("Plain text logs", "Simple sequential output; best for background or headless runs."),
+        ],
+        default_index=0,
+    )
+    want_web = (iface == 0)
+    want_terminal = (iface == 1)
+    if want_web and not FLASK_AVAILABLE:
+        print(colorize("warning", "  Note: 'flask' is not installed, so the web dashboard will be disabled until you install it (pip install flask)."))
+    if want_terminal and not RICH_AVAILABLE:
+        print(colorize("warning", "  Note: 'rich' is not installed, so the terminal dashboard will be disabled until you install it (pip install rich)."))
+
+    # Q4: notifications (Discord webhook, then email)
+    want_webhook = False
+    print()
+    if _wizard_ask_yes_no("Set up Discord (or other webhook) alerts now?", default=False):
+        print(colorize("info", "  In Discord: Server Settings > Integrations > Webhooks > New Webhook > Copy Webhook URL."))
+        webhook_url = _wizard_ask_text("Paste the webhook URL (stored in .env)", required=True)
+        if webhook_url:
+            want_webhook = True
+            collected_secrets["WEBHOOK_URL"] = webhook_url
+
+    want_email = False
+    print()
+    if _wizard_ask_yes_no("Set up email (SMTP) alerts now?", default=False):
+        SMTP_HOST = _wizard_ask_text("SMTP server host (e.g. smtp.gmail.com)", required=True)
+        port_raw = _wizard_ask_text("SMTP port", default="587")
+        try:
+            SMTP_PORT = int(port_raw)
+        except ValueError:
+            SMTP_PORT = 587
+        SMTP_SSL = _wizard_ask_yes_no("Use SSL/TLS?", default=True)
+        SMTP_USER = _wizard_ask_text("SMTP username", required=True)
+        collected_secrets["SMTP_PASSWORD"] = _wizard_ask_text("SMTP password (stored in .env)", required=True)
+        SENDER_EMAIL = _wizard_ask_text("Sender email (From)", required=True)
+        RECEIVER_EMAIL = _wizard_ask_text("Recipient email (To)", required=True)
+        want_email = True
+
+    # Apply non-secret choices to globals so they render into the config
+    TARGET_USERNAMES = targets
+    SKIP_SESSION = not logged_in
+    SESSION_USERNAME = session_username
+    WEB_DASHBOARD_ENABLED = want_web
+    DASHBOARD_ENABLED = want_terminal
+    if want_web and method == "docker":
+        WEB_DASHBOARD_HOST = "0.0.0.0"
+    STATUS_NOTIFICATION = bool(want_email)
+    WEBHOOK_ENABLED = bool(want_webhook)
+    if want_webhook:
+        WEBHOOK_STATUS_NOTIFICATION = True
+
+    # Optional inline Firefox import (skipped under Docker where the cookie mount is not present)
+    if do_firefox_import:
+        print()
+        if method == "docker":
+            print(colorize("warning", "Inside Docker the Firefox import needs your browser profile mounted, so it cannot run here."))
+            print("Run this once on the host before starting (Linux example):")
+            print(colorize("section", '  docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor --import-firefox-session'))
+        elif _wizard_ask_yes_no("Import the Firefox session now? (log in to Instagram in Firefox first)", default=True):
+            try:
+                cookie_path = os.path.expanduser(get_firefox_cookiefile())
+                if not os.path.isfile(cookie_path):
+                    print(colorize("warning", f"Could not find Firefox cookies at '{cookie_path}'. You can import later with: {prefix} --import-firefox-session"))
+                else:
+                    import_session(cookie_path, None)
+            except SystemExit:
+                raise
+            except Exception as e:
+                print(colorize("warning", f"Firefox import failed: {e}"))
+                print(f"You can retry later with: {prefix} --import-firefox-session")
+        else:
+            print(colorize("info", f"You can import later with: {prefix} --import-firefox-session"))
+
+    # Write the config file (default name, confirm before overwriting an existing one)
+    print()
+    config_path = "instagram_monitor.conf"
+    if os.path.isfile(config_path) and not _wizard_ask_yes_no(f"'{config_path}' already exists. Overwrite it?", default=False):
+        config_path = _wizard_ask_text("Save config as", default="instagram_monitor_new.conf", required=True)
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(generate_config_with_current_values())
+        print(colorize("info", f"Saved configuration to {config_path}"))
+    except Exception as e:
+        print(colorize("error", f"Could not write config file '{config_path}': {e}"))
+        sys.exit(1)
+
+    # Write secrets to .env
+    if collected_secrets:
+        env_path = ".env"
+        try:
+            _wizard_write_env(collected_secrets, env_path)
+            print(colorize("info", f"Saved secrets ({', '.join(collected_secrets)}) to {env_path}"))
+        except Exception as e:
+            print(colorize("warning", f"Could not write secrets file '{env_path}': {e}"))
+
+    # Summary and the exact command to run
+    print(colorize("header", "\nSetup complete!\n"))
+    targets_str = " ".join(targets)
+    web_port_flag = " -p 8000:8000" if want_web else ""
+    if method == "docker":
+        run_cmd = f'docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor {targets_str} --config-file /data/{os.path.basename(config_path)}'
+    else:
+        run_cmd = f"{prefix} {targets_str} --config-file {config_path}"
+    print("To start monitoring, run:")
+    print(colorize("section", f"  {run_cmd}\n"))
+    if want_web:
+        print(f"Then open {colorize('link', 'http://127.0.0.1:8000/')} in your browser.\n")
+    if want_email:
+        print(f"Test email anytime with: {colorize('section', prefix + ' --send-test-email')}")
+    if want_webhook:
+        print(f"Test webhook anytime with: {colorize('section', prefix + ' --send-test-webhook')}")
+
+    # Offer to launch right away (not for Docker, which needs the mount/port flags above)
+    if method != "docker" and _wizard_ask_yes_no("\nStart monitoring now?", default=True):
+        run_args = list(targets) + ["--config-file", os.path.abspath(config_path)]
+        sys.stdout.flush()
+        os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)] + run_args)
+    sys.exit(0)
+
+
+# Prints a short welcome with the most common commands and offers to launch the setup wizard
+def _wizard_welcome(parser) -> None:
+    print("Quickest start (no setup, anonymous):")
+    print(colorize("section", "    instagram_monitor <username>\n"))
+    print("Easiest start (guided setup wizard):")
+    print(colorize("section", "    instagram_monitor --setup\n"))
+    print("Point-and-click (no command line):")
+    print(colorize("section", "    instagram_monitor --web-dashboard      then open http://127.0.0.1:8000\n"))
+    print(f"Full options: {colorize('section', 'instagram_monitor --help')}")
+    print(f"Guide:        {colorize('link', 'https://github.com/misiektoja/instagram_monitor#quick-start')}\n")
+    if sys.stdin.isatty() and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
+        run_setup_wizard()
+
+
 def run_main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
@@ -10169,6 +10461,12 @@ def run_main():
         dest="env_file",
         metavar="PATH",
         help="Path to optional dotenv file (auto-search if not set, disable with 'none')",
+    )
+    conf.add_argument(
+        "--setup",
+        dest="setup",
+        action="store_true",
+        help="Run the interactive first-run setup wizard and exit",
     )
 
     # Session login credentials
@@ -10585,9 +10883,13 @@ def run_main():
 
     args = parser.parse_args()
 
+    if args.setup:
+        run_setup_wizard()
+        sys.exit(0)
+
     if len(sys.argv) == 1:
-        parser.print_help(sys.stderr)
-        sys.exit(1)
+        _wizard_welcome(parser)
+        sys.exit(0)
 
     if args.config_file:
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
