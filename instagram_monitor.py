@@ -2184,11 +2184,22 @@ def create_web_dashboard_app():
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500  # type: ignore
 
+    @app.route('/api/session/chromium/profiles', methods=['GET'])
+    def api_chromium_profiles():  # type: ignore
+        browser = (flask_request.args.get('browser') or 'chrome').lower()  # type: ignore
+        if browser not in CHROMIUM_IMPORT_BROWSERS:
+            return jsonify({'success': False, 'error': f'Unsupported browser: {browser}'}), 400  # type: ignore
+        try:
+            profiles = [{'dir': p['dir'], 'name': p['name']} for p in list_chromium_profiles(browser)]
+            return jsonify({'success': True, 'profiles': profiles})  # type: ignore
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500  # type: ignore
+
     # Runs a dashboard browser import, updates global session state and returns a Flask JSON response
-    def _handle_browser_import(browser, cookiefile=None):
+    def _handle_browser_import(browser, cookiefile=None, profile=None):
         global SESSION_USERNAME, SKIP_SESSION
         try:
-            username = import_browser_session_dashboard(browser, cookiefile)
+            username = import_browser_session_dashboard(browser, cookiefile, profile=profile)
         except CookieImportError as e:
             return jsonify({'success': False, 'error': str(e)}), 400  # type: ignore
         except Exception as e:
@@ -2229,12 +2240,15 @@ def create_web_dashboard_app():
             return jsonify({'success': False, 'error': f'Unsupported browser: {browser}'}), 400  # type: ignore
 
         cookiefile = None
+        profile = None
         if browser == 'firefox':
             cookiefile = data.get('path')
             if not cookiefile:
                 return jsonify({'success': False, 'error': 'Cookie file path required'}), 400  # type: ignore
+        else:
+            profile = data.get('profile') or None
 
-        return _handle_browser_import(browser, cookiefile)
+        return _handle_browser_import(browser, cookiefile, profile=profile)
 
     @app.route('/api/session/test', methods=['POST'])
     def api_test_session():  # type: ignore
@@ -5352,7 +5366,65 @@ def get_firefox_cookie_dict(cookiefile):
 
 
 # Reads Instagram session cookies from a Chromium-based browser via pycookiecheat and returns them as a name to value dict
-def get_chromium_cookie_dict(browser):
+# Default Chromium-family user-data directories (parent of the per-profile folders) by OS and browser
+CHROMIUM_USER_DATA_DIRS = {
+    "Darwin": {
+        "chrome": "~/Library/Application Support/Google/Chrome",
+        "chromium": "~/Library/Application Support/Chromium",
+        "brave": "~/Library/Application Support/BraveSoftware/Brave-Browser",
+    },
+    "Linux": {
+        "chrome": "~/.config/google-chrome",
+        "chromium": "~/.config/chromium",
+        "brave": "~/.config/BraveSoftware/Brave-Browser",
+    },
+}
+
+
+# Returns the user-data directory for a Chromium-based browser on this OS, or None if unsupported
+def get_chromium_user_data_dir(browser):
+    return CHROMIUM_USER_DATA_DIRS.get(system(), {}).get(browser)
+
+
+# Resolves the cookie database path for a Chromium profile dir, preferring the modern Network layout over the legacy one
+def chromium_profile_cookie_file(base_path, profile_dir):
+    for rel in (("Network", "Cookies"), ("Cookies",)):
+        candidate = os.path.join(base_path, profile_dir, *rel)
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+# Lists available profiles for a Chromium-based browser with their directory and friendly display name
+def list_chromium_profiles(browser):
+    base = get_chromium_user_data_dir(browser)
+    if not base:
+        return []
+    base_path = expanduser(base)
+    if not os.path.isdir(base_path):
+        return []
+
+    # Friendly names live in the Local State JSON under profile.info_cache keyed by the profile dir name
+    names = {}
+    try:
+        with open(os.path.join(base_path, "Local State"), "r", encoding="utf-8") as f:
+            info_cache = json.load(f).get("profile", {}).get("info_cache", {})
+        names = {d: (info.get("name") or d) for d, info in info_cache.items()}
+    except (OSError, ValueError):
+        pass
+
+    profiles = []
+    for entry in sorted(os.listdir(base_path)):
+        if entry != "Default" and not entry.startswith("Profile "):
+            continue
+        cookie_file = chromium_profile_cookie_file(base_path, entry)
+        if cookie_file:
+            profiles.append({"dir": entry, "name": names.get(entry, entry), "cookie_file": cookie_file})
+    return profiles
+
+
+# Reads Instagram session cookies from a Chromium-based browser via pycookiecheat and returns them as a name to value dict
+def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
     label = browser_label(browser)
 
     if system() == "Windows":
@@ -5376,8 +5448,24 @@ def get_chromium_cookie_dict(browser):
         "chromium": BrowserType.CHROMIUM,
     }[browser]
 
+    # Resolve the cookie DB ourselves so we honour the chosen profile and the modern Network/Cookies layout
+    # (pycookiecheat's profile_name is Firefox-only and its default path ignores the Network subfolder)
+    if cookie_file:
+        cookie_file = expanduser(cookie_file)
+        if not os.path.isfile(cookie_file):
+            raise CookieImportError(f"{label} cookie file '{cookie_file}' not found")
+    else:
+        base = get_chromium_user_data_dir(browser)
+        if base:
+            base_path = expanduser(base)
+            cookie_file = chromium_profile_cookie_file(base_path, profile or "Default")
+            if cookie_file is None and profile:
+                available = ", ".join(p["dir"] for p in list_chromium_profiles(browser)) or "none found"
+                raise CookieImportError(f"{label} profile '{profile}' not found (available: {available})")
+        # if base is unknown or Default is missing, leave cookie_file None and let pycookiecheat try its own default
+
     try:
-        cookies = get_cookies("https://www.instagram.com", browser=browser_type)
+        cookies = get_cookies("https://www.instagram.com", browser=browser_type, cookie_file=cookie_file)
     except Exception as e:
         raise CookieImportError(
             f"Could not read {label} cookies: {e}\nMake sure {label} is installed and you are logged in to Instagram in it"
@@ -5387,21 +5475,44 @@ def get_chromium_cookie_dict(browser):
     cookie_dict = cookies if isinstance(cookies, dict) else {c.name: c.value for c in cookies}
 
     if not cookie_dict:
-        raise CookieImportError(f"No Instagram cookies found in {label} - are you logged in to Instagram in {label}?")
+        where = f" (profile '{profile}')" if profile else ""
+        raise CookieImportError(f"No Instagram cookies found in {label}{where} - are you logged in to Instagram in {label}?")
 
     return cookie_dict
 
 
 # Returns Instagram session cookies for the given browser, dispatching to the Firefox or Chromium reader
-def get_browser_cookie_dict(browser, cookiefile=None):
+def get_browser_cookie_dict(browser, cookiefile=None, profile=None):
     if browser == "firefox":
         return get_firefox_cookie_dict(cookiefile)
-    return get_chromium_cookie_dict(browser)
+    return get_chromium_cookie_dict(browser, profile=profile, cookie_file=cookiefile)
+
+
+# Prompts to choose a Chromium profile when several exist and none was given, mirroring the Firefox profile picker
+def select_chromium_profile_cli(browser, explicit_profile):
+    if explicit_profile:
+        return explicit_profile
+
+    profiles = list_chromium_profiles(browser)
+    if len(profiles) <= 1:
+        return profiles[0]["dir"] if profiles else None
+
+    print(f"Multiple {browser_label(browser)} profiles found:")
+    for idx, p in enumerate(profiles, start=1):
+        print(f"  {idx}) {p['dir']}  -  {p['name']}")
+
+    try:
+        choice = int(input("Select profile number (0 to exit): "))
+        if choice == 0:
+            raise SystemExit("No profile selected, aborting ...")
+        return profiles[choice - 1]["dir"]
+    except (ValueError, IndexError):
+        raise SystemExit("Invalid profile selection !")
 
 
 # Imports a browser session for the web dashboard, saves it via Instaloader and returns the logged-in username
-def import_browser_session_dashboard(browser, cookiefile=None):
-    cookie_dict = get_browser_cookie_dict(browser, cookiefile)
+def import_browser_session_dashboard(browser, cookiefile=None, profile=None):
+    cookie_dict = get_browser_cookie_dict(browser, cookiefile, profile=profile)
 
     L = Instaloader(user_agent=USER_AGENT, max_connection_attempts=1)
     L.context._session.cookies.update(cookie_dict)
@@ -5416,20 +5527,22 @@ def import_browser_session_dashboard(browser, cookiefile=None):
 
 
 # Imports Instagram cookies from the given browser into Instaloader, checks login and saves the session
-def import_session(browser, cookiefile, sessionfile):
+def import_session(browser, cookiefile, sessionfile, profile=None):
     label = browser_label(browser)
 
     if browser == "firefox":
         print(f"Using cookies from '{cookiefile}' file\n")
+    elif profile:
+        print(f"Using cookies from {label} browser (profile '{profile}')\n")
     else:
         print(f"Using cookies from {label} browser\n")
 
     try:
-        cookie_dict = get_browser_cookie_dict(browser, cookiefile)
+        cookie_dict = get_browser_cookie_dict(browser, cookiefile, profile=profile)
     except CookieImportError as e:
         raise SystemExit(f"Error: {e}")
 
-    instaloader = Instaloader(max_connection_attempts=1)
+    instaloader = Instaloader(user_agent=USER_AGENT, max_connection_attempts=1)
     instaloader.context._session.cookies.update(cookie_dict)
     username = instaloader.test_login()
 
@@ -11024,6 +11137,12 @@ def run_main():
         help="Browser to import the session from: firefox (default, all platforms), chrome (Google Chrome), brave or chromium (the standalone open-source Chromium browser, not Chrome). chrome, brave and chromium require the 'pycookiecheat' package and work only on macOS and Linux; Edge, Opera, Vivaldi and Arc are not supported"
     )
     import_grp.add_argument(
+        "--browser-profile",
+        dest="browser_profile",
+        metavar="PROFILE",
+        help="Chromium-based browsers only: profile directory to import from, e.g. 'Default' or 'Profile 1'; if omitted and several exist, it will list them to choose from"
+    )
+    import_grp.add_argument(
         "--import-firefox-session",
         action="store_true",
         help="Deprecated alias for --import-browser-session --browser firefox"
@@ -11032,7 +11151,7 @@ def run_main():
         "--cookie-file",
         dest="cookie_file",
         metavar="COOKIEFILE",
-        help="Path to Firefox cookies.sqlite (Firefox only); if omitted, it will list all available"
+        help="Path to the cookie database: Firefox cookies.sqlite, or for Chromium-based browsers an explicit Cookies DB; if omitted, the profile is used"
     )
     import_grp.add_argument(
         "--session-file",
@@ -11139,15 +11258,21 @@ def run_main():
                 raise SystemExit(f"Error: Session directory '{session_dir}' not found !")
 
         cookie_path = None
+        profile = None
         if browser == "firefox":
             cookie_path = args.cookie_file or get_firefox_cookiefile()
             cookie_path = os.path.expanduser(cookie_path)
             if not os.path.isfile(cookie_path):
                 raise SystemExit(f"Error: Cookie file '{cookie_path}' not found !")
-        elif args.cookie_file:
-            print(f"* Note: --cookie-file is ignored for {browser_label(browser)} (cookies are read directly from the browser)\n")
+            if args.browser_profile:
+                print("* Note: --browser-profile is ignored for Firefox (use --cookie-file to pick a profile)\n")
+        else:
+            # An explicit cookie DB wins, otherwise pick a profile (prompting when several exist)
+            cookie_path = os.path.expanduser(args.cookie_file) if args.cookie_file else None
+            if not cookie_path:
+                profile = select_chromium_profile_cli(browser, args.browser_profile)
 
-        import_session(browser, cookie_path, session_path)
+        import_session(browser, cookie_path, session_path, profile=profile)
         sys.exit(0)
 
     local_tz = None
