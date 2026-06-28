@@ -25,6 +25,8 @@ working tree rather than any installed copy of the package.
 | `test_time_and_dates.py` | `display_time`, `calculate_timespan`, hour formatting, timezone conversions |
 | `test_privacy.py` | `apply_privacy_substitutions` (string/dict/list recursion, invalid entries) |
 | `test_notifications.py` | Webhook URL validation, Discord markdown escaping, credential masking, payload templating |
+| `test_webhook_delivery.py` | `send_webhook` payload formatting, gates and retry behavior with fake HTTP |
+| `test_paginated_fetching.py` | `fetch_usernames_paginated` batching, limits and stop-event behavior |
 | `test_scheduling.py` | `CHECK_POSTS_IN_HOURS_RANGE` window logic, next-check computation, cycle probability, interval randomization |
 | `test_session_flags.py` | Error classification and session/IP flag detection with a stubbed profile resolver |
 | `test_parsing_and_useragents.py` | JSON username extraction, follow-string formatting, desktop/mobile user-agent shape |
