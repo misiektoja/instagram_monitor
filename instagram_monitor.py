@@ -2168,18 +2168,7 @@ def create_web_dashboard_app():
     @app.route('/api/session/firefox/profiles', methods=['GET'])
     def api_firefox_profiles():  # type: ignore
         try:
-            default_cookiefile = {
-                "Windows": FIREFOX_WINDOWS_COOKIE,
-                "Darwin": FIREFOX_MACOS_COOKIE,
-            }.get(system(), FIREFOX_LINUX_COOKIE)
-
-            cookiefiles = glob(expanduser(default_cookiefile))
-            profiles = []
-            for path in cookiefiles:
-                profiles.append({
-                    'name': basename(dirname(path)),
-                    'path': path
-                })
+            profiles = [{'name': p['name'], 'path': p['path']} for p in list_firefox_profiles()]
             return jsonify({'success': True, 'profiles': profiles})  # type: ignore
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500  # type: ignore
@@ -5302,35 +5291,54 @@ def get_real_reel_code(bot: instaloader.Instaloader, username: str) -> Optional[
         return None
 
 
-# Finds (or prompts you to select) your Firefox cookies.sqlite file
-def get_firefox_cookiefile():
+# Lists available Firefox profiles with their directory, friendly name and cookies.sqlite path
+def list_firefox_profiles():
     default_cookiefile = {
         "Windows": FIREFOX_WINDOWS_COOKIE,
         "Darwin": FIREFOX_MACOS_COOKIE,
     }.get(system(), FIREFOX_LINUX_COOKIE)
 
-    cookiefiles = glob(expanduser(default_cookiefile))
+    profiles = []
+    for path in glob(expanduser(default_cookiefile)):
+        profile_dir = basename(dirname(path))
+        # Firefox profile dirs look like "<random>.default-release"; the part after the first dot is the friendly name
+        friendly = profile_dir.split(".", 1)[1] if "." in profile_dir else profile_dir
+        profiles.append({"dir": profile_dir, "name": friendly, "path": path})
+    return profiles
 
-    if not cookiefiles:
+
+# Finds (or prompts you to select) your Firefox cookies.sqlite file
+def get_firefox_cookiefile():
+    profiles = list_firefox_profiles()
+
+    if not profiles:
         raise SystemExit("No Firefox cookies.sqlite file found, use --cookie-file COOKIEFILE flag")
 
-    if len(cookiefiles) == 1:
-        return cookiefiles[0]
+    if len(profiles) == 1:
+        return profiles[0]["path"]
 
     print("Multiple Firefox profiles found:")
 
-    for idx, path in enumerate(cookiefiles, start=1):
-        profile = basename(dirname(path))
-        print(f"  {idx}) {profile}  -  {path}")
+    for idx, p in enumerate(profiles, start=1):
+        print(f"  {idx}) {p['name']}  -  {p['path']}")
 
     try:
         choice = int(input("Select profile number (0 to exit): "))
         if choice == 0:
             raise SystemExit("No profile selected, aborting ...")
-        cookiefile = cookiefiles[choice - 1]
+        return profiles[choice - 1]["path"]
     except (ValueError, IndexError):
         raise SystemExit("Invalid profile selection !")
-    return cookiefile
+
+
+# Resolves a Firefox profile name (directory or friendly name) to its cookies.sqlite path
+def resolve_firefox_profile(name):
+    profiles = list_firefox_profiles()
+    for p in profiles:
+        if name.lower() in (p["dir"].lower(), p["name"].lower()):
+            return p["path"]
+    available = ", ".join(p["name"] for p in profiles) or "none found"
+    raise CookieImportError(f"Firefox profile '{name}' not found (available: {available})")
 
 
 # Browsers supported by the session importer (Firefox uses the built-in SQLite reader, the rest go through pycookiecheat)
@@ -5494,8 +5502,10 @@ def select_chromium_profile_cli(browser, explicit_profile):
         return explicit_profile
 
     profiles = list_chromium_profiles(browser)
-    if len(profiles) <= 1:
-        return profiles[0]["dir"] if profiles else None
+    if not profiles:
+        raise SystemExit(f"No {browser_label(browser)} profiles found - is it installed and are you logged in to Instagram?")
+    if len(profiles) == 1:
+        return profiles[0]["dir"]
 
     print(f"Multiple {browser_label(browser)} profiles found:")
     for idx, p in enumerate(profiles, start=1):
@@ -11140,7 +11150,7 @@ def run_main():
         "--browser-profile",
         dest="browser_profile",
         metavar="PROFILE",
-        help="Chromium-based browsers only: profile directory to import from, e.g. 'Default' or 'Profile 1'; if omitted and several exist, it will list them to choose from"
+        help="Profile to import from, for any browser: a Firefox profile name (e.g. 'default-release') or a Chromium profile directory (e.g. 'Default' or 'Profile 1'); if omitted and several exist, it will list them to choose from"
     )
     import_grp.add_argument(
         "--import-firefox-session",
@@ -11151,7 +11161,7 @@ def run_main():
         "--cookie-file",
         dest="cookie_file",
         metavar="COOKIEFILE",
-        help="Path to the cookie database: Firefox cookies.sqlite, or for Chromium-based browsers an explicit Cookies DB; if omitted, the profile is used"
+        help="Advanced: explicit path to the cookie database (Firefox cookies.sqlite or a Chromium Cookies DB); overrides --browser-profile"
     )
     import_grp.add_argument(
         "--session-file",
@@ -11257,20 +11267,29 @@ def run_main():
             if not os.path.isdir(session_dir):
                 raise SystemExit(f"Error: Session directory '{session_dir}' not found !")
 
+        # Unified profile selection for every browser:
+        #   --cookie-file PATH  -> explicit cookie database (advanced override)
+        #   --browser-profile NAME -> pick a profile by name
+        #   neither             -> use the only profile, or prompt when several exist
         cookie_path = None
         profile = None
-        if browser == "firefox":
-            cookie_path = args.cookie_file or get_firefox_cookiefile()
-            cookie_path = os.path.expanduser(cookie_path)
-            if not os.path.isfile(cookie_path):
+        if args.cookie_file:
+            cookie_path = os.path.expanduser(args.cookie_file)
+            if browser == "firefox" and not os.path.isfile(cookie_path):
                 raise SystemExit(f"Error: Cookie file '{cookie_path}' not found !")
-            if args.browser_profile:
-                print("* Note: --browser-profile is ignored for Firefox (use --cookie-file to pick a profile)\n")
+        elif args.browser_profile:
+            if browser == "firefox":
+                try:
+                    cookie_path = resolve_firefox_profile(args.browser_profile)
+                except CookieImportError as e:
+                    raise SystemExit(f"Error: {e}")
+            else:
+                profile = args.browser_profile
         else:
-            # An explicit cookie DB wins, otherwise pick a profile (prompting when several exist)
-            cookie_path = os.path.expanduser(args.cookie_file) if args.cookie_file else None
-            if not cookie_path:
-                profile = select_chromium_profile_cli(browser, args.browser_profile)
+            if browser == "firefox":
+                cookie_path = os.path.expanduser(get_firefox_cookiefile())
+            else:
+                profile = select_chromium_profile_cli(browser, None)
 
         import_session(browser, cookie_path, session_path, profile=profile)
         sys.exit(0)
