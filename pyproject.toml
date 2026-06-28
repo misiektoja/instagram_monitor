@@ -42,6 +42,8 @@ keywords = ["instagram", "monitoring", "tracking", "real-time", "osint", "instal
 
 [project.optional-dependencies]
 test = ["pytest>=7.0"]
+# Needed only to import Chrome/Brave/Chromium sessions (--browser chrome|brave|chromium); macOS and Linux only
+browser = ["pycookiecheat>=0.8"]
 
 [project.urls]
 Homepage = "https://github.com/misiektoja/instagram_monitor"
