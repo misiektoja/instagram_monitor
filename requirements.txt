@@ -9,3 +9,6 @@ tqdm
 rich
 flask
 jinja2
+
+# Optional: uncomment only to import Chrome/Brave/Chromium sessions (--browser chrome|brave|chromium); macOS and Linux only
+# pycookiecheat
