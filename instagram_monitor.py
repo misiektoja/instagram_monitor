@@ -2145,7 +2145,7 @@ def create_web_dashboard_app():
                 return jsonify({'success': False, 'error': 'No data provided'}), 400  # type: ignore
 
             username = data.get('username', '').strip()
-            method = data.get('method', 'firefox')
+            method = data.get('method', 'saved')
 
             if username:
                 SESSION_USERNAME = username
@@ -3041,7 +3041,7 @@ _MSG_WITH_USER_RE = re.compile(r"^\[(.+?)\] (.*)$")
 _FROM_TO_COUNT_RE = re.compile(r"(from\s+)(\d+)(\s+to\s+)(\d+)")
 _DIFF_COUNT_UP_RE = re.compile(r"(\(\+\d+\))")
 _DIFF_COUNT_DOWN_RE = re.compile(r"(\(-\d+\))")
-_USER_TAG_RE = re.compile(r"((?:for|by|of|Session|Initial|Monitoring\s+Instagram)\s+user:?|Username:|Target:|Tracking:?|(?:Starting\s+)?check\s+#\d+\s+(?:completed\s+)?for|paused\s+for|resuming\s+for|Firefox\s+for:|User(?=\s+[\w._-]+\s+has))([\t ]+)([\w._-]+)", re.IGNORECASE)
+_USER_TAG_RE = re.compile(r"((?:for|by|of|Session|Initial|Monitoring\s+Instagram)\s+user:?|Username:|Target:|Tracking:?|(?:Starting\s+)?check\s+#\d+\s+(?:completed\s+)?for|paused\s+for|resuming\s+for|(?:Firefox|Chrome|Brave|Chromium)\s+for:|User(?=\s+[\w._-]+\s+has))([\t ]+)([\w._-]+)", re.IGNORECASE)
 _STATUS_LINE_RE = re.compile(r"^(\*?\s*(?:STATUS|Status):\s+)(.*)$")
 _DURATION_RE = re.compile(r"(\d+\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?))", re.IGNORECASE)
 _LONG_DATE_RE = re.compile(r"\b(?:\w{3}\s+)?\d{1,2}\s+\w{3}(?:\s+\d{2,4})?[\s,]*\d{2}:\d{2}(:\d{2})?(\s*[AP]M)?\b", re.IGNORECASE)
@@ -4899,7 +4899,7 @@ def latest_post_mobile(user: str, bot: instaloader.Instaloader):
 
     if data.get("status") == "fail":
         ig_message = data.get("message", "unknown error")
-        hint = " (try using Firefox session login with --import-firefox-session)" if not bot.context.is_logged_in else ""
+        hint = " (try using browser session login with --import-browser-session)" if not bot.context.is_logged_in else ""
         raise RuntimeError(f"Instagram API error: {ig_message}{hint}")
 
     if "data" not in data or not isinstance(data.get("data"), dict):
