@@ -1145,7 +1145,7 @@ def _install_http_backend() -> None:
     if real_requests is None or isinstance(real_requests, _RequestsBackendShim):
         _CURL_CFFI_BACKEND_INSTALLED = True
         return
-    _ilc.requests = _RequestsBackendShim(real_requests)
+    setattr(_ilc, "requests", _RequestsBackendShim(real_requests))
     _CURL_CFFI_BACKEND_INSTALLED = True
 
 
@@ -3711,10 +3711,11 @@ def show_follow_info(followers_reported: int, followers_actual: int, followings_
         debug_print(f"* Followers: reported ({followers_reported}) actual ({followers_actual}). Followings: reported ({followings_reported}) actual ({followings_actual})")
 
 
+# Compares follower or following lists, logs changes and returns formatted notification fragments
 def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_file_name):
-    a, b = set(old_list), set(new_list)
-    removed = list(a - b)
-    added = list(b - a)
+    old_set, new_set = set(old_list), set(new_list)
+    removed = [item for item in old_list if item not in new_set]
+    added = [item for item in new_list if item not in old_set]
 
     added_list = ""
     removed_list = ""
@@ -5626,7 +5627,7 @@ def get_random_mobile_user_agent() -> str:
     return (f"Instagram {app_major}.{app_minor}.{app_patch}.{app_revision} ({device}{model}; iOS {os_major}_{os_minor}; {language}; {locale}; scale={scale:.2f}; {width}x{height}; {device_id}) AppleWebKit/420+")
 
 
-# Extracts usernames from a JSON response, automatically detecting if the data is for 'following' or 'followers'
+# Extracts usernames from a follower or following JSON response and returns [] for malformed shapes
 def extract_usernames_safely(data_dict):
     usernames = []
 
@@ -5634,24 +5635,27 @@ def extract_usernames_safely(data_dict):
     # The value is the path segment needed to reach the 'edges' list
     possible_keys = ['edge_followed_by', 'edge_follow']
 
-    # Safely access the 'user' dictionary
-    try:
-        user_data = data_dict['data']['user']
-    except KeyError as e:
-        # print(f"Format Check Failed: Missing essential key {e} in top level. Skipping.")
+    if not isinstance(data_dict, dict):
+        return []
+
+    data = data_dict.get('data')
+    if not isinstance(data, dict):
+        return []
+
+    user_data = data.get('user')
+    if not isinstance(user_data, dict):
         return []
 
     # Iterate through possible keys to find the correct list
     edges = None
     for key in possible_keys:
-        if key in user_data:
-            try:
-                edges = user_data[key]['edges']
-                break
-            except KeyError:
-                # This handles the case where the key exists but 'edges' is missing
-                # print(f"Warning: Found '{key}' but 'edges' list is missing inside it. Trying next key.")
-                continue
+        edge_group = user_data.get(key)
+        if not isinstance(edge_group, dict):
+            continue
+        if 'edges' not in edge_group:
+            continue
+        edges = edge_group.get('edges')
+        break
 
     # Check if any edges were found and if it's a list
     if edges is None:
@@ -5664,13 +5668,14 @@ def extract_usernames_safely(data_dict):
 
     # 4. Extract usernames from the list of edges
     for edge in edges:
-        try:
-            # The node structure is consistent: edge -> 'node' -> 'username'
-            username = edge['node']['username']
-            usernames.append(username)
-        except KeyError:
-            # Handle a malformed single entry by skipping it
+        if not isinstance(edge, dict):
             continue
+        node = edge.get('node')
+        if not isinstance(node, dict):
+            continue
+        username = node.get('username')
+        if isinstance(username, str):
+            usernames.append(username)
 
     return usernames
 
