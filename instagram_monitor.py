@@ -7856,12 +7856,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         _thread_local.in_partial_line = False
         error_msg = format_error_message(e)
         print(f"* Error: {error_msg}")
-        print_fix_hint(error_msg)
+        # Detect a flagged session/IP up front so the specific flagged guidance below replaces the generic fix hint
+        session_flagged = is_session_flagged(error_msg, bot)
+        if not session_flagged:
+            print_fix_hint(error_msg)
         print_cur_ts(newline=True)
         log_activity(f"Error: {error_msg}", user=user)
 
         # Handle session recovery for automated checks/challenge errors
-        if is_session_flagged(error_msg, bot):
+        if session_flagged:
             err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
             update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
             print(f"* Error: {err_str}")
