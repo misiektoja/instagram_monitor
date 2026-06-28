@@ -1016,46 +1016,22 @@
                         <option value="chromium">Chromium (standalone browser, not Chrome)</option>
                     </select>
 
-                    <!-- Firefox import flow -->
-                    <div id="firefox-import-flow">
-                        <button class="btn btn-secondary" onclick="detectFirefoxProfiles()" id="detect-firefox-btn">
-                            <span>🦊</span> Detect Firefox Profiles
-                        </button>
+                    <!-- Browser import flow (same logic for every browser) -->
+                    <p id="browser-import-note" style="font-size: 13px; color: #888; margin-bottom: 12px; display: none;"></p>
 
-                        <div id="firefox-profiles-container"
-                            style="display: none; margin-top: 16px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 12px;">
-                            <label class="form-label">Select Firefox Profile</label>
-                            <select class="form-input" id="firefox-profile-select" style="margin-bottom: 12px;"></select>
-                            <button class="btn btn-primary btn-sm" onclick="importFirefoxSession()">
-                                <span>📥</span> Import Selected Profile
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Chromium import flow -->
-                    <div id="chromium-import-flow" style="display: none;">
-                        <p style="font-size: 13px; color: #888; margin-bottom: 12px;">
-                            Make sure you are logged in to Instagram in <span id="chromium-browser-label">Chrome</span>.
-                            "Chromium" means the standalone open-source browser, not Chrome - pick it only if you run
-                            that browser. Requires the <code>pycookiecheat</code> package and works only on macOS and
-                            Linux (not on Windows, where Chrome's app-bound encryption blocks access - use Firefox
-                            there). Edge, Opera, Vivaldi and Arc are not supported.
-                        </p>
-                        <button class="btn btn-secondary btn-sm" onclick="detectChromiumProfiles()" id="detect-chromium-btn"
-                            style="margin-bottom: 12px;">
-                            <span>🔍</span> Detect Profiles
-                        </button>
-
-                        <div id="chromium-profiles-container"
-                            style="display: none; margin-bottom: 12px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 12px;">
-                            <label class="form-label">Select Profile</label>
-                            <select class="form-input" id="chromium-profile-select"></select>
-                        </div>
-
-                        <button class="btn btn-primary btn-sm" onclick="importChromiumSession()">
-                            <span>📥</span> Import from <span id="chromium-browser-label-btn">Chrome</span>
+                    <!-- Profile picker, shown only when several profiles exist -->
+                    <div id="browser-profiles-container"
+                        style="display: none; margin-bottom: 12px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 12px;">
+                        <label class="form-label">Select Profile</label>
+                        <select class="form-input" id="browser-profile-select" style="margin-bottom: 12px;"></select>
+                        <button class="btn btn-primary btn-sm" onclick="importSelectedProfile()">
+                            <span>📥</span> Import Selected Profile
                         </button>
                     </div>
+
+                    <button class="btn btn-primary btn-sm" id="browser-import-btn" onclick="startBrowserImport()">
+                        <span>📥</span> Import from <span id="browser-import-label">Firefox</span>
+                    </button>
                 </div>
 
                 <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 20px; margin-top: 20px;">
@@ -2598,96 +2574,99 @@
             }
         }
 
+        const CHROMIUM_IMPORT_NOTE = 'Make sure you are logged in to Instagram in this browser. "Chromium" means the standalone open-source browser, not Chrome - pick it only if you run that browser. Requires the pycookiecheat package and works only on macOS and Linux (not on Windows, where Chrome\'s app-bound encryption blocks access - use Firefox there). Edge, Opera, Vivaldi and Arc are not supported.';
+
+        function browserDisplayLabel(browser) {
+            return browser === 'chrome' ? 'Google Chrome' : browser.charAt(0).toUpperCase() + browser.slice(1);
+        }
+
         function onBrowserChange() {
             const browser = document.getElementById('browser-select').value;
-            const isFirefox = (browser === 'firefox');
-            document.getElementById('firefox-import-flow').style.display = isFirefox ? 'block' : 'none';
-            document.getElementById('chromium-import-flow').style.display = isFirefox ? 'none' : 'block';
-            if (!isFirefox) {
-                const label = browser.charAt(0).toUpperCase() + browser.slice(1);
-                document.getElementById('chromium-browser-label').textContent = label;
-                document.getElementById('chromium-browser-label-btn').textContent = label;
-                // Reset the profile picker - profiles differ per browser
-                document.getElementById('chromium-profiles-container').style.display = 'none';
-                document.getElementById('chromium-profile-select').innerHTML = '';
+            document.getElementById('browser-import-label').textContent = browserDisplayLabel(browser);
+
+            const note = document.getElementById('browser-import-note');
+            if (browser === 'firefox') {
+                note.style.display = 'none';
+                note.textContent = '';
+            } else {
+                note.style.display = 'block';
+                note.textContent = CHROMIUM_IMPORT_NOTE;
             }
+
+            // Reset the profile picker - profiles differ per browser
+            document.getElementById('browser-profiles-container').style.display = 'none';
+            document.getElementById('browser-profile-select').innerHTML = '';
+            document.getElementById('browser-import-btn').style.display = 'inline-flex';
         }
 
-        async function detectChromiumProfiles() {
+        // Returns profiles normalised to {value, label}, or null on error (Firefox value is a path, Chromium a profile dir)
+        async function fetchBrowserProfiles(browser) {
+            const url = browser === 'firefox'
+                ? '/api/session/firefox/profiles'
+                : '/api/session/chromium/profiles?browser=' + encodeURIComponent(browser);
+            const response = await fetch(url);
+            const data = await response.json();
+            if (!data.success) {
+                showToast(data.error || 'Failed to detect profiles', 'error');
+                return null;
+            }
+            return data.profiles.map(p => browser === 'firefox'
+                ? { value: p.path, label: p.name }
+                : { value: p.dir, label: `${p.name} (${p.dir})` });
+        }
+
+        // Same logic for every browser: one profile imports directly, several reveal the list to choose from
+        async function startBrowserImport() {
             const browser = document.getElementById('browser-select').value;
+            showToast(`Searching for ${browser} profiles...`);
+
+            let profiles;
             try {
-                showToast(`Searching for ${browser} profiles...`);
-                const response = await fetch('/api/session/chromium/profiles?browser=' + encodeURIComponent(browser));
-                const data = await response.json();
-                if (data.success && data.profiles.length > 0) {
-                    const select = document.getElementById('chromium-profile-select');
-                    select.innerHTML = data.profiles.map(p =>
-                        `<option value="${escapeHtml(p.dir)}">${escapeHtml(p.name)} (${escapeHtml(p.dir)})</option>`).join('');
-                    document.getElementById('chromium-profiles-container').style.display = 'block';
-                    showToast(`Found ${data.profiles.length} profile(s)`);
-                } else {
-                    showToast(data.error || 'No profiles found', 'error');
-                }
+                profiles = await fetchBrowserProfiles(browser);
             } catch (err) {
                 showToast('Failed to detect profiles', 'error');
+                return;
             }
+            if (profiles === null) return;
+
+            if (profiles.length === 0) {
+                showToast(`No ${browser} profiles found`, 'error');
+                return;
+            }
+            if (profiles.length === 1) {
+                doBrowserImport(browser, profiles[0].value);
+                return;
+            }
+
+            // Multiple profiles - let the user choose, then import the selected one
+            const select = document.getElementById('browser-profile-select');
+            select.innerHTML = profiles.map(p =>
+                `<option value="${escapeHtml(p.value)}">${escapeHtml(p.label)}</option>`).join('');
+            document.getElementById('browser-profiles-container').style.display = 'block';
+            document.getElementById('browser-import-btn').style.display = 'none';
+            showToast(`Found ${profiles.length} profiles - select one and import`);
         }
 
-        async function importChromiumSession() {
+        function importSelectedProfile() {
             const browser = document.getElementById('browser-select').value;
-            const container = document.getElementById('chromium-profiles-container');
-            const select = document.getElementById('chromium-profile-select');
-            const profile = (container.style.display !== 'none' && select.value) ? select.value : null;
+            const value = document.getElementById('browser-profile-select').value;
+            if (!value) return;
+            doBrowserImport(browser, value);
+        }
+
+        async function doBrowserImport(browser, value) {
             const payload = { browser };
-            if (profile) payload.profile = profile;
+            if (browser === 'firefox') {
+                payload.path = value;
+            } else {
+                payload.profile = value;
+            }
             try {
                 showToast(`Importing session from ${browser}...`);
                 const response = await fetch('/api/session/browser/import', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
-                });
-                const data = await response.json();
-                if (data.success) {
-                    showToast(`Imported session for ${data.username}`);
-                    fetchStatus();
-                    fetchSessionDetails();
-                } else {
-                    showToast(data.error || 'Failed to import session', 'error');
-                }
-            } catch (err) {
-                showToast('Failed to import session', 'error');
-            }
-        }
-
-        async function detectFirefoxProfiles() {
-            try {
-                showToast('Searching for Firefox profiles...');
-                const response = await fetch('/api/session/firefox/profiles');
-                const data = await response.json();
-                if (data.success && data.profiles.length > 0) {
-                    const select = document.getElementById('firefox-profile-select');
-                    select.innerHTML = data.profiles.map(p => `<option value="${escapeHtml(p.path)}">${escapeHtml(p.name)}</option>`).join('');
-                    document.getElementById('firefox-profiles-container').style.display = 'block';
-                    showToast(`Found ${data.profiles.length} profiles`);
-                } else {
-                    showToast('No Firefox profiles found', 'error');
-                }
-            } catch (err) {
-                showToast('Failed to detect profiles', 'error');
-            }
-        }
-
-        async function importFirefoxSession() {
-            const path = document.getElementById('firefox-profile-select').value;
-            if (!path) return;
-
-            try {
-                showToast('Importing session from Firefox...');
-                const response = await fetch('/api/session/firefox/import', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path })
                 });
                 const data = await response.json();
                 if (data.success) {
