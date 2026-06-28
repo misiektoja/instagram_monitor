@@ -258,7 +258,7 @@ Running the tool with no arguments offers the same wizard. It auto-detects wheth
 | Just try it, no login | `instagram_monitor <target_insta_user>` |
 | Be guided through setup | `instagram_monitor --setup` |
 | Avoid the command line | `instagram_monitor --web-dashboard` then use the browser |
-| See stories, reels and who followed/unfollowed | Log in first ([Firefox session](#option-3-session-login-using-firefox-cookies-recommended)), then `instagram_monitor -u <your_insta_user> <target_insta_user>` |
+| See stories, reels and who followed/unfollowed | Log in first ([browser session](#option-3-session-login-using-browser-cookies-recommended)), then `instagram_monitor -u <your_insta_user> <target_insta_user>` |
 
 ### Manual commands
 
@@ -276,10 +276,10 @@ Or if you installed [manually](#manual-python-based-installation):
 python3 instagram_monitor.py <target_insta_user>
 ```
 
-- Track the `target_insta_user` in [session mode 2](#option-3-session-login-using-firefox-cookies-recommended) (with session login via Firefox web browser):
+- Track the `target_insta_user` in [session mode 2](#option-3-session-login-using-browser-cookies-recommended) (with session login via your web browser):
 
 ```sh
-# log in to the Instagram account (your_insta_user) via Firefox web browser
+# log in to the Instagram account (your_insta_user) in your web browser (Firefox, Chrome, Brave or Chromium)
 instagram_monitor --import-browser-session --browser firefox
 instagram_monitor -u <your_insta_user> <target_insta_user>
 ```
@@ -358,8 +358,8 @@ This saves the session locally. However, frequent follower/following/stories cha
 
 For device consistency, set `USER_AGENT` to match Instaloader's Chrome user agent (see [User Agent](#user-agent) below).
 
-<a id="option-3-session-login-using-firefox-cookies-recommended"></a>
-#### Option 3: Session Login Using Firefox Cookies (recommended)
+<a id="option-3-session-login-using-browser-cookies-recommended"></a>
+#### Option 3: Session Login Using Browser Cookies (recommended)
 
 The most reliable method is to reuse an existing Instagram session from your web browser, along with manually specifying the user agent. Firefox is recommended for best compatibility and lowest detection risk, but since **v3.5** Chrome, Brave and Chromium are also supported.
 
@@ -371,14 +371,14 @@ instagram_monitor --import-browser-session --browser firefox
 
 `--browser` accepts `firefox` (default), `chrome`, `brave` or `chromium`. The older `--import-firefox-session` flag still works as an alias for `--browser firefox`.
 
-Since **v3.0**, you can also perform this import easily via the **[Web Dashboard](#web-dashboard-mode)** (no command line required). Simply open the dashboard, go to the **Session** page, pick the browser from the dropdown and import (for Firefox, click **Detect Firefox Profiles** first).
+Since **v3.0**, you can also perform this import easily via the **[Web Dashboard](#web-dashboard-mode)** (no command line required). Simply open the dashboard, go to the **Session** page, pick the browser from the dropdown and click **Import**. If the browser has a single profile it is imported directly; if several exist you can choose which one.
 
-For Firefox, the tool detects available profiles with a `cookies.sqlite` file. If multiple profiles are found, it will prompt you to select one, then import the session and save it via Instaloader.
+The tool detects the browser's available profiles. If only one exists it is imported directly; if several are found it lets you select one, then imports the session and saves it via Instaloader.
 
-To use a specific Firefox profile path:
+Profile selection works the same way for every browser (see [Selecting a browser profile](#selecting-a-browser-profile) below). To pick a specific Firefox profile by name:
 
 ```sh
-instagram_monitor --import-browser-session --browser firefox --cookie-file "/path/cookies.sqlite"
+instagram_monitor --import-browser-session --browser firefox --browser-profile "default-release"
 ```
 
 You can adjust the default Firefox cookie directory permanently via `FIREFOX_*_COOKIE` configuration options.
@@ -418,7 +418,25 @@ Then import the session:
 instagram_monitor --import-browser-session --browser chrome
 ```
 
-On **Windows** this is not possible: Chrome's app-bound encryption (Chrome 127+) blocks any external program from reading its cookies. The tool detects Windows and recommends using Firefox instead. The `--cookie-file` flag is ignored for these browsers (cookies are read directly from the browser).
+On **Windows** this is not possible: Chrome's app-bound encryption (Chrome 127+) blocks any external program from reading its cookies. The tool detects Windows and recommends using Firefox instead.
+
+<a id="selecting-a-browser-profile"></a>
+##### Selecting a browser profile
+
+Every supported browser can have multiple profiles, each with its own cookies (Firefox: `default-release`, `Finance`, ...; Chromium-based: `Default`, `Profile 1`, ...). The same options work for all of them:
+
+- **Pick by name** with `--browser-profile`. Use the Firefox profile name (e.g. `default-release`) or the Chromium profile directory (e.g. `Default`, `Profile 1`):
+
+  ```sh
+  instagram_monitor --import-browser-session --browser chrome --browser-profile "Profile 1"
+  instagram_monitor --import-browser-session --browser firefox --browser-profile "default-release"
+  ```
+
+- **Let it prompt you.** If you do not pass `--browser-profile` and several profiles exist, the tool lists them so you can choose.
+- **On the [Web Dashboard](#web-dashboard-mode)**, pick the browser, click **Detect Profiles** and select one.
+- **Advanced:** point `--cookie-file` at a specific cookie database (Firefox `cookies.sqlite` or a Chromium `Cookies` file). This overrides `--browser-profile`.
+
+For Chromium-based browsers the tool resolves the cookie database itself, so it works with both the legacy `<profile>/Cookies` and the newer `<profile>/Network/Cookies` layouts.
 
 Inside **Docker** Chromium-based import is also unavailable, because the container cannot reach the host's keyring used to decrypt the cookies. Use Firefox there (see the [Docker Usage examples](#docker-usage-recommended)), or run the Chromium import directly on the host.
 
@@ -427,12 +445,12 @@ The session login method has the added benefit of blending tool activity with re
 <a id="user-agent"></a>
 ##### User Agent
 
-It is also recommended to use the exact user agent string from your Firefox web browser:
-- open Firefox and type `about:support` in the address bar
-- find the `User Agent` value under the `Application Basics` section and copy it
+It is also recommended to use the exact user agent string from the web browser you imported the session from:
+- in Firefox, type `about:support` in the address bar and copy the `User Agent` value under the `Application Basics` section
+- in Chrome, Brave or Chromium, open `chrome://version` and copy the `User Agent` value
 - set this value via the `USER_AGENT` configuration option or by using the `--user-agent` flag (since **v3.0**, you can also do it easily via the **[Web Dashboard](#web-dashboard-mode)**)
 
-If you created the session with Instaloader instead (Option 2 above), match Instaloader's user agent rather than Firefox's. Instaloader logs in with a Chrome user agent, so set `USER_AGENT` to a matching Chrome string to keep the same device consistency. You can print the exact value Instaloader uses with:
+If you created the session with Instaloader instead (Option 2 above), match Instaloader's user agent rather than a browser's. Instaloader logs in with a Chrome user agent, so set `USER_AGENT` to a matching Chrome string to keep the same device consistency. You can print the exact value Instaloader uses with:
 
 ```sh
 python3 -c "from instaloader.instaloadercontext import default_user_agent; print(default_user_agent())"
@@ -1242,15 +1260,15 @@ As mentioned earlier it is highly recommended to use a dedicated Instagram accou
 
 To minimize any chance of detection, make sure to follow the best practices outlined below.
 
-<a id="sign-in-using-session-mode-with-firefox-cookies"></a>
-### Sign In Using Session Mode with Firefox Cookies
+<a id="sign-in-using-session-mode-with-browser-cookies"></a>
+### Sign In Using Session Mode with Browser Cookies
 
-Use your Firefox web browser to log in, ensuring the session looks natural and consistent to Instagram. Follow instructions described [here](#option-3-session-login-using-firefox-cookies-recommended)
+Use your web browser (Firefox, Chrome, Brave or Chromium) to log in, ensuring the session looks natural and consistent to Instagram. Follow instructions described [here](#option-3-session-login-using-browser-cookies-recommended)
 
 <a id="set-the-correct-user-agent"></a>
 ### Set the Correct User-Agent
 
-Always pass the exact web browser user agent string from your Firefox web browser by using `USER_AGENT` configuration option or the `--user-agent` flag. This helps maintain device consistency during automated actions. Follow instructions described [here](#user-agent)
+Always pass the exact user agent string from the web browser you imported the session from by using `USER_AGENT` configuration option or the `--user-agent` flag. This helps maintain device consistency during automated actions. Follow instructions described [here](#user-agent)
 
 <a id="use-the-human-mode"></a>
 ### Use the Human Mode
@@ -1347,7 +1365,7 @@ Refrain from logging in via VPNs, especially with IPs in different regions. Sudd
 <a id="use-the-account-for-normal-activities"></a>
 ### Use the Account for Normal Activities
 
-If you have created a new account for monitoring and you are using [Session Login Using Firefox](#option-3-session-login-using-firefox-cookies-recommended), make sure to behave like a regular user for several days. New accounts are more closely monitored by Instagram's bot detection systems. Watch content, post stories or reels and leave comments - this helps establish a natural activity pattern.
+If you have created a new account for monitoring and you are using [Session Login Using Browser Cookies](#option-3-session-login-using-browser-cookies-recommended), make sure to behave like a regular user for several days. New accounts are more closely monitored by Instagram's bot detection systems. Watch content, post stories or reels and leave comments - this helps establish a natural activity pattern.
 
 Once you start using the tool, try to blend its actions with normal usage. However, avoid overlapping browser activity with tool activity, as simultaneous actions can trigger suspicious behavior flags.
 
