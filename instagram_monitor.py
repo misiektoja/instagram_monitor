@@ -27,12 +27,12 @@ VERSION = "3.5"
 # ---------------------------
 
 CONFIG_BLOCK = """
-# Session login (mode 2) is required for some features such as retrieving the list of followings/followers
+# Session login (Logged-in mode) is required for some features such as retrieving the list of followings/followers
 # or detailed posts/reels/stories info
 #
-# The tool still works without login (mode 1), but in a limited way
+# The tool still works without login (No-login mode), but in a limited way
 #
-# For session login (mode 2), you'll need to log in with your Instagram username and password
+# For session login (Logged-in mode), you'll need to log in with your Instagram username and password
 #
 # Provide the username below (or use the -u flag)
 SESSION_USERNAME = ""
@@ -170,7 +170,7 @@ FOLLOWERS_CHURN_DETECTION = False
 SKIP_FOLLOW_CHANGES = False
 
 # Make the tool behave more like a human by performing random feed / profile / hashtag / followee actions
-# Used only with session login (mode 2), always disabled without login (anonymous mode 1)
+# Used only with session login (Logged-in mode), always disabled without login (No-login mode)
 BE_HUMAN = False
 
 # Approximate number of simulated human actions to perform per 24 hours
@@ -2154,7 +2154,7 @@ def create_web_dashboard_app():
                     WEB_DASHBOARD_DATA['session'] = {'username': username, 'active': False, 'method': method}
 
                 msg = f"Session configured for: {username} (Method: {method})"
-                mode_msg = "Session mode switched to: Mode 2 (Logged In)"
+                mode_msg = "Session mode switched to: Logged in"
                 log_activity(msg)
                 print(f"\n* {msg}")
                 print(f"* {mode_msg}")
@@ -2201,7 +2201,7 @@ def create_web_dashboard_app():
             WEB_DASHBOARD_DATA['session'] = {'username': username, 'active': True, 'method': browser}
 
         msg = f"Imported session from {browser_label(browser)} for: {username}"
-        mode_msg = "Session mode switched to: Mode 2 (Logged In)"
+        mode_msg = "Session mode switched to: Logged in"
         log_activity(msg)
         print(f"\n* {msg}")
         print(f"* {mode_msg}")
@@ -2394,7 +2394,7 @@ def create_web_dashboard_app():
             WEB_DASHBOARD_DATA['session'] = {'username': None, 'active': False}
 
         msg = f"Session cleared for: {username}"
-        mode_msg = "Session mode switched to: Mode 1 (Anonymous)"
+        mode_msg = "Session mode switched to: No login"
         log_activity(msg)
         print(f"\n* {msg}")
         print(f"* {mode_msg}")
@@ -10473,7 +10473,7 @@ def run_setup_wizard() -> None:
     logged_in = _wizard_ask_choice(
         "Do you want to log in with an Instagram account?",
         [
-            ("No - anonymous (no setup; sees new posts, bio and follower counts)", "Cannot see stories, reels or exactly who followed/unfollowed."),
+            ("No - no login (no setup; sees new posts, bio and follower counts)", "Cannot see stories, reels or exactly who followed/unfollowed."),
             ("Yes - logged in (full detail: stories, reels, follower churn)", "Use a DEDICATED account; Instagram may flag automation."),
         ],
         default_index=0,
@@ -10628,7 +10628,7 @@ def run_setup_wizard() -> None:
 
 # Prints a short welcome with the most common commands and offers to launch the setup wizard
 def _wizard_welcome(parser) -> None:
-    print("Quickest start (no setup, anonymous):")
+    print("Quickest start (no setup, no login):")
     print(colorize("section", "    instagram_monitor <username>\n"))
     print("Easiest start (guided setup wizard):")
     print(colorize("section", "    instagram_monitor --setup\n"))
@@ -10692,7 +10692,22 @@ def run_main():
 
     parser = argparse.ArgumentParser(
         prog="instagram_monitor",
-        description=("Monitor an Instagram user's activity and send customizable email alerts [ https://github.com/misiektoja/instagram_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
+        description=("Monitor an Instagram user's activity and send customizable email alerts [ https://github.com/misiektoja/instagram_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  # Guided setup (recommended for the first run)\n"
+            "  instagram_monitor --setup\n"
+            "\n"
+            "  # No login (new posts, bio and follower counts)\n"
+            "  instagram_monitor <username>\n"
+            "\n"
+            "  # Logged in via Firefox - full detail (stories, reels, follower churn)\n"
+            "  instagram_monitor --import-browser-session --browser firefox\n"
+            "  instagram_monitor -u <your_user> <username>\n"
+            "\n"
+            "  # Point-and-click web dashboard\n"
+            "  instagram_monitor <username> --web-dashboard\n"
+        )
     )
 
     # Positional targets (one or more)
@@ -11571,9 +11586,9 @@ def run_main():
         GET_MORE_POST_DETAILS = False
         SKIP_GETTING_STORY_DETAILS = True
         BE_HUMAN = False
-        mode_of_the_tool = "1 (no session login - anonymous)"
+        mode_of_the_tool = "No login (public data only)"
     else:
-        mode_of_the_tool = "2 (session login)"
+        mode_of_the_tool = "Logged in (full data)"
 
     # Auto-disable Follower Churn Detection if session or lists are skipped
     if FOLLOWERS_CHURN_DETECTION:
