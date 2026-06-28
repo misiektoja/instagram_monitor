@@ -1,5 +1,12 @@
 # instagram_monitor release notes
 
+# Changes in 3.5 (TBD)
+
+**Features and Improvements**:
+
+- **NEW:** Added an **interactive setup wizard** to make first-time setup easy for non-technical users. Run it with the `--setup` flag, or just launch the tool with no arguments and accept the prompt. The wizard asks a short series of questions (which account(s) to monitor, anonymous vs logged-in, how to provide the login session including an inline Firefox import, which interface to use and whether to enable Discord/webhook or email alerts), then writes a ready-to-run `instagram_monitor.conf`, routes secrets to a `.env` file and offers to start monitoring right away. It auto-detects whether the tool was installed via pip, run from a downloaded script or run under Docker, and tailors the suggested commands accordingly
+- **IMPROVE:** Running the tool with **no arguments** now shows a short welcome with the most common commands and an offer to launch the setup wizard, instead of dumping the full help text
+
 # Changes in 3.4 (16 Jun 2026)
 
 **Features and Improvements**:
