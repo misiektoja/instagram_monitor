@@ -3667,6 +3667,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         smtpObj.quit()
     except Exception as e:
         print(f"Error sending email: {e}")
+        print(colorize("info", "  To fix: verify SMTP_HOST, SMTP_PORT and SMTP_SSL, and that SMTP_USER / SMTP_PASSWORD are correct. For Gmail and similar providers use an app password, not your normal login password. Test with --send-test-email."))
         return 1
     return 0
 
@@ -3953,6 +3954,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                 print(f"* Webhook error: HTTP {response.status_code} - {response.text[:200]}")
                 # Don't retry on client errors (4xx) unless it's 429
                 if response.status_code != 429:
+                    print(colorize("info", "  To fix: check WEBHOOK_URL is correct and still valid (Discord webhooks can be deleted or regenerated). Test it with --send-test-webhook."))
                     return 1
 
         except (req.exceptions.RequestException, req.exceptions.ConnectionError, req.exceptions.Timeout) as e:
@@ -7140,6 +7142,48 @@ def format_error_message(e: Exception) -> str:
     return f"{error_type}: {error_str}"
 
 
+# Returns a short actionable next-step hint for a known error message, or an empty string when none applies
+def error_fix_hint(error_msg: str, is_logged_in: bool = False) -> str:
+    m = (error_msg or "").lower()
+
+    # Rate limiting or TLS-fingerprint blocks
+    if any(t in m for t in ("429", "too many requests", "wait a few minutes", "rate limit", "please wait")):
+        return "To fix: Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users. See the README section 'How to Prevent Getting Challenged and Account Suspension'."
+
+    # Challenge, checkpoint or shadowban
+    if any(t in m for t in ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data")):
+        return "To fix: Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint, then re-import the session with 'instagram_monitor --import-firefox-session'. Also raise the check interval. See the README section 'How to Prevent Getting Challenged and Account Suspension'."
+
+    # Missing session file
+    if "session file" in m:
+        return "To fix: no saved session was found for this account. Create one with 'instagram_monitor --import-firefox-session' (after logging in via Firefox), or with 'instaloader -l <your_user>'. In the Web Dashboard you can import from the Session page."
+
+    # Invalid or expired session
+    if any(t in m for t in ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required")):
+        return "To fix: your Instagram session looks invalid or expired. Re-import it with 'instagram_monitor --import-firefox-session' (after logging in via Firefox), or recreate it with 'instaloader -l <your_user>'. In the Web Dashboard you can re-import from the Session page."
+
+    # Profile not found
+    if any(t in m for t in ("profilenotexists", "does not exist", "not found", "404")):
+        hint = "To fix: check the target username is spelled correctly and the account still exists and is reachable."
+        if is_logged_in:
+            hint += " If the username is correct, your session or IP may be temporarily flagged."
+        return hint
+
+    # Network or connectivity problems
+    if any(t in m for t in ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl")):
+        return "To fix: this looks like a network problem. Check your internet connection (and proxy settings if --enable-proxy is set) and try again."
+
+    return ""
+
+
+# Prints an actionable fix hint for the given error to the console when one is available
+def print_fix_hint(error_msg: str) -> None:
+    is_logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
+    hint = error_fix_hint(error_msg, is_logged_in)
+    if hint:
+        print(colorize("info", f"  {hint}"))
+
+
 # Returns True when the formatted error indicates a profile could not be found (deleted/renamed target or a flagged session masking every profile)
 def is_profile_not_found_error(error_msg):
     return any(t in error_msg for t in PROFILE_NOT_FOUND_TRIGGERS)
@@ -7631,6 +7675,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             except Exception as e:
                 error_msg = format_error_message(e)
                 print(f"* Session error for {user}: {error_msg}")
+                print_fix_hint(error_msg)
                 print_cur_ts(newline=True)
                 log_activity(f"Session error: {error_msg}", user=user)
 
@@ -7811,6 +7856,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         _thread_local.in_partial_line = False
         error_msg = format_error_message(e)
         print(f"* Error: {error_msg}")
+        print_fix_hint(error_msg)
         print_cur_ts(newline=True)
         log_activity(f"Error: {error_msg}", user=user)
 
@@ -8040,6 +8086,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             close_pbar()
             error_msg = format_error_message(e)
             print(f"* Error while getting followers: {error_msg}")
+            print_fix_hint(error_msg)
             update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
             if threading.current_thread() is threading.main_thread():
                 sys.exit(1)
@@ -8188,6 +8235,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             close_pbar()
             error_msg = format_error_message(e)
             print(f"* Error while getting followings: {error_msg}")
+            print_fix_hint(error_msg)
             update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
             if threading.current_thread() is threading.main_thread():
                 sys.exit(1)
@@ -8433,6 +8481,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             except Exception as e:
                 error_msg = format_error_message(e)
                 print(f"* Error while processing story items: {error_msg}")
+                print_fix_hint(error_msg)
                 update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
                 if threading.current_thread() is threading.main_thread():
                     sys.exit(1)
@@ -8505,6 +8554,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         except Exception as e:
             error_msg = format_error_message(e)
             print(f"* Error while processing posts/reels: {error_msg}")
+            print_fix_hint(error_msg)
             update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
             if threading.current_thread() is threading.main_thread():
                 sys.exit(1)
@@ -8988,7 +9038,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     continue  # Retry the main loop
 
                 if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
-                    print("* Session might not be valid anymore!")
+                    print("* Session might not be valid anymore! Re-import it with --import-firefox-session (or from the Web Dashboard Session page).")
                     if ERROR_NOTIFICATION and not email_sent:
                         m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
 
@@ -9016,7 +9066,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
             if (next((s for s in get_thread_output() if "HTTP redirect from" in s), None)):
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
-                print("* Session might not be valid anymore!")
+                print("* Session might not be valid anymore! Re-import it with --import-firefox-session (or from the Web Dashboard Session page).")
                 print(f"Retrying in {display_time(r_sleep_time)}")
                 if ERROR_NOTIFICATION and not email_sent:
                     m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
@@ -9782,7 +9832,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     error_msg = format_error_message(e)
                     print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
                     if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
-                        print("* Session might not be valid anymore!")
+                        print("* Session might not be valid anymore! Re-import it with --import-firefox-session (or from the Web Dashboard Session page).")
                         if ERROR_NOTIFICATION and not email_sent:
                             m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
 
@@ -11003,6 +11053,7 @@ def run_main():
 
     if not cfg_path and CLI_CONFIG_PATH:
         print(f"* Error: Config file '{CLI_CONFIG_PATH}' does not exist")
+        print(colorize("info", "  To fix: check the path passed to --config-file, or create a config with 'instagram_monitor --setup' or 'instagram_monitor --generate-config instagram_monitor.conf'."))
         sys.exit(1)
 
     if cfg_path:
