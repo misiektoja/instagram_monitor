@@ -1006,17 +1006,43 @@
             <div class="card" style="margin-top: 20px;">
                 <div class="card-title">Configure Session</div>
 
-                <div id="firefox-import-section" style="margin-bottom: 24px;">
-                    <button class="btn btn-secondary" onclick="detectFirefoxProfiles()" id="detect-firefox-btn">
-                        <span>🦊</span> Detect Firefox Profiles
-                    </button>
+                <div id="browser-import-section" style="margin-bottom: 24px;">
+                    <label class="form-label">Import session from browser</label>
+                    <select class="form-input" id="browser-select" style="margin-bottom: 16px; max-width: 360px;"
+                        onchange="onBrowserChange()">
+                        <option value="firefox">Firefox (recommended)</option>
+                        <option value="chrome">Google Chrome</option>
+                        <option value="brave">Brave</option>
+                        <option value="chromium">Chromium (standalone browser, not Chrome)</option>
+                    </select>
 
-                    <div id="firefox-profiles-container"
-                        style="display: none; margin-top: 16px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 12px;">
-                        <label class="form-label">Select Firefox Profile</label>
-                        <select class="form-input" id="firefox-profile-select" style="margin-bottom: 12px;"></select>
-                        <button class="btn btn-primary btn-sm" onclick="importFirefoxSession()">
-                            <span>📥</span> Import Selected Profile
+                    <!-- Firefox import flow -->
+                    <div id="firefox-import-flow">
+                        <button class="btn btn-secondary" onclick="detectFirefoxProfiles()" id="detect-firefox-btn">
+                            <span>🦊</span> Detect Firefox Profiles
+                        </button>
+
+                        <div id="firefox-profiles-container"
+                            style="display: none; margin-top: 16px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 12px;">
+                            <label class="form-label">Select Firefox Profile</label>
+                            <select class="form-input" id="firefox-profile-select" style="margin-bottom: 12px;"></select>
+                            <button class="btn btn-primary btn-sm" onclick="importFirefoxSession()">
+                                <span>📥</span> Import Selected Profile
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Chromium import flow -->
+                    <div id="chromium-import-flow" style="display: none;">
+                        <p style="font-size: 13px; color: #888; margin-bottom: 12px;">
+                            Make sure you are logged in to Instagram in <span id="chromium-browser-label">Chrome</span>.
+                            "Chromium" means the standalone open-source browser, not Chrome - pick it only if you run
+                            that browser. Requires the <code>pycookiecheat</code> package and works only on macOS and
+                            Linux (not on Windows, where Chrome's app-bound encryption blocks access - use Firefox
+                            there). Edge, Opera, Vivaldi and Arc are not supported.
+                        </p>
+                        <button class="btn btn-primary btn-sm" onclick="importChromiumSession()">
+                            <span>📥</span> Import from <span id="chromium-browser-label-btn">Chrome</span>
                         </button>
                     </div>
                 </div>
@@ -2561,6 +2587,40 @@
             }
         }
 
+        function onBrowserChange() {
+            const browser = document.getElementById('browser-select').value;
+            const isFirefox = (browser === 'firefox');
+            document.getElementById('firefox-import-flow').style.display = isFirefox ? 'block' : 'none';
+            document.getElementById('chromium-import-flow').style.display = isFirefox ? 'none' : 'block';
+            if (!isFirefox) {
+                const label = browser.charAt(0).toUpperCase() + browser.slice(1);
+                document.getElementById('chromium-browser-label').textContent = label;
+                document.getElementById('chromium-browser-label-btn').textContent = label;
+            }
+        }
+
+        async function importChromiumSession() {
+            const browser = document.getElementById('browser-select').value;
+            try {
+                showToast(`Importing session from ${browser}...`);
+                const response = await fetch('/api/session/browser/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ browser })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showToast(`Imported session for ${data.username}`);
+                    fetchStatus();
+                    fetchSessionDetails();
+                } else {
+                    showToast(data.error || 'Failed to import session', 'error');
+                }
+            } catch (err) {
+                showToast('Failed to import session', 'error');
+            }
+        }
+
         async function detectFirefoxProfiles() {
             try {
                 showToast('Searching for Firefox profiles...');
@@ -2707,7 +2767,9 @@
                     `${escapeHtml(sessionData.last_modified)} (${escapeHtml(sessionData.last_modified_relative)} ago)` :
                     (sessionData.file_exists ? 'Unknown' : 'N/A');
                 document.getElementById('session-detail-method').textContent = sessionData.method ?
-                    (sessionData.method === 'firefox' ? 'Firefox Import' : 'Manual Setup') : '-';
+                    (['firefox', 'chrome', 'brave', 'chromium'].includes(sessionData.method) ?
+                        sessionData.method.charAt(0).toUpperCase() + sessionData.method.slice(1) + ' Import' :
+                        'Manual Setup') : '-';
                 document.getElementById('session-detail-tested').textContent = sessionData.last_tested || 'Never';
 
                 // Show action buttons
