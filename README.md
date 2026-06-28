@@ -173,6 +173,14 @@ It should work on other versions of macOS, Linux, Unix and Windows as well.
 pip install instagram_monitor
 ```
 
+If you also want to import sessions from Chrome, Brave or Chromium (macOS and Linux only), install the optional `browser` extra instead. This is a superset of the base package, so run just this one command (no need to also run `pip install instagram_monitor`):
+
+```sh
+pip install "instagram_monitor[browser]"
+```
+
+Firefox session import needs no extra and works out of the box.
+
 <a id="install-from-docker-hub"></a>
 ### Install from Docker Hub
 
@@ -192,6 +200,8 @@ pip install instaloader requests python-dateutil pytz tzlocal python-dotenv tqdm
 ```
 
 **Note:** `rich` is required for the Terminal Dashboard, `flask` is required for the Web Dashboard. If Rich or Flask is not installed, the corresponding dashboard is disabled automatically.
+
+**Note:** To import sessions from Chrome, Brave or Chromium (macOS and Linux only), also run `pip install pycookiecheat`.
 
 Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt)*:
 
@@ -270,7 +280,7 @@ python3 instagram_monitor.py <target_insta_user>
 
 ```sh
 # log in to the Instagram account (your_insta_user) via Firefox web browser
-instagram_monitor --import-firefox-session
+instagram_monitor --import-browser-session --browser firefox
 instagram_monitor -u <your_insta_user> <target_insta_user>
 ```
 
@@ -351,27 +361,68 @@ For device consistency, set `USER_AGENT` to match Instaloader's Chrome user agen
 <a id="option-3-session-login-using-firefox-cookies-recommended"></a>
 #### Option 3: Session Login Using Firefox Cookies (recommended)
 
-The most reliable method is to reuse an existing Instagram session from your Firefox web browser, along with manually specifying the user agent.
+The most reliable method is to reuse an existing Instagram session from your web browser, along with manually specifying the user agent. Firefox is recommended for best compatibility and lowest detection risk, but since **v3.5** Chrome, Brave and Chromium are also supported.
 
-Log in to your account (`your_insta_user`) in Firefox, then run:
+Log in to your account (`your_insta_user`) in the browser, then run:
 
 ```sh
-instagram_monitor --import-firefox-session
+instagram_monitor --import-browser-session --browser firefox
 ```
 
-Since **v3.0**, you can also perform this import easily via the **[Web Dashboard](#web-dashboard-mode)** (no command line required). Simply open the dashboard, go to the **Session** page and click **Detect Firefox Profiles**.
+`--browser` accepts `firefox` (default), `chrome`, `brave` or `chromium`. The older `--import-firefox-session` flag still works as an alias for `--browser firefox`.
 
-The tool will detect available Firefox profiles with a `cookies.sqlite` file. If multiple profiles are found, it will prompt you to select one, then import the session and save it via Instaloader.
+Since **v3.0**, you can also perform this import easily via the **[Web Dashboard](#web-dashboard-mode)** (no command line required). Simply open the dashboard, go to the **Session** page, pick the browser from the dropdown and import (for Firefox, click **Detect Firefox Profiles** first).
+
+For Firefox, the tool detects available profiles with a `cookies.sqlite` file. If multiple profiles are found, it will prompt you to select one, then import the session and save it via Instaloader.
 
 To use a specific Firefox profile path:
 
 ```sh
-instagram_monitor --import-firefox-session --cookie-file "/path/cookies.sqlite"
+instagram_monitor --import-browser-session --browser firefox --cookie-file "/path/cookies.sqlite"
 ```
 
 You can adjust the default Firefox cookie directory permanently via `FIREFOX_*_COOKIE` configuration options.
 
-The session login method using Firefox cookies has the added benefit of blending tool activity with regular user behavior. Interacting with Instagram via Firefox every few days (scrolling, liking posts etc.) helps maintain session trust. However, avoid overlapping browser activity with tool activity, as simultaneous actions can trigger suspicious behavior flags.
+##### Which browsers are supported
+
+The `--browser` flag (and the dashboard dropdown) accepts these values:
+
+| `--browser` | Application it reads | Platforms |
+| --- | --- | --- |
+| `firefox` (default) | Mozilla Firefox | macOS, Linux, Windows |
+| `chrome` | Google Chrome | macOS, Linux |
+| `brave` | Brave | macOS, Linux |
+| `chromium` | The standalone open-source Chromium browser | macOS, Linux |
+
+**About the `chromium` option:** Chromium is the unbranded open-source browser that Google Chrome is built on. It is a **separate application** from Chrome, with its own profile and cookie store, and is a common default browser on many Linux distributions. Pick `chromium` only if you actually run that browser; if you use Google Chrome, pick `chrome`.
+
+**Not currently supported:** Microsoft Edge, Opera, Vivaldi, Arc and other Chromium-based browsers. They share the Chromium engine but each keeps its own separate cookie store, and the underlying [`pycookiecheat`](https://github.com/n8henrie/pycookiecheat) library only handles the browsers listed above. If you use one of these, log in with Firefox (or Chrome/Brave/Chromium) for the import instead.
+
+##### Importing from Chrome, Brave or Chromium
+
+These browsers encrypt their cookies, so importing from them requires the optional [`pycookiecheat`](https://github.com/n8henrie/pycookiecheat) package and works only on **macOS and Linux**. If you installed from PyPI, pull it in with the `browser` extra:
+
+```sh
+pip install "instagram_monitor[browser]"
+```
+
+If you run the downloaded script or installed from `requirements.txt`, install it directly instead:
+
+```sh
+pip3 install pycookiecheat
+```
+
+Then import the session:
+
+```sh
+instagram_monitor --import-browser-session --browser chrome
+```
+
+On **Windows** this is not possible: Chrome's app-bound encryption (Chrome 127+) blocks any external program from reading its cookies. The tool detects Windows and recommends using Firefox instead. The `--cookie-file` flag is ignored for these browsers (cookies are read directly from the browser).
+
+Inside **Docker** Chromium-based import is also unavailable, because the container cannot reach the host's keyring used to decrypt the cookies. Use Firefox there (see the [Docker Usage examples](#docker-usage-recommended)), or run the Chromium import directly on the host.
+
+The session login method has the added benefit of blending tool activity with regular user behavior. Interacting with Instagram via the browser every few days (scrolling, liking posts etc.) helps maintain session trust. However, avoid overlapping browser activity with tool activity, as simultaneous actions can trigger suspicious behavior flags.
 
 <a id="user-agent"></a>
 ##### User Agent
@@ -632,14 +683,16 @@ Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) on your host.
 4. Import Firefox session cookies on Linux host:
 
 ```sh
-docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor --import-firefox-session
+docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor --import-browser-session --browser firefox
 ```
 
 5. Import Firefox session cookies on macOS host from explicit cookie file:
 
 ```sh
-docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/Library/Application Support/Firefox/Profiles/<profile>/cookies.sqlite:/cookies/cookies.sqlite:ro" misiektoja/instagram-monitor --import-firefox-session --cookie-file /cookies/cookies.sqlite
+docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/Library/Application Support/Firefox/Profiles/<profile>/cookies.sqlite:/cookies/cookies.sqlite:ro" misiektoja/instagram-monitor --import-browser-session --browser firefox --cookie-file /cookies/cookies.sqlite
 ```
+
+Firefox is the practical choice inside Docker because its cookies are plain files that can be mounted read-only. Importing from Chrome, Brave or Chromium (`--browser chrome|brave|chromium`) relies on the host's keyring for decryption, which is not available in the container, so run those imports directly on the host instead.
 
 Once imported, run with `-u <your_insta_user>` as usual and the session file from the persistent volume will be reused.
 
