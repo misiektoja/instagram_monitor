@@ -38,7 +38,7 @@ CONFIG_BLOCK = """
 SESSION_USERNAME = ""
 
 # Provide the password using one of the following methods:
-#   - Log in via Firefox web browser and import session cookie: instagram_monitor --import-firefox-session
+#   - Log in via web browser and import session cookie: instagram_monitor --import-browser-session --browser firefox (also chrome, brave or chromium)
 #   - Log in using instaloader: instaloader -l <SESSION_USERNAME>
 #   - Pass it at runtime with -p / --session-password
 #   - Set it as an environment variable (e.g. export SESSION_PASSWORD=...)
@@ -2184,61 +2184,57 @@ def create_web_dashboard_app():
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500  # type: ignore
 
+    # Runs a dashboard browser import, updates global session state and returns a Flask JSON response
+    def _handle_browser_import(browser, cookiefile=None):
+        global SESSION_USERNAME, SKIP_SESSION
+        try:
+            username = import_browser_session_dashboard(browser, cookiefile)
+        except CookieImportError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400  # type: ignore
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500  # type: ignore
+
+        SESSION_USERNAME = username
+        SKIP_SESSION = False
+
+        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+            WEB_DASHBOARD_DATA['session'] = {'username': username, 'active': True, 'method': browser}
+
+        msg = f"Imported session from {browser_label(browser)} for: {username}"
+        mode_msg = "Session mode switched to: Mode 2 (Logged In)"
+        log_activity(msg)
+        print(f"\n* {msg}")
+        print(f"* {mode_msg}")
+        print_cur_ts(newline=True)
+
+        SESSION_REFRESHED_EVENT.set()
+        SESSION_REFRESHED_EVENT.clear()
+        return jsonify({'success': True, 'username': username})  # type: ignore
+
     @app.route('/api/session/firefox/import', methods=['POST'])
     def api_firefox_import():  # type: ignore
-        global SESSION_USERNAME, SKIP_SESSION
         data = flask_request.get_json()  # type: ignore
         if not data or 'path' not in data:
             return jsonify({'success': False, 'error': 'Cookie file path required'}), 400  # type: ignore
+        return _handle_browser_import('firefox', data['path'])
 
-        cookiefile = data['path']
-        try:
-            # We use a temporary instaloader instance to detect the username
-            L = Instaloader(user_agent=USER_AGENT, max_connection_attempts=1)
-            # Re-use parts of import_session logic but without SystemExit
-            try:
-                with connect(f"file:{cookiefile}?immutable=1", uri=True) as conn:
-                    try:
-                        cookie_iter = conn.execute(
-                            "SELECT name, value FROM moz_cookies WHERE baseDomain='instagram.com'"
-                        )
-                    except OperationalError:
-                        cookie_iter = conn.execute(
-                            "SELECT name, value FROM moz_cookies WHERE host LIKE '%instagram.com'"
-                        )
-                    cookie_dict = dict(cookie_iter)
-            except sqlite3.DatabaseError:
-                return jsonify({'success': False, 'error': 'Invalid Firefox cookies.sqlite file'}), 400  # type: ignore
+    @app.route('/api/session/browser/import', methods=['POST'])
+    def api_browser_import():  # type: ignore
+        data = flask_request.get_json()  # type: ignore
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400  # type: ignore
 
-            L.context._session.cookies.update(cookie_dict)
-            username = L.test_login()
+        browser = (data.get('browser') or 'firefox').lower()
+        if browser not in IMPORT_BROWSERS:
+            return jsonify({'success': False, 'error': f'Unsupported browser: {browser}'}), 400  # type: ignore
 
-            if not username:
-                return jsonify({'success': False, 'error': 'Not logged in in Firefox'}), 400  # type: ignore
+        cookiefile = None
+        if browser == 'firefox':
+            cookiefile = data.get('path')
+            if not cookiefile:
+                return jsonify({'success': False, 'error': 'Cookie file path required'}), 400  # type: ignore
 
-            # Save session - without arguments to saveto standard config directory
-            L.context.username = username
-            L.save_session_to_file()
-
-            # Update global state
-            SESSION_USERNAME = username
-            SKIP_SESSION = False
-
-            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-                WEB_DASHBOARD_DATA['session'] = {'username': username, 'active': True, 'method': 'firefox'}
-
-            msg = f"Imported session from Firefox for: {username}"
-            mode_msg = "Session mode switched to: Mode 2 (Logged In)"
-            log_activity(msg)
-            print(f"\n* {msg}")
-            print(f"* {mode_msg}")
-            print_cur_ts(newline=True)
-
-            SESSION_REFRESHED_EVENT.set()
-            SESSION_REFRESHED_EVENT.clear()
-            return jsonify({'success': True, 'username': username})  # type: ignore
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500  # type: ignore
+        return _handle_browser_import(browser, cookiefile)
 
     @app.route('/api/session/test', methods=['POST'])
     def api_test_session():  # type: ignore
@@ -5320,10 +5316,23 @@ def get_firefox_cookiefile():
     return cookiefile
 
 
-# Imports Instagram cookie into Instaloader, checks login and saves the session
-def import_session(cookiefile, sessionfile):
-    print(f"Using cookies from '{cookiefile}' file\n")
+# Browsers supported by the session importer (Firefox uses the built-in SQLite reader, the rest go through pycookiecheat)
+IMPORT_BROWSERS = ("firefox", "chrome", "brave", "chromium")
+CHROMIUM_IMPORT_BROWSERS = ("chrome", "brave", "chromium")
 
+
+# Human-friendly display name for a supported import browser
+def browser_label(browser):
+    return "Firefox" if browser == "firefox" else browser.capitalize()
+
+
+# Raised when browser session cookies cannot be read or imported
+class CookieImportError(Exception):
+    pass
+
+
+# Reads Instagram session cookies from a Firefox cookies.sqlite file and returns them as a name to value dict
+def get_firefox_cookie_dict(cookiefile):
     try:
         with connect(f"file:{cookiefile}?immutable=1", uri=True) as conn:
             try:
@@ -5334,20 +5343,95 @@ def import_session(cookiefile, sessionfile):
                 cookie_iter = conn.execute(
                     "SELECT name, value FROM moz_cookies WHERE host LIKE '%instagram.com'"
                 )
-
-            cookie_dict = dict(cookie_iter)
-
+            return dict(cookie_iter)
     except sqlite3.DatabaseError:
-        raise SystemExit(
-            f"Error: '{cookiefile}' is not a valid Firefox cookies.sqlite file"
+        raise CookieImportError(f"'{cookiefile}' is not a valid Firefox cookies.sqlite file")
+
+
+# Reads Instagram session cookies from a Chromium-based browser via pycookiecheat and returns them as a name to value dict
+def get_chromium_cookie_dict(browser):
+    label = browser_label(browser)
+
+    if system() == "Windows":
+        raise CookieImportError(
+            f"Importing {label} cookies is not supported on Windows because Chrome's app-bound encryption blocks "
+            "external access. Use Firefox instead: instagram_monitor --import-browser-session --browser firefox"
         )
+
+    try:
+        from pycookiecheat import BrowserType, get_cookies
+    except (ImportError, ModuleNotFoundError):
+        raise CookieImportError(
+            f"Importing {label} cookies requires the 'pycookiecheat' library !\n\n"
+            "To install it, run:\n    pip3 install pycookiecheat\n\n"
+            "Once installed, re-run this tool"
+        )
+
+    browser_type = {
+        "chrome": BrowserType.CHROME,
+        "brave": BrowserType.BRAVE,
+        "chromium": BrowserType.CHROMIUM,
+    }[browser]
+
+    try:
+        cookies = get_cookies("https://www.instagram.com", browser=browser_type)
+    except Exception as e:
+        raise CookieImportError(
+            f"Could not read {label} cookies: {e}\nMake sure {label} is installed and you are logged in to Instagram in it"
+        )
+
+    # get_cookies returns a name to value dict by default (as_cookies is False), coerce defensively to keep a plain dict
+    cookie_dict = cookies if isinstance(cookies, dict) else {c.name: c.value for c in cookies}
+
+    if not cookie_dict:
+        raise CookieImportError(f"No Instagram cookies found in {label} - are you logged in to Instagram in {label}?")
+
+    return cookie_dict
+
+
+# Returns Instagram session cookies for the given browser, dispatching to the Firefox or Chromium reader
+def get_browser_cookie_dict(browser, cookiefile=None):
+    if browser == "firefox":
+        return get_firefox_cookie_dict(cookiefile)
+    return get_chromium_cookie_dict(browser)
+
+
+# Imports a browser session for the web dashboard, saves it via Instaloader and returns the logged-in username
+def import_browser_session_dashboard(browser, cookiefile=None):
+    cookie_dict = get_browser_cookie_dict(browser, cookiefile)
+
+    L = Instaloader(user_agent=USER_AGENT, max_connection_attempts=1)
+    L.context._session.cookies.update(cookie_dict)
+    username = L.test_login()
+
+    if not username:
+        raise CookieImportError(f"Not logged in - are you logged in successfully in {browser_label(browser)}?")
+
+    L.context.username = username
+    L.save_session_to_file()
+    return username
+
+
+# Imports Instagram cookies from the given browser into Instaloader, checks login and saves the session
+def import_session(browser, cookiefile, sessionfile):
+    label = browser_label(browser)
+
+    if browser == "firefox":
+        print(f"Using cookies from '{cookiefile}' file\n")
+    else:
+        print(f"Using cookies from {label} browser\n")
+
+    try:
+        cookie_dict = get_browser_cookie_dict(browser, cookiefile)
+    except CookieImportError as e:
+        raise SystemExit(f"Error: {e}")
 
     instaloader = Instaloader(max_connection_attempts=1)
     instaloader.context._session.cookies.update(cookie_dict)
     username = instaloader.test_login()
 
     if not username:
-        raise SystemExit("Not logged in - are you logged in successfully in Firefox?")
+        raise SystemExit(f"Not logged in - are you logged in successfully in {label}?")
 
     print(f"Imported session cookies for {username}")
 
@@ -5362,12 +5446,18 @@ def import_session(cookiefile, sessionfile):
     RED = f"\033[{_STYLE_CODES['red']}m" if COLOR_ENABLED else ""
     RESET = ANSI_RESET if COLOR_ENABLED else ""
 
+    border = "*" * 69
+    warning_lines = [
+        f" Do not use Instagram in {label} while the script is running.",
+        " Simultaneous browser and tool activity can get the account flagged.",
+        f" Tip: you might want to clear Instagram cookies in {label} now.",
+    ]
+
     print("")
-    print(f"{RED}*********************************************************************{RESET}")
-    print(f"{RED} Do not use Instagram in Firefox while the script is running.         {RESET}")
-    print(f"{RED} Simultaneous browser and tool activity can get the account flagged.  {RESET}")
-    print(f"{RED} Tip: you might want to clear Instagram cookies in Firefox now.       {RESET}")
-    print(f"{RED}*********************************************************************{RESET}")
+    print(f"{RED}{border}{RESET}")
+    for line in warning_lines:
+        print(f"{RED}{line.ljust(len(border))}{RESET}")
+    print(f"{RED}{border}{RESET}")
 
 
 # Finds an optional config file
@@ -10299,7 +10389,7 @@ def run_setup_wizard() -> None:
                 if not os.path.isfile(cookie_path):
                     print(colorize("warning", f"Could not find Firefox cookies at '{cookie_path}'. You can import later with: {prefix} --import-firefox-session"))
                 else:
-                    import_session(cookie_path, None)
+                    import_session("firefox", cookie_path, None)
             except SystemExit:
                 raise
             except Exception as e:
@@ -10861,18 +10951,30 @@ def run_main():
         help="Send test webhook notification to verify settings"
     )
 
-    # Firefox session import options
-    import_grp = parser.add_argument_group("Firefox session import")
+    # Browser session import options
+    import_grp = parser.add_argument_group("Browser session import")
+    import_grp.add_argument(
+        "--import-browser-session",
+        action="store_true",
+        help="Import browser session cookies into Instaloader (use --browser to pick the source)"
+    )
+    import_grp.add_argument(
+        "--browser",
+        dest="browser",
+        choices=list(IMPORT_BROWSERS),
+        default="firefox",
+        help="Browser to import the session from: firefox (default, all platforms), chrome (Google Chrome), brave or chromium (the standalone open-source Chromium browser, not Chrome). chrome, brave and chromium require the 'pycookiecheat' package and work only on macOS and Linux; Edge, Opera, Vivaldi and Arc are not supported"
+    )
     import_grp.add_argument(
         "--import-firefox-session",
         action="store_true",
-        help="Import Firefox session cookies into Instaloader"
+        help="Deprecated alias for --import-browser-session --browser firefox"
     )
     import_grp.add_argument(
         "--cookie-file",
         dest="cookie_file",
         metavar="COOKIEFILE",
-        help="Path to Firefox cookies.sqlite; if omitted, it will list all available"
+        help="Path to Firefox cookies.sqlite (Firefox only); if omitted, it will list all available"
     )
     import_grp.add_argument(
         "--session-file",
@@ -10965,7 +11067,10 @@ def run_main():
             if val is not None:
                 globals()[secret] = val
 
-    if args.import_firefox_session:
+    if args.import_firefox_session or args.import_browser_session:
+
+        # Legacy --import-firefox-session always targets Firefox, otherwise honour --browser
+        browser = "firefox" if (args.import_firefox_session and not args.import_browser_session) else args.browser
 
         session_path = None
         if args.session_file:
@@ -10974,12 +11079,16 @@ def run_main():
             if not os.path.isdir(session_dir):
                 raise SystemExit(f"Error: Session directory '{session_dir}' not found !")
 
-        cookie_path = args.cookie_file or get_firefox_cookiefile()
-        cookie_path = os.path.expanduser(cookie_path)
-        if not os.path.isfile(cookie_path):
-            raise SystemExit(f"Error: Cookie file '{cookie_path}' not found !")
+        cookie_path = None
+        if browser == "firefox":
+            cookie_path = args.cookie_file or get_firefox_cookiefile()
+            cookie_path = os.path.expanduser(cookie_path)
+            if not os.path.isfile(cookie_path):
+                raise SystemExit(f"Error: Cookie file '{cookie_path}' not found !")
+        elif args.cookie_file:
+            print(f"* Note: --cookie-file is ignored for {browser_label(browser)} (cookies are read directly from the browser)\n")
 
-        import_session(cookie_path, session_path)
+        import_session(browser, cookie_path, session_path)
         sys.exit(0)
 
     local_tz = None
