@@ -90,3 +90,45 @@ class TestSendFollowerChangeWebhook:
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "")
         rc = im_module.send_follower_change_webhook("user", "followings", 5, 4, "", "- b (<url>)\n")
         assert rc == 1
+
+    # Follower changes pass a follower notification payload through to send_webhook
+    def test_followers_payload_passed_to_send_webhook(self, im_module, monkeypatch):
+        calls = []
+        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: calls.append((args, kwargs)) or 0)
+
+        rc = im_module.send_follower_change_webhook("user", "followers", 10, 12, "- a (<url>)\n", "")
+
+        assert rc == 0
+        assert len(calls) == 1
+        args, kwargs = calls[0]
+        assert "user Followers Changed" in args[0]
+        assert args[1] == "User **user** followers changed from **10** to **12**"
+        assert kwargs["color"] == 0x2ecc71
+        assert kwargs["notification_type"] == "followers"
+        assert kwargs["fields"][:3] == [
+            {"name": "Old Count", "value": "10", "inline": True},
+            {"name": "New Count", "value": "12", "inline": True},
+            {"name": "Change", "value": "+2", "inline": True},
+        ]
+        assert kwargs["fields"][3] == {"name": "**Added followers:**", "value": "- a (<url>)\n"}
+
+    # Following changes pass a status notification payload through to send_webhook
+    def test_followings_payload_passed_to_send_webhook(self, im_module, monkeypatch):
+        calls = []
+        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: calls.append((args, kwargs)) or 0)
+
+        rc = im_module.send_follower_change_webhook("user", "followings", 5, 4, "", "- b (<url>)\n")
+
+        assert rc == 0
+        assert len(calls) == 1
+        args, kwargs = calls[0]
+        assert "user Followings Changed" in args[0]
+        assert args[1] == "User **user** followings changed from **5** to **4**"
+        assert kwargs["color"] == 0x3498db
+        assert kwargs["notification_type"] == "status"
+        assert kwargs["fields"][:3] == [
+            {"name": "Old Count", "value": "5", "inline": True},
+            {"name": "New Count", "value": "4", "inline": True},
+            {"name": "Change", "value": "-1", "inline": True},
+        ]
+        assert kwargs["fields"][3] == {"name": "**Removed followings:**", "value": "- b (<url>)\n"}

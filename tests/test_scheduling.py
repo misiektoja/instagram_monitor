@@ -109,13 +109,18 @@ class TestProbabilityForCycle:
 
 
 class TestRandomizeNumber:
-    def test_within_expected_bounds(self, im_module):
-        for _ in range(200):
-            val = im_module.randomize_number(5400, 900, 180)
-            assert 4500 <= val <= 5580
+    # Standard intervals use number minus diff_low as the lower random bound
+    def test_uses_expected_bounds(self, im_module, monkeypatch):
+        calls = []
+        monkeypatch.setattr(im_module.random, "randint", lambda low, high: calls.append((low, high)) or high)
 
-    def test_small_number_does_not_go_negative(self, im_module):
-        # When number <= diff_low the low bound is the number itself
-        for _ in range(200):
-            val = im_module.randomize_number(100, 900, 50)
-            assert 100 <= val <= 150
+        assert im_module.randomize_number(5400, 900, 180) == 5580
+        assert calls == [(4500, 5580)]
+
+    # Small intervals use number itself as the lower random bound
+    def test_small_number_does_not_go_negative(self, im_module, monkeypatch):
+        calls = []
+        monkeypatch.setattr(im_module.random, "randint", lambda low, high: calls.append((low, high)) or low)
+
+        assert im_module.randomize_number(100, 900, 50) == 100
+        assert calls == [(100, 150)]
