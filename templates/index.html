@@ -1041,6 +1041,17 @@
                             Linux (not on Windows, where Chrome's app-bound encryption blocks access - use Firefox
                             there). Edge, Opera, Vivaldi and Arc are not supported.
                         </p>
+                        <button class="btn btn-secondary btn-sm" onclick="detectChromiumProfiles()" id="detect-chromium-btn"
+                            style="margin-bottom: 12px;">
+                            <span>🔍</span> Detect Profiles
+                        </button>
+
+                        <div id="chromium-profiles-container"
+                            style="display: none; margin-bottom: 12px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 12px;">
+                            <label class="form-label">Select Profile</label>
+                            <select class="form-input" id="chromium-profile-select"></select>
+                        </div>
+
                         <button class="btn btn-primary btn-sm" onclick="importChromiumSession()">
                             <span>📥</span> Import from <span id="chromium-browser-label-btn">Chrome</span>
                         </button>
@@ -2596,17 +2607,45 @@
                 const label = browser.charAt(0).toUpperCase() + browser.slice(1);
                 document.getElementById('chromium-browser-label').textContent = label;
                 document.getElementById('chromium-browser-label-btn').textContent = label;
+                // Reset the profile picker - profiles differ per browser
+                document.getElementById('chromium-profiles-container').style.display = 'none';
+                document.getElementById('chromium-profile-select').innerHTML = '';
+            }
+        }
+
+        async function detectChromiumProfiles() {
+            const browser = document.getElementById('browser-select').value;
+            try {
+                showToast(`Searching for ${browser} profiles...`);
+                const response = await fetch('/api/session/chromium/profiles?browser=' + encodeURIComponent(browser));
+                const data = await response.json();
+                if (data.success && data.profiles.length > 0) {
+                    const select = document.getElementById('chromium-profile-select');
+                    select.innerHTML = data.profiles.map(p =>
+                        `<option value="${escapeHtml(p.dir)}">${escapeHtml(p.name)} (${escapeHtml(p.dir)})</option>`).join('');
+                    document.getElementById('chromium-profiles-container').style.display = 'block';
+                    showToast(`Found ${data.profiles.length} profile(s)`);
+                } else {
+                    showToast(data.error || 'No profiles found', 'error');
+                }
+            } catch (err) {
+                showToast('Failed to detect profiles', 'error');
             }
         }
 
         async function importChromiumSession() {
             const browser = document.getElementById('browser-select').value;
+            const container = document.getElementById('chromium-profiles-container');
+            const select = document.getElementById('chromium-profile-select');
+            const profile = (container.style.display !== 'none' && select.value) ? select.value : null;
+            const payload = { browser };
+            if (profile) payload.profile = profile;
             try {
                 showToast(`Importing session from ${browser}...`);
                 const response = await fetch('/api/session/browser/import', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ browser })
+                    body: JSON.stringify(payload)
                 });
                 const data = await response.json();
                 if (data.success) {
