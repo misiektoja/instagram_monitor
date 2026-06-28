@@ -29,6 +29,8 @@ working tree rather than any installed copy of the package.
 | `test_paginated_fetching.py` | `fetch_usernames_paginated` batching, limits and stop-event behavior |
 | `test_dashboard_endpoints.py` | Web Dashboard status, settings, config, session and test-notification endpoints |
 | `test_detection_workflows.py` | Posts/reels count change notifications and leaked-collab notification workflows |
+| `test_profile_picture_workflows.py` | Profile picture creation, removal, change notifications, CSV rows and file moves |
+| `test_story_workflows.py` | Startup story item CSV writing and dashboard update metadata with fake Instaloader data |
 | `test_scheduling.py` | `CHECK_POSTS_IN_HOURS_RANGE` window logic, next-check computation, cycle probability, interval randomization |
 | `test_session_flags.py` | Error classification and session/IP flag detection with a stubbed profile resolver |
 | `test_parsing_and_useragents.py` | JSON username extraction, follow-string formatting, desktop/mobile user-agent shape |
