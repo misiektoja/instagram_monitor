@@ -1,6 +1,9 @@
 .git
 .github
 .gitignore
+.env
+.env*
+docker-compose.yml
 .venv
 __pycache__/
 *.py[cod]
