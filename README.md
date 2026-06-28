@@ -25,6 +25,11 @@ Docker
 docker pull misiektoja/instagram-monitor:latest
 ```
 
+Then run the guided setup wizard to get started in under a minute:
+```sh
+instagram_monitor --setup
+```
+
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="100%"/>
 </p>
@@ -90,6 +95,7 @@ docker pull misiektoja/instagram-monitor:latest
    * [Manual Python-based Installation](#manual-python-based-installation)
    * [Upgrading](#upgrading)
 3. [Quick Start](#quick-start)
+   * [New here? Run the setup wizard](#-new-here-run-the-setup-wizard)
 4. [Configuration](#configuration)
    * [Configuration File](#configuration-file)
    * [Session Mode 1: Without Logged-In Instagram Account (No Session Login)](#session-mode-1-without-logged-in-instagram-account-no-session-login)
@@ -224,6 +230,27 @@ docker build --pull -t instagram_monitor:local .
 
 <a id="quick-start"></a>
 ## Quick Start
+
+### 🧭 New here? Run the setup wizard
+
+The fastest way to get going (since **v3.5**) is the interactive setup wizard. It asks a few plain questions (who to monitor, anonymous or logged-in, which interface, optional alerts), then writes a ready-to-run config for you and offers to start immediately:
+
+```sh
+instagram_monitor --setup
+```
+
+Running the tool with no arguments offers the same wizard. It auto-detects whether you installed via pip, downloaded the script or run under Docker and shows commands that match your setup.
+
+### Not sure which mode you want?
+
+| I want to... | Run this |
+| --- | --- |
+| Just try it, no login | `instagram_monitor <target_insta_user>` |
+| Be guided through setup | `instagram_monitor --setup` |
+| Avoid the command line | `instagram_monitor --web-dashboard` then use the browser |
+| See stories, reels and who followed/unfollowed | Log in first ([Firefox session](#option-3-session-login-using-firefox-cookies-recommended)), then `instagram_monitor -u <your_insta_user> <target_insta_user>` |
+
+### Manual commands
 
 If you prefer to run it in a container, jump to 🐳 [Docker Usage (Recommended)](#docker-usage-recommended).
 
