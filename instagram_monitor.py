@@ -1548,7 +1548,7 @@ def create_web_dashboard_app():
         data['username'] = SESSION_USERNAME if SESSION_USERNAME else None
         data['skip_session'] = SKIP_SESSION
 
-        # Force active to False if Mode 1
+        # Force active to False in No-login mode
         if SKIP_SESSION or not SESSION_USERNAME:
             data['active'] = False
 
@@ -2178,6 +2178,8 @@ def create_web_dashboard_app():
         browser = (flask_request.args.get('browser') or 'chrome').lower()  # type: ignore
         if browser not in CHROMIUM_IMPORT_BROWSERS:
             return jsonify({'success': False, 'error': f'Unsupported browser: {browser}'}), 400  # type: ignore
+        if system() == "Windows":
+            return jsonify({'success': False, 'error': chromium_windows_unsupported_message(browser)}), 400  # type: ignore
         try:
             profiles = [{'dir': p['dir'], 'name': p['name']} for p in list_chromium_profiles(browser)]
             return jsonify({'success': True, 'profiles': profiles})  # type: ignore
@@ -3717,8 +3719,18 @@ def show_follow_info(followers_reported: int, followers_actual: int, followings_
 # Compares follower or following lists, logs changes and returns formatted notification fragments
 def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_file_name):
     old_set, new_set = set(old_list), set(new_list)
-    removed = [item for item in old_list if item not in new_set]
-    added = [item for item in new_list if item not in old_set]
+    removed_seen = set()
+    added_seen = set()
+    removed = []
+    added = []
+    for item in old_list:
+        if item not in new_set and item not in removed_seen:
+            removed.append(item)
+            removed_seen.add(item)
+    for item in new_list:
+        if item not in old_set and item not in added_seen:
+            added.append(item)
+            added_seen.add(item)
 
     added_list = ""
     removed_list = ""
@@ -5351,6 +5363,12 @@ def browser_label(browser):
     return "Firefox" if browser == "firefox" else browser.capitalize()
 
 
+# Returns the unsupported Windows message for a Chromium-based browser
+def chromium_windows_unsupported_message(browser):
+    label = browser_label(browser)
+    return f"Importing {label} cookies is not supported on Windows because Chrome's app-bound encryption blocks external access. Use Firefox instead: instagram_monitor --import-browser-session --browser firefox"
+
+
 # Raised when browser session cookies cannot be read or imported
 class CookieImportError(Exception):
     pass
@@ -5436,10 +5454,7 @@ def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
     label = browser_label(browser)
 
     if system() == "Windows":
-        raise CookieImportError(
-            f"Importing {label} cookies is not supported on Windows because Chrome's app-bound encryption blocks "
-            "external access. Use Firefox instead: instagram_monitor --import-browser-session --browser firefox"
-        )
+        raise CookieImportError(chromium_windows_unsupported_message(browser))
 
     try:
         from pycookiecheat import BrowserType, get_cookies
@@ -5500,6 +5515,8 @@ def get_browser_cookie_dict(browser, cookiefile=None, profile=None):
 def select_chromium_profile_cli(browser, explicit_profile):
     if explicit_profile:
         return explicit_profile
+    if system() == "Windows":
+        raise SystemExit(f"Error: {chromium_windows_unsupported_message(browser)}")
 
     profiles = list_chromium_profiles(browser)
     if not profiles:
@@ -5584,6 +5601,7 @@ def import_session(browser, cookiefile, sessionfile, profile=None):
     for line in warning_lines:
         print(f"{RED}{line.ljust(len(border))}{RESET}")
     print(f"{RED}{border}{RESET}")
+    return username
 
 
 # Finds an optional config file
@@ -7280,15 +7298,15 @@ def error_fix_hint(error_msg: str, is_logged_in: bool = False) -> str:
 
     # Challenge, checkpoint or shadowban
     if any(t in m for t in ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data")):
-        return "To fix: Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint, then re-import the session with 'instagram_monitor --import-firefox-session'. Also raise the check interval. See the README section 'How to Prevent Getting Challenged and Account Suspension'."
+        return "To fix: Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint, then re-import the session with 'instagram_monitor --import-browser-session --browser firefox'. Also raise the check interval. See the README section 'How to Prevent Getting Challenged and Account Suspension'."
 
     # Missing session file
     if "session file" in m:
-        return "To fix: no saved session was found for this account. Create one with 'instagram_monitor --import-firefox-session' (after logging in via Firefox), or with 'instaloader -l <your_user>'. In the Web Dashboard you can import from the Session page."
+        return "To fix: no saved session was found for this account. Create one with 'instagram_monitor --import-browser-session --browser firefox' after logging in via Firefox or with 'instaloader -l <your_user>'. In the Web Dashboard you can import from the Session page."
 
     # Invalid or expired session
     if any(t in m for t in ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required")):
-        return "To fix: your Instagram session looks invalid or expired. Re-import it with 'instagram_monitor --import-firefox-session' (after logging in via Firefox), or recreate it with 'instaloader -l <your_user>'. In the Web Dashboard you can re-import from the Session page."
+        return "To fix: your Instagram session looks invalid or expired. Re-import it with 'instagram_monitor --import-browser-session --browser firefox' after logging in via Firefox or recreate it with 'instaloader -l <your_user>'. In the Web Dashboard you can re-import from the Session page."
 
     # Profile not found
     if any(t in m for t in ("profilenotexists", "does not exist", "not found", "404")):
@@ -9145,15 +9163,15 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             skip_getting_posts_details = SKIP_GETTING_POSTS_DETAILS
                             get_more_post_details = GET_MORE_POST_DETAILS
 
-                            # Reload session into bot context or clear if Mode 1
+                            # Reload session into bot context or clear in No-login mode
                             with SESSION_FILE_LOCK:
                                 try:
                                     if skip_session:
-                                        # Clear session context for Mode 1
+                                        # Clear session context for No-login mode
                                         bot.context._session.cookies.clear()
                                         with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                             WEB_DASHBOARD_DATA['session']['active'] = False
-                                        log_activity("Session cleared for Mode 1", user=user)
+                                        log_activity("Session cleared for No-login mode", user=user)
                                     else:
                                         bot.load_session_from_file(SESSION_USERNAME)
                                         with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
@@ -9169,7 +9187,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     continue  # Retry the main loop
 
                 if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
-                    print("* Session might not be valid anymore! Re-import it with --import-firefox-session (or from the Web Dashboard Session page).")
+                    print("* Session might not be valid anymore! Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page.")
                     if ERROR_NOTIFICATION and not email_sent:
                         m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
 
@@ -9197,7 +9215,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
             if (next((s for s in get_thread_output() if "HTTP redirect from" in s), None)):
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
-                print("* Session might not be valid anymore! Re-import it with --import-firefox-session (or from the Web Dashboard Session page).")
+                print("* Session might not be valid anymore! Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page.")
                 print(f"Retrying in {display_time(r_sleep_time)}")
                 if ERROR_NOTIFICATION and not email_sent:
                     m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
@@ -9963,7 +9981,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     error_msg = format_error_message(e)
                     print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
                     if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
-                        print("* Session might not be valid anymore! Re-import it with --import-firefox-session (or from the Web Dashboard Session page).")
+                        print("* Session might not be valid anymore! Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page.")
                         if ERROR_NOTIFICATION and not email_sent:
                             m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
 
@@ -10359,9 +10377,10 @@ def _wizard_install_method() -> str:
 
 
 # Returns the command prefix used to invoke the tool for the detected install method
-def _wizard_cmd_prefix(method: str) -> str:
+def _wizard_cmd_prefix(method: str, web_dashboard: bool = False) -> str:
     if method == "docker":
-        return ('docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor')
+        web_port_flag = " -p 8000:8000" if web_dashboard else ""
+        return (f'docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor')
     if method == "manual":
         return "python3 instagram_monitor.py"
     return "instagram_monitor"
@@ -10451,7 +10470,7 @@ def run_setup_wizard() -> None:
 
     if not sys.stdin.isatty():
         print(colorize("warning", "The setup wizard needs an interactive terminal (TTY)."))
-        print("Run it from an interactive shell, or use --generate-config and edit the config file by hand.")
+        print("Run it from an interactive shell or use --generate-config and edit the config file by hand.")
         sys.exit(1)
 
     method = _wizard_install_method()
@@ -10563,21 +10582,25 @@ def run_setup_wizard() -> None:
         if method == "docker":
             print(colorize("warning", "Inside Docker the Firefox import needs your browser profile mounted, so it cannot run here."))
             print("Run this once on the host before starting (Linux example):")
-            print(colorize("section", '  docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor --import-firefox-session'))
+            print(colorize("section", '  docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor --import-browser-session --browser firefox'))
         elif _wizard_ask_yes_no("Import the Firefox session now? (log in to Instagram in Firefox first)", default=True):
             try:
                 cookie_path = os.path.expanduser(get_firefox_cookiefile())
                 if not os.path.isfile(cookie_path):
-                    print(colorize("warning", f"Could not find Firefox cookies at '{cookie_path}'. You can import later with: {prefix} --import-firefox-session"))
+                    print(colorize("warning", f"Could not find Firefox cookies at '{cookie_path}'. You can import later with: {prefix} --import-browser-session --browser firefox"))
                 else:
-                    import_session("firefox", cookie_path, None)
+                    imported_username = import_session("firefox", cookie_path, None)
+                    if imported_username != session_username:
+                        print(colorize("warning", f"Imported session belongs to '{imported_username}', updating SESSION_USERNAME in the generated config."))
+                        session_username = imported_username
+                        SESSION_USERNAME = imported_username
             except SystemExit:
                 raise
             except Exception as e:
                 print(colorize("warning", f"Firefox import failed: {e}"))
-                print(f"You can retry later with: {prefix} --import-firefox-session")
+                print(f"You can retry later with: {prefix} --import-browser-session --browser firefox")
         else:
-            print(colorize("info", f"You can import later with: {prefix} --import-firefox-session"))
+            print(colorize("info", f"You can import later with: {prefix} --import-browser-session --browser firefox"))
 
     # Write the config file (default name, confirm before overwriting an existing one)
     print()
@@ -10628,13 +10651,16 @@ def run_setup_wizard() -> None:
 
 # Prints a short welcome with the most common commands and offers to launch the setup wizard
 def _wizard_welcome(parser) -> None:
+    method = _wizard_install_method()
+    prefix = _wizard_cmd_prefix(method)
+    web_prefix = _wizard_cmd_prefix(method, web_dashboard=True)
     print("Quickest start (no setup, no login):")
-    print(colorize("section", "    instagram_monitor <username>\n"))
+    print(colorize("section", f"    {prefix} <username>\n"))
     print("Easiest start (guided setup wizard):")
-    print(colorize("section", "    instagram_monitor --setup\n"))
+    print(colorize("section", f"    {prefix} --setup\n"))
     print("Point-and-click (no command line):")
-    print(colorize("section", "    instagram_monitor --web-dashboard      then open http://127.0.0.1:8000\n"))
-    print(f"Full options: {colorize('section', 'instagram_monitor --help')}")
+    print(colorize("section", f"    {web_prefix} --web-dashboard      then open http://127.0.0.1:8000\n"))
+    print(f"Full options: {colorize('section', prefix + ' --help')}")
     print(f"Guide:        {colorize('link', 'https://github.com/misiektoja/instagram_monitor#quick-start')}\n")
     if sys.stdin.isatty() and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
         run_setup_wizard()
@@ -11193,7 +11219,7 @@ def run_main():
 
     if len(sys.argv) == 1:
         _wizard_welcome(parser)
-        sys.exit(0)
+        sys.exit(0 if sys.stdin.isatty() else 1)
 
     if args.config_file:
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
