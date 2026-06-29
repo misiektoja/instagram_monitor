@@ -1,0 +1,30 @@
+name: Update GitHub Pages Documentation
+
+on:
+  # Manual refresh: Actions tab -> "Update GitHub Pages Documentation" -> Run workflow
+  workflow_dispatch:
+  # Auto refresh on docs changes pushed to main
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '.github/workflows/docs.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install docs dependencies
+        run: pip install -r docs/requirements.txt
+      - name: Build and deploy to GitHub Pages
+        run: mkdocs gh-deploy --force --strict
