@@ -46,6 +46,12 @@ class TestCompareAndLogFollowerChanges:
         assert removed_list.index("drop_b") < removed_list.index("drop_a")
         assert added_list.index("join_b") < added_list.index("join_a")
 
+    # Duplicate usernames in source data are reported once while preserving first-seen order
+    def test_diff_output_deduplicates_source_duplicates(self, im_module, capsys):
+        added_list, removed_list, *_ = _run(im_module, capsys, user="u", change_type="followers", old_list=["keep", "drop", "drop"], new_list=["join", "join", "keep"], csv_file_name="")
+        assert removed_list.count("- drop ") == 1
+        assert added_list.count("- join ") == 1
+
     def test_writes_csv_rows(self, im_module, capsys, tmp_path, monkeypatch):
         monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "UTC")
         csv_path = str(tmp_path / "follow.csv")
