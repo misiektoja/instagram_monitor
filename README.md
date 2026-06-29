@@ -98,8 +98,8 @@ instagram_monitor --setup
    * [New here? Run the setup wizard](#-new-here-run-the-setup-wizard)
 4. [Configuration](#configuration)
    * [Configuration File](#configuration-file)
-   * [Session Mode 1: Without Logged-In Instagram Account (No Session Login)](#session-mode-1-without-logged-in-instagram-account-no-session-login)
-   * [Session Mode 2: With Logged-In Instagram Account (Session Login)](#session-mode-2-with-logged-in-instagram-account-session-login)
+   * [No-Login Mode (No Session Login)](#no-login-mode-no-session-login)
+   * [Logged-In Mode (With Session Login)](#logged-in-mode-with-session-login)
    * [Time Zone](#time-zone)
    * [SMTP Settings](#smtp-settings)
    * [Storing Secrets](#storing-secrets)
@@ -110,7 +110,8 @@ instagram_monitor --setup
    * [Dashboard View Modes](#dashboard-view-modes)
 6. [Usage](#usage)
    * [Docker Usage (Recommended)](#docker-usage-recommended)
-      * [Docker Hub Image](#docker-hub-image-recommended)
+      * [Docker Compose (Easiest)](#docker-compose-easiest)
+      * [Docker Hub Image](#docker-hub-image)
       * [Build Image Locally](#build-image-locally)
       * [Common Run Scenarios](#common-run-scenarios)
    * [Monitoring Mode](#monitoring-mode)
@@ -241,9 +242,10 @@ docker build --pull -t instagram_monitor:local .
 <a id="quick-start"></a>
 ## Quick Start
 
+<a id="-new-here-run-the-setup-wizard"></a>
 ### 🧭 New here? Run the setup wizard
 
-The fastest way to get going (since **v3.5**) is the interactive setup wizard. It asks a few plain questions (who to monitor, anonymous or logged-in, which interface, optional alerts), then writes a ready-to-run config for you and offers to start immediately:
+The fastest way to get going (since **v3.5**) is the interactive setup wizard. It asks a few plain questions (who to monitor, no-login or logged-in, which interface, optional alerts), then writes a ready-to-run config for you and offers to start immediately:
 
 ```sh
 instagram_monitor --setup
@@ -251,6 +253,7 @@ instagram_monitor --setup
 
 Running the tool with no arguments offers the same wizard. It auto-detects whether you installed via pip, downloaded the script or run under Docker and shows commands that match your setup.
 
+<a id="not-sure-which-mode-you-want"></a>
 ### Not sure which mode you want?
 
 | I want to... | Run this |
@@ -260,11 +263,12 @@ Running the tool with no arguments offers the same wizard. It auto-detects wheth
 | Avoid the command line | `instagram_monitor --web-dashboard` then use the browser |
 | See stories, reels and who followed/unfollowed | Log in first ([browser session](#option-3-session-login-using-browser-cookies-recommended)), then `instagram_monitor -u <your_insta_user> <target_insta_user>` |
 
+<a id="manual-commands"></a>
 ### Manual commands
 
 If you prefer to run it in a container, jump to 🐳 [Docker Usage (Recommended)](#docker-usage-recommended).
 
-- Track the `target_insta_user` in [session mode 1](#session-mode-1-without-logged-in-instagram-account-no-session-login) (no session login - anonymous):
+- Track the `target_insta_user` in [No-login mode](#no-login-mode-no-session-login) (no session login):
 
 ```sh
 instagram_monitor <target_insta_user>
@@ -276,7 +280,7 @@ Or if you installed [manually](#manual-python-based-installation):
 python3 instagram_monitor.py <target_insta_user>
 ```
 
-- Track the `target_insta_user` in [session mode 2](#option-3-session-login-using-browser-cookies-recommended) (with session login via your web browser):
+- Track the `target_insta_user` in [Logged-in mode](#option-3-session-login-using-browser-cookies-recommended) (with session login via your web browser):
 
 ```sh
 # log in to the Instagram account (your_insta_user) in your web browser (Firefox, Chrome, Brave or Chromium)
@@ -320,17 +324,17 @@ Edit the `instagram_monitor.conf` file and change any desired configuration opti
 
 **Note**: Since **v3.0**, you can also change nearly all configuration settings and generate config file via the **[Web Dashboard](#web-dashboard-mode)**.
 
-<a id="session-mode-1-without-logged-in-instagram-account-no-session-login"></a>
-### Session Mode 1: Without Logged-In Instagram Account (No Session Login)
+<a id="no-login-mode-without-session-login"></a>
+### No-Login Mode (No Session Login)
 
-In this mode, the tool operates without logging in to an Instagram account (anonymous).
+In this mode, the tool operates without logging in to an Instagram account.
 
 You can still monitor basic user activity such as new or deleted posts (excluding reels and stories due to Instagram API limitations), bio changes and changes in follower/following counts. However, you won't see which specific followers/followings were added or removed.
 
 This mode requires no setup, is easy to use and is resistant to Instagram's anti-bot mechanisms and CAPTCHA challenges.
 
-<a id="session-mode-2-with-logged-in-instagram-account-session-login"></a>
-### Session Mode 2: With Logged-In Instagram Account (Session Login)
+<a id="logged-in-mode-with-session-login"></a>
+### Logged-In Mode (With Session Login)
 
 In this mode, the tool uses an Instagram session login to access additional data. This includes detailed insights into new posts, reels and stories, also about added or removed followers/followings.
 
@@ -383,6 +387,7 @@ instagram_monitor --import-browser-session --browser firefox --browser-profile "
 
 You can adjust the default Firefox cookie directory permanently via `FIREFOX_*_COOKIE` configuration options.
 
+<a id="which-browsers-are-supported"></a>
 ##### Which browsers are supported
 
 The `--browser` flag (and the dashboard dropdown) accepts these values:
@@ -398,6 +403,7 @@ The `--browser` flag (and the dashboard dropdown) accepts these values:
 
 **Not currently supported:** Microsoft Edge, Opera, Vivaldi, Arc and other Chromium-based browsers. They share the Chromium engine but each keeps its own separate cookie store, and the underlying [`pycookiecheat`](https://github.com/n8henrie/pycookiecheat) library only handles the browsers listed above. If you use one of these, log in with Firefox (or Chrome/Brave/Chromium) for the import instead.
 
+<a id="importing-from-chrome-brave-or-chromium"></a>
 ##### Importing from Chrome, Brave or Chromium
 
 These browsers encrypt their cookies, so importing from them requires the optional [`pycookiecheat`](https://github.com/n8henrie/pycookiecheat) package and works only on **macOS and Linux**. If you installed from PyPI, pull it in with the `browser` extra:
@@ -501,7 +507,11 @@ export WEBHOOK_URL="https://discord.com/api/webhooks/..."
 
 On **Windows Command Prompt** use `set` instead of `export` and on **Windows PowerShell** use `$env`.
 
-Alternatively store them persistently in a dotenv file (recommended):
+Alternatively store them persistently in a dotenv file (recommended). The repo ships a [.env.example](.env.example) you can copy as a starting point:
+
+```sh
+cp .env.example .env
+```
 
 ```ini
 SESSION_PASSWORD="your_instagram_session_password"
@@ -646,7 +656,38 @@ Toggle seamlessly between modes using the **'m'** key or the web dashboard toggl
 
 Running via [Docker](https://www.docker.com) is the easiest setup for most users and avoids local Python dependency management.
 
-<a id="docker-hub-image-recommended"></a>
+<a id="docker-compose-easiest"></a>
+#### Docker Compose (Easiest)
+
+The repo ships a [docker-compose.yml](docker-compose.yml) that wraps the volume mounts, port and session persistence for you, so you do not have to remember long `docker run` commands.
+
+1. Generate a config (the wizard sets `WEB_DASHBOARD_HOST = "0.0.0.0"` for Docker automatically, so the dashboard is reachable from your host):
+
+```sh
+docker compose run --rm instagram_monitor --setup
+```
+
+2. Optionally copy the secrets template and fill it in:
+
+```sh
+cp .env.example .env
+```
+
+3. Start it:
+
+```sh
+docker compose up
+```
+
+By default this launches the [Web Dashboard](#web-dashboard-mode) as a control panel. Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) and add targets in the browser. It auto-loads `instagram_monitor.conf` and `.env` from the current directory.
+
+To monitor specific targets from the command line instead, override the command:
+
+```sh
+docker compose run --rm --service-ports instagram_monitor target1 target2 --web-dashboard
+```
+
+<a id="docker-hub-image"></a>
 #### Docker Hub Image
 
 A prebuilt multi-architecture image is available on Docker Hub: [`misiektoja/instagram-monitor`](https://hub.docker.com/r/misiektoja/instagram-monitor)
@@ -717,13 +758,13 @@ Once imported, run with `-u <your_insta_user>` as usual and the session file fro
 <a id="monitoring-mode"></a>
 ### Monitoring Mode
 
-To monitor specific user activity in [session mode 1](#session-mode-1-without-logged-in-instagram-account-no-session-login) (no session login - anonymous), just type Instagram username as a command-line argument (`target_insta_user` in the example below):
+To monitor specific user activity in [No-login mode](#no-login-mode-no-session-login) (no session login), just type Instagram username as a command-line argument (`target_insta_user` in the example below):
 
 ```sh
 instagram_monitor <target_insta_user>
 ```
 
-To monitor specific user activity in [session mode 2](#session-mode-2-with-logged-in-instagram-account-session-login) (with session login), you also need to specify your Instagram account name (`your_insta_user` in the example below) via `SESSION_USERNAME` configuration option or `-u` flag:
+To monitor specific user activity in [Logged-in mode](#logged-in-mode-with-session-login) (with session login), you also need to specify your Instagram account name (`your_insta_user` in the example below) via `SESSION_USERNAME` configuration option or `-u` flag:
 
 ```sh
 instagram_monitor -u <your_insta_user> <target_insta_user>
@@ -767,7 +808,7 @@ The tool automatically saves its output to an `instagram_monitor_<suffix>.log` f
 - In single-target mode, `<suffix>` is the username.
 - In multi-target mode, `<suffix>` is the sorted list of target usernames joined with underscores.
 
-The tool in mode 2 (session login) also saves the list of followings & followers to these files:
+The tool in Logged-in mode (session login) also saves the list of followings & followers to these files:
 - `instagram_<username>_followings.json`
 - `instagram_<username>_followers.json`
 
@@ -909,13 +950,13 @@ To enable follower churn detection:
 - or use the `--followers-churn` flag
 - or toggle it via the **Settings** menu in the **Web Dashboard**
 
-**Note**: This feature is automatically disabled if `SKIP_FOLLOW_CHANGES` is active, as detailed tracking is not possible when follow-related reporting is suppressed. It also requires [Session Mode 2](#session-mode-2-with-logged-in-instagram-account-session-login).
+**Note**: This feature is automatically disabled if `SKIP_FOLLOW_CHANGES` is active, as detailed tracking is not possible when follow-related reporting is suppressed. It also requires [Logged-in mode](#logged-in-mode-with-session-login).
 
 ```sh
 instagram_monitor <target_insta_user> --followers-churn
 ```
 
-**Note**: This feature requires [Session Mode 2](#session-mode-2-with-logged-in-instagram-account-session-login) (session login) to access the Instagram API and it will increase API calls since it fetches the full follower/following lists every check interval, so the risk of account suspension is higher.
+**Note**: This feature requires [Logged-in mode](#logged-in-mode-with-session-login) (session login) to access the Instagram API and it will increase API calls since it fetches the full follower/following lists every check interval, so the risk of account suspension is higher.
 
 <a id="skipping-follow-changes"></a>
 ### Skipping Follow Changes
@@ -965,7 +1006,7 @@ Depending on which values you set, the tool runs in one of these modes (it print
 - **Batches of Y accounts with Z second delay**: `*_PER_BATCH` and `*_DELAY_PER_BATCH` are set
 - **Maximum of N accounts in batches of Y with Z second delay**: all three are set
 
-**Note**: This feature requires [Session Mode 2](#session-mode-2-with-logged-in-instagram-account-session-login) (session login).
+**Note**: This feature requires [Logged-in mode](#logged-in-mode-with-session-login) (session login).
 
 <a id="routing-traffic-through-a-proxy"></a>
 ### Routing Traffic Through a Proxy
@@ -1003,7 +1044,7 @@ All Instagram traffic flows through a configurable HTTP transport backend:
 - `curl_cffi` (default): sends requests via [curl_cffi](https://github.com/lexiforest/curl_cffi), impersonating a real browser's TLS (JA3/JA4) and HTTP/2 fingerprint. This avoids fingerprint-based blocks where Instagram returns a spurious `HTTP 429` on the very first request even from a clean IP, a pattern most often seen on Linux builds (including Raspberry Pi OS) whose system TLS stack presents a fingerprint Instagram treats as automation.
 - `requests`: the stock `requests` / `urllib3` transport using the system TLS stack (the historical behavior).
 
-Both the anonymous and logged-in paths use the selected backend. If `curl_cffi` is selected but not installed, the tool prints a warning and transparently falls back to `requests`.
+Both the no-login and logged-in paths use the selected backend. If `curl_cffi` is selected but not installed, the tool prints a warning and transparently falls back to `requests`.
 
 Select the backend with `HTTP_BACKEND` (or `--http-backend`) and choose which browser curl_cffi impersonates with `CURL_CFFI_IMPERSONATE` (or `--impersonate`):
 
@@ -1160,8 +1201,8 @@ This feature is enabled by default. To disable it, either:
 - set the `DETECT_COLLAB_POSTS` to `False`
 - or use the `--no-detect-collab-posts` flag
 
-<a id="collab-posts-how-it-works"></a>
-#### How It Works
+<a id="collab-posts---how-it-works"></a>
+#### Collab Posts - How It Works
 
 The probe runs only for accounts whose posts are not otherwise viewable, meaning private profiles you do not follow.
 
@@ -1277,7 +1318,7 @@ Since v1.7, the tool includes a new experimental **Be Human** mode that makes it
 
 It is disabled by default, but you can enable it via `BE_HUMAN` configuration option, `--be-human` flag or by toggling it via the **Settings** menu in the **Web Dashboard**.
 
-It is used only with session login (session mode 2).
+It is used only with session login (Logged-in mode).
 
 After each check cycle, the tool will randomly do one or more of these harmless actions:
 - View your explore feed: pulls a single post from Instagram's explore feed
