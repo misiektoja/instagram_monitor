@@ -47,6 +47,7 @@ browser = ["pycookiecheat>=0.8"]
 
 [project.urls]
 Homepage = "https://github.com/misiektoja/instagram_monitor"
+Documentation = "https://misiektoja.github.io/instagram_monitor/"
 Source   = "https://github.com/misiektoja/instagram_monitor"
 Changelog= "https://github.com/misiektoja/instagram_monitor/blob/main/RELEASE_NOTES.md"
 
