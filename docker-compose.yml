@@ -1,0 +1,44 @@
+# Docker Compose setup for instagram_monitor
+#
+# Quick start:
+#   1. Generate a config (the wizard sets WEB_DASHBOARD_HOST=0.0.0.0 for Docker automatically):
+#        docker compose run --rm instagram_monitor --setup
+#   2. Copy the secrets template and fill it in (optional):
+#        cp .env.example .env
+#   3. Start it:
+#        docker compose up
+#   4. Open the web dashboard at http://127.0.0.1:8000/ and add targets.
+#
+# To monitor specific targets from the command line instead of the dashboard,
+# override the command, e.g.:
+#   docker compose run --rm --service-ports instagram_monitor user1 user2 --web-dashboard
+#
+# To import a Firefox session (Linux host example), mount your profile and run:
+#   docker compose run --rm -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox
+
+services:
+  instagram_monitor:
+    image: misiektoja/instagram-monitor:latest
+    # To build from this repo instead of pulling the published image, comment out
+    # the "image:" line above and uncomment the "build:" line below.
+    # build: .
+    init: true
+    stdin_open: true
+    tty: true
+    ports:
+      - "8000:8000"
+    volumes:
+      # Generated files, config and the .env secrets file live in the current
+      # directory on the host. The tool auto-loads ./.env from here, so there is
+      # no need to declare env_file (and no error if you have not created one yet).
+      - ./:/data
+      # Persist the Instaloader session across runs
+      - instagram_monitor_session:/home/instagram/.config/instaloader
+    # Default: launch the web dashboard as a control panel.
+    # It auto-loads ./instagram_monitor.conf if present, otherwise waits for you
+    # to add targets in the browser. Needs WEB_DASHBOARD_HOST = "0.0.0.0" in the
+    # config (the setup wizard sets this for you when it detects Docker).
+    command: ["--web-dashboard"]
+
+volumes:
+  instagram_monitor_session:
