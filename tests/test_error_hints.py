@@ -35,3 +35,9 @@ class TestErrorFixHint:
         # The real call sites pass format_error_message() output into error_fix_hint()
         msg = im_module.format_error_message(KeyError("data"))
         assert "challenge" in im_module.error_fix_hint(msg)
+
+    # Session recovery hints use the unified browser import command
+    def test_session_hints_use_browser_import_command(self, im_module):
+        hint = im_module.error_fix_hint("ConnectionException: Login required, redirected")
+        assert "--import-browser-session --browser firefox" in hint
+        assert "--import-firefox-session" not in hint
