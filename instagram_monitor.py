@@ -10641,6 +10641,10 @@ def run_setup_wizard() -> None:
     if want_webhook:
         print(f"Test webhook anytime with: {colorize('section', prefix + ' --send-test-webhook')}")
 
+    # Offer to verify the setup with the preflight checks before launching
+    if _wizard_ask_yes_no("\nRun a quick check that everything works now?", default=True):
+        run_doctor(targets)
+
     # Offer to launch right away (not for Docker, which needs the mount/port flags above)
     if method != "docker" and _wizard_ask_yes_no("\nStart monitoring now?", default=True):
         run_args = list(targets) + ["--config-file", os.path.abspath(config_path)]
@@ -10664,6 +10668,163 @@ def _wizard_welcome(parser) -> None:
     print(f"Guide:        {colorize('link', 'https://github.com/misiektoja/instagram_monitor#quick-start')}\n")
     if sys.stdin.isatty() and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
         run_setup_wizard()
+
+
+# Prints one doctor check line with a status marker and an optional detail or hint
+def _doctor_line(status: str, label: str, detail: str = "") -> None:
+    marks = {"ok": ("[ OK ]", "boolean_true"), "warn": ("[WARN]", "warning"), "fail": ("[FAIL]", "error"), "info": ("[ -- ]", "info")}
+    mark, theme = marks.get(status, ("[ -- ]", "info"))
+    print(f"  {colorize(theme, mark)} {label}")
+    if detail:
+        print(f"         {detail}")
+
+
+# Runs preflight self-checks and prints a PASS/WARN/FAIL report, returning the number of failed checks
+def run_doctor(targets) -> int:
+    import importlib.util
+
+    fails = 0
+    warns = 0
+
+    print(colorize("header", f"\nInstagram Monitor v{VERSION} - Doctor\n"))
+    print("Running preflight checks. Read-only - this sends no emails or webhooks.\n")
+
+    # Environment and optional dependencies
+    print(colorize("section", "Environment"))
+    _doctor_line("info", f"Python {platform.python_version()}")
+    deps = [
+        ("curl_cffi", _CURL_CFFI_AVAILABLE, "browser TLS impersonation that avoids first-request 429 blocks"),
+        ("rich", RICH_AVAILABLE, "the Terminal Dashboard"),
+        ("flask", FLASK_AVAILABLE, "the Web Dashboard"),
+        ("pycookiecheat", importlib.util.find_spec("pycookiecheat") is not None, "session import from Chromium-based browsers"),
+    ]
+    for name, present, what in deps:
+        if present:
+            _doctor_line("ok", f"{name} installed", f"Enables {what}")
+        else:
+            warns += 1
+            _doctor_line("warn", f"{name} not installed", f"Optional: enables {what}. Install with: pip install {name}")
+
+    # Configuration and secrets
+    print(colorize("section", "\nConfiguration"))
+    cfg = find_config_file(CLI_CONFIG_PATH)
+    if cfg:
+        _doctor_line("ok", "Config file", cfg)
+    else:
+        _doctor_line("info", "Config file", "none found - using defaults and CLI flags (create one with --setup)")
+    placeholders = ("", "your_smtp_password")
+    present_secrets = [k for k in SECRET_KEYS if globals().get(k) and globals().get(k) not in placeholders]
+    _doctor_line("info", "Secrets from environment/.env", ", ".join(present_secrets) if present_secrets else "none set")
+
+    # Build a single bot for the live checks (reuses the globally installed HTTP backend)
+    bot = None
+    try:
+        bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True, quiet=True)
+        if PROXY_ENABLED:
+            set_instaloader_proxies(bot)
+    except Exception as e:
+        fails += 1
+        _doctor_line("fail", "Could not initialise Instaloader", format_error_message(e))
+
+    # Session
+    print(colorize("section", "\nSession"))
+    logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
+    if not logged_in:
+        _doctor_line("info", "No-login mode", "No session needed. Stories, reels and follower churn require Logged-in mode.")
+    elif bot is None:
+        warns += 1
+        _doctor_line("warn", "Skipped session check", "Instaloader could not be initialised")
+    else:
+        try:
+            bot.load_session_from_file(SESSION_USERNAME)
+            who = bot.test_login()
+            if who:
+                _doctor_line("ok", f"Session valid for {who}")
+            else:
+                warns += 1
+                _doctor_line("warn", f"Session for {SESSION_USERNAME} is not logged in", error_fix_hint("login_required", True))
+        except FileNotFoundError:
+            fails += 1
+            _doctor_line("fail", f"No saved session for {SESSION_USERNAME}", error_fix_hint("session file not found", True))
+        except Exception as e:
+            fails += 1
+            msg = format_error_message(e)
+            _doctor_line("fail", f"Session check failed: {msg}", error_fix_hint(msg, True))
+
+    # Instagram connectivity
+    print(colorize("section", "\nConnectivity"))
+    if bot is None:
+        warns += 1
+        _doctor_line("warn", "Skipped connectivity check", "Instaloader could not be initialised")
+    else:
+        try:
+            profile_from_username_resilient(bot, FLAGGED_PROBE_USERNAME)
+            _doctor_line("ok", "Instagram reachable", f"Fetched public account '{FLAGGED_PROBE_USERNAME}'")
+        except Exception as e:
+            fails += 1
+            msg = format_error_message(e)
+            _doctor_line("fail", "Instagram not reachable or blocked", msg)
+            hint = error_fix_hint(msg, logged_in)
+            if hint:
+                print(f"         {hint}")
+
+    # Targets
+    print(colorize("section", "\nTargets"))
+    if not targets:
+        _doctor_line("info", "No targets configured", "Add them on the CLI, in the config, or via the Web Dashboard.")
+    elif bot is None:
+        warns += 1
+        _doctor_line("warn", "Skipped target checks", "Instaloader could not be initialised")
+    else:
+        for t in targets:
+            try:
+                profile_from_username_resilient(bot, t)
+                _doctor_line("ok", f"Target '{t}' found")
+            except Exception as e:
+                warns += 1
+                msg = format_error_message(e)
+                _doctor_line("warn", f"Target '{t}' could not be fetched", msg)
+
+    # Notifications
+    print(colorize("section", "\nNotifications"))
+    smtp_configured = (SMTP_HOST and SMTP_HOST != "your_smtp_server_ssl" and SMTP_USER and SMTP_USER != "your_smtp_user" and SMTP_PASSWORD and SMTP_PASSWORD != "your_smtp_password")
+    if not smtp_configured:
+        _doctor_line("info", "Email notifications not configured")
+    else:
+        try:
+            ctx = ssl.create_default_context()
+            smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=5)
+            if SMTP_SSL:
+                smtp.starttls(context=ctx)
+            smtp.login(SMTP_USER, SMTP_PASSWORD)
+            smtp.quit()
+            _doctor_line("ok", "Email (SMTP) login works", "Send a real test with --send-test-email")
+        except Exception as e:
+            fails += 1
+            _doctor_line("fail", f"Email (SMTP) check failed: {e}", "Verify SMTP_HOST, SMTP_PORT and SMTP_SSL, and SMTP_USER/SMTP_PASSWORD. Gmail and similar need an app password.")
+
+    if not WEBHOOK_URL:
+        if WEBHOOK_ENABLED:
+            warns += 1
+            _doctor_line("warn", "Webhook enabled but WEBHOOK_URL is empty", "Set WEBHOOK_URL (or via .env), or disable webhooks.")
+        else:
+            _doctor_line("info", "Webhook notifications not configured")
+    elif validate_webhook_url(WEBHOOK_URL):
+        _doctor_line("ok", "Webhook URL looks valid", "Send a real test with --send-test-webhook")
+    else:
+        fails += 1
+        _doctor_line("fail", "Webhook URL is not a valid HTTP(S) URL", "Check WEBHOOK_URL.")
+
+    # Summary
+    print(colorize("header", "\nSummary"))
+    if fails:
+        print(colorize("error", f"  {fails} check(s) failed, {warns} warning(s). Fix the failures above before relying on the tool."))
+    elif warns:
+        print(colorize("warning", f"  All critical checks passed with {warns} warning(s). Review the warnings above."))
+    else:
+        print(colorize("boolean_true", "  All checks passed. You are good to go!"))
+    print()
+    return fails
 
 
 def run_main():
@@ -10779,6 +10940,12 @@ def run_main():
         dest="setup",
         action="store_true",
         help="Run the interactive first-run setup wizard and exit",
+    )
+    conf.add_argument(
+        "--doctor",
+        dest="doctor",
+        action="store_true",
+        help="Run preflight self-checks (deps, config, session, connectivity, targets, notifications) and exit",
     )
 
     # Session login credentials
@@ -11615,6 +11782,10 @@ def run_main():
         mode_of_the_tool = "No login (public data only)"
     else:
         mode_of_the_tool = "Logged in (full data)"
+
+    # Run preflight checks once the effective session mode and targets are resolved
+    if getattr(args, "doctor", False):
+        sys.exit(1 if run_doctor(targets) else 0)
 
     # Auto-disable Follower Churn Detection if session or lists are skipped
     if FOLLOWERS_CHURN_DETECTION:
