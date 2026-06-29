@@ -13,21 +13,30 @@
 
 Powerful, real-time OSINT suite for tracking every activity on Instagram - from story updates and bio changes to follower shifts, providing stunning dashboards and instant alerts to keep you in the loop.
 
-### 🚀 Quick Install
+### 🚀 Quick Install & Run
 
-Python
+Python from PyPI
 ```sh
 pip install instagram_monitor
+instagram_monitor --setup
 ```
 
-Docker
+Manual Python script
+```sh
+python3 instagram_monitor.py --setup
+```
+
+Docker Compose
+```sh
+curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
+docker compose run --rm instagram_monitor --setup
+docker compose up
+```
+
+Docker run
 ```sh
 docker pull misiektoja/instagram-monitor:latest
-```
-
-Then run the guided setup wizard to get started in under a minute:
-```sh
-instagram_monitor --setup
+docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -p 8000:8000 misiektoja/instagram-monitor --setup
 ```
 
 <p align="center">
@@ -245,13 +254,26 @@ docker build --pull -t instagram_monitor:local .
 <a id="-new-here-run-the-setup-wizard"></a>
 ### 🧭 New here? Run the setup wizard
 
-The fastest way to get going (since **v3.5**) is the interactive setup wizard. It asks a few plain questions (who to monitor, no-login or logged-in, which interface, optional alerts), then writes a ready-to-run config for you and offers to start immediately:
+The fastest way to get going (since **v3.5**) is the interactive setup wizard. It asks a few plain questions (who to monitor, no-login or logged-in, which interface, optional alerts), then writes a ready-to-run config for you. For local installs it can also start monitoring immediately.
+
+Use the command that matches how you run the tool:
 
 ```sh
+# PyPI install
 instagram_monitor --setup
+
+# Manual Python script
+python3 instagram_monitor.py --setup
+
+# Docker Compose (skip curl if you cloned the repo)
+curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
+docker compose run --rm instagram_monitor --setup
+
+# Docker image
+docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -p 8000:8000 misiektoja/instagram-monitor --setup
 ```
 
-Running the tool with no arguments offers the same wizard. It auto-detects whether you installed via pip, downloaded the script or run under Docker and shows commands that match your setup.
+Running the tool with no arguments from an interactive terminal offers the same wizard. It auto-detects whether you installed via pip, downloaded the script or run under Docker and shows commands that match your setup.
 
 <a id="not-sure-which-mode-you-want"></a>
 ### Not sure which mode you want?
@@ -259,7 +281,7 @@ Running the tool with no arguments offers the same wizard. It auto-detects wheth
 | I want to... | Run this |
 | --- | --- |
 | Just try it, no login | `instagram_monitor <target_insta_user>` |
-| Be guided through setup | `instagram_monitor --setup` |
+| Be guided through setup | Use the setup command for your install path above |
 | Avoid the command line | `instagram_monitor --web-dashboard` then use the browser |
 | See stories, reels and who followed/unfollowed | Log in first ([browser session](#option-3-session-login-using-browser-cookies-recommended)), then `instagram_monitor -u <your_insta_user> <target_insta_user>` |
 
@@ -439,7 +461,7 @@ Every supported browser can have multiple profiles, each with its own cookies (F
   ```
 
 - **Let it prompt you.** If you do not pass `--browser-profile` and several profiles exist, the tool lists them so you can choose.
-- **On the [Web Dashboard](#web-dashboard-mode)**, pick the browser, click **Detect Profiles** and select one.
+- **On the [Web Dashboard](#web-dashboard-mode)**, pick the browser, click **Import** and select a profile if prompted.
 - **Advanced:** point `--cookie-file` at a specific cookie database (Firefox `cookies.sqlite` or a Chromium `Cookies` file). This overrides `--browser-profile`.
 
 For Chromium-based browsers the tool resolves the cookie database itself, so it works with both the legacy `<profile>/Cookies` and the newer `<profile>/Network/Cookies` layouts.
@@ -659,7 +681,13 @@ Running via [Docker](https://www.docker.com) is the easiest setup for most users
 <a id="docker-compose-easiest"></a>
 #### Docker Compose (Easiest)
 
-The repo ships a [docker-compose.yml](docker-compose.yml) that wraps the volume mounts, port and session persistence for you, so you do not have to remember long `docker run` commands.
+The repo ships a [docker-compose.yml](docker-compose.yml) that wraps the volume mounts, port and session persistence for you, so you do not have to remember long `docker run` commands. If you cloned the repo, you already have this file.
+
+If you are starting from an empty directory, download it first:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
+```
 
 1. Generate a config (the wizard sets `WEB_DASHBOARD_HOST = "0.0.0.0"` for Docker automatically, so the dashboard is reachable from your host):
 
@@ -667,9 +695,10 @@ The repo ships a [docker-compose.yml](docker-compose.yml) that wraps the volume 
 docker compose run --rm instagram_monitor --setup
 ```
 
-2. Optionally copy the secrets template and fill it in:
+2. Optionally copy the secrets template and fill it in. If you did not clone the repo, download the template first:
 
 ```sh
+curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/.env.example
 cp .env.example .env
 ```
 
