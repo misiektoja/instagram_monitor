@@ -21,11 +21,6 @@ pip install instagram_monitor
 instagram_monitor --setup
 ```
 
-Manual Python script
-```sh
-python3 instagram_monitor.py --setup
-```
-
 Docker Compose
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
