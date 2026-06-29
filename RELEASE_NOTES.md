@@ -9,6 +9,9 @@
 - **NEW:** Added **unified per-profile selection across all browsers**. A single `--browser-profile` flag now picks a profile for any browser - a Firefox profile name (e.g. `default-release`) or a Chromium profile directory (e.g. `Default`, `Profile 1`) - with an interactive prompt when several exist and a **Detect Profiles** button on the Web Dashboard. `--cookie-file` is the advanced explicit-database override for every browser. For Chromium-based browsers the cookie database is resolved directly, so both the legacy `<profile>/Cookies` and the newer `<profile>/Network/Cookies` layouts work
 - **IMPROVE:** Running the tool with **no arguments** now shows a short welcome with the most common commands and an offer to launch the setup wizard, instead of dumping the full help text
 - **IMPROVE:** Added **action-oriented error hints**. Common failures (invalid or expired session, challenge/checkpoint, rate limiting, missing session file, target not found, network problems, SMTP and webhook delivery errors) now print a concise `To fix:` next step instead of just the raw error
+- **IMPROVE:** Renamed the session modes from numbered **Mode 1 / Mode 2** to intent-based **No-login** and **Logged-in** across console output, the Web Dashboard, the config template and the README, so you no longer have to remember which number means what
+- **IMPROVE:** Added an **examples section to `--help`** with copy-pasteable commands for guided setup, anonymous tracking, logged-in tracking and the web dashboard
+- **NEW:** Added a **[docker-compose.yml](docker-compose.yml)** and a **[.env.example](.env.example)** so Docker users can get started with `docker compose up` instead of long `docker run` commands, with secrets kept in a copyable dotenv template
 - **IMPROVE:** The old `--import-firefox-session` flag is kept as a backward-compatible alias for `--import-browser-session --browser firefox`
 
 # Changes in 3.4 (16 Jun 2026)
