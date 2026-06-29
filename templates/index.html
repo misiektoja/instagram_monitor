@@ -2062,9 +2062,10 @@
 
             if (Object.keys(targets).length === 0) {
                 console.log('No targets found, showing empty state');
-                if (tbody) tbody.innerHTML = `<tr><td colspan="10"><div class="empty-state"><p>No targets added yet.</p></div></td></tr>`;
-                if (tbodySimple) tbodySimple.innerHTML = `<tr><td colspan="9"><div class="empty-state"><p>No targets added yet.</p></div></td></tr>`;
-                if (targetsList) targetsList.innerHTML = `<tr><td colspan="6"><div class="empty-state"><p>No targets configured</p></div></td></tr>`;
+                const emptyTargets = `<div class="empty-state"><div class="empty-state-icon">👥</div><p>No targets yet</p><p style="font-size:0.9em;opacity:0.7;margin-top:4px;">Add an Instagram account to start monitoring.</p><button class="btn btn-primary" style="margin-top:16px;" onclick="showModal('add-target')"><span>➕</span> Add Target</button></div>`;
+                if (tbody) tbody.innerHTML = `<tr><td colspan="10">${emptyTargets}</td></tr>`;
+                if (tbodySimple) tbodySimple.innerHTML = `<tr><td colspan="9">${emptyTargets}</td></tr>`;
+                if (targetsList) targetsList.innerHTML = `<tr><td colspan="6">${emptyTargets}</td></tr>`;
                 return;
             }
 
