@@ -11423,8 +11423,16 @@ def run_main():
                             sys.exit(1)
                     else:
                         raise e
+        except SyntaxError as e:
+            print(f"* Error loading config file '{cfg_path}':")
+            if e.lineno:
+                print(f"    Line {e.lineno}: {(e.text or '').rstrip()}")
+            print(f"    {e.msg}")
+            print(colorize("info", "  To fix: check that line - text values need matching quotes and Windows paths need forward slashes (/) or doubled backslashes (\\\\). Or regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'."))
+            sys.exit(1)
         except Exception as e:
-            print(f"* Error loading config file '{cfg_path}': {e}")
+            print(f"* Error loading config file '{cfg_path}': {type(e).__name__}: {e}")
+            print(colorize("info", "  To fix: verify the file is readable and contains valid settings. You can regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'."))
             sys.exit(1)
 
     if args.output_dir:
