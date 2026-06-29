@@ -938,11 +938,11 @@
                     </div>
 
                     <p style="margin-bottom: 12px;">
-                        <strong>Session Mode 1 (Anonymous):</strong> No login required. Limited to basic profile info
+                        <strong>No-login mode:</strong> No login required. Limited to basic profile info
                         and post counts.
                     </p>
                     <p style="margin-bottom: 12px;">
-                        <strong>Session Mode 2 (Logged In):</strong> Requires Instagram account login. Provides access
+                        <strong>Logged-in mode:</strong> Requires Instagram account login. Provides access
                         to full functionality including detailed follower/following lists, stories content, detailed
                         post/reel info.
                     </p>
@@ -1036,7 +1036,7 @@
 
                 <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 20px; margin-top: 20px;">
                     <div class="form-group">
-                        <label class="form-label">Manual Username Setup (Mode 2)</label>
+                        <label class="form-label">Manual Username Setup (Logged-in mode)</label>
                         <input type="text" class="form-input" id="session-username"
                             placeholder="your_instagram_username">
                     </div>
@@ -1054,7 +1054,7 @@
                         </button>
                         <button class="btn btn-danger" onclick="clearSession()" id="clear-session-btn"
                             style="display: none;">
-                            <span>🗑️</span> Reset to Mode 1 (Anonymous)
+                            <span>🗑️</span> Reset to No-login mode
                         </button>
                     </div>
                 </div>
@@ -2773,7 +2773,7 @@
                 badge.textContent = sessionData.active ? 'Active' : 'Inactive';
 
                 modeIndicator.className = 'badge badge-success';
-                modeIndicator.textContent = 'Mode 2: Logged In';
+                modeIndicator.textContent = 'Logged-in mode';
 
                 // Show details
                 detailsContainer.style.display = 'block';
@@ -2802,7 +2802,7 @@
                 badge.textContent = 'Inactive';
 
                 modeIndicator.className = 'badge badge-idle';
-                modeIndicator.textContent = 'Mode 1: Anonymous';
+                modeIndicator.textContent = 'No-login mode';
 
                 // Hide details
                 detailsContainer.style.display = 'none';
