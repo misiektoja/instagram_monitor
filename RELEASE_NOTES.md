@@ -13,6 +13,7 @@
 - **IMPROVE:** Added an **examples section to `--help`** with copy-pasteable commands for guided setup, anonymous tracking, logged-in tracking and the web dashboard
 - **NEW:** Added a **[docker-compose.yml](docker-compose.yml)** and a **[.env.example](.env.example)** so Docker users can get started with `docker compose up` instead of long `docker run` commands, with secrets kept in a copyable dotenv template
 - **IMPROVE:** The old `--import-firefox-session` flag is kept as a backward-compatible alias for `--import-browser-session --browser firefox`
+- **IMPROVE:** Expanded the **offline pytest suite** to increase coverage of critical monitoring workflows, including webhook delivery, paginated follower/following fetching, Web Dashboard endpoints, posts/reels count detection, leaked-collab reporting, profile-picture creation/removal/change handling and startup story item metadata/CSV updates.
 
 # Changes in 3.4 (16 Jun 2026)
 
