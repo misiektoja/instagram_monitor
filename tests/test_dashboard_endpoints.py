@@ -87,6 +87,16 @@ class TestDashboardConfigAndSession:
         assert im_module.SESSION_USERNAME == "session_user"
         assert im_module.SKIP_SESSION is False
 
+    # Chromium profile detection returns the explicit unsupported-platform error on Windows
+    def test_chromium_profiles_reports_windows_unsupported(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "system", lambda: "Windows")
+
+        response = client.get("/api/session/chromium/profiles?browser=chrome")
+
+        assert response.status_code == 400
+        assert "not supported on Windows" in response.get_json()["error"]
+
 
 class TestDashboardTestNotifications:
     # Test email route delegates to send_email and returns success
