@@ -54,6 +54,7 @@ docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/in
 - **Batch Support**: Monitor and download media for **multiple users simultaneously**.
 
 ### 📱 Interactive Dashboards
+- **Guided Setup**: Interactive wizard writes a ready-to-run config for PyPI, script and Docker workflows.
 - **Terminal Dashboard**: Beautiful, live-updating CLI interface with real-time stats.
 - **Web Dashboard**: Modern, local web UI with activity feeds and remote controls.
 - **Image Support**: View profile pictures and media directly in your terminal (via `imgcat`).
@@ -68,6 +69,7 @@ docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/in
 - **Jitter Mode**: Adds human-like delays to HTTP requests.
 - **Hour-Range Checking**: Limits activity to specific hours of the day.
 - **Account Flexibility**: Works with or without a logged-in Instagram account.
+- **Browser Session Import**: Reuse Firefox, Chrome, Brave or Chromium sessions with profile selection.
 - **Browser TLS Impersonation**: Routes traffic through curl_cffi to mimic a real browser's TLS fingerprint and dodge fingerprint-based blocks.
 - **Proxy Support**: Route Instagram and webhook traffic through your own proxy.
 - **Privacy Substitutions**: Mask or rename identities across all output, logs and notifications.
@@ -79,7 +81,7 @@ docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/in
 - **Follower Churn**: Detailed tracking of exactly who followed or unfollowed.
 - **Batched Fetching**: Throttle follower/following downloads into delayed batches.
 - **Remote Control**: Manage tracking features via signals or the web UI.
-- **Docker Ready**: Run via Docker Hub image or local image build with persisted config, dotenv and sessions.
+- **Docker Ready**: Run via Docker Hub, Docker Compose or local image build with persisted config, dotenv and sessions.
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_terminal_dashboard.png" alt="instagram_monitor_terminal_dashboard" width="100%"/>
