@@ -10583,8 +10583,7 @@ def run_setup_wizard() -> None:
     import_browser = "firefox"
     browser_choices = _wizard_import_browsers(method)
     if logged_in:
-        print()
-        session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
+        # Ask the login method first so the username prompt that follows knows whether it can be auto-detected
         print()
         import_from = "Firefox" if browser_choices == ["firefox"] else "a browser"
         login_method = _wizard_ask_choice(
@@ -10606,7 +10605,16 @@ def run_setup_wizard() -> None:
                     default_index=0,
                 )
                 import_browser = browser_choices[browser_idx]
-        elif login_method == 2:
+
+        # The username can be detected from the imported session, but only for a host import (containers defer the import, so the wizard cannot read the cookies here)
+        print()
+        can_detect_username = do_browser_import and method not in ("docker", "compose")
+        if can_detect_username:
+            session_username = _wizard_ask_text(f"Your Instagram username (leave empty to detect it from the imported {browser_label(import_browser)} session)").lstrip("@")
+        else:
+            session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
+
+        if login_method == 2:
             collected_secrets["SESSION_PASSWORD"] = _wizard_ask_text("Instagram password (stored in .env)", required=True)
 
     # Q3: interface
@@ -10689,7 +10697,10 @@ def run_setup_wizard() -> None:
                     profile = select_chromium_profile_cli(import_browser, None)
                     imported_username = import_session(import_browser, None, None, profile=profile)
                 if imported_username and imported_username != session_username:
-                    print(colorize("warning", f"Imported session belongs to '{imported_username}', updating SESSION_USERNAME in the generated config."))
+                    if session_username:
+                        print(colorize("warning", f"Imported session belongs to '{imported_username}', updating SESSION_USERNAME in the generated config."))
+                    else:
+                        print(colorize("info", f"Detected username '{imported_username}' from the imported session."))
                     session_username = imported_username
                     SESSION_USERNAME = imported_username
             except (SystemExit, Exception) as e:
@@ -10697,6 +10708,13 @@ def run_setup_wizard() -> None:
                 print(f"You can retry later with: {retry_hint}")
         else:
             print(colorize("info", f"You can import later with: {retry_hint}"))
+
+    # Safety net: a logged-in setup needs a username to locate the saved session at runtime, so prompt for it if the import did not provide one (declined, failed or deferred to a container host)
+    if logged_in and not session_username:
+        print()
+        print(colorize("warning", "No username yet - the session could not be detected automatically."))
+        session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
+        SESSION_USERNAME = session_username
 
     # Write the config file (default name, confirm before overwriting an existing one)
     print()
