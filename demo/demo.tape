@@ -79,19 +79,19 @@ Sleep 2500ms
 Type "n"
 Sleep 500ms
 Enter
-Sleep 1800ms
+Sleep 1000ms
 
 # Email alerts? n
 Type "n"
 Sleep 500ms
 Enter
-Sleep 1800ms
+Sleep 1000ms
 
 # Run the doctor check now? n
 Type "n"
 Sleep 500ms
 Enter
-Sleep 2000ms
+Sleep 1000ms
 
 # ---------------------------------------------------------------------------
 # 3. Start monitoring now? y  -> the web dashboard launches
@@ -102,4 +102,4 @@ Enter
 Sleep 10s
 
 Ctrl+C
-Sleep 2500ms
+Sleep 1500ms
