@@ -10634,7 +10634,16 @@ def run_setup_wizard() -> None:
         run_cmd = f'docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor {targets_str} --config-file /data/{os.path.basename(config_path)}'
     else:
         run_cmd = f"{prefix} {targets_str} --config-file {config_path}"
-    print("To start monitoring, run:")
+
+    # Offer to verify the setup with the preflight checks before launching
+    if _wizard_ask_yes_no("Run a quick check that everything works now?", default=True):
+        run_doctor(targets)
+
+    # Docker has no "start now" prompt, so its command is the only way to launch; otherwise point the reader forward to the "Start monitoring now?" prompt
+    if method == "docker":
+        print("\nTo start monitoring, run:")
+    else:
+        print('\nTo start monitoring, run the command (or respond with Y below):')
     print(colorize("section", f"  {run_cmd}\n"))
     if want_web:
         print(f"Then open {colorize('link', 'http://127.0.0.1:8000/')} in your browser.\n")
@@ -10643,12 +10652,8 @@ def run_setup_wizard() -> None:
     if want_webhook:
         print(f"Test webhook anytime with: {colorize('section', prefix + ' --send-test-webhook')}")
 
-    # Offer to verify the setup with the preflight checks before launching
-    if _wizard_ask_yes_no("\nRun a quick check that everything works now?", default=True):
-        run_doctor(targets)
-
     # Offer to launch right away (not for Docker, which needs the mount/port flags above)
-    if method != "docker" and _wizard_ask_yes_no("\nStart monitoring now?", default=True):
+    if method != "docker" and _wizard_ask_yes_no("Start monitoring now?", default=True):
         run_args = list(targets) + ["--config-file", os.path.abspath(config_path)]
         sys.stdout.flush()
         os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)] + run_args)
@@ -10660,15 +10665,17 @@ def _wizard_welcome(parser) -> None:
     method = _wizard_install_method()
     prefix = _wizard_cmd_prefix(method)
     web_prefix = _wizard_cmd_prefix(method, web_dashboard=True)
+    interactive = sys.stdin.isatty()
     print("Quickest start (no setup, no login):")
     print(colorize("section", f"    {prefix} <username>\n"))
     print("Easiest start (guided setup wizard):")
-    print(colorize("section", f"    {prefix} --setup\n"))
+    setup_hint = colorize("info", "   (or just answer Y below)") if interactive else ""
+    print(colorize("section", f"    {prefix} --setup") + setup_hint + "\n")
     print("Point-and-click (no command line):")
     print(colorize("section", f"    {web_prefix} --web-dashboard      then open http://127.0.0.1:8000\n"))
     print(f"Full options: {colorize('section', prefix + ' --help')}")
-    print(f"Guide:        {colorize('link', 'https://misiektoja.github.io/instagram_monitor/quick-start/')}\n")
-    if sys.stdin.isatty() and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
+    print(f"\nGuide:        {colorize('link', 'https://misiektoja.github.io/instagram_monitor/quick-start/')}\n")
+    if interactive and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
         run_setup_wizard()
 
 
