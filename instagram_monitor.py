@@ -7294,11 +7294,11 @@ def error_fix_hint(error_msg: str, is_logged_in: bool = False) -> str:
 
     # Rate limiting or TLS-fingerprint blocks
     if any(t in m for t in ("429", "too many requests", "wait a few minutes", "rate limit", "please wait")):
-        return "To fix: Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users. See the README section 'How to Prevent Getting Challenged and Account Suspension'."
+        return "To fix: Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users. See https://misiektoja.github.io/instagram_monitor/anti-detection/."
 
     # Challenge, checkpoint or shadowban
     if any(t in m for t in ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data")):
-        return "To fix: Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint, then re-import the session with 'instagram_monitor --import-browser-session --browser firefox'. Also raise the check interval. See the README section 'How to Prevent Getting Challenged and Account Suspension'."
+        return "To fix: Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint, then re-import the session with 'instagram_monitor --import-browser-session --browser firefox'. Also raise the check interval. See https://misiektoja.github.io/instagram_monitor/anti-detection/."
 
     # Missing session file
     if "session file" in m:
@@ -10667,7 +10667,7 @@ def _wizard_welcome(parser) -> None:
     print("Point-and-click (no command line):")
     print(colorize("section", f"    {web_prefix} --web-dashboard      then open http://127.0.0.1:8000\n"))
     print(f"Full options: {colorize('section', prefix + ' --help')}")
-    print(f"Guide:        {colorize('link', 'https://github.com/misiektoja/instagram_monitor#quick-start')}\n")
+    print(f"Guide:        {colorize('link', 'https://misiektoja.github.io/instagram_monitor/quick-start/')}\n")
     if sys.stdin.isatty() and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
         run_setup_wizard()
 
