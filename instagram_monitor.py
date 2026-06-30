@@ -3599,6 +3599,36 @@ class Logger(object):
                         handle.write(clean_message)
                         handle.flush()
 
+    # Writes a message to the terminal only (honouring colour), bypassing all log files
+    def terminal_only(self, message):
+        with STDOUT_LOCK:
+            message = apply_privacy_substitutions(message)
+            colorized_message = apply_color_to_text(message)
+            self.terminal.write(colorized_message)
+            self.terminal.flush()
+
+    # Writes a message to the log file(s) only (ANSI stripped), bypassing the terminal
+    def log_only(self, message):
+        with STDOUT_LOCK:
+            message = apply_privacy_substitutions(message)
+            colorized_message = apply_color_to_text(message)
+            clean_message = ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8)
+            if self.main_log:
+                self.main_log.write(clean_message)
+                self.main_log.flush()
+            target = self._get_current_target()
+            if target:
+                handle = self._ensure_log_open(target)
+                if handle:
+                    handle.write(clean_message)
+                    handle.flush()
+            else:
+                for t in list(self.target_paths.keys()):
+                    handle = self._ensure_log_open(t)
+                    if handle:
+                        handle.write(clean_message)
+                        handle.flush()
+
     def flush(self):
         self.terminal.flush()
         if self.main_log:
@@ -3624,6 +3654,14 @@ class ColorStream(object):
         coloured = apply_color_to_text(apply_privacy_substitutions(message))
         self.terminal.write(coloured)
         self.terminal.flush()
+
+    # Writes a message to the terminal only (honouring colour), matching the Logger interface
+    def terminal_only(self, message):
+        self.write(message)
+
+    # No-op log sink for the logging-disabled path, matching the Logger interface
+    def log_only(self, message):
+        return
 
     def flush(self):
         self.terminal.flush()
@@ -12112,7 +12150,7 @@ def run_main():
         GET_MORE_POST_DETAILS = False
         SKIP_GETTING_STORY_DETAILS = True
         BE_HUMAN = False
-        mode_of_the_tool = "No login (public data only)"
+        mode_of_the_tool = "No login (limited data)"
     else:
         mode_of_the_tool = "Logged in (full data)"
 
@@ -12263,8 +12301,13 @@ def run_main():
         FOLLOWERS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
 
-    # Print summary screen (will be suppressed from terminal by Logger when dashboard is active, but still logged to files)
-    print(f"* Instagram polling interval:\t\t[ {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)} ]")
+    # Build the run summary as (text, show_in_concise, show_in_full) rows
+    # The concise terminal view leads with the targets and hides off/default rows; the full view (every row) is written to the log and also shown on the terminal under --verbose/--debug
+    summary_rows = []
+
+    summary_rows.append((f"* Targets:\t\t\t\t{', '.join(targets)}", True, True))
+    summary_rows.append((f"* Instagram polling interval:\t\t[ {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)} ]", True, True))
+
     hours_ranges_str = ""
     if CHECK_POSTS_IN_HOURS_RANGE:
         ranges = []
@@ -12279,49 +12322,62 @@ def run_main():
             hours_ranges_str = "None (both ranges disabled)"
     else:
         hours_ranges_str = format_hour_range(0, 23)
-    print("* Hours for fetching updates:\t\t" + hours_ranges_str)
-    print(f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
-    print(f"* Session Mode:\t\t\t\t{mode_of_the_tool}")
-    print(f"* Human mode:\t\t\t\t{BE_HUMAN}" + (f" (Verbose)" if BE_HUMAN_VERBOSE else ""))
-    print(f"* Skip session login:\t\t\t{SKIP_SESSION}")
-    print(f"* Skip fetching followers:\t\t{SKIP_FOLLOWERS}")
-    print(f"* Skip fetching followings:\t\t{SKIP_FOLLOWINGS}")
-    print(f"* Skip reporting follows changes:\t{SKIP_FOLLOW_CHANGES}")
-    print(f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}")
-    print(f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}")
-    print(f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}")
-    print(f"* Detect collab posts (private):\t{DETECT_COLLAB_POSTS}")
+    summary_rows.append(("* Hours for fetching updates:\t\t" + hours_ranges_str, bool(CHECK_POSTS_IN_HOURS_RANGE), True))
+
+    # Concise one-line notifications summary (terminal only); the detailed rows below carry the full breakdown to the log/--verbose
+    email_on = bool(STATUS_NOTIFICATION or FOLLOWERS_NOTIFICATION or ERROR_NOTIFICATION)
+    summary_rows.append((f"* Notifications:\t\t\t[email = {'on' if email_on else 'off'}] [webhook = {'on' if WEBHOOK_ENABLED else 'off'}]", True, False))
+    summary_rows.append((f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]", False, True))
+
+    summary_rows.append((f"* Session Mode:\t\t\t\t{mode_of_the_tool}", True, True))
+    summary_rows.append((f"* Human mode:\t\t\t\t{BE_HUMAN}" + (f" (Verbose)" if BE_HUMAN_VERBOSE else ""), bool(BE_HUMAN), True))
+    summary_rows.append((f"* Skip session login:\t\t\t{SKIP_SESSION}", bool(SKIP_SESSION), True))
+    summary_rows.append((f"* Skip fetching followers:\t\t{SKIP_FOLLOWERS}", bool(SKIP_FOLLOWERS), True))
+    summary_rows.append((f"* Skip fetching followings:\t\t{SKIP_FOLLOWINGS}", bool(SKIP_FOLLOWINGS), True))
+    summary_rows.append((f"* Skip reporting follows changes:\t{SKIP_FOLLOW_CHANGES}", bool(SKIP_FOLLOW_CHANGES), True))
+    summary_rows.append((f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}", bool(SKIP_GETTING_STORY_DETAILS), True))
+    summary_rows.append((f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}", bool(SKIP_GETTING_POSTS_DETAILS), True))
+    summary_rows.append((f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}", bool(GET_MORE_POST_DETAILS), True))
+    summary_rows.append((f"* Detect collab posts (private):\t{DETECT_COLLAB_POSTS}", not DETECT_COLLAB_POSTS, True))
+
     churn_status = str(FOLLOWERS_CHURN_DETECTION)
     if FOLLOWERS_CHURN_AUTODISABLED:
         churn_status += f" ({FOLLOWERS_CHURN_AUTODISABLED_REASON})"
-    print(f"* Follower churn detection:\t\t{churn_status}")
-    print(f"* Browser user agent:\t\t\t{USER_AGENT}")
-    print(f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}")
+    summary_rows.append((f"* Follower churn detection:\t\t{churn_status}", bool(FOLLOWERS_CHURN_DETECTION or FOLLOWERS_CHURN_AUTODISABLED), True))
+
+    summary_rows.append((f"* Browser user agent:\t\t\t{USER_AGENT}", False, True))
+    summary_rows.append((f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}", False, True))
+
     if _curl_cffi_backend_active():
         impersonate_resolved = _curl_cffi_impersonate_target()
         impersonate_display = f"auto -> {impersonate_resolved}" if str(CURL_CFFI_IMPERSONATE or "auto").strip().lower() in ("", "auto") else impersonate_resolved
-        print(f"* HTTP backend:\t\t\t\tcurl_cffi (impersonate: {impersonate_display})")
+        summary_rows.append((f"* HTTP backend:\t\t\t\tcurl_cffi (impersonate: {impersonate_display})", True, True))
     else:
-        print(f"* HTTP backend:\t\t\t\trequests")
-    print(f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}")
-    print(f"* Proxies:\t\t\t\t" + ("Enabled" if PROXY_ENABLED else "Disabled"))
+        summary_rows.append((f"* HTTP backend:\t\t\t\trequests", True, True))
+
+    summary_rows.append((f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}", bool(ENABLE_JITTER), True))
+
+    summary_rows.append((f"* Proxies:\t\t\t\t" + ("Enabled" if PROXY_ENABLED else "Disabled"), bool(PROXY_ENABLED), True))
     if PROXY_ENABLED:
         ipaddr = get_ip_address()
         masked_proxy_url = mask_url_credentials(PROXY_URL)
-        print(f"*   Proxy IP Address:\t\t\t{ipaddr}")
-        print(f"*   Proxy URL:\t\t\t\t{masked_proxy_url[:50]}")
-        print(f"*   Proxy Certificate:\t\t\t{PROXY_CERT_PATH or '-'}")
-        print(f"*   Proxy for Webhooks:\t\t\t" + ("Enabled" if PROXY_WEBHOOKS else "Disabled"))
+        summary_rows.append((f"*   Proxy IP Address:\t\t\t{ipaddr}", True, True))
+        summary_rows.append((f"*   Proxy URL:\t\t\t\t{masked_proxy_url[:50]}", True, True))
+        summary_rows.append((f"*   Proxy Certificate:\t\t\t{PROXY_CERT_PATH or '-'}", True, True))
+        summary_rows.append((f"*   Proxy for Webhooks:\t\t\t" + ("Enabled" if PROXY_WEBHOOKS else "Disabled"), True, True))
+
     follower_str = build_follow_string(ADVANCED_FOLLOWER_FETCH, FOLLOWER_LIMIT_TO_FETCH, FOLLOWERS_PER_BATCH, FOLLOWER_DELAY_PER_BATCH)
     followee_str = build_follow_string(ADVANCED_FOLLOWEE_FETCH, FOLLOWEE_LIMIT_TO_FETCH, FOLLOWEES_PER_BATCH, FOLLOWEE_DELAY_PER_BATCH)
-    print(f"* Advanced Follower Fetching:\t\t{follower_str}")
-    print(f"* Advanced Followee Fetching:\t\t{followee_str}")
-    print(f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
-    print(f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}")
-    print(f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
-    print(f"* Empty profile pic template:\t\t{profile_pic_file_exists}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""))
+    summary_rows.append((f"* Advanced Follower Fetching:\t\t{follower_str}", bool(ADVANCED_FOLLOWER_FETCH), True))
+    summary_rows.append((f"* Advanced Followee Fetching:\t\t{followee_str}", bool(ADVANCED_FOLLOWEE_FETCH), True))
+    summary_rows.append((f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""), not LIVENESS_CHECK_INTERVAL, True))
+    summary_rows.append((f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}", not DETECT_CHANGED_PROFILE_PIC, True))
+    summary_rows.append((f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""), bool(imgcat_exe), True))
+    summary_rows.append((f"* Empty profile pic template:\t\t{profile_pic_file_exists}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""), bool(profile_pic_file_exists), True))
+
     thumbnail_adnotation = " (forced by Web Dashboard)" if THUMBNAILS_FORCED_BY_WEB else ""
-    print(f"* Download thumbnail images:\t\t{DOWNLOAD_THUMBNAILS}{thumbnail_adnotation}")
+    summary_rows.append((f"* Download thumbnail images:\t\t{DOWNLOAD_THUMBNAILS}{thumbnail_adnotation}", (not DOWNLOAD_THUMBNAILS) or THUMBNAILS_FORCED_BY_WEB, True))
+
     # Dashboard status
     dashboard_status = DASHBOARD_ENABLED and RICH_AVAILABLE
     dashboard_reason = ""
@@ -12330,7 +12386,8 @@ def run_main():
             dashboard_reason = " (missing rich)"
         elif not DASHBOARD_ENABLED:
             dashboard_reason = " (disabled)"
-    print(f"* Dashboard:\t\t\t\t{dashboard_status}{dashboard_reason}")
+    summary_rows.append((f"* Dashboard:\t\t\t\t{dashboard_status}{dashboard_reason}", bool(DASHBOARD_ENABLED), True))
+
     # Web Dashboard status
     web_dashboard_status = WEB_DASHBOARD_ENABLED and FLASK_AVAILABLE
     web_dashboard_reason = ""
@@ -12339,38 +12396,63 @@ def run_main():
             web_dashboard_reason = " (disabled)"
         elif not FLASK_AVAILABLE:
             web_dashboard_reason = " (missing Flask)"
-    print(f"* Web Dashboard:\t\t\t{web_dashboard_status}{web_dashboard_reason}")
+    summary_rows.append((f"* Web Dashboard:\t\t\t{web_dashboard_status}{web_dashboard_reason}", bool(WEB_DASHBOARD_ENABLED), True))
+
     if len(targets) == 1:
-        print(f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
+        summary_rows.append((f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""), bool(CSV_FILE), True))
     else:
         if CSV_FILE:
-            print(f"* CSV logging enabled:\t\t\tTrue (per-user files, base: {CSV_FILE})")
+            summary_rows.append((f"* CSV logging enabled:\t\t\tTrue (per-user files, base: {CSV_FILE})", True, True))
         else:
-            print(f"* CSV logging enabled:\t\t\tFalse")
-    print(f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
+            summary_rows.append((f"* CSV logging enabled:\t\t\tFalse", False, True))
+
+    summary_rows.append((f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""), bool(DISABLE_LOGGING), True))
+
     if OUTPUT_DIR:
         output_dir_desc = "(root for user data & logs)" if len(targets) == 1 else "(container for per-user subdirectories & logs)"
-        print(f"* Output directory:\t\t\t{OUTPUT_DIR} {output_dir_desc}")
+        summary_rows.append((f"* Output directory:\t\t\t{OUTPUT_DIR} {output_dir_desc}", True, True))
     else:
-        print(f"* Output directory:\t\t\t{os.getcwd()} (current working directory)")
-    print(f"* Configuration file:\t\t\t{cfg_path}")
-    print(f"* Dotenv file:\t\t\t\t{env_path or 'None'}")
+        summary_rows.append((f"* Output directory:\t\t\t{os.getcwd()} (current working directory)", True, True))
+
+    summary_rows.append((f"* Configuration file:\t\t\t{cfg_path}", True, True))
+    summary_rows.append((f"* Dotenv file:\t\t\t\t{env_path or 'None'}", True, True))
+
     if WEB_DASHBOARD_ENABLED:
         if WEB_DASHBOARD_TEMPLATE_DIR:
             templates_display = WEB_DASHBOARD_TEMPLATE_DIR
         else:
             detected = _peek_web_dashboard_template_dir_autodetect()
             templates_display = "Auto-detect" + (f" ({detected})" if detected else "")
-        print(f"* Web Dashboard templates:\t\t{templates_display}")
-    print(f"* Webhook notifications:\t\t{WEBHOOK_ENABLED}" + (f" ({str(WEBHOOK_URL)[:50]}...)" if WEBHOOK_ENABLED and WEBHOOK_URL and len(str(WEBHOOK_URL)) > 50 else (f" ({WEBHOOK_URL})" if WEBHOOK_ENABLED and WEBHOOK_URL else "")))
+        summary_rows.append((f"* Web Dashboard templates:\t\t{templates_display}", False, True))
+
+    summary_rows.append((f"* Webhook notifications:\t\t{WEBHOOK_ENABLED}" + (f" ({str(WEBHOOK_URL)[:50]}...)" if WEBHOOK_ENABLED and WEBHOOK_URL and len(str(WEBHOOK_URL)) > 50 else (f" ({WEBHOOK_URL})" if WEBHOOK_ENABLED and WEBHOOK_URL else "")), False, True))
     if WEBHOOK_ENABLED:
-        print(f"*   Webhook on status/profile changes:\t{WEBHOOK_STATUS_NOTIFICATION}")
-        print(f"*   Webhook on follow changes:\t\t{WEBHOOK_FOLLOWERS_NOTIFICATION}")
-        print(f"*   Webhook on errors:\t\t\t{WEBHOOK_ERROR_NOTIFICATION}")
-    print(f"* Verbose mode:\t\t\t\t{VERBOSE_MODE}")
-    print(f"* Debug mode:\t\t\t\t{DEBUG_MODE}")
-    print(f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}")
-    print(f"* 12h time format:\t\t\t{TIME_FORMAT_12H}")
+        summary_rows.append((f"*   Webhook on status/profile changes:\t{WEBHOOK_STATUS_NOTIFICATION}", False, True))
+        summary_rows.append((f"*   Webhook on follow changes:\t\t{WEBHOOK_FOLLOWERS_NOTIFICATION}", False, True))
+        summary_rows.append((f"*   Webhook on errors:\t\t\t{WEBHOOK_ERROR_NOTIFICATION}", False, True))
+
+    summary_rows.append((f"* Verbose mode:\t\t\t\t{VERBOSE_MODE}", bool(VERBOSE_MODE), True))
+    summary_rows.append((f"* Debug mode:\t\t\t\t{DEBUG_MODE}", bool(DEBUG_MODE), True))
+    summary_rows.append((f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}", False, True))
+    summary_rows.append((f"* 12h time format:\t\t\t{TIME_FORMAT_12H}", False, True))
+
+    # Concise-only hint pointing at the full settings dump
+    summary_rows.append(("* (run with --verbose to see all settings)", True, False))
+
+    # Emit the summary: full rows always go to the log; the terminal shows the full set under --verbose/--debug, otherwise the concise set (suppressed entirely while the terminal dashboard owns the screen)
+    show_full_on_terminal = bool(VERBOSE_MODE or DEBUG_MODE)
+    terminal_suppressed = bool(DASHBOARD_ENABLED and RICH_AVAILABLE)
+    summary_out = sys.stdout
+    for row_text, in_concise, in_full in summary_rows:
+        row_line = row_text + "\n"
+        to_terminal = (in_full if show_full_on_terminal else in_concise) and not terminal_suppressed
+        if in_full and hasattr(summary_out, "log_only"):
+            summary_out.log_only(row_line)
+        if to_terminal:
+            if hasattr(summary_out, "terminal_only"):
+                summary_out.terminal_only(row_line)
+            else:
+                print(row_text)
 
     # More visible warnings if requested features are missing (still only printed to terminal when dashboard is not active)
     if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
