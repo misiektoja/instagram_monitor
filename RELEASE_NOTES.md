@@ -20,6 +20,12 @@
 - **IMPROVE:** Added an **examples section to `--help`** with copy-pasteable commands for guided setup, anonymous tracking, logged-in tracking and the web dashboard. The examples auto-detect how the tool was launched (pip, downloaded script, Docker or Docker Compose) and print matching commands the same way the setup wizard does
 - **IMPROVE:** The old `--import-firefox-session` flag is kept as a backward-compatible alias for `--import-browser-session --browser firefox`
 - **IMPROVE:** Expanded the **offline pytest suite** to increase coverage of critical monitoring workflows, including webhook delivery, paginated follower/following fetching, Web Dashboard endpoints, posts/reels count detection, leaked-collab reporting, profile-picture creation/removal/change handling, install-method detection and startup story item metadata/CSV updates.
+- **IMPROVE:** Suppressed **Instaloader's intermittent retry noise** (the repeated `JSON Query to graphql/query: 403 Forbidden ... [retrying; skip with ^C]` lines it prints to stderr) during normal runs and the `--doctor`/`--setup` preflight, since those attempts usually succeed on a later try. The final failure is still shown, while verbose or debug mode keeps the full chatter
+
+**Bug fixes**:
+
+- **BUGFIX:** Repaired **logged-in post and reel fetching** after Instagram retired the GraphQL `doc_id 8845758582119845` (`xdt_shortcode_media`) in June 2026, which returned null data and crashed `Post._obtain_metadata` with `TypeError: 'NoneType' object is not subscriptable` as soon as a field outside the timeline node (such as tagged users) was read. Added a compatibility patch that migrates to `doc_id 27128499623469141` (`PolarisPostRootQuery`) and reshapes the response to the legacy fields (ports [instaloader/instaloader#2706](https://github.com/instaloader/instaloader/pull/2706), see [#2704](https://github.com/instaloader/instaloader/issues/2704))
+- **BUGFIX:** Guarded **`latest_post_reel`** against a null GraphQL `data` response so a deprecated query or a temporary block surfaces a clean, actionable `To fix:` message instead of a raw `TypeError`
 
 # Changes in 3.4 (16 Jun 2026)
 
