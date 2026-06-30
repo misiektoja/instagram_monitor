@@ -44,7 +44,7 @@ Show
 Type "pip install instagram_monitor"
 Sleep 800ms
 Enter
-Sleep 4s
+Sleep 3s
 Type "clear"
 Enter
 Sleep 500ms
@@ -73,7 +73,7 @@ Sleep 2500ms
 Type "1"
 Sleep 600ms
 Enter
-Sleep 2500ms
+Sleep 1000ms
 
 # Discord alerts? n
 Type "n"
@@ -85,13 +85,13 @@ Sleep 1000ms
 Type "n"
 Sleep 500ms
 Enter
-Sleep 1000ms
+Sleep 2500ms
 
 # Run the doctor check now? n
 Type "n"
 Sleep 500ms
 Enter
-Sleep 1000ms
+Sleep 2000ms
 
 # ---------------------------------------------------------------------------
 # 3. Start monitoring now? y  -> the web dashboard launches
@@ -102,4 +102,4 @@ Enter
 Sleep 10s
 
 Ctrl+C
-Sleep 1500ms
+Sleep 2500ms
