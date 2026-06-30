@@ -10620,6 +10620,8 @@ def run_setup_wizard() -> None:
         env_path = ".env"
         try:
             _wizard_write_env(collected_secrets, env_path)
+            for key, value in collected_secrets.items():
+                globals()[key] = value
             print(colorize("info", f"Saved secrets ({', '.join(collected_secrets)}) to {env_path}"))
         except Exception as e:
             print(colorize("warning", f"Could not write secrets file '{env_path}': {e}"))
@@ -11574,7 +11576,7 @@ def run_main():
                 print(f"* Error: Proxy certificate file does not exist. '{PROXY_CERT_PATH}'")
                 sys.exit(1)
 
-    if not check_internet():
+    if not args.doctor and not check_internet():
         sys.exit(1)
 
     # Advanced Follower/Followee Fetching Settings
@@ -11712,7 +11714,7 @@ def run_main():
         WEB_DASHBOARD_TEMPLATE_DIR = os.path.abspath(os.path.expanduser(args.web_dashboard_template_dir))
 
     # Allow empty targets with specific flags
-    if not targets and not WEB_DASHBOARD_ENABLED:
+    if not targets and not WEB_DASHBOARD_ENABLED and not args.doctor:
         utility_flags = {
             "--no-color", "-h", "--help",
             "--web-dashboard", "--version"
