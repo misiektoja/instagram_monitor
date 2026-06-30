@@ -10424,6 +10424,20 @@ def _firefox_import_cmd(method: str) -> str:
     return f"{with_mount} --import-browser-session --browser firefox"
 
 
+# Browsers the setup wizard can import from in this environment (Chromium-family needs OS keyring access, unavailable on Windows and inside containers, so those get Firefox only)
+def _wizard_import_browsers(method: str) -> list:
+    if system() == "Windows" or method in ("docker", "compose"):
+        return ["firefox"]
+    return list(IMPORT_BROWSERS)
+
+
+# One-line wizard menu description for an import browser choice
+def _wizard_browser_desc(browser: str) -> str:
+    if browser == "firefox":
+        return "Built-in reader; works on every OS, no extra packages."
+    return f"Reads {browser_label(browser)}'s cookie store (needs the 'pycookiecheat' package; macOS/Linux only)."
+
+
 # Builds the --help examples epilog using commands that match the detected install method (manual, pip, docker, compose)
 def _build_help_epilog() -> str:
     method = _wizard_install_method()
@@ -10565,22 +10579,33 @@ def run_setup_wizard() -> None:
 
     session_username = ""
     collected_secrets: dict = {}
-    do_firefox_import = False
+    do_browser_import = False
+    import_browser = "firefox"
+    browser_choices = _wizard_import_browsers(method)
     if logged_in:
         print()
         session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
         print()
+        import_from = "Firefox" if browser_choices == ["firefox"] else "a browser"
         login_method = _wizard_ask_choice(
             "How do you want to provide the login session?",
             [
-                ("Import from Firefox (recommended)", "Reuses your existing Firefox login; most reliable and least detectable."),
+                (f"Import from {import_from} (recommended)", "Reuses your existing browser login; most reliable and least detectable."),
                 ("I already created a session with instaloader", "You previously ran 'instaloader -l <user>'."),
                 ("Username + password", "Least safe; full login each run. Password is stored in .env, never the config."),
             ],
             default_index=0,
         )
         if login_method == 0:
-            do_firefox_import = True
+            do_browser_import = True
+            if len(browser_choices) > 1:
+                print()
+                browser_idx = _wizard_ask_choice(
+                    "Which browser do you want to import the session from?",
+                    [(browser_label(b), _wizard_browser_desc(b)) for b in browser_choices],
+                    default_index=0,
+                )
+                import_browser = browser_choices[browser_idx]
         elif login_method == 2:
             collected_secrets["SESSION_PASSWORD"] = _wizard_ask_text("Instagram password (stored in .env)", required=True)
 
@@ -10641,31 +10666,37 @@ def run_setup_wizard() -> None:
     if want_webhook:
         WEBHOOK_STATUS_NOTIFICATION = True
 
-    # Optional inline Firefox import (skipped under Docker/Compose where the cookie mount is not present)
-    if do_firefox_import:
+    # Optional inline browser import (skipped under Docker/Compose where the cookie store is not mounted)
+    if do_browser_import:
         print()
+        label = browser_label(import_browser)
+        retry_hint = f"{prefix} --import-browser-session --browser {import_browser}"
         if method in ("docker", "compose"):
-            print(colorize("warning", "Inside a container the Firefox import needs your browser profile mounted, so it cannot run here."))
+            print(colorize("warning", f"Inside a container the {label} import needs your browser profile mounted, so it cannot run here."))
             print("Run this once on the host before starting (Linux example):")
             print(colorize("section", f"  {_firefox_import_cmd(method)}"))
-        elif _wizard_ask_yes_no("Import the Firefox session now? (log in to Instagram in Firefox first)", default=True):
+        elif _wizard_ask_yes_no(f"Import the {label} session now? (log in to Instagram in {label} first)", default=True):
+            # The import is optional, so any failure (no profile, not logged in, missing pycookiecheat) warns and lets the wizard finish writing the config
             try:
-                cookie_path = os.path.expanduser(get_firefox_cookiefile())
-                if not os.path.isfile(cookie_path):
-                    print(colorize("warning", f"Could not find Firefox cookies at '{cookie_path}'. You can import later with: {prefix} --import-browser-session --browser firefox"))
+                imported_username = None
+                if import_browser == "firefox":
+                    cookie_path = os.path.expanduser(get_firefox_cookiefile())
+                    if not os.path.isfile(cookie_path):
+                        print(colorize("warning", f"Could not find Firefox cookies at '{cookie_path}'. You can import later with: {retry_hint}"))
+                    else:
+                        imported_username = import_session("firefox", cookie_path, None)
                 else:
-                    imported_username = import_session("firefox", cookie_path, None)
-                    if imported_username != session_username:
-                        print(colorize("warning", f"Imported session belongs to '{imported_username}', updating SESSION_USERNAME in the generated config."))
-                        session_username = imported_username
-                        SESSION_USERNAME = imported_username
-            except SystemExit:
-                raise
-            except Exception as e:
-                print(colorize("warning", f"Firefox import failed: {e}"))
-                print(f"You can retry later with: {prefix} --import-browser-session --browser firefox")
+                    profile = select_chromium_profile_cli(import_browser, None)
+                    imported_username = import_session(import_browser, None, None, profile=profile)
+                if imported_username and imported_username != session_username:
+                    print(colorize("warning", f"Imported session belongs to '{imported_username}', updating SESSION_USERNAME in the generated config."))
+                    session_username = imported_username
+                    SESSION_USERNAME = imported_username
+            except (SystemExit, Exception) as e:
+                print(colorize("warning", f"{label} import failed: {e}"))
+                print(f"You can retry later with: {retry_hint}")
         else:
-            print(colorize("info", f"You can import later with: {prefix} --import-browser-session --browser firefox"))
+            print(colorize("info", f"You can import later with: {retry_hint}"))
 
     # Write the config file (default name, confirm before overwriting an existing one)
     print()
