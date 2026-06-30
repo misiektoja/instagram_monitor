@@ -977,6 +977,179 @@ def _apply_instaloader_graphql_profile_patch() -> None:
 _apply_instaloader_graphql_profile_patch()
 
 
+# Instaloader 4.15.1 Post metadata GraphQL doc_id 8845758582119845 (xdt_shortcode_media) went dead after
+# Instagram API changes (June 2026): it returns {"data": null} with an "execution error", so
+# Post._obtain_metadata crashes with "TypeError: 'NoneType' object is not subscriptable" the moment any field
+# outside the timeline node (e.g. tagged_users) is read. It is port of instaloader PR #2706: migrate to doc_id
+# 27128499623469141 (PolarisPostRootQuery), which returns v1/iPhone-format media and reshape it into the
+# legacy field names the rest of Post expects.
+# Self-deactivating: skipped once upstream stops referencing the dead doc_id in _obtain_metadata.
+_INSTALOADER_POST_METADATA_PATCH_APPLIED = False
+
+
+# Monkey-patch Instaloader Post metadata onto the working doc_id (no site-packages edit)
+def _apply_instaloader_post_metadata_patch() -> None:
+    global _INSTALOADER_POST_METADATA_PATCH_APPLIED
+    if _INSTALOADER_POST_METADATA_PATCH_APPLIED:
+        return
+
+    try:
+        from instaloader.structures import Post
+        from instaloader.exceptions import BadResponseException, PostChangedException
+    except ImportError:
+        return
+
+    original = getattr(Post, "_obtain_metadata", None)
+    if original is None:
+        _INSTALOADER_POST_METADATA_PATCH_APPLIED = True
+        return
+
+    # Self-deactivate once upstream migrates off the dead doc_id (the fixed method no longer references it)
+    try:
+        import inspect
+        if "8845758582119845" not in inspect.getsource(original):
+            _INSTALOADER_POST_METADATA_PATCH_APPLIED = True
+            return
+    except (OSError, TypeError):
+        pass
+
+    new_doc_id = "27128499623469141"
+    media_types = {1: "GraphImage", 2: "GraphVideo", 8: "GraphSidecar"}
+
+    def _patched_obtain_metadata(self):  # type: ignore[no-untyped-def]
+        if self._full_metadata_dict:
+            return
+        resp = self._context.doc_id_graphql_query(
+            new_doc_id,
+            {"shortcode": self.shortcode, "__relay_internal__pv__PolarisAIGMMediaWebLabelEnabledrelayprovider": False},
+        )
+        web_info = (resp.get("data") or {}).get("xdt_api__v1__media__shortcode__web_info") or {}
+        items = web_info.get("items")
+        if not items:
+            raise BadResponseException("Fetching Post metadata failed.")
+        media = items[0]
+        media_type = media.get("media_type")
+        typename = media_types.get(media_type)
+        if not typename:
+            raise BadResponseException(f"Unknown media_type in metadata: {media_type}.")
+        pic_json = {
+            "shortcode": media["code"],
+            "id": media["pk"],
+            "__typename": typename,
+            "is_video": media_type == 2,
+            "taken_at_timestamp": media["taken_at"],
+            "owner": {"id": media["user"]["pk"], "username": media["user"].get("username", ""), "full_name": media["user"].get("full_name", "")},
+        }
+        candidates = (media.get("image_versions2") or {}).get("candidates") or []
+        if candidates:
+            pic_json["display_url"] = candidates[0]["url"]
+        video_versions = media.get("video_versions") or []
+        if video_versions:
+            pic_json["video_url"] = video_versions[0]["url"]
+        if media.get("video_duration") is not None:
+            pic_json["video_duration"] = media["video_duration"]
+        if media.get("view_count") is not None:
+            pic_json["video_view_count"] = media["view_count"]
+        if media.get("play_count") is not None:
+            pic_json["video_play_count"] = media["play_count"]
+        caption = media.get("caption")
+        caption_text = caption.get("text") if isinstance(caption, dict) else None
+        pic_json["edge_media_to_caption"] = {"edges": [{"node": {"text": caption_text}}]} if caption_text is not None else {"edges": []}
+        pic_json["edge_media_preview_like"] = {"count": media.get("like_count") or 0}
+        pic_json["edge_media_to_parent_comment"] = {"count": media.get("comment_count") or 0, "edges": []}
+        if media.get("has_liked") is not None:
+            pic_json["viewer_has_liked"] = media["has_liked"]
+        if media.get("accessibility_caption") is not None:
+            pic_json["accessibility_caption"] = media["accessibility_caption"]
+        if media.get("location"):
+            pic_json["location"] = media["location"]
+        carousel = media.get("carousel_media") or []
+        if carousel:
+            carousel_nodes = []
+            for item in carousel:
+                item_type = item.get("media_type", 1)
+                node = {"shortcode": item.get("code", ""), "__typename": media_types.get(item_type, "GraphImage"), "is_video": item_type == 2}
+                item_candidates = (item.get("image_versions2") or {}).get("candidates") or []
+                node["display_url"] = item_candidates[0]["url"] if item_candidates else ""
+                item_videos = item.get("video_versions") or []
+                node["video_url"] = item_videos[0]["url"] if item_videos else None
+                if item.get("accessibility_caption") is not None:
+                    node["accessibility_caption"] = item["accessibility_caption"]
+                carousel_nodes.append({"node": node})
+            pic_json["edge_sidecar_to_children"] = {"edges": carousel_nodes}
+        tagged = (media.get("usertags") or {}).get("in") or []
+        if tagged:
+            pic_json["edge_media_to_tagged_user"] = {"edges": [{"node": {"user": {"username": t["user"]["username"].lower()}}} for t in tagged if (t.get("user") or {}).get("username")]}
+        self._full_metadata_dict = pic_json
+        if DEBUG_MODE:
+            debug_print(f"instaloader post metadata doc_id patch fired (shortcode {self.shortcode})")
+        if self.shortcode != self._full_metadata_dict["shortcode"]:
+            self._node.update(self._full_metadata_dict)
+            raise PostChangedException
+
+    Post._obtain_metadata = _patched_obtain_metadata  # type: ignore[method-assign]
+
+    # PR #2706 also guards these so the new shape missing a field (e.g. a reel without a view count) returns None
+    def _patched_video_view_count(self):  # type: ignore[no-untyped-def]
+        if self.is_video:
+            try:
+                return self._field("video_view_count")
+            except KeyError:
+                return None
+        return None
+
+    def _patched_video_play_count(self):  # type: ignore[no-untyped-def]
+        if self.is_video:
+            try:
+                return self._field("video_play_count")
+            except KeyError:
+                return None
+        return None
+
+    Post.video_view_count = property(_patched_video_view_count)  # type: ignore[assignment]
+    Post.video_play_count = property(_patched_video_play_count)  # type: ignore[assignment]
+
+    _INSTALOADER_POST_METADATA_PATCH_APPLIED = True
+
+
+_apply_instaloader_post_metadata_patch()
+
+
+# Instaloader logs every intermittent retry (e.g. "JSON Query to graphql/query: 403 Forbidden ...
+# [retrying; skip with ^C]") straight to stderr via InstaloaderContext.error(), which the quiet flag does not
+# suppress. These are transient and usually succeed on a later attempt, so drop just that retry noise; the
+# final failure is raised as an exception, not logged here. Verbose/debug keep the full chatter.
+_INSTALOADER_RETRY_NOISE_PATCH_APPLIED = False
+
+
+# Silence Instaloader's intermittent retry messages on stderr while keeping final errors
+def _apply_instaloader_quiet_retry_patch() -> None:
+    global _INSTALOADER_RETRY_NOISE_PATCH_APPLIED
+    if _INSTALOADER_RETRY_NOISE_PATCH_APPLIED:
+        return
+
+    try:
+        from instaloader.instaloadercontext import InstaloaderContext
+    except ImportError:
+        return
+
+    original_error = getattr(InstaloaderContext, "error", None)
+    if original_error is None:
+        _INSTALOADER_RETRY_NOISE_PATCH_APPLIED = True
+        return
+
+    def _patched_error(self, msg, repeat_at_end=True):  # type: ignore[no-untyped-def]
+        if isinstance(msg, str) and "[retrying; skip with ^C]" in msg and not VERBOSE_MODE and not DEBUG_MODE:
+            return
+        return original_error(self, msg, repeat_at_end=repeat_at_end)
+
+    InstaloaderContext.error = _patched_error  # type: ignore[method-assign]
+    _INSTALOADER_RETRY_NOISE_PATCH_APPLIED = True
+
+
+_apply_instaloader_quiet_retry_patch()
+
+
 # ---------------------------------------------------------------------------
 # Pluggable HTTP transport backend (HTTP_BACKEND)
 #
@@ -4896,10 +5069,15 @@ def profile_from_username_resilient(bot: instaloader.Instaloader, username: str)
 def latest_post_reel(user: str, bot: instaloader.Instaloader) -> Optional[Tuple[instaloader.Post, str]]:
     profile = profile_from_username_resilient(bot, user)
 
-    # Max 3 pinned posts + the latest one
-    posts = [(p, "post") for p in islice(profile.get_posts(), 4)]
+    try:
+        # Max 3 pinned posts + the latest one
+        posts = [(p, "post") for p in islice(profile.get_posts(), 4)]
 
-    reels = [(r, "reel") for r in islice(profile.get_reels(), 4)]
+        reels = [(r, "reel") for r in islice(profile.get_reels(), 4)]
+    except TypeError as e:
+        # Instaloader subscripts a null GraphQL "data" field when Instagram deprecates a doc_id or
+        # temporarily blocks the session/IP; surface a clean, actionable error instead of a raw TypeError
+        raise RuntimeError("Instagram returned empty data for posts/reels (a GraphQL query may be deprecated or the session/IP is temporarily blocked)") from e
 
     candidates = posts + reels
 
@@ -7339,6 +7517,10 @@ def error_fix_hint(error_msg: str, is_logged_in: bool = False) -> str:
     # Network or connectivity problems
     if any(t in m for t in ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl")):
         return "To fix: this looks like a network problem. Check your internet connection (and proxy settings if --enable-proxy is set) and try again."
+
+    # Deprecated GraphQL doc_id returning null data, or a temporary block
+    if any(t in m for t in ("empty data for posts", "fetching post metadata failed", "not subscriptable")):
+        return "To fix: Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version; if you are already current, report it at https://github.com/misiektoja/instagram_monitor/issues)."
 
     return ""
 
