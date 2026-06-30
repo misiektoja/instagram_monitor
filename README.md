@@ -15,6 +15,10 @@ Powerful, real-time OSINT suite for tracking every activity on Instagram - from 
 
 ### 🚀 Quick Install & Run
 
+<p align="center">
+   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_demo.gif" alt="instagram_monitor demo: install, setup wizard and run" width="100%"/>
+</p>
+
 Python from PyPI
 ```sh
 pip install instagram_monitor
