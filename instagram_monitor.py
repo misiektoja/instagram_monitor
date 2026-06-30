@@ -3150,6 +3150,27 @@ def colorize_status(status_text):
     return colorize(key, status_text)
 
 
+# ASCII art startup banner (pure ASCII for maximum terminal portability)
+STARTUP_BANNER = r"""
+ .-------------.    ___           _
+|  O        .  |   |_ _|_ __  ___| |_ __ _  __ _ _ __ __ _ _ __ ___
+|    .-----.   |    | || '_ \/ __| __/ _` |/ _` | '__/ _` | '_ ` _ \
+|   |  ( )  |  |    | || | | \__ \ || (_| | (_| | | | (_| | | | | | |
+|    '-----'   |   |___|_| |_|___/\__\__,_|\__, |_|  \__,_|_| |_| |_|
+ '-------------'                           |___/
+                    __  __             _ _
+                   |  \/  | ___  _ __ (_) |_ ___  _ __
+                   | |\/| |/ _ \| '_ \| | __/ _ \| '__|
+                   | |  | | (_) | | | | | || (_) | |
+                   |_|  |_|\___/|_| |_|_|\__\___/|_|"""
+
+
+# Prints the ASCII art startup banner with the tagline and version, honoring color settings
+def print_startup_banner() -> None:
+    print(colorize("header", STARTUP_BANNER))
+    print(colorize("info", f"                   v{VERSION}\n"))
+
+
 # Helper to apply a block style while preserving internal highlights
 def _apply_style_nested(line, style_name):
     start_style = _COLOR_STYLES.get(style_name)
@@ -10881,7 +10902,7 @@ def run_main():
     clear_screen(CLEAR_SCREEN)
 
     if not (early_dashboard_enabled and RICH_AVAILABLE):
-        print(colorize("header", f"Instagram Monitoring Tool v{VERSION}\n"))
+        print_startup_banner()
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
