@@ -25,6 +25,9 @@ services:
     init: true
     stdin_open: true
     tty: true
+    environment:
+      # Lets the tool print docker-compose-style example commands in --help and the setup wizard
+      - INSTAGRAM_MONITOR_COMPOSE=1
     ports:
       - "8000:8000"
     volumes:
