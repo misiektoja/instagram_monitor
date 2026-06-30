@@ -10986,6 +10986,25 @@ def _doctor_line(status: str, label: str, detail: str = "") -> None:
         print(f"         {detail}")
 
 
+# Prints an inline 'doing X...' status that the upcoming result line overwrites, on interactive terminals only
+def _doctor_progress(text: str) -> None:
+    if not sys.stdout.isatty():
+        return
+    line = f"  {text} ..."
+    _doctor_progress.width = len(line)  # type: ignore[attr-defined]
+    sys.stdout.write(colorize("info", line))
+    sys.stdout.flush()
+
+
+# Clears the inline _doctor_progress status so the result line can replace it, on interactive terminals only
+def _doctor_progress_clear() -> None:
+    width = getattr(_doctor_progress, "width", 0)
+    if sys.stdout.isatty() and width:
+        sys.stdout.write("\r" + " " * width + "\r")
+        sys.stdout.flush()
+        _doctor_progress.width = 0  # type: ignore[attr-defined]
+
+
 # Runs preflight self-checks and prints a PASS/WARN/FAIL report, returning the number of failed checks
 def run_doctor(targets) -> int:
     import importlib.util
@@ -11042,18 +11061,22 @@ def run_doctor(targets) -> int:
         warns += 1
         _doctor_line("warn", "Skipped session check", "Instaloader could not be initialised")
     else:
+        _doctor_progress(f"Validating session for {SESSION_USERNAME}")
         try:
             bot.load_session_from_file(SESSION_USERNAME)
             who = bot.test_login()
+            _doctor_progress_clear()
             if who:
                 _doctor_line("ok", f"Session valid for {who}")
             else:
                 warns += 1
                 _doctor_line("warn", f"Session for {SESSION_USERNAME} is not logged in", error_fix_hint("login_required", True))
         except FileNotFoundError:
+            _doctor_progress_clear()
             fails += 1
             _doctor_line("fail", f"No saved session for {SESSION_USERNAME}", error_fix_hint("session file not found", True))
         except Exception as e:
+            _doctor_progress_clear()
             fails += 1
             msg = format_error_message(e)
             _doctor_line("fail", f"Session check failed: {msg}", error_fix_hint(msg, True))
@@ -11064,10 +11087,13 @@ def run_doctor(targets) -> int:
         warns += 1
         _doctor_line("warn", "Skipped connectivity check", "Instaloader could not be initialised")
     else:
+        _doctor_progress("Contacting Instagram")
         try:
             profile_from_username_resilient(bot, FLAGGED_PROBE_USERNAME)
+            _doctor_progress_clear()
             _doctor_line("ok", "Instagram reachable", f"Fetched public account '{FLAGGED_PROBE_USERNAME}'")
         except Exception as e:
+            _doctor_progress_clear()
             fails += 1
             msg = format_error_message(e)
             _doctor_line("fail", "Instagram not reachable or blocked", msg)
@@ -11084,10 +11110,13 @@ def run_doctor(targets) -> int:
         _doctor_line("warn", "Skipped target checks", "Instaloader could not be initialised")
     else:
         for t in targets:
+            _doctor_progress(f"Looking up '{t}'")
             try:
                 profile_from_username_resilient(bot, t)
+                _doctor_progress_clear()
                 _doctor_line("ok", f"Target '{t}' found")
             except Exception as e:
+                _doctor_progress_clear()
                 warns += 1
                 msg = format_error_message(e)
                 _doctor_line("warn", f"Target '{t}' could not be fetched", msg)
@@ -11098,6 +11127,7 @@ def run_doctor(targets) -> int:
     if not smtp_configured:
         _doctor_line("info", "Email notifications not configured")
     else:
+        _doctor_progress(f"Connecting to SMTP server {SMTP_HOST}")
         try:
             ctx = ssl.create_default_context()
             smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=5)
@@ -11105,8 +11135,10 @@ def run_doctor(targets) -> int:
                 smtp.starttls(context=ctx)
             smtp.login(SMTP_USER, SMTP_PASSWORD)
             smtp.quit()
+            _doctor_progress_clear()
             _doctor_line("ok", "Email (SMTP) login works", "Send a real test with --send-test-email")
         except Exception as e:
+            _doctor_progress_clear()
             fails += 1
             _doctor_line("fail", f"Email (SMTP) check failed: {e}", "Verify SMTP_HOST, SMTP_PORT and SMTP_SSL, and SMTP_USER/SMTP_PASSWORD. Gmail and similar need an app password.")
 
