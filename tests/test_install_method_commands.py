@@ -62,6 +62,33 @@ class TestFirefoxImportCmd:
         assert im_module._firefox_import_cmd("compose") == 'docker compose run --rm -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox'
 
 
+class TestWizardImportBrowsers:
+    def test_non_container_unix_offers_all_browsers(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "system", lambda: "Darwin")
+        assert im_module._wizard_import_browsers("pip") == list(im_module.IMPORT_BROWSERS)
+        assert "chrome" in im_module._wizard_import_browsers("manual")
+
+    def test_windows_offers_firefox_only(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "system", lambda: "Windows")
+        assert im_module._wizard_import_browsers("pip") == ["firefox"]
+
+    def test_container_offers_firefox_only(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
+        assert im_module._wizard_import_browsers("docker") == ["firefox"]
+        assert im_module._wizard_import_browsers("compose") == ["firefox"]
+
+
+class TestWizardBrowserDesc:
+    def test_firefox_mentions_no_extra_packages(self, im_module):
+        assert "no extra packages" in im_module._wizard_browser_desc("firefox")
+
+    def test_chromium_family_mentions_pycookiecheat(self, im_module):
+        for browser in im_module.CHROMIUM_IMPORT_BROWSERS:
+            desc = im_module._wizard_browser_desc(browser)
+            assert "pycookiecheat" in desc
+            assert im_module.browser_label(browser) in desc
+
+
 class TestHelpEpilog:
     def _web_dashboard_line(self, epilog):
         return next(line for line in epilog.splitlines() if line.strip().endswith("--web-dashboard"))
