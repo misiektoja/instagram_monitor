@@ -112,5 +112,3 @@ Refrain from logging in via VPNs, especially with IPs in different regions. Sudd
 If you have created a new account for monitoring and you are using [Session Login Using Browser Cookies](configuration.md#option-3-session-login-using-browser-cookies-recommended), make sure to behave like a regular user for several days. New accounts are more closely monitored by Instagram's bot detection systems. Watch content, post stories or reels and leave comments - this helps establish a natural activity pattern.
 
 Once you start using the tool, try to blend its actions with normal usage. However, avoid overlapping browser activity with tool activity, as simultaneous actions can trigger suspicious behavior flags.
-
-<a id="troubleshooting"></a>

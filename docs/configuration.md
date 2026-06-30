@@ -35,7 +35,7 @@ This mode requires no setup, is easy to use and is resistant to Instagram's anti
 
 In this mode, the tool uses an Instagram session login to access additional data. This includes detailed insights into new posts, reels and stories, also about added or removed followers/followings.
 
-**Important**: It is highly recommended to use a dedicated Instagram account when using this tool in session login mode. While the risk of account suspension is generally low (in practice, accounts often stay active long-term), Instagram may still flag it as an automated tool. This can lead to challenges presented by Instagram that must be dismissed manually. To minimize any chance of detection, make sure to follow the best practices outlined [here](usage.md#how-to-prevent-getting-challenged-and-account-suspension).
+**Important**: It is highly recommended to use a dedicated Instagram account when using this tool in session login mode. While the risk of account suspension is generally low (in practice, accounts often stay active long-term), Instagram may still flag it as an automated tool. This can lead to challenges presented by Instagram that must be dismissed manually. To minimize any chance of detection, make sure to follow the best practices outlined [here](anti-detection.md).
 
 <a id="option-1-basic-session-login-not-recommended"></a>
 ### Option 1: Basic Session Login (not recommended)
@@ -231,5 +231,3 @@ instagram_monitor <target_insta_user> --env-file none
 ```
 
 As a fallback, you can also store secrets in the configuration file or source code.
-
-<a id="view-modes"></a>

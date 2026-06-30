@@ -108,5 +108,3 @@ Both the Terminal and Web dashboards support two levels of information density:
    - Useful for auditing your setup and verifying configuration.
 
 Toggle seamlessly between modes using the **'m'** key or the web dashboard toggle button.
-
-<a id="usage"></a>

@@ -18,5 +18,3 @@ For deeper issues, run the tool with the `--debug` flag. It shows full HTTP traf
 - **Debug Mode (`--debug`)**: For developers or fixing issues. Shows full HTTP traffic and internal script logic.
 
 **Note**: Both **Verbose** and **Debug** modes can be toggled live via the **Settings** menu in the **Web Dashboard**.
-
-<a id="testing"></a>

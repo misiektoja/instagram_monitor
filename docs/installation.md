@@ -98,5 +98,3 @@ If you run a locally built image, rebuild it to pick up new changes:
 ```sh
 docker build --pull -t instagram_monitor:local .
 ```
-
-<a id="quick-start"></a>

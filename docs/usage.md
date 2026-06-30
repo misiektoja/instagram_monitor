@@ -137,7 +137,7 @@ By default, the tool looks for a configuration file named `instagram_monitor.con
  - home directory (`~`)
  - script directory
 
- If you generated a configuration file as described in [Configuration](quick-start.md#configuration), but saved it under a different name or in a different directory, you can specify its location using the `--config-file` flag:
+ If you generated a configuration file as described in [Configuration](configuration.md#configuration-file), but saved it under a different name or in a different directory, you can specify its location using the `--config-file` flag:
 
 ```sh
 instagram_monitor <target_insta_user> --config-file /path/instagram_monitor_new.conf
@@ -648,5 +648,3 @@ Example:
 ```sh
 grc tail -F -n 100 instagram_monitor_<username>.log
 ```
-
-<a id="how-to-prevent-getting-challenged-and-account-suspension"></a>

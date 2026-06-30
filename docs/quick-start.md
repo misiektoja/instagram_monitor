@@ -70,5 +70,3 @@ To get the list of all supported command-line arguments / flags:
 ```sh
 instagram_monitor --help
 ```
-
-<a id="configuration"></a>
