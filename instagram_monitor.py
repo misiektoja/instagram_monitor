@@ -10387,10 +10387,10 @@ def get_target_paths(user):
     return target_csv, target_log
 
 
-# Detects how the tool was launched so the wizard can show matching commands
+# Detects how the tool was launched so the wizard can show matching commands (compose is the docker-compose.yml service, which exports INSTAGRAM_MONITOR_COMPOSE)
 def _wizard_install_method() -> str:
     if os.path.exists("/.dockerenv") or os.environ.get("INSTAGRAM_MONITOR_DOCKER"):
-        return "docker"
+        return "compose" if os.environ.get("INSTAGRAM_MONITOR_COMPOSE") else "docker"
     prog = os.path.basename(sys.argv[0] or "")
     if prog.endswith(".py"):
         return "manual"
@@ -10399,12 +10399,56 @@ def _wizard_install_method() -> str:
 
 # Returns the command prefix used to invoke the tool for the detected install method
 def _wizard_cmd_prefix(method: str, web_dashboard: bool = False) -> str:
+    if method == "compose":
+        service_ports = " --service-ports" if web_dashboard else ""
+        return f"docker compose run --rm{service_ports} instagram_monitor"
     if method == "docker":
         web_port_flag = " -p 8000:8000" if web_dashboard else ""
         return (f'docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor')
     if method == "manual":
         return "python3 instagram_monitor.py"
     return "instagram_monitor"
+
+
+# Returns the full "import Firefox session" command for the install method, mounting the host Firefox profile read-only inside containers (Linux host path, where the cookies actually live)
+def _firefox_import_cmd(method: str) -> str:
+    prefix = _wizard_cmd_prefix(method)
+    if method not in ("docker", "compose"):
+        return f"{prefix} --import-browser-session --browser firefox"
+    ff_mount = '-v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'
+    if method == "docker":
+        with_mount = prefix.replace("misiektoja/instagram-monitor", f"{ff_mount} misiektoja/instagram-monitor")
+    else:
+        base, _, svc = prefix.rpartition(" ")
+        with_mount = f"{base} {ff_mount} {svc}"
+    return f"{with_mount} --import-browser-session --browser firefox"
+
+
+# Builds the --help examples epilog using commands that match the detected install method (manual, pip, docker, compose)
+def _build_help_epilog() -> str:
+    method = _wizard_install_method()
+    prefix = _wizard_cmd_prefix(method)
+    web_prefix = _wizard_cmd_prefix(method, web_dashboard=True)
+    # Inside a container the host OS is not knowable (the container is always Linux), so the Firefox mount example assumes a Linux host and is labelled as such
+    if method in ("docker", "compose"):
+        ff_comment = "  # Logged in via Firefox - full detail (Linux host shown; mount your Firefox profile)\n"
+    else:
+        ff_comment = "  # Logged in via Firefox - full detail (stories, reels, follower churn)\n"
+    return (
+        "Examples:\n"
+        "  # Guided setup (recommended for the first run)\n"
+        f"  {prefix} --setup\n"
+        "\n"
+        "  # No login (new posts, bio and follower counts)\n"
+        f"  {prefix} <username>\n"
+        "\n"
+        f"{ff_comment}"
+        f"  {_firefox_import_cmd(method)}\n"
+        f"  {prefix} -u <your_user> <username>\n"
+        "\n"
+        "  # Point-and-click web dashboard (add targets in the browser)\n"
+        f"  {web_prefix} --web-dashboard\n"
+    )
 
 
 # Reads a single line of input, exiting cleanly if the user aborts with Ctrl+C or Ctrl+D
@@ -10590,20 +10634,20 @@ def run_setup_wizard() -> None:
     SESSION_USERNAME = session_username
     WEB_DASHBOARD_ENABLED = want_web
     DASHBOARD_ENABLED = want_terminal
-    if want_web and method == "docker":
+    if want_web and method in ("docker", "compose"):
         WEB_DASHBOARD_HOST = "0.0.0.0"
     STATUS_NOTIFICATION = bool(want_email)
     WEBHOOK_ENABLED = bool(want_webhook)
     if want_webhook:
         WEBHOOK_STATUS_NOTIFICATION = True
 
-    # Optional inline Firefox import (skipped under Docker where the cookie mount is not present)
+    # Optional inline Firefox import (skipped under Docker/Compose where the cookie mount is not present)
     if do_firefox_import:
         print()
-        if method == "docker":
-            print(colorize("warning", "Inside Docker the Firefox import needs your browser profile mounted, so it cannot run here."))
+        if method in ("docker", "compose"):
+            print(colorize("warning", "Inside a container the Firefox import needs your browser profile mounted, so it cannot run here."))
             print("Run this once on the host before starting (Linux example):")
-            print(colorize("section", '  docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor --import-browser-session --browser firefox'))
+            print(colorize("section", f"  {_firefox_import_cmd(method)}"))
         elif _wizard_ask_yes_no("Import the Firefox session now? (log in to Instagram in Firefox first)", default=True):
             try:
                 cookie_path = os.path.expanduser(get_firefox_cookiefile())
@@ -10653,6 +10697,8 @@ def run_setup_wizard() -> None:
     web_port_flag = " -p 8000:8000" if want_web else ""
     if method == "docker":
         run_cmd = f'docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor {targets_str} --config-file /data/{os.path.basename(config_path)}'
+    elif method == "compose":
+        run_cmd = f"{_wizard_cmd_prefix('compose', web_dashboard=want_web)} {targets_str} --config-file /data/{os.path.basename(config_path)}"
     else:
         run_cmd = f"{prefix} {targets_str} --config-file {config_path}"
 
@@ -10660,8 +10706,8 @@ def run_setup_wizard() -> None:
     if _wizard_ask_yes_no("Run a quick check that everything works now?", default=True):
         run_doctor(targets)
 
-    # Docker has no "start now" prompt, so its command is the only way to launch; otherwise point the reader forward to the "Start monitoring now?" prompt
-    if method == "docker":
+    # Docker/Compose have no "start now" prompt, so the printed command is the only way to launch. Otherwise point the reader forward to the "Start monitoring now?" prompt
+    if method in ("docker", "compose"):
         print("\nTo start monitoring, run:")
     else:
         print('\nTo start monitoring, run the command (or respond with Y below):')
@@ -10673,8 +10719,8 @@ def run_setup_wizard() -> None:
     if want_webhook:
         print(f"Test webhook anytime with: {colorize('section', prefix + ' --send-test-webhook')}")
 
-    # Offer to launch right away (not for Docker, which needs the mount/port flags above)
-    if method != "docker" and _wizard_ask_yes_no("Start monitoring now?", default=True):
+    # Offer to launch right away (not for Docker/Compose, which need the mount/port flags above)
+    if method not in ("docker", "compose") and _wizard_ask_yes_no("Start monitoring now?", default=True):
         run_args = list(targets) + ["--config-file", os.path.abspath(config_path)]
         sys.stdout.flush()
         os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)] + run_args)
@@ -10910,21 +10956,7 @@ def run_main():
     parser = argparse.ArgumentParser(
         prog="instagram_monitor",
         description=("Monitor an Instagram user's activity and send customizable email alerts [ https://github.com/misiektoja/instagram_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter,
-        epilog=(
-            "Examples:\n"
-            "  # Guided setup (recommended for the first run)\n"
-            "  instagram_monitor --setup\n"
-            "\n"
-            "  # No login (new posts, bio and follower counts)\n"
-            "  instagram_monitor <username>\n"
-            "\n"
-            "  # Logged in via Firefox - full detail (stories, reels, follower churn)\n"
-            "  instagram_monitor --import-browser-session --browser firefox\n"
-            "  instagram_monitor -u <your_user> <username>\n"
-            "\n"
-            "  # Point-and-click web dashboard\n"
-            "  instagram_monitor <username> --web-dashboard\n"
-        )
+        epilog=_build_help_epilog()
     )
 
     # Positional targets (one or more)
