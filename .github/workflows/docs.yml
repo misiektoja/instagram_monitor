@@ -3,24 +3,23 @@ name: Update GitHub Pages Documentation
 on:
   # Manual refresh: Actions tab -> "Update GitHub Pages Documentation" -> Run workflow
   workflow_dispatch:
-  # Auto refresh on docs changes pushed to main
-  push:
-    branches: [main]
-    paths:
-      - 'docs/**'
-      - 'mkdocs.yml'
-      - '.github/workflows/docs.yml'
+  # Auto refresh after a successful package publish
+  workflow_run:
+    workflows: ["Publish to PyPI"]
+    types: [completed]
 
 permissions:
   contents: write
 
 jobs:
   deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
