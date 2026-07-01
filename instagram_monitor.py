@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.5
+v3.5.1
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -20,7 +20,7 @@ flask (optional - for web dashboard)
 rich (optional - for terminal dashboard)
 """
 
-VERSION = "3.5"
+VERSION = "3.5.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -10788,8 +10788,12 @@ def run_setup_wizard() -> None:
     # Q1: target username(s)
     targets: list = []
     while not targets:
-        targets_raw = _wizard_ask_text("Which Instagram account(s) do you want to monitor? (comma-separated for several)", required=True)
+        targets_raw = _wizard_ask_text("Which Instagram account(s) / target(s) do you want to monitor? (comma-separated for several)", required=True)
         targets = [t.strip().lstrip("@") for t in targets_raw.split(",") if t.strip()]
+
+    # Ask whether to bake the target(s) into the config or keep the config target-agnostic (useful when the same config is reused for different targets passed on the CLI each run)
+    print()
+    persist_targets = _wizard_ask_yes_no("Save the target(s) in the config file too? (if No: select targets via CLI instead)", default=True)
 
     # Q2: login mode
     print()
@@ -10887,7 +10891,7 @@ def run_setup_wizard() -> None:
         want_email = True
 
     # Apply non-secret choices to globals so they render into the config
-    TARGET_USERNAMES = targets
+    TARGET_USERNAMES = targets if persist_targets else []
     SKIP_SESSION = not logged_in
     SESSION_USERNAME = session_username
     WEB_DASHBOARD_ENABLED = want_web
@@ -10949,9 +10953,11 @@ def run_setup_wizard() -> None:
     try:
         with open(config_path, "w", encoding="utf-8") as f:
             f.write(generate_config_with_current_values())
-        print(colorize("info", f"Saved configuration to {config_path}"))
+        print(colorize("info", f"\nSaved configuration to {config_path}"))
+        if not persist_targets:
+            print(colorize("info", "\nNo targets saved in the config - remember to pass them on the CLI each run (as shown below)."))
     except Exception as e:
-        print(colorize("error", f"Could not write config file '{config_path}': {e}"))
+        print(colorize("error", f"\nCould not write config file '{config_path}': {e}"))
         sys.exit(1)
 
     # Write secrets to .env
