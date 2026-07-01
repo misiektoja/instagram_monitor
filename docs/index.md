@@ -13,13 +13,13 @@
 
 Powerful, real-time OSINT suite for tracking every activity on Instagram - from story updates and bio changes to follower shifts, providing stunning dashboards and instant alerts to keep you in the loop.
 
-### 🚀 Quick Install & Run
-
 <p align="center">
-   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_demo.gif" alt="instagram_monitor demo: install, setup wizard and run" width="100%"/>
+   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="100%"/>
 </p>
 
-Python from PyPI
+### 🚀 Quick Install & Run
+
+Python from PyPI (see also the video below)
 ```sh
 pip install instagram_monitor
 instagram_monitor --setup
@@ -39,7 +39,7 @@ docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/in
 ```
 
 <p align="center">
-   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="100%"/>
+   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_demo.gif" alt="instagram_monitor demo: install, setup wizard and run" width="100%"/>
 </p>
 
 <a id="features"></a>
