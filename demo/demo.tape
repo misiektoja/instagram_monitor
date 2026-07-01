@@ -3,6 +3,11 @@
 # Render it (run from the repo root so $PWD is the project):
 #     brew install vhs        # one-time (also pulls ttyd + ffmpeg)
 #     vhs demo/demo.tape      # writes assets/instagram_monitor_demo.gif
+#     gifsicle -O3 --lossy=80 --colors 128 -b assets/instagram_monitor_demo.gif
+#
+# Keep the GIF small (a few hundred KB). GitHub wraps large animated GIFs in a
+# manual play/pause player that does not autoplay. A light GIF is inlined and
+# autoplays. The low Framerate and the gifsicle pass above are what keep it down.
 #
 # It builds a wheel from the local source so `pip install instagram_monitor`
 # shows the current version even before it is published to PyPI. The first
@@ -13,12 +18,13 @@ Output assets/instagram_monitor_demo.gif
 
 Set Shell "bash"
 Set FontSize 18
-Set Width 1320
-Set Height 820
+Set Width 1100
+Set Height 680
 Set Padding 20
 Set Theme "Dracula"
 Set TypingSpeed 55ms
 Set WindowBar Colorful
+Set Framerate 24
 
 # ---------------------------------------------------------------------------
 # Hidden setup: isolated venv + local wheel so the visible `pip install` is real
