@@ -3378,6 +3378,10 @@ def _colorize_line(line):
         else:
             return _apply_style_nested(line, "proxy_ip")
 
+    # Session mode value is free-form text (e.g. "No login ...") - keep it plain so words like "No" are not mistaken for an offline/boolean keyword
+    if line.startswith("* Session Mode:"):
+        return line
+
     # Case for list items (e.g. - username [ link ]) - color username yellow
     if line.strip().startswith("- ") and " [ http" in line:
         # Highlight the part before the bracket in yellow
@@ -10727,7 +10731,8 @@ def _wizard_ask_choice(question: str, options, default_index: int = 0) -> int:
         marker = colorize("info", " (default)") if (i - 1) == default_index else ""
         print(f"  {colorize('username', str(i))}. {label}{marker}")
         if desc:
-            print(f"     {desc}")
+            for desc_line in desc.split("\n"):
+                print(f"     {desc_line}")
     while True:
         raw = _wizard_input(colorize("info", f"Choose [1-{len(options)}]: ")).strip()
         if not raw:
@@ -10842,7 +10847,7 @@ def run_setup_wizard() -> None:
     iface = _wizard_ask_choice(
         "How do you want to view activity?",
         [
-            ("Web dashboard - point and click in your browser", "Friendliest; add/remove targets and change settings without the command line."),
+            ("Web dashboard - point and click in your browser", "Friendliest; add/remove targets and change settings without the command line.\nPlain text logs still print in your terminal."),
             ("Terminal dashboard - live stats in your terminal", "Rich full-screen view; needs the 'rich' library."),
             ("Plain text logs", "Simple sequential output; best for background or headless runs."),
         ],
