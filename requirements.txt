@@ -1,0 +1,3 @@
+# Build dependencies for the documentation site (MkDocs Material).
+# Used by .github/workflows/docs.yml and for local builds: mkdocs serve
+mkdocs-material>=9.5
