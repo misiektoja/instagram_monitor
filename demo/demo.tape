@@ -69,6 +69,12 @@ Sleep 800ms
 Enter
 Sleep 2500ms
 
+# Save the target(s) in the config too? y
+Type "y"
+Sleep 600ms
+Enter
+Sleep 2500ms
+
 # Log in? 1 = No (no login)
 Type "1"
 Sleep 600ms
