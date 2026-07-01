@@ -17,7 +17,7 @@
 Output assets/instagram_monitor_demo.gif
 
 Set Shell "bash"
-Set FontSize 18
+Set FontSize 16
 Set Width 1100
 Set Height 680
 Set Padding 20
