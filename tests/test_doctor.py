@@ -86,6 +86,20 @@ class TestRunDoctor:
         assert rc >= 1
         assert "not reachable or blocked" in out
 
+    # Doctor rejects an unsupported webhook provider without sending a message
+    def test_invalid_webhook_provider_fails(self, im_module, monkeypatch, capsys):
+        _setup_no_network(monkeypatch, im_module)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", True, raising=False)
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True, raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://example.com/hook", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "unsupported", raising=False)
+
+        rc = im_module.run_doctor([])
+        out = capsys.readouterr().out
+        assert rc >= 1
+        assert "Webhook provider is invalid" in out
+
     def test_cli_doctor_runs_without_targets_or_global_connectivity_gate(self, im_module, monkeypatch):
         calls = []
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--doctor", "--no-color"])
