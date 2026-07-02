@@ -81,3 +81,41 @@ class TestSendWebhook:
 
         assert im_module.send_webhook("Title", "desc") == 0
         assert len(calls) == 2
+
+    # A native ntfy call sends UTF-8 text, field details and the title query parameter
+    def test_ntfy_payload_uses_native_topic_api(self, im_module, monkeypatch):
+        calls = []
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "ntfy")
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.sh/private-topic?auth=private-value")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module.req, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse(200))
+
+        rc = im_module.send_webhook("Instagram title za\u017c\u00f3\u0142\u0107", "Body: Bj\u00f6rk", fields=[{"name": "Count", "value": "3"}], image_url="https://example.com/image.jpg")
+
+        assert rc == 0
+        args, kwargs = calls[0]
+        assert args == ("https://ntfy.sh/private-topic?auth=private-value",)
+        assert kwargs["data"] == "Body: Bj\u00f6rk\n\nCount: 3\n\nImage: https://example.com/image.jpg".encode("utf-8")
+        assert kwargs["params"] == {"title": "Instagram title za\u017c\u00f3\u0142\u0107"}
+        assert kwargs["headers"]["Content-Type"] == "text/plain; charset=utf-8"
+        assert "json" not in kwargs
+
+    # Ntfy message truncation respects its UTF-8 byte limit without splitting a character
+    def test_ntfy_message_is_bounded_by_utf8_bytes(self, im_module):
+        title, message = im_module.build_ntfy_webhook_message("Title", ("a" * (im_module.NTFY_MESSAGE_LIMIT_BYTES - 1)) + "\U0001f3a5")
+        assert title == "Title"
+        assert len(message.encode("utf-8")) == im_module.NTFY_MESSAGE_LIMIT_BYTES - 1
+        assert not message.endswith("\U0001f3a5")
+
+    # An unsupported provider fails before any webhook request is attempted
+    def test_invalid_webhook_provider_is_rejected(self, im_module, monkeypatch):
+        calls = []
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "unsupported")
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://example.com/hook")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module.req, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
+
+        assert im_module.send_webhook("Title", "Body") == 1
+        assert calls == []
