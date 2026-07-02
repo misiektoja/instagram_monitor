@@ -17,6 +17,7 @@ Powerful, real-time OSINT suite for tracking every activity on Instagram - from 
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="100%"/>
 </p>
 
+<a id="-quick-install-run"></a>
 ### 🚀 Quick Install & Run
 
 Python from PyPI (see also the video below)
@@ -43,7 +44,6 @@ docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/in
 </p>
 
 <a id="features"></a>
-
 ## Features
 
 ### 🔍 Real-time Tracking
@@ -65,8 +65,8 @@ docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/in
 - **Image Support**: View profile pictures and media directly in your terminal (via `imgcat`).
 
 ### 🔔 Smart Notifications
-- **Multi-Channel**: Instant alerts via **Email** and **Webhooks** (**Discord** etc.).
-- **Rich Alerts**: Attached media (profile pics, stories, posts) directly in notifications.
+- **Multi-Channel**: Instant alerts via **Email**, **Discord webhooks** and native **ntfy** notifications.
+- **Rich Alerts**: Attached media (profile pics, stories, posts) in Discord notifications.
 - **Error Reporting**: Be notified if the monitoring process hits a snag.
 
 ### 🛡️ Privacy & Detection Avoidance
@@ -96,6 +96,7 @@ docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/in
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor.png" alt="instagram_monitor_log_screenshot" width="100%"/>
 </p>
 
+<a id="documentation"></a>
 ## Documentation
 
 Full documentation is available at **[misiektoja.github.io/instagram_monitor](https://misiektoja.github.io/instagram_monitor/)**:
@@ -108,6 +109,7 @@ Full documentation is available at **[misiektoja.github.io/instagram_monitor](ht
 - [Anti-detection](https://misiektoja.github.io/instagram_monitor/anti-detection/) - avoid challenges and account suspension
 - [Troubleshooting](https://misiektoja.github.io/instagram_monitor/troubleshooting/) - the `--doctor` self-check and logging levels
 
+<a id="quick-start"></a>
 ## Quick Start
 
 <a id="-new-here-run-the-setup-wizard"></a>
@@ -181,12 +183,66 @@ To get the list of all supported command-line arguments / flags:
 instagram_monitor --help
 ```
 
+<a id="webhook-settings"></a>
+## Webhook Settings
+
+Instagram Monitor can send activity alerts through Discord or the native [ntfy publish API](https://docs.ntfy.sh/publish/). Webhooks work independently from email. The easiest setup is `instagram_monitor --setup`, where you can choose Discord or ntfy when asked about alerts.
+
+`WEBHOOK_PROVIDER` selects the request format. It defaults to `"discord"` so existing configurations and custom Discord-compatible templates keep working.
+
+<a id="discord"></a>
+### Discord
+
+Create a channel webhook in Discord under **Edit Channel > Integrations > Webhooks**, then keep the default provider in `instagram_monitor.conf`:
+
+```ini
+WEBHOOK_PROVIDER = "discord"
+```
+
+Save the private URL in `.env` as `WEBHOOK_URL` or pass it with `--webhook-url`.
+
+<a id="ntfy"></a>
+### ntfy
+
+For ntfy.sh or a self-hosted ntfy server:
+
+1. Choose a hard-to-guess topic such as `instagram-monitor-long-random-value`.
+2. Use the complete topic URL such as `https://ntfy.sh/instagram-monitor-long-random-value`.
+3. Set the provider in `instagram_monitor.conf`:
+
+```ini
+WEBHOOK_PROVIDER = "ntfy"
+```
+
+4. Save the topic URL in `.env` as `WEBHOOK_URL`.
+
+Instagram Monitor sends the alert body and event field details as a bounded UTF-8 ntfy message, with the alert subject as its title. Query parameters already present in the topic URL are preserved, which supports the ntfy [`auth` query parameter](https://docs.ntfy.sh/publish/#authentication) for protected topics.
+
+Topics on the public ntfy.sh service are public unless protected through an account reservation. Treat an unprotected topic name like a password and do not reuse the example topic above.
+
+Enable the event types you want, then send a test without starting monitoring:
+
+```ini
+WEBHOOK_ENABLED = True
+WEBHOOK_STATUS_NOTIFICATION = True
+WEBHOOK_FOLLOWERS_NOTIFICATION = True
+WEBHOOK_ERROR_NOTIFICATION = True
+```
+
+```sh
+instagram_monitor --send-test-webhook
+```
+
+See the [Webhook Notifications guide](https://misiektoja.github.io/instagram_monitor/usage/#webhook-notifications) for full Discord, ntfy, command-line and advanced template settings.
+
+<a id="change-log"></a>
 ## Change Log
 
 See [RELEASE_NOTES.md](https://github.com/misiektoja/instagram_monitor/blob/main/RELEASE_NOTES.md) for details.
 
 <a id="maintainers"></a>
 
+<a id="maintainers"></a>
 ## Maintainers
 
 - 👤 **misiektoja** ([@misiektoja](https://github.com/misiektoja))
@@ -194,6 +250,7 @@ See [RELEASE_NOTES.md](https://github.com/misiektoja/instagram_monitor/blob/main
 
 <a id="license"></a>
 
+<a id="license"></a>
 ## License
 
 Licensed under GPLv3. See [LICENSE](https://github.com/misiektoja/instagram_monitor/blob/main/LICENSE).
