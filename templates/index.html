@@ -1357,9 +1357,16 @@
                         </label>
                     </div>
                     <div class="form-group" style="margin: 10px 0;">
+                        <label class="form-label">Provider</label>
+                        <select class="form-input" id="webhook-provider">
+                            <option value="discord">Discord</option>
+                            <option value="ntfy">ntfy</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin: 10px 0;">
                         <label class="form-label">Webhook URL</label>
                         <input type="text" class="form-input" id="webhook-url"
-                            placeholder="https://discord.com/api/webhooks/...">
+                            placeholder="Discord webhook or complete ntfy topic URL">
                     </div>
                     <div style="margin-bottom: 20px;">
                         <button class="btn btn-secondary btn-sm" onclick="testWebhook()">
@@ -1973,12 +1980,13 @@
                 // settings-grid pairs each webhook row with its proxy counterpart
                 { l: 'Webhook', v: config.webhook_enabled },
                 { l: 'Proxy for Instagram', v: config.proxy_enabled ? 'Enabled' : 'Disabled' },
-                { l: 'Webhook Status', v: config.webhook_status ? 'Enabled' : 'Disabled' },
+                { l: 'Webhook Provider', v: config.webhook_provider },
                 { l: 'Proxy for Webhooks', v: config.proxy_webhooks ? 'Enabled' : 'Disabled' },
-                { l: 'Webhook Followers', v: config.webhook_followers ? 'Enabled' : 'Disabled' },
+                { l: 'Webhook Status', v: config.webhook_status ? 'Enabled' : 'Disabled' },
                 { l: 'Proxy URL', v: config.proxy_url ? config.proxy_url.substring(0, 50) + (config.proxy_url.length > 50 ? '...' : '') : '' },
-                { l: 'Webhook Errors', v: config.webhook_errors ? 'Enabled' : 'Disabled' },
+                { l: 'Webhook Followers', v: config.webhook_followers ? 'Enabled' : 'Disabled' },
                 { l: 'Proxy Certificate', v: config.proxy_cert || '' },
+                { l: 'Webhook Errors', v: config.webhook_errors ? 'Enabled' : 'Disabled' },
             ];
 
             // Environment specific items
@@ -2198,6 +2206,7 @@
             document.getElementById('error-notifications').checked = s.error_notifications || false;
 
             document.getElementById('webhook-enabled').checked = s.webhook_enabled || false;
+            document.getElementById('webhook-provider').value = s.webhook_provider || 'discord';
             document.getElementById('webhook-url').value = s.webhook_url || '';
             document.getElementById('webhook-status').checked = s.webhook_status || false;
             document.getElementById('webhook-followers').checked = s.webhook_followers || false;
@@ -2413,6 +2422,7 @@
                 error_notifications: document.getElementById('error-notifications').checked,
 
                 webhook_enabled: document.getElementById('webhook-enabled').checked,
+                webhook_provider: document.getElementById('webhook-provider').value,
                 webhook_url: document.getElementById('webhook-url').value,
                 webhook_status: document.getElementById('webhook-status').checked,
                 webhook_followers: document.getElementById('webhook-followers').checked,
