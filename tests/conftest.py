@@ -55,6 +55,7 @@ def deterministic_globals(monkeypatch):
     monkeypatch.setattr(im, "MAX_H2", 0, raising=False)
     monkeypatch.setattr(im, "WEBHOOK_ENABLED", False, raising=False)
     monkeypatch.setattr(im, "WEBHOOK_URL", "", raising=False)
+    monkeypatch.setattr(im, "WEBHOOK_PROVIDER", "discord", raising=False)
     monkeypatch.setattr(im, "DAILY_HUMAN_HITS", 5, raising=False)
     # Drop any cached flag-probe verdict between tests
     with im.FLAGGED_PROBE_LOCK:
