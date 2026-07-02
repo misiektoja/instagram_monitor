@@ -46,6 +46,18 @@ class TestDashboardSettings:
         assert data["smtp_password_set"] is True
         assert "smtp_password" not in data
 
+    # Settings GET and POST expose and update the non-secret webhook provider
+    def test_settings_round_trip_webhook_provider(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        assert client.get("/api/settings").get_json()["webhook_provider"] == "discord"
+        response = client.post("/api/settings", json={"webhook_provider": "ntfy"})
+        assert response.status_code == 200
+        assert im_module.WEBHOOK_PROVIDER == "ntfy"
+
     # Settings POST clamps too-small intervals and reports the adjusted change
     def test_settings_post_clamps_check_interval(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)
