@@ -223,14 +223,19 @@ Example email:
 <a id="webhook-notifications"></a>
 ## Webhook Notifications
 
-The tool supports webhook notifications (compatible with **Discord** and other webhook services) for all monitored events (posts, reels, stories, followings, followers, bio, profile visibility, profile picture changes and errors).
+The tool supports native **Discord** and **ntfy** webhook notifications for all monitored events (posts, reels, stories, followings, followers, bio, profile visibility, profile picture changes and errors). Email and webhooks work independently.
+
+`WEBHOOK_PROVIDER` selects the request format. It defaults to `"discord"` so existing configurations and custom Discord-compatible templates keep working.
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_discord.png" alt="instagram_monitor_discord_screenshot" width="80%"/>
 </p>
 
 <a id="1-configure-discord-webhook"></a>
-### 1. Configure Discord Webhook
+### 1. Choose a Provider
+
+#### Discord
+
 If you are new to Discord, follow these steps to get your **Webhook URL**:
 
 1.  **Create a Server**: Click the **+** (Plus) icon on the left sidebar ("Add a Server") -> **Create My Own** -> **For me and my friends**.
@@ -238,16 +243,33 @@ If you are new to Discord, follow these steps to get your **Webhook URL**:
 3.  **Create Webhook**: Go to **Integrations** in the left menu -> **Webhooks** -> **New Webhook**.
 4.  **Copy URL**: Click on the new webhook (often named "Spidey Bot", you can rename it) and click **Copy Webhook URL**.
 
+Keep `WEBHOOK_PROVIDER = "discord"` in `instagram_monitor.conf`.
+
+#### ntfy
+
+For ntfy.sh or a self-hosted ntfy server:
+
+1. Choose a hard-to-guess topic such as `instagram-monitor-long-random-value`.
+2. Use the complete topic URL such as `https://ntfy.sh/instagram-monitor-long-random-value`.
+3. Set `WEBHOOK_PROVIDER = "ntfy"` in `instagram_monitor.conf`.
+
+Instagram Monitor sends the alert body and event field details as a bounded UTF-8 ntfy message, with the alert subject as its title. Query parameters already present in the topic URL are preserved, which supports the ntfy [`auth` query parameter](https://docs.ntfy.sh/publish/#authentication) for protected topics.
+
+Topics on the public ntfy.sh service are public unless protected through an account reservation. Treat an unprotected topic name like a password and do not reuse the example topic above.
+
 <a id="2-enable-in-the-tool"></a>
 ### 2. Enable in the Tool
-- set `WEBHOOK_ENABLED` to `True` and `WEBHOOK_URL` to your copied URL in `instagram_monitor.conf`
+- set `WEBHOOK_ENABLED` to `True`, select `WEBHOOK_PROVIDER` and set `WEBHOOK_URL` to your copied Discord or ntfy URL in `instagram_monitor.conf`
 - or use an [environment variable](configuration.md#storing-secrets) or a dotenv file for `WEBHOOK_URL`
 - or use the `--webhook-url` flag (alternatively use the `--webhook` flag if URL is already in config)
 - or toggle it via the **Settings** menu in the **Web Dashboard**
 
 ```sh
-# Enable with URL
-instagram_monitor <target_insta_user> --webhook-url "https://discord.com/api/webhooks/..."
+# Enable Discord with URL
+instagram_monitor <target_insta_user> --webhook-provider discord --webhook-url "https://discord.com/api/webhooks/..."
+
+# Enable ntfy with a topic URL
+instagram_monitor <target_insta_user> --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-private-topic"
 
 # Explicitly enable/disable if URL is in config
 instagram_monitor <target_insta_user> --webhook
@@ -262,8 +284,8 @@ You can verify your configuration by sending a test notification:
 # Verify settings from configuration file
 instagram_monitor --send-test-webhook
 
-# Verify a specific URL from command line
-instagram_monitor --webhook-url "https://discord.com/api/webhooks/..." --send-test-webhook
+# Verify a specific provider and URL from command line
+instagram_monitor --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-private-topic" --send-test-webhook
 ```
 
 <a id="4-advanced-configuration"></a>
@@ -283,6 +305,7 @@ instagram_monitor <target_insta_user> --webhook-url "..." --webhook-status --web
 Configuration file options (all disabled by default):
 ```ini
 WEBHOOK_ENABLED = False
+WEBHOOK_PROVIDER = "discord"  # Use "ntfy" for an ntfy topic URL
 WEBHOOK_URL = "https://discord.com/api/webhooks/..."
 WEBHOOK_USERNAME = "Instagram Monitor"
 WEBHOOK_AVATAR_URL = ""
