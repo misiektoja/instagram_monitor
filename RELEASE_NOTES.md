@@ -1,5 +1,14 @@
 # instagram_monitor release notes
 
+# Changes in 3.6 (TBD)
+
+**Features and Improvements**:
+
+- **NEW:** Added native **ntfy webhook notifications** for status, follower and error events. Set `WEBHOOK_PROVIDER = "ntfy"` and save a complete ntfy topic URL in `WEBHOOK_URL` or select ntfy in the setup wizard or Web Dashboard
+- **IMPROVE:** Preserved Discord as the default webhook provider for backward compatibility, including custom payload templates, headers, transformations, proxy routing and Discord image attachments
+- **IMPROVE:** Added provider validation to `--doctor`, provider visibility in startup and dashboard summaries plus a `--webhook-provider {discord,ntfy}` command-line option
+- **IMPROVE:** Sent native ntfy messages as bounded UTF-8 text with the alert subject as the title, event field details in the body and existing topic query parameters preserved for authentication
+
 # Changes in 3.5 (01 Jul 2026)
 
 Version **3.5** focuses on making the tool easier to use, configure and recover when something goes wrong, especially for non-technical users who asked for a simpler path. It brings guided setup, broader browser-session import, clearer diagnostics and friendlier recovery hints so first runs and everyday troubleshooting require less manual digging.
