@@ -32,6 +32,7 @@ keywords = [
 description = "Skip placeholders and variable references"
 regexTarget = "secret"
 regexes = [
+    '''(?i)^legacy-secret$''',
     '''(?i)^your_[a-z0-9_]+$''',
     '''(?i)^example(?:_[a-z0-9_]+)?$''',
     '''(?i)^dummy(?:_[a-z0-9_]+)?$''',
