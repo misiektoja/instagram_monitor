@@ -517,13 +517,15 @@ WEBHOOK_TEMPLATE = {
     }]
 }
 
-# Webhook request headers as a dictionary, but it can be empty.
+# Optional static request headers for advanced webhook integrations
+# Prefer NTFY_ACCESS_TOKEN in an environment variable or dotenv file for ntfy Bearer authentication
 # Some examples:
 #   {
 #       "Content-Type": "application/json",
 #       "Authorization": "Bearer tk_redacted"
 #   }
 WEBHOOK_HEADERS = {}
+NTFY_ACCESS_TOKEN = ""
 
 # Transformations to apply to WEBHOOK_TEMPLATE and WEBHOOK_HEADERS as a list of tuples, but it can be empty
 # tuple format is: (field_to_target, method_name, *optional_arguments)
@@ -647,6 +649,10 @@ def generate_config_with_current_values() -> str:
         expr, comment = _split_inline_comment_preserving_strings(rhs)
         expr_stripped = expr.strip()
 
+        if var in SENSITIVE_CONFIG_KEYS:
+            out_lines.append(line)
+            continue
+
         # Avoid rewriting multiline structures (keep template as-is)
         if expr_stripped.endswith(("{", "[", "(")) and not any(c in expr_stripped for c in ("}", "]", ")")):
             out_lines.append(line)
@@ -664,6 +670,71 @@ def generate_config_with_current_values() -> str:
         out_lines.append(new_line)
 
     return "\n".join(out_lines) + "\n"
+
+
+# Quotes one secret value for lossless parsing by python-dotenv
+def _format_dotenv_value(value: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError("Dotenv secret values must be strings")
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "\\r").replace("\n", "\\n")
+    return f'"{escaped}"'
+
+
+# Updates allowed secrets in a dotenv file through an atomic replacement
+def update_dotenv_file(destination, updates):
+    if not hasattr(updates, "items"):
+        raise TypeError("Dotenv updates must be a mapping")
+    update_items = list(updates.items())
+    for key, value in update_items:
+        if not isinstance(key, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", key) or key not in SECRET_KEYS:
+            raise ValueError(f"Unsupported dotenv key: {key!r}")
+        if not isinstance(value, str):
+            raise TypeError(f"Dotenv value for {key} must be a string")
+
+    destination_path = Path(destination).expanduser()
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    existing_lines = destination_path.read_text(encoding="utf-8").splitlines() if destination_path.exists() else []
+    update_keys = {key for key, _ in update_items}
+    values_by_key = dict(update_items)
+    seen_keys = set()
+    output_lines = []
+    assignment_pattern = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
+    for line in existing_lines:
+        match = assignment_pattern.match(line)
+        key = match.group(1) if match else None
+        if key not in update_keys:
+            output_lines.append(line)
+            continue
+        if key in seen_keys:
+            continue
+        output_lines.append(f"{key}={_format_dotenv_value(values_by_key[key])}")
+        seen_keys.add(key)
+
+    for key, value in update_items:
+        if key not in seen_keys:
+            output_lines.append(f"{key}={_format_dotenv_value(value)}")
+            seen_keys.add(key)
+
+    content = "\n".join(output_lines)
+    if output_lines:
+        content += "\n"
+
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", prefix=f".{destination_path.name}.", suffix=".tmp", dir=str(destination_path.parent), delete=False) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(content)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        if os.name == "posix":
+            os.chmod(temporary_path, 0o600)
+        os.replace(temporary_path, destination_path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
+
+    return {"path": str(destination_path), "updated_keys": tuple(key for key, _ in update_items)}
 
 
 # Default dummy values so linters shut up
@@ -751,6 +822,8 @@ WEBHOOK_EMBED_TITLE_LIMIT = 256
 NTFY_MESSAGE_LIMIT_BYTES = 4096
 WEBHOOK_USERNAME = "Instagram Monitor"
 WEBHOOK_AVATAR_URL = ""
+WEBHOOK_HEADERS = {}
+NTFY_ACCESS_TOKEN = ""
 WEBHOOK_STATUS_NOTIFICATION = True
 WEBHOOK_FOLLOWERS_NOTIFICATION = True
 WEBHOOK_ERROR_NOTIFICATION = False
@@ -780,7 +853,10 @@ exec(CONFIG_BLOCK, globals())
 DEFAULT_CONFIG_FILENAME = "instagram_monitor.conf"
 
 # List of secret keys to load from env/config
-SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD", "WEBHOOK_URL", "PROXY_URL")
+SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD", "WEBHOOK_URL", "PROXY_URL", "NTFY_ACCESS_TOKEN")
+
+# Config values that must retain safe template defaults during generated output
+SENSITIVE_CONFIG_KEYS = frozenset((*SECRET_KEYS, "WEBHOOK_HEADERS"))
 
 # List of error substrings that unambiguously indicate the session account or IP has been flagged (challenge/checkpoint/shadowban)
 FLAGGED_TRIGGERS = ("detected automated checks", "checkpoint_required")
@@ -879,6 +955,8 @@ import time
 import string
 import json
 import os
+import tempfile
+import getpass
 from os.path import expanduser, dirname, basename
 from datetime import datetime, timezone, timedelta
 from dateutil import relativedelta
@@ -4128,6 +4206,63 @@ def build_ntfy_webhook_message(title: str, description: str, fields=None, image_
     return safe_title, safe_message
 
 
+# Returns a safe validation error for one custom webhook header mapping
+def _validate_webhook_header_mapping(headers) -> Optional[str]:
+    if not isinstance(headers, dict):
+        return "WEBHOOK_HEADERS must be a dictionary of string header names and values"
+    normalized_names = set()
+    for name, value in headers.items():
+        if not isinstance(name, str) or not re.fullmatch(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+", name):
+            return "WEBHOOK_HEADERS contains an invalid HTTP header name"
+        normalized_name = name.casefold()
+        if normalized_name in normalized_names:
+            return "WEBHOOK_HEADERS contains duplicate case-insensitive header names"
+        normalized_names.add(normalized_name)
+        if not isinstance(value, str):
+            return f"WEBHOOK_HEADERS value for {name} must be a string"
+        if "\r" in value or "\n" in value:
+            return f"WEBHOOK_HEADERS value for {name} must not contain line breaks"
+    return None
+
+
+# Returns a safe configuration error for custom webhook headers or ntfy access tokens
+def validate_webhook_headers(provider=None) -> Optional[str]:
+    header_error = _validate_webhook_header_mapping(WEBHOOK_HEADERS)
+    if header_error is not None:
+        return header_error
+    if normalized_webhook_provider(provider) == "ntfy":
+        if not isinstance(NTFY_ACCESS_TOKEN, str):
+            return "NTFY_ACCESS_TOKEN must be a string"
+        token = NTFY_ACCESS_TOKEN.strip()
+        if "\r" in token or "\n" in token:
+            return "NTFY_ACCESS_TOKEN must not contain line breaks"
+        if token.casefold().startswith(("bearer ", "basic ")):
+            return "NTFY_ACCESS_TOKEN must contain only the access token without an Authorization scheme"
+    return None
+
+
+# Builds provider-specific headers while formatting placeholders and applying private ntfy authentication
+def build_webhook_headers(provider: str, payload: dict) -> dict[str, str]:
+    validation_error = validate_webhook_headers(provider)
+    if validation_error is not None:
+        raise ValueError(validation_error)
+    formatted_headers = format_payload(WEBHOOK_HEADERS, payload)
+    formatted_error = _validate_webhook_header_mapping(formatted_headers)
+    if formatted_error is not None:
+        raise ValueError(formatted_error)
+    headers: dict[str, str] = dict(cast(dict[str, str], formatted_headers))
+    if not any(name.casefold() == "user-agent" for name in headers):
+        headers["User-Agent"] = f"InstagramMonitor/{VERSION}"
+    if provider == "ntfy":
+        headers = {name: value for name, value in headers.items() if name.casefold() != "content-type"}
+        headers["Content-Type"] = "text/plain; charset=utf-8"
+        token = NTFY_ACCESS_TOKEN.strip()
+        if token:
+            headers = {name: value for name, value in headers.items() if name.casefold() != "authorization"}
+            headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 # Sends one webhook notification through the selected provider
 def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status"):
     if not WEBHOOK_ENABLED or not WEBHOOK_URL:
@@ -4200,9 +4335,11 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
             except (AttributeError, TypeError) as e:
                 print(f"* Transformation error on {field}.{method_name}: {e}")
 
-    final_headers: dict = format_payload(WEBHOOK_HEADERS, payload)  # type: ignore
-    if 'User-Agent' not in final_headers:
-        final_headers['User-Agent'] = f"InstagramMonitor/{VERSION}"
+    try:
+        final_headers = build_webhook_headers(provider, payload)
+    except ValueError as e:
+        print(f"* Webhook error: {e}")
+        return 1
 
     if PROXY_ENABLED and PROXY_WEBHOOKS:
         final_post_proxy = get_proxies()
@@ -4218,9 +4355,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         try:
             if provider == "ntfy":
                 ntfy_title, ntfy_message = build_ntfy_webhook_message(str(payload["title"]), str(payload["description"]), payload["fields"], webhook_image_url)
-                ntfy_headers = dict(final_headers)
-                ntfy_headers["Content-Type"] = "text/plain; charset=utf-8"
-                response = req.post(str(WEBHOOK_URL), headers=ntfy_headers, data=ntfy_message.encode("utf-8"), params={"title": ntfy_title}, timeout=10, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                response = req.post(str(WEBHOOK_URL), headers=final_headers, data=ntfy_message.encode("utf-8"), params={"title": ntfy_title}, timeout=10, verify=final_post_proxy_ssl, proxies=final_post_proxy)
             else:
                 final_payload = format_payload(WEBHOOK_TEMPLATE, payload)  # type: ignore
                 if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
@@ -4842,7 +4977,7 @@ def reload_secrets_signal_handler(sig, frame):
             else:
                 env_path = find_dotenv()
             if env_path:
-                load_dotenv(env_path, override=True)
+                load_dotenv(env_path, override=True, interpolate=False)
             else:
                 print("* No .env file found, skipping env-var reload")
         except ImportError:
@@ -10753,6 +10888,19 @@ def _wizard_ask_text(question: str, default: str = "", required: bool = False) -
         print(colorize("warning", "  This value is required."))
 
 
+# Reads a required secret through getpass without echoing the entered value
+def _wizard_ask_secret(question: str) -> str:
+    while True:
+        try:
+            value = getpass.getpass(f"{question}: ")
+        except (EOFError, KeyboardInterrupt):
+            print("\n" + colorize("warning", "Setup cancelled."))
+            raise SystemExit(1) from None
+        if value:
+            return value
+        print(colorize("warning", "  This secret is required and cannot be empty."))
+
+
 # Prompts a yes/no question and returns the boolean answer
 def _wizard_ask_yes_no(question: str, default: bool = True) -> bool:
     hint = "[Y/n]" if default else "[y/N]"
@@ -10785,31 +10933,50 @@ def _wizard_ask_choice(question: str, options, default_index: int = 0) -> int:
         print(colorize("warning", f"  Enter a number between 1 and {len(options)}."))
 
 
-# Writes or updates KEY=value secret lines in the given dotenv file, preserving existing entries
-def _wizard_write_env(secrets: dict, env_path: str) -> None:
-    existing: dict = {}
-    order: list = []
-    if os.path.isfile(env_path):
-        with open(env_path, "r", encoding="utf-8") as f:
-            for line in f:
-                s = line.strip()
-                if not s or s.startswith("#") or "=" not in s:
-                    continue
-                key = s.split("=", 1)[0].strip()
-                existing[key] = line.rstrip("\n")
-                if key not in order:
-                    order.append(key)
-    for key, value in secrets.items():
-        existing[key] = f"{key}={value}"
-        if key not in order:
-            order.append(key)
-    with open(env_path, "w", encoding="utf-8") as f:
-        for key in order:
-            f.write(existing[key] + "\n")
+# Returns a secret from the selected dotenv file or environment without displaying it
+def _wizard_secret_value(key: str, env_path: Path) -> Optional[str]:
+    value = None
+    if env_path.is_file():
+        try:
+            from dotenv import dotenv_values
+            value = dotenv_values(env_path, interpolate=False).get(key)
+        except Exception:
+            value = None
+    if value is None:
+        value = os.environ.get(key)
+    return value if isinstance(value, str) else None
+
+
+# Returns whether a non-placeholder secret exists in the selected dotenv file or environment
+def _wizard_existing_secret(key: str, env_path: Path, placeholders=()) -> bool:
+    value = _wizard_secret_value(key, env_path)
+    return value is not None and bool(value.strip()) and value not in placeholders
+
+
+# Collects an optional ntfy access token without displaying or contacting the service
+def _wizard_collect_ntfy_access_token(secret_updates: dict, env_path: Path) -> None:
+    existing_token = _wizard_existing_secret("NTFY_ACCESS_TOKEN", env_path)
+    if existing_token:
+        choice = _wizard_ask_choice("Which ntfy authentication should be used?", [("Keep the saved access token", "Keeps the private value without displaying or changing it."), ("Paste a new access token", "Uses a hidden prompt then saves the replacement in .env."), ("Do not use an access token", "Disables the saved token. Authentication in the topic URL still works.")])
+        if choice == 0:
+            return
+        if choice == 2:
+            secret_updates["NTFY_ACCESS_TOKEN"] = ""
+            print("  The saved ntfy access token will be disabled without being displayed.")
+            return
+    elif not _wizard_ask_yes_no("Authenticate this ntfy topic with a separate access token?", default=False):
+        print("  No separate access token selected. Authentication already present in the topic URL still works.")
+        return
+    while True:
+        token = _wizard_ask_secret("Paste the ntfy access token only").strip()
+        if token and "\r" not in token and "\n" not in token and not token.casefold().startswith(("bearer ", "basic ")):
+            break
+        print("  Paste only the access token without a Bearer or Basic prefix.")
+    secret_updates["NTFY_ACCESS_TOKEN"] = token
 
 
 # Runs the interactive first-run setup, writing config plus .env and optionally launching monitoring
-def run_setup_wizard() -> None:
+def run_setup_wizard(config_file=None, env_file=None) -> None:
     global SESSION_USERNAME, SKIP_SESSION, TARGET_USERNAMES
     global WEB_DASHBOARD_ENABLED, DASHBOARD_ENABLED, WEB_DASHBOARD_HOST, STATUS_NOTIFICATION
     global SMTP_HOST, SMTP_PORT, SMTP_SSL, SMTP_USER, SENDER_EMAIL, RECEIVER_EMAIL
@@ -10822,6 +10989,12 @@ def run_setup_wizard() -> None:
 
     method = _wizard_install_method()
     prefix = _wizard_cmd_prefix(method)
+    config_path = str(Path(config_file or DEFAULT_CONFIG_FILENAME).expanduser())
+    env_path = Path(env_file or ".env").expanduser()
+    for secret_key in SECRET_KEYS:
+        existing_secret = _wizard_secret_value(secret_key, env_path)
+        if existing_secret is not None:
+            globals()[secret_key] = existing_secret
 
     print(colorize("header", f"\nInstagram Monitor v{VERSION} - Setup Wizard\n"))
     print("This asks a few questions and writes a ready-to-run configuration.")
@@ -10887,7 +11060,7 @@ def run_setup_wizard() -> None:
             session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
 
         if login_method == 2:
-            collected_secrets["SESSION_PASSWORD"] = _wizard_ask_text("Instagram password (stored in .env)", required=True)
+            collected_secrets["SESSION_PASSWORD"] = _wizard_ask_secret("Instagram password (stored in .env)")
 
     # Q3: interface
     print()
@@ -10919,10 +11092,20 @@ def run_setup_wizard() -> None:
         else:
             print(colorize("info", "  In ntfy: choose a hard-to-guess topic and use its complete URL, such as https://ntfy.sh/your-private-topic."))
             webhook_prompt = "Paste the ntfy topic URL (stored in .env)"
-        webhook_url = _wizard_ask_text(webhook_prompt, required=True)
-        if webhook_url:
-            want_webhook = True
+        existing_webhook = _wizard_existing_secret("WEBHOOK_URL", env_path)
+        replace_webhook = True
+        if existing_webhook:
+            replace_webhook = _wizard_ask_choice("Which webhook URL should be used?", [("Keep the saved URL", "Keeps the private value without displaying or changing it."), ("Paste a new URL", "Uses a hidden prompt then saves the new private value in .env.")]) == 1
+        if replace_webhook:
+            while True:
+                webhook_url = _wizard_ask_secret(webhook_prompt)
+                if validate_webhook_url(webhook_url):
+                    break
+                print(colorize("warning", "  That does not look like a complete HTTP(S) webhook URL. Copy it from the webhook service and try again."))
             collected_secrets["WEBHOOK_URL"] = webhook_url
+        want_webhook = True
+        if WEBHOOK_PROVIDER == "ntfy":
+            _wizard_collect_ntfy_access_token(collected_secrets, env_path)
 
     want_email = False
     print()
@@ -10935,7 +11118,7 @@ def run_setup_wizard() -> None:
             SMTP_PORT = 587
         SMTP_SSL = _wizard_ask_yes_no("Use SSL/TLS?", default=True)
         SMTP_USER = _wizard_ask_text("SMTP username", required=True)
-        collected_secrets["SMTP_PASSWORD"] = _wizard_ask_text("SMTP password (stored in .env)", required=True)
+        collected_secrets["SMTP_PASSWORD"] = _wizard_ask_secret("SMTP password (stored in .env)")
         SENDER_EMAIL = _wizard_ask_text("Sender email (From)", required=True)
         RECEIVER_EMAIL = _wizard_ask_text("Recipient email (To)", required=True)
         want_email = True
@@ -10997,7 +11180,6 @@ def run_setup_wizard() -> None:
 
     # Write the config file (default name, confirm before overwriting an existing one)
     print()
-    config_path = "instagram_monitor.conf"
     if os.path.isfile(config_path) and not _wizard_ask_yes_no(f"'{config_path}' already exists. Overwrite it?", default=False):
         config_path = _wizard_ask_text("Save config as", default="instagram_monitor_new.conf", required=True)
     try:
@@ -11010,11 +11192,10 @@ def run_setup_wizard() -> None:
         print(colorize("error", f"\nCould not write config file '{config_path}': {e}"))
         sys.exit(1)
 
-    # Write secrets to .env
+    # Write secrets to the selected dotenv file
     if collected_secrets:
-        env_path = ".env"
         try:
-            _wizard_write_env(collected_secrets, env_path)
+            update_dotenv_file(env_path, collected_secrets)
             for key, value in collected_secrets.items():
                 globals()[key] = value
             print(colorize("info", f"Saved secrets ({', '.join(collected_secrets)}) to {env_path}"))
@@ -11250,11 +11431,16 @@ def run_doctor(targets) -> int:
     elif not normalized_webhook_provider():
         fails += 1
         _doctor_line("fail", "Webhook provider is invalid", "Set WEBHOOK_PROVIDER to 'discord' or 'ntfy'.")
-    elif validate_webhook_url(WEBHOOK_URL):
-        _doctor_line("ok", f"Webhook URL looks valid for {normalized_webhook_provider()}", "Send a real test with --send-test-webhook")
-    else:
+    elif not validate_webhook_url(WEBHOOK_URL):
         fails += 1
         _doctor_line("fail", "Webhook URL is not a valid HTTP(S) URL", "Check WEBHOOK_URL.")
+    else:
+        header_error = validate_webhook_headers(normalized_webhook_provider())
+        if header_error is not None:
+            fails += 1
+            _doctor_line("fail", "Webhook headers are invalid", header_error)
+        else:
+            _doctor_line("ok", f"Webhook URL and headers look valid for {normalized_webhook_provider()}", "Send a real test with --send-test-webhook")
 
     # Summary
     print(colorize("header", "\nSummary"))
@@ -11809,7 +11995,9 @@ def run_main():
     args = parser.parse_args()
 
     if args.setup:
-        run_setup_wizard()
+        if args.env_file and str(args.env_file).casefold() == "none":
+            parser.error("--setup requires a dotenv destination and cannot use --env-file none")
+        run_setup_wizard(config_file=args.config_file, env_file=args.env_file)
         sys.exit(0)
 
     if len(sys.argv) == 1:
@@ -11883,11 +12071,11 @@ def run_main():
                 if not os.path.isfile(env_path):
                     print(f"* Warning: dotenv file '{env_path}' does not exist\n")
                 else:
-                    load_dotenv(env_path, override=True)
+                    load_dotenv(env_path, override=True, interpolate=False)
             else:
                 env_path = find_dotenv() or None
                 if env_path:
-                    load_dotenv(env_path, override=True)
+                    load_dotenv(env_path, override=True, interpolate=False)
         except ImportError:
             env_path = DOTENV_FILE if DOTENV_FILE else None
             if env_path:
