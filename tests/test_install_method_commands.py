@@ -89,6 +89,17 @@ class TestWizardBrowserDesc:
             assert im_module.browser_label(browser) in desc
 
 
+class TestWizardSecretInput:
+    # Secret input uses getpass and returns the hidden value
+    def test_secret_prompt_uses_getpass(self, im_module, monkeypatch):
+        prompts = []
+        monkeypatch.setattr(im_module.getpass, "getpass", lambda prompt: prompts.append(prompt) or "private-value")
+        monkeypatch.setattr(im_module, "_wizard_input", lambda prompt: (_ for _ in ()).throw(AssertionError("visible input used")))
+
+        assert im_module._wizard_ask_secret("Secret") == "private-value"
+        assert prompts == ["Secret: "]
+
+
 class TestHelpEpilog:
     def _web_dashboard_line(self, epilog):
         return next(line for line in epilog.splitlines() if line.strip().endswith("--web-dashboard"))
