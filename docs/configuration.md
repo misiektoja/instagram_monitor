@@ -192,7 +192,7 @@ instagram_monitor --send-test-email
 <a id="storing-secrets"></a>
 ## Storing Secrets
 
-It is recommended to store secrets like `SESSION_PASSWORD`, `SMTP_PASSWORD`, `WEBHOOK_URL` or `PROXY_URL` as either an environment variable or in a dotenv file.
+It is recommended to store secrets like `SESSION_PASSWORD`, `SMTP_PASSWORD`, `WEBHOOK_URL`, `NTFY_ACCESS_TOKEN` or `PROXY_URL` as either an environment variable or in a dotenv file.
 
 Set the needed environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
 
@@ -200,6 +200,7 @@ Set the needed environment variables using `export` on **Linux/Unix/macOS/WSL** 
 export SESSION_PASSWORD="your_instagram_session_password"
 export SMTP_PASSWORD="your_smtp_password"
 export WEBHOOK_URL="https://discord.com/api/webhooks/..."
+export NTFY_ACCESS_TOKEN="tk_your_ntfy_access_token"
 ```
 
 On **Windows Command Prompt** use `set` instead of `export` and on **Windows PowerShell** use `$env`.
@@ -214,6 +215,7 @@ cp .env.example .env
 SESSION_PASSWORD="your_instagram_session_password"
 SMTP_PASSWORD="your_smtp_password"
 WEBHOOK_URL="https://discord.com/api/webhooks/..."
+NTFY_ACCESS_TOKEN="tk_your_ntfy_access_token"
 ```
 
 By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it.
