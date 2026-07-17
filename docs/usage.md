@@ -255,6 +255,24 @@ For ntfy.sh or a self-hosted ntfy server:
 
 Instagram Monitor sends the alert body and event field details as a bounded UTF-8 ntfy message, with the alert subject as its title. Query parameters already present in the topic URL are preserved, which supports the ntfy [`auth` query parameter](https://docs.ntfy.sh/publish/#authentication) for protected topics.
 
+For a protected topic, the setup wizard can collect an ntfy access token through a hidden prompt and save it privately in `.env`. For manual setup, add:
+
+```ini
+NTFY_ACCESS_TOKEN="tk_your_ntfy_access_token"
+```
+
+The token is sent as `Authorization: Bearer <token>` and takes precedence over an `Authorization` entry in `WEBHOOK_HEADERS`.
+
+Static custom headers remain available for advanced Discord or ntfy integrations:
+
+```python
+WEBHOOK_HEADERS = {
+    "Authorization": "Basic your_base64_credentials",
+}
+```
+
+For ntfy, Instagram Monitor always sets the required plain-text `Content-Type`. Prefer `NTFY_ACCESS_TOKEN` in `.env` for Bearer authentication because a token inside `WEBHOOK_HEADERS` is easier to expose or commit accidentally. Header names and values are validated before any request is sent.
+
 Topics on the public ntfy.sh service are public unless protected through an account reservation. Treat an unprotected topic name like a password and do not reuse the example topic above.
 
 <a id="2-enable-in-the-tool"></a>
