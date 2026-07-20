@@ -268,7 +268,7 @@ Keep `WEBHOOK_PROVIDER = "discord"` in `instagram_monitor.conf`.
 For ntfy.sh or a self-hosted ntfy server:
 
 1. Choose a hard-to-guess topic such as `instagram-monitor-long-random-value`.
-2. Use the complete topic URL such as `https://ntfy.sh/instagram-monitor-long-random-value`.
+2. In the setup wizard, paste either the bare ntfy.sh topic name or its complete topic URL such as `https://ntfy.sh/instagram-monitor-long-random-value`. A bare topic name is expanded to an ntfy.sh URL. For self-hosted servers and for Web Dashboard or manual configuration, use the complete HTTP(S) topic URL.
 3. Set `WEBHOOK_PROVIDER = "ntfy"` in `instagram_monitor.conf`.
 
 Instagram Monitor sends the alert body and event field details as a bounded UTF-8 ntfy message, with the alert subject as its title. Query parameters already present in the topic URL are preserved, which supports the ntfy [`auth` query parameter](https://docs.ntfy.sh/publish/#authentication) for protected topics.
