@@ -4,7 +4,7 @@
 
 **Features and Improvements**:
 
-- **NEW:** Added native **ntfy webhook notifications** for status, follower and error events. Set `WEBHOOK_PROVIDER = "ntfy"` and save a complete ntfy topic URL in `WEBHOOK_URL` or select ntfy in the setup wizard or Web Dashboard
+- **NEW:** Added native **ntfy webhook notifications** for status, follower and error events. Set `WEBHOOK_PROVIDER = "ntfy"` and save a complete ntfy topic URL in `WEBHOOK_URL` or select ntfy in the setup wizard or Web Dashboard. The setup wizard also accepts a bare ntfy.sh topic name and expands it to a complete URL
 - **NEW:** Added **authentication for protected ntfy topics** via `NTFY_ACCESS_TOKEN` support with Bearer authentication, hidden setup wizard collection and precedence over custom `Authorization` headers in `WEBHOOK_HEADERS`
 - **IMPROVE:** Preserved Discord as the default webhook provider for backward compatibility, including custom payload templates, headers, transformations, proxy routing and Discord image attachments
 - **IMPROVE:** Added provider validation to `--doctor`, provider visibility in startup and dashboard summaries plus a `--webhook-provider {discord,ntfy}` command-line option
