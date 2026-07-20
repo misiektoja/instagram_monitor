@@ -62,7 +62,7 @@ pip install instaloader requests python-dateutil pytz tzlocal python-dotenv tqdm
 
 **Note:** `rich` is required for the Terminal Dashboard, `flask` is required for the Web Dashboard. If Rich or Flask is not installed, the corresponding dashboard is disabled automatically.
 
-**Note:** To import sessions from Chrome, Brave or Chromium (macOS and Linux only), also run `pip install pycookiecheat`.
+**Note:** To import sessions from Chrome, Brave or Chromium (macOS and Linux only), also run `pip install pycookiecheat`. The setup wizard offers to run the matching install command with the active Python interpreter if this package is missing.
 
 Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt)*:
 
