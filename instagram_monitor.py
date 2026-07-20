@@ -10847,9 +10847,14 @@ def get_target_paths(user):
     return target_csv, target_log
 
 
+# Returns whether the process is running inside the supported container image
+def _running_in_container() -> bool:
+    return os.path.exists("/.dockerenv") or bool(os.environ.get("INSTAGRAM_MONITOR_DOCKER"))
+
+
 # Detects how the tool was launched so the wizard can show matching commands (compose is the docker-compose.yml service, which exports INSTAGRAM_MONITOR_COMPOSE)
 def _wizard_install_method() -> str:
-    if os.path.exists("/.dockerenv") or os.environ.get("INSTAGRAM_MONITOR_DOCKER"):
+    if _running_in_container():
         return "compose" if os.environ.get("INSTAGRAM_MONITOR_COMPOSE") else "docker"
     prog = os.path.basename(sys.argv[0] or "")
     if prog.endswith(".py"):
@@ -10889,8 +10894,9 @@ def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, exact: bool = F
         service_ports = " --service-ports" if web_dashboard else ""
         return f"docker compose run --rm{service_ports} instagram_monitor"
     if method == "docker":
-        web_port_flag = " -p 8000:8000" if web_dashboard else ""
-        return (f'docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor')
+        web_port_flag = " -p 127.0.0.1:8000:8000" if web_dashboard else ""
+        user_flag = f" --user {os.getuid()}:{os.getgid()}" if hasattr(os, "getuid") and hasattr(os, "getgid") else ""
+        return (f'docker run --rm -it --init{user_flag} -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor')
     return _wizard_render_command(_wizard_local_command_args(method, exact=exact))
 
 
@@ -12622,6 +12628,10 @@ def run_main():
     if args.web_dashboard_template_dir:
         # Resolve to absolute path immediately
         WEB_DASHBOARD_TEMPLATE_DIR = os.path.abspath(os.path.expanduser(args.web_dashboard_template_dir))
+
+    # Container bridge networking needs the service to listen beyond its own loopback interface
+    if WEB_DASHBOARD_ENABLED and _running_in_container() and WEB_DASHBOARD_HOST in ("127.0.0.1", "localhost", "::1"):
+        WEB_DASHBOARD_HOST = "0.0.0.0"
 
     # Allow empty targets with specific flags
     if not targets and not WEB_DASHBOARD_ENABLED and not args.doctor:
