@@ -108,6 +108,37 @@ class TestGenerateConfigWithCurrentValues:
         assert namespace["WEBHOOK_HEADERS"] == {}
 
 
+class TestConfigPersistence:
+    # Config writes replace the destination and retain a timestamped backup
+    def test_write_config_creates_backup(self, im_module):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            destination = directory / "instagram_monitor.conf"
+            destination.write_text("OLD_VALUE = True\n", encoding="utf-8")
+            content = im_module.generate_config_with_current_values({**vars(im_module), "TARGET_USERNAMES": ["saved.target"]})
+
+            status = im_module.write_config_file(destination, content)
+
+            backup_path = Path(status["backup_path"])
+            assert destination.read_text(encoding="utf-8") == content
+            assert backup_path.read_text(encoding="utf-8") == "OLD_VALUE = True\n"
+            assert backup_path.parent == directory
+            assert backup_path.name.startswith("instagram_monitor.conf.")
+            assert backup_path.name.endswith(".bak")
+
+    # Invalid config content is rejected before the destination changes
+    def test_write_config_rejects_invalid_content(self, im_module):
+        with make_test_directory() as directory_name:
+            destination = Path(directory_name) / "instagram_monitor.conf"
+            destination.write_text("ORIGINAL = True\n", encoding="utf-8")
+
+            with pytest.raises(SyntaxError):
+                im_module.write_config_file(destination, "BROKEN = [\n")
+
+            assert destination.read_text(encoding="utf-8") == "ORIGINAL = True\n"
+            assert list(destination.parent.glob("*.bak")) == []
+
+
 class TestDotenvPersistence:
     # Atomic dotenv updates preserve unrelated content and round-trip quoted secret values
     def test_update_preserves_content_and_special_values(self, im_module):
