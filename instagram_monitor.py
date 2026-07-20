@@ -4079,6 +4079,18 @@ def validate_webhook_url(url):
         return False
 
 
+# Converts a complete ntfy URL or valid ntfy.sh topic name into a complete topic URL
+def normalize_ntfy_topic_url(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    normalized = value.strip()
+    if validate_webhook_url(normalized):
+        return normalized
+    if re.fullmatch(r"[-_A-Za-z0-9]{1,64}", normalized):
+        return f"https://ntfy.sh/{normalized}"
+    return ""
+
+
 # Returns the normalized configured webhook provider or an empty string when unsupported
 def normalized_webhook_provider(provider=None) -> str:
     selected_provider = WEBHOOK_PROVIDER if provider is None else provider
@@ -11263,18 +11275,22 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
         print(colorize("info", "  In Discord: Server Settings > Integrations > Webhooks > New Webhook > Copy Webhook URL."))
         webhook_prompt = "Paste the Discord webhook URL (stored in .env)"
     else:
-        print(colorize("info", "  In ntfy: choose a hard-to-guess topic and use its complete URL, such as https://ntfy.sh/your-private-topic."))
-        webhook_prompt = "Paste the ntfy topic URL (stored in .env)"
+        print(colorize("info", "  In ntfy: choose a hard-to-guess topic. Paste its name for ntfy.sh or use the complete URL for a self-hosted server."))
+        webhook_prompt = "Paste the ntfy topic URL or ntfy.sh topic name (stored in .env)"
     existing_webhook = _wizard_existing_secret("WEBHOOK_URL", state.env_path)
     replace_webhook = True
     if existing_webhook:
         replace_webhook = _wizard_ask_choice("Which webhook URL should be used?", [("Keep the saved URL", "Keeps the private value without displaying or changing it."), ("Paste a new URL", "Uses a hidden prompt then saves the replacement in .env.")]) == 1
     if replace_webhook:
         while True:
-            webhook_url = _wizard_ask_secret(webhook_prompt)
+            webhook_input = _wizard_ask_secret(webhook_prompt)
+            webhook_url = normalize_ntfy_topic_url(webhook_input) if provider == "ntfy" else webhook_input.strip()
             if validate_webhook_url(webhook_url):
                 break
-            print(colorize("warning", "  That does not look like a complete HTTP(S) webhook URL. Copy it from the service and try again."))
+            if provider == "ntfy":
+                print(colorize("warning", "  Enter a complete HTTP(S) ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores."))
+            else:
+                print(colorize("warning", "  That does not look like a complete HTTP(S) webhook URL. Copy it from the service and try again."))
         state.secret_updates["WEBHOOK_URL"] = webhook_url
     if provider == "ntfy":
         _wizard_collect_ntfy_access_token(state.secret_updates, state.env_path)
