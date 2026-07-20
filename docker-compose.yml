@@ -1,11 +1,12 @@
 # Docker Compose setup for instagram_monitor
 #
 # Quick start:
-#   1. Generate a config (the wizard sets WEB_DASHBOARD_HOST=0.0.0.0 for Docker automatically):
+#   1. On native Linux export the host identity first (Docker Desktop users skip this):
+#        export INSTAGRAM_MONITOR_UID="$(id -u)"
+#        export INSTAGRAM_MONITOR_GID="$(id -g)"
+#   2. Generate a config (the wizard configures the dashboard for container access):
 #        docker compose run --rm instagram_monitor --setup
-#   2. Copy the secrets template and fill it in (optional):
-#        cp .env.example .env
-#   3. Start it:
+#   3. Start the saved targets and selected interface:
 #        docker compose up
 #   4. Open the web dashboard at http://127.0.0.1:8000/ and add targets.
 #
@@ -25,23 +26,25 @@ services:
     init: true
     stdin_open: true
     tty: true
+    # Native Linux users can map this service to the host identity so /data stays writable
+    user: "${INSTAGRAM_MONITOR_UID:-10001}:${INSTAGRAM_MONITOR_GID:-10001}"
     environment:
       # Lets the tool print docker-compose-style example commands in --help and the setup wizard
       - INSTAGRAM_MONITOR_COMPOSE=1
     ports:
-      - "8000:8000"
+      # Keep the unauthenticated dashboard reachable only from this host
+      - "127.0.0.1:8000:8000"
     volumes:
       # Generated files, config and the .env secrets file live in the current
       # directory on the host. The tool auto-loads ./.env from here, so there is
       # no need to declare env_file (and no error if you have not created one yet).
-      - ./:/data
+      # The shared SELinux label is ignored on hosts that do not use SELinux.
+      - ./:/data:z
       # Persist the Instaloader session across runs
       - instagram_monitor_session:/home/instagram/.config/instaloader
-    # Default: launch the web dashboard as a control panel.
-    # It auto-loads ./instagram_monitor.conf if present, otherwise waits for you
-    # to add targets in the browser. Needs WEB_DASHBOARD_HOST = "0.0.0.0" in the
-    # config (the setup wizard sets this for you when it detects Docker).
-    command: ["--web-dashboard"]
+    # Override the image's --help default with no CLI arguments so the saved
+    # targets and interface in instagram_monitor.conf control normal startup.
+    command: []
 
 volumes:
   instagram_monitor_session:
