@@ -55,3 +55,60 @@ jobs:
 
       - name: Run setup wizard smoke tests
         run: python -m pytest tests/test_setup_wizard.py tests/test_install_method_commands.py tests/test_config_generation.py tests/test_webhook_delivery.py
+
+  container-smoke:
+    name: container smoke checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Build local smoke image
+        run: docker build --tag instagram-monitor:ci .
+
+      - name: Run application version and help
+        run: |
+          docker run --rm instagram-monitor:ci --version
+          docker run --rm instagram-monitor:ci --help
+
+      - name: Confirm noninteractive setup guidance
+        run: |
+          mkdir -p local/container-smoke
+          if docker run --rm instagram-monitor:ci --setup >local/container-smoke/setup-output.txt 2>&1; then
+            echo "Noninteractive setup unexpectedly succeeded"
+            exit 1
+          fi
+          rg "interactive terminal" local/container-smoke/setup-output.txt
+
+      - name: Generate a config as the host user
+        run: |
+          mkdir -p local/container-smoke
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/local/container-smoke:/data:z" instagram-monitor:ci --generate-config /data/instagram_monitor.conf
+          test -s local/container-smoke/instagram_monitor.conf
+
+      - name: Verify mapped-user session volume access
+        run: |
+          docker volume create instagram-monitor-ci-session
+          docker run --rm --user "$(id -u):$(id -g)" -v instagram-monitor-ci-session:/home/instagram/.config/instaloader --entrypoint /usr/bin/touch instagram-monitor:ci /home/instagram/.config/instaloader/write-check
+
+      - name: Reach the no-config dashboard through host loopback
+        run: |
+          docker run --rm -d --name instagram-monitor-dashboard-ci -p 127.0.0.1:18000:8000 instagram-monitor:ci --web-dashboard
+          curl -fsS --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:18000/api/status
+          docker stop instagram-monitor-dashboard-ci
+
+      - name: Validate Docker Compose configuration
+        run: |
+          docker compose -f docker-compose.yml config
+          docker compose -f docker-compose.yml config | rg 'host_ip: 127.0.0.1'
+          docker compose -f docker-compose.yml config | rg 'command: \[\]'
+
+      - name: Run the locally built image through Docker Compose
+        run: |
+          docker tag instagram-monitor:ci misiektoja/instagram-monitor:latest
+          INSTAGRAM_MONITOR_UID="$(id -u)" INSTAGRAM_MONITOR_GID="$(id -g)" docker compose -f docker-compose.yml run --rm instagram_monitor --version
+          INSTAGRAM_MONITOR_UID="$(id -u)" INSTAGRAM_MONITOR_GID="$(id -g)" docker compose -f docker-compose.yml run --rm instagram_monitor --generate-config /data/local/container-smoke/compose-instagram-monitor.conf
+          test -s local/container-smoke/compose-instagram-monitor.conf
