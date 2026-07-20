@@ -49,6 +49,8 @@ Firefox session import needs no extra and works out of the box.
 docker pull misiektoja/instagram-monitor:latest
 ```
 
+The image runs as a non-root user. Native Linux users should follow the host UID/GID setup in [Docker Usage](usage.md#docker-usage-recommended) before writing through a bind mount. Docker Desktop normally handles host file ownership without that override.
+
 <a id="manual-python-based-installation"></a>
 ### Manual Python-based Installation
 
