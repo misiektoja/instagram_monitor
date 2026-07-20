@@ -1,6 +1,6 @@
 # instagram_monitor release notes
 
-# Changes in 3.6 (TBD)
+# Changes in 3.6 (21 Jul 2026)
 
 **Features and Improvements**:
 
@@ -9,6 +9,13 @@
 - **IMPROVE:** Preserved Discord as the default webhook provider for backward compatibility, including custom payload templates, headers, transformations, proxy routing and Discord image attachments
 - **IMPROVE:** Added provider validation to `--doctor`, provider visibility in startup and dashboard summaries plus a `--webhook-provider {discord,ntfy}` command-line option
 - **IMPROVE:** Sent native ntfy messages as bounded UTF-8 text with the alert subject as the title, event field details in the body and existing topic query parameters preserved for authentication
+- **IMPROVE:** Added an editable setup summary so answers can be reviewed before saving
+- **IMPROVE:** Simplified browser onboarding with separate Firefox and Chromium choices plus optional `pycookiecheat` installation
+- **IMPROVE:** Made generated commands portable across Python installations and custom config paths
+- **IMPROVE:** Added confirmation, backups and validation when replacing configuration files
+- **BUGFIX:** No-argument launches now honor saved targets and Web Dashboard mode
+- **BUGFIX:** Improved Docker and Compose support for Linux user mappings, persistent sessions and saved interface choices
+- **SECURITY:** Limited Docker Web Dashboard publishing to the host loopback interface
 
 
 # Changes in 3.5 (01 Jul 2026)
