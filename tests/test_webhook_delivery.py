@@ -212,17 +212,18 @@ class TestSendWebhook:
         assert calls == []
 
 
-# Full setup persists the ntfy URL and access token only in the dotenv file
+# Full setup expands a bare ntfy topic and persists both ntfy secrets only in the dotenv file
 def test_setup_wizard_persists_ntfy_secrets_privately(im_module, monkeypatch, capsys):
     with make_test_directory() as directory_name:
         directory = Path(directory_name)
         config_path = directory / "instagram_monitor.conf"
         env_path = directory / ".env"
-        topic_url = "https://ntfy.example.test/private-topic"
+        topic_name = "private-topic"
+        topic_url = f"https://ntfy.sh/{topic_name}"
         token = "tk_private_access_token"
         answers = iter([True, True, True, False, False, False])
         choices = iter([0, 2, 1, 0])
-        secrets = iter([topic_url, token])
+        secrets = iter([topic_name, token])
         monkeypatch.delenv("WEBHOOK_URL", raising=False)
         monkeypatch.delenv("NTFY_ACCESS_TOKEN", raising=False)
         monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
@@ -247,5 +248,6 @@ def test_setup_wizard_persists_ntfy_secrets_privately(im_module, monkeypatch, ca
         assert dotenv["WEBHOOK_URL"] == topic_url
         assert dotenv["NTFY_ACCESS_TOKEN"] == token
         output = capsys.readouterr().out
+        assert topic_name not in output
         assert topic_url not in output
         assert token not in output
