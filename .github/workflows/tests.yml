@@ -34,3 +34,24 @@ jobs:
 
       - name: Run offline test suite
         run: python -m pytest
+
+  windows-setup-smoke:
+    name: setup wizard smoke (Windows)
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: python -m pip install -e ".[test]"
+
+      - name: Run setup wizard smoke tests
+        run: python -m pytest tests/test_setup_wizard.py tests/test_install_method_commands.py tests/test_config_generation.py tests/test_webhook_delivery.py
