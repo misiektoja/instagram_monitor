@@ -11,8 +11,11 @@ Use the command that matches how you run the tool:
 # PyPI install
 instagram_monitor --setup
 
-# Manual Python script
+# Manual Python script on macOS or Linux
 python3 instagram_monitor.py --setup
+
+# Manual Python script on Windows
+python instagram_monitor.py --setup
 
 # Docker Compose (skip curl if you cloned the repo)
 curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
@@ -22,7 +25,9 @@ docker compose run --rm instagram_monitor --setup
 docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -p 8000:8000 misiektoja/instagram-monitor --setup
 ```
 
-Running the tool with no arguments from an interactive terminal offers the same wizard. It auto-detects whether you installed via pip, downloaded the script or run under Docker and shows commands that match your setup.
+Running the tool with no arguments from an interactive terminal offers the same wizard when no operation is saved. If you save targets in the config, a later no-argument launch starts those targets directly. The wizard detects whether you installed via pip, downloaded the script or run under Docker. Local commands reuse the active Python executable while config and dotenv paths are safely quoted.
+
+Answers stay editable until the final setup summary. You can save them, change one section without losing the others or confirm that you want to discard everything. Firefox and Chromium imports are separate choices. If Chromium support is missing on macOS or Linux, setup offers to install it in one step. Existing config files require confirmation and receive a timestamped backup. A failed secrets write or failed doctor check prevents automatic monitoring startup.
 
 <a id="not-sure-which-mode-you-want"></a>
 ## Not sure which mode you want?
@@ -45,10 +50,14 @@ If you prefer to run it in a container, jump to 🐳 [Docker Usage (Recommended)
 instagram_monitor <target_insta_user>
 ```
 
-Or if you installed [manually](installation.md#manual-python-based-installation):
+Or if you installed [manually](installation.md#manual-python-based-installation), use `python3` on macOS or Linux and `python` on Windows:
 
 ```sh
+# macOS or Linux
 python3 instagram_monitor.py <target_insta_user>
+
+# Windows
+python instagram_monitor.py <target_insta_user>
 ```
 
 - Track the `target_insta_user` in [Logged-in mode](configuration.md#option-3-session-login-using-browser-cookies-recommended) (with session login via your web browser):
