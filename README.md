@@ -20,7 +20,7 @@ Powerful, real-time OSINT suite for tracking every activity on Instagram - from 
 <a id="-quick-install-run"></a>
 ### 🚀 Quick Install & Run
 
-Python from PyPI (see also the video below)
+Python from PyPI
 ```sh
 pip install instagram_monitor
 instagram_monitor --setup
@@ -120,11 +120,11 @@ Full documentation is available at **[misiektoja.github.io/instagram_monitor](ht
 <a id="-new-here-run-the-setup-wizard"></a>
 ### 🧭 New here? Run the setup wizard
 
-The fastest way to get going (since **v3.5**) is the interactive setup wizard. It asks a few plain questions (who to monitor, no-login or logged-in, which interface, optional alerts), then writes a ready-to-run config for you. For local installs it can also start monitoring immediately.
+The fastest way to get started is `--setup`. It asks who to monitor, whether to log in, which interface to use and which alerts you want then saves a ready-to-run configuration. For local installs it can also run the self-check and start monitoring.
 
 Use the command that matches how you run the tool:
 
-On native Linux export `INSTAGRAM_MONITOR_UID="$(id -u)"` and `INSTAGRAM_MONITOR_GID="$(id -g)"` before the Compose command below. Docker Desktop users can omit those exports. Windows PowerShell users should prefer Compose or use the direct commands in the [Docker Usage guide](https://misiektoja.github.io/instagram_monitor/usage/#docker-usage-recommended).
+On Linux, set `INSTAGRAM_MONITOR_UID="$(id -u)"` and `INSTAGRAM_MONITOR_GID="$(id -g)"` before using Docker Compose. Docker Desktop users on macOS or Windows can skip this step.
 
 ```sh
 # PyPI install
@@ -144,9 +144,9 @@ docker compose run --rm instagram_monitor --setup
 docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor --setup
 ```
 
-Running the tool with no arguments from an interactive terminal offers the same wizard when no operation is saved. If you save targets in the config, a later no-argument launch starts those targets directly. The wizard detects whether you installed via pip, downloaded the script or run under Docker. Local commands reuse the active Python executable while config and dotenv paths are safely quoted.
+Running the tool with no arguments offers the wizard when no target has been saved. With saved targets, it starts monitoring directly. The wizard detects PyPI, script, Docker or Docker Compose installs and shows matching commands.
 
-Answers stay editable until the final setup summary. You can save them, change one section without losing the others or confirm that you want to discard everything. Firefox and Chromium imports are separate choices. If Chromium support is missing on macOS or Linux, setup offers to install it in one step. Existing config files require confirmation and receive a timestamped backup. A failed secrets write or failed doctor check prevents automatic monitoring startup.
+See the [full Quick Start guide](https://misiektoja.github.io/instagram_monitor/quick-start/) for browser choices, configuration backups and setup recovery.
 
 <a id="not-sure-which-mode-you-want"></a>
 ### Not sure which mode you want?
@@ -161,113 +161,34 @@ Answers stay editable until the final setup summary. You can save them, change o
 <a id="manual-commands"></a>
 ### Manual commands
 
-If you prefer to run it in a container, jump to 🐳 [Docker Usage (Recommended)](https://misiektoja.github.io/instagram_monitor/usage/#docker-usage-recommended).
+The examples below use a PyPI install. For a manual script install, replace `instagram_monitor` with `python3 instagram_monitor.py` on macOS or Linux and `python instagram_monitor.py` on Windows.
 
-- Track the `target_insta_user` in [No-login mode](https://misiektoja.github.io/instagram_monitor/configuration/#no-login-mode-no-session-login) (no session login):
+Track a public account without logging in:
 
 ```sh
 instagram_monitor <target_insta_user>
 ```
 
-Or if you installed [manually](https://misiektoja.github.io/instagram_monitor/installation/#manual-python-based-installation), use `python3` on macOS or Linux and `python` on Windows:
+For stories, reels and follower changes, sign in through a supported browser then import the session:
 
 ```sh
-# macOS or Linux
-python3 instagram_monitor.py <target_insta_user>
-
-# Windows
-python instagram_monitor.py <target_insta_user>
-```
-
-- Track the `target_insta_user` in [Logged-in mode](https://misiektoja.github.io/instagram_monitor/configuration/#option-3-session-login-using-browser-cookies-recommended) (with session login via your web browser):
-
-```sh
-# log in to the Instagram account (your_insta_user) in your web browser (Firefox, Chrome, Brave or Chromium)
 instagram_monitor --import-browser-session --browser firefox
 instagram_monitor -u <your_insta_user> <target_insta_user>
 ```
 
-- You can also launch the **[Web Dashboard](https://misiektoja.github.io/instagram_monitor/view-modes/#web-dashboard-mode)** along with tracking:
+Launch the [Web Dashboard](https://misiektoja.github.io/instagram_monitor/view-modes/#web-dashboard-mode) with monitoring:
 
 ```sh
 instagram_monitor <target_insta_user> --web-dashboard
 ```
 
-To get the list of all supported command-line arguments / flags:
+View every command:
 
 ```sh
 instagram_monitor --help
 ```
 
-<a id="webhook-settings"></a>
-## Webhook Settings
-
-Instagram Monitor can send activity alerts through Discord or the native [ntfy publish API](https://docs.ntfy.sh/publish/). Webhooks work independently from email. The easiest setup is `instagram_monitor --setup`, where you can choose Discord or ntfy when asked about alerts.
-
-`WEBHOOK_PROVIDER` selects the request format. It defaults to `"discord"` so existing configurations and custom Discord-compatible templates keep working.
-
-<a id="discord"></a>
-### Discord
-
-Create a channel webhook in Discord under **Edit Channel > Integrations > Webhooks**, then keep the default provider in `instagram_monitor.conf`:
-
-```ini
-WEBHOOK_PROVIDER = "discord"
-```
-
-Save the private URL in `.env` as `WEBHOOK_URL` or pass it with `--webhook-url`.
-
-<a id="ntfy"></a>
-### ntfy
-
-For ntfy.sh or a self-hosted ntfy server:
-
-1. Choose a hard-to-guess topic such as `instagram-monitor-long-random-value`.
-2. Use the complete topic URL such as `https://ntfy.sh/instagram-monitor-long-random-value`.
-3. Set the provider in `instagram_monitor.conf`:
-
-```ini
-WEBHOOK_PROVIDER = "ntfy"
-```
-
-4. Save the topic URL in `.env` as `WEBHOOK_URL`.
-
-Instagram Monitor sends the alert body and event field details as a bounded UTF-8 ntfy message, with the alert subject as its title. Query parameters already present in the topic URL are preserved, which supports the ntfy [`auth` query parameter](https://docs.ntfy.sh/publish/#authentication) for protected topics.
-
-For a protected topic, the setup wizard can collect an ntfy access token through a hidden prompt. It saves the token in `.env` without displaying it. For manual setup, add the token to `.env`:
-
-```ini
-NTFY_ACCESS_TOKEN="tk_your_ntfy_access_token"
-```
-
-Instagram Monitor sends this value as `Authorization: Bearer <token>`. `NTFY_ACCESS_TOKEN` takes precedence over an `Authorization` entry in `WEBHOOK_HEADERS`.
-
-Static custom headers remain available for advanced Discord or ntfy integrations in `instagram_monitor.conf`:
-
-```python
-WEBHOOK_HEADERS = {
-    "Authorization": "Basic your_base64_credentials",
-}
-```
-
-For ntfy, Instagram Monitor always sets the required plain-text `Content-Type`. Prefer `NTFY_ACCESS_TOKEN` in `.env` for Bearer authentication because a token inside `WEBHOOK_HEADERS` is easier to expose or commit accidentally. Header names and values are validated before any request is sent.
-
-Topics on the public ntfy.sh service are public unless protected through an account reservation. Treat an unprotected topic name like a password and do not reuse the example topic above.
-
-Enable the event types you want, then send a test without starting monitoring:
-
-```ini
-WEBHOOK_ENABLED = True
-WEBHOOK_STATUS_NOTIFICATION = True
-WEBHOOK_FOLLOWERS_NOTIFICATION = True
-WEBHOOK_ERROR_NOTIFICATION = True
-```
-
-```sh
-instagram_monitor --send-test-webhook
-```
-
-See the [Webhook Notifications guide](https://misiektoja.github.io/instagram_monitor/usage/#webhook-notifications) for full Discord, ntfy, command-line and advanced template settings.
+For Docker commands, browser profiles, email alerts, Discord, ntfy and advanced settings, see [Configuration](https://misiektoja.github.io/instagram_monitor/configuration/) and [Usage](https://misiektoja.github.io/instagram_monitor/usage/). Keep private webhook URLs in `.env` or enter them through the setup wizard. See [Webhook Notifications](https://misiektoja.github.io/instagram_monitor/usage/#webhook-notifications) for complete setup and testing instructions.
 
 <a id="change-log"></a>
 ## Change Log
@@ -275,14 +196,10 @@ See the [Webhook Notifications guide](https://misiektoja.github.io/instagram_mon
 See [RELEASE_NOTES.md](https://github.com/misiektoja/instagram_monitor/blob/main/RELEASE_NOTES.md) for details.
 
 <a id="maintainers"></a>
-
-<a id="maintainers"></a>
 ## Maintainers
 
 - 👤 **misiektoja** ([@misiektoja](https://github.com/misiektoja))
 - 👤 **tomballgithub** ([@tomballgithub](https://github.com/tomballgithub))
-
-<a id="license"></a>
 
 <a id="license"></a>
 ## License
