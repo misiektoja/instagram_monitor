@@ -208,8 +208,10 @@ On **Windows Command Prompt** use `set` instead of `export` and on **Windows Pow
 Alternatively store them persistently in a dotenv file (recommended). The repo ships a [.env.example](https://github.com/misiektoja/instagram_monitor/blob/main/.env.example) you can copy as a starting point:
 
 ```sh
-cp .env.example .env
+test -e .env || cp .env.example .env
 ```
+
+This leaves an existing `.env` untouched, including any secrets saved by the setup wizard.
 
 ```ini
 SESSION_PASSWORD="your_instagram_session_password"
