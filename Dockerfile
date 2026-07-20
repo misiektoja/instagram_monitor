@@ -5,7 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
-    HOME=/home/instagram
+    HOME=/home/instagram \
+    INSTAGRAM_MONITOR_DOCKER=1
 
 WORKDIR /opt/instagram_monitor
 
@@ -21,7 +22,8 @@ COPY templates ./templates
 
 RUN chmod 755 /opt/instagram_monitor/instagram_monitor.py && \
     mkdir -p /data /home/instagram/.config/instaloader && \
-    chown -R instagram:instagram /opt/instagram_monitor /data /home/instagram
+    chown -R instagram:instagram /opt/instagram_monitor /data /home/instagram && \
+    chmod 1777 /home/instagram/.config/instaloader
 
 WORKDIR /data
 
