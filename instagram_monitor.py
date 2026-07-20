@@ -989,6 +989,22 @@ WEB_DASHBOARD_MONITOR_THREADS = {}  # Active monitoring threads by username
 WEB_DASHBOARD_STOP_EVENTS = {}  # Stop events for each monitoring thread
 WEB_DASHBOARD_RECHECK_EVENTS = {}  # Recheck events for each monitoring thread
 
+
+# ASCII art startup banner (pure ASCII for maximum terminal portability)
+STARTUP_BANNER = r"""
+ .-------------.    ___           _
+|  O        .  |   |_ _|_ __  ___| |_ __ _  __ _ _ __ __ _ _ __ ___
+|    .-----.   |    | || '_ \/ __| __/ _` |/ _` | '__/ _` | '_ ` _ \
+|   |  ( )  |  |    | || | | \__ \ || (_| | (_| | | | (_| | | | | | |
+|    '-----'   |   |___|_| |_|___/\__\__,_|\__, |_|  \__,_|_| |_| |_|
+ '-------------'                           |___/
+                    __  __             _ _
+                   |  \/  | ___  _ __ (_) |_ ___  _ __
+                   | |\/| |/ _ \| '_ \| | __/ _ \| '__|
+                   | |  | | (_) | | | | | || (_) | |
+                   |_|  |_|\___/|_| |_|_|\__\___/|_|"""
+
+
 import sys
 import signal
 
@@ -3470,21 +3486,6 @@ def colorize_status(status_text):
     else:
         key = "status_other"
     return colorize(key, status_text)
-
-
-# ASCII art startup banner (pure ASCII for maximum terminal portability)
-STARTUP_BANNER = r"""
- .-------------.    ___           _
-|  O        .  |   |_ _|_ __  ___| |_ __ _  __ _ _ __ __ _ _ __ ___
-|    .-----.   |    | || '_ \/ __| __/ _` |/ _` | '__/ _` | '_ ` _ \
-|   |  ( )  |  |    | || | | \__ \ || (_| | (_| | | | (_| | | | | | |
-|    '-----'   |   |___|_| |_|___/\__\__,_|\__, |_|  \__,_|_| |_| |_|
- '-------------'                           |___/
-                    __  __             _ _
-                   |  \/  | ___  _ __ (_) |_ ___  _ __
-                   | |\/| |/ _ \| '_ \| | __/ _ \| '__|
-                   | |  | | (_) | | | | | || (_) | |
-                   |_|  |_|\___/|_| |_|_|\__\___/|_|"""
 
 
 # Prints the ASCII art startup banner with the tagline and version, honoring color settings
