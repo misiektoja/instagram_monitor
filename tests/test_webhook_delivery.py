@@ -221,7 +221,7 @@ def test_setup_wizard_persists_ntfy_secrets_privately(im_module, monkeypatch, ca
         topic_url = "https://ntfy.example.test/private-topic"
         token = "tk_private_access_token"
         answers = iter([True, True, True, False, False, False])
-        choices = iter([0, 2, 1])
+        choices = iter([0, 2, 1, 0])
         secrets = iter([topic_url, token])
         monkeypatch.delenv("WEBHOOK_URL", raising=False)
         monkeypatch.delenv("NTFY_ACCESS_TOKEN", raising=False)
@@ -232,7 +232,7 @@ def test_setup_wizard_persists_ntfy_secrets_privately(im_module, monkeypatch, ca
         monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
         monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda *args, **kwargs: next(secrets))
         monkeypatch.setattr(im_module, "run_doctor", Mock(side_effect=AssertionError("doctor called")))
-        for name in ("SESSION_USERNAME", "SKIP_SESSION", "TARGET_USERNAMES", "WEB_DASHBOARD_ENABLED", "DASHBOARD_ENABLED", "STATUS_NOTIFICATION", "WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_STATUS_NOTIFICATION", "NTFY_ACCESS_TOKEN"):
+        for name in ("CLI_CONFIG_PATH", "DOTENV_FILE", "SESSION_USERNAME", "SKIP_SESSION", "TARGET_USERNAMES", "WEB_DASHBOARD_ENABLED", "DASHBOARD_ENABLED", "STATUS_NOTIFICATION", "WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_STATUS_NOTIFICATION", "NTFY_ACCESS_TOKEN"):
             monkeypatch.setattr(im_module, name, getattr(im_module, name), raising=False)
 
         with pytest.raises(SystemExit) as error:
