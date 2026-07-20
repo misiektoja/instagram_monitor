@@ -47,8 +47,17 @@ class TestCmdPrefix:
         assert im_module._wizard_cmd_prefix("pip") == "instagram_monitor"
 
     def test_docker_only_web_adds_port_publish(self, im_module):
-        assert "-p 8000:8000" not in im_module._wizard_cmd_prefix("docker")
-        assert "-p 8000:8000" in im_module._wizard_cmd_prefix("docker", web_dashboard=True)
+        assert "-p 127.0.0.1:8000:8000" not in im_module._wizard_cmd_prefix("docker")
+        assert "-p 127.0.0.1:8000:8000" in im_module._wizard_cmd_prefix("docker", web_dashboard=True)
+
+    def test_docker_reuses_effective_identity_and_selinux_mount(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module.os, "getuid", lambda: 1234)
+        monkeypatch.setattr(im_module.os, "getgid", lambda: 5678)
+
+        prefix = im_module._wizard_cmd_prefix("docker")
+
+        assert "--user 1234:5678" in prefix
+        assert '-v "$PWD:/data:z"' in prefix
 
     def test_compose_only_web_adds_service_ports(self, im_module):
         assert im_module._wizard_cmd_prefix("compose") == "docker compose run --rm instagram_monitor"
