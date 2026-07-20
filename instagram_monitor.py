@@ -626,10 +626,16 @@ def _format_config_value(value, prefer_double_quotes: bool) -> str:
     return repr(value)
 
 
-# Renders CONFIG_BLOCK with current runtime globals substituted into simple one-line assignments
-def generate_config_with_current_values() -> str:
+# Validates Python config content without executing it
+def validate_config_content(content: str, filename: str = "<generated-config>") -> None:
+    compile(content, filename, "exec")
+
+
+# Renders CONFIG_BLOCK with selected runtime values substituted into simple one-line assignments
+def generate_config_with_current_values(values=None) -> str:
     import re
 
+    current_values = globals() if values is None else values
     assign_re = re.compile(r"^([A-Z][A-Z0-9_]*)\s*=\s*(.*)$")
     out_lines: list[str] = []
 
@@ -658,18 +664,65 @@ def generate_config_with_current_values() -> str:
             out_lines.append(line)
             continue
 
-        if var not in globals():
+        if var not in current_values:
             out_lines.append(line)
             continue
 
         prefer_double_quotes = expr_stripped.startswith('"')
-        new_expr = _format_config_value(globals()[var], prefer_double_quotes=prefer_double_quotes)
+        new_expr = _format_config_value(current_values[var], prefer_double_quotes=prefer_double_quotes)
         new_line = f"{var} = {new_expr}"
         if comment:
             new_line = f"{new_line}  {comment}"
         out_lines.append(new_line)
 
-    return "\n".join(out_lines) + "\n"
+    rendered = "\n".join(out_lines) + "\n"
+    validate_config_content(rendered)
+    return rendered
+
+
+# Writes validated config content atomically and backs up an existing destination
+def write_config_file(destination, content: str):
+    destination_path = Path(destination).expanduser()
+    validate_config_content(content, str(destination_path))
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    backup_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", prefix=f".{destination_path.name}.", suffix=".tmp", dir=str(destination_path.parent), delete=False) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(content)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+
+        if destination_path.exists():
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            for collision_index in range(1000):
+                collision_suffix = "" if collision_index == 0 else f"-{collision_index:02d}"
+                candidate = destination_path.with_name(f"{destination_path.name}.{timestamp}{collision_suffix}.bak")
+                try:
+                    with destination_path.open("rb") as source_file, candidate.open("xb") as backup_file:
+                        shutil.copyfileobj(source_file, backup_file)
+                        backup_file.flush()
+                        os.fsync(backup_file.fileno())
+                    backup_path = candidate
+                    break
+                except FileExistsError:
+                    continue
+                except Exception:
+                    if candidate.exists():
+                        candidate.unlink()
+                    raise
+            if backup_path is None:
+                raise FileExistsError(f"Could not create a unique backup for '{destination_path}'")
+
+        os.replace(temporary_path, destination_path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
+
+    return {"path": str(destination_path), "backup_path": str(backup_path) if backup_path is not None else None}
 
 
 # Quotes one secret value for lossless parsing by python-dotenv
@@ -957,6 +1010,8 @@ import json
 import os
 import tempfile
 import getpass
+import importlib.util
+import shlex
 from os.path import expanduser, dirname, basename
 from datetime import datetime, timezone, timedelta
 from dateutil import relativedelta
@@ -1444,7 +1499,8 @@ from typing import Optional, Tuple, Any, Callable, Dict, List, TypeVar, cast
 from glob import glob
 import sqlite3
 from sqlite3 import OperationalError, connect
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from dataclasses import dataclass
 from functools import wraps
 import traceback
 import copy
@@ -5875,9 +5931,11 @@ def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
     try:
         from pycookiecheat import BrowserType, get_cookies
     except (ImportError, ModuleNotFoundError):
+        executable = sys.executable or ("python" if system() == "Windows" else "python3")
+        install_command = _wizard_render_command([executable, "-m", "pip", "install", "pycookiecheat>=0.8"])
         raise CookieImportError(
             f"Importing {label} cookies requires the 'pycookiecheat' library !\n\n"
-            "To install it, run:\n    pip3 install pycookiecheat\n\n"
+            f"To install it, run:\n    {install_command}\n\n"
             "Once installed, re-run this tool"
         )
 
@@ -10799,31 +10857,83 @@ def _wizard_install_method() -> str:
     return "pip"
 
 
+# Returns local command arguments using friendly names or exact runtime paths
+def _wizard_local_command_args(method: str, exact: bool = False) -> List[str]:
+    if exact:
+        executable = sys.executable or ("python" if system() == "Windows" else "python3")
+        if method == "pip":
+            return [executable, "-m", "instagram_monitor"]
+        return [executable, str(Path(__file__).resolve())]
+    path_class = PureWindowsPath if system() == "Windows" else Path
+    executable_name = path_class(sys.executable).name or ("python" if system() == "Windows" else "python3")
+    if system() == "Windows" and executable_name.casefold().endswith(".exe"):
+        executable_name = executable_name[:-4]
+    script_name = path_class(__file__).name
+    return [executable_name, script_name] if method == "manual" else ["instagram_monitor"]
+
+
+# Renders command arguments for the active host shell
+def _wizard_render_command(arguments) -> str:
+    values = [str(argument) for argument in arguments]
+    return subprocess.list2cmdline(values) if system() == "Windows" else shlex.join(values)
+
+
+# Quotes one command argument for the active host shell
+def _wizard_quote_argument(value) -> str:
+    return _wizard_render_command([str(value)])
+
+
 # Returns the command prefix used to invoke the tool for the detected install method
-def _wizard_cmd_prefix(method: str, web_dashboard: bool = False) -> str:
+def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, exact: bool = False) -> str:
     if method == "compose":
         service_ports = " --service-ports" if web_dashboard else ""
         return f"docker compose run --rm{service_ports} instagram_monitor"
     if method == "docker":
         web_port_flag = " -p 8000:8000" if web_dashboard else ""
         return (f'docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor')
-    if method == "manual":
-        return "python3 instagram_monitor.py"
-    return "instagram_monitor"
+    return _wizard_render_command(_wizard_local_command_args(method, exact=exact))
 
 
-# Returns the full "import Firefox session" command for the install method, mounting the host Firefox profile read-only inside containers (Linux host path, where the cookies actually live)
-def _firefox_import_cmd(method: str) -> str:
-    prefix = _wizard_cmd_prefix(method)
+# Converts a wizard destination into the matching path inside the data container mount
+def _wizard_container_path(path) -> str:
+    resolved = Path(path).expanduser().resolve()
+    try:
+        relative = resolved.relative_to(Path.cwd().resolve())
+    except ValueError:
+        relative = Path(resolved.name)
+    return str(PurePosixPath("/data") / PurePosixPath(relative.as_posix()))
+
+
+# Builds one install-aware action command with safe paths and optional targets
+def _wizard_action_command(method: str, action: str, config_path, env_path, targets=(), web_dashboard: bool = False) -> str:
+    parts = [_wizard_cmd_prefix(method, web_dashboard=web_dashboard, exact=True)]
+    if action:
+        parts.append(action)
+    parts.extend(_wizard_quote_argument(target) for target in targets)
+    selected_config = _wizard_container_path(config_path) if method in ("docker", "compose") else str(Path(config_path).expanduser().resolve())
+    selected_env = _wizard_container_path(env_path) if method in ("docker", "compose") else str(Path(env_path).expanduser().resolve())
+    parts.extend(("--config-file", _wizard_quote_argument(selected_config), "--env-file", _wizard_quote_argument(selected_env)))
+    return " ".join(parts)
+
+
+# Returns the full Firefox import command with an optional exact dotenv destination
+def _firefox_import_cmd(method: str, env_path=None, exact: bool = False) -> str:
+    prefix = _wizard_cmd_prefix(method, exact=exact)
     if method not in ("docker", "compose"):
-        return f"{prefix} --import-browser-session --browser firefox"
+        command = f"{prefix} --import-browser-session --browser firefox"
+        if env_path is not None:
+            command += f" --env-file {_wizard_quote_argument(str(Path(env_path).expanduser().resolve()))}"
+        return command
     ff_mount = '-v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'
     if method == "docker":
         with_mount = prefix.replace("misiektoja/instagram-monitor", f"{ff_mount} misiektoja/instagram-monitor")
     else:
         base, _, svc = prefix.rpartition(" ")
         with_mount = f"{base} {ff_mount} {svc}"
-    return f"{with_mount} --import-browser-session --browser firefox"
+    command = f"{with_mount} --import-browser-session --browser firefox"
+    if env_path is not None:
+        command += f" --env-file {_wizard_quote_argument(_wizard_container_path(env_path))}"
+    return command
 
 
 # Browsers the setup wizard can import from in this environment (Chromium-family needs OS keyring access, unavailable on Windows and inside containers, so those get Firefox only)
@@ -10836,8 +10946,35 @@ def _wizard_import_browsers(method: str) -> list:
 # One-line wizard menu description for an import browser choice
 def _wizard_browser_desc(browser: str) -> str:
     if browser == "firefox":
-        return "Built-in reader; works on every OS, no extra packages."
-    return f"Reads {browser_label(browser)}'s cookie store (needs the 'pycookiecheat' package; macOS/Linux only)."
+        return "Built-in reader for macOS, Linux and Windows with no extra packages."
+    return f"Import from the signed-in {browser_label(browser)} profile."
+
+
+# Returns whether Chromium browser import support is available in the active Python environment
+def _wizard_chromium_dependency_available() -> bool:
+    try:
+        return importlib.util.find_spec("pycookiecheat") is not None
+    except (AttributeError, ImportError, ValueError):
+        return False
+
+
+# Installs Chromium browser import support into the active Python environment
+def _wizard_install_chromium_dependency(method: str) -> bool:
+    requirement = "pycookiecheat>=0.8"
+    executable = sys.executable or ("python" if system() == "Windows" else "python3")
+    command = [executable, "-m", "pip", "install", requirement]
+    print(f"Installing Chromium browser support with:\n    {_wizard_render_command(command)}\n")
+    try:
+        result = subprocess.run(command, check=False)
+    except OSError as exc:
+        print(colorize("warning", f"  Installation could not start: {exc}"))
+        return False
+    importlib.invalidate_caches()
+    if result.returncode == 0 and _wizard_chromium_dependency_available():
+        print(colorize("info", "\nChromium browser support was installed successfully."))
+        return True
+    print(colorize("warning", "\nChromium browser support could not be installed. Choose Firefox or another login method."))
+    return False
 
 
 # Builds the --help examples epilog using commands that match the detected install method (manual, pip, docker, compose)
@@ -10917,6 +11054,7 @@ def _wizard_ask_yes_no(question: str, default: bool = True) -> bool:
 
 # Prints a numbered menu and returns the zero-based index the user selected
 def _wizard_ask_choice(question: str, options, default_index: int = 0) -> int:
+    print()
     print(colorize("info", question))
     for i, (label, desc) in enumerate(options, start=1):
         marker = colorize("info", " (default)") if (i - 1) == default_index else ""
@@ -10975,267 +11113,416 @@ def _wizard_collect_ntfy_access_token(secret_updates: dict, env_path: Path) -> N
     secret_updates["NTFY_ACCESS_TOKEN"] = token
 
 
-# Runs the interactive first-run setup, writing config plus .env and optionally launching monitoring
-def run_setup_wizard(config_file=None, env_file=None) -> None:
-    global SESSION_USERNAME, SKIP_SESSION, TARGET_USERNAMES
-    global WEB_DASHBOARD_ENABLED, DASHBOARD_ENABLED, WEB_DASHBOARD_HOST, STATUS_NOTIFICATION
-    global SMTP_HOST, SMTP_PORT, SMTP_SSL, SMTP_USER, SENDER_EMAIL, RECEIVER_EMAIL
-    global WEBHOOK_ENABLED, WEBHOOK_PROVIDER, WEBHOOK_STATUS_NOTIFICATION
+# Config values reset before one setup section is collected again
+WIZARD_LOGIN_CONFIG_KEYS = ("SESSION_USERNAME", "SKIP_SESSION")
+WIZARD_INTERFACE_CONFIG_KEYS = ("WEB_DASHBOARD_ENABLED", "DASHBOARD_ENABLED", "WEB_DASHBOARD_HOST")
+WIZARD_WEBHOOK_CONFIG_KEYS = ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_STATUS_NOTIFICATION")
+WIZARD_EMAIL_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL", "STATUS_NOTIFICATION")
 
+
+# Holds editable setup answers until the user explicitly saves them
+@dataclass
+class WizardSetupState:
+    config_path: Path
+    env_path: Path
+    baseline_values: dict
+    config_values: dict
+    secret_updates: dict
+    targets: List[str]
+    persist_targets: bool
+    logged_in: bool
+    login_method: str
+    session_username: str
+    import_browser: Optional[str]
+    want_web: bool
+    want_terminal: bool
+    want_webhook: bool
+    want_email: bool
+
+
+# Restores one editable section to its setup-start values and drops pending secrets
+def _wizard_reset_section(state: WizardSetupState, config_keys, secret_keys) -> None:
+    for key in config_keys:
+        if key in state.baseline_values:
+            state.config_values[key] = state.baseline_values[key]
+        else:
+            state.config_values.pop(key, None)
+    for key in secret_keys:
+        state.secret_updates.pop(key, None)
+
+
+# Confirms replacement or selects another config destination before answers are collected
+def _wizard_choose_config_destination(config_path: Path) -> Path:
+    selected = config_path.expanduser().resolve()
+    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. Replace it and create a timestamped backup?", default=False):
+        alternative = _wizard_ask_text("Another config destination or leave empty to cancel")
+        if not alternative:
+            print(colorize("warning", "Setup cancelled. Destination files were not changed."))
+            raise SystemExit(1)
+        selected = Path(alternative).expanduser().resolve()
+    return selected
+
+
+# Collects monitored targets and whether they should be persisted
+def _wizard_collect_target_section(state: WizardSetupState) -> None:
+    default_targets = ", ".join(state.targets)
+    targets = []
+    while not targets:
+        targets_raw = _wizard_ask_text("Which Instagram account(s) or target(s) do you want to monitor?", default=default_targets, required=True)
+        targets = [target.strip().lstrip("@") for target in targets_raw.split(",") if target.strip()]
+    state.targets = targets
+    print()
+    state.persist_targets = _wizard_ask_yes_no("Save the target(s) in the config file too?", default=state.persist_targets)
+    state.config_values["TARGET_USERNAMES"] = list(targets) if state.persist_targets else []
+
+
+# Collects one login method with separate Firefox and Chromium paths
+def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
+    _wizard_reset_section(state, WIZARD_LOGIN_CONFIG_KEYS, ("SESSION_PASSWORD",))
+    supported_browsers = _wizard_import_browsers(method)
+    chromium_browsers = [browser for browser in supported_browsers if browser in CHROMIUM_IMPORT_BROWSERS]
+    while True:
+        options = [("No login", "Sees new posts, bio and follower counts."), ("Import from Firefox, recommended", "Reuses a signed-in Firefox session with no additional package.")]
+        actions = ["no-login", "firefox"]
+        if chromium_browsers:
+            chromium_description = "Import from a signed-in Chrome, Brave or Chromium profile." if _wizard_chromium_dependency_available() else "Setup can install the required pycookiecheat package now."
+            options.append(("Import from Chrome, Brave or Chromium", chromium_description))
+            actions.append("chromium")
+        options.extend((("Use an existing Instaloader session", "You previously created a session with Instaloader."), ("Username and password", "Least safe. The password is stored in .env and never in the config.")))
+        actions.extend(("existing", "password"))
+        default_index = actions.index(state.login_method) if state.login_method in actions else 0
+        action = actions[_wizard_ask_choice("How do you want to access Instagram?", options, default_index=default_index)]
+        if action == "chromium" and not _wizard_chromium_dependency_available():
+            print()
+            if not _wizard_ask_yes_no("Chromium browser import requires pycookiecheat. Install it now?", default=True):
+                print(colorize("info", "  Chromium import was not selected. Choose Firefox or another login method."))
+                continue
+            if not _wizard_install_chromium_dependency(method):
+                continue
+        break
+
+    state.login_method = action
+    state.logged_in = action != "no-login"
+    state.import_browser = None
+    state.session_username = ""
+    if action == "no-login":
+        state.config_values.update({"SKIP_SESSION": True, "SESSION_USERNAME": ""})
+        return
+    if action == "firefox":
+        state.import_browser = "firefox"
+    elif action == "chromium":
+        browser_index = _wizard_ask_choice("Which Chromium browser should be imported?", [(browser_label(browser), _wizard_browser_desc(browser)) for browser in chromium_browsers])
+        state.import_browser = chromium_browsers[browser_index]
+
+    print()
+    can_detect_username = state.import_browser is not None and method not in ("docker", "compose")
+    if can_detect_username:
+        state.session_username = _wizard_ask_text(f"Your Instagram username (leave empty to detect it from {browser_label(state.import_browser)} import)").lstrip("@")
+    else:
+        state.session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
+    if action == "password":
+        state.secret_updates["SESSION_PASSWORD"] = _wizard_ask_secret("Instagram password (stored in .env)")
+    state.config_values.update({"SKIP_SESSION": False, "SESSION_USERNAME": state.session_username})
+
+
+# Collects the preferred monitoring interface
+def _wizard_collect_interface_section(state: WizardSetupState, method: str) -> None:
+    _wizard_reset_section(state, WIZARD_INTERFACE_CONFIG_KEYS, ())
+    default_index = 0 if state.want_web else 1 if state.want_terminal else 2
+    interface = _wizard_ask_choice("How do you want to view activity?", [("Web dashboard - point and click in your browser", "Add or remove targets and change settings without the command line."), ("Terminal dashboard - live stats in your terminal", "Rich full-screen view in the terminal."), ("Plain text logs", "Simple sequential output for background or headless runs.")], default_index=default_index)
+    state.want_web = interface == 0
+    state.want_terminal = interface == 1
+    state.config_values.update({"WEB_DASHBOARD_ENABLED": state.want_web, "DASHBOARD_ENABLED": state.want_terminal})
+    if state.want_web and method in ("docker", "compose"):
+        state.config_values["WEB_DASHBOARD_HOST"] = "0.0.0.0"
+    if state.want_web and not FLASK_AVAILABLE:
+        print(colorize("warning", "  Note: flask is not installed, so the web dashboard will remain unavailable until it is installed."))
+    if state.want_terminal and not RICH_AVAILABLE:
+        print(colorize("warning", "  Note: rich is not installed, so the terminal dashboard will remain unavailable until it is installed."))
+
+
+# Collects webhook settings and hidden secrets
+def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
+    _wizard_reset_section(state, WIZARD_WEBHOOK_CONFIG_KEYS, ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN"))
+    print()
+    if not _wizard_ask_yes_no("Set up webhook alerts (Discord, ntfy etc.)?", default=state.want_webhook):
+        state.want_webhook = False
+        state.config_values.update({"WEBHOOK_ENABLED": False, "WEBHOOK_STATUS_NOTIFICATION": False})
+        return
+    provider_choice = _wizard_ask_choice("Which webhook service should receive alerts?", [("Discord", "Sends a Discord embed with supported image attachments."), ("ntfy", "Sends a native notification to one ntfy topic URL.")], default_index=0 if state.config_values.get("WEBHOOK_PROVIDER", "discord") == "discord" else 1)
+    provider = "discord" if provider_choice == 0 else "ntfy"
+    state.config_values["WEBHOOK_PROVIDER"] = provider
+    if provider == "discord":
+        print(colorize("info", "  In Discord: Server Settings > Integrations > Webhooks > New Webhook > Copy Webhook URL."))
+        webhook_prompt = "Paste the Discord webhook URL (stored in .env)"
+    else:
+        print(colorize("info", "  In ntfy: choose a hard-to-guess topic and use its complete URL, such as https://ntfy.sh/your-private-topic."))
+        webhook_prompt = "Paste the ntfy topic URL (stored in .env)"
+    existing_webhook = _wizard_existing_secret("WEBHOOK_URL", state.env_path)
+    replace_webhook = True
+    if existing_webhook:
+        replace_webhook = _wizard_ask_choice("Which webhook URL should be used?", [("Keep the saved URL", "Keeps the private value without displaying or changing it."), ("Paste a new URL", "Uses a hidden prompt then saves the replacement in .env.")]) == 1
+    if replace_webhook:
+        while True:
+            webhook_url = _wizard_ask_secret(webhook_prompt)
+            if validate_webhook_url(webhook_url):
+                break
+            print(colorize("warning", "  That does not look like a complete HTTP(S) webhook URL. Copy it from the service and try again."))
+        state.secret_updates["WEBHOOK_URL"] = webhook_url
+    if provider == "ntfy":
+        _wizard_collect_ntfy_access_token(state.secret_updates, state.env_path)
+    state.want_webhook = True
+    state.config_values.update({"WEBHOOK_ENABLED": True, "WEBHOOK_STATUS_NOTIFICATION": True})
+
+
+# Collects email settings and the hidden SMTP password
+def _wizard_collect_email_section(state: WizardSetupState) -> None:
+    _wizard_reset_section(state, WIZARD_EMAIL_CONFIG_KEYS, ("SMTP_PASSWORD",))
+    print()
+    if not _wizard_ask_yes_no("Set up email (SMTP) alerts now?", default=state.want_email):
+        state.want_email = False
+        state.config_values["STATUS_NOTIFICATION"] = False
+        return
+    host = _wizard_ask_text("SMTP server host (e.g. smtp.gmail.com)", required=True)
+    port_text = _wizard_ask_text("SMTP port", default=str(state.config_values.get("SMTP_PORT") or 587))
+    try:
+        port = int(port_text)
+    except ValueError:
+        port = 587
+    use_ssl = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(state.config_values.get("SMTP_SSL", True)))
+    user = _wizard_ask_text("SMTP username", required=True)
+    state.secret_updates["SMTP_PASSWORD"] = _wizard_ask_secret("SMTP password (stored in .env)")
+    sender = _wizard_ask_text("Sender email (From)", required=True)
+    receiver = _wizard_ask_text("Recipient email (To)", required=True)
+    state.config_values.update({"SMTP_HOST": host, "SMTP_PORT": port, "SMTP_SSL": use_ssl, "SMTP_USER": user, "SENDER_EMAIL": sender, "RECEIVER_EMAIL": receiver, "STATUS_NOTIFICATION": True})
+    state.want_email = True
+
+
+# Lets the user change output files and recollects secret-dependent sections when needed
+def _wizard_collect_destination_section(state: WizardSetupState, method: str) -> None:
+    config_text = _wizard_ask_text("Configuration file destination", default=str(state.config_path), required=True)
+    selected_config = Path(config_text).expanduser().resolve()
+    if selected_config != state.config_path:
+        state.config_path = _wizard_choose_config_destination(selected_config)
+    while True:
+        env_text = _wizard_ask_text("Dotenv file destination", default=str(state.env_path), required=True)
+        if env_text.casefold() != "none":
+            break
+        print(colorize("warning", "  Setup needs a writable dotenv file and cannot use 'none'."))
+    selected_env = Path(env_text).expanduser().resolve()
+    state.config_values["DOTENV_FILE"] = str(selected_env)
+    if selected_env == state.env_path:
+        return
+    state.env_path = selected_env
+    print(colorize("info", "  The dotenv destination changed. Re-enter login and notification settings that may contain secrets."))
+    _wizard_collect_login_section(state, method)
+    _wizard_collect_webhook_section(state)
+    _wizard_collect_email_section(state)
+
+
+# Prints the current editable setup answers without exposing secrets
+def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
+    interface = "web dashboard" if state.want_web else "terminal dashboard" if state.want_terminal else "plain text logs"
+    session_summary = state.session_username if state.logged_in and state.session_username else "detect during browser import" if state.logged_in else "none"
+    print(colorize("header", "\nSetup summary\n"))
+    print(f"  Targets: {', '.join(state.targets)}")
+    print(f"  Persist targets: {'yes' if state.persist_targets else 'no'}")
+    print(f"  Login: {state.login_method}")
+    print(f"  Session username: {session_summary}")
+    if state.import_browser:
+        print(f"  Browser: {browser_label(state.import_browser)}")
+    print(f"  Interface: {interface}")
+    print(f"  Email: {'enabled' if state.want_email else 'disabled'}")
+    print(f"  Webhook: {'enabled' if state.want_webhook else 'disabled'}")
+    print(f"  Config destination: {state.config_path}")
+    print(f"  Dotenv destination: {state.env_path}")
+    print(f"  Install method: {method}")
+
+
+# Opens one selected setup section then returns to the summary
+def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
+    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets and persistence", "Change monitored accounts and whether they are saved."), ("Login and session", "Change no-login, browser or credential settings."), ("Interface", "Change the dashboard or plain text mode."), ("Webhook alerts", "Change Discord or ntfy settings."), ("Email alerts", "Change SMTP settings."), ("File destinations", "Change the config or dotenv path."), ("Return to summary", "Keep every current answer.")])
+    if section == 0:
+        print()
+        _wizard_collect_target_section(state)
+    elif section == 1:
+        _wizard_collect_login_section(state, method)
+    elif section == 2:
+        _wizard_collect_interface_section(state, method)
+    elif section == 3:
+        _wizard_collect_webhook_section(state)
+    elif section == 4:
+        _wizard_collect_email_section(state)
+    elif section == 5:
+        print()
+        _wizard_collect_destination_section(state, method)
+
+
+# Reviews editable answers until the user saves or confirms a discard
+def _wizard_review_setup(state: WizardSetupState, method: str) -> bool:
+    while True:
+        _wizard_print_setup_summary(state, method)
+        action = _wizard_ask_choice("What would you like to do?", [("Save settings", "Write the displayed settings to the selected files."), ("Review or change settings", "Edit one section without losing the other answers."), ("Discard answers and exit", "Leave the destination files unchanged.")])
+        if action == 0:
+            return True
+        if action == 1:
+            _wizard_edit_setup_section(state, method)
+            continue
+        print()
+        if _wizard_ask_yes_no("Discard all entered answers and exit?", default=False):
+            return False
+        print(colorize("info", "  Setup answers retained."))
+
+
+# Completes a confirmed browser import before the final config is rendered
+def _wizard_finish_browser_import(state: WizardSetupState, method: str) -> None:
+    if not state.import_browser:
+        return
+    label = browser_label(state.import_browser)
+    retry_hint = f"{_wizard_cmd_prefix(method, exact=True)} --import-browser-session --browser {state.import_browser} --env-file {_wizard_quote_argument(str(state.env_path))}"
+    if method in ("docker", "compose"):
+        print(colorize("warning", f"Inside a container the {label} import needs your browser profile mounted, so it cannot run here."))
+        print("Run this once on the host before starting:")
+        print(colorize("section", f"  {_firefox_import_cmd(method, state.env_path, exact=True)}"))
+    elif _wizard_ask_yes_no(f"Import the {label} session now? (log in to Instagram in {label} first)", default=True):
+        try:
+            imported_username = None
+            if state.import_browser == "firefox":
+                cookie_path = os.path.expanduser(get_firefox_cookiefile())
+                if not os.path.isfile(cookie_path):
+                    print(colorize("warning", f"Could not find Firefox cookies at '{cookie_path}'. You can import later with: {retry_hint}"))
+                else:
+                    imported_username = import_session("firefox", cookie_path, None)
+            else:
+                profile = select_chromium_profile_cli(state.import_browser, None)
+                imported_username = import_session(state.import_browser, None, None, profile=profile)
+            if imported_username:
+                if state.session_username and imported_username != state.session_username:
+                    print(colorize("warning", f"Imported session belongs to '{imported_username}', updating SESSION_USERNAME in the generated config."))
+                elif not state.session_username:
+                    print(colorize("info", f"Detected username '{imported_username}' from the imported session."))
+                state.session_username = imported_username
+        except (SystemExit, Exception) as exc:
+            print(colorize("warning", f"{label} import failed: {exc}"))
+            print(f"You can retry later with: {retry_hint}")
+    else:
+        print(colorize("info", f"You can import later with: {retry_hint}"))
+    if not state.session_username:
+        print(colorize("warning", "No username was detected from the browser session."))
+        state.session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
+    state.config_values["SESSION_USERNAME"] = state.session_username
+
+
+# Starts monitoring with a Windows-safe child process or a POSIX process replacement
+def _wizard_launch_monitor(arguments) -> int:
+    command = [str(argument) for argument in arguments]
+    if system() == "Windows":
+        return subprocess.run(command, check=False).returncode
+    os.execv(command[0], command)
+    return 0
+
+
+# Runs the interactive first-run setup with staged answers and safe persistence
+def run_setup_wizard(config_file=None, env_file=None) -> None:
+    global CLI_CONFIG_PATH, DOTENV_FILE
     if not sys.stdin.isatty():
         print(colorize("warning", "The setup wizard needs an interactive terminal (TTY)."))
         print("Run it from an interactive shell or use --generate-config and edit the config file by hand.")
-        sys.exit(1)
+        raise SystemExit(1)
 
     method = _wizard_install_method()
-    prefix = _wizard_cmd_prefix(method)
-    config_path = str(Path(config_file or DEFAULT_CONFIG_FILENAME).expanduser())
-    env_path = Path(env_file or ".env").expanduser()
+    config_path = _wizard_choose_config_destination(Path(config_file or DEFAULT_CONFIG_FILENAME).expanduser().resolve())
+    env_path = Path(env_file or ".env").expanduser().resolve()
     for secret_key in SECRET_KEYS:
         existing_secret = _wizard_secret_value(secret_key, env_path)
         if existing_secret is not None:
             globals()[secret_key] = existing_secret
+    baseline_values = dict(globals())
+    config_values = dict(baseline_values)
+    config_values["DOTENV_FILE"] = str(env_path)
+    state = WizardSetupState(config_path, env_path, baseline_values, config_values, {}, [], True, False, "no-login", "", None, True, False, False, False)
 
     print(colorize("header", f"\nInstagram Monitor v{VERSION} - Setup Wizard\n"))
     print("This asks a few questions and writes a ready-to-run configuration.")
-    print("Press Enter to accept the default shown in [brackets]. Ctrl+C to cancel.\n")
-    print(f"Detected install method: {colorize('username', method)}\n")
+    print("Press Enter to accept the shown default. Ctrl+C cancels.\n")
+    print(f"Detected install method: {colorize('username', method)}")
+    print(f"Configuration: {state.config_path}")
+    print(f"Dotenv:       {state.env_path}")
 
-    # Q1: target username(s)
-    targets: list = []
-    while not targets:
-        targets_raw = _wizard_ask_text("Which Instagram account(s) / target(s) do you want to monitor? (comma-separated for several)", required=True)
-        targets = [t.strip().lstrip("@") for t in targets_raw.split(",") if t.strip()]
-
-    # Ask whether to bake the target(s) into the config or keep the config target-agnostic (useful when the same config is reused for different targets passed on the CLI each run)
     print()
-    persist_targets = _wizard_ask_yes_no("Save the target(s) in the config file too? (if No: select targets via CLI instead)", default=True)
+    _wizard_collect_target_section(state)
+    _wizard_collect_login_section(state, method)
+    _wizard_collect_interface_section(state, method)
+    _wizard_collect_webhook_section(state)
+    _wizard_collect_email_section(state)
+    if not _wizard_review_setup(state, method):
+        print(colorize("warning", "Setup cancelled. Destination files were not changed."))
+        raise SystemExit(1)
 
-    # Q2: login mode
     print()
-    logged_in = _wizard_ask_choice(
-        "Do you want to log in with an Instagram account?",
-        [
-            ("No - no login (no setup; sees new posts, bio and follower counts)", "Cannot see stories, reels or exactly who followed/unfollowed."),
-            ("Yes - logged in (full detail: stories, reels, follower churn)", "Use a DEDICATED account; Instagram may flag automation."),
-        ],
-        default_index=0,
-    ) == 1
-
-    session_username = ""
-    collected_secrets: dict = {}
-    do_browser_import = False
-    import_browser = "firefox"
-    browser_choices = _wizard_import_browsers(method)
-    if logged_in:
-        # Ask the login method first so the username prompt that follows knows whether it can be auto-detected
-        print()
-        import_from = "Firefox" if browser_choices == ["firefox"] else "a browser"
-        login_method = _wizard_ask_choice(
-            "How do you want to provide the login session?",
-            [
-                (f"Import from {import_from} (recommended)", "Reuses your existing browser login; most reliable and least detectable."),
-                ("I already created a session with instaloader", "You previously ran 'instaloader -l <user>'."),
-                ("Username + password", "Least safe; full login each run. Password is stored in .env, never the config."),
-            ],
-            default_index=0,
-        )
-        if login_method == 0:
-            do_browser_import = True
-            if len(browser_choices) > 1:
-                print()
-                browser_idx = _wizard_ask_choice(
-                    "Which browser do you want to import the session from?",
-                    [(browser_label(b), _wizard_browser_desc(b)) for b in browser_choices],
-                    default_index=0,
-                )
-                import_browser = browser_choices[browser_idx]
-
-        # The username can be detected from the imported session, but only for a host import (containers defer the import, so the wizard cannot read the cookies here)
-        print()
-        can_detect_username = do_browser_import and method not in ("docker", "compose")
-        if can_detect_username:
-            session_username = _wizard_ask_text(f"Your Instagram username (leave empty to detect it from the imported {browser_label(import_browser)} session)").lstrip("@")
-        else:
-            session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
-
-        if login_method == 2:
-            collected_secrets["SESSION_PASSWORD"] = _wizard_ask_secret("Instagram password (stored in .env)")
-
-    # Q3: interface
-    print()
-    iface = _wizard_ask_choice(
-        "How do you want to view activity?",
-        [
-            ("Web dashboard - point and click in your browser", "Friendliest; add/remove targets and change settings without the command line.\nPlain text logs still print in your terminal."),
-            ("Terminal dashboard - live stats in your terminal", "Rich full-screen view; needs the 'rich' library."),
-            ("Plain text logs", "Simple sequential output; best for background or headless runs."),
-        ],
-        default_index=0,
-    )
-    want_web = (iface == 0)
-    want_terminal = (iface == 1)
-    if want_web and not FLASK_AVAILABLE:
-        print(colorize("warning", "  Note: 'flask' is not installed, so the web dashboard will be disabled until you install it (pip install flask)."))
-    if want_terminal and not RICH_AVAILABLE:
-        print(colorize("warning", "  Note: 'rich' is not installed, so the terminal dashboard will be disabled until you install it (pip install rich)."))
-
-    # Q4: notifications (Discord or ntfy webhook, then email)
-    want_webhook = False
-    print()
-    if _wizard_ask_yes_no("Set up Discord or ntfy webhook alerts now?", default=False):
-        provider_choice = _wizard_ask_choice("Which webhook service should receive alerts?", [("Discord", "Sends a Discord embed with supported image attachments."), ("ntfy", "Sends a native notification to one ntfy topic URL.")], default_index=0)
-        WEBHOOK_PROVIDER = "discord" if provider_choice == 0 else "ntfy"
-        if WEBHOOK_PROVIDER == "discord":
-            print(colorize("info", "  In Discord: Server Settings > Integrations > Webhooks > New Webhook > Copy Webhook URL."))
-            webhook_prompt = "Paste the Discord webhook URL (stored in .env)"
-        else:
-            print(colorize("info", "  In ntfy: choose a hard-to-guess topic and use its complete URL, such as https://ntfy.sh/your-private-topic."))
-            webhook_prompt = "Paste the ntfy topic URL (stored in .env)"
-        existing_webhook = _wizard_existing_secret("WEBHOOK_URL", env_path)
-        replace_webhook = True
-        if existing_webhook:
-            replace_webhook = _wizard_ask_choice("Which webhook URL should be used?", [("Keep the saved URL", "Keeps the private value without displaying or changing it."), ("Paste a new URL", "Uses a hidden prompt then saves the new private value in .env.")]) == 1
-        if replace_webhook:
-            while True:
-                webhook_url = _wizard_ask_secret(webhook_prompt)
-                if validate_webhook_url(webhook_url):
-                    break
-                print(colorize("warning", "  That does not look like a complete HTTP(S) webhook URL. Copy it from the webhook service and try again."))
-            collected_secrets["WEBHOOK_URL"] = webhook_url
-        want_webhook = True
-        if WEBHOOK_PROVIDER == "ntfy":
-            _wizard_collect_ntfy_access_token(collected_secrets, env_path)
-
-    want_email = False
-    print()
-    if _wizard_ask_yes_no("Set up email (SMTP) alerts now?", default=False):
-        SMTP_HOST = _wizard_ask_text("SMTP server host (e.g. smtp.gmail.com)", required=True)
-        port_raw = _wizard_ask_text("SMTP port", default="587")
-        try:
-            SMTP_PORT = int(port_raw)
-        except ValueError:
-            SMTP_PORT = 587
-        SMTP_SSL = _wizard_ask_yes_no("Use SSL/TLS?", default=True)
-        SMTP_USER = _wizard_ask_text("SMTP username", required=True)
-        collected_secrets["SMTP_PASSWORD"] = _wizard_ask_secret("SMTP password (stored in .env)")
-        SENDER_EMAIL = _wizard_ask_text("Sender email (From)", required=True)
-        RECEIVER_EMAIL = _wizard_ask_text("Recipient email (To)", required=True)
-        want_email = True
-
-    # Apply non-secret choices to globals so they render into the config
-    TARGET_USERNAMES = targets if persist_targets else []
-    SKIP_SESSION = not logged_in
-    SESSION_USERNAME = session_username
-    WEB_DASHBOARD_ENABLED = want_web
-    DASHBOARD_ENABLED = want_terminal
-    if want_web and method in ("docker", "compose"):
-        WEB_DASHBOARD_HOST = "0.0.0.0"
-    STATUS_NOTIFICATION = bool(want_email)
-    WEBHOOK_ENABLED = bool(want_webhook)
-    if want_webhook:
-        WEBHOOK_STATUS_NOTIFICATION = True
-
-    # Optional inline browser import (skipped under Docker/Compose where the cookie store is not mounted)
-    if do_browser_import:
-        print()
-        label = browser_label(import_browser)
-        retry_hint = f"{prefix} --import-browser-session --browser {import_browser}"
-        if method in ("docker", "compose"):
-            print(colorize("warning", f"Inside a container the {label} import needs your browser profile mounted, so it cannot run here."))
-            print("Run this once on the host before starting (Linux example):")
-            print(colorize("section", f"  {_firefox_import_cmd(method)}"))
-        elif _wizard_ask_yes_no(f"Import the {label} session now? (log in to Instagram in {label} first)", default=True):
-            # The import is optional, so any failure (no profile, not logged in, missing pycookiecheat) warns and lets the wizard finish writing the config
-            try:
-                imported_username = None
-                if import_browser == "firefox":
-                    cookie_path = os.path.expanduser(get_firefox_cookiefile())
-                    if not os.path.isfile(cookie_path):
-                        print(colorize("warning", f"Could not find Firefox cookies at '{cookie_path}'. You can import later with: {retry_hint}"))
-                    else:
-                        imported_username = import_session("firefox", cookie_path, None)
-                else:
-                    profile = select_chromium_profile_cli(import_browser, None)
-                    imported_username = import_session(import_browser, None, None, profile=profile)
-                if imported_username and imported_username != session_username:
-                    if session_username:
-                        print(colorize("warning", f"Imported session belongs to '{imported_username}', updating SESSION_USERNAME in the generated config."))
-                    else:
-                        print(colorize("info", f"Detected username '{imported_username}' from the imported session."))
-                    session_username = imported_username
-                    SESSION_USERNAME = imported_username
-            except (SystemExit, Exception) as e:
-                print(colorize("warning", f"{label} import failed: {e}"))
-                print(f"You can retry later with: {retry_hint}")
-        else:
-            print(colorize("info", f"You can import later with: {retry_hint}"))
-
-    # Safety net: a logged-in setup needs a username to locate the saved session at runtime, so prompt for it if the import did not provide one (declined, failed or deferred to a container host)
-    if logged_in and not session_username:
-        print()
-        print(colorize("warning", "No username yet - the session could not be detected automatically."))
-        session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
-        SESSION_USERNAME = session_username
-
-    # Write the config file (default name, confirm before overwriting an existing one)
-    print()
-    if os.path.isfile(config_path) and not _wizard_ask_yes_no(f"'{config_path}' already exists. Overwrite it?", default=False):
-        config_path = _wizard_ask_text("Save config as", default="instagram_monitor_new.conf", required=True)
+    _wizard_finish_browser_import(state, method)
+    state.config_values.update({"TARGET_USERNAMES": list(state.targets) if state.persist_targets else [], "SESSION_USERNAME": state.session_username, "SKIP_SESSION": not state.logged_in, "DOTENV_FILE": str(state.env_path)})
+    config_content = generate_config_with_current_values(state.config_values)
     try:
-        with open(config_path, "w", encoding="utf-8") as f:
-            f.write(generate_config_with_current_values())
-        print(colorize("info", f"\nSaved configuration to {config_path}"))
-        if not persist_targets:
-            print(colorize("info", "\nNo targets saved in the config - remember to pass them on the CLI each run (as shown below)."))
-    except Exception as e:
-        print(colorize("error", f"\nCould not write config file '{config_path}': {e}"))
-        sys.exit(1)
+        write_status = write_config_file(state.config_path, config_content)
+    except Exception as exc:
+        print(colorize("error", f"Could not write config file '{state.config_path}': {exc}"))
+        raise SystemExit(1) from None
 
-    # Write secrets to the selected dotenv file
-    if collected_secrets:
+    if state.secret_updates:
         try:
-            update_dotenv_file(env_path, collected_secrets)
-            for key, value in collected_secrets.items():
-                globals()[key] = value
-            print(colorize("info", f"Saved secrets ({', '.join(collected_secrets)}) to {env_path}"))
-        except Exception as e:
-            print(colorize("warning", f"Could not write secrets file '{env_path}': {e}"))
-
-    # Summary and the exact command to run
-    print(colorize("header", "\nSetup complete!\n"))
-    targets_str = " ".join(targets)
-    web_port_flag = " -p 8000:8000" if want_web else ""
-    if method == "docker":
-        run_cmd = f'docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor {targets_str} --config-file /data/{os.path.basename(config_path)}'
-    elif method == "compose":
-        run_cmd = f"{_wizard_cmd_prefix('compose', web_dashboard=want_web)} {targets_str} --config-file /data/{os.path.basename(config_path)}"
+            update_status = update_dotenv_file(state.env_path, state.secret_updates)
+        except Exception as exc:
+            print(colorize("error", f"Configuration was saved but secrets could not be written to '{state.env_path}': {exc}"))
+            print(colorize("warning", "Setup is incomplete and monitoring was not started."))
+            raise SystemExit(1) from None
     else:
-        run_cmd = f"{prefix} {targets_str} --config-file {config_path}"
+        update_status = None
 
-    # Offer to verify the setup with the preflight checks before launching
+    globals().update(state.config_values)
+    for secret_key in SECRET_KEYS:
+        saved_secret = _wizard_secret_value(secret_key, state.env_path)
+        globals()[secret_key] = saved_secret if saved_secret is not None else ""
+    globals().update(state.secret_updates)
+    CLI_CONFIG_PATH = str(state.config_path)
+    DOTENV_FILE = str(state.env_path)
+
+    print(colorize("header", "\nSaved files\n"))
+    print(f"  Configuration: {write_status['path']}")
+    if write_status["backup_path"]:
+        print(f"  Backup:        {write_status['backup_path']}")
+    if update_status is not None:
+        print(f"  Secrets:       {update_status['path']}")
+
+    doctor_failures = 0
+    print()
     if _wizard_ask_yes_no("Run a quick check that everything works now?", default=True):
-        run_doctor(targets)
+        doctor_failures = run_doctor(state.targets)
 
-    # Docker/Compose have no "start now" prompt, so the printed command is the only way to launch. Otherwise point the reader forward to the "Start monitoring now?" prompt
-    if method in ("docker", "compose"):
-        print("\nTo start monitoring, run:")
-    else:
-        print('\nTo start monitoring, run the command (or respond with Y below):')
-    print(colorize("section", f"  {run_cmd}\n"))
-    if want_web:
+    command_targets = [] if state.persist_targets else state.targets
+    run_command = _wizard_action_command(method, "", state.config_path, state.env_path, command_targets, web_dashboard=state.want_web)
+    doctor_command = _wizard_action_command(method, "--doctor", state.config_path, state.env_path, command_targets, web_dashboard=state.want_web)
+    print(colorize("header", "\nNext steps\n"))
+    print("Check setup again:")
+    print(colorize("section", f"    {doctor_command}\n"))
+    print("Start monitoring:")
+    print(colorize("section", f"    {run_command}\n"))
+    if state.want_web:
         print(f"Then open {colorize('link', 'http://127.0.0.1:8000/')} in your browser.\n")
-    if want_email:
-        print(f"Test email anytime with: {colorize('section', prefix + ' --send-test-email')}")
-    if want_webhook:
-        print(f"Test webhook anytime with: {colorize('section', prefix + ' --send-test-webhook')}")
+    if state.want_email:
+        print(f"Test email anytime with: {colorize('section', _wizard_action_command(method, '--send-test-email', state.config_path, state.env_path, web_dashboard=state.want_web))}")
+    if state.want_webhook:
+        print(f"Test webhook anytime with: {colorize('section', _wizard_action_command(method, '--send-test-webhook', state.config_path, state.env_path, web_dashboard=state.want_web))}")
 
-    # Offer to launch right away (not for Docker/Compose, which need the mount/port flags above)
-    if method not in ("docker", "compose") and _wizard_ask_yes_no("Start monitoring now?", default=True):
-        run_args = list(targets) + ["--config-file", os.path.abspath(config_path)]
+    if doctor_failures:
+        print(colorize("warning", "Setup was saved but doctor found failures. Fix them before starting monitoring."))
+    elif method not in ("docker", "compose") and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True):
+        launch_arguments = _wizard_local_command_args(method, exact=True)
+        launch_arguments.extend(command_targets)
+        launch_arguments.extend(("--config-file", str(state.config_path), "--env-file", str(state.env_path)))
         sys.stdout.flush()
-        os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)] + run_args)
-    sys.exit(0)
+        raise SystemExit(_wizard_launch_monitor(launch_arguments))
+    raise SystemExit(0)
 
 
 # Prints a short welcome with the most common commands and offers to launch the setup wizard
@@ -11255,6 +11542,11 @@ def _wizard_welcome(parser) -> None:
     print(f"\nGuide:        {colorize('link', 'https://misiektoja.github.io/instagram_monitor/quick-start/')}\n")
     if interactive and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
         run_setup_wizard()
+
+
+# Returns whether a launch has no saved operation and should offer first-run setup
+def _wizard_should_offer_first_run(arguments, configured_targets, web_dashboard_enabled: bool) -> bool:
+    return len(arguments) == 1 and not configured_targets and not web_dashboard_enabled
 
 
 # Prints one doctor check line with a status marker and an optional detail or hint
@@ -11454,6 +11746,7 @@ def run_doctor(targets) -> int:
     return fails
 
 
+# Parses configuration and command-line options then starts the selected operation
 def run_main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
@@ -12000,10 +12293,6 @@ def run_main():
         run_setup_wizard(config_file=args.config_file, env_file=args.env_file)
         sys.exit(0)
 
-    if len(sys.argv) == 1:
-        _wizard_welcome(parser)
-        sys.exit(0 if sys.stdin.isatty() else 1)
-
     if args.config_file:
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
 
@@ -12086,6 +12375,10 @@ def run_main():
             val = os.getenv(secret)
             if val is not None:
                 globals()[secret] = val
+
+    if _wizard_should_offer_first_run(sys.argv, TARGET_USERNAMES, WEB_DASHBOARD_ENABLED):
+        _wizard_welcome(parser)
+        sys.exit(0 if sys.stdin.isatty() else 1)
 
     if args.import_firefox_session or args.import_browser_session:
 
