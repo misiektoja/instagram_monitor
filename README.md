@@ -27,16 +27,21 @@ instagram_monitor --setup
 ```
 
 Docker Compose
+
+On native Linux export your host identity first. Docker Desktop users on macOS or Windows can skip the two `export` commands.
+
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
+export INSTAGRAM_MONITOR_UID="$(id -u)"
+export INSTAGRAM_MONITOR_GID="$(id -g)"
 docker compose run --rm instagram_monitor --setup
 docker compose up
 ```
 
-Docker run
+Docker run on macOS or Linux
 ```sh
 docker pull misiektoja/instagram-monitor:latest
-docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -p 8000:8000 misiektoja/instagram-monitor --setup
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor --setup
 ```
 
 <p align="center">
@@ -119,6 +124,8 @@ The fastest way to get going (since **v3.5**) is the interactive setup wizard. I
 
 Use the command that matches how you run the tool:
 
+On native Linux export `INSTAGRAM_MONITOR_UID="$(id -u)"` and `INSTAGRAM_MONITOR_GID="$(id -g)"` before the Compose command below. Docker Desktop users can omit those exports. Windows PowerShell users should prefer Compose or use the direct commands in the [Docker Usage guide](https://misiektoja.github.io/instagram_monitor/usage/#docker-usage-recommended).
+
 ```sh
 # PyPI install
 instagram_monitor --setup
@@ -133,8 +140,8 @@ python instagram_monitor.py --setup
 curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
 docker compose run --rm instagram_monitor --setup
 
-# Docker image
-docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -p 8000:8000 misiektoja/instagram-monitor --setup
+# Docker image on macOS or Linux
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor --setup
 ```
 
 Running the tool with no arguments from an interactive terminal offers the same wizard when no operation is saved. If you save targets in the config, a later no-argument launch starts those targets directly. The wizard detects whether you installed via pip, downloaded the script or run under Docker. Local commands reuse the active Python executable while config and dotenv paths are safely quoted.
