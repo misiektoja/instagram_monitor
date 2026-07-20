@@ -26,16 +26,21 @@ instagram_monitor --setup
 ```
 
 Docker Compose
+
+On native Linux export your host identity first. Docker Desktop users on macOS or Windows can skip the two `export` commands.
+
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
+export INSTAGRAM_MONITOR_UID="$(id -u)"
+export INSTAGRAM_MONITOR_GID="$(id -g)"
 docker compose run --rm instagram_monitor --setup
 docker compose up
 ```
 
-Docker run
+Docker run on macOS or Linux
 ```sh
 docker pull misiektoja/instagram-monitor:latest
-docker run --rm -it --init -v "$PWD:/data" -v instagram_monitor_session:/home/instagram/.config/instaloader -p 8000:8000 misiektoja/instagram-monitor --setup
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor --setup
 ```
 
 <p align="center">
