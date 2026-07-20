@@ -13,6 +13,12 @@ class TestValidateWebhookUrl:
         assert im_module.validate_webhook_url(url) is False
 
 
+class TestNormalizeNtfyTopicUrl:
+    @pytest.mark.parametrize("value,expected", [("https://ntfy.example.test/private-topic?auth=value", "https://ntfy.example.test/private-topic?auth=value"), ("http://ntfy.internal/private-topic", "http://ntfy.internal/private-topic"), (" private_Topic-123 ", "https://ntfy.sh/private_Topic-123"), ("a" * 64, f"https://ntfy.sh/{'a' * 64}"), ("a" * 65, ""), ("ntfy.sh/private-topic", ""), ("private.topic", ""), ("private/topic", ""), (None, "")])
+    def test_normalization(self, im_module, value, expected):
+        assert im_module.normalize_ntfy_topic_url(value) == expected
+
+
 class TestEscapeDiscordMarkdown:
     def test_empty_string(self, im_module):
         assert im_module.escape_discord_markdown("") == ""
