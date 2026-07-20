@@ -11519,7 +11519,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
 
     doctor_failures = 0
     print()
-    if _wizard_ask_yes_no("Run a quick check that everything works now?", default=True):
+    if _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
         doctor_failures = run_doctor(state.targets)
 
     command_targets = [] if state.persist_targets else state.targets
@@ -11600,7 +11600,63 @@ def _doctor_progress_clear() -> None:
         _doctor_progress.width = 0  # type: ignore[attr-defined]
 
 
-# Runs preflight self-checks and prints a PASS/WARN/FAIL report, returning the number of failed checks
+# Prompts for explicit doctor delivery consent and defaults safely to no
+def _doctor_ask_yes_no(question: str) -> bool:
+    while True:
+        try:
+            raw = input(colorize("info", f"{question} [y/N]: ")).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\n" + colorize("info", "Delivery test skipped."))
+            return False
+        if not raw or raw in ("n", "no"):
+            return False
+        if raw in ("y", "yes"):
+            return True
+        print(colorize("warning", "  Please answer 'y' or 'n'."))
+
+
+# Sends one approved doctor webhook while restoring its configured enabled state
+def _doctor_send_test_webhook() -> int:
+    global WEBHOOK_ENABLED
+    previous_enabled = WEBHOOK_ENABLED
+    try:
+        WEBHOOK_ENABLED = True
+        return send_webhook("Instagram Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type="doctor")
+    finally:
+        WEBHOOK_ENABLED = previous_enabled
+
+
+# Offers separate real delivery tests only after interactive confirmation
+def _doctor_offer_notification_tests(smtp_ready: bool, webhook_ready: bool) -> int:
+    if not sys.stdin.isatty() or not sys.stdout.isatty() or not (smtp_ready or webhook_ready):
+        return 0
+    print(colorize("section", "\nOptional delivery tests"))
+    print("Doctor will not write files. Each approved test sends one real message.")
+    failures = 0
+    if smtp_ready:
+        if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
+            result = send_email("instagram_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "This test email was sent after approval in <b>--doctor</b>. Your SMTP delivery settings work.", SMTP_SSL, smtp_timeout=5)
+            if result == 0:
+                _doctor_line("ok", "Doctor test email delivered", "One real test email was sent after confirmation")
+            else:
+                failures += 1
+                _doctor_line("fail", "Doctor test email delivery failed", "The approved test email could not be delivered")
+        else:
+            _doctor_line("info", "Test email skipped", "No email was sent")
+    if webhook_ready:
+        provider = normalized_webhook_provider()
+        if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
+            if _doctor_send_test_webhook() == 0:
+                _doctor_line("ok", "Doctor test webhook delivered", "One real test webhook was sent after confirmation")
+            else:
+                failures += 1
+                _doctor_line("fail", "Doctor test webhook delivery failed", "The approved test webhook could not be delivered")
+        else:
+            _doctor_line("info", "Test webhook skipped", "No webhook was sent")
+    return failures
+
+
+# Runs preflight checks plus approved delivery tests and returns the number of failures
 def run_doctor(targets) -> int:
     import importlib.util
 
@@ -11608,7 +11664,7 @@ def run_doctor(targets) -> int:
     warns = 0
 
     print(colorize("header", f"\nInstagram Monitor v{VERSION} - Doctor\n"))
-    print("Running preflight checks. Read-only - this sends no emails or webhooks.\n")
+    print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.\n")
 
     # Environment and optional dependencies
     print(colorize("section", "Environment"))
@@ -11719,6 +11775,7 @@ def run_doctor(targets) -> int:
     # Notifications
     print(colorize("section", "\nNotifications"))
     smtp_configured = (SMTP_HOST and SMTP_HOST != "your_smtp_server_ssl" and SMTP_USER and SMTP_USER != "your_smtp_user" and SMTP_PASSWORD and SMTP_PASSWORD != "your_smtp_password")
+    smtp_ready = False
     if not smtp_configured:
         _doctor_line("info", "Email notifications not configured")
     else:
@@ -11731,12 +11788,14 @@ def run_doctor(targets) -> int:
             smtp.login(SMTP_USER, SMTP_PASSWORD)
             smtp.quit()
             _doctor_progress_clear()
-            _doctor_line("ok", "Email (SMTP) login works", "Send a real test with --send-test-email")
+            smtp_ready = True
+            _doctor_line("ok", "Email (SMTP) login works", "No email was sent during this passive check")
         except Exception as e:
             _doctor_progress_clear()
             fails += 1
             _doctor_line("fail", f"Email (SMTP) check failed: {e}", "Verify SMTP_HOST, SMTP_PORT and SMTP_SSL, and SMTP_USER/SMTP_PASSWORD. Gmail and similar need an app password.")
 
+    webhook_ready = False
     if not WEBHOOK_URL:
         if WEBHOOK_ENABLED:
             warns += 1
@@ -11755,7 +11814,10 @@ def run_doctor(targets) -> int:
             fails += 1
             _doctor_line("fail", "Webhook headers are invalid", header_error)
         else:
-            _doctor_line("ok", f"Webhook URL and headers look valid for {normalized_webhook_provider()}", "Send a real test with --send-test-webhook")
+            webhook_ready = True
+            _doctor_line("ok", f"Webhook URL and headers look valid for {normalized_webhook_provider()}", "No webhook was sent during this passive check")
+
+    fails += _doctor_offer_notification_tests(smtp_ready, webhook_ready)
 
     # Summary
     print(colorize("header", "\nSummary"))
@@ -11874,7 +11936,7 @@ def run_main():
         "--doctor",
         dest="doctor",
         action="store_true",
-        help="Run preflight self-checks (deps, config, session, connectivity, targets, notifications) and exit",
+        help="Run preflight checks with separately approved notification delivery tests and exit",
     )
 
     # Session login credentials
