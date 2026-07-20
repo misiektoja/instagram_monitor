@@ -1,6 +1,15 @@
 """Tests for the --doctor preflight checks (no real network)."""
 
+import io
+from unittest.mock import Mock
+
 import pytest
+
+
+class _TTYBuffer(io.StringIO):
+    # Reports interactive terminal capability for delivery prompt tests
+    def isatty(self):
+        return True
 
 
 class _FakeBot:
@@ -128,3 +137,75 @@ class TestRunDoctor:
 
         assert exc.value.code == 0
         assert calls == [[]]
+
+
+class TestDoctorDeliveryTests:
+    # Separate default-no decisions can skip both delivery channels without sending
+    def test_delivery_tests_can_be_declined_independently(self, im_module, monkeypatch):
+        consent = Mock(side_effect=[False, False])
+        email = Mock(side_effect=AssertionError("email sent without approval"))
+        webhook = Mock(side_effect=AssertionError("webhook sent without approval"))
+        stream = _TTYBuffer()
+        monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+        monkeypatch.setattr(im_module.sys, "stdout", stream)
+        monkeypatch.setattr(im_module, "_doctor_ask_yes_no", consent)
+        monkeypatch.setattr(im_module, "send_email", email)
+        monkeypatch.setattr(im_module, "_doctor_send_test_webhook", webhook)
+        assert im_module._doctor_offer_notification_tests(True, True) == 0
+        assert consent.call_count == 2
+        email.assert_not_called()
+        webhook.assert_not_called()
+        output = stream.getvalue()
+        assert "Test email skipped" in output
+        assert "Test webhook skipped" in output
+
+    # An empty delivery answer defaults safely to no
+    def test_delivery_consent_defaults_to_no(self, im_module, monkeypatch):
+        prompts = []
+        monkeypatch.setattr("builtins.input", lambda prompt: (prompts.append(prompt) or ""))
+        assert im_module._doctor_ask_yes_no("Send one test") is False
+        assert len(prompts) == 1
+        assert prompts[0].endswith("Send one test [y/N]: ")
+
+    # Separate approvals deliver one email and one webhook
+    def test_delivery_tests_send_approved_messages(self, im_module, monkeypatch):
+        consent = Mock(side_effect=[True, True])
+        email = Mock(return_value=0)
+        webhook = Mock(return_value=0)
+        stream = _TTYBuffer()
+        monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+        monkeypatch.setattr(im_module.sys, "stdout", stream)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "ntfy")
+        monkeypatch.setattr(im_module, "_doctor_ask_yes_no", consent)
+        monkeypatch.setattr(im_module, "send_email", email)
+        monkeypatch.setattr(im_module, "_doctor_send_test_webhook", webhook)
+        assert im_module._doctor_offer_notification_tests(True, True) == 0
+        email.assert_called_once_with("instagram_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "This test email was sent after approval in <b>--doctor</b>. Your SMTP delivery settings work.", im_module.SMTP_SSL, smtp_timeout=5)
+        webhook.assert_called_once_with()
+
+    # Noninteractive doctor runs never offer or send delivery tests
+    def test_noninteractive_doctor_never_offers_delivery_tests(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+        monkeypatch.setattr(im_module.sys, "stdout", Mock(isatty=lambda: False))
+        monkeypatch.setattr(im_module, "_doctor_ask_yes_no", Mock(side_effect=AssertionError("consent prompt attempted")))
+        monkeypatch.setattr(im_module, "send_email", Mock(side_effect=AssertionError("email attempted")))
+        monkeypatch.setattr(im_module, "_doctor_send_test_webhook", Mock(side_effect=AssertionError("webhook attempted")))
+        assert im_module._doctor_offer_notification_tests(True, True) == 0
+
+    # An approved delivery failure contributes one doctor failure
+    def test_approved_delivery_failure_is_counted(self, im_module, monkeypatch):
+        stream = _TTYBuffer()
+        monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+        monkeypatch.setattr(im_module.sys, "stdout", stream)
+        monkeypatch.setattr(im_module, "_doctor_ask_yes_no", Mock(return_value=True))
+        monkeypatch.setattr(im_module, "send_email", Mock(return_value=1))
+        assert im_module._doctor_offer_notification_tests(True, False) == 1
+
+    # Doctor webhook delivery temporarily enables sending and restores the setting
+    def test_doctor_webhook_test_restores_enabled_state(self, im_module, monkeypatch):
+        delivery = Mock(return_value=0)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", False)
+        monkeypatch.setattr(im_module, "send_webhook", delivery)
+        assert im_module._doctor_send_test_webhook() == 0
+        assert im_module.WEBHOOK_ENABLED is False
+        delivery.assert_called_once_with("Instagram Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type="doctor")
