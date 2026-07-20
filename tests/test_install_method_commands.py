@@ -1,4 +1,8 @@
-"""Tests for install-method detection and the command examples it drives (--help epilog, wizard prefixes)."""
+"""Tests for install-method detection and the command examples it drives."""
+
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 
 # Forces _wizard_install_method to a known launch environment for one assertion
@@ -34,8 +38,10 @@ class TestInstallMethodDetection:
 
 
 class TestCmdPrefix:
-    def test_manual(self, im_module):
-        assert im_module._wizard_cmd_prefix("manual") == "python3 instagram_monitor.py"
+    def test_manual_matches_active_python_name(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
+        monkeypatch.setattr(im_module.sys, "executable", "/opt/runtime/python3.13")
+        assert im_module._wizard_cmd_prefix("manual") == "python3.13 instagram_monitor.py"
 
     def test_pip(self, im_module):
         assert im_module._wizard_cmd_prefix("pip") == "instagram_monitor"
@@ -82,11 +88,71 @@ class TestWizardBrowserDesc:
     def test_firefox_mentions_no_extra_packages(self, im_module):
         assert "no extra packages" in im_module._wizard_browser_desc("firefox")
 
-    def test_chromium_family_mentions_pycookiecheat(self, im_module):
+    def test_chromium_family_names_the_selected_browser(self, im_module):
         for browser in im_module.CHROMIUM_IMPORT_BROWSERS:
             desc = im_module._wizard_browser_desc(browser)
-            assert "pycookiecheat" in desc
+            assert "signed-in" in desc
             assert im_module.browser_label(browser) in desc
+
+
+class TestPortableWizardCommands:
+    def test_action_command_quotes_custom_paths(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
+        monkeypatch.setattr(im_module.sys, "executable", "/opt/Python Runtime/python3")
+        config_path = Path("/tmp/Instagram Monitor/custom config.conf")
+        env_path = Path("/tmp/Instagram Monitor/custom secrets.env")
+
+        command = im_module._wizard_action_command("manual", "--doctor", config_path, env_path, ["target.user"])
+
+        assert command.startswith("'/opt/Python Runtime/python3'")
+        assert f"--config-file '{config_path.resolve()}'" in command
+        assert f"--env-file '{env_path.resolve()}'" in command
+        assert "target.user" in command
+
+    def test_windows_renderer_quotes_paths_with_spaces(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "system", lambda: "Windows")
+        command = im_module._wizard_render_command([r"C:\Python Dev\python.exe", r"C:\Python Dev\instagram_monitor.py", "--env-file", r"C:\Python Dev\.env"])
+        assert command == r'"C:\Python Dev\python.exe" "C:\Python Dev\instagram_monitor.py" --env-file "C:\Python Dev\.env"'
+
+    def test_windows_launch_uses_argument_list(self, im_module, monkeypatch):
+        run_mock = Mock(return_value=SimpleNamespace(returncode=7))
+        monkeypatch.setattr(im_module, "system", lambda: "Windows")
+        monkeypatch.setattr(im_module.subprocess, "run", run_mock)
+        arguments = [r"C:\Python Dev\python.exe", r"C:\Python Dev\instagram_monitor.py", "--doctor"]
+
+        assert im_module._wizard_launch_monitor(arguments) == 7
+        run_mock.assert_called_once_with(arguments, check=False)
+
+
+class TestChromiumDependencyInstall:
+    def test_install_uses_the_active_interpreter(self, im_module, monkeypatch):
+        run_mock = Mock(return_value=SimpleNamespace(returncode=0))
+        monkeypatch.setattr(im_module.sys, "executable", "/opt/runtime/python3.13")
+        monkeypatch.setattr(im_module.subprocess, "run", run_mock)
+        monkeypatch.setattr(im_module, "_wizard_chromium_dependency_available", lambda: True)
+
+        assert im_module._wizard_install_chromium_dependency("manual") is True
+        run_mock.assert_called_once_with(["/opt/runtime/python3.13", "-m", "pip", "install", "pycookiecheat>=0.8"], check=False)
+
+
+class TestWizardMenuSpacing:
+    def test_choice_starts_on_a_new_line(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "_wizard_input", lambda prompt: "1")
+        print("Previous answer")
+
+        assert im_module._wizard_ask_choice("Choose", [("One", "Description")]) == 0
+        assert "Previous answer\n\nChoose" in capsys.readouterr().out
+
+
+class TestFirstRunDecision:
+    def test_saved_targets_skip_the_setup_offer(self, im_module):
+        assert im_module._wizard_should_offer_first_run(["instagram_monitor.py"], ["saved.target"], False) is False
+
+    def test_saved_web_dashboard_skips_the_setup_offer(self, im_module):
+        assert im_module._wizard_should_offer_first_run(["instagram_monitor.py"], [], True) is False
+
+    def test_empty_bare_launch_offers_setup(self, im_module):
+        assert im_module._wizard_should_offer_first_run(["instagram_monitor.py"], [], False) is True
 
 
 class TestWizardSecretInput:
