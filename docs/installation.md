@@ -7,11 +7,12 @@ Choose one installation method and keep using its command format throughout the 
 
 Choose one runtime path:
 
-* **Python path**:
+**Python path**:
   * [Python](https://www.python.org/downloads/) 3.9 or higher
   * Core libraries: `instaloader`, `requests`, `curl_cffi`, `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich`, `flask`, `jinja2`
   * Optional Chromium cookie import library: `pycookiecheat`
-* **Container path** (Python is not required on the host):
+
+**Container path** (Python is not required on the host):
   * Any Docker-compatible runtime such as:
     * [Docker Desktop](https://docs.docker.com/get-started/get-docker/) (macOS, Windows, Linux)
     * [Docker Engine](https://docs.docker.com/engine/install/) (Linux)
@@ -63,7 +64,16 @@ An extra includes the base package so you do not need to run both install comman
 <a id="manual-python-based-installation"></a>
 ### Install the Manual Script
 
-Download [instagram_monitor.py](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py) and [requirements.txt](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt) to the same directory. Then install the core dependencies:
+Download the script and dependency list into the same directory:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py
+curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt
+```
+
+You can also download [instagram_monitor.py](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py) and [requirements.txt](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt) in a browser or use the files from a cloned repository.
+
+Install the core dependencies:
 
 ```sh
 pip install -r requirements.txt
@@ -227,6 +237,8 @@ For the direct Docker volume named `instagram_monitor_session`, use:
 ```sh
 docker run --rm --user 10001:10001 --entrypoint chmod -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest 1777 /home/instagram/.config/instaloader
 ```
+
+### Check Upgrade
 
 After any upgrade, run the doctor command for your installation:
 
