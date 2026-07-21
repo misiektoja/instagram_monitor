@@ -1,6 +1,6 @@
 # instagram_monitor release notes
 
-# Changes in 3.6 (21 Jul 2026)
+# Changes in 3.6 (22 Jul 2026)
 
 **Features and Improvements**:
 
