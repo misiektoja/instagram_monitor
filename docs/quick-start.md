@@ -1,13 +1,15 @@
 # Quick Start
 
-<a id="-new-here-run-the-setup-wizard"></a>
-## 🧭 New here? Run the setup wizard
+<a id="new-here-run-the-setup-wizard"></a>
+## New here? Run the setup wizard
 
-The fastest way to get going (since **v3.5**) is the interactive setup wizard. It asks a few plain questions (who to monitor, no-login or logged-in, which interface, optional alerts), then writes a ready-to-run config for you. For local installs it can also start monitoring immediately.
+First complete one method on the [Installation](installation.md) page. The fastest way to configure that installation is the interactive setup wizard. It asks who to monitor, whether to use a login session, which interface to start and whether to enable alerts. Before saving, you can review the summary and edit one section without losing the other answers. It then writes a ready-to-run configuration while private values stay in `.env`.
+
+For a local install the wizard can also run the doctor check and start monitoring immediately. In a container it prints the exact follow-up commands for the detected Docker or Docker Compose path.
+
+Before running the Docker Compose setup command on Linux, export `INSTAGRAM_MONITOR_UID="$(id -u)"` and `INSTAGRAM_MONITOR_GID="$(id -g)"` as shown under [Install with Docker Compose](installation.md#docker-compose).
 
 Use the command that matches how you run the tool:
-
-On native Linux export `INSTAGRAM_MONITOR_UID="$(id -u)"` and `INSTAGRAM_MONITOR_GID="$(id -g)"` before the Compose command below. Docker Desktop users can omit those exports. Windows PowerShell users should prefer Compose or use the direct commands in the [Docker Usage guide](usage.md#docker-usage-recommended).
 
 ```sh
 # PyPI install
@@ -19,64 +21,72 @@ python3 instagram_monitor.py --setup
 # Manual Python script on Windows
 python instagram_monitor.py --setup
 
-# Docker Compose (skip curl if you cloned the repo)
+# Docker Compose (skip curl if you cloned the repository)
 curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
 docker compose run --rm instagram_monitor --setup
 
-# Docker image on macOS or Linux
-docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor --setup
+# Docker image on macOS or Windows PowerShell
+docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
+
+# Docker image on Linux
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
 ```
 
-Running the tool with no arguments from an interactive terminal offers the same wizard when no operation is saved. If you save targets in the config, a later no-argument launch starts those targets directly. The wizard detects whether you installed via pip, downloaded the script or run under Docker. Local commands reuse the active Python executable while config and dotenv paths are safely quoted.
+In Windows Command Prompt replace `${PWD}` with `%cd%`. If your Docker-compatible runtime rejects the `:z` mount suffix, remove only that suffix.
 
-Answers stay editable until the final setup summary. You can save them, change one section without losing the others or confirm that you want to discard everything. Firefox and Chromium imports are separate choices. If Chromium support is missing on macOS or Linux, setup offers to install it in one step. Existing config files require confirmation and receive a timestamped backup. A failed secrets write or failed doctor check prevents automatic monitoring startup.
+Running the tool with no arguments from an interactive terminal offers the wizard when neither saved targets nor a saved Web Dashboard are available. If you save targets in `TARGET_USERNAMES`, a later no-argument launch starts those targets. If you save the Web Dashboard without targets, it starts as a browser control panel where you can add targets.
+
+The wizard detects PyPI, downloaded-script, Docker and Docker Compose installations then prints matching commands. Local commands reuse the active Python executable. Config and dotenv paths are quoted for the active operating system.
+
+Answers stay editable until the final setup summary. Existing configuration replacement requires confirmation and creates a timestamped backup. Secrets are written separately to the selected dotenv file. A failed config write, secrets write or doctor check prevents automatic monitoring startup.
+
+Firefox import works in every local installation without an extra package. Chrome, Brave and Chromium import is available on macOS and Linux with the optional browser dependency. Container setup uses Firefox only because Chromium cookie decryption needs the host keyring. See [Session Login Using Browser Cookies](configuration.md#option-3-session-login-using-browser-cookies-recommended).
 
 <a id="not-sure-which-mode-you-want"></a>
-## Not sure which mode you want?
+## Not sure which command you need?
+
+The short commands in this table use PyPI. Keep the options and replace `instagram_monitor` with the prefix under [Command Format by Installation Method](usage.md#command-format) when you use another installation.
 
 | I want to... | Run this |
 | --- | --- |
-| Just try it, no login | `instagram_monitor <target_insta_user>` |
-| Be guided through setup | Use the setup command for your install path above |
-| Avoid the command line | `instagram_monitor --web-dashboard` then use the browser |
-| See stories, reels and who followed/unfollowed | Log in first ([browser session](configuration.md#option-3-session-login-using-browser-cookies-recommended)), then `instagram_monitor -u <your_insta_user> <target_insta_user>` |
+| Set up Instagram Monitor for the first time | Use the setup command for your installation above |
+| Try public monitoring without a login | `instagram_monitor <target_insta_user>` |
+| Start targets saved in `TARGET_USERNAMES` | `instagram_monitor --config-file instagram_monitor.conf` or `docker compose up` |
+| Start a browser control panel without targets | `instagram_monitor --web-dashboard` |
+| Monitor several accounts | `instagram_monitor target_1 target_2` or `instagram_monitor --targets target_1,target_2` |
+| Check the selected login, connectivity and targets | `instagram_monitor --doctor` |
+| See stories, reels and follower details | Import a browser session then run `instagram_monitor -u <your_insta_user> <target_insta_user>` |
 
 <a id="manual-commands"></a>
-## Manual commands
+## Run Individual Commands
 
-If you prefer to run it in a container, jump to 🐳 [Docker Usage (Recommended)](usage.md#docker-usage-recommended).
+The examples below use PyPI. For a manual script replace `instagram_monitor` with `python3 instagram_monitor.py` on macOS or Linux and `python instagram_monitor.py` on Windows. Docker and Docker Compose users should use the prefixes under [Command Format by Installation Method](usage.md#command-format).
 
-- Track the `target_insta_user` in [No-login mode](configuration.md#no-login-mode-no-session-login) (no session login):
+Track a public account in [No-Login Mode](configuration.md#no-login-mode-without-session-login):
 
 ```sh
 instagram_monitor <target_insta_user>
 ```
 
-Or if you installed [manually](installation.md#manual-python-based-installation), use `python3` on macOS or Linux and `python` on Windows:
+For stories, reels and detailed follower changes, log in to Instagram in a supported browser then import the session. Firefox is the recommended local path:
 
 ```sh
-# macOS or Linux
-python3 instagram_monitor.py <target_insta_user>
-
-# Windows
-python instagram_monitor.py <target_insta_user>
-```
-
-- Track the `target_insta_user` in [Logged-in mode](configuration.md#option-3-session-login-using-browser-cookies-recommended) (with session login via your web browser):
-
-```sh
-# log in to the Instagram account (your_insta_user) in your web browser (Firefox, Chrome, Brave or Chromium)
 instagram_monitor --import-browser-session --browser firefox
 instagram_monitor -u <your_insta_user> <target_insta_user>
 ```
 
-- You can also launch the **[Web Dashboard](view-modes.md#web-dashboard-mode)** along with tracking:
+The browser import saves an Instaloader session. Keep using the same `-u` username during monitoring. Container users must reuse the same named session volume and mount Firefox for the one-time import as shown under [Container Operation](usage.md#container-operation).
+
+Launch the [Web Dashboard](view-modes.md#web-dashboard-mode) with a target or as an empty control panel:
 
 ```sh
 instagram_monitor <target_insta_user> --web-dashboard
+instagram_monitor --web-dashboard
 ```
 
-To get the list of all supported command-line arguments / flags:
+Compose one-off Web Dashboard commands need `--service-ports`. Direct Docker commands need the loopback port mapping. Both complete forms are under [Monitoring Mode](usage.md#monitoring-mode).
+
+View every command-line option plus examples adapted to the detected installation:
 
 ```sh
 instagram_monitor --help
