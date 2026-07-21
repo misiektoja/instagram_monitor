@@ -180,12 +180,16 @@ pip install --upgrade "instagram_monitor[browser]"
 
 ### Upgrade a Manual Installation
 
-Replace `instagram_monitor.py` with the newest copy. Download the current `requirements.txt` and refresh the dependencies too because a new release may add a required library:
+Replace [instagram_monitor.py](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py) and [requirements.txt](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt) with the newest copies. You can download them in a browser, use the files from an updated clone or run:
 
 ```sh
+curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py
+curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt
 pip install --upgrade -r requirements.txt
 python3 instagram_monitor.py --version
 ```
+
+Refresh the dependencies even when `requirements.txt` appears unchanged because a new release may add or change a required library.
 
 Use `python instagram_monitor.py --version` on Windows. If you modified the script itself, save your changes before replacing it then reapply them to the new version.
 
