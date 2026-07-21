@@ -93,6 +93,25 @@ class TestWizardImportBrowsers:
         assert im_module._wizard_import_browsers("compose") == ["firefox"]
 
 
+class TestProfileListSpacing:
+    # Verifies Firefox profile choices start after a blank line
+    def test_firefox_choices_have_leading_blank_line(self, im_module, monkeypatch, capsys):
+        profiles = [{"dir": "one.default", "name": "one", "path": "/tmp/one/cookies.sqlite"}, {"dir": "two.default", "name": "two", "path": "/tmp/two/cookies.sqlite"}]
+        monkeypatch.setattr(im_module, "list_firefox_profiles", lambda: profiles)
+        monkeypatch.setattr("builtins.input", lambda prompt: "1")
+        assert im_module.get_firefox_cookiefile() == profiles[0]["path"]
+        assert capsys.readouterr().out.startswith("\nMultiple Firefox profiles found:")
+
+    # Verifies Chromium profile choices start after a blank line
+    def test_chromium_choices_have_leading_blank_line(self, im_module, monkeypatch, capsys):
+        profiles = [{"dir": "Default", "name": "Personal"}, {"dir": "Profile 1", "name": "Work"}]
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
+        monkeypatch.setattr(im_module, "list_chromium_profiles", lambda browser: profiles)
+        monkeypatch.setattr("builtins.input", lambda prompt: "2")
+        assert im_module.select_chromium_profile_cli("chrome", None) == profiles[1]["dir"]
+        assert capsys.readouterr().out.startswith("\nMultiple Chrome profiles found:")
+
+
 class TestWizardBrowserDesc:
     def test_firefox_mentions_no_extra_packages(self, im_module):
         assert "no extra packages" in im_module._wizard_browser_desc("firefox")
