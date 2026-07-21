@@ -51,8 +51,8 @@ class TestCmdPrefix:
         assert "-p 127.0.0.1:8000:8000" in im_module._wizard_cmd_prefix("docker", web_dashboard=True)
 
     def test_docker_reuses_effective_identity_and_selinux_mount(self, im_module, monkeypatch):
-        monkeypatch.setattr(im_module.os, "getuid", lambda: 1234)
-        monkeypatch.setattr(im_module.os, "getgid", lambda: 5678)
+        monkeypatch.setattr(im_module.os, "getuid", lambda: 1234, raising=False)
+        monkeypatch.setattr(im_module.os, "getgid", lambda: 5678, raising=False)
 
         prefix = im_module._wizard_cmd_prefix("docker")
 

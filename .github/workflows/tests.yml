@@ -81,7 +81,7 @@ jobs:
             echo "Noninteractive setup unexpectedly succeeded"
             exit 1
           fi
-          rg "interactive terminal" local/container-smoke/setup-output.txt
+          grep -F "interactive terminal" local/container-smoke/setup-output.txt
 
       - name: Generate a config as the host user
         run: |
