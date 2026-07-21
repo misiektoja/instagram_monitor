@@ -19,7 +19,8 @@ Powerful, real-time OSINT suite for tracking every activity on Instagram - from 
 
 ### 🚀 Quick Install & Run
 
-Python from PyPI (see also the video below)
+Python from PyPI
+
 ```sh
 pip install instagram_monitor
 instagram_monitor --setup
@@ -37,11 +38,27 @@ docker compose run --rm instagram_monitor --setup
 docker compose up
 ```
 
-Docker run on macOS or Linux
+Docker run
+
+On macOS or Windows with Docker Desktop:
+
 ```sh
 docker pull misiektoja/instagram-monitor:latest
-docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor --setup
+docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
+docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --config-file /data/instagram_monitor.conf --env-file /data/.env
 ```
+
+The Docker Desktop command uses macOS shell or Windows PowerShell syntax. In Windows Command Prompt replace `${PWD}` with `%cd%`.
+
+On Linux, pass your host user and group so the container can write to the current directory:
+
+```sh
+docker pull misiektoja/instagram-monitor:latest
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --config-file /data/instagram_monitor.conf --env-file /data/.env
+```
+
+For the manual single-file method, optional browser support and upgrade commands for every method, see [Installation](installation.md).
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_demo.gif" alt="instagram_monitor demo: install, setup wizard and run" width="100%"/>
