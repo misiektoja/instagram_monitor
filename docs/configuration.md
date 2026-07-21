@@ -1,5 +1,7 @@
 # Configuration
 
+Examples on this page use the PyPI command `instagram_monitor`. Manual script, Docker Compose and direct Docker users should keep the shown options and use the matching prefix under [Command Format by Installation Method](usage.md#command-format). Container file paths must point into `/data`.
+
 <a id="configuration-file"></a>
 ## Configuration File
 
@@ -17,7 +19,40 @@ instagram_monitor --generate-config instagram_monitor.conf
 
 > **IMPORTANT**: On **Windows PowerShell**, using redirection (`>`) can cause the file to be encoded in UTF-16, which will lead to "null bytes" errors when running the tool. It is highly recommended to provide the filename directly as an argument to `--generate-config` to ensure UTF-8 encoding.
 
+When you include the filename, Instagram Monitor writes the template directly as UTF-8. This avoids PowerShell changing the file encoding during redirection.
+
+For a guided configuration, use `instagram_monitor --setup` instead. The setup wizard validates the generated settings before saving them. If you confirm replacement of an existing configuration, it creates a timestamped backup first.
+
 Edit the `instagram_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
+
+Without `--config-file`, Instagram Monitor uses the first configuration it finds in this order:
+
+1. `instagram_monitor.conf` in the current directory
+2. `~/.instagram_monitor.conf` in the home directory
+3. `instagram_monitor.conf` next to the script
+
+An explicit `--config-file PATH` is always used and the command stops with an error if that file does not exist.
+
+Settings are applied in this order from lowest to highest priority:
+
+1. Built-in defaults
+2. The discovered or explicitly selected configuration file
+3. Supported secrets from the process environment after the selected or discovered dotenv file is loaded
+4. Command-line options
+
+The dotenv layer applies only to `SESSION_PASSWORD`, `SMTP_PASSWORD`, `WEBHOOK_URL`, `PROXY_URL` and `NTFY_ACCESS_TOKEN`. When a dotenv file is selected or discovered, it is loaded before these keys are read from the process environment. Values in that dotenv file replace same-named values already exported in the shell. Use `--config-file PATH` and `--env-file PATH` when you want both selected files to be explicit.
+
+Save one or more monitoring targets through setup or set `TARGET_USERNAMES` yourself:
+
+```ini
+TARGET_USERNAMES = ["target_user_1", "target_user_2"]
+```
+
+Positional usernames and `--targets` values are combined. If any command-line targets are present, they replace the saved list for that run. With configured targets, start monitoring without positional usernames:
+
+```sh
+instagram_monitor --config-file instagram_monitor.conf
+```
 
 **Note**: Since **v3.0**, you can also change nearly all configuration settings and generate config file via the **[Web Dashboard](view-modes.md#web-dashboard-mode)**.
 
@@ -56,6 +91,18 @@ instaloader -l <your_insta_user>
 ```
 
 This saves the session locally. However, frequent follower/following/stories changes can still lead to detection, as Instagram may flag this as automated behavior.
+
+The local command above stores the session in your user profile. With Docker Compose, create it inside the same named volume that monitoring uses:
+
+```sh
+docker compose run --rm --entrypoint instaloader instagram_monitor -l <your_insta_user>
+```
+
+For a direct image, mount the normal session volume and override the entry point:
+
+```sh
+docker run --rm -it -v instagram_monitor_session:/home/instagram/.config/instaloader --entrypoint instaloader misiektoja/instagram-monitor:latest -l <your_insta_user>
+```
 
 For device consistency, set `USER_AGENT` to match Instaloader's Chrome user agent (see [User Agent](#user-agent) below).
 
@@ -112,7 +159,7 @@ pip install "instagram_monitor[browser]"
 If you run the downloaded script or installed from `requirements.txt`, install it directly instead:
 
 ```sh
-pip3 install pycookiecheat
+pip install "pycookiecheat>=0.8"
 ```
 
 Then import the session:
@@ -141,7 +188,7 @@ Every supported browser can have multiple profiles, each with its own cookies (F
 
 For Chromium-based browsers the tool resolves the cookie database itself, so it works with both the legacy `<profile>/Cookies` and the newer `<profile>/Network/Cookies` layouts.
 
-Inside **Docker** Chromium-based import is also unavailable, because the container cannot reach the host's keyring used to decrypt the cookies. Use Firefox there (see the [Docker Usage examples](usage.md#docker-usage-recommended)), or run the Chromium import directly on the host.
+Inside **Docker** Chromium-based import is also unavailable because the container cannot reach the host keyring used to decrypt the cookies. Use Firefox there as shown under [Container Operation](usage.md#container-operation) or run the Chromium import through a local PyPI or manual installation.
 
 The session login method has the added benefit of blending tool activity with regular user behavior. Interacting with Instagram via the browser every few days (scrolling, liking posts etc.) helps maintain session trust. However, avoid overlapping browser activity with tool activity, as simultaneous actions can trigger suspicious behavior flags.
 
@@ -192,9 +239,9 @@ instagram_monitor --send-test-email
 <a id="storing-secrets"></a>
 ## Storing Secrets
 
-It is recommended to store secrets like `SESSION_PASSWORD`, `SMTP_PASSWORD`, `WEBHOOK_URL`, `NTFY_ACCESS_TOKEN` or `PROXY_URL` as either an environment variable or in a dotenv file.
+It is recommended to store secrets like `SESSION_PASSWORD`, `SMTP_PASSWORD`, `WEBHOOK_URL`, `NTFY_ACCESS_TOKEN` or `PROXY_URL` in the dotenv file selected by setup.
 
-Set the needed environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
+When a dotenv file is selected or discovered, exported values for the supported secret keys are also available. Set them with `export` on **Linux/Unix/macOS/WSL** systems:
 
 ```sh
 export SESSION_PASSWORD="your_instagram_session_password"
@@ -220,7 +267,7 @@ WEBHOOK_URL="https://discord.com/api/webhooks/..."
 NTFY_ACCESS_TOKEN="tk_your_ntfy_access_token"
 ```
 
-By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it.
+By default the tool auto-searches for a dotenv file named `.env` in the current directory then upward from it.
 
 You can specify a custom file with `DOTENV_FILE` or `--env-file` flag:
 
@@ -228,10 +275,10 @@ You can specify a custom file with `DOTENV_FILE` or `--env-file` flag:
 instagram_monitor <target_insta_user> --env-file /path/.env-instagram_monitor
 ```
 
- You can also disable `.env` auto-search with `DOTENV_FILE = "none"` or `--env-file none`:
+You can also disable `.env` auto-search with `DOTENV_FILE = "none"` or `--env-file none`:
 
 ```sh
 instagram_monitor <target_insta_user> --env-file none
 ```
 
-As a fallback, you can also store secrets in the configuration file or source code.
+As a fallback, you can store secrets in the configuration file. Avoid putting secrets directly in the source code.
