@@ -7,7 +7,11 @@ Examples on this page use the PyPI command `instagram_monitor`. Manual script, D
 
 Most settings can be configured via command-line arguments.
 
-If you want to have it stored persistently, generate a default config template and save it to a file named `instagram_monitor.conf`:
+If you want to have it stored persistently, you can store them in a configuration file.
+
+For a guided configuration, it is recommended to use `instagram_monitor --setup`. The setup wizard validates the generated settings before saving them. If you confirm replacement of an existing configuration, it creates a timestamped backup first.
+
+If you want to edit the file manually, generate a default config template and save it to a file named `instagram_monitor.conf`:
 
 ```sh
 # On macOS, Linux or Windows Command Prompt (cmd.exe)
@@ -20,8 +24,6 @@ instagram_monitor --generate-config instagram_monitor.conf
 > **IMPORTANT**: On **Windows PowerShell**, using redirection (`>`) can cause the file to be encoded in UTF-16, which will lead to "null bytes" errors when running the tool. It is highly recommended to provide the filename directly as an argument to `--generate-config` to ensure UTF-8 encoding.
 
 When you include the filename, Instagram Monitor writes the template directly as UTF-8. This avoids PowerShell changing the file encoding during redirection.
-
-For a guided configuration, use `instagram_monitor --setup` instead. The setup wizard validates the generated settings before saving them. If you confirm replacement of an existing configuration, it creates a timestamped backup first.
 
 Edit the `instagram_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
