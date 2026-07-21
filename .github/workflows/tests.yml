@@ -103,8 +103,8 @@ jobs:
       - name: Validate Docker Compose configuration
         run: |
           docker compose -f docker-compose.yml config
-          docker compose -f docker-compose.yml config | rg 'host_ip: 127.0.0.1'
-          docker compose -f docker-compose.yml config | rg 'command: \[\]'
+          docker compose -f docker-compose.yml config | grep -F 'host_ip: 127.0.0.1'
+          docker compose -f docker-compose.yml config | grep -F 'command: []'
 
       - name: Run the locally built image through Docker Compose
         run: |
