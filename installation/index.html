@@ -1139,10 +1139,13 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span><span class="s2">&quot;instagram_monitor[browser]&quot;</span>
 </code></pre></div>
 <h3 id="upgrade-a-manual-installation">Upgrade a Manual Installation<a class="headerlink" href="#upgrade-a-manual-installation" title="Permanent link">&para;</a></h3>
-<p>Replace <code>instagram_monitor.py</code> with the newest copy. Download the current <code>requirements.txt</code> and refresh the dependencies too because a new release may add a required library:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>-r<span class="w"> </span>requirements.txt
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>python3<span class="w"> </span>instagram_monitor.py<span class="w"> </span>--version
+<p>Replace <a href="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py">instagram_monitor.py</a> and <a href="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt">requirements.txt</a> with the newest copies. You can download them in a browser, use the files from an updated clone or run:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>python3<span class="w"> </span>instagram_monitor.py<span class="w"> </span>--version
 </code></pre></div>
+<p>Refresh the dependencies even when <code>requirements.txt</code> appears unchanged because a new release may add or change a required library.</p>
 <p>Use <code>python instagram_monitor.py --version</code> on Windows. If you modified the script itself, save your changes before replacing it then reapply them to the new version.</p>
 <h3 id="upgrade-a-docker-compose-installation">Upgrade a Docker Compose Installation<a class="headerlink" href="#upgrade-a-docker-compose-installation" title="Permanent link">&para;</a></h3>
 <p>Stop an attached run with <code>Ctrl+C</code>. From the directory that contains <code>docker-compose.yml</code> run:</p>
