@@ -8,18 +8,20 @@ Choose one installation method and keep using its command format throughout the 
 Choose one runtime path:
 
 **Python path**:
-  * [Python](https://www.python.org/downloads/) 3.9 or higher
-  * Core libraries: `instaloader`, `requests`, `curl_cffi`, `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich`, `flask`, `jinja2`
-  * Optional Chromium cookie import library: `pycookiecheat`
+
+- [Python](https://www.python.org/downloads/) 3.9 or higher
+- Core libraries: `instaloader`, `requests`, `curl_cffi`, `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich`, `flask`, `jinja2`
+- Optional Chromium cookie import library: `pycookiecheat`
 
 **Container path** (Python is not required on the host):
-  * Any Docker-compatible runtime such as:
-    * [Docker Desktop](https://docs.docker.com/get-started/get-docker/) (macOS, Windows, Linux)
-    * [Docker Engine](https://docs.docker.com/engine/install/) (Linux)
-    * [Colima](https://colima.run/docs/installation/) with Docker CLI (macOS)
-    * [OrbStack](https://docs.orbstack.dev/quick-start) (macOS)
-    * [Rancher Desktop](https://docs.rancherdesktop.io/getting-started/installation/) with Moby or Docker CLI enabled (macOS, Windows, Linux)
-  * The Docker Compose v2 plugin if you choose Docker Compose
+
+- Any Docker-compatible runtime such as:
+    - [Docker Desktop](https://docs.docker.com/get-started/get-docker/) (macOS, Windows, Linux)
+    - [Docker Engine](https://docs.docker.com/engine/install/) (Linux)
+    - [Colima](https://colima.run/docs/installation/) with Docker CLI (macOS)
+    - [OrbStack](https://docs.orbstack.dev/quick-start) (macOS)
+    - [Rancher Desktop](https://docs.rancherdesktop.io/getting-started/installation/) with Moby or Docker CLI enabled (macOS, Windows, Linux)
+- The Docker Compose v2 plugin if you choose Docker Compose
 
 The published image already contains Python and all core libraries. You do not need a local Python installation for Docker.
 
