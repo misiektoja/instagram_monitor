@@ -1,161 +1,99 @@
 # Usage
 
-<a id="docker-usage-recommended"></a>
-## Docker Usage (Recommended)
+<a id="command-format"></a>
+## Command Format by Installation Method
 
-Running via [Docker](https://www.docker.com) is the easiest setup for most users and avoids local Python dependency management.
+Examples on this page use the PyPI command `instagram_monitor`. Keep all shown options and targets but replace that command with the prefix for your installation:
 
-<a id="docker-compose-easiest"></a>
-### Docker Compose (Easiest)
+| Installation | Command prefix |
+| --- | --- |
+| PyPI | `instagram_monitor` |
+| Manual script on macOS or Linux | `python3 instagram_monitor.py` |
+| Manual script on Windows | `python instagram_monitor.py` |
+| Docker Compose | `docker compose run --rm instagram_monitor` |
+| Docker Compose with Web Dashboard | `docker compose run --rm --service-ports instagram_monitor` |
+| Direct Docker on macOS or Windows PowerShell | `docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest` |
+| Direct Docker on Linux | `docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest` |
 
-The repo ships a [docker-compose.yml](https://github.com/misiektoja/instagram_monitor/blob/main/docker-compose.yml) that wraps the volume mounts, port and session persistence for you, so you do not have to remember long `docker run` commands. If you cloned the repo, you already have this file.
-
-If you are starting from an empty directory, download it first:
-
-```sh
-curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
-```
-
-On native Linux map the service to your host identity before the first setup command. This lets the non-root container write the generated config, dotenv and output files through the `/data` bind mount. Docker Desktop users on macOS or Windows can skip these exports.
-
-```sh
-export INSTAGRAM_MONITOR_UID="$(id -u)"
-export INSTAGRAM_MONITOR_GID="$(id -g)"
-```
-
-Export the same values again before a later `docker compose up`. Alternatively store their numeric values in Compose's `.env` file. The setup wizard preserves unrelated entries already present in that file.
-
-1. Generate a config. The image makes the Web Dashboard listen on the container network while Compose publishes it only on host loopback:
-
-```sh
-docker compose run --rm instagram_monitor --setup
-```
-
-2. If you saved the targets, start them with the interface selected in setup:
-
-```sh
-docker compose up
-```
-
-If you did not save the targets, use the complete `docker compose run` command printed by setup instead. Compose auto-loads `instagram_monitor.conf` and the application auto-loads `.env` from the current directory. The wizard creates or updates `.env` when you enter a secret, so do not replace it with `.env.example` after setup.
-
-When Web Dashboard was selected, open [http://127.0.0.1:8000/](http://127.0.0.1:8000/). The port is bound only to the Docker host. Other machines cannot connect through the host network unless you deliberately change the published address.
-
-To monitor specific targets from the command line instead, override the command:
-
-```sh
-docker compose run --rm --service-ports instagram_monitor target1 target2 --web-dashboard
-```
-
-<a id="docker-hub-image"></a>
-### Docker Hub Image
-
-A prebuilt multi-architecture image is available on Docker Hub: [`misiektoja/instagram-monitor`](https://hub.docker.com/r/misiektoja/instagram-monitor)
-
-Run and show help:
-
-```sh
-docker run --rm -it misiektoja/instagram-monitor --help
-```
-
-<a id="build-image-locally"></a>
-### Build Image Locally
-
-If you want to build from source:
-
-```sh
-docker build -t instagram_monitor:local .
-docker run --rm -it instagram_monitor:local --help
-```
-
-If you prefer the local image, replace `misiektoja/instagram-monitor` with `instagram_monitor:local` in the Docker commands below.
-
-<a id="common-run-scenarios"></a>
-### Common Run Scenarios
-
-**Shell note:** The examples below use Bash/Zsh variables (`$PWD`, `$HOME`) and map the container to the current macOS or Linux identity. In PowerShell omit `--user "$(id -u):$(id -g)"`, use `${PWD}` and `${HOME}` and remove the `:z` suffix if your runtime rejects it. The image's default non-root identity is used on Windows.
-
-1. Basic monitoring with persistent data and session storage:
-
-```sh
-docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor <target_insta_user>
-```
-
-This keeps generated files in your current directory and keeps Instaloader sessions in the Docker volume `instagram_monitor_session`.
-
-2. Use config file and dotenv from your current directory:
-
-```sh
-docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor <target_insta_user> --config-file /data/instagram_monitor.conf --env-file /data/.env
-```
-
-3. Run Web Dashboard and access it from host browser:
-
-The official image automatically makes a loopback-configured dashboard listen on the container network. Publish it only on host loopback:
-
-```sh
-docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -p 127.0.0.1:8000:8000 misiektoja/instagram-monitor <target_insta_user> --web-dashboard
-```
-
-Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) on your host.
-
-4. Import Firefox session cookies on Linux host:
-
-```sh
-docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor --import-browser-session --browser firefox
-```
-
-5. Import Firefox session cookies on macOS host from explicit cookie file:
-
-```sh
-docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/Library/Application Support/Firefox/Profiles/<profile>/cookies.sqlite:/cookies/cookies.sqlite:ro" misiektoja/instagram-monitor --import-browser-session --browser firefox --cookie-file /cookies/cookies.sqlite
-```
-
-Firefox is the practical choice inside Docker because its cookies are plain files that can be mounted read-only. Importing from Chrome, Brave or Chromium (`--browser chrome|brave|chromium`) relies on the host's keyring for decryption, which is not available in the container, so run those imports directly on the host instead.
-
-The `/data:z` suffix supplies a shared SELinux label on enforcing Linux hosts and is ignored elsewhere. Do not add `z` or `Z` to an entire Firefox profile without understanding the host relabeling effect. If SELinux blocks that read-only profile mount, close Firefox and copy the needed cookie database to a dedicated directory before mounting it.
-
-Images built with this version initialize new Instaloader session volumes with permissions that support a mapped non-root UID. If an older Compose session volume reports `Permission denied` after upgrading, repair its root mode once before using the mapped identity:
-
-```sh
-docker compose run --rm --user 10001:10001 --entrypoint chmod instagram_monitor 1777 /home/instagram/.config/instaloader
-```
-
-For the direct Docker volume named `instagram_monitor_session`, use:
-
-```sh
-docker run --rm --user 10001:10001 --entrypoint chmod -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor 1777 /home/instagram/.config/instaloader
-```
-
-Once imported, run with `-u <your_insta_user>` as usual and the session file from the persistent volume will be reused.
+In Windows Command Prompt replace `${PWD}` with `%cd%`. If your runtime rejects `:z`, remove that suffix only. Direct Docker Web Dashboard runs also need `-p 127.0.0.1:8000:8000` before the image name. File options inside a container must use paths under `/data` for content stored in the mounted current directory.
 
 <a id="monitoring-mode"></a>
 ## Monitoring Mode
 
-To monitor specific user activity in [No-login mode](configuration.md#no-login-mode-no-session-login) (no session login), just type Instagram username as a command-line argument (`target_insta_user` in the example below):
+Instagram Monitor accepts one or more usernames as positional targets. It also accepts a comma-separated list through `--targets` or a saved list in `TARGET_USERNAMES`. If you provide any command-line targets, they are used instead of the saved list.
+
+To monitor one public account in [No-Login Mode](configuration.md#no-login-mode-without-session-login), pass its username:
 
 ```sh
 instagram_monitor <target_insta_user>
 ```
 
-To monitor specific user activity in [Logged-in mode](configuration.md#logged-in-mode-with-session-login) (with session login), you also need to specify your Instagram account name (`your_insta_user` in the example below) via `SESSION_USERNAME` configuration option or `-u` flag:
+For [Logged-In Mode](configuration.md#logged-in-mode-with-session-login), configure the Instagram account used for the session through `SESSION_USERNAME` or `-u`:
 
 ```sh
 instagram_monitor -u <your_insta_user> <target_insta_user>
 ```
 
-Since **v3.0** you can also launch the **[Web Dashboard](view-modes.md#web-dashboard-mode)** along with tracking:
+You can monitor multiple accounts in one process with positional arguments or `--targets`:
 
 ```sh
-instagram_monitor -u <your_insta_user> <target_insta_user> --web-dashboard
+instagram_monitor target_user_1 target_user_2 target_user_3
+instagram_monitor --targets target_user_1,target_user_2,target_user_3
 ```
 
-By default, the tool looks for a configuration file named `instagram_monitor.conf` in:
- - current directory
- - home directory (`~`)
- - script directory
+The setup wizard can save these usernames in `TARGET_USERNAMES`. With saved targets, start the PyPI or manual installation without positional usernames:
 
- If you generated a configuration file as described in [Configuration](configuration.md#configuration-file), but saved it under a different name or in a different directory, you can specify its location using the `--config-file` flag:
+```sh
+instagram_monitor --config-file instagram_monitor.conf
+```
+
+Docker Compose uses the same saved targets when you run:
+
+```sh
+docker compose up
+```
+
+If setup did not save the targets, pass them to Compose explicitly:
+
+```sh
+docker compose run --rm instagram_monitor target_user_1 target_user_2
+```
+
+For a manual script installation:
+
+```sh
+python3 instagram_monitor.py <target_insta_user>
+```
+
+For a direct image on Docker Desktop:
+
+```sh
+docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest <target_insta_user>
+```
+
+For a direct image on Linux:
+
+```sh
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest <target_insta_user>
+```
+
+Launch the [Web Dashboard](view-modes.md#web-dashboard-mode) with targets or by itself as a browser control panel:
+
+```sh
+instagram_monitor <target_insta_user> --web-dashboard
+instagram_monitor --web-dashboard
+```
+
+For Compose, publish the configured dashboard port during a one-off run:
+
+```sh
+docker compose run --rm --service-ports instagram_monitor <target_insta_user> --web-dashboard
+```
+
+For direct Docker add `-p 127.0.0.1:8000:8000` before the image name. Then open [http://127.0.0.1:8000/](http://127.0.0.1:8000/).
+
+The configuration file search order and setting precedence are documented under [Configuration File](configuration.md#configuration-file). To select another file explicitly, use `--config-file`:
+
 
 ```sh
 instagram_monitor <target_insta_user> --config-file /path/instagram_monitor_new.conf
@@ -163,13 +101,7 @@ instagram_monitor <target_insta_user> --config-file /path/instagram_monitor_new.
 
 The tool runs until interrupted (`Ctrl+C`). Use `tmux` or `screen` for persistence.
 
-You can monitor multiple Instagram users in **one process** by passing multiple target usernames:
-
-```sh
-instagram_monitor target_user_1 target_user_2 target_user_3
-```
-
-**Note**: You can also add and remove monitoring targets directly via the **[Web Dashboard](view-modes.md#web-dashboard-mode)** without restarting the tool.
+You can add or remove targets directly through the Web Dashboard without restarting the tool.
 
 To reduce the chance of triggering Instagram anti-bot mechanisms, the tool will **stagger** the start of each target's monitoring loop (auto-spread across your `INSTA_CHECK_INTERVAL` by default). You can override it with:
 
@@ -199,6 +131,77 @@ It also saves downloaded posts/reels images & videos to:
 And downloaded stories images & videos to:
 - `instagram_<username>_story_YYYYmmdd_HHMMSS.jpg`
 - `instagram_<username>_story_YYYYmmdd_HHMMSS.mp4`
+
+<a id="docker-usage-recommended"></a>
+<a id="container-operation"></a>
+## Container Operation
+
+Installation, Linux ownership setup, local image builds, upgrades and old volume repair are documented under [Docker installation](installation.md#docker-compose). This section covers normal container operation after setup.
+
+<a id="docker-compose-easiest"></a>
+### Docker Compose
+
+Compose mounts the current directory at `/data` and stores the Instaloader login in a named volume. The wizard creates or updates `instagram_monitor.conf` and `.env` on the host. Logs, JSON, CSV and downloaded media also persist outside the container.
+
+Start the saved targets and interface in the foreground:
+
+```sh
+docker compose up
+```
+
+For a background run and live logs:
+
+```sh
+docker compose up -d
+docker compose logs -f
+```
+
+Stop and remove the service container without deleting the bind-mounted files or named session volume:
+
+```sh
+docker compose down
+```
+
+When Web Dashboard is selected, open [http://127.0.0.1:8000/](http://127.0.0.1:8000/). Compose publishes the port only on host loopback. Other machines cannot connect unless you deliberately change the published address.
+
+Compose automatically makes `instagram_monitor.conf` available in `/data`. The application also loads `.env` from that directory when setup selected it. Do not replace a wizard-created `.env` with `.env.example` because the existing file can contain private login or notification values.
+
+<a id="common-run-scenarios"></a>
+### Direct Docker
+
+Use explicit container paths when selecting files from the mounted current directory:
+
+```sh
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest <target_insta_user> --config-file /data/instagram_monitor.conf --env-file /data/.env
+```
+
+The same `instagram_monitor_session` volume must be present during browser import and later logged-in runs.
+
+### Import Firefox into the Container Session
+
+On Linux, mount the Firefox profile read-only:
+
+```sh
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox
+```
+
+With Compose on Linux:
+
+```sh
+docker compose run --rm -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox
+```
+
+On macOS, mount one explicit Firefox cookie database:
+
+```sh
+docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "${HOME}/Library/Application Support/Firefox/Profiles/<profile>/cookies.sqlite:/cookies/cookies.sqlite:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --cookie-file /cookies/cookies.sqlite
+```
+
+Firefox is the practical choice inside Docker because its cookies are plain files that can be mounted read-only. Importing from Chrome, Brave or Chromium relies on the host keyring for decryption, which is unavailable in the container. Run those imports through a local PyPI or manual installation instead.
+
+Do not add `z` or `Z` to an entire Firefox profile without understanding the host relabeling effect. If SELinux blocks the read-only profile mount, close Firefox and copy the needed cookie database to a dedicated directory before mounting it.
+
+After importing, run with `-u <your_insta_user>` and reuse the same named session volume.
 
 <a id="email-notifications"></a>
 ## Email Notifications
@@ -548,6 +551,8 @@ You can specify a custom root directory for all output files using the `-o` / `-
 instagram_monitor <target_insta_user> -o /path/to/downloads
 ```
 
+Inside Docker, use a container path under the mounted directory such as `-o /data/downloads`. The files then appear in `downloads` on the host.
+
 The tool will organize files into subdirectories:
 
 - **Output structure**: The layout depends on whether you monitor one or multiple users:
@@ -601,7 +606,7 @@ The tool also has built-in detection of empty profile pictures. Instagram does n
 
 To enable this:
 - download the [instagram_profile_pic_empty.jpg](https://raw.githubusercontent.com/misiektoja/instagram_monitor/main/instagram_profile_pic_empty.jpg) file
-- place it in the directory where you run the tool. **Note**: If installed via `pip`, this file is already bundled; however, any local file in your working directory will take **priority** over the bundled default.
+- place it in the directory where you run the manual script. PyPI and Docker installations already include this file. Any local file in your working directory takes **priority** over the bundled default.
 
 Without this file, the tool will treat an empty profile picture as a regular image. For example, if a user removes their profile picture, it would be treated as a change rather than a removal.
 
@@ -634,6 +639,8 @@ To do this, set the path to your `imgcat` binary in the `IMGCAT_PATH` configurat
 If you specify only the binary name, it will be auto-searched in your PATH.
 
 Set it to empty to disable this feature.
+
+The published Docker image does not include `imgcat`. Use a local installation or add the tool in a custom image if terminal image display is required. Saved images remain available through the `/data` mount without `imgcat`.
 
 <a id="check-intervals"></a>
 ## Check Intervals
@@ -685,7 +692,15 @@ Send signals with `kill` or `pkill`, e.g.:
 pkill -USR1 -f "instagram_monitor <target_insta_user>"
 ```
 
-As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.
+For a Docker Compose service, send the signal through Docker:
+
+```sh
+docker compose kill --signal SIGUSR1 instagram_monitor
+```
+
+For direct Docker, assign a stable container name with `--name instagram-monitor` when starting it then use `docker kill --signal SIGUSR1 instagram-monitor`.
+
+A local Windows process supports only a limited signal set. Linux containers can receive the Docker signals above even when Docker Desktop runs on Windows.
 
 <a id="coloring-log-output-with-grc"></a>
 ## Coloring Log Output with GRC
