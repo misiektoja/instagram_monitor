@@ -97,7 +97,7 @@ jobs:
       - name: Reach the no-config dashboard through host loopback
         run: |
           docker run --rm -d --name instagram-monitor-dashboard-ci -p 127.0.0.1:18000:8000 instagram-monitor:ci --web-dashboard
-          curl -fsS --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:18000/api/status
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 1 http://127.0.0.1:18000/api/status
           docker stop instagram-monitor-dashboard-ci
 
       - name: Validate Docker Compose configuration
