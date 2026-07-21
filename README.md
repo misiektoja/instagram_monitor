@@ -21,6 +21,7 @@ Powerful, real-time OSINT suite for tracking every activity on Instagram - from 
 ### 🚀 Quick Install & Run
 
 Python from PyPI
+
 ```sh
 pip install instagram_monitor
 instagram_monitor --setup
@@ -38,11 +39,27 @@ docker compose run --rm instagram_monitor --setup
 docker compose up
 ```
 
-Docker run on macOS or Linux
+Docker run
+
+On macOS or Windows with Docker Desktop:
+
 ```sh
 docker pull misiektoja/instagram-monitor:latest
-docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor --setup
+docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
+docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --config-file /data/instagram_monitor.conf --env-file /data/.env
 ```
+
+The Docker Desktop command uses macOS shell or Windows PowerShell syntax. In Windows Command Prompt replace `${PWD}` with `%cd%`.
+
+On Linux, pass your host user and group so the container can write to the current directory:
+
+```sh
+docker pull misiektoja/instagram-monitor:latest
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --config-file /data/instagram_monitor.conf --env-file /data/.env
+```
+
+For the manual single-file method, optional browser support and upgrade commands for every method, see [Installation](https://misiektoja.github.io/instagram_monitor/installation/).
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_demo.gif" alt="instagram_monitor demo: install, setup wizard and run" width="100%"/>
@@ -106,25 +123,25 @@ docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v insta
 
 Full documentation is available at **[misiektoja.github.io/instagram_monitor](https://misiektoja.github.io/instagram_monitor/)**:
 
-- [Installation](https://misiektoja.github.io/instagram_monitor/installation/) - PyPI, Docker and manual install
-- [Quick Start](https://misiektoja.github.io/instagram_monitor/quick-start/) - the setup wizard and first run
-- [Configuration](https://misiektoja.github.io/instagram_monitor/configuration/) - session login, time zone, SMTP and secrets
+- [Installation](https://misiektoja.github.io/instagram_monitor/installation/) - PyPI, manual script, Docker installation and upgrades
+- [Quick Start](https://misiektoja.github.io/instagram_monitor/quick-start/) - setup wizard, login choices and first run
+- [Configuration](https://misiektoja.github.io/instagram_monitor/configuration/) - settings precedence, saved targets, session login, SMTP and secrets
 - [View Modes](https://misiektoja.github.io/instagram_monitor/view-modes/) - text, terminal and web dashboards
-- [Usage](https://misiektoja.github.io/instagram_monitor/usage/) - Docker, notifications, proxy, CSV and more
+- [Usage](https://misiektoja.github.io/instagram_monitor/usage/) - command formats, monitoring, container operation, notifications, proxy and output
 - [Anti-detection](https://misiektoja.github.io/instagram_monitor/anti-detection/) - avoid challenges and account suspension
 - [Troubleshooting](https://misiektoja.github.io/instagram_monitor/troubleshooting/) - the `--doctor` self-check and logging levels
 
 <a id="quick-start"></a>
 ## Quick Start
 
-<a id="-new-here-run-the-setup-wizard"></a>
-### 🧭 New here? Run the setup wizard
+<a id="new-here-run-the-setup-wizard"></a>
+### New here? Run the setup wizard
 
-The fastest way to get started is `--setup`. It asks who to monitor, whether to log in, which interface to use and which alerts you want then saves a ready-to-run configuration. For local installs it can also run the self-check and start monitoring.
+The fastest way to get started is `--setup`. It asks who to monitor, whether to log in, which interface to use and which alerts you want then saves a ready-to-run configuration. Private values stay in `.env`.
+
+On Linux, set `INSTAGRAM_MONITOR_UID="$(id -u)"` and `INSTAGRAM_MONITOR_GID="$(id -g)"` before using Docker Compose.
 
 Use the command that matches how you run the tool:
-
-On Linux, set `INSTAGRAM_MONITOR_UID="$(id -u)"` and `INSTAGRAM_MONITOR_GID="$(id -g)"` before using Docker Compose. Docker Desktop users on macOS or Windows can skip this step.
 
 ```sh
 # PyPI install
@@ -136,32 +153,38 @@ python3 instagram_monitor.py --setup
 # Manual Python script on Windows
 python instagram_monitor.py --setup
 
-# Docker Compose (skip curl if you cloned the repo)
+# Docker Compose (skip curl if you cloned the repository)
 curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
 docker compose run --rm instagram_monitor --setup
 
-# Docker image on macOS or Linux
-docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor --setup
+# Docker image on macOS or Windows PowerShell
+docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
+
+# Docker image on Linux
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
 ```
 
-Running the tool with no arguments offers the wizard when no target has been saved. With saved targets, it starts monitoring directly. The wizard detects PyPI, script, Docker or Docker Compose installs and shows matching commands.
+Running the tool with no arguments offers the wizard when no target or Web Dashboard has been saved. With saved targets, it starts monitoring directly. The wizard detects PyPI, script, Docker or Docker Compose installs and shows matching commands.
 
-See the [full Quick Start guide](https://misiektoja.github.io/instagram_monitor/quick-start/) for browser choices, configuration backups and setup recovery.
+See the [full Quick Start guide](https://misiektoja.github.io/instagram_monitor/quick-start/) for browser choices, saved targets, configuration backups and setup recovery.
 
 <a id="not-sure-which-mode-you-want"></a>
-### Not sure which mode you want?
+### Not sure which command you need?
 
 | I want to... | Run this |
 | --- | --- |
-| Just try it, no login | `instagram_monitor <target_insta_user>` |
-| Be guided through setup | Use the setup command for your install path above |
-| Avoid the command line | `instagram_monitor --web-dashboard` then use the browser |
-| See stories, reels and who followed/unfollowed | Log in first ([browser session](https://misiektoja.github.io/instagram_monitor/configuration/#option-3-session-login-using-browser-cookies-recommended)), then `instagram_monitor -u <your_insta_user> <target_insta_user>` |
+| Set up Instagram Monitor for the first time | Use the setup command for your installation above |
+| Try public monitoring without a login | `instagram_monitor <target_insta_user>` |
+| Start targets saved in `TARGET_USERNAMES` | `instagram_monitor --config-file instagram_monitor.conf` or `docker compose up` |
+| Start a browser control panel without targets | `instagram_monitor --web-dashboard` |
+| Monitor several accounts | `instagram_monitor target_1 target_2` or `instagram_monitor --targets target_1,target_2` |
+| Check the selected login, connectivity and targets | `instagram_monitor --doctor` |
+| See stories, reels and follower details | Import a [browser session](https://misiektoja.github.io/instagram_monitor/configuration/#option-3-session-login-using-browser-cookies-recommended) then run `instagram_monitor -u <your_insta_user> <target_insta_user>` |
 
 <a id="manual-commands"></a>
 ### Manual commands
 
-The examples below use a PyPI install. For a manual script install, replace `instagram_monitor` with `python3 instagram_monitor.py` on macOS or Linux and `python instagram_monitor.py` on Windows.
+The examples below use a PyPI install. For a manual script install, replace `instagram_monitor` with `python3 instagram_monitor.py` on macOS or Linux and `python instagram_monitor.py` on Windows. Docker users can copy the complete command prefixes from the [Usage guide](https://misiektoja.github.io/instagram_monitor/usage/#command-format).
 
 Track a public account without logging in:
 
@@ -188,7 +211,7 @@ View every command:
 instagram_monitor --help
 ```
 
-For Docker commands, browser profiles, email alerts, Discord, ntfy and advanced settings, see [Configuration](https://misiektoja.github.io/instagram_monitor/configuration/) and [Usage](https://misiektoja.github.io/instagram_monitor/usage/). Keep private webhook URLs in `.env` or enter them through the setup wizard. See [Webhook Notifications](https://misiektoja.github.io/instagram_monitor/usage/#webhook-notifications) for complete setup and testing instructions.
+For container operation, browser profiles, email alerts, Discord, ntfy and advanced settings, see [Configuration](https://misiektoja.github.io/instagram_monitor/configuration/) and [Usage](https://misiektoja.github.io/instagram_monitor/usage/). Keep private webhook URLs in `.env` or enter them through the setup wizard. See [Webhook Notifications](https://misiektoja.github.io/instagram_monitor/usage/#webhook-notifications) for complete setup and testing instructions.
 
 <a id="change-log"></a>
 ## Change Log
