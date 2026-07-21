@@ -18,6 +18,8 @@ def test_installation_docs_cover_all_delivery_and_upgrade_paths():
         assert heading in installation
     assert "The published image already contains Python and all core libraries" in installation
     assert "The Docker Compose v2 plugin" in installation
+    assert "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py" in installation
+    assert "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt" in installation
     assert "pip install --upgrade -r requirements.txt" in installation
     assert "docker build --pull --tag instagram-monitor:local ." in installation
 
