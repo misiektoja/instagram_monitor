@@ -24,6 +24,17 @@ def test_installation_docs_cover_all_delivery_and_upgrade_paths():
     assert "docker build --pull --tag instagram-monitor:local ." in installation
 
 
+# Verifies manual upgrade guidance repeats linked files and direct download commands
+def test_manual_upgrade_docs_are_self_contained():
+    installation = read_asset("docs/installation.md")
+    manual_upgrade = installation.split("### Upgrade a Manual Installation", 1)[1].split("### Upgrade a Docker Compose Installation", 1)[0]
+    assert "[instagram_monitor.py](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py)" in manual_upgrade
+    assert "[requirements.txt](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt)" in manual_upgrade
+    assert "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py" in manual_upgrade
+    assert "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt" in manual_upgrade
+    assert "pip install --upgrade -r requirements.txt" in manual_upgrade
+
+
 # Verifies monitoring guidance exposes saved targets and every install-aware command prefix
 def test_usage_docs_cover_targets_and_install_commands():
     usage = read_asset("docs/usage.md")
