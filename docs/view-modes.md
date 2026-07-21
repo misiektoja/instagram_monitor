@@ -1,5 +1,7 @@
 # View Modes
 
+Examples on this page use the PyPI command `instagram_monitor`. For a manual script or container, keep the shown targets and options but use the matching prefix under [Command Format by Installation Method](usage.md#command-format).
+
 The tool provides three distinct ways to visualize monitoring activity:
 
 1. **Traditional Text Mode**: Standard CLI output, best for logging and background processes.
@@ -81,6 +83,14 @@ instagram_monitor --web-dashboard
 ```
 
 The web dashboard requires `flask`. If flask is missing, it will be disabled while the console output remains active.
+
+Docker Compose publishes the default dashboard only on host loopback. Use `docker compose up` when setup saved the Web Dashboard or add `--service-ports` to a one-off Compose command:
+
+```sh
+docker compose run --rm --service-ports instagram_monitor target1 target2 --web-dashboard
+```
+
+For direct Docker, add `-p 127.0.0.1:8000:8000` before the image name. The complete mount and port forms are under [Monitoring Mode](usage.md#monitoring-mode).
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="90%"/>
