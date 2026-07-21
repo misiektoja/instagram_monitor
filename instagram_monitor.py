@@ -11454,8 +11454,21 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         raise SystemExit(1)
 
     method = _wizard_install_method()
-    config_path = _wizard_choose_config_destination(Path(config_file or DEFAULT_CONFIG_FILENAME).expanduser().resolve())
+    config_path = Path(config_file or DEFAULT_CONFIG_FILENAME).expanduser().resolve()
     env_path = Path(env_file or ".env").expanduser().resolve()
+
+    print(colorize("header", "\nSetup Wizard\n"))
+    print("This asks a few questions and writes a ready-to-run configuration.")
+    print("Press Enter to accept the shown default. Ctrl+C cancels.\n")
+    print("Secrets go to the dotenv file. Non-secret settings go to the config file.")
+    print("No-login mode is simplest. Firefox session import is recommended for full monitoring.\n")
+    print("Use a dedicated Instagram account for session login mode and follow the anti-detection guidance.")
+    print("Session login guide: https://misiektoja.github.io/instagram_monitor/configuration/#logged-in-mode-with-session-login\n")
+    print(f"Detected install method: {colorize('username', method)}")
+    print(f"Configuration:          {config_path}")
+    print(f"Dotenv:                 {env_path}\n")
+
+    config_path = _wizard_choose_config_destination(config_path)
     for secret_key in SECRET_KEYS:
         existing_secret = _wizard_secret_value(secret_key, env_path)
         if existing_secret is not None:
@@ -11464,13 +11477,6 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     config_values = dict(baseline_values)
     config_values["DOTENV_FILE"] = str(env_path)
     state = WizardSetupState(config_path, env_path, baseline_values, config_values, {}, [], True, False, "no-login", "", None, True, False, False, False)
-
-    print(colorize("header", f"\nInstagram Monitor v{VERSION} - Setup Wizard\n"))
-    print("This asks a few questions and writes a ready-to-run configuration.")
-    print("Press Enter to accept the shown default. Ctrl+C cancels.\n")
-    print(f"Detected install method: {colorize('username', method)}")
-    print(f"Configuration: {state.config_path}")
-    print(f"Dotenv:       {state.env_path}")
 
     print()
     _wizard_collect_target_section(state)

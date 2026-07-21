@@ -104,6 +104,29 @@ class TestBrowserOnboarding:
 
 
 class TestPromptWording:
+    # Verifies the wizard explains setup and paths before checking an existing configuration
+    def test_intro_precedes_existing_config_confirmation(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            config_path = directory / "instagram_monitor.conf"
+            env_path = directory / ".env"
+            choose_destination = Mock(side_effect=SystemExit(23))
+            monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+            monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
+            monkeypatch.setattr(im_module, "_wizard_choose_config_destination", choose_destination)
+
+            with pytest.raises(SystemExit) as error:
+                im_module.run_setup_wizard(config_file=config_path, env_file=env_path)
+
+            assert error.value.code == 23
+            choose_destination.assert_called_once_with(config_path.resolve())
+            output = capsys.readouterr().out
+            assert "Setup Wizard\n\nThis asks a few questions" in output
+            assert "Secrets go to the dotenv file. Non-secret settings go to the config file." in output
+            assert "No-login mode is simplest. Firefox session import is recommended for full monitoring." in output
+            assert "Session login guide: https://misiektoja.github.io/instagram_monitor/configuration/#logged-in-mode-with-session-login" in output
+            assert f"Detected install method: manual\nConfiguration:          {config_path.resolve()}\nDotenv:                 {env_path.resolve()}\n" in output
+
     def test_webhook_section_names_discord_and_ntfy(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
             state = make_setup_state(im_module, Path(directory_name))
