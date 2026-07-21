@@ -11339,8 +11339,8 @@ def _wizard_collect_destination_section(state: WizardSetupState, method: str) ->
     state.env_path = selected_env
     print(colorize("info", "  The dotenv destination changed. Re-enter login and notification settings that may contain secrets."))
     _wizard_collect_login_section(state, method)
-    _wizard_collect_webhook_section(state)
     _wizard_collect_email_section(state)
+    _wizard_collect_webhook_section(state)
 
 
 # Prints the current editable setup answers without exposing secrets
@@ -11364,7 +11364,7 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
 
 # Opens one selected setup section then returns to the summary
 def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
-    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets and persistence", "Change monitored accounts and whether they are saved."), ("Login and session", "Change no-login, browser or credential settings."), ("Interface", "Change the dashboard or plain text mode."), ("Webhook alerts", "Change Discord or ntfy settings."), ("Email alerts", "Change SMTP settings."), ("File destinations", "Change the config or dotenv path."), ("Return to summary", "Keep every current answer.")])
+    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets and persistence", "Change monitored accounts and whether they are saved."), ("Login and session", "Change no-login, browser or credential settings."), ("Interface", "Change the dashboard or plain text mode."), ("Email alerts", "Change SMTP settings."), ("Webhook alerts", "Change Discord or ntfy settings."), ("File destinations", "Change the config or dotenv path."), ("Return to summary", "Keep every current answer.")])
     if section == 0:
         print()
         _wizard_collect_target_section(state)
@@ -11373,9 +11373,9 @@ def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
     elif section == 2:
         _wizard_collect_interface_section(state, method)
     elif section == 3:
-        _wizard_collect_webhook_section(state)
-    elif section == 4:
         _wizard_collect_email_section(state)
+    elif section == 4:
+        _wizard_collect_webhook_section(state)
     elif section == 5:
         print()
         _wizard_collect_destination_section(state, method)
@@ -11482,8 +11482,8 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     _wizard_collect_target_section(state)
     _wizard_collect_login_section(state, method)
     _wizard_collect_interface_section(state, method)
-    _wizard_collect_webhook_section(state)
     _wizard_collect_email_section(state)
+    _wizard_collect_webhook_section(state)
     if not _wizard_review_setup(state, method):
         print(colorize("warning", "Setup cancelled. Destination files were not changed."))
         raise SystemExit(1)

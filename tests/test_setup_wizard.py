@@ -161,6 +161,56 @@ class TestPromptWording:
             assert state.config_values["SMTP_SSL"] is True
 
 
+class TestSectionOrder:
+    # Verifies initial setup collects email before webhook settings
+    def test_initial_setup_matches_spotify_notification_order(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            calls = []
+            protect_setup_globals(im_module, monkeypatch)
+            monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+            monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
+            monkeypatch.setattr(im_module, "_wizard_collect_target_section", lambda state: calls.append("target"))
+            monkeypatch.setattr(im_module, "_wizard_collect_login_section", lambda state, method: calls.append("login"))
+            monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: calls.append("interface"))
+            monkeypatch.setattr(im_module, "_wizard_collect_email_section", lambda state: calls.append("email"))
+            monkeypatch.setattr(im_module, "_wizard_collect_webhook_section", lambda state: calls.append("webhook"))
+            monkeypatch.setattr(im_module, "_wizard_review_setup", lambda state, method: calls.append("review") or False)
+
+            with pytest.raises(SystemExit) as error:
+                im_module.run_setup_wizard(config_file=directory / "instagram_monitor.conf", env_file=directory / ".env")
+
+            assert error.value.code == 1
+            assert calls == ["target", "login", "interface", "email", "webhook", "review"]
+
+    # Verifies a changed dotenv destination recollects email before webhook settings
+    def test_destination_change_matches_spotify_notification_order(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            state = make_setup_state(im_module, directory)
+            calls = []
+            destinations = iter([str(state.config_path), str(directory / "replacement.env")])
+            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: next(destinations))
+            monkeypatch.setattr(im_module, "_wizard_collect_login_section", lambda current_state, method: calls.append("login"))
+            monkeypatch.setattr(im_module, "_wizard_collect_email_section", lambda current_state: calls.append("email"))
+            monkeypatch.setattr(im_module, "_wizard_collect_webhook_section", lambda current_state: calls.append("webhook"))
+
+            im_module._wizard_collect_destination_section(state, "manual")
+
+            assert calls == ["login", "email", "webhook"]
+
+    # Verifies the setup editor lists email before webhook settings
+    def test_editor_matches_spotify_notification_order(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            labels = []
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: labels.extend(label for label, _ in options) or 6)
+
+            im_module._wizard_edit_setup_section(state, "manual")
+
+            assert labels == ["Targets and persistence", "Login and session", "Interface", "Email alerts", "Webhook alerts", "File destinations", "Return to summary"]
+
+
 class TestWizardSafetyGates:
     def test_bare_launch_reads_saved_targets_before_first_run_decision(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
@@ -203,9 +253,10 @@ class TestWizardSafetyGates:
             directory = Path(directory_name)
             config_path = directory / "instagram_monitor.conf"
             env_path = directory / ".env"
-            answers = iter([True, True, False])
+            answers = iter([True, False, True])
             choices = iter([0, 2, 0, 0])
             protect_setup_globals(im_module, monkeypatch)
+            monkeypatch.delenv("WEBHOOK_URL", raising=False)
             monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
             monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
             monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: "target.user")
