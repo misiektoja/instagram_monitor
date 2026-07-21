@@ -39,6 +39,19 @@ class TestDoctorLine:
         assert "the-detail" in out
 
 
+class TestDoctorProgress:
+    # Verifies doctor progress stops at the visible message and clears only that width
+    def test_uses_visible_message_width(self, im_module, monkeypatch):
+        stream = _TTYBuffer()
+        monkeypatch.setattr(im_module.sys, "stdout", stream)
+        monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+        im_module._doctor_progress("Checking authentication")
+        line = "  Checking authentication ..."
+        assert stream.getvalue() == "\r" + line
+        im_module._doctor_progress_clear()
+        assert stream.getvalue() == "\r" + line + "\r" + (" " * len(line)) + "\r"
+
+
 class TestRunDoctor:
     def test_all_pass_no_login_returns_zero(self, im_module, monkeypatch, capsys):
         _setup_no_network(monkeypatch, im_module)
