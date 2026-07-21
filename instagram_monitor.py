@@ -5814,6 +5814,7 @@ def get_firefox_cookiefile():
     if len(profiles) == 1:
         return profiles[0]["path"]
 
+    print()
     print("Multiple Firefox profiles found:")
 
     for idx, p in enumerate(profiles, start=1):
@@ -6011,6 +6012,7 @@ def select_chromium_profile_cli(browser, explicit_profile):
     if len(profiles) == 1:
         return profiles[0]["dir"]
 
+    print()
     print(f"Multiple {browser_label(browser)} profiles found:")
     for idx, p in enumerate(profiles, start=1):
         print(f"  {idx}) {p['dir']}  -  {p['name']}")
@@ -11593,7 +11595,7 @@ def _doctor_progress(text: str) -> None:
         return
     line = f"  {text} ..."
     _doctor_progress.width = len(line)  # type: ignore[attr-defined]
-    sys.stdout.write(colorize("info", line))
+    sys.stdout.write("\r" + colorize("info", line))
     sys.stdout.flush()
 
 
