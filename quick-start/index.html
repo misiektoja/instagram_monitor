@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -31,7 +31,7 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -379,7 +379,7 @@
   <a href="#new-here-run-the-setup-wizard" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🧭 New here? Run the setup wizard
+        New here? Run the setup wizard
       
     </span>
   </a>
@@ -387,10 +387,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#not-sure-which-mode-you-want" class="md-nav__link">
+  <a href="#not-sure-which-command-you-need" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Not sure which mode you want?
+        Not sure which command you need?
       
     </span>
   </a>
@@ -398,10 +398,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#manual-commands" class="md-nav__link">
+  <a href="#run-individual-commands" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Manual commands
+        Run Individual Commands
       
     </span>
   </a>
@@ -635,7 +635,7 @@
   <a href="#new-here-run-the-setup-wizard" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🧭 New here? Run the setup wizard
+        New here? Run the setup wizard
       
     </span>
   </a>
@@ -643,10 +643,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#not-sure-which-mode-you-want" class="md-nav__link">
+  <a href="#not-sure-which-command-you-need" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Not sure which mode you want?
+        Not sure which command you need?
       
     </span>
   </a>
@@ -654,10 +654,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#manual-commands" class="md-nav__link">
+  <a href="#run-individual-commands" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Manual commands
+        Run Individual Commands
       
     </span>
   </a>
@@ -690,26 +690,39 @@
 
 
 <h1 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h1>
-<p><a id="-new-here-run-the-setup-wizard"></a></p>
-<h2 id="new-here-run-the-setup-wizard">🧭 New here? Run the setup wizard<a class="headerlink" href="#new-here-run-the-setup-wizard" title="Permanent link">&para;</a></h2>
-<p>The fastest way to get going (since <strong>v3.5</strong>) is the interactive setup wizard. It asks a few plain questions (who to monitor, no-login or logged-in, which interface, optional alerts), then writes a ready-to-run config for you. For local installs it can also start monitoring immediately.</p>
+<p><a id="new-here-run-the-setup-wizard"></a></p>
+<h2 id="new-here-run-the-setup-wizard">New here? Run the setup wizard<a class="headerlink" href="#new-here-run-the-setup-wizard" title="Permanent link">&para;</a></h2>
+<p>First complete one method on the <a href="../installation/">Installation</a> page. The fastest way to configure that installation is the interactive setup wizard. It asks who to monitor, whether to use a login session, which interface to start and whether to enable alerts. Before saving, you can review the summary and edit one section without losing the other answers. It then writes a ready-to-run configuration while private values stay in <code>.env</code>.</p>
+<p>For a local install the wizard can also run the doctor check and start monitoring immediately. In a container it prints the exact follow-up commands for the detected Docker or Docker Compose path.</p>
+<p>Before running the Docker Compose setup command on Linux, export <code>INSTAGRAM_MONITOR_UID="$(id -u)"</code> and <code>INSTAGRAM_MONITOR_GID="$(id -g)"</code> as shown under <a href="../installation/#docker-compose">Install with Docker Compose</a>.</p>
 <p>Use the command that matches how you run the tool:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># PyPI install</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>instagram_monitor<span class="w"> </span>--setup
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Manual Python script</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Manual Python script on macOS or Linux</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>python3<span class="w"> </span>instagram_monitor.py<span class="w"> </span>--setup
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Docker Compose (skip curl if you cloned the repo)</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>instagram_monitor<span class="w"> </span>--setup
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="c1"># Docker image</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-p<span class="w"> </span><span class="m">8000</span>:8000<span class="w"> </span>misiektoja/instagram-monitor<span class="w"> </span>--setup
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Manual Python script on Windows</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>python<span class="w"> </span>instagram_monitor.py<span class="w"> </span>--setup
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Docker Compose (skip curl if you cloned the repository)</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>instagram_monitor<span class="w"> </span>--setup
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="c1"># Docker image on macOS or Windows PowerShell</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="c1"># Docker image on Linux</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
 </code></pre></div>
-<p>Running the tool with no arguments from an interactive terminal offers the same wizard. It auto-detects whether you installed via pip, downloaded the script or run under Docker and shows commands that match your setup.</p>
+<p>In Windows Command Prompt replace <code>${PWD}</code> with <code>%cd%</code>. If your Docker-compatible runtime rejects the <code>:z</code> mount suffix, remove only that suffix.</p>
+<p>Running the tool with no arguments from an interactive terminal offers the wizard when neither saved targets nor a saved Web Dashboard are available. If you save targets in <code>TARGET_USERNAMES</code>, a later no-argument launch starts those targets. If you save the Web Dashboard without targets, it starts as a browser control panel where you can add targets.</p>
+<p>The wizard detects PyPI, downloaded-script, Docker and Docker Compose installations then prints matching commands. Local commands reuse the active Python executable. Config and dotenv paths are quoted for the active operating system.</p>
+<p>Answers stay editable until the final setup summary. Existing configuration replacement requires confirmation and creates a timestamped backup. Secrets are written separately to the selected dotenv file. A failed config write, secrets write or doctor check prevents automatic monitoring startup.</p>
+<p>Firefox import works in every local installation without an extra package. Chrome, Brave and Chromium import is available on macOS and Linux with the optional browser dependency. Container setup uses Firefox only because Chromium cookie decryption needs the host keyring. See <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">Session Login Using Browser Cookies</a>.</p>
 <p><a id="not-sure-which-mode-you-want"></a></p>
-<h2 id="not-sure-which-mode-you-want">Not sure which mode you want?<a class="headerlink" href="#not-sure-which-mode-you-want" title="Permanent link">&para;</a></h2>
+<h2 id="not-sure-which-command-you-need">Not sure which command you need?<a class="headerlink" href="#not-sure-which-command-you-need" title="Permanent link">&para;</a></h2>
+<p>The short commands in this table use PyPI. Keep the options and replace <code>instagram_monitor</code> with the prefix under <a href="../usage/#command-format">Command Format by Installation Method</a> when you use another installation.</p>
 <table>
 <thead>
 <tr>
@@ -719,48 +732,53 @@
 </thead>
 <tbody>
 <tr>
-<td>Just try it, no login</td>
+<td>Set up Instagram Monitor for the first time</td>
+<td>Use the setup command for your installation above</td>
+</tr>
+<tr>
+<td>Try public monitoring without a login</td>
 <td><code>instagram_monitor &lt;target_insta_user&gt;</code></td>
 </tr>
 <tr>
-<td>Be guided through setup</td>
-<td>Use the setup command for your install path above</td>
+<td>Start targets saved in <code>TARGET_USERNAMES</code></td>
+<td><code>instagram_monitor --config-file instagram_monitor.conf</code> or <code>docker compose up</code></td>
 </tr>
 <tr>
-<td>Avoid the command line</td>
-<td><code>instagram_monitor --web-dashboard</code> then use the browser</td>
+<td>Start a browser control panel without targets</td>
+<td><code>instagram_monitor --web-dashboard</code></td>
 </tr>
 <tr>
-<td>See stories, reels and who followed/unfollowed</td>
-<td>Log in first (<a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">browser session</a>), then <code>instagram_monitor -u &lt;your_insta_user&gt; &lt;target_insta_user&gt;</code></td>
+<td>Monitor several accounts</td>
+<td><code>instagram_monitor target_1 target_2</code> or <code>instagram_monitor --targets target_1,target_2</code></td>
+</tr>
+<tr>
+<td>Check the selected login, connectivity and targets</td>
+<td><code>instagram_monitor --doctor</code></td>
+</tr>
+<tr>
+<td>See stories, reels and follower details</td>
+<td>Import a browser session then run <code>instagram_monitor -u &lt;your_insta_user&gt; &lt;target_insta_user&gt;</code></td>
 </tr>
 </tbody>
 </table>
 <p><a id="manual-commands"></a></p>
-<h2 id="manual-commands">Manual commands<a class="headerlink" href="#manual-commands" title="Permanent link">&para;</a></h2>
-<p>If you prefer to run it in a container, jump to 🐳 <a href="../usage/#docker-usage-recommended">Docker Usage (Recommended)</a>.</p>
-<ul>
-<li>Track the <code>target_insta_user</code> in <a href="../configuration/#no-login-mode-no-session-login">No-login mode</a> (no session login):</li>
-</ul>
+<h2 id="run-individual-commands">Run Individual Commands<a class="headerlink" href="#run-individual-commands" title="Permanent link">&para;</a></h2>
+<p>The examples below use PyPI. For a manual script replace <code>instagram_monitor</code> with <code>python3 instagram_monitor.py</code> on macOS or Linux and <code>python instagram_monitor.py</code> on Windows. Docker and Docker Compose users should use the prefixes under <a href="../usage/#command-format">Command Format by Installation Method</a>.</p>
+<p>Track a public account in <a href="../configuration/#no-login-mode-without-session-login">No-Login Mode</a>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;
 </code></pre></div>
-<p>Or if you installed <a href="../installation/#manual-python-based-installation">manually</a>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>python3<span class="w"> </span>instagram_monitor.py<span class="w"> </span>&lt;target_insta_user&gt;
+<p>For stories, reels and detailed follower changes, log in to Instagram in a supported browser then import the session. Firefox is the recommended local path:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>instagram_monitor<span class="w"> </span>-u<span class="w"> </span>&lt;your_insta_user&gt;<span class="w"> </span>&lt;target_insta_user&gt;
 </code></pre></div>
-<ul>
-<li>Track the <code>target_insta_user</code> in <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">Logged-in mode</a> (with session login via your web browser):</li>
-</ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># log in to the Instagram account (your_insta_user) in your web browser (Firefox, Chrome, Brave or Chromium)</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>instagram_monitor<span class="w"> </span>-u<span class="w"> </span>&lt;your_insta_user&gt;<span class="w"> </span>&lt;target_insta_user&gt;
+<p>The browser import saves an Instaloader session. Keep using the same <code>-u</code> username during monitoring. Container users must reuse the same named session volume and mount Firefox for the one-time import as shown under <a href="../usage/#container-operation">Container Operation</a>.</p>
+<p>Launch the <a href="../view-modes/#web-dashboard-mode">Web Dashboard</a> with a target or as an empty control panel:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--web-dashboard
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>instagram_monitor<span class="w"> </span>--web-dashboard
 </code></pre></div>
-<ul>
-<li>You can also launch the <strong><a href="../view-modes/#web-dashboard-mode">Web Dashboard</a></strong> along with tracking:</li>
-</ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--web-dashboard
-</code></pre></div>
-<p>To get the list of all supported command-line arguments / flags:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>instagram_monitor<span class="w"> </span>--help
+<p>Compose one-off Web Dashboard commands need <code>--service-ports</code>. Direct Docker commands need the loopback port mapping. Both complete forms are under <a href="../usage/#monitoring-mode">Monitoring Mode</a>.</p>
+<p>View every command-line option plus examples adapted to the detected installation:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>instagram_monitor<span class="w"> </span>--help
 </code></pre></div>
 
 
@@ -824,7 +842,7 @@
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>

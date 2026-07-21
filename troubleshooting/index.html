@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -31,7 +31,7 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -511,6 +511,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#doctor-preflight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Doctor Preflight
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#choosing-the-right-logging-level" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -610,6 +621,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#doctor-preflight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Doctor Preflight
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#choosing-the-right-logging-level" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -646,11 +668,23 @@
 
 
 <h1 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h1>
-<p>If something is not working (or you just want to confirm your setup before leaving it running), start with the built-in self-check:</p>
+<p>Examples on this page use the PyPI command <code>instagram_monitor</code>. For a manual script or container, keep the shown options and use the matching prefix under <a href="../usage/#command-format">Command Format by Installation Method</a>. The setup wizard and <code>--help</code> print commands for the detected installation.</p>
+<p><a id="doctor-preflight"></a></p>
+<h2 id="doctor-preflight">Doctor Preflight<a class="headerlink" href="#doctor-preflight" title="Permanent link">&para;</a></h2>
+<p>Before starting a long monitoring run, use the built-in self-check:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>instagram_monitor<span class="w"> </span>--doctor
 </code></pre></div>
-<p>It runs a read-only preflight (it sends no emails or webhooks) and prints a <code>PASS</code> / <code>WARN</code> / <code>FAIL</code> report covering optional dependencies, the config file and secrets, session validity (in Logged-in mode), Instagram connectivity, whether your target accounts resolve and whether email/webhook notifications are configured. Each failure includes a <code>To fix:</code> next step, and the command exits non-zero if any check fails, so it is also handy in scripts. It honours the same flags as a normal run, so <code>instagram_monitor -u &lt;your_user&gt; &lt;target&gt; --doctor</code> checks that exact setup. The setup wizard also offers to run it at the end.</p>
-<p>For deeper issues, run the tool with the <code>--debug</code> flag. It shows full HTTP traffic and internal script logic. Create a new issue in Github if you cannot fix it yourself.</p>
+<p>Doctor never writes files. It first performs passive checks and prints a <code>PASS</code> / <code>WARN</code> / <code>FAIL</code> report covering optional dependencies, the config file and secrets, session validity in Logged-In Mode, Instagram connectivity, target resolution and email or webhook configuration.</p>
+<p>In an interactive terminal, each notification channel that passes its passive checks gets a separate optional delivery prompt. Both prompts default to No. Approving the email prompt delivers one real test email. Approving the webhook prompt publishes one real Discord or ntfy notification. Declining either prompt sends nothing. Noninteractive doctor runs never offer or send delivery tests.</p>
+<p>Each failure includes a <code>To fix:</code> next step. The command exits nonzero if any passive check or approved delivery test fails, which also makes it useful in scripts. It honors the same flags as a normal run, so you can check only the saved setup or one exact login and target combination:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>instagram_monitor<span class="w"> </span>--doctor
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>instagram_monitor<span class="w"> </span>-u<span class="w"> </span>&lt;your_user&gt;<span class="w"> </span>&lt;target&gt;<span class="w"> </span>--doctor
+</code></pre></div>
+<p>For Docker Compose use:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>instagram_monitor<span class="w"> </span>--doctor
+</code></pre></div>
+<p>Doctor exits after the report and does not start the Web Dashboard, so this Compose check does not need <code>--service-ports</code>. The setup wizard offers to run doctor at the end.</p>
+<p>For deeper issues, add <code>--debug</code> to a doctor check or normal run. It shows full HTTP traffic and internal script logic. Remove or mask cookies, passwords, tokens and private webhook URLs before sharing output in a GitHub issue.</p>
 <p><a id="choosing-the-right-logging-level"></a></p>
 <h2 id="choosing-the-right-logging-level">Choosing the Right Logging Level<a class="headerlink" href="#choosing-the-right-logging-level" title="Permanent link">&para;</a></h2>
 <ul>
@@ -658,7 +692,7 @@
 <li><strong>Verbose Mode (<code>--verbose</code>)</strong>: Adds per-check timing details (last check, next check schedule and interval) to plain text output. Handy for background or headless runs without a dashboard, where you want to confirm in the log that the loop is running.</li>
 <li><strong>Debug Mode (<code>--debug</code>)</strong>: For developers or fixing issues. Shows full HTTP traffic and internal script logic.</li>
 </ul>
-<p><strong>Note</strong>: Both <strong>Verbose</strong> and <strong>Debug</strong> modes can be toggled live via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong>.</p>
+<p>Both <strong>Verbose</strong> and <strong>Debug</strong> modes can also be toggled live through the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong>.</p>
 
 
 
@@ -721,7 +755,7 @@
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>

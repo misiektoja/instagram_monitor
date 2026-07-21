@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -31,7 +31,7 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -712,6 +712,7 @@
 
 
 <h1 id="view-modes">View Modes<a class="headerlink" href="#view-modes" title="Permanent link">&para;</a></h1>
+<p>Examples on this page use the PyPI command <code>instagram_monitor</code>. For a manual script or container, keep the shown targets and options but use the matching prefix under <a href="../usage/#command-format">Command Format by Installation Method</a>.</p>
 <p>The tool provides three distinct ways to visualize monitoring activity:</p>
 <ol>
 <li><strong>Traditional Text Mode</strong>: Standard CLI output, best for logging and background processes.</li>
@@ -773,6 +774,10 @@
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>instagram_monitor<span class="w"> </span>--web-dashboard
 </code></pre></div>
 <p>The web dashboard requires <code>flask</code>. If flask is missing, it will be disabled while the console output remains active.</p>
+<p>Docker Compose publishes the default dashboard only on host loopback. Use <code>docker compose up</code> when setup saved the Web Dashboard or add <code>--service-ports</code> to a one-off Compose command:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--service-ports<span class="w"> </span>instagram_monitor<span class="w"> </span>target1<span class="w"> </span>target2<span class="w"> </span>--web-dashboard
+</code></pre></div>
+<p>For direct Docker, add <code>-p 127.0.0.1:8000:8000</code> before the image name. The complete mount and port forms are under <a href="../usage/#monitoring-mode">Monitoring Mode</a>.</p>
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="90%"/>
 </p>
@@ -862,7 +867,7 @@
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>
