@@ -3,11 +3,11 @@
 <a id="new-here-run-the-setup-wizard"></a>
 ## New here? Run the setup wizard
 
-First complete one method on the [Installation](installation.md) page. The fastest way to configure that installation is the interactive setup wizard. It asks who to monitor, whether to use a login session, which interface to start and whether to enable alerts. Before saving, you can review the summary and edit one section without losing the other answers. It then writes a ready-to-run configuration while private values stay in `.env`.
+First complete one method on the [Installation](installation.md) page. Then use the interactive setup wizard. It asks which Instagram accounts to monitor, whether to use a saved login, which interface to start and which alerts to enable. You can review and change your answers before saving. Regular settings go in `instagram_monitor.conf`. Private values such as passwords and webhook URLs go in `.env`.
 
-For local installs the wizard can also run the doctor check and start monitoring immediately. In a container it prints the exact follow-up commands for the detected Docker or Docker Compose path.
+For a local install, the wizard can check the setup and start monitoring immediately. In a container, it prints the next Docker or Docker Compose commands to run.
 
-Before running the Docker Compose setup command on Linux, export `INSTAGRAM_MONITOR_UID="$(id -u)"` and `INSTAGRAM_MONITOR_GID="$(id -g)"` as shown under [Install with Docker Compose](installation.md#docker-compose).
+Before using Docker Compose on Linux, run the two `export` commands under [Install with Docker Compose](installation.md#docker-compose). They pass your numeric user and group IDs to the container so files created in the current directory belong to you. Docker Desktop users on macOS or Windows can skip this step.
 
 Use the command that matches how you run the tool:
 
@@ -32,22 +32,22 @@ docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/hom
 docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
 ```
 
-In Windows Command Prompt replace `${PWD}` with `%cd%`. If your Docker-compatible runtime rejects the `:z` mount suffix, remove only that suffix.
+In Windows Command Prompt replace `${PWD}` with `%cd%`. The `:z` suffix is for hosts that use SELinux. If your Docker-compatible runtime reports that it is invalid, remove only `:z`.
 
-The wizard asks for Instagram targets, recommends Firefox-based import and lets you choose email alerts, webhook alerts or both. On macOS and Linux it offers Chrome, Brave and Chromium as a separate cookie import path. If the optional `pycookiecheat` package is missing, setup can install it into the active Python environment before continuing.
+In this documentation, a **target** is an Instagram account you want to monitor. The **session account** is the Instagram account that Instagram Monitor uses to sign in. They can be different accounts.
 
-The wizard detects PyPI, downloaded-script, Docker and Docker Compose installations then prints matching commands. Local commands reuse the active Python executable. Config and dotenv paths are quoted for the active operating system.
+The wizard recommends importing a saved Firefox login. On macOS and Linux it can also import from Chrome, Brave or Chromium. Those three browsers require the optional `pycookiecheat` package. If it is missing, the wizard can install it in a local Python installation.
 
-It writes regular settings to `instagram_monitor.conf` while private values go only to `.env`.
+The wizard detects PyPI, a downloaded script, Docker or Docker Compose and prints matching commands. It also formats file paths for the current operating system.
 
-Firefox import works in every local installation without an extra package. Chrome, Brave and Chromium import is available on macOS and Linux with the optional browser dependency. Container setup uses Firefox only because Chromium cookie decryption needs the host keyring. See [Session Login Using Browser Cookies](configuration.md#option-3-session-login-using-browser-cookies-recommended).
+Firefox import works in every local installation without an extra package. Chrome, Brave and Chromium import works on macOS and Linux with the optional browser dependency. Container setup uses Firefox because Chromium cookie decryption needs a password service from the host that is not available inside the container. See [Session Login Using Browser Cookies](configuration.md#option-3-session-login-using-browser-cookies-recommended).
 
-Running the tool with no arguments from an interactive terminal offers the wizard when neither saved targets nor a saved Web Dashboard are available. If you save targets in `TARGET_USERNAMES`, a later no-argument launch starts those targets. If you save the Web Dashboard without targets, it starts as a browser control panel where you can add targets.
+If no targets or Web Dashboard setting have been saved, running the tool with no arguments opens the wizard in an interactive terminal. If `TARGET_USERNAMES` contains saved targets, the same command starts monitoring them. If only the Web Dashboard is enabled, it starts an empty browser control panel where you can add targets.
 
 <a id="not-sure-which-mode-you-want"></a>
 ## Not sure which command you need?
 
-The short commands in this table use PyPI. Keep the options and replace `instagram_monitor` with the prefix under [Command Format by Installation Method](usage.md#command-format) when you use another installation.
+The table uses the PyPI command. If you chose another installation, use its [command prefix](usage.md#command-format) instead of `instagram_monitor`.
 
 | I want to... | Run this |
 | --- | --- |
@@ -62,7 +62,7 @@ The short commands in this table use PyPI. Keep the options and replace `instagr
 <a id="manual-commands"></a>
 ## Run Individual Commands
 
-The examples below use PyPI. For a manual script replace `instagram_monitor` with `python3 instagram_monitor.py` on macOS or Linux and `python instagram_monitor.py` on Windows. Docker and Docker Compose users should use the prefixes under [Command Format by Installation Method](usage.md#command-format).
+The examples below use PyPI. For a manual script, replace `instagram_monitor` with `python3 instagram_monitor.py` on macOS or Linux. Use `python instagram_monitor.py` on Windows. Docker users should copy the matching prefix under [Command Format by Installation Method](usage.md#command-format).
 
 Track a public account in [No-Login Mode](configuration.md#no-login-mode-without-session-login):
 
@@ -77,7 +77,7 @@ instagram_monitor --import-browser-session --browser firefox
 instagram_monitor -u <your_insta_user> <target_insta_user>
 ```
 
-The browser import saves an Instaloader session. Keep using the same `-u` username during monitoring. Container users must reuse the same named session volume and mount Firefox for the one-time import as shown under [Container Operation](usage.md#container-operation).
+The import converts the browser login into a saved Instaloader session. The value passed to `-u` must be the username of that logged-in account. Container users must use the same `instagram_monitor_session` Docker volume for the import and later monitoring runs. The complete import command is under [Container Operation](usage.md#container-operation).
 
 Launch the [Web Dashboard](view-modes.md#web-dashboard-mode) with a target or as an empty control panel:
 
@@ -86,7 +86,7 @@ instagram_monitor <target_insta_user> --web-dashboard
 instagram_monitor --web-dashboard
 ```
 
-Compose one-off Web Dashboard commands need `--service-ports`. Direct Docker commands need the loopback port mapping. Both complete forms are under [Monitoring Mode](usage.md#monitoring-mode).
+A one-off Compose command needs `--service-ports` so the browser can reach the dashboard. A direct Docker command needs a port mapping. Both complete commands are under [Monitoring Mode](usage.md#monitoring-mode).
 
 View every command-line option plus examples adapted to the detected installation:
 
