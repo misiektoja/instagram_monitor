@@ -127,7 +127,7 @@ Profile selection works the same way for every browser (see [Selecting a browser
 instagram_monitor --import-browser-session --browser firefox --browser-profile "default-release"
 ```
 
-You can adjust the default Firefox cookie directory permanently via `FIREFOX_*_COOKIE` configuration options.
+On Linux, Firefox profiles installed natively, through Snap or through Flatpak are discovered automatically. You can adjust the default Firefox cookie directory permanently via `FIREFOX_*_COOKIE` configuration options. The advanced `--cookie-file` option covers any other layout.
 
 <a id="which-browsers-are-supported"></a>
 #### Which browsers are supported
