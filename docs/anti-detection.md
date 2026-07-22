@@ -24,6 +24,7 @@ It is disabled by default, but you can enable it via `BE_HUMAN` configuration op
 It is used only with session login (Logged-in mode).
 
 After each check cycle, the tool will randomly do one or more of these harmless actions:
+
 - View your explore feed: pulls a single post from Instagram's explore feed
 - Open your own profile, as if tapping your avatar
 - Browse a hashtag: fetches one post from a random tag listed in `MY_HASHTAGS` configuration option
@@ -63,6 +64,7 @@ The tool supports limiting fetching updates to specific hours of the day, which 
 When hour-range checking is enabled, the tool will only fetch updates (posts, reels, stories, profile changes, followers/followings) during the configured time windows. Outside these hours, the tool will skip fetching updates but will continue running and wait for the next allowed time window.
 
 To enable this feature, set `CHECK_POSTS_IN_HOURS_RANGE` to `True` and configure the allowed hour ranges using:
+
 - `MIN_H1` and `MAX_H1` - first range of hours (default: 0-4, i.e., midnight to 4:59 AM)
 - `MIN_H2` and `MAX_H2` - second range of hours (default: 11-23, i.e., 11:00 AM to 11:59 PM / 23:59)
 
@@ -71,6 +73,7 @@ You can define up to two non-overlapping or overlapping ranges. To disable any r
 **Note**: You can also enable this feature and configure the allowed hour ranges live via the **Settings** menu in the **Web Dashboard**.
 
 For example, to only allow checks during business hours (9 AM to 5 PM / 17:00), you could set:
+
 - `MIN_H1 = 9`
 - `MAX_H1 = 17`
 - `MIN_H2 = 0`
