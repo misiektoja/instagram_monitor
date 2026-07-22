@@ -56,3 +56,10 @@ def test_quick_start_covers_direct_docker_host_variants():
     assert "# Docker image on macOS or Windows PowerShell" in quick_start
     assert "# Docker image on Linux" in quick_start
     assert "instagram_monitor_session:/home/instagram/.config/instaloader" in quick_start
+
+
+# Verifies manual quick-start commands link both Instagram authentication modes
+def test_quick_start_links_both_authentication_modes():
+    quick_start = read_asset("docs/quick-start.md")
+    assert "[No-Login Mode](configuration.md#no-login-mode-without-session-login)" in quick_start
+    assert "[Logged-In Mode](configuration.md#logged-in-mode-with-session-login)" in quick_start
