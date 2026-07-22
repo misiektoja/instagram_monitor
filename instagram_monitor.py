@@ -48,7 +48,7 @@ SESSION_USERNAME = ""
 SESSION_PASSWORD = ""
 
 # SMTP settings for sending email notifications
-# If left as-is, no notifications will be sent
+# If left as-is, no email notifications will be sent
 #
 # Provide the SMTP_PASSWORD secret using one of the following methods:
 #   - Set it as an environment variable (e.g. export SMTP_PASSWORD=...)
@@ -102,7 +102,7 @@ LOCAL_TIMEZONE = 'Auto'
 # Can be also toggled via Web Dashboard
 TIME_FORMAT_12H = False
 
-# Notify when the user's profile picture changes? (via console and email if STATUS_NOTIFICATION / -s is enabled).
+# Detect profile picture changes in console output and enabled email or webhook status notifications
 # If enabled, the current profile picture is saved as:
 #   - instagram_<username>_profile_pic.jpg (initial)
 #   - instagram_<username>_profile_pic_YYmmdd_HHMM.jpg (on change)
@@ -11892,7 +11892,7 @@ def run_main():
 
     parser = argparse.ArgumentParser(
         prog="instagram_monitor",
-        description=("Monitor an Instagram user's activity and send customizable email alerts [ https://github.com/misiektoja/instagram_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter,
+        description=("Monitor Instagram activity and send customizable email or webhook alerts [ https://github.com/misiektoja/instagram_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter,
         epilog=_build_help_epilog()
     )
 
