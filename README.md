@@ -29,7 +29,7 @@ instagram_monitor --setup
 
 Docker Compose
 
-On native Linux export your host identity first. Docker Desktop users on macOS or Windows can skip the two `export` commands.
+On Linux, the container needs your numeric user ID and group ID so files it creates in the current directory belong to you instead of `root`. Run the two `export` commands in the same terminal before the Compose commands. Docker Desktop handles file ownership on macOS and Windows, so users on those systems can skip both `export` commands.
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
@@ -49,9 +49,11 @@ docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/hom
 docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --config-file /data/instagram_monitor.conf --env-file /data/.env
 ```
 
-The Docker Desktop command uses macOS shell or Windows PowerShell syntax. In Windows Command Prompt replace `${PWD}` with `%cd%`.
+The first command starts the setup wizard. The second starts monitoring with the files created by the wizard. Both commands keep configuration and downloaded files in the current directory. They keep the saved Instagram login in the Docker volume named `instagram_monitor_session`.
 
-On Linux, pass your host user and group so the container can write to the current directory:
+These commands use macOS shell or Windows PowerShell syntax. In Windows Command Prompt replace `${PWD}` with `%cd%`.
+
+On Linux, `--user "$(id -u):$(id -g)"` runs the container with your numeric user and group IDs. This lets the container write files that your host account can edit:
 
 ```sh
 docker pull misiektoja/instagram-monitor:latest
@@ -59,7 +61,7 @@ docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v insta
 docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --config-file /data/instagram_monitor.conf --env-file /data/.env
 ```
 
-For the manual single-file method, optional browser support and upgrade commands for every method, see [Installation](https://misiektoja.github.io/instagram_monitor/installation/).
+For the manual single-file method, optional browser support and upgrade commands for every installation method, see [Installation](https://misiektoja.github.io/instagram_monitor/installation/).
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_demo.gif" alt="instagram_monitor demo: install, setup wizard and run" width="100%"/>
@@ -139,7 +141,7 @@ Full documentation is available at **[misiektoja.github.io/instagram_monitor](ht
 
 The fastest way to get started is `--setup`. It asks who to monitor, whether to log in, which interface to use and which alerts you want then saves a ready-to-run configuration. Private values stay in `.env`.
 
-On Linux, set `INSTAGRAM_MONITOR_UID="$(id -u)"` and `INSTAGRAM_MONITOR_GID="$(id -g)"` before using Docker Compose.
+On Linux, set `INSTAGRAM_MONITOR_UID="$(id -u)"` and `INSTAGRAM_MONITOR_GID="$(id -g)"` before using Docker Compose. These values make files created by the container belong to your host user. Docker Desktop users on macOS or Windows do not need them.
 
 Use the command that matches how you run the tool:
 
@@ -164,7 +166,7 @@ docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/hom
 docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
 ```
 
-Running the tool with no arguments offers the wizard when no target or Web Dashboard has been saved. With saved targets, it starts monitoring directly. The wizard detects PyPI, script, Docker or Docker Compose installs and shows matching commands.
+Running the tool with no arguments offers the wizard if you have not saved any targets or enabled the Web Dashboard. If targets are already saved, it starts monitoring them. The wizard detects the installation method and shows the commands that match it.
 
 See the [full Quick Start guide](https://misiektoja.github.io/instagram_monitor/quick-start/) for browser choices, saved targets, configuration backups and setup recovery.
 
