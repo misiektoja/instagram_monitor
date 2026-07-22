@@ -104,7 +104,8 @@ jobs:
         run: |
           docker compose -f docker-compose.yml config
           docker compose -f docker-compose.yml config | grep -F 'host_ip: 127.0.0.1'
-          docker compose -f docker-compose.yml config | grep -F 'command: []'
+          docker compose -f docker-compose.yml config | grep -F -- '--env-file'
+          docker compose -f docker-compose.yml config | grep -F -- '/data/.env'
 
       - name: Run the locally built image through Docker Compose
         run: |
