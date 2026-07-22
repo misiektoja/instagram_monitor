@@ -1,8 +1,8 @@
 # View Modes
 
-Examples on this page use the PyPI command `instagram_monitor`. For a manual script or container, keep the shown targets and options but use the matching prefix under [Command Format by Installation Method](usage.md#command-format).
+Examples on this page use the PyPI command `instagram_monitor`. If you chose another installation, replace that command with the matching [command prefix](usage.md#command-format). Keep all targets and options after the prefix.
 
-The tool provides three distinct ways to visualize monitoring activity:
+Choose one of three ways to view monitoring activity:
 
 1. **Traditional Text Mode**: Standard CLI output, best for logging and background processes.
 2. **Terminal Dashboard**: A rich, interactive terminal interface with real-time stats.
@@ -13,22 +13,20 @@ The tool provides three distinct ways to visualize monitoring activity:
 <a id="traditional-text-mode"></a>
 ## Traditional Text Mode
 
-This is the classic command-line output. It is characterized by:
+Text mode is the default. It works in any terminal and is well suited to background processes.
 
-- **Clean, sequential logging**: Every event is printed as it happens with a timestamp.
-- **Persistence**: Ideal for running in the background (e.g., via `nohup` or `tmux`) where you want a full history of events in your terminal scrollback or log files.
-- **Low Overhead**: Minimal resource usage and compatible with any terminal.
-
-It is the default mode of operation.
+- Every event is printed with a timestamp.
+- Earlier events remain available in terminal scrollback and log files.
+- It uses fewer terminal features than either dashboard.
 
 ---
 
 <a id="terminal-dashboard-mode"></a>
 ## Terminal Dashboard
 
-The Terminal Dashboard provides a beautiful, live-updating interface directly in your terminal. It requires the `rich` library.
+The Terminal Dashboard updates status, statistics and recent events in one terminal screen. It requires the `rich` library, which is included in normal installations.
 
-To enable the terminal dashboard, use the `--dashboard` flag (or set `DASHBOARD_ENABLED = True` in your config).
+Enable it with `--dashboard` or `DASHBOARD_ENABLED = True`.
 
 **Key Features:**
 
@@ -60,7 +58,7 @@ instagram_monitor target1 target2 --dashboard
 <a id="web-dashboard-mode"></a>
 ## Web Dashboard
 
-A modern, real-time web interface running on your local machine (default: `http://127.0.0.1:8000/`).
+The Web Dashboard runs a small web server on your computer. By default, open `http://127.0.0.1:8000/` in a browser on the same computer. The `127.0.0.1` address is local, so other devices cannot connect unless you change the server and Docker settings.
 
 **Key Features:**
 
@@ -72,7 +70,7 @@ A modern, real-time web interface running on your local machine (default: `http:
 - **Synchronization**: Changes made in the web dashboard (like mode toggles) are reflected in the terminal instantly.
 - **Dynamic Configuration**: Configure sessions and settings without touching the terminal or config files.
 
-To enable the web dashboard, use the `--web-dashboard` flag (or set `WEB_DASHBOARD_ENABLED = True` in your config).
+Enable it with `--web-dashboard` or `WEB_DASHBOARD_ENABLED = True`.
 
 **Flexible Usage:**
 
@@ -87,9 +85,9 @@ instagram_monitor target1 target2 --web-dashboard
 instagram_monitor --web-dashboard
 ```
 
-The web dashboard requires `flask`. If flask is missing, it will be disabled while the console output remains active.
+The Web Dashboard requires `flask`, which is included in normal installations. If it is missing, Instagram Monitor disables the dashboard but keeps console monitoring active.
 
-Docker Compose publishes the default dashboard only on host loopback. Use `docker compose up` when setup saved the Web Dashboard or add `--service-ports` to a one-off Compose command:
+Docker Compose exposes the default dashboard only at `127.0.0.1` on the host. Use `docker compose up` if setup enabled the Web Dashboard. For a one-off Compose command, add `--service-ports`:
 
 ```sh
 docker compose run --rm --service-ports instagram_monitor target1 target2 --web-dashboard
@@ -110,7 +108,7 @@ For direct Docker, add `-p 127.0.0.1:8000:8000` before the image name. The compl
 <a id="dashboard-view-modes"></a>
 ## Dashboard View Modes
 
-Both the Terminal and Web dashboards support two levels of information density:
+Both dashboards offer two views:
 
 1. **User Mode** (`user`):
    - Simple, minimal interface.
@@ -122,4 +120,4 @@ Both the Terminal and Web dashboards support two levels of information density:
    - Displays User Agent strings, Hour Ranges, Jitter status and more.
    - Useful for auditing your setup and verifying configuration.
 
-Toggle seamlessly between modes using the **'m'** key or the web dashboard toggle button.
+Switch views with the **'m'** key in the Terminal Dashboard or the view button in the Web Dashboard.
