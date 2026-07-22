@@ -115,6 +115,7 @@ The tool automatically saves its output to an `instagram_monitor_<suffix>.log` f
 - In multi-target mode, `<suffix>` is the sorted list of target usernames joined with underscores.
 
 The tool in Logged-in mode (session login) also saves the list of followings & followers to these files:
+
 - `instagram_<username>_followings.json`
 - `instagram_<username>_followers.json`
 
@@ -125,10 +126,12 @@ When downloading lists of followers or followings, a **progress bar** is display
 The tool also saves the user profile picture to `instagram_<username>_profile_pic*.jpg` files.
 
 It also saves downloaded posts/reels images & videos to:
+
 - `instagram_<username>_post/reel_YYYYmmdd_HHMMSS.jpg`
 - `instagram_<username>_post/reel_YYYYmmdd_HHMMSS.mp4`
 
 And downloaded stories images & videos to:
+
 - `instagram_<username>_story_YYYYmmdd_HHMMSS.jpg`
 - `instagram_<username>_story_YYYYmmdd_HHMMSS.mp4`
 
@@ -207,6 +210,7 @@ After importing, run with `-u <your_insta_user>` and reuse the same named sessio
 ## Email Notifications
 
 To enable email notifications for various events (such as new posts, reels and stories, changes in followings, bio updates, changes in profile picture and visibility):
+
 - set `STATUS_NOTIFICATION` to `True`
 - or use the `-s` flag
 - or toggle it via the **Settings** menu in the **Web Dashboard**
@@ -216,6 +220,7 @@ instagram_monitor <target_insta_user> -s
 ```
 
 To also get email notifications about changed followers:
+
 - set `FOLLOWERS_NOTIFICATION` to `True`
 - or use the `-m` flag
 - or toggle it via the **Settings** menu in the **Web Dashboard**
@@ -225,6 +230,7 @@ instagram_monitor <target_insta_user> -m
 ```
 
 To disable sending an email on errors (enabled by default):
+
 - set `ERROR_NOTIFICATION` to `False`
 - or use the `-e` flag
 - or toggle it via the **Settings** menu in the **Web Dashboard**
@@ -363,6 +369,7 @@ When enabled, the tool fetches the full list of followers and followings on **ev
 - You need comprehensive monitoring of all follower/following activity
 
 To enable follower churn detection:
+
 - set `FOLLOWERS_CHURN_DETECTION` to `True`
 - or use the `--followers-churn` flag
 - or toggle it via the **Settings** menu in the **Web Dashboard**
@@ -381,12 +388,14 @@ instagram_monitor <target_insta_user> --followers-churn
 If you want to track followers/followings counts in the dashboards, but don't want to get any notifications or logs when they change, you can enable the "Skip Follow Changes" mode.
 
 When enabled:
+
 - **Notifications**: Email and Webhook alerts for follower/following changes are suppressed.
 - **Reporting**: Console prints and activity logs for these changes are disabled.
 - **CSV Export**: No "Followers Count" or "Followings Count" entries are written to the CSV file.
 - **Performance**: High-overhead downloading of full lists is skipped, saving bandwidth and reducing API call volume.
 
 To enable skipping follow changes:
+
 - set `SKIP_FOLLOW_CHANGES` to `True` in your config
 - or use the `--skip-follow-changes` flag
 - or toggle it via the **Settings** menu in the **Web Dashboard**
@@ -431,6 +440,7 @@ Depending on which values you set, the tool runs in one of these modes (it print
 You can route the tool's Instagram traffic (and optionally webhook traffic) through an HTTP or HTTPS proxy. This is useful for pinning the monitor to a stable egress IP or for keeping it on the same network identity over time.
 
 To enable a proxy:
+
 - set `PROXY_ENABLED` to `True` and `PROXY_URL` to your proxy URL
 - or use the `--enable-proxy` and `--proxy-url` flags
 
@@ -439,6 +449,7 @@ instagram_monitor <target_insta_user> --enable-proxy --proxy-url "http://user:pa
 ```
 
 Additional options:
+
 - `PROXY_CERT_PATH` (or `--proxy-cert`): path to a local SSL certificate to use for the proxied connection
 - `PROXY_WEBHOOKS` (or `--enable-proxy-webhooks`): also send webhook POST requests through the proxy (some proxies do not allow POST, so this is off by default)
 
@@ -596,6 +607,7 @@ On the first run, it saves the current profile picture to `instagram_<username>_
 On each subsequent check a new image is fetched and it is compared byte-for-byte with the saved image.
 
 If a change is detected, the old picture is moved to `instagram_<username>_profile_pic_old.jpg` and the new one is saved to:
+
 - `instagram_<username>_profile_pic.jpg` (current)
 - `instagram_<username>_profile_pic_YYmmdd_HHMM.jpg` (for history)
 
@@ -605,6 +617,7 @@ If a change is detected, the old picture is moved to `instagram_<username>_profi
 The tool also has built-in detection of empty profile pictures. Instagram does not indicate an empty user's profile image in their API; that's why the tool detects it by using an empty profile image template (which appears to be identical on a binary level for all users).
 
 To enable this:
+
 - download the [instagram_profile_pic_empty.jpg](https://raw.githubusercontent.com/misiektoja/instagram_monitor/main/instagram_profile_pic_empty.jpg) file
 - place it in the directory where you run the manual script. PyPI and Docker installations already include this file. Any local file in your working directory takes **priority** over the bundled default.
 
