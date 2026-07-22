@@ -712,8 +712,8 @@
 
 
 <h1 id="view-modes">View Modes<a class="headerlink" href="#view-modes" title="Permanent link">&para;</a></h1>
-<p>Examples on this page use the PyPI command <code>instagram_monitor</code>. For a manual script or container, keep the shown targets and options but use the matching prefix under <a href="../usage/#command-format">Command Format by Installation Method</a>.</p>
-<p>The tool provides three distinct ways to visualize monitoring activity:</p>
+<p>Examples on this page use the PyPI command <code>instagram_monitor</code>. If you chose another installation, replace that command with the matching <a href="../usage/#command-format">command prefix</a>. Keep all targets and options after the prefix.</p>
+<p>Choose one of three ways to view monitoring activity:</p>
 <ol>
 <li><strong>Traditional Text Mode</strong>: Standard CLI output, best for logging and background processes.</li>
 <li><strong>Terminal Dashboard</strong>: A rich, interactive terminal interface with real-time stats.</li>
@@ -722,18 +722,17 @@
 <hr />
 <p><a id="traditional-text-mode"></a></p>
 <h2 id="traditional-text-mode">Traditional Text Mode<a class="headerlink" href="#traditional-text-mode" title="Permanent link">&para;</a></h2>
-<p>This is the classic command-line output. It is characterized by:</p>
+<p>Text mode is the default. It works in any terminal and is well suited to background processes.</p>
 <ul>
-<li><strong>Clean, sequential logging</strong>: Every event is printed as it happens with a timestamp.</li>
-<li><strong>Persistence</strong>: Ideal for running in the background (e.g., via <code>nohup</code> or <code>tmux</code>) where you want a full history of events in your terminal scrollback or log files.</li>
-<li><strong>Low Overhead</strong>: Minimal resource usage and compatible with any terminal.</li>
+<li>Every event is printed with a timestamp.</li>
+<li>Earlier events remain available in terminal scrollback and log files.</li>
+<li>It uses fewer terminal features than either dashboard.</li>
 </ul>
-<p>It is the default mode of operation.</p>
 <hr />
 <p><a id="terminal-dashboard-mode"></a></p>
 <h2 id="terminal-dashboard">Terminal Dashboard<a class="headerlink" href="#terminal-dashboard" title="Permanent link">&para;</a></h2>
-<p>The Terminal Dashboard provides a beautiful, live-updating interface directly in your terminal. It requires the <code>rich</code> library.</p>
-<p>To enable the terminal dashboard, use the <code>--dashboard</code> flag (or set <code>DASHBOARD_ENABLED = True</code> in your config).</p>
+<p>The Terminal Dashboard updates status, statistics and recent events in one terminal screen. It requires the <code>rich</code> library, which is included in normal installations.</p>
+<p>Enable it with <code>--dashboard</code> or <code>DASHBOARD_ENABLED = True</code>.</p>
 <p><strong>Key Features:</strong></p>
 <ul>
 <li><strong>Visual Analytics</strong>: Real-time display of tracked targets with number of followers, followings, posts, visibility and story status.</li>
@@ -760,7 +759,7 @@
 <hr />
 <p><a id="web-dashboard-mode"></a></p>
 <h2 id="web-dashboard">Web Dashboard<a class="headerlink" href="#web-dashboard" title="Permanent link">&para;</a></h2>
-<p>A modern, real-time web interface running on your local machine (default: <code>http://127.0.0.1:8000/</code>).</p>
+<p>The Web Dashboard runs a small web server on your computer. By default, open <code>http://127.0.0.1:8000/</code> in a browser on the same computer. The <code>127.0.0.1</code> address is local, so other devices cannot connect unless you change the server and Docker settings.</p>
 <p><strong>Key Features:</strong></p>
 <ul>
 <li><strong>Full Control Panel</strong>: Add or remove monitoring targets directly from the browser.</li>
@@ -771,7 +770,7 @@
 <li><strong>Synchronization</strong>: Changes made in the web dashboard (like mode toggles) are reflected in the terminal instantly.</li>
 <li><strong>Dynamic Configuration</strong>: Configure sessions and settings without touching the terminal or config files.</li>
 </ul>
-<p>To enable the web dashboard, use the <code>--web-dashboard</code> flag (or set <code>WEB_DASHBOARD_ENABLED = True</code> in your config).</p>
+<p>Enable it with <code>--web-dashboard</code> or <code>WEB_DASHBOARD_ENABLED = True</code>.</p>
 <p><strong>Flexible Usage:</strong></p>
 <ul>
 <li><strong>Standard Monitoring</strong>: Provide targets on the CLI and the dashboard acts as a live mirror and remote management interface.</li>
@@ -783,8 +782,8 @@
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Starting as a pure control panel</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>instagram_monitor<span class="w"> </span>--web-dashboard
 </code></pre></div>
-<p>The web dashboard requires <code>flask</code>. If flask is missing, it will be disabled while the console output remains active.</p>
-<p>Docker Compose publishes the default dashboard only on host loopback. Use <code>docker compose up</code> when setup saved the Web Dashboard or add <code>--service-ports</code> to a one-off Compose command:</p>
+<p>The Web Dashboard requires <code>flask</code>, which is included in normal installations. If it is missing, Instagram Monitor disables the dashboard but keeps console monitoring active.</p>
+<p>Docker Compose exposes the default dashboard only at <code>127.0.0.1</code> on the host. Use <code>docker compose up --no-log-prefix</code> if setup enabled the Web Dashboard. For a one-off Compose command, add <code>--service-ports</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--service-ports<span class="w"> </span>instagram_monitor<span class="w"> </span>target1<span class="w"> </span>target2<span class="w"> </span>--web-dashboard
 </code></pre></div>
 <p>For direct Docker, add <code>-p 127.0.0.1:8000:8000</code> before the image name. The complete mount and port forms are under <a href="../usage/#monitoring-mode">Monitoring Mode</a>.</p>
@@ -799,7 +798,7 @@
 <hr />
 <p><a id="dashboard-view-modes"></a></p>
 <h2 id="dashboard-view-modes">Dashboard View Modes<a class="headerlink" href="#dashboard-view-modes" title="Permanent link">&para;</a></h2>
-<p>Both the Terminal and Web dashboards support two levels of information density:</p>
+<p>Both dashboards offer two views:</p>
 <ol>
 <li><strong>User Mode</strong> (<code>user</code>):</li>
 <li>Simple, minimal interface.</li>
@@ -814,7 +813,7 @@
 <li>Displays User Agent strings, Hour Ranges, Jitter status and more.</li>
 <li>Useful for auditing your setup and verifying configuration.</li>
 </ol>
-<p>Toggle seamlessly between modes using the <strong>'m'</strong> key or the web dashboard toggle button.</p>
+<p>Switch views with the <strong>'m'</strong> key in the Terminal Dashboard or the view button in the Web Dashboard.</p>
 
 
 

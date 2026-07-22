@@ -579,14 +579,14 @@
 
 
 <h1 id="testing">Testing<a class="headerlink" href="#testing" title="Permanent link">&para;</a></h1>
-<p>The project ships an offline test suite under <a href="https://github.com/misiektoja/instagram_monitor/tree/main/tests/">tests/</a> built with <a href="https://docs.pytest.org/">pytest</a>. The tests exercise the pure and offline-safe logic (config parsing, time/timespan formatting, scheduling windows, privacy substitutions, webhook/notification helpers, follower diffing, CSV writing, session-flag detection and user-agent generation) and never reach Instagram. The few functions that would normally hit the network are stubbed.</p>
+<p>The <a href="https://github.com/misiektoja/instagram_monitor/tree/main/tests/">tests directory</a> contains a <a href="https://docs.pytest.org/">pytest</a> suite for contributors. It checks configuration parsing, time formatting, scheduling, privacy substitutions, notifications, follower comparisons, CSV output, session error handling and user agent generation. The tests do not contact Instagram. Network functions are replaced with local test doubles.</p>
 <p>Install the test dependencies and run the suite:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># from the repository root</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;.[test]&#39;</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest
 </code></pre></div>
-<p>The same suite runs automatically on pull requests and on pushes to the <code>main</code> and <code>dev</code> branches via GitHub Actions across all supported Python versions (see <a href="https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/tests.yml">.github/workflows/tests.yml</a>), and must pass before a release is published to PyPI or Docker Hub.</p>
-<p>Online tests that log into Instagram are intentionally out of scope, as automated logins risk triggering challenges or account suspension.</p>
+<p>GitHub Actions runs the same suite for pull requests and pushes to <code>main</code> or <code>dev</code>. It tests every supported Python version. See the <a href="https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/tests.yml">test workflow</a>. The suite must pass before a release is published to PyPI or Docker Hub.</p>
+<p>The suite intentionally excludes tests that sign in to Instagram because automated test logins could trigger security checks or suspension.</p>
 
 
 

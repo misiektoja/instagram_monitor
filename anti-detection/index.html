@@ -867,51 +867,50 @@
 
 <h1 id="how-to-prevent-getting-challenged-and-account-suspension">How to Prevent Getting Challenged and Account Suspension<a class="headerlink" href="#how-to-prevent-getting-challenged-and-account-suspension" title="Permanent link">&para;</a></h1>
 <p>As mentioned earlier it is highly recommended to use a dedicated Instagram account when using this tool in session login mode. While the risk of account suspension is generally low (in practice, accounts often stay active long-term), Instagram may still flag it as an automated tool. This can lead to challenges presented by Instagram that must be dismissed manually.</p>
-<p>To minimize any chance of detection, make sure to follow the best practices outlined below.</p>
+<p>Use a separate account if losing access to your main account would be unacceptable. The practices below may reduce the risk but they are not guarantees.</p>
 <p><a id="sign-in-using-session-mode-with-browser-cookies"></a></p>
 <h2 id="sign-in-using-session-mode-with-browser-cookies">Sign In Using Session Mode with Browser Cookies<a class="headerlink" href="#sign-in-using-session-mode-with-browser-cookies" title="Permanent link">&para;</a></h2>
-<p>Use your web browser (Firefox, Chrome, Brave or Chromium) to log in, ensuring the session looks natural and consistent to Instagram. Follow instructions described <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">here</a></p>
+<p>Log in through a supported browser (Firefox, Chrome, Brave or Chromium) and import that saved session instead of sending the password on every start. Follow <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">Session Login Using Browser Cookies</a>.</p>
 <p><a id="set-the-correct-user-agent"></a></p>
 <h2 id="set-the-correct-user-agent">Set the Correct User-Agent<a class="headerlink" href="#set-the-correct-user-agent" title="Permanent link">&para;</a></h2>
-<p>Always pass the exact user agent string from the web browser you imported the session from by using <code>USER_AGENT</code> configuration option or the <code>--user-agent</code> flag. This helps maintain device consistency during automated actions. Follow instructions described <a href="../configuration/#user-agent">here</a></p>
+<p>Set <code>USER_AGENT</code> or <code>--user-agent</code> to the value reported by the browser used for the import. This keeps the browser identity in the requests consistent with the imported session. Follow <a href="../configuration/#user-agent">User Agent</a>.</p>
 <p><a id="use-the-human-mode"></a></p>
 <h2 id="use-the-human-mode">Use the Human Mode<a class="headerlink" href="#use-the-human-mode" title="Permanent link">&para;</a></h2>
-<p>Since v1.7, the tool includes a new experimental <strong>Be Human</strong> mode that makes it behave more like a real user to reduce bot detection.</p>
-<p>It is disabled by default, but you can enable it via <code>BE_HUMAN</code> configuration option, <code>--be-human</code> flag or by toggling it via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong>.</p>
-<p>It is used only with session login (Logged-in mode).</p>
-<p>After each check cycle, the tool will randomly do one or more of these harmless actions:</p>
+<p>Experimental <strong>Be Human</strong> mode adds a small number of feed or profile requests between normal monitoring checks so it behaves more like a real user to reduce bot detection.</p>
+<p>It is disabled by default. Enable it through <code>BE_HUMAN</code>, the <code>--be-human</code> option or the <strong>Settings</strong> page in the Web Dashboard.</p>
+<p>It works only in <a href="../configuration/#logged-in-mode-with-session-login">Logged-In Mode</a>.</p>
+<p>After a check cycle, the tool may perform one or more of these requests:</p>
 <ul>
-<li>View your explore feed: pulls a single post from Instagram's explore feed</li>
-<li>Open your own profile, as if tapping your avatar</li>
-<li>Browse a hashtag: fetches one post from a random tag listed in <code>MY_HASHTAGS</code> configuration option</li>
-<li>Look at a profile of someone you follow</li>
+<li>fetch one post from the Explore feed</li>
+<li>open the session account's profile</li>
+<li>fetch one post from a tag listed in <code>MY_HASHTAGS</code></li>
+<li>open the profile of an account followed by the session account</li>
 </ul>
-<p>By default it does around 5 of these actions spread over 24 hours, but you can adjust it via <code>DAILY_HUMAN_HITS</code> option.</p>
-<p>If you are interested in your human actions set <code>BE_HUMAN_VERBOSE</code> option to <code>True</code>.</p>
+<p>By default, it performs about five of these actions over 24 hours. Change the limit with <code>DAILY_HUMAN_HITS</code>.</p>
+<p>Set <code>BE_HUMAN_VERBOSE = True</code> to log each action.</p>
 <p><a id="use-the-jitter-mode"></a></p>
 <h2 id="use-the-jitter-mode">Use the Jitter Mode<a class="headerlink" href="#use-the-jitter-mode" title="Permanent link">&para;</a></h2>
-<p>Since v1.7, the tool allows to force every HTTP call made by Instaloader to go through a built-in jitter/back-off layer to look more human.</p>
-<p>This adds random delay (0.8-3 s) before each request and automatically retries on Instagram's 429 "too many requests" or checkpoint challenges, with exponential back-off (60 s → 120 s → 240 s) and a little extra jitter.</p>
-<p>This significantly reduces detection risk, but also makes the tool slower.</p>
-<p>You can enable this feature via <code>ENABLE_JITTER</code> configuration option or <code>--enable-jitter</code> flag.</p>
-<p>If you want to see verbose output for HTTP jitter/back-off wrappers set <code>JITTER_VERBOSE</code> option to <code>True</code>.</p>
+<p>Jitter mode adds a random delay of 0.8 to 3 seconds before each Instaloader request. It also retries HTTP 429 responses and checkpoint challenges after increasingly long waits of about 60, 120 and 240 seconds.</p>
+<p>The extra waits make monitoring slower. They may help with temporary rate limits but they do not guarantee that Instagram will accept the requests.</p>
+<p>Enable it through <code>ENABLE_JITTER</code> or <code>--enable-jitter</code>.</p>
+<p>Set <code>JITTER_VERBOSE = True</code> to log each delayed request and retry.</p>
 <p><a id="keep-the-polling-interval-reasonable"></a></p>
 <h2 id="keep-the-polling-interval-reasonable">Keep the Polling Interval Reasonable<a class="headerlink" href="#keep-the-polling-interval-reasonable" title="Permanent link">&para;</a></h2>
-<p>Avoid setting the polling interval (<code>INSTA_CHECK_INTERVAL</code> option or <code>-c</code> flag) too aggressively. Use a minimum of 1 hour - longer is better. For example, I set it to 12 hours on test accounts, resulting in only 2 checks per day.</p>
-<p>Also consider to randomize the check interval, as explained <a href="../usage/#check-intervals">here</a>.</p>
-<p><strong>Important</strong>: When monitoring multiple users in a single process, the effective request rate is multiplied by the number of targets. For example, monitoring 5 users with a 1-hour interval means 5 requests per hour. To maintain the same per-account request rate, increase the check interval proportionally. If you normally use 1 hour for a single user, consider using 5 hours (or more) when monitoring 5 users. The tool automatically staggers requests between targets, but the overall request frequency should still be adjusted based on the total number of monitored users.</p>
+<p>The polling interval controls how long the tool waits between checks. Use at least one hour through <code>INSTA_CHECK_INTERVAL</code> or <code>-c 3600</code>. A longer interval sends fewer requests. There is no interval that guarantees protection from limits.</p>
+<p>Instagram Monitor randomizes the interval by default. See <a href="../usage/#check-intervals">Check Intervals</a>.</p>
+<p>Each target adds requests. Five targets checked every hour create about five times the target-check traffic of one target checked every hour. To keep a similar total rate, increase the interval as you add targets. The tool spreads target checks across the interval but does not reduce the total number of checks.</p>
 <p><a id="use-hour-range-checking"></a></p>
 <h2 id="use-hour-range-checking">Use Hour-Range Checking<a class="headerlink" href="#use-hour-range-checking" title="Permanent link">&para;</a></h2>
-<p>The tool supports limiting fetching updates to specific hours of the day, which helps reduce detection by avoiding requests during times when automated activity might be more suspicious.</p>
-<p>When hour-range checking is enabled, the tool will only fetch updates (posts, reels, stories, profile changes, followers/followings) during the configured time windows. Outside these hours, the tool will skip fetching updates but will continue running and wait for the next allowed time window.</p>
+<p>Hour-range checking limits Instagram requests to selected parts of the day. It can reduce the total request count and keep requests within hours you choose.</p>
+<p>Inside the allowed windows, the tool checks posts, reels, stories, profile details and follower or following data. Outside them, the process stays running but waits without fetching those updates.</p>
 <p>To enable this feature, set <code>CHECK_POSTS_IN_HOURS_RANGE</code> to <code>True</code> and configure the allowed hour ranges using:</p>
 <ul>
-<li><code>MIN_H1</code> and <code>MAX_H1</code> - first range of hours (default: 0-4, i.e., midnight to 4:59 AM)</li>
-<li><code>MIN_H2</code> and <code>MAX_H2</code> - second range of hours (default: 11-23, i.e., 11:00 AM to 11:59 PM / 23:59)</li>
+<li><code>MIN_H1</code> and <code>MAX_H1</code> set the first range. The default <code>0</code> to <code>4</code> means midnight through 4:59 AM</li>
+<li><code>MIN_H2</code> and <code>MAX_H2</code> set the second range. The default <code>11</code> to <code>23</code> means 11:00 AM through 11:59 PM</li>
 </ul>
-<p>You can define up to two non-overlapping or overlapping ranges. To disable any range, set both MIN and MAX to 0.</p>
+<p>You can define one or two ranges. The ranges may overlap. To disable a range, set both its <code>MIN</code> and <code>MAX</code> value to <code>0</code>.</p>
 <p><strong>Note</strong>: You can also enable this feature and configure the allowed hour ranges live via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong>.</p>
-<p>For example, to only allow checks during business hours (9 AM to 5 PM / 17:00), you could set:</p>
+<p>For example, use these values to allow checks from 9:00 AM through 5:59 PM:</p>
 <ul>
 <li><code>MIN_H1 = 9</code></li>
 <li><code>MAX_H1 = 17</code></li>
@@ -919,26 +918,25 @@
 <li><code>MAX_H2 = 0</code></li>
 </ul>
 <p>Hours are specified in 24-hour format (0-23) and are evaluated in your configured time zone (see <a href="../configuration/#time-zone">Time Zone</a>).</p>
-<p>If you want to see verbose output about when updates are being fetched or skipped, set <code>HOURS_VERBOSE</code> to <code>True</code>. This is useful for debugging and understanding when the tool is active.</p>
-<p>This feature works particularly well when combined with reasonable polling intervals, as it ensures that even if your check interval triggers, requests will only be made during the configured time windows, making your activity pattern look more natural.</p>
+<p>Set <code>HOURS_VERBOSE = True</code> to log when a check is allowed or skipped.</p>
+<p>The polling interval still applies inside each allowed window. A scheduled check outside a window waits for a later allowed time.</p>
 <p><a id="do-not-monitor-too-many-users"></a></p>
 <h2 id="do-not-monitor-too-many-users">Do Not Monitor Too Many Users<a class="headerlink" href="#do-not-monitor-too-many-users" title="Permanent link">&para;</a></h2>
-<p>It is recommended to limit the number of users monitored by a single account, especially if they post frequent updates. When using multi-user monitoring (monitoring multiple users in one process), keep in mind that the total request volume increases with each additional target. In some cases, it may be best to create a separate account for additional users and even run it from a different IP address to reduce the risk of detection.</p>
+<p>Limit the number of targets monitored through one session account. Each target increases the total number of Instagram requests. If you need many targets, split them into smaller groups with longer intervals. Separate session accounts may also be appropriate but each account remains subject to Instagram's limits.</p>
 <p><a id="use-only-needed-functionality"></a></p>
 <h2 id="use-only-needed-functionality">Use Only Needed Functionality<a class="headerlink" href="#use-only-needed-functionality" title="Permanent link">&para;</a></h2>
-<p>Frequent updates to certain data types, such as new stories or posts/reels, are more likely to flag the account as an automated tool compared to profile changes or lists of followers/followings.</p>
-<p>If certain data isn't essential for your use case, consider disabling its retrieval. The tool provides fine-grained control, for example you can skip fetching stories details (<code>-r</code>), posts/reels details (<code>-w</code>), the list of followings (<code>-g</code> flag) and followers (<code>-f</code>).</p>
-<p><strong>Note</strong>: All of these fine-grained tracking options can also be toggled live via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong>.</p>
+<p>Disable checks you do not need. This reduces request volume. You can skip story details with <code>-r</code>, post or reel details with <code>-w</code>, the following list with <code>-g</code> and the follower list with <code>-f</code>.</p>
+<p>You can also turn these checks on or off through the <strong>Settings</strong> page in the Web Dashboard.</p>
 <p><a id="use-two-factor-authentication-2fa"></a></p>
 <h2 id="use-two-factor-authentication-2fa">Use Two-Factor Authentication (2FA)<a class="headerlink" href="#use-two-factor-authentication-2fa" title="Permanent link">&para;</a></h2>
 <p>Activate 2FA on the account used for monitoring. It adds credibility to your account and reduces the likelihood of security flags.</p>
 <p><a id="avoid-using-vpns"></a></p>
 <h2 id="avoid-using-vpns">Avoid Using VPNs<a class="headerlink" href="#avoid-using-vpns" title="Permanent link">&para;</a></h2>
-<p>Refrain from logging in via VPNs, especially with IPs in different regions. Sudden location changes can trigger Instagram's security systems.</p>
+<p>Avoid frequent changes to the public IP address or geographic region used by the session. For example, switching VPN regions between runs may cause Instagram to request a security check.</p>
 <p><a id="use-the-account-for-normal-activities"></a></p>
 <h2 id="use-the-account-for-normal-activities">Use the Account for Normal Activities<a class="headerlink" href="#use-the-account-for-normal-activities" title="Permanent link">&para;</a></h2>
-<p>If you have created a new account for monitoring and you are using <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">Session Login Using Browser Cookies</a>, make sure to behave like a regular user for several days. New accounts are more closely monitored by Instagram's bot detection systems. Watch content, post stories or reels and leave comments - this helps establish a natural activity pattern.</p>
-<p>Once you start using the tool, try to blend its actions with normal usage. However, avoid overlapping browser activity with tool activity, as simultaneous actions can trigger suspicious behavior flags.</p>
+<p>Before monitoring, confirm that the account works normally in the browser used for <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">session import</a>. Resolve any login or security prompts there first.</p>
+<p>Do not use the same browser session while Instagram Monitor is actively making requests. Simultaneous activity from the browser and tool may cause additional security checks.</p>
 
 
 

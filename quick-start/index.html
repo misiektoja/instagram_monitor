@@ -692,9 +692,9 @@
 <h1 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h1>
 <p><a id="new-here-run-the-setup-wizard"></a></p>
 <h2 id="new-here-run-the-setup-wizard">New here? Run the setup wizard<a class="headerlink" href="#new-here-run-the-setup-wizard" title="Permanent link">&para;</a></h2>
-<p>First complete one method on the <a href="../installation/">Installation</a> page. The fastest way to configure that installation is the interactive setup wizard. It asks who to monitor, whether to use a login session, which interface to start and whether to enable alerts. Before saving, you can review the summary and edit one section without losing the other answers. It then writes a ready-to-run configuration while private values stay in <code>.env</code>.</p>
-<p>For local installs the wizard can also run the doctor check and start monitoring immediately. In a container it prints the exact follow-up commands for the detected Docker or Docker Compose path.</p>
-<p>Before running the Docker Compose setup command on Linux, export <code>INSTAGRAM_MONITOR_UID="$(id -u)"</code> and <code>INSTAGRAM_MONITOR_GID="$(id -g)"</code> as shown under <a href="../installation/#docker-compose">Install with Docker Compose</a>.</p>
+<p>First complete one method on the <a href="../installation/">Installation</a> page. Then use the interactive setup wizard. It asks which Instagram accounts to monitor, whether to use a saved login, which interface to start and which alerts to enable. You can review and change your answers before saving. Regular settings go in <code>instagram_monitor.conf</code>. Private values such as passwords and webhook URLs go in <code>.env</code>.</p>
+<p>For a local install, the wizard can check the setup and start monitoring immediately. In a container, it prints the next Docker or Docker Compose commands to run.</p>
+<p>Before using Docker Compose on a native Linux container engine, run the two <code>export</code> commands under <a href="../installation/#docker-compose">Install with Docker Compose</a>. They pass your numeric user and group IDs to the container so files created in the current directory belong to you. Docker-compatible runtimes on macOS and Windows normally do not need this step.</p>
 <p>Use the command that matches how you run the tool:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># PyPI install</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>instagram_monitor<span class="w"> </span>--setup
@@ -715,15 +715,15 @@
 <a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="c1"># Docker image on Linux</span>
 <a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
 </code></pre></div>
-<p>In Windows Command Prompt replace <code>${PWD}</code> with <code>%cd%</code>. If your Docker-compatible runtime rejects the <code>:z</code> mount suffix, remove only that suffix.</p>
-<p>The wizard asks for Instagram targets, recommends Firefox-based import and lets you choose email alerts, webhook alerts or both. On macOS and Linux it offers Chrome, Brave and Chromium as a separate cookie import path. If the optional <code>pycookiecheat</code> package is missing, setup can install it into the active Python environment before continuing.</p>
-<p>The wizard detects PyPI, downloaded-script, Docker and Docker Compose installations then prints matching commands. Local commands reuse the active Python executable. Config and dotenv paths are quoted for the active operating system.</p>
-<p>It writes regular settings to <code>instagram_monitor.conf</code> while private values go only to <code>.env</code>.</p>
-<p>Firefox import works in every local installation without an extra package. Chrome, Brave and Chromium import is available on macOS and Linux with the optional browser dependency. Container setup uses Firefox only because Chromium cookie decryption needs the host keyring. See <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">Session Login Using Browser Cookies</a>.</p>
-<p>Running the tool with no arguments from an interactive terminal offers the wizard when neither saved targets nor a saved Web Dashboard are available. If you save targets in <code>TARGET_USERNAMES</code>, a later no-argument launch starts those targets. If you save the Web Dashboard without targets, it starts as a browser control panel where you can add targets.</p>
+<p>In Windows Command Prompt replace <code>${PWD}</code> with <code>%cd%</code>. The <code>:z</code> suffix is for hosts that use SELinux. If your Docker-compatible runtime reports that it is invalid, remove only <code>:z</code>.</p>
+<p>In this documentation, a <strong>target</strong> is an Instagram account you want to monitor. The <strong>session account</strong> is the Instagram account that Instagram Monitor uses to sign in. They can be different accounts.</p>
+<p>The wizard recommends importing a saved Firefox login. On macOS and Linux it can also import from Chrome, Brave or Chromium. Those three browsers require the optional <code>pycookiecheat</code> package. If it is missing, the wizard can install it in a local Python installation.</p>
+<p>The wizard detects PyPI, a downloaded script, Docker or Docker Compose and prints matching commands. It also formats file paths for the current operating system.</p>
+<p>Firefox import works in every local installation without an extra package. Chrome, Brave and Chromium import works on macOS and Linux with the optional browser dependency. Container setup uses Firefox because Chromium cookie decryption needs a password service from the host that is not available inside the container. See <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">Session Login Using Browser Cookies</a>.</p>
+<p>If no targets or Web Dashboard setting have been saved, running the tool with no arguments opens the wizard in an interactive terminal. If <code>TARGET_USERNAMES</code> contains saved targets, the same command starts monitoring them. If only the Web Dashboard is enabled, it starts an empty browser control panel where you can add targets.</p>
 <p><a id="not-sure-which-mode-you-want"></a></p>
 <h2 id="not-sure-which-command-you-need">Not sure which command you need?<a class="headerlink" href="#not-sure-which-command-you-need" title="Permanent link">&para;</a></h2>
-<p>The short commands in this table use PyPI. Keep the options and replace <code>instagram_monitor</code> with the prefix under <a href="../usage/#command-format">Command Format by Installation Method</a> when you use another installation.</p>
+<p>The table uses the PyPI command. If you chose another installation, use its <a href="../usage/#command-format">command prefix</a> instead of <code>instagram_monitor</code>.</p>
 <table>
 <thead>
 <tr>
@@ -742,7 +742,7 @@
 </tr>
 <tr>
 <td>Start targets saved in <code>TARGET_USERNAMES</code></td>
-<td><code>instagram_monitor --config-file instagram_monitor.conf</code> or <code>docker compose up</code></td>
+<td><code>instagram_monitor --config-file instagram_monitor.conf</code> or <code>docker compose up --no-log-prefix</code></td>
 </tr>
 <tr>
 <td>Start a browser control panel without targets</td>
@@ -764,7 +764,7 @@
 </table>
 <p><a id="manual-commands"></a></p>
 <h2 id="run-individual-commands">Run Individual Commands<a class="headerlink" href="#run-individual-commands" title="Permanent link">&para;</a></h2>
-<p>The examples below use PyPI. For a manual script replace <code>instagram_monitor</code> with <code>python3 instagram_monitor.py</code> on macOS or Linux and <code>python instagram_monitor.py</code> on Windows. Docker and Docker Compose users should use the prefixes under <a href="../usage/#command-format">Command Format by Installation Method</a>.</p>
+<p>The examples below use PyPI. For a manual script, replace <code>instagram_monitor</code> with <code>python3 instagram_monitor.py</code> on macOS or Linux. Use <code>python instagram_monitor.py</code> on Windows. Docker users should copy the matching prefix under <a href="../usage/#command-format">Command Format by Installation Method</a>.</p>
 <p>Track a public account in <a href="../configuration/#no-login-mode-without-session-login">No-Login Mode</a>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;
 </code></pre></div>
@@ -772,12 +772,12 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>instagram_monitor<span class="w"> </span>-u<span class="w"> </span>&lt;your_insta_user&gt;<span class="w"> </span>&lt;target_insta_user&gt;
 </code></pre></div>
-<p>The browser import saves an Instaloader session. Keep using the same <code>-u</code> username during monitoring. Container users must reuse the same named session volume and mount Firefox for the one-time import as shown under <a href="../usage/#container-operation">Container Operation</a>.</p>
+<p>The import converts the browser login into a saved Instaloader session. The value passed to <code>-u</code> must be the username of that logged-in account. Container users must use the same <code>instagram_monitor_session</code> Docker volume for the import and later monitoring runs. The complete import command is under <a href="../usage/#container-operation">Container Operation</a>.</p>
 <p>Launch the <a href="../view-modes/#web-dashboard-mode">Web Dashboard</a> with a target or as an empty control panel:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--web-dashboard
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>instagram_monitor<span class="w"> </span>--web-dashboard
 </code></pre></div>
-<p>Compose one-off Web Dashboard commands need <code>--service-ports</code>. Direct Docker commands need the loopback port mapping. Both complete forms are under <a href="../usage/#monitoring-mode">Monitoring Mode</a>.</p>
+<p>A one-off Compose command needs <code>--service-ports</code> so the browser can reach the dashboard. A direct Docker command needs a port mapping. Both complete commands are under <a href="../usage/#monitoring-mode">Monitoring Mode</a>.</p>
 <p>View every command-line option plus examples adapted to the detected installation:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>instagram_monitor<span class="w"> </span>--help
 </code></pre></div>

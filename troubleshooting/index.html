@@ -668,31 +668,31 @@
 
 
 <h1 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h1>
-<p>Examples on this page use the PyPI command <code>instagram_monitor</code>. For a manual script or container, keep the shown options and use the matching prefix under <a href="../usage/#command-format">Command Format by Installation Method</a>. The setup wizard and <code>--help</code> print commands for the detected installation.</p>
+<p>Examples on this page use the PyPI command <code>instagram_monitor</code>. If you chose another installation, replace that command with the matching <a href="../usage/#command-format">command prefix</a>. The setup wizard and <code>--help</code> also print commands for the detected installation.</p>
 <p><a id="doctor-preflight"></a></p>
 <h2 id="doctor-preflight">Doctor Preflight<a class="headerlink" href="#doctor-preflight" title="Permanent link">&para;</a></h2>
-<p>Before starting a long monitoring run, use the built-in self-check:</p>
+<p>Before a long monitoring run, check the current configuration:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>instagram_monitor<span class="w"> </span>--doctor
 </code></pre></div>
-<p>Doctor never writes files. It first performs passive checks and prints a <code>PASS</code> / <code>WARN</code> / <code>FAIL</code> report covering optional dependencies, the config file and secrets, session validity in Logged-In Mode, Instagram connectivity, target resolution and email or webhook configuration.</p>
-<p>In an interactive terminal, each notification channel that passes its passive checks gets a separate optional delivery prompt. Both prompts default to No. Approving the email prompt delivers one real test email. Approving the webhook prompt publishes one real Discord or ntfy notification. Declining either prompt sends nothing. Noninteractive doctor runs never offer or send delivery tests.</p>
-<p>Each failure includes a <code>To fix:</code> next step. The command exits nonzero if any passive check or approved delivery test fails, which also makes it useful in scripts. It honors the same flags as a normal run, so you can check only the saved setup or one exact login and target combination:</p>
+<p>Doctor does not change files. It reports <code>PASS</code>, <code>WARN</code> or <code>FAIL</code> for optional packages, configuration, private values, login session, Instagram connection, target usernames and notification settings. Login session checks apply only to Logged-In Mode.</p>
+<p>In an interactive terminal, Doctor can offer one real delivery test for each configured notification channel that passes its checks. Each prompt defaults to No. Answering Yes to the email prompt sends one test email. Answering Yes to the webhook prompt sends one Discord or ntfy message. Doctor never offers delivery tests when it runs without an interactive terminal.</p>
+<p>Each failure includes a <code>To fix:</code> action. The command returns a nonzero exit status if a check or approved delivery test fails, so scripts can detect the failure. Doctor accepts normal login, target and file options. Use them to check the saved setup or one exact combination:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>instagram_monitor<span class="w"> </span>--doctor
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>instagram_monitor<span class="w"> </span>-u<span class="w"> </span>&lt;your_user&gt;<span class="w"> </span>&lt;target&gt;<span class="w"> </span>--doctor
 </code></pre></div>
 <p>For Docker Compose use:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>instagram_monitor<span class="w"> </span>--doctor
 </code></pre></div>
-<p>Doctor exits after the report and does not start the Web Dashboard, so this Compose check does not need <code>--service-ports</code>. The setup wizard offers to run doctor at the end.</p>
-<p>For deeper issues, add <code>--debug</code> to a doctor check or normal run. It shows full HTTP traffic and internal script logic. Remove or mask cookies, passwords, tokens and private webhook URLs before sharing output in a GitHub issue.</p>
+<p>Doctor exits after the report and does not start monitoring or the Web Dashboard. The Compose command therefore does not need <code>--service-ports</code>. The setup wizard also offers to run Doctor after saving.</p>
+<p>For more detail, add <code>--debug</code> to Doctor or a normal run. Debug output includes HTTP details and internal decisions. It may also contain private data. Remove cookies, passwords, tokens and webhook URLs before sharing it.</p>
 <p><a id="choosing-the-right-logging-level"></a></p>
 <h2 id="choosing-the-right-logging-level">Choosing the Right Logging Level<a class="headerlink" href="#choosing-the-right-logging-level" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Default Mode</strong>: Clean and quiet. Logs changes (new posts, bio updates, etc.) and critical errors. Best for long-term production use.</li>
-<li><strong>Verbose Mode (<code>--verbose</code>)</strong>: Adds per-check timing details (last check, next check schedule and interval) to plain text output. Handy for background or headless runs without a dashboard, where you want to confirm in the log that the loop is running.</li>
-<li><strong>Debug Mode (<code>--debug</code>)</strong>: For developers or fixing issues. Shows full HTTP traffic and internal script logic.</li>
+<li><strong>Default mode</strong> logs detected changes and important errors.</li>
+<li><strong>Verbose mode (<code>--verbose</code>)</strong> also logs the previous check time, next check time and interval. Use it to confirm that a background process is still checking targets.</li>
+<li><strong>Debug mode (<code>--debug</code>)</strong> adds HTTP details and internal decisions for troubleshooting.</li>
 </ul>
-<p>Both <strong>Verbose</strong> and <strong>Debug</strong> modes can also be toggled live through the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong>.</p>
+<p>You can also change Verbose and Debug modes through the <strong>Settings</strong> page in the Web Dashboard.</p>
 
 
 
