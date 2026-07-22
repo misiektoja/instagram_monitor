@@ -14,6 +14,7 @@ The tool provides three distinct ways to visualize monitoring activity:
 ## Traditional Text Mode
 
 This is the classic command-line output. It is characterized by:
+
 - **Clean, sequential logging**: Every event is printed as it happens with a timestamp.
 - **Persistence**: Ideal for running in the background (e.g., via `nohup` or `tmux`) where you want a full history of events in your terminal scrollback or log files.
 - **Low Overhead**: Minimal resource usage and compatible with any terminal.
@@ -30,6 +31,7 @@ The Terminal Dashboard provides a beautiful, live-updating interface directly in
 To enable the terminal dashboard, use the `--dashboard` flag (or set `DASHBOARD_ENABLED = True` in your config).
 
 **Key Features:**
+
 - **Visual Analytics**: Real-time display of tracked targets with number of followers, followings, posts, visibility and story status.
 - **Live Activity Log**: A scrolling view of the last few events.
 - **Interactive Toggles**: Press **'m'** to switch between 'User' and 'Config' views instantly.
@@ -37,6 +39,7 @@ To enable the terminal dashboard, use the `--dashboard` flag (or set `DASHBOARD_
 - **Uptime & Status**: Clean header showing tool version, status and total runtime.
 
 **Keyboard Shortcuts:**
+
 - **'m'**: Toggle dashboard view (User/Config)
 - **'s'**: **Start All** monitoring
 - **'x'**: **Stop All** monitoring
@@ -60,6 +63,7 @@ instagram_monitor target1 target2 --dashboard
 A modern, real-time web interface running on your local machine (default: `http://127.0.0.1:8000/`).
 
 **Key Features:**
+
 - **Full Control Panel**: Add or remove monitoring targets directly from the browser.
 - **Visual Analytics**: Real-time display of tracked targets with number of followers, followings, posts, visibility and story status.
 - **Live Activity Log**: A scrolling view of the last few events.
@@ -71,6 +75,7 @@ A modern, real-time web interface running on your local machine (default: `http:
 To enable the web dashboard, use the `--web-dashboard` flag (or set `WEB_DASHBOARD_ENABLED = True` in your config).
 
 **Flexible Usage:**
+
 - **Standard Monitoring**: Provide targets on the CLI and the dashboard acts as a live mirror and remote management interface.
 - **Control Panel Mode**: Start the tool with **only** the `--web-dashboard` flag (no initial targets). The script will wait for you to add users through the browser.
 
