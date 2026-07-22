@@ -7,7 +7,7 @@
 #   2. Generate a config (the wizard configures the dashboard for container access):
 #        docker compose run --rm instagram_monitor --setup
 #   3. Start the saved targets and selected interface:
-#        docker compose up
+#        docker compose up --no-log-prefix
 #   4. Open the web dashboard at http://127.0.0.1:8000/ and add targets.
 #
 # To monitor specific targets from the command line instead of the dashboard,
@@ -35,16 +35,15 @@ services:
       # Keep the unauthenticated dashboard reachable only from this host
       - "127.0.0.1:8000:8000"
     volumes:
-      # Generated files, config and the .env secrets file live in the current
-      # directory on the host. The tool auto-loads ./.env from here, so there is
-      # no need to declare env_file (and no error if you have not created one yet).
+      # Generated files plus config and the .env secrets file live in the current
+      # directory on the host.
       # The shared SELinux label is ignored on hosts that do not use SELinux.
       - ./:/data:z
       # Persist the Instaloader session across runs
       - instagram_monitor_session:/home/instagram/.config/instaloader
-    # Override the image's --help default with no CLI arguments so the saved
-    # targets and interface in instagram_monitor.conf control normal startup.
-    command: []
+    # Override the image's --help default while preserving saved targets and interface
+    # choices from config, then load bind-mounted secrets explicitly.
+    command: ["--env-file", "/data/.env"]
 
 volumes:
   instagram_monitor_session:
