@@ -2,6 +2,8 @@
 
 # Changes in 3.6 (22 Jul 2026)
 
+Version **3.6** focuses on flexible, dependable notifications and safer guided configuration. It adds native ntfy support with protected-topic authentication, interactive delivery checks in `--doctor` and an editable setup summary, while preserving Discord compatibility and strengthening Docker defaults, saved launch behavior and Web Dashboard exposure.
+
 **Features and Improvements**:
 
 - **NEW:** Added native **ntfy webhook notifications** for status, follower and error events. Set `WEBHOOK_PROVIDER = "ntfy"` and save a complete ntfy topic URL in `WEBHOOK_URL` or select ntfy in the setup wizard or Web Dashboard. The setup wizard also accepts a bare ntfy.sh topic name and expands it to a complete URL
