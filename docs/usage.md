@@ -52,7 +52,7 @@ instagram_monitor --config-file instagram_monitor.conf
 Docker Compose uses the same saved targets when you run:
 
 ```sh
-docker compose up
+docker compose up --no-log-prefix
 ```
 
 If setup did not save the targets, pass them to Compose explicitly:
@@ -151,14 +151,14 @@ Compose makes the current host directory available as `/data` inside the contain
 Start the saved targets and interface in the foreground:
 
 ```sh
-docker compose up
+docker compose up --no-log-prefix
 ```
 
 For a background run and live logs:
 
 ```sh
 docker compose up -d
-docker compose logs -f
+docker compose logs -f --no-log-prefix
 ```
 
 Stop and remove the service container:
