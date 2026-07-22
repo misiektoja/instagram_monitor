@@ -5,6 +5,7 @@
 **Features and improvements**:
 
 - **IMPROVE:** Added automatic Firefox profile discovery for native Linux, Snap and Flatpak installations. CLI and Web Dashboard session imports now locate all three layouts and de-duplicate cookie databases
+- **IMPROVE:** Improved CLI and `--doctor` recovery guidance with installation-aware Firefox session import commands and direct links for session, rate-limit, proxy, SMTP, webhook and configuration errors
 
 **Bug fixes**:
 
