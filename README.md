@@ -36,7 +36,7 @@ curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/
 export INSTAGRAM_MONITOR_UID="$(id -u)"
 export INSTAGRAM_MONITOR_GID="$(id -g)"
 docker compose run --rm instagram_monitor --setup
-docker compose up
+docker compose up --no-log-prefix
 ```
 
 Docker run
@@ -177,7 +177,7 @@ See the [full Quick Start guide](https://misiektoja.github.io/instagram_monitor/
 | --- | --- |
 | Set up Instagram Monitor for the first time | Use the setup command for your installation above |
 | Try public monitoring without a login | `instagram_monitor <target_insta_user>` |
-| Start targets saved in `TARGET_USERNAMES` | `instagram_monitor --config-file instagram_monitor.conf` or `docker compose up` |
+| Start targets saved in `TARGET_USERNAMES` | `instagram_monitor --config-file instagram_monitor.conf` or `docker compose up --no-log-prefix` |
 | Start a browser control panel without targets | `instagram_monitor --web-dashboard` |
 | Monitor several accounts | `instagram_monitor target_1 target_2` or `instagram_monitor --targets target_1,target_2` |
 | Check the selected login, connectivity and targets | `instagram_monitor --doctor` |
