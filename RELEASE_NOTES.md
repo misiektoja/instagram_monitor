@@ -1,5 +1,15 @@
 # instagram_monitor release notes
 
+# Changes in 3.6.1 (22 Jul 2026)
+
+**Features and improvements**:
+
+- **IMPROVE:** Added automatic Firefox profile discovery for native Linux, Snap and Flatpak installations. CLI and Web Dashboard session imports now locate all three layouts and de-duplicate cookie databases
+
+**Bug fixes**:
+
+- **BUGFIX:** Made the Compose service pass `/data/.env` explicitly so `docker compose up` loads saved secrets even when config does not set `DOTENV_FILE`
+
 # Changes in 3.6 (22 Jul 2026)
 
 Version **3.6** focuses on flexible, dependable notifications and safer guided configuration. It adds native ntfy support with protected-topic authentication, interactive delivery checks in `--doctor` and an editable setup summary, while preserving Discord compatibility and strengthening Docker defaults, saved launch behavior and Web Dashboard exposure.
