@@ -722,29 +722,35 @@
 <hr />
 <p><a id="traditional-text-mode"></a></p>
 <h2 id="traditional-text-mode">Traditional Text Mode<a class="headerlink" href="#traditional-text-mode" title="Permanent link">&para;</a></h2>
-<p>This is the classic command-line output. It is characterized by:
-- <strong>Clean, sequential logging</strong>: Every event is printed as it happens with a timestamp.
-- <strong>Persistence</strong>: Ideal for running in the background (e.g., via <code>nohup</code> or <code>tmux</code>) where you want a full history of events in your terminal scrollback or log files.
-- <strong>Low Overhead</strong>: Minimal resource usage and compatible with any terminal.</p>
+<p>This is the classic command-line output. It is characterized by:</p>
+<ul>
+<li><strong>Clean, sequential logging</strong>: Every event is printed as it happens with a timestamp.</li>
+<li><strong>Persistence</strong>: Ideal for running in the background (e.g., via <code>nohup</code> or <code>tmux</code>) where you want a full history of events in your terminal scrollback or log files.</li>
+<li><strong>Low Overhead</strong>: Minimal resource usage and compatible with any terminal.</li>
+</ul>
 <p>It is the default mode of operation.</p>
 <hr />
 <p><a id="terminal-dashboard-mode"></a></p>
 <h2 id="terminal-dashboard">Terminal Dashboard<a class="headerlink" href="#terminal-dashboard" title="Permanent link">&para;</a></h2>
 <p>The Terminal Dashboard provides a beautiful, live-updating interface directly in your terminal. It requires the <code>rich</code> library.</p>
 <p>To enable the terminal dashboard, use the <code>--dashboard</code> flag (or set <code>DASHBOARD_ENABLED = True</code> in your config).</p>
-<p><strong>Key Features:</strong>
-- <strong>Visual Analytics</strong>: Real-time display of tracked targets with number of followers, followings, posts, visibility and story status.
-- <strong>Live Activity Log</strong>: A scrolling view of the last few events.
-- <strong>Interactive Toggles</strong>: Press <strong>'m'</strong> to switch between 'User' and 'Config' views instantly.
-- <strong>Remote Control</strong>: Start, stop or recheck monitoring for all targets directly from the terminal.
-- <strong>Uptime &amp; Status</strong>: Clean header showing tool version, status and total runtime.</p>
-<p><strong>Keyboard Shortcuts:</strong>
-- <strong>'m'</strong>: Toggle dashboard view (User/Config)
-- <strong>'s'</strong>: <strong>Start All</strong> monitoring
-- <strong>'x'</strong>: <strong>Stop All</strong> monitoring
-- <strong>'r'</strong>: <strong>Recheck All</strong> targets
-- <strong>'q'</strong>: <strong>Exit</strong> the tool
-- <strong>'h'</strong>: Show help (lists commands in the activity log)</p>
+<p><strong>Key Features:</strong></p>
+<ul>
+<li><strong>Visual Analytics</strong>: Real-time display of tracked targets with number of followers, followings, posts, visibility and story status.</li>
+<li><strong>Live Activity Log</strong>: A scrolling view of the last few events.</li>
+<li><strong>Interactive Toggles</strong>: Press <strong>'m'</strong> to switch between 'User' and 'Config' views instantly.</li>
+<li><strong>Remote Control</strong>: Start, stop or recheck monitoring for all targets directly from the terminal.</li>
+<li><strong>Uptime &amp; Status</strong>: Clean header showing tool version, status and total runtime.</li>
+</ul>
+<p><strong>Keyboard Shortcuts:</strong></p>
+<ul>
+<li><strong>'m'</strong>: Toggle dashboard view (User/Config)</li>
+<li><strong>'s'</strong>: <strong>Start All</strong> monitoring</li>
+<li><strong>'x'</strong>: <strong>Stop All</strong> monitoring</li>
+<li><strong>'r'</strong>: <strong>Recheck All</strong> targets</li>
+<li><strong>'q'</strong>: <strong>Exit</strong> the tool</li>
+<li><strong>'h'</strong>: Show help (lists commands in the activity log)</li>
+</ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>instagram_monitor<span class="w"> </span>target1<span class="w"> </span>target2<span class="w"> </span>--dashboard
 </code></pre></div>
 <p align="center">
@@ -755,18 +761,22 @@
 <p><a id="web-dashboard-mode"></a></p>
 <h2 id="web-dashboard">Web Dashboard<a class="headerlink" href="#web-dashboard" title="Permanent link">&para;</a></h2>
 <p>A modern, real-time web interface running on your local machine (default: <code>http://127.0.0.1:8000/</code>).</p>
-<p><strong>Key Features:</strong>
-- <strong>Full Control Panel</strong>: Add or remove monitoring targets directly from the browser.
-- <strong>Visual Analytics</strong>: Real-time display of tracked targets with number of followers, followings, posts, visibility and story status.
-- <strong>Live Activity Log</strong>: A scrolling view of the last few events.
-- <strong>Manual Trigger</strong>: A "Recheck" button to force an immediate update for specific or all users.
-- <strong>Remote Management</strong>: Start or stop monitoring for specific or all targets with a single click.
-- <strong>Synchronization</strong>: Changes made in the web dashboard (like mode toggles) are reflected in the terminal instantly.
-- <strong>Dynamic Configuration</strong>: Configure sessions and settings without touching the terminal or config files.</p>
+<p><strong>Key Features:</strong></p>
+<ul>
+<li><strong>Full Control Panel</strong>: Add or remove monitoring targets directly from the browser.</li>
+<li><strong>Visual Analytics</strong>: Real-time display of tracked targets with number of followers, followings, posts, visibility and story status.</li>
+<li><strong>Live Activity Log</strong>: A scrolling view of the last few events.</li>
+<li><strong>Manual Trigger</strong>: A "Recheck" button to force an immediate update for specific or all users.</li>
+<li><strong>Remote Management</strong>: Start or stop monitoring for specific or all targets with a single click.</li>
+<li><strong>Synchronization</strong>: Changes made in the web dashboard (like mode toggles) are reflected in the terminal instantly.</li>
+<li><strong>Dynamic Configuration</strong>: Configure sessions and settings without touching the terminal or config files.</li>
+</ul>
 <p>To enable the web dashboard, use the <code>--web-dashboard</code> flag (or set <code>WEB_DASHBOARD_ENABLED = True</code> in your config).</p>
-<p><strong>Flexible Usage:</strong>
-- <strong>Standard Monitoring</strong>: Provide targets on the CLI and the dashboard acts as a live mirror and remote management interface.
-- <strong>Control Panel Mode</strong>: Start the tool with <strong>only</strong> the <code>--web-dashboard</code> flag (no initial targets). The script will wait for you to add users through the browser.</p>
+<p><strong>Flexible Usage:</strong></p>
+<ul>
+<li><strong>Standard Monitoring</strong>: Provide targets on the CLI and the dashboard acts as a live mirror and remote management interface.</li>
+<li><strong>Control Panel Mode</strong>: Start the tool with <strong>only</strong> the <code>--web-dashboard</code> flag (no initial targets). The script will wait for you to add users through the browser.</li>
+</ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Starting with initial targets</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>instagram_monitor<span class="w"> </span>target1<span class="w"> </span>target2<span class="w"> </span>--web-dashboard
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>

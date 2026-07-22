@@ -1504,18 +1504,24 @@
 <li>In single-target mode, <code>&lt;suffix&gt;</code> is the username.</li>
 <li>In multi-target mode, <code>&lt;suffix&gt;</code> is the sorted list of target usernames joined with underscores.</li>
 </ul>
-<p>The tool in Logged-in mode (session login) also saves the list of followings &amp; followers to these files:
-- <code>instagram_&lt;username&gt;_followings.json</code>
-- <code>instagram_&lt;username&gt;_followers.json</code></p>
+<p>The tool in Logged-in mode (session login) also saves the list of followings &amp; followers to these files:</p>
+<ul>
+<li><code>instagram_&lt;username&gt;_followings.json</code></li>
+<li><code>instagram_&lt;username&gt;_followers.json</code></li>
+</ul>
 <p>Thanks to this we do not need to re-fetch it every time the tool is restarted and we can also detect changes since the last usage of the tool.</p>
 <p>When downloading lists of followers or followings, a <strong>progress bar</strong> is displayed showing real-time download progress, including statistics such as names per request, total requests, elapsed time and estimated remaining time. Progress updates are shown in the terminal only (to avoid cluttering log files), with the final completion state written to the log file for reference.</p>
 <p>The tool also saves the user profile picture to <code>instagram_&lt;username&gt;_profile_pic*.jpg</code> files.</p>
-<p>It also saves downloaded posts/reels images &amp; videos to:
-- <code>instagram_&lt;username&gt;_post/reel_YYYYmmdd_HHMMSS.jpg</code>
-- <code>instagram_&lt;username&gt;_post/reel_YYYYmmdd_HHMMSS.mp4</code></p>
-<p>And downloaded stories images &amp; videos to:
-- <code>instagram_&lt;username&gt;_story_YYYYmmdd_HHMMSS.jpg</code>
-- <code>instagram_&lt;username&gt;_story_YYYYmmdd_HHMMSS.mp4</code></p>
+<p>It also saves downloaded posts/reels images &amp; videos to:</p>
+<ul>
+<li><code>instagram_&lt;username&gt;_post/reel_YYYYmmdd_HHMMSS.jpg</code></li>
+<li><code>instagram_&lt;username&gt;_post/reel_YYYYmmdd_HHMMSS.mp4</code></li>
+</ul>
+<p>And downloaded stories images &amp; videos to:</p>
+<ul>
+<li><code>instagram_&lt;username&gt;_story_YYYYmmdd_HHMMSS.jpg</code></li>
+<li><code>instagram_&lt;username&gt;_story_YYYYmmdd_HHMMSS.mp4</code></li>
+</ul>
 <p><a id="docker-usage-recommended"></a>
 <a id="container-operation"></a></p>
 <h2 id="container-operation">Container Operation<a class="headerlink" href="#container-operation" title="Permanent link">&para;</a></h2>
@@ -1556,22 +1562,28 @@
 <p>After importing, run with <code>-u &lt;your_insta_user&gt;</code> and reuse the same named session volume.</p>
 <p><a id="email-notifications"></a></p>
 <h2 id="email-notifications">Email Notifications<a class="headerlink" href="#email-notifications" title="Permanent link">&para;</a></h2>
-<p>To enable email notifications for various events (such as new posts, reels and stories, changes in followings, bio updates, changes in profile picture and visibility):
-- set <code>STATUS_NOTIFICATION</code> to <code>True</code>
-- or use the <code>-s</code> flag
-- or toggle it via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong></p>
+<p>To enable email notifications for various events (such as new posts, reels and stories, changes in followings, bio updates, changes in profile picture and visibility):</p>
+<ul>
+<li>set <code>STATUS_NOTIFICATION</code> to <code>True</code></li>
+<li>or use the <code>-s</code> flag</li>
+<li>or toggle it via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong></li>
+</ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>-s
 </code></pre></div>
-<p>To also get email notifications about changed followers:
-- set <code>FOLLOWERS_NOTIFICATION</code> to <code>True</code>
-- or use the <code>-m</code> flag
-- or toggle it via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong></p>
+<p>To also get email notifications about changed followers:</p>
+<ul>
+<li>set <code>FOLLOWERS_NOTIFICATION</code> to <code>True</code></li>
+<li>or use the <code>-m</code> flag</li>
+<li>or toggle it via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong></li>
+</ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>-m
 </code></pre></div>
-<p>To disable sending an email on errors (enabled by default):
-- set <code>ERROR_NOTIFICATION</code> to <code>False</code>
-- or use the <code>-e</code> flag
-- or toggle it via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong></p>
+<p>To disable sending an email on errors (enabled by default):</p>
+<ul>
+<li>set <code>ERROR_NOTIFICATION</code> to <code>False</code></li>
+<li>or use the <code>-e</code> flag</li>
+<li>or toggle it via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong></li>
+</ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>-e
 </code></pre></div>
 <p>Make sure you defined your SMTP settings earlier (see <a href="../configuration/#smtp-settings">SMTP settings</a>).</p>
@@ -1675,10 +1687,12 @@
 <li>You want to track exactly who followed/unfollowed even without count changes</li>
 <li>You need comprehensive monitoring of all follower/following activity</li>
 </ul>
-<p>To enable follower churn detection:
-- set <code>FOLLOWERS_CHURN_DETECTION</code> to <code>True</code>
-- or use the <code>--followers-churn</code> flag
-- or toggle it via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong></p>
+<p>To enable follower churn detection:</p>
+<ul>
+<li>set <code>FOLLOWERS_CHURN_DETECTION</code> to <code>True</code></li>
+<li>or use the <code>--followers-churn</code> flag</li>
+<li>or toggle it via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong></li>
+</ul>
 <p><strong>Note</strong>: This feature is automatically disabled if <code>SKIP_FOLLOW_CHANGES</code> is active, as detailed tracking is not possible when follow-related reporting is suppressed. It also requires <a href="../configuration/#logged-in-mode-with-session-login">Logged-in mode</a>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--followers-churn
 </code></pre></div>
@@ -1686,15 +1700,19 @@
 <p><a id="skipping-follow-changes"></a></p>
 <h2 id="skipping-follow-changes">Skipping Follow Changes<a class="headerlink" href="#skipping-follow-changes" title="Permanent link">&para;</a></h2>
 <p>If you want to track followers/followings counts in the dashboards, but don't want to get any notifications or logs when they change, you can enable the "Skip Follow Changes" mode.</p>
-<p>When enabled:
-- <strong>Notifications</strong>: Email and Webhook alerts for follower/following changes are suppressed.
-- <strong>Reporting</strong>: Console prints and activity logs for these changes are disabled.
-- <strong>CSV Export</strong>: No "Followers Count" or "Followings Count" entries are written to the CSV file.
-- <strong>Performance</strong>: High-overhead downloading of full lists is skipped, saving bandwidth and reducing API call volume.</p>
-<p>To enable skipping follow changes:
-- set <code>SKIP_FOLLOW_CHANGES</code> to <code>True</code> in your config
-- or use the <code>--skip-follow-changes</code> flag
-- or toggle it via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong></p>
+<p>When enabled:</p>
+<ul>
+<li><strong>Notifications</strong>: Email and Webhook alerts for follower/following changes are suppressed.</li>
+<li><strong>Reporting</strong>: Console prints and activity logs for these changes are disabled.</li>
+<li><strong>CSV Export</strong>: No "Followers Count" or "Followings Count" entries are written to the CSV file.</li>
+<li><strong>Performance</strong>: High-overhead downloading of full lists is skipped, saving bandwidth and reducing API call volume.</li>
+</ul>
+<p>To enable skipping follow changes:</p>
+<ul>
+<li>set <code>SKIP_FOLLOW_CHANGES</code> to <code>True</code> in your config</li>
+<li>or use the <code>--skip-follow-changes</code> flag</li>
+<li>or toggle it via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong></li>
+</ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--skip-follow-changes
 </code></pre></div>
 <p><a id="advanced-followerfollowing-fetching"></a></p>
@@ -1724,14 +1742,18 @@
 <p><a id="routing-traffic-through-a-proxy"></a></p>
 <h2 id="routing-traffic-through-a-proxy">Routing Traffic Through a Proxy<a class="headerlink" href="#routing-traffic-through-a-proxy" title="Permanent link">&para;</a></h2>
 <p>You can route the tool's Instagram traffic (and optionally webhook traffic) through an HTTP or HTTPS proxy. This is useful for pinning the monitor to a stable egress IP or for keeping it on the same network identity over time.</p>
-<p>To enable a proxy:
-- set <code>PROXY_ENABLED</code> to <code>True</code> and <code>PROXY_URL</code> to your proxy URL
-- or use the <code>--enable-proxy</code> and <code>--proxy-url</code> flags</p>
+<p>To enable a proxy:</p>
+<ul>
+<li>set <code>PROXY_ENABLED</code> to <code>True</code> and <code>PROXY_URL</code> to your proxy URL</li>
+<li>or use the <code>--enable-proxy</code> and <code>--proxy-url</code> flags</li>
+</ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--enable-proxy<span class="w"> </span>--proxy-url<span class="w"> </span><span class="s2">&quot;http://user:pass@host:port&quot;</span>
 </code></pre></div>
-<p>Additional options:
-- <code>PROXY_CERT_PATH</code> (or <code>--proxy-cert</code>): path to a local SSL certificate to use for the proxied connection
-- <code>PROXY_WEBHOOKS</code> (or <code>--enable-proxy-webhooks</code>): also send webhook POST requests through the proxy (some proxies do not allow POST, so this is off by default)</p>
+<p>Additional options:</p>
+<ul>
+<li><code>PROXY_CERT_PATH</code> (or <code>--proxy-cert</code>): path to a local SSL certificate to use for the proxied connection</li>
+<li><code>PROXY_WEBHOOKS</code> (or <code>--enable-proxy-webhooks</code>): also send webhook POST requests through the proxy (some proxies do not allow POST, so this is off by default)</li>
+</ul>
 <p><code>PROXY_URL</code> may contain credentials, so it is treated as a secret: the tool masks it in all output and you can store it via an <a href="../configuration/#storing-secrets">environment variable or dotenv file</a>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a><span class="na">PROXY_ENABLED</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
 <a id="__codelineno-33-2" name="__codelineno-33-2" href="#__codelineno-33-2"></a><span class="na">PROXY_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;http://user:pass@host:port&quot;</span>
@@ -1851,15 +1873,19 @@
 <p>Since Instagram periodically changes the profile picture URL even when the image is the same, the tool performs a binary comparison of JPEG files to detect actual changes.</p>
 <p>On the first run, it saves the current profile picture to <code>instagram_&lt;username&gt;_profile_pic.jpg</code></p>
 <p>On each subsequent check a new image is fetched and it is compared byte-for-byte with the saved image.</p>
-<p>If a change is detected, the old picture is moved to <code>instagram_&lt;username&gt;_profile_pic_old.jpg</code> and the new one is saved to:
-- <code>instagram_&lt;username&gt;_profile_pic.jpg</code> (current)
-- <code>instagram_&lt;username&gt;_profile_pic_YYmmdd_HHMM.jpg</code> (for history)</p>
+<p>If a change is detected, the old picture is moved to <code>instagram_&lt;username&gt;_profile_pic_old.jpg</code> and the new one is saved to:</p>
+<ul>
+<li><code>instagram_&lt;username&gt;_profile_pic.jpg</code> (current)</li>
+<li><code>instagram_&lt;username&gt;_profile_pic_YYmmdd_HHMM.jpg</code> (for history)</li>
+</ul>
 <p><a id="empty-profile-picture-detection"></a></p>
 <h3 id="empty-profile-picture-detection">Empty Profile Picture Detection<a class="headerlink" href="#empty-profile-picture-detection" title="Permanent link">&para;</a></h3>
 <p>The tool also has built-in detection of empty profile pictures. Instagram does not indicate an empty user's profile image in their API; that's why the tool detects it by using an empty profile image template (which appears to be identical on a binary level for all users).</p>
-<p>To enable this:
-- download the <a href="https://raw.githubusercontent.com/misiektoja/instagram_monitor/main/instagram_profile_pic_empty.jpg">instagram_profile_pic_empty.jpg</a> file
-- place it in the directory where you run the manual script. PyPI and Docker installations already include this file. Any local file in your working directory takes <strong>priority</strong> over the bundled default.</p>
+<p>To enable this:</p>
+<ul>
+<li>download the <a href="https://raw.githubusercontent.com/misiektoja/instagram_monitor/main/instagram_profile_pic_empty.jpg">instagram_profile_pic_empty.jpg</a> file</li>
+<li>place it in the directory where you run the manual script. PyPI and Docker installations already include this file. Any local file in your working directory takes <strong>priority</strong> over the bundled default.</li>
+</ul>
 <p>Without this file, the tool will treat an empty profile picture as a regular image. For example, if a user removes their profile picture, it would be treated as a change rather than a removal.</p>
 <p><a id="detecting-collab-posts-on-private-accounts"></a></p>
 <h2 id="detecting-collab-posts-on-private-accounts">Detecting Collab Posts on Private Accounts<a class="headerlink" href="#detecting-collab-posts-on-private-accounts" title="Permanent link">&para;</a></h2>

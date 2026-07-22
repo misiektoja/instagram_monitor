@@ -1081,10 +1081,12 @@
 <p>The session login method has the added benefit of blending tool activity with regular user behavior. Interacting with Instagram via the browser every few days (scrolling, liking posts etc.) helps maintain session trust. However, avoid overlapping browser activity with tool activity, as simultaneous actions can trigger suspicious behavior flags.</p>
 <p><a id="user-agent"></a></p>
 <h4 id="user-agent">User Agent<a class="headerlink" href="#user-agent" title="Permanent link">&para;</a></h4>
-<p>It is also recommended to use the exact user agent string from the web browser you imported the session from:
-- in Firefox, type <code>about:support</code> in the address bar and copy the <code>User Agent</code> value under the <code>Application Basics</code> section
-- in Chrome, Brave or Chromium, open <code>chrome://version</code> and copy the <code>User Agent</code> value
-- set this value via the <code>USER_AGENT</code> configuration option or by using the <code>--user-agent</code> flag (since <strong>v3.0</strong>, you can also do it easily via the <strong><a href="../view-modes/#web-dashboard-mode">Web Dashboard</a></strong>)</p>
+<p>It is also recommended to use the exact user agent string from the web browser you imported the session from:</p>
+<ul>
+<li>in Firefox, type <code>about:support</code> in the address bar and copy the <code>User Agent</code> value under the <code>Application Basics</code> section</li>
+<li>in Chrome, Brave or Chromium, open <code>chrome://version</code> and copy the <code>User Agent</code> value</li>
+<li>set this value via the <code>USER_AGENT</code> configuration option or by using the <code>--user-agent</code> flag (since <strong>v3.0</strong>, you can also do it easily via the <strong><a href="../view-modes/#web-dashboard-mode">Web Dashboard</a></strong>)</li>
+</ul>
 <p>If you created the session with Instaloader instead (Option 2 above), match Instaloader's user agent rather than a browser's. Instaloader logs in with a Chrome user agent, so set <code>USER_AGENT</code> to a matching Chrome string to keep the same device consistency. You can print the exact value Instaloader uses with:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;from instaloader.instaloadercontext import default_user_agent; print(default_user_agent())&quot;</span>
 </code></pre></div>

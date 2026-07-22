@@ -879,11 +879,13 @@
 <p>Since v1.7, the tool includes a new experimental <strong>Be Human</strong> mode that makes it behave more like a real user to reduce bot detection.</p>
 <p>It is disabled by default, but you can enable it via <code>BE_HUMAN</code> configuration option, <code>--be-human</code> flag or by toggling it via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong>.</p>
 <p>It is used only with session login (Logged-in mode).</p>
-<p>After each check cycle, the tool will randomly do one or more of these harmless actions:
-- View your explore feed: pulls a single post from Instagram's explore feed
-- Open your own profile, as if tapping your avatar
-- Browse a hashtag: fetches one post from a random tag listed in <code>MY_HASHTAGS</code> configuration option
-- Look at a profile of someone you follow</p>
+<p>After each check cycle, the tool will randomly do one or more of these harmless actions:</p>
+<ul>
+<li>View your explore feed: pulls a single post from Instagram's explore feed</li>
+<li>Open your own profile, as if tapping your avatar</li>
+<li>Browse a hashtag: fetches one post from a random tag listed in <code>MY_HASHTAGS</code> configuration option</li>
+<li>Look at a profile of someone you follow</li>
+</ul>
 <p>By default it does around 5 of these actions spread over 24 hours, but you can adjust it via <code>DAILY_HUMAN_HITS</code> option.</p>
 <p>If you are interested in your human actions set <code>BE_HUMAN_VERBOSE</code> option to <code>True</code>.</p>
 <p><a id="use-the-jitter-mode"></a></p>
@@ -902,16 +904,20 @@
 <h2 id="use-hour-range-checking">Use Hour-Range Checking<a class="headerlink" href="#use-hour-range-checking" title="Permanent link">&para;</a></h2>
 <p>The tool supports limiting fetching updates to specific hours of the day, which helps reduce detection by avoiding requests during times when automated activity might be more suspicious.</p>
 <p>When hour-range checking is enabled, the tool will only fetch updates (posts, reels, stories, profile changes, followers/followings) during the configured time windows. Outside these hours, the tool will skip fetching updates but will continue running and wait for the next allowed time window.</p>
-<p>To enable this feature, set <code>CHECK_POSTS_IN_HOURS_RANGE</code> to <code>True</code> and configure the allowed hour ranges using:
-- <code>MIN_H1</code> and <code>MAX_H1</code> - first range of hours (default: 0-4, i.e., midnight to 4:59 AM)
-- <code>MIN_H2</code> and <code>MAX_H2</code> - second range of hours (default: 11-23, i.e., 11:00 AM to 11:59 PM / 23:59)</p>
+<p>To enable this feature, set <code>CHECK_POSTS_IN_HOURS_RANGE</code> to <code>True</code> and configure the allowed hour ranges using:</p>
+<ul>
+<li><code>MIN_H1</code> and <code>MAX_H1</code> - first range of hours (default: 0-4, i.e., midnight to 4:59 AM)</li>
+<li><code>MIN_H2</code> and <code>MAX_H2</code> - second range of hours (default: 11-23, i.e., 11:00 AM to 11:59 PM / 23:59)</li>
+</ul>
 <p>You can define up to two non-overlapping or overlapping ranges. To disable any range, set both MIN and MAX to 0.</p>
 <p><strong>Note</strong>: You can also enable this feature and configure the allowed hour ranges live via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong>.</p>
-<p>For example, to only allow checks during business hours (9 AM to 5 PM / 17:00), you could set:
-- <code>MIN_H1 = 9</code>
-- <code>MAX_H1 = 17</code>
-- <code>MIN_H2 = 0</code>
-- <code>MAX_H2 = 0</code></p>
+<p>For example, to only allow checks during business hours (9 AM to 5 PM / 17:00), you could set:</p>
+<ul>
+<li><code>MIN_H1 = 9</code></li>
+<li><code>MAX_H1 = 17</code></li>
+<li><code>MIN_H2 = 0</code></li>
+<li><code>MAX_H2 = 0</code></li>
+</ul>
 <p>Hours are specified in 24-hour format (0-23) and are evaluated in your configured time zone (see <a href="../configuration/#time-zone">Time Zone</a>).</p>
 <p>If you want to see verbose output about when updates are being fetched or skipped, set <code>HOURS_VERBOSE</code> to <code>True</code>. This is useful for debugging and understanding when the tool is active.</p>
 <p>This feature works particularly well when combined with reasonable polling intervals, as it ensures that even if your check interval triggers, requests will only be made during the configured time windows, making your activity pattern look more natural.</p>
