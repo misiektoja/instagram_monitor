@@ -941,6 +941,16 @@ CLI_CONFIG_PATH = None
 # To solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
 
+DOCUMENTATION_URL = "https://misiektoja.github.io/instagram_monitor"
+QUICK_START_GUIDE_URL = DOCUMENTATION_URL + "/quick-start/"
+CONFIG_FILE_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#configuration-file"
+SESSION_IMPORT_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#option-3-session-login-using-browser-cookies-recommended"
+SMTP_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#smtp-settings"
+WEBHOOK_GUIDE_URL = DOCUMENTATION_URL + "/usage/#webhook-notifications"
+PROXY_GUIDE_URL = DOCUMENTATION_URL + "/usage/#routing-traffic-through-a-proxy"
+ANTI_DETECTION_INTERVAL_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#keep-the-polling-interval-reasonable"
+ANTI_DETECTION_SESSION_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#sign-in-using-session-mode-with-browser-cookies"
+
 # Progress Bar control items
 START_TIME = 0
 NAME_COUNT = 1
@@ -1788,8 +1798,8 @@ def create_web_dashboard_app():
         if not os.path.isdir(template_dir):
             print("\n" + "*" * HORIZONTAL_LINE)
             print(f"* Error: Web Dashboard template directory not found: {template_dir}\n")
-            print(f"  Please check the WEB_DASHBOARD_TEMPLATE_DIR setting or --web-dashboard-template-dir flag")
-            print(f"  The directory must exist and contain index.html\n")
+            print("Please check the WEB_DASHBOARD_TEMPLATE_DIR setting or --web-dashboard-template-dir flag")
+            print("The directory must exist and contain index.html\n")
             print(f"* Web Dashboard will NOT be available!")
             print("*" * HORIZONTAL_LINE)
             return None
@@ -1834,15 +1844,15 @@ def create_web_dashboard_app():
     if not template_dir:
         print("\n" + "*" * HORIZONTAL_LINE)
         print(f"* Error: Web Dashboard templates not found\n")
-        print(f"  The tool searched for templates in the following locations:")
+        print("The tool searched for templates in the following locations:")
         for candidate in candidate_dirs:
-            print(f"     - {candidate}")
+            print(f"- {candidate}")
         print()
-        print(f"  To fix this, you can:")
-        print(f"    1. Ensure templates/ directory exists in the script directory")
-        print(f"    2. Set WEB_DASHBOARD_TEMPLATE_DIR in your config file")
-        print(f"    3. Use --web-dashboard-template-dir flag to specify the template directory")
-        print(f"    4. If installed via pip, ensure the package includes the templates directory\n")
+        print("To fix this, you can:")
+        print("1. Ensure templates/ directory exists in the script directory")
+        print("2. Set WEB_DASHBOARD_TEMPLATE_DIR in your config file")
+        print("3. Use --web-dashboard-template-dir flag to specify the template directory")
+        print("4. If installed via pip, ensure the package includes the templates directory\n")
         print(f"* Web Dashboard will NOT be available!")
         print("*" * HORIZONTAL_LINE)
         return None
@@ -1852,7 +1862,7 @@ def create_web_dashboard_app():
     if not os.path.isfile(index_path):
         print("\n" + "*" * HORIZONTAL_LINE)
         print(f"* Error: Template file 'index.html' not found in: {template_dir}\n")
-        print(f"  The template directory exists, but is missing the required index.html file\n")
+        print("The template directory exists but is missing the required index.html file\n")
         print(f"* Web Dashboard will NOT be available!")
         print("*" * HORIZONTAL_LINE)
         return None
@@ -4058,7 +4068,8 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         smtpObj.quit()
     except Exception as e:
         print(f"Error sending email: {e}")
-        print(colorize("info", "  To fix: verify SMTP_HOST, SMTP_PORT and SMTP_SSL, and that SMTP_USER / SMTP_PASSWORD are correct. For Gmail and similar providers use an app password, not your normal login password. Test with --send-test-email."))
+        print(colorize("info", "To fix: verify SMTP_HOST, SMTP_PORT and SMTP_SSL plus SMTP_USER / SMTP_PASSWORD. For Gmail and similar providers use an app password, not your normal login password. Test with --send-test-email."))
+        print(f"Guide: {SMTP_GUIDE_URL}")
         return 1
     return 0
 
@@ -4450,7 +4461,8 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
 
             print(f"* Webhook error: HTTP {response.status_code} - {response.text[:200]}")
             if response.status_code != 429:
-                print(colorize("info", "  To fix: check that WEBHOOK_PROVIDER matches the saved Discord or ntfy URL, then test it with --send-test-webhook."))
+                print(colorize("info", "To fix: check that WEBHOOK_PROVIDER matches the saved Discord or ntfy URL then test it with --send-test-webhook."))
+                print(f"Guide: {WEBHOOK_GUIDE_URL}")
                 return 1
 
         except (req.exceptions.RequestException, req.exceptions.ConnectionError, req.exceptions.Timeout) as e:
@@ -7779,25 +7791,30 @@ def format_error_message(e: Exception) -> str:
     return f"{error_type}: {error_str}"
 
 
-# Returns a short actionable next-step hint for a known error message, or an empty string when none applies
+# Returns the browser session import command matching the current installation
+def session_recovery_command() -> str:
+    return _firefox_import_cmd(_wizard_install_method())
+
+
+# Returns a short actionable next-step hint for a known error message or an empty string when none applies
 def error_fix_hint(error_msg: str, is_logged_in: bool = False) -> str:
     m = (error_msg or "").lower()
 
     # Rate limiting or TLS-fingerprint blocks
     if any(t in m for t in ("429", "too many requests", "wait a few minutes", "rate limit", "please wait")):
-        return "To fix: Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users. See https://misiektoja.github.io/instagram_monitor/anti-detection/."
+        return f"To fix: Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users.\nGuide: {ANTI_DETECTION_INTERVAL_GUIDE_URL}"
 
     # Challenge, checkpoint or shadowban
     if any(t in m for t in ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data")):
-        return "To fix: Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint, then re-import the session with 'instagram_monitor --import-browser-session --browser firefox'. Also raise the check interval. See https://misiektoja.github.io/instagram_monitor/anti-detection/."
+        return f"To fix: Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'. Also raise the check interval.\nGuide: {ANTI_DETECTION_SESSION_GUIDE_URL}"
 
     # Missing session file
     if "session file" in m:
-        return "To fix: no saved session was found for this account. Create one with 'instagram_monitor --import-browser-session --browser firefox' after logging in via Firefox or with 'instaloader -l <your_user>'. In the Web Dashboard you can import from the Session page."
+        return f"To fix: no saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_user>'. In the Web Dashboard you can import from the Session page.\nGuide: {SESSION_IMPORT_GUIDE_URL}"
 
     # Invalid or expired session
     if any(t in m for t in ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required")):
-        return "To fix: your Instagram session looks invalid or expired. Re-import it with 'instagram_monitor --import-browser-session --browser firefox' after logging in via Firefox or recreate it with 'instaloader -l <your_user>'. In the Web Dashboard you can re-import from the Session page."
+        return f"To fix: your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_user>'. In the Web Dashboard you can re-import from the Session page.\nGuide: {SESSION_IMPORT_GUIDE_URL}"
 
     # Profile not found
     if any(t in m for t in ("profilenotexists", "does not exist", "not found", "404")):
@@ -7808,7 +7825,7 @@ def error_fix_hint(error_msg: str, is_logged_in: bool = False) -> str:
 
     # Network or connectivity problems
     if any(t in m for t in ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl")):
-        return "To fix: this looks like a network problem. Check your internet connection (and proxy settings if --enable-proxy is set) and try again."
+        return f"To fix: this looks like a network problem. Check your internet connection and proxy settings if --enable-proxy is set then try again.\nGuide: {PROXY_GUIDE_URL}"
 
     # Deprecated GraphQL doc_id returning null data, or a temporary block
     if any(t in m for t in ("empty data for posts", "fetching post metadata failed", "not subscriptable")):
@@ -7822,7 +7839,7 @@ def print_fix_hint(error_msg: str) -> None:
     is_logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
     hint = error_fix_hint(error_msg, is_logged_in)
     if hint:
-        print(colorize("info", f"  {hint}"))
+        print(colorize("info", hint))
 
 
 # Returns True when the formatted error indicates a profile could not be found (deleted/renamed target or a flagged session masking every profile)
@@ -11465,7 +11482,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     print("Secrets go to the dotenv file. Non-secret settings go to the config file.")
     print("No-login mode is simplest. Firefox session import is recommended for full monitoring.\n")
     print("Use a dedicated Instagram account for session login mode and follow the anti-detection guidance.")
-    print("Session login guide: https://misiektoja.github.io/instagram_monitor/configuration/#logged-in-mode-with-session-login\n")
+    print(f"Session login guide: {SESSION_IMPORT_GUIDE_URL}\n")
     print(f"Detected install method: {colorize('username', method)}")
     print(f"Configuration:          {config_path}")
     print(f"Dotenv:                 {env_path}\n")
@@ -11570,7 +11587,7 @@ def _wizard_welcome(parser) -> None:
     print("Point-and-click (no command line):")
     print(colorize("section", f"    {web_prefix} --web-dashboard      then open http://127.0.0.1:8000\n"))
     print(f"Full options: {colorize('section', prefix + ' --help')}")
-    print(f"\nGuide:        {colorize('link', 'https://misiektoja.github.io/instagram_monitor/quick-start/')}\n")
+    print(f"\nGuide:        {colorize('link', QUICK_START_GUIDE_URL)}\n")
     if interactive and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
         run_setup_wizard()
 
@@ -11584,16 +11601,16 @@ def _wizard_should_offer_first_run(arguments, configured_targets, web_dashboard_
 def _doctor_line(status: str, label: str, detail: str = "") -> None:
     marks = {"ok": ("[ OK ]", "boolean_true"), "warn": ("[WARN]", "warning"), "fail": ("[FAIL]", "error"), "info": ("[ -- ]", "info")}
     mark, theme = marks.get(status, ("[ -- ]", "info"))
-    print(f"  {colorize(theme, mark)} {label}")
+    print(f"{colorize(theme, mark)} {label}")
     if detail:
-        print(f"         {detail}")
+        print(detail)
 
 
 # Prints an inline 'doing X...' status that the upcoming result line overwrites, on interactive terminals only
 def _doctor_progress(text: str) -> None:
     if not sys.stdout.isatty():
         return
-    line = f"  {text} ..."
+    line = f"{text} ..."
     _doctor_progress.width = len(line)  # type: ignore[attr-defined]
     sys.stdout.write("\r" + colorize("info", line))
     sys.stdout.flush()
@@ -11758,7 +11775,7 @@ def run_doctor(targets) -> int:
             _doctor_line("fail", "Instagram not reachable or blocked", msg)
             hint = error_fix_hint(msg, logged_in)
             if hint:
-                print(f"         {hint}")
+                print(hint)
 
     # Targets
     print(colorize("section", "\nTargets"))
@@ -12396,7 +12413,8 @@ def run_main():
 
     if not cfg_path and CLI_CONFIG_PATH:
         print(f"* Error: Config file '{CLI_CONFIG_PATH}' does not exist")
-        print(colorize("info", "  To fix: check the path passed to --config-file, or create a config with 'instagram_monitor --setup' or 'instagram_monitor --generate-config instagram_monitor.conf'."))
+        print(colorize("info", "To fix: check the path passed to --config-file or create a config with 'instagram_monitor --setup' or 'instagram_monitor --generate-config instagram_monitor.conf'."))
+        print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
         sys.exit(1)
 
     if cfg_path:
@@ -12424,13 +12442,15 @@ def run_main():
         except SyntaxError as e:
             print(f"* Error loading config file '{cfg_path}':")
             if e.lineno:
-                print(f"    Line {e.lineno}: {(e.text or '').rstrip()}")
-            print(f"    {e.msg}")
-            print(colorize("info", "  To fix: check that line - text values need matching quotes and Windows paths need forward slashes (/) or doubled backslashes (\\\\). Or regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'."))
+                print(f"Line {e.lineno}: {(e.text or '').rstrip()}")
+            print(f"Parser: {e.msg}")
+            print(colorize("info", "To fix: check that line. Text values need matching quotes and Windows paths need forward slashes (/) or doubled backslashes (\\\\). You can also regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'."))
+            print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
             sys.exit(1)
         except Exception as e:
             print(f"* Error loading config file '{cfg_path}': {type(e).__name__}: {e}")
-            print(colorize("info", "  To fix: verify the file is readable and contains valid settings. You can regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'."))
+            print(colorize("info", "To fix: verify the file is readable and contains valid settings. You can regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'."))
+            print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
             sys.exit(1)
 
     if args.output_dir:
