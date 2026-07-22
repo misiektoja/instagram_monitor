@@ -10,7 +10,7 @@ Choose either the Python path or the container path.
 **Python path**:
 
 - [Python](https://www.python.org/downloads/) 3.9 or higher
-- The installer adds the required Python libraries automatically
+- Core libraries: `instaloader`, `requests`, `curl_cffi`, `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich`, `flask`, `jinja2`
 - `pycookiecheat` is optional and is needed only to import cookies from Chrome, Brave or Chromium
 
 **Container path** (Python is included in the image):
