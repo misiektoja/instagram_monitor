@@ -7,7 +7,7 @@ First complete one method on the [Installation](installation.md) page. Then use 
 
 For a local install, the wizard can check the setup and start monitoring immediately. In a container, it prints the next Docker or Docker Compose commands to run.
 
-Before using Docker Compose on Linux, run the two `export` commands under [Install with Docker Compose](installation.md#docker-compose). They pass your numeric user and group IDs to the container so files created in the current directory belong to you. Docker Desktop users on macOS or Windows can skip this step.
+Before using Docker Compose on a native Linux container engine, run the two `export` commands under [Install with Docker Compose](installation.md#docker-compose). They pass your numeric user and group IDs to the container so files created in the current directory belong to you. VM-backed Docker-compatible runtimes on macOS and Windows normally do not need this step.
 
 Use the command that matches how you run the tool:
 
