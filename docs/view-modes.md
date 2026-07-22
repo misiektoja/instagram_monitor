@@ -87,7 +87,7 @@ instagram_monitor --web-dashboard
 
 The Web Dashboard requires `flask`, which is included in normal installations. If it is missing, Instagram Monitor disables the dashboard but keeps console monitoring active.
 
-Docker Compose exposes the default dashboard only at `127.0.0.1` on the host. Use `docker compose up` if setup enabled the Web Dashboard. For a one-off Compose command, add `--service-ports`:
+Docker Compose exposes the default dashboard only at `127.0.0.1` on the host. Use `docker compose up --no-log-prefix` if setup enabled the Web Dashboard. For a one-off Compose command, add `--service-ports`:
 
 ```sh
 docker compose run --rm --service-ports instagram_monitor target1 target2 --web-dashboard
