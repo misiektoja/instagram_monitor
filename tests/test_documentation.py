@@ -22,6 +22,9 @@ def test_installation_docs_cover_all_delivery_and_upgrade_paths():
     assert "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt" in installation
     assert "pip install --upgrade -r requirements.txt" in installation
     assert "docker build --pull --tag instagram-monitor:local ." in installation
+    assert "Plain `docker run` reuses a cached image" in installation
+    assert "docker pull misiektoja/instagram-monitor:latest" in installation
+    assert "docker compose pull" in installation
 
 
 # Verifies manual upgrade guidance repeats linked files and direct download commands
@@ -63,3 +66,9 @@ def test_quick_start_links_both_authentication_modes():
     quick_start = read_asset("docs/quick-start.md")
     assert "[No-Login Mode](configuration.md#no-login-mode-without-session-login)" in quick_start
     assert "[Logged-In Mode](configuration.md#logged-in-mode-with-session-login)" in quick_start
+
+
+# Verifies Compose smoke checks cannot replace the locally built image with a registry image
+def test_container_smoke_checks_disable_pulls():
+    workflow = read_asset(".github/workflows/tests.yml")
+    assert workflow.count("docker compose -f docker-compose.yml run --rm --pull=never instagram_monitor") == 2
