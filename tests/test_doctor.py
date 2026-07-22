@@ -37,6 +37,7 @@ class TestDoctorLine:
         out = capsys.readouterr().out
         assert "the-label" in out
         assert "the-detail" in out
+        assert not any(line.startswith((" ", "\t")) for line in out.splitlines())
 
 
 class TestDoctorProgress:
@@ -46,7 +47,7 @@ class TestDoctorProgress:
         monkeypatch.setattr(im_module.sys, "stdout", stream)
         monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
         im_module._doctor_progress("Checking authentication")
-        line = "  Checking authentication ..."
+        line = "Checking authentication ..."
         assert stream.getvalue() == "\r" + line
         im_module._doctor_progress_clear()
         assert stream.getvalue() == "\r" + line + "\r" + (" " * len(line)) + "\r"
