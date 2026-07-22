@@ -128,7 +128,7 @@ INSTAGRAM_MONITOR_UID=1000
 INSTAGRAM_MONITOR_GID=1000
 ```
 
-The values above are only examples. Use the numbers returned on your system. The setup wizard keeps unrelated entries in this file. VM-backed Docker-compatible runtimes on macOS and Windows normally handle bind-mount ownership, so users on those systems can usually skip this step. If `/data` is not writable, set the host user and group IDs as shown above.
+The values above are only examples. Use the numbers returned on your system. The setup wizard keeps unrelated entries in this file. Docker-compatible runtimes on macOS and Windows normally handle bind-mount ownership, so users on those systems can usually skip this step. If `/data` is not writable, set the host user and group IDs as shown above.
 
 Compose makes the current host directory available as `/data` inside the container. This is called a bind mount. The setup wizard creates `instagram_monitor.conf` and `.env` there, so the files remain on your computer when the container is replaced. A separate Docker volume named `instagram_monitor_session` keeps the saved Instagram login. Continue with [Quick Start](quick-start.md#new-here-run-the-setup-wizard).
 
