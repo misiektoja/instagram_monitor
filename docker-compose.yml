@@ -1,7 +1,7 @@
 # Docker Compose setup for instagram_monitor
 #
 # Quick start:
-#   1. On native Linux export the host identity first (Docker Desktop users skip this):
+#   1. On native Linux export the host identity first (VM-backed runtime users on macOS or Windows normally skip this):
 #        export INSTAGRAM_MONITOR_UID="$(id -u)"
 #        export INSTAGRAM_MONITOR_GID="$(id -g)"
 #   2. Generate a config (the wizard configures the dashboard for container access):
