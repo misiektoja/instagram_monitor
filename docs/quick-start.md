@@ -53,7 +53,7 @@ The table uses the PyPI command. If you chose another installation, use its [com
 | --- | --- |
 | Set up Instagram Monitor for the first time | Use the setup command for your installation above |
 | Try public monitoring without a login | `instagram_monitor <target_insta_user>` |
-| Start targets saved in `TARGET_USERNAMES` | `instagram_monitor --config-file instagram_monitor.conf` or `docker compose up` |
+| Start targets saved in `TARGET_USERNAMES` | `instagram_monitor --config-file instagram_monitor.conf` or `docker compose up --no-log-prefix` |
 | Start a browser control panel without targets | `instagram_monitor --web-dashboard` |
 | Monitor several accounts | `instagram_monitor target_1 target_2` or `instagram_monitor --targets target_1,target_2` |
 | Check the selected login, connectivity and targets | `instagram_monitor --doctor` |
