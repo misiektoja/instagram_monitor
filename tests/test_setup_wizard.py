@@ -124,7 +124,7 @@ class TestPromptWording:
             assert "Setup Wizard\n\nThis asks a few questions" in output
             assert "Secrets go to the dotenv file. Non-secret settings go to the config file." in output
             assert "No-login mode is simplest. Firefox session import is recommended for full monitoring." in output
-            assert "Session login guide: https://misiektoja.github.io/instagram_monitor/configuration/#logged-in-mode-with-session-login" in output
+            assert f"Session login guide: {im_module.SESSION_IMPORT_GUIDE_URL}" in output
             assert f"Detected install method: manual\nConfiguration:          {config_path.resolve()}\nDotenv:                 {env_path.resolve()}\n" in output
 
     def test_webhook_section_names_discord_and_ntfy(self, im_module, monkeypatch):
