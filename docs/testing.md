@@ -1,6 +1,6 @@
 # Testing
 
-The project ships an offline test suite under [tests/](https://github.com/misiektoja/instagram_monitor/tree/main/tests/) built with [pytest](https://docs.pytest.org/). The tests exercise the pure and offline-safe logic (config parsing, time/timespan formatting, scheduling windows, privacy substitutions, webhook/notification helpers, follower diffing, CSV writing, session-flag detection and user-agent generation) and never reach Instagram. The few functions that would normally hit the network are stubbed.
+The [tests directory](https://github.com/misiektoja/instagram_monitor/tree/main/tests/) contains a [pytest](https://docs.pytest.org/) suite for contributors. It checks configuration parsing, time formatting, scheduling, privacy substitutions, notifications, follower comparisons, CSV output, session error handling and user agent generation. The tests do not contact Instagram. Network functions are replaced with local test doubles.
 
 Install the test dependencies and run the suite:
 
@@ -10,6 +10,6 @@ pip install -e '.[test]'
 python -m pytest
 ```
 
-The same suite runs automatically on pull requests and on pushes to the `main` and `dev` branches via GitHub Actions across all supported Python versions (see [.github/workflows/tests.yml](https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/tests.yml)), and must pass before a release is published to PyPI or Docker Hub.
+GitHub Actions runs the same suite for pull requests and pushes to `main` or `dev`. It tests every supported Python version. See the [test workflow](https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/tests.yml). The suite must pass before a release is published to PyPI or Docker Hub.
 
-Online tests that log into Instagram are intentionally out of scope, as automated logins risk triggering challenges or account suspension.
+The suite intentionally excludes tests that sign in to Instagram because automated test logins could trigger security checks or suspension.
