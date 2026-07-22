@@ -22,7 +22,7 @@ def test_installation_docs_cover_all_delivery_and_upgrade_paths():
     assert "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt" in installation
     assert "pip install --upgrade -r requirements.txt" in installation
     assert "docker build --pull --tag instagram-monitor:local ." in installation
-    assert "Plain `docker run` reuses a cached image" in installation
+    assert "Docker uses the copy of the image already stored on your computer" in installation
     assert "docker pull misiektoja/instagram-monitor:latest" in installation
     assert "docker compose pull" in installation
 
@@ -49,8 +49,8 @@ def test_usage_docs_cover_targets_and_install_commands():
 def test_configuration_docs_explain_generation_and_precedence():
     configuration = read_asset("docs/configuration.md")
     assert "writes the template directly as UTF-8" in configuration
-    assert "creates a timestamped backup first" in configuration
-    assert "Positional usernames and `--targets` values are combined" in configuration
+    assert "creates a backup whose name includes the current date and time" in configuration
+    assert "Usernames written directly after the command and usernames passed through `--targets` are combined" in configuration
 
 
 # Verifies quick-start guidance includes direct Docker commands for desktop and Linux hosts
