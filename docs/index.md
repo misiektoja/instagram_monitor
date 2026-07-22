@@ -28,7 +28,7 @@ instagram_monitor --setup
 
 Docker Compose
 
-On native Linux export your host identity first. Docker Desktop users on macOS or Windows can skip the two `export` commands.
+On Linux, the container needs your numeric user ID and group ID so files it creates in the current directory belong to you instead of `root`. Run the two `export` commands in the same terminal before the Compose commands. Docker Desktop handles file ownership on macOS and Windows, so users on those systems can skip both `export` commands.
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
@@ -48,9 +48,11 @@ docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/hom
 docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --config-file /data/instagram_monitor.conf --env-file /data/.env
 ```
 
-The Docker Desktop command uses macOS shell or Windows PowerShell syntax. In Windows Command Prompt replace `${PWD}` with `%cd%`.
+The first command starts the setup wizard. The second starts monitoring with the files created by the wizard. Both commands keep configuration and downloaded files in the current directory. They keep the saved Instagram login in the Docker volume named `instagram_monitor_session`.
 
-On Linux, pass your host user and group so the container can write to the current directory:
+These commands use macOS shell or Windows PowerShell syntax. In Windows Command Prompt replace `${PWD}` with `%cd%`.
+
+On Linux, `--user "$(id -u):$(id -g)"` runs the container with your numeric user and group IDs. This lets the container write files that your host account can edit:
 
 ```sh
 docker pull misiektoja/instagram-monitor:latest
