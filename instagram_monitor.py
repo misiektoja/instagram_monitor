@@ -339,6 +339,7 @@ DOTENV_FILE = ""
 # Default Firefox cookie directories by OS
 FIREFOX_MACOS_COOKIE = "~/Library/Application Support/Firefox/Profiles/*/cookies.sqlite"
 FIREFOX_WINDOWS_COOKIE = "~/AppData/Roaming/Mozilla/Firefox/Profiles/*/cookies.sqlite"
+# Native Linux path, with Snap and Flatpak paths discovered automatically too
 FIREFOX_LINUX_COOKIE = "~/.mozilla/firefox/*/cookies.sqlite"
 
 # Base name for the log file. Output will be saved to target-specific log files.
@@ -5800,19 +5801,30 @@ def get_real_reel_code(bot: instaloader.Instaloader, username: str) -> Optional[
         return None
 
 
+# Returns Firefox cookie patterns for the active platform including Linux package variants
+def firefox_cookie_patterns():
+    selected_system = system()
+    configured_pattern = {"Windows": FIREFOX_WINDOWS_COOKIE, "Darwin": FIREFOX_MACOS_COOKIE}.get(selected_system, FIREFOX_LINUX_COOKIE)
+    patterns = [configured_pattern]
+    if selected_system == "Linux":
+        patterns.extend(("~/snap/firefox/common/.mozilla/firefox/*/cookies.sqlite", "~/.var/app/org.mozilla.firefox/.mozilla/firefox/*/cookies.sqlite"))
+    return tuple(dict.fromkeys(patterns))
+
+
 # Lists available Firefox profiles with their directory, friendly name and cookies.sqlite path
 def list_firefox_profiles():
-    default_cookiefile = {
-        "Windows": FIREFOX_WINDOWS_COOKIE,
-        "Darwin": FIREFOX_MACOS_COOKIE,
-    }.get(system(), FIREFOX_LINUX_COOKIE)
-
     profiles = []
-    for path in glob(expanduser(default_cookiefile)):
-        profile_dir = basename(dirname(path))
-        # Firefox profile dirs look like "<random>.default-release"; the part after the first dot is the friendly name
-        friendly = profile_dir.split(".", 1)[1] if "." in profile_dir else profile_dir
-        profiles.append({"dir": profile_dir, "name": friendly, "path": path})
+    seen_paths = set()
+    for cookie_pattern in firefox_cookie_patterns():
+        for path in sorted(glob(expanduser(cookie_pattern))):
+            normalized_path = os.path.realpath(path)
+            if normalized_path in seen_paths:
+                continue
+            seen_paths.add(normalized_path)
+            profile_dir = basename(dirname(path))
+            # Firefox profile dirs look like "<random>.default-release"; the part after the first dot is the friendly name
+            friendly = profile_dir.split(".", 1)[1] if "." in profile_dir else profile_dir
+            profiles.append({"dir": profile_dir, "name": friendly, "path": path})
     return profiles
 
 
