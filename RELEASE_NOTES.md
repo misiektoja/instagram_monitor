@@ -18,7 +18,6 @@
 - **BUGFIX:** Improved Docker and Compose support for Linux user mappings, persistent sessions and saved interface choices
 - **SECURITY:** Limited Docker Web Dashboard publishing to the host loopback interface
 
-
 # Changes in 3.5 (01 Jul 2026)
 
 Version **3.5** focuses on making the tool easier to use, configure and recover when something goes wrong, especially for non-technical users who asked for a simpler path. It brings guided setup, broader browser-session import, clearer diagnostics and friendlier recovery hints so first runs and everyday troubleshooting require less manual digging.
