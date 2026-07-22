@@ -198,6 +198,7 @@ The session login method has the added benefit of blending tool activity with re
 #### User Agent
 
 It is also recommended to use the exact user agent string from the web browser you imported the session from:
+
 - in Firefox, type `about:support` in the address bar and copy the `User Agent` value under the `Application Basics` section
 - in Chrome, Brave or Chromium, open `chrome://version` and copy the `User Agent` value
 - set this value via the `USER_AGENT` configuration option or by using the `--user-agent` flag (since **v3.0**, you can also do it easily via the **[Web Dashboard](view-modes.md#web-dashboard-mode)**)
