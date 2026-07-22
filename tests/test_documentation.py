@@ -72,3 +72,13 @@ def test_quick_start_links_both_authentication_modes():
 def test_container_smoke_checks_disable_pulls():
     workflow = read_asset(".github/workflows/tests.yml")
     assert workflow.count("docker compose -f docker-compose.yml run --rm --pull=never instagram_monitor") == 2
+
+
+# Verifies Compose loads mounted secrets and attached examples suppress service prefixes
+def test_compose_defaults_load_dotenv_and_suppress_attached_prefixes():
+    compose = read_asset("docker-compose.yml")
+    assert 'command: ["--env-file", "/data/.env"]' in compose
+    assert "docker compose up --no-log-prefix" in compose
+    for relative_path in ("README.md", "docs/index.md", "docs/quick-start.md", "docs/installation.md", "docs/usage.md", "docs/view-modes.md"):
+        assert "docker compose up --no-log-prefix" in read_asset(relative_path)
+    assert "docker compose logs -f --no-log-prefix" in read_asset("docs/usage.md")
