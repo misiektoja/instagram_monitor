@@ -37,7 +37,26 @@ class TestErrorFixHint:
         assert "challenge" in im_module.error_fix_hint(msg)
 
     # Session recovery hints use the unified browser import command
-    def test_session_hints_use_browser_import_command(self, im_module):
+    def test_session_hints_use_browser_import_command(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "pip")
         hint = im_module.error_fix_hint("ConnectionException: Login required, redirected")
         assert "--import-browser-session --browser firefox" in hint
         assert "--import-firefox-session" not in hint
+        assert im_module.SESSION_IMPORT_GUIDE_URL in hint
+
+    # Manual script recovery uses the matching portable command
+    def test_session_hints_match_manual_install(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
+        monkeypatch.setattr(im_module.sys, "executable", "/usr/bin/python3")
+        hint = im_module.error_fix_hint("ConnectionException: Login required, redirected")
+        assert "python3 instagram_monitor.py --import-browser-session --browser firefox" in hint
+        assert "instagram_monitor --import-browser-session" not in hint
+
+    # Printed recovery hints have no leading spaces or tabs
+    def test_printed_hint_is_flush_left(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+        im_module.print_fix_hint("ConnectionException: 429 Too Many Requests")
+        output = capsys.readouterr().out
+        assert "\nGuide:" in output
+        assert not any(line.startswith((" ", "\t")) for line in output.splitlines())
