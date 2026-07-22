@@ -70,7 +70,7 @@ Track a public account in [No-Login Mode](configuration.md#no-login-mode-without
 instagram_monitor <target_insta_user>
 ```
 
-For stories, reels and detailed follower changes, log in to Instagram in a supported browser then import the session. Firefox is the recommended local path:
+For stories, reels and detailed follower changes, use [Logged-In Mode](configuration.md#logged-in-mode-with-session-login). Log in to Instagram in a supported browser then import the session. Firefox is the recommended local path:
 
 ```sh
 instagram_monitor --import-browser-session --browser firefox
