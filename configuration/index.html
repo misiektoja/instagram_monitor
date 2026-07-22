@@ -938,7 +938,9 @@
 <p><a id="configuration-file"></a></p>
 <h2 id="configuration-file">Configuration File<a class="headerlink" href="#configuration-file" title="Permanent link">&para;</a></h2>
 <p>Most settings can be configured via command-line arguments.</p>
-<p>If you want to have it stored persistently, generate a default config template and save it to a file named <code>instagram_monitor.conf</code>:</p>
+<p>If you want to have it stored persistently, you can store them in a configuration file.</p>
+<p>For a guided configuration, it is recommended to use <code>instagram_monitor --setup</code>. The setup wizard validates the generated settings before saving them. If you confirm replacement of an existing configuration, it creates a timestamped backup first.</p>
+<p>If you want to edit the file manually, generate a default config template and save it to a file named <code>instagram_monitor.conf</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># On macOS, Linux or Windows Command Prompt (cmd.exe)</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>instagram_monitor<span class="w"> </span>--generate-config<span class="w"> </span>&gt;<span class="w"> </span>instagram_monitor.conf
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
@@ -949,7 +951,6 @@
 <p><strong>IMPORTANT</strong>: On <strong>Windows PowerShell</strong>, using redirection (<code>&gt;</code>) can cause the file to be encoded in UTF-16, which will lead to "null bytes" errors when running the tool. It is highly recommended to provide the filename directly as an argument to <code>--generate-config</code> to ensure UTF-8 encoding.</p>
 </blockquote>
 <p>When you include the filename, Instagram Monitor writes the template directly as UTF-8. This avoids PowerShell changing the file encoding during redirection.</p>
-<p>For a guided configuration, use <code>instagram_monitor --setup</code> instead. The setup wizard validates the generated settings before saving them. If you confirm replacement of an existing configuration, it creates a timestamped backup first.</p>
 <p>Edit the <code>instagram_monitor.conf</code> file and change any desired configuration options (detailed comments are provided for each).</p>
 <p>Without <code>--config-file</code>, Instagram Monitor uses the first configuration it finds in this order:</p>
 <ol>
