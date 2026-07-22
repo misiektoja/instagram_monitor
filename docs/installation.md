@@ -114,7 +114,7 @@ docker compose run --rm instagram_monitor --version
 
 You can also download [docker-compose.yml](https://github.com/misiektoja/instagram_monitor/blob/main/docker-compose.yml) in a browser or use the file from a cloned repository.
 
-On Linux, the container does not automatically know which host user should own new files. Export your numeric user ID and group ID so configuration, logs and downloads created by the container belong to your account instead of `root`:
+On a native Linux container engine, the container does not automatically know which host user should own new files. Export your numeric user ID and group ID so configuration, logs and downloads created by the container belong to your account instead of `root`:
 
 ```sh
 export INSTAGRAM_MONITOR_UID="$(id -u)"
@@ -128,7 +128,7 @@ INSTAGRAM_MONITOR_UID=1000
 INSTAGRAM_MONITOR_GID=1000
 ```
 
-The values above are only examples. Use the numbers returned on your system. The setup wizard keeps unrelated entries in this file. Docker Desktop normally handles file ownership on macOS and Windows, so users on those systems can skip this step.
+The values above are only examples. Use the numbers returned on your system. The setup wizard keeps unrelated entries in this file. VM-backed Docker-compatible runtimes on macOS and Windows normally handle bind-mount ownership, so users on those systems can usually skip this step. If `/data` is not writable, set the host user and group IDs as shown above.
 
 Compose makes the current host directory available as `/data` inside the container. This is called a bind mount. The setup wizard creates `instagram_monitor.conf` and `.env` there, so the files remain on your computer when the container is replaced. A separate Docker volume named `instagram_monitor_session` keeps the saved Instagram login. Continue with [Quick Start](quick-start.md#new-here-run-the-setup-wizard).
 
@@ -144,9 +144,9 @@ docker run --rm misiektoja/instagram-monitor:latest --version
 
 Docker uses the copy of the image already stored on your computer. Run `docker pull` again when you want to upgrade. Normal monitoring commands do not download a newer image automatically.
 
-Normal runs make the current directory available as `/data` in the container. Configuration and output written there remain on the host after the temporary container stops. The Docker volume named `instagram_monitor_session` keeps the saved Instagram login. On Linux, the command also passes your numeric user and group IDs so new files belong to you. [Quick Start](quick-start.md#new-here-run-the-setup-wizard) shows the complete commands for Docker Desktop and Linux.
+Normal runs make the current directory available as `/data` in the container. Configuration and output written there remain on the host after the temporary container stops. The Docker volume named `instagram_monitor_session` keeps the saved Instagram login. On a native Linux container engine, the command also passes your numeric user and group IDs so new files belong to you. [Quick Start](quick-start.md#new-here-run-the-setup-wizard) shows the complete commands for macOS shells, Windows PowerShell and native Linux engines.
 
-Docker Desktop examples use `${PWD}` in macOS shells and Windows PowerShell. In Windows Command Prompt use `%cd%` for the current directory. Linux examples use `$PWD` and add the host user mapping.
+The macOS shell and Windows PowerShell examples use `${PWD}`. In Windows Command Prompt use `%cd%` for the current directory. Native Linux examples use `$PWD` and add the host user mapping.
 
 The `:z` suffix lets Docker relabel the mounted directory on hosts that use SELinux. If your Docker-compatible runtime reports that `:z` is invalid, remove only `:z` and keep the rest of the mount.
 
