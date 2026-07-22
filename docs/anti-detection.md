@@ -2,77 +2,75 @@
 
 As mentioned earlier it is highly recommended to use a dedicated Instagram account when using this tool in session login mode. While the risk of account suspension is generally low (in practice, accounts often stay active long-term), Instagram may still flag it as an automated tool. This can lead to challenges presented by Instagram that must be dismissed manually.
 
-To minimize any chance of detection, make sure to follow the best practices outlined below.
+Use a separate account if losing access to your main account would be unacceptable. The practices below may reduce the risk but they are not guarantees.
 
 <a id="sign-in-using-session-mode-with-browser-cookies"></a>
 ## Sign In Using Session Mode with Browser Cookies
 
-Use your web browser (Firefox, Chrome, Brave or Chromium) to log in, ensuring the session looks natural and consistent to Instagram. Follow instructions described [here](configuration.md#option-3-session-login-using-browser-cookies-recommended)
+Log in through a supported browser (Firefox, Chrome, Brave or Chromium) and import that saved session instead of sending the password on every start. Follow [Session Login Using Browser Cookies](configuration.md#option-3-session-login-using-browser-cookies-recommended).
 
 <a id="set-the-correct-user-agent"></a>
 ## Set the Correct User-Agent
 
-Always pass the exact user agent string from the web browser you imported the session from by using `USER_AGENT` configuration option or the `--user-agent` flag. This helps maintain device consistency during automated actions. Follow instructions described [here](configuration.md#user-agent)
+Set `USER_AGENT` or `--user-agent` to the value reported by the browser used for the import. This keeps the browser identity in the requests consistent with the imported session. Follow [User Agent](configuration.md#user-agent).
 
 <a id="use-the-human-mode"></a>
 ## Use the Human Mode
 
-Since v1.7, the tool includes a new experimental **Be Human** mode that makes it behave more like a real user to reduce bot detection.
+Experimental **Be Human** mode adds a small number of feed or profile requests between normal monitoring checks so it behaves more like a real user to reduce bot detection.
 
-It is disabled by default, but you can enable it via `BE_HUMAN` configuration option, `--be-human` flag or by toggling it via the **Settings** menu in the **Web Dashboard**.
+It is disabled by default. Enable it through `BE_HUMAN`, the `--be-human` option or the **Settings** page in the Web Dashboard.
 
-It is used only with session login (Logged-in mode).
+It works only in [Logged-In Mode](configuration.md#logged-in-mode-with-session-login).
 
-After each check cycle, the tool will randomly do one or more of these harmless actions:
+After a check cycle, the tool may perform one or more of these requests:
 
-- View your explore feed: pulls a single post from Instagram's explore feed
-- Open your own profile, as if tapping your avatar
-- Browse a hashtag: fetches one post from a random tag listed in `MY_HASHTAGS` configuration option
-- Look at a profile of someone you follow
+- fetch one post from the Explore feed
+- open the session account's profile
+- fetch one post from a tag listed in `MY_HASHTAGS`
+- open the profile of an account followed by the session account
 
-By default it does around 5 of these actions spread over 24 hours, but you can adjust it via `DAILY_HUMAN_HITS` option.
+By default, it performs about five of these actions over 24 hours. Change the limit with `DAILY_HUMAN_HITS`.
 
-If you are interested in your human actions set `BE_HUMAN_VERBOSE` option to `True`.
+Set `BE_HUMAN_VERBOSE = True` to log each action.
 
 <a id="use-the-jitter-mode"></a>
 ## Use the Jitter Mode
 
-Since v1.7, the tool allows to force every HTTP call made by Instaloader to go through a built-in jitter/back-off layer to look more human.
+Jitter mode adds a random delay of 0.8 to 3 seconds before each Instaloader request. It also retries HTTP 429 responses and checkpoint challenges after increasingly long waits of about 60, 120 and 240 seconds.
 
-This adds random delay (0.8-3 s) before each request and automatically retries on Instagram's 429 "too many requests" or checkpoint challenges, with exponential back-off (60 s → 120 s → 240 s) and a little extra jitter.
+The extra waits make monitoring slower. They may help with temporary rate limits but they do not guarantee that Instagram will accept the requests.
 
-This significantly reduces detection risk, but also makes the tool slower.
+Enable it through `ENABLE_JITTER` or `--enable-jitter`.
 
-You can enable this feature via `ENABLE_JITTER` configuration option or `--enable-jitter` flag.
-
-If you want to see verbose output for HTTP jitter/back-off wrappers set `JITTER_VERBOSE` option to `True`.
+Set `JITTER_VERBOSE = True` to log each delayed request and retry.
 
 <a id="keep-the-polling-interval-reasonable"></a>
 ## Keep the Polling Interval Reasonable
 
-Avoid setting the polling interval (`INSTA_CHECK_INTERVAL` option or `-c` flag) too aggressively. Use a minimum of 1 hour - longer is better. For example, I set it to 12 hours on test accounts, resulting in only 2 checks per day.
+The polling interval controls how long the tool waits between checks. Use at least one hour through `INSTA_CHECK_INTERVAL` or `-c 3600`. A longer interval sends fewer requests. There is no interval that guarantees protection from limits.
 
-Also consider to randomize the check interval, as explained [here](usage.md#check-intervals).
+Instagram Monitor randomizes the interval by default. See [Check Intervals](usage.md#check-intervals).
 
-**Important**: When monitoring multiple users in a single process, the effective request rate is multiplied by the number of targets. For example, monitoring 5 users with a 1-hour interval means 5 requests per hour. To maintain the same per-account request rate, increase the check interval proportionally. If you normally use 1 hour for a single user, consider using 5 hours (or more) when monitoring 5 users. The tool automatically staggers requests between targets, but the overall request frequency should still be adjusted based on the total number of monitored users.
+Each target adds requests. Five targets checked every hour create about five times the target-check traffic of one target checked every hour. To keep a similar total rate, increase the interval as you add targets. The tool spreads target checks across the interval but does not reduce the total number of checks.
 
 <a id="use-hour-range-checking"></a>
 ## Use Hour-Range Checking
 
-The tool supports limiting fetching updates to specific hours of the day, which helps reduce detection by avoiding requests during times when automated activity might be more suspicious.
+Hour-range checking limits Instagram requests to selected parts of the day. It can reduce the total request count and keep requests within hours you choose.
 
-When hour-range checking is enabled, the tool will only fetch updates (posts, reels, stories, profile changes, followers/followings) during the configured time windows. Outside these hours, the tool will skip fetching updates but will continue running and wait for the next allowed time window.
+Inside the allowed windows, the tool checks posts, reels, stories, profile details and follower or following data. Outside them, the process stays running but waits without fetching those updates.
 
 To enable this feature, set `CHECK_POSTS_IN_HOURS_RANGE` to `True` and configure the allowed hour ranges using:
 
-- `MIN_H1` and `MAX_H1` - first range of hours (default: 0-4, i.e., midnight to 4:59 AM)
-- `MIN_H2` and `MAX_H2` - second range of hours (default: 11-23, i.e., 11:00 AM to 11:59 PM / 23:59)
+- `MIN_H1` and `MAX_H1` set the first range. The default `0` to `4` means midnight through 4:59 AM
+- `MIN_H2` and `MAX_H2` set the second range. The default `11` to `23` means 11:00 AM through 11:59 PM
 
-You can define up to two non-overlapping or overlapping ranges. To disable any range, set both MIN and MAX to 0.
+You can define one or two ranges. The ranges may overlap. To disable a range, set both its `MIN` and `MAX` value to `0`.
 
 **Note**: You can also enable this feature and configure the allowed hour ranges live via the **Settings** menu in the **Web Dashboard**.
 
-For example, to only allow checks during business hours (9 AM to 5 PM / 17:00), you could set:
+For example, use these values to allow checks from 9:00 AM through 5:59 PM:
 
 - `MIN_H1 = 9`
 - `MAX_H1 = 17`
@@ -81,23 +79,21 @@ For example, to only allow checks during business hours (9 AM to 5 PM / 17:00), 
 
 Hours are specified in 24-hour format (0-23) and are evaluated in your configured time zone (see [Time Zone](configuration.md#time-zone)).
 
-If you want to see verbose output about when updates are being fetched or skipped, set `HOURS_VERBOSE` to `True`. This is useful for debugging and understanding when the tool is active.
+Set `HOURS_VERBOSE = True` to log when a check is allowed or skipped.
 
-This feature works particularly well when combined with reasonable polling intervals, as it ensures that even if your check interval triggers, requests will only be made during the configured time windows, making your activity pattern look more natural.
+The polling interval still applies inside each allowed window. A scheduled check outside a window waits for a later allowed time.
 
 <a id="do-not-monitor-too-many-users"></a>
 ## Do Not Monitor Too Many Users
 
-It is recommended to limit the number of users monitored by a single account, especially if they post frequent updates. When using multi-user monitoring (monitoring multiple users in one process), keep in mind that the total request volume increases with each additional target. In some cases, it may be best to create a separate account for additional users and even run it from a different IP address to reduce the risk of detection.
+Limit the number of targets monitored through one session account. Each target increases the total number of Instagram requests. If you need many targets, split them into smaller groups with longer intervals. Separate session accounts may also be appropriate but each account remains subject to Instagram's limits.
 
 <a id="use-only-needed-functionality"></a>
 ## Use Only Needed Functionality
 
-Frequent updates to certain data types, such as new stories or posts/reels, are more likely to flag the account as an automated tool compared to profile changes or lists of followers/followings.
+Disable checks you do not need. This reduces request volume. You can skip story details with `-r`, post or reel details with `-w`, the following list with `-g` and the follower list with `-f`.
 
-If certain data isn't essential for your use case, consider disabling its retrieval. The tool provides fine-grained control, for example you can skip fetching stories details (`-r`), posts/reels details (`-w`), the list of followings (`-g` flag) and followers (`-f`).
-
-**Note**: All of these fine-grained tracking options can also be toggled live via the **Settings** menu in the **Web Dashboard**.
+You can also turn these checks on or off through the **Settings** page in the Web Dashboard.
 
 <a id="use-two-factor-authentication-2fa"></a>
 ## Use Two-Factor Authentication (2FA)
@@ -107,11 +103,11 @@ Activate 2FA on the account used for monitoring. It adds credibility to your acc
 <a id="avoid-using-vpns"></a>
 ## Avoid Using VPNs
 
-Refrain from logging in via VPNs, especially with IPs in different regions. Sudden location changes can trigger Instagram's security systems.
+Avoid frequent changes to the public IP address or geographic region used by the session. For example, switching VPN regions between runs may cause Instagram to request a security check.
 
 <a id="use-the-account-for-normal-activities"></a>
 ## Use the Account for Normal Activities
 
-If you have created a new account for monitoring and you are using [Session Login Using Browser Cookies](configuration.md#option-3-session-login-using-browser-cookies-recommended), make sure to behave like a regular user for several days. New accounts are more closely monitored by Instagram's bot detection systems. Watch content, post stories or reels and leave comments - this helps establish a natural activity pattern.
+Before monitoring, confirm that the account works normally in the browser used for [session import](configuration.md#option-3-session-login-using-browser-cookies-recommended). Resolve any login or security prompts there first.
 
-Once you start using the tool, try to blend its actions with normal usage. However, avoid overlapping browser activity with tool activity, as simultaneous actions can trigger suspicious behavior flags.
+Do not use the same browser session while Instagram Monitor is actively making requests. Simultaneous activity from the browser and tool may cause additional security checks.
