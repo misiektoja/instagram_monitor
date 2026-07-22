@@ -61,6 +61,16 @@ def test_quick_start_covers_direct_docker_host_variants():
     assert "instagram_monitor_session:/home/instagram/.config/instaloader" in quick_start
 
 
+# Verifies Firefox guidance covers Linux package variants for local and container imports
+def test_firefox_docs_cover_snap_and_flatpak():
+    configuration = read_asset("docs/configuration.md")
+    usage = read_asset("docs/usage.md")
+    assert "installed natively, through Snap or through Flatpak" in configuration
+    assert '-v "$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"' in usage
+    assert '-v "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"' in usage
+    assert "Do not add `:z` or `:Z` to the whole Firefox profile mount" in usage
+
+
 # Verifies manual quick-start commands link both Instagram authentication modes
 def test_quick_start_links_both_authentication_modes():
     quick_start = read_asset("docs/quick-start.md")
