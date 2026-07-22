@@ -29,7 +29,7 @@ instagram_monitor --setup
 
 Docker Compose
 
-On a native Linux container engine, the container needs your numeric user ID and group ID so files it creates in the current directory belong to you instead of `root`. Run the two `export` commands in the same terminal before the Compose commands. VM-backed Docker-compatible runtimes on macOS and Windows normally handle bind-mount ownership, so users on those systems can usually skip both `export` commands.
+On a native Linux container engine, the container needs your numeric user ID and group ID so files it creates in the current directory belong to you instead of `root`. Run the two `export` commands in the same terminal before the Compose commands. Docker-compatible runtimes on macOS and Windows normally handle bind-mount ownership, so users on those systems can usually skip both `export` commands.
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
@@ -141,7 +141,7 @@ Full documentation is available at **[misiektoja.github.io/instagram_monitor](ht
 
 The fastest way to get started is `--setup`. It asks who to monitor, whether to log in, which interface to use and which alerts you want then saves a ready-to-run configuration. Private values stay in `.env`.
 
-On a native Linux container engine, set `INSTAGRAM_MONITOR_UID="$(id -u)"` and `INSTAGRAM_MONITOR_GID="$(id -g)"` before using Docker Compose. These values make files created by the container belong to your host user. VM-backed Docker-compatible runtimes on macOS and Windows normally do not need them.
+On a native Linux container engine, set `INSTAGRAM_MONITOR_UID="$(id -u)"` and `INSTAGRAM_MONITOR_GID="$(id -g)"` before using Docker Compose. These values make files created by the container belong to your host user. Docker-compatible runtimes on macOS and Windows normally do not need them.
 
 Use the command that matches how you run the tool:
 
