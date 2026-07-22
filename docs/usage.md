@@ -198,6 +198,16 @@ With Compose on Linux:
 docker compose run --rm -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox
 ```
 
+Firefox installed through Snap or Flatpak stores its profile in a different host directory. Mount that directory at the standard container path:
+
+```sh
+# Firefox from Snap
+docker compose run --rm -v "$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox
+
+# Firefox from Flatpak
+docker compose run --rm -v "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox
+```
+
 On macOS, mount one explicit Firefox cookie database:
 
 ```sh
