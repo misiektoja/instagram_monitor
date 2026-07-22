@@ -109,6 +109,6 @@ jobs:
       - name: Run the locally built image through Docker Compose
         run: |
           docker tag instagram-monitor:ci misiektoja/instagram-monitor:latest
-          INSTAGRAM_MONITOR_UID="$(id -u)" INSTAGRAM_MONITOR_GID="$(id -g)" docker compose -f docker-compose.yml run --rm instagram_monitor --version
-          INSTAGRAM_MONITOR_UID="$(id -u)" INSTAGRAM_MONITOR_GID="$(id -g)" docker compose -f docker-compose.yml run --rm instagram_monitor --generate-config /data/local/container-smoke/compose-instagram-monitor.conf
+          INSTAGRAM_MONITOR_UID="$(id -u)" INSTAGRAM_MONITOR_GID="$(id -g)" docker compose -f docker-compose.yml run --rm --pull=never instagram_monitor --version
+          INSTAGRAM_MONITOR_UID="$(id -u)" INSTAGRAM_MONITOR_GID="$(id -g)" docker compose -f docker-compose.yml run --rm --pull=never instagram_monitor --generate-config /data/local/container-smoke/compose-instagram-monitor.conf
           test -s local/container-smoke/compose-instagram-monitor.conf
