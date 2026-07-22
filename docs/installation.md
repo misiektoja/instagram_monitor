@@ -208,7 +208,7 @@ Stop an attached run with `Ctrl+C`. From the directory that contains `docker-com
 
 ```sh
 docker compose pull
-docker compose up
+docker compose up --no-log-prefix
 ```
 
 Compose replaces the service container with one based on the current `latest` image. The host files `instagram_monitor.conf` and `.env` remain in place with all downloaded output. The named `instagram_monitor_session` volume also remains available.
