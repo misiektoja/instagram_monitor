@@ -135,6 +135,8 @@ docker pull misiektoja/instagram-monitor:latest
 docker run --rm misiektoja/instagram-monitor:latest --version
 ```
 
+Plain `docker run` reuses a cached image when the tag already exists locally. Repeat the documented `docker pull` during upgrades. Normal monitoring commands do not force a registry check on every start, which avoids an unexpected release change during routine runs.
+
 Normal runs mount the current directory at `/data` so configuration and output survive the temporary container. They also use the named volume `instagram_monitor_session` so the Instaloader login survives. On Linux, pass your host identity so setup can write through the bind mount. [Quick Start](quick-start.md#new-here-run-the-setup-wizard) shows both Docker Desktop and Linux commands.
 
 Docker Desktop examples use `${PWD}` in macOS shells and Windows PowerShell. In Windows Command Prompt use `%cd%` for the current directory. Linux examples use `$PWD` and add the host user mapping.
