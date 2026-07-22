@@ -35,7 +35,7 @@ curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/
 export INSTAGRAM_MONITOR_UID="$(id -u)"
 export INSTAGRAM_MONITOR_GID="$(id -g)"
 docker compose run --rm instagram_monitor --setup
-docker compose up
+docker compose up --no-log-prefix
 ```
 
 Docker run
