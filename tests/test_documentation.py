@@ -82,3 +82,11 @@ def test_compose_defaults_load_dotenv_and_suppress_attached_prefixes():
     for relative_path in ("README.md", "docs/index.md", "docs/quick-start.md", "docs/installation.md", "docs/usage.md", "docs/view-modes.md"):
         assert "docker compose up --no-log-prefix" in read_asset(relative_path)
     assert "docker compose logs -f --no-log-prefix" in read_asset("docs/usage.md")
+
+
+# Verifies historical feature links target their current documentation sections
+def test_release_notes_use_current_documentation_links():
+    release_notes = read_asset("RELEASE_NOTES.md")
+    for fragment in ("view-modes/#terminal-dashboard-mode", "view-modes/#web-dashboard-mode", "usage/#webhook-notifications", "usage/#follower-churn-detection", "usage/#output-directory", "usage/#skipping-follow-changes", "anti-detection/#use-the-human-mode", "anti-detection/#use-the-jitter-mode", "configuration/#user-agent"):
+        assert f"https://misiektoja.github.io/instagram_monitor/{fragment}" in release_notes
+    assert "https://github.com/misiektoja/instagram_monitor#" not in release_notes
