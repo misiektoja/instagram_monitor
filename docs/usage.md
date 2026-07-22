@@ -593,7 +593,7 @@ Summary messages and errors that apply to the whole process are written to every
 <a id="detection-of-changed-profile-pictures"></a>
 ## Detection of Changed Profile Pictures
 
-Profile picture change notifications appear in the console. They are also sent by email when status email notifications are enabled.
+Profile picture changes appear in console output. They can also be sent by email, Discord or ntfy when the matching status notification settings are enabled.
 
 This feature is enabled by default. To disable it, either:
 
