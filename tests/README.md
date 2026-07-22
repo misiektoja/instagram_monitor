@@ -1,8 +1,8 @@
 # Offline test suite
 
-These tests cover the pure and offline-safe logic of `instagram_monitor.py`.
-They never reach the network: the handful of functions that would normally
-contact Instagram are stubbed (see `test_session_flags.py`).
+These tests cover logic in `instagram_monitor.py` that can run without network access.
+Functions that normally contact Instagram are replaced with test doubles. See
+`test_session_flags.py` for an example.
 
 ## Running
 
@@ -13,9 +13,9 @@ pip install -e '.[test]'
 python -m pytest
 ```
 
-`pyproject.toml` configures pytest to put the repository root first on
-`sys.path` (and `conftest.py` enforces it), so the tests always run against the
-working tree rather than any installed copy of the package.
+`pyproject.toml` puts the repository root first on `sys.path`. `conftest.py`
+enforces the same order. The tests therefore use the working tree instead of an
+installed copy of the package.
 
 ## Layout
 
@@ -46,5 +46,5 @@ working tree rather than any installed copy of the package.
 * Keep everything offline. If a code path needs network access, stub it with
   `monkeypatch` rather than skipping the test.
 
-Online tests that log into Instagram are intentionally excluded, since automated
-logins risk triggering challenges or account suspension.
+Online tests that log in to Instagram are excluded because automated test logins
+could trigger security checks or account suspension.
