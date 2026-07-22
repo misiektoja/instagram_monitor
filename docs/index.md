@@ -28,7 +28,7 @@ instagram_monitor --setup
 
 Docker Compose
 
-On Linux, the container needs your numeric user ID and group ID so files it creates in the current directory belong to you instead of `root`. Run the two `export` commands in the same terminal before the Compose commands. Docker Desktop handles file ownership on macOS and Windows, so users on those systems can skip both `export` commands.
+On a native Linux container engine, the container needs your numeric user ID and group ID so files it creates in the current directory belong to you instead of `root`. Run the two `export` commands in the same terminal before the Compose commands. VM-backed Docker-compatible runtimes on macOS and Windows normally handle bind-mount ownership, so users on those systems can usually skip both `export` commands.
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
@@ -40,7 +40,7 @@ docker compose up --no-log-prefix
 
 Docker run
 
-On macOS or Windows with Docker Desktop:
+On macOS shells or Windows PowerShell with a Docker-compatible runtime that provides the `docker` CLI:
 
 ```sh
 docker pull misiektoja/instagram-monitor:latest
