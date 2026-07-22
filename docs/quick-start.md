@@ -5,7 +5,7 @@
 
 First complete one method on the [Installation](installation.md) page. The fastest way to configure that installation is the interactive setup wizard. It asks who to monitor, whether to use a login session, which interface to start and whether to enable alerts. Before saving, you can review the summary and edit one section without losing the other answers. It then writes a ready-to-run configuration while private values stay in `.env`.
 
-For a local install the wizard can also run the doctor check and start monitoring immediately. In a container it prints the exact follow-up commands for the detected Docker or Docker Compose path.
+For local installs the wizard can also run the doctor check and start monitoring immediately. In a container it prints the exact follow-up commands for the detected Docker or Docker Compose path.
 
 Before running the Docker Compose setup command on Linux, export `INSTAGRAM_MONITOR_UID="$(id -u)"` and `INSTAGRAM_MONITOR_GID="$(id -g)"` as shown under [Install with Docker Compose](installation.md#docker-compose).
 
@@ -34,13 +34,15 @@ docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v insta
 
 In Windows Command Prompt replace `${PWD}` with `%cd%`. If your Docker-compatible runtime rejects the `:z` mount suffix, remove only that suffix.
 
-Running the tool with no arguments from an interactive terminal offers the wizard when neither saved targets nor a saved Web Dashboard are available. If you save targets in `TARGET_USERNAMES`, a later no-argument launch starts those targets. If you save the Web Dashboard without targets, it starts as a browser control panel where you can add targets.
+The wizard asks for Instagram targets, recommends Firefox-based import and lets you choose email alerts, webhook alerts or both. On macOS and Linux it offers Chrome, Brave and Chromium as a separate cookie import path. If the optional `pycookiecheat` package is missing, setup can install it into the active Python environment before continuing.
 
 The wizard detects PyPI, downloaded-script, Docker and Docker Compose installations then prints matching commands. Local commands reuse the active Python executable. Config and dotenv paths are quoted for the active operating system.
 
-Answers stay editable until the final setup summary. Existing configuration replacement requires confirmation and creates a timestamped backup. Secrets are written separately to the selected dotenv file. A failed config write, secrets write or doctor check prevents automatic monitoring startup.
+It writes regular settings to `instagram_monitor.conf` while private values go only to `.env`.
 
 Firefox import works in every local installation without an extra package. Chrome, Brave and Chromium import is available on macOS and Linux with the optional browser dependency. Container setup uses Firefox only because Chromium cookie decryption needs the host keyring. See [Session Login Using Browser Cookies](configuration.md#option-3-session-login-using-browser-cookies-recommended).
+
+Running the tool with no arguments from an interactive terminal offers the wizard when neither saved targets nor a saved Web Dashboard are available. If you save targets in `TARGET_USERNAMES`, a later no-argument launch starts those targets. If you save the Web Dashboard without targets, it starts as a browser control panel where you can add targets.
 
 <a id="not-sure-which-mode-you-want"></a>
 ## Not sure which command you need?
