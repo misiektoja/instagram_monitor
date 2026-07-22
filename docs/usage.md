@@ -12,8 +12,8 @@ Most examples on this page use the PyPI command `instagram_monitor`. If you chos
 | Manual script on Windows | `python instagram_monitor.py` |
 | Docker Compose | `docker compose run --rm instagram_monitor` |
 | Docker Compose with Web Dashboard | `docker compose run --rm --service-ports instagram_monitor` |
-| Direct Docker on macOS or Windows PowerShell | `docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest` |
-| Direct Docker on Linux | `docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest` |
+| Direct `docker run` on macOS or Windows PowerShell | `docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest` |
+| Direct `docker run` on native Linux | `docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest` |
 
 For example, the PyPI command `instagram_monitor target1 --doctor` becomes `docker compose run --rm instagram_monitor target1 --doctor` with Compose.
 
@@ -67,7 +67,7 @@ For a manual script installation:
 python3 instagram_monitor.py <target_insta_user>
 ```
 
-For a direct image on Docker Desktop:
+For a direct `docker run` command on macOS or Windows PowerShell:
 
 ```sh
 docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest <target_insta_user>
@@ -727,7 +727,7 @@ docker compose kill --signal SIGUSR1 instagram_monitor
 
 For direct Docker, assign a stable container name with `--name instagram-monitor` when starting it then use `docker kill --signal SIGUSR1 instagram-monitor`.
 
-A local Windows process supports only a limited signal set. Linux containers can receive the Docker signals above even when Docker Desktop runs on Windows.
+A local Windows process supports only a limited signal set. Linux containers can receive the Docker signals above when a Docker-compatible runtime runs them on Windows.
 
 <a id="coloring-log-output-with-grc"></a>
 ## Coloring Log Output with GRC
