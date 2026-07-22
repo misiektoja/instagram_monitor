@@ -77,6 +77,25 @@ class TestFirefoxImportCmd:
         assert im_module._firefox_import_cmd("compose") == 'docker compose run --rm -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox'
 
 
+class TestFirefoxProfileDiscovery:
+    # Verifies native, Snap and Flatpak Firefox profiles are discovered without duplicate cookie paths
+    def test_linux_discovers_package_variants(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
+        monkeypatch.setattr(im_module, "FIREFOX_LINUX_COOKIE", "/native/*/cookies.sqlite")
+        matches = {"/native/*/cookies.sqlite": ["/native/a.default-release/cookies.sqlite"], "/home/test/snap/firefox/common/.mozilla/firefox/*/cookies.sqlite": ["/snap/b.default/cookies.sqlite"], "/home/test/.var/app/org.mozilla.firefox/.mozilla/firefox/*/cookies.sqlite": ["/flatpak/c.work/cookies.sqlite", "/native/a.default-release/cookies.sqlite"]}
+        monkeypatch.setattr(im_module, "expanduser", lambda value: value.replace("~", "/home/test", 1))
+        monkeypatch.setattr(im_module, "glob", lambda pattern: matches.get(pattern, []))
+        profiles = im_module.list_firefox_profiles()
+        assert [profile["path"] for profile in profiles] == ["/native/a.default-release/cookies.sqlite", "/snap/b.default/cookies.sqlite", "/flatpak/c.work/cookies.sqlite"]
+        assert [profile["name"] for profile in profiles] == ["default-release", "default", "work"]
+
+    # Verifies non-Linux platforms keep using only their configured Firefox pattern
+    def test_non_linux_uses_only_configured_pattern(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "system", lambda: "Darwin")
+        monkeypatch.setattr(im_module, "FIREFOX_MACOS_COOKIE", "/custom/firefox/*/cookies.sqlite")
+        assert im_module.firefox_cookie_patterns() == ("/custom/firefox/*/cookies.sqlite",)
+
+
 class TestWizardImportBrowsers:
     def test_non_container_unix_offers_all_browsers(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "system", lambda: "Darwin")
