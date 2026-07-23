@@ -91,7 +91,7 @@ The table uses the PyPI command. If you chose another installation, use its [com
 | Check the selected login, connectivity and targets | `instagram_monitor --doctor` |
 | See stories, reels and follower details | Import a browser session then run `instagram_monitor -u <your_insta_user> <target_insta_user>` |
 
-<a id="manual-commands"></a>
+<a id="run-individual-commands"></a>
 ## Run Individual Commands
 
 The examples below use PyPI. For a manual script, replace `instagram_monitor` with `python3 instagram_monitor.py` on macOS or Linux. Use `python instagram_monitor.py` on Windows. Docker users should copy the matching prefix under [Command Format by Installation Method](usage.md#command-format).
