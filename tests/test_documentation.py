@@ -67,11 +67,12 @@ def test_container_onboarding_prioritizes_direct_docker_and_isolates_setup():
         assert 'misiektoja/instagram-monitor:latest --setup\n```\n\nAfter setup finishes, start monitoring with the files created by the wizard:\n\n```sh\ndocker run --rm -it --init -v "${PWD}:/data:z"' in quick_install
         assert 'misiektoja/instagram-monitor:latest --setup\n```\n\nAfter setup finishes, start monitoring:\n\n```sh\ndocker run --rm -it --init --user "$(id -u):$(id -g)"' in quick_install
     readme = read_asset("README.md")
-    assert "# Manual Python script on macOS or Linux\npython3 instagram_monitor.py --setup" in readme
-    assert "# Manual Python script on Windows\npython instagram_monitor.py --setup" in readme
-    assert readme.index("# Docker image on macOS or Windows PowerShell") < readme.index("# Docker Compose on native Linux only")
-    assert "# Docker image on macOS or Windows PowerShell\ndocker run --rm --pull=always" in readme
-    assert "# Docker Compose on native Linux only\nexport INSTAGRAM_MONITOR_UID" in readme
+    assert "\n## Quick Start\n" not in readme
+    assert '<a id="common-commands"></a>' in readme
+    assert readme.index('<a id="features"></a>') < readme.index('<a id="common-commands"></a>') < readme.index('<a id="documentation"></a>')
+    assert "| Set up Instagram Monitor for the first time |" not in readme
+    assert "https://misiektoja.github.io/instagram_monitor/quick-start/#run-individual-commands" in readme
+    assert "https://misiektoja.github.io/instagram_monitor/quick-start/" in readme
 
 
 # Verifies manual upgrade guidance repeats linked files and direct download commands
