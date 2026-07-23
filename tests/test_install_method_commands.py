@@ -63,6 +63,10 @@ class TestCmdPrefix:
         assert '-v "${PWD}:/data:z"' in prefix
         assert "--user" not in im_module._wizard_cmd_prefix("docker", host_os="macos")
         assert '--user "$(id -u):$(id -g)"' in im_module._wizard_cmd_prefix("docker", host_os="linux")
+        assert '-v "${PWD}:/data:z"' in im_module._wizard_cmd_prefix("docker", host_os="windows-powershell")
+        assert '-v "%cd%:/data:z"' in im_module._wizard_cmd_prefix("docker", host_os="windows-cmd")
+        assert "--user" not in im_module._wizard_cmd_prefix("docker", host_os="windows-powershell")
+        assert "--user" not in im_module._wizard_cmd_prefix("docker", host_os="windows-cmd")
 
     def test_compose_only_web_adds_service_ports(self, im_module):
         assert im_module._wizard_cmd_prefix("compose") == "docker compose run --rm instagram_monitor"
@@ -101,12 +105,13 @@ class TestFirefoxImportCmd:
     def test_non_container_has_no_mount(self, im_module):
         assert im_module._firefox_import_cmd("pip") == "instagram_monitor --import-browser-session --browser firefox"
 
-    @pytest.mark.parametrize("host_os,source", [("macos", '"${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"'), ("linux", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"')])
+    @pytest.mark.parametrize("host_os,source", [("macos", '"${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"'), ("linux", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("windows-powershell", '"$env:APPDATA\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'), ("windows-cmd", '"%APPDATA%\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"')])
     def test_container_commands_mount_selected_host_profile(self, im_module, host_os, source):
         docker = im_module._firefox_import_cmd("docker", host_os=host_os)
         compose = im_module._firefox_import_cmd("compose", host_os=host_os)
         assert f"-v {source} misiektoja/instagram-monitor" in docker
         assert ('--user "$(id -u):$(id -g)"' in docker) is host_os.startswith("linux")
+        assert ('-v "%cd%:/data:z"' in docker) is (host_os == "windows-cmd")
         assert docker.endswith("--import-browser-session --browser firefox")
         assert compose == f"docker compose run --rm -v {source} instagram_monitor --import-browser-session --browser firefox"
 
