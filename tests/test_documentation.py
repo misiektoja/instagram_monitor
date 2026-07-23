@@ -90,6 +90,21 @@ def test_usage_docs_cover_targets_and_install_commands():
     usage = read_asset("docs/usage.md")
     for value in ("TARGET_USERNAMES", "--targets target_user_1,target_user_2,target_user_3", "python3 instagram_monitor.py", "docker compose run --rm instagram_monitor", "docker compose run --rm --service-ports instagram_monitor", "misiektoja/instagram-monitor:latest"):
         assert value in usage
+    assert usage.count("-p 127.0.0.1:8000:8000") >= 3
+    assert "`0.0.0.0` is a server bind address, not an address to enter in a browser" in usage
+
+
+# Verifies container dashboard troubleshooting distinguishes listening ports from published ports
+def test_dashboard_docs_explain_container_port_publication():
+    view_modes = read_asset("docs/view-modes.md")
+    troubleshooting = read_asset("docs/troubleshooting.md")
+    compose = read_asset("docker-compose.yml")
+    assert "It is not a browser destination" in view_modes
+    assert "A plain `docker compose run --rm` starts the server but does not publish the service port" in view_modes
+    assert "Do not enter `http://0.0.0.0:8000/` in the browser" in troubleshooting
+    assert "`127.0.0.1:8000->8000/tcp` means the port is published correctly" in troubleshooting
+    assert "A value containing only `8000/tcp`" in troubleshooting
+    assert "0.0.0.0 is the internal server bind address, not a browser destination" in compose
 
 
 # Verifies configuration guidance explains direct UTF-8 output and target precedence
