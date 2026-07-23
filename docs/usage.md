@@ -186,32 +186,38 @@ Use the same `instagram_monitor_session` volume during browser import and every 
 
 ### Import Firefox into the Container Session
 
-On Linux, mount the Firefox profile read-only:
+Finish the setup wizard first. It asks which operating system runs Docker and how Firefox was installed then prints the matching one-time import command. Run Doctor only after that import succeeds.
+
+Use the direct Docker command that matches the Firefox profile layout on the host:
 
 ```sh
-docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox
+# macOS
+docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
+
+# Linux with a standard Firefox package
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
+
+# Linux with Firefox from Snap
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
+
+# Linux with Firefox from Flatpak
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
 ```
 
-With Compose on Linux:
+The equivalent Docker Compose commands are:
 
 ```sh
-docker compose run --rm -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox
-```
+# macOS
+docker compose run --rm -v "${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
 
-Firefox installed through Snap or Flatpak stores its profile in a different host directory. Mount that directory at the standard container path:
+# Linux with a standard Firefox package
+docker compose run --rm -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
 
-```sh
-# Firefox from Snap
-docker compose run --rm -v "$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox
+# Linux with Firefox from Snap
+docker compose run --rm -v "$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
 
-# Firefox from Flatpak
-docker compose run --rm -v "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox
-```
-
-On macOS, mount one explicit Firefox cookie database:
-
-```sh
-docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "${HOME}/Library/Application Support/Firefox/Profiles/<profile>/cookies.sqlite:/cookies/cookies.sqlite:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --cookie-file /cookies/cookies.sqlite
+# Linux with Firefox from Flatpak
+docker compose run --rm -v "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
 ```
 
 Firefox works inside Docker because its cookie database can be mounted as a read-only file. Chrome, Brave and Chromium need the host password service to decrypt their cookies. A container cannot use that service. Import from those browsers through a local PyPI or manual installation instead.
