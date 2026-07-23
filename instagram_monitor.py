@@ -3051,6 +3051,16 @@ def recheck_all_targets():
     return True
 
 
+# Returns a browser-safe URL instead of exposing a wildcard server bind address
+def _web_dashboard_browser_url(host=None, port=None) -> str:
+    selected_host = str(host if host is not None else WEB_DASHBOARD_HOST).strip() or "127.0.0.1"
+    selected_port = port if port is not None else WEB_DASHBOARD_PORT
+    browser_host = "127.0.0.1" if selected_host in ("0.0.0.0", "::", "[::]") else selected_host
+    if ":" in browser_host and not browser_host.startswith("["):
+        browser_host = f"[{browser_host}]"
+    return f"http://{browser_host}:{selected_port}/"
+
+
 # Starts the Flask web server in a background thread
 def start_web_dashboard_server():
     global WEB_DASHBOARD_APP, WEB_DASHBOARD_THREAD, WEB_DASHBOARD_TEMPLATE_DIR, VERSION
@@ -3077,7 +3087,12 @@ def start_web_dashboard_server():
     WEB_DASHBOARD_THREAD = threading.Thread(target=run_server, daemon=True, name="web_ui_server")
     WEB_DASHBOARD_THREAD.start()
 
-    print(f"\n* Web Dashboard available at:\t\thttp://{WEB_DASHBOARD_HOST}:{WEB_DASHBOARD_PORT}/")
+    print(f"\n* Open Web Dashboard in your browser:\t{_web_dashboard_browser_url()}")
+    if _running_in_container():
+        if WEB_DASHBOARD_PORT == 8000:
+            print("* Docker port publishing:\t\tUse -p 127.0.0.1:8000:8000 or Compose --service-ports")
+        else:
+            print(f"* Docker port publishing:\t\tPublish container port {WEB_DASHBOARD_PORT} to the host")
     return True
 
 
@@ -7079,7 +7094,7 @@ def update_dashboard():
         if WEB_DASHBOARD_ENABLED and not DASHBOARD_DATA.get('targets_list', []):
             loading_text.append("⌛ Waiting for targets...\n\n", style="yellow")
             loading_text.append("* Web UI: ", style="dim")
-            loading_text.append(f"http://{WEB_DASHBOARD_HOST or '127.0.0.1'}:{WEB_DASHBOARD_PORT or '8000'}/\n\n", style="bold cyan")
+            loading_text.append(f"{_web_dashboard_browser_url()}\n\n", style="bold cyan")
             loading_text.append("No initial targets specified on command line.\n", style="dim")
             loading_text.append("Please open the Web UI above to manually add Instagram users for monitoring.\n", style="dim")
             loading_text.append("You can also configure sessions and settings directly from the dashboard.\n\n", style="dim")
@@ -7142,7 +7157,7 @@ def init_dashboard():
     if WEB_DASHBOARD_ENABLED and not DASHBOARD_DATA.get('targets_list', []):
         loading_text.append("⌛ Waiting for targets...\n\n", style="yellow")
         loading_text.append("* Web UI: ", style="dim")
-        loading_text.append(f"http://{WEB_DASHBOARD_HOST or '127.0.0.1'}:{WEB_DASHBOARD_PORT or '8000'}/\n\n", style="bold cyan")
+        loading_text.append(f"{_web_dashboard_browser_url()}\n\n", style="bold cyan")
         loading_text.append("No initial targets specified on command line.\n", style="dim")
         loading_text.append("Please open the Web UI above to manually add Instagram users for monitoring.\n", style="dim")
         loading_text.append("You can also configure sessions and settings directly from the dashboard.\n\n", style="dim")
@@ -11321,8 +11336,6 @@ def _wizard_collect_interface_section(state: WizardSetupState, method: str) -> N
     state.want_web = interface == 0
     state.want_terminal = interface == 1
     state.config_values.update({"WEB_DASHBOARD_ENABLED": state.want_web, "DASHBOARD_ENABLED": state.want_terminal})
-    if state.want_web and method in ("docker", "compose"):
-        state.config_values["WEB_DASHBOARD_HOST"] = "0.0.0.0"
     if state.want_web and not FLASK_AVAILABLE:
         print(colorize("warning", "  Note: flask is not installed, so the web dashboard will remain unavailable until it is installed."))
     if state.want_terminal and not RICH_AVAILABLE:
@@ -11609,7 +11622,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
 
     command_targets = [] if state.persist_targets else state.targets
     run_command = _wizard_action_command(method, "", state.config_path, state.env_path, command_targets, web_dashboard=state.want_web, host_os=state.container_host)
-    doctor_command = _wizard_action_command(method, "--doctor", state.config_path, state.env_path, command_targets, web_dashboard=state.want_web, host_os=state.container_host)
+    doctor_command = _wizard_action_command(method, "--doctor", state.config_path, state.env_path, command_targets, host_os=state.container_host)
     print(colorize("header", "\nNext steps\n"))
     if browser_import_pending:
         selected_host = cast(str, state.container_host)
@@ -11626,9 +11639,9 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     if state.want_web:
         print(f"Then open {colorize('link', 'http://127.0.0.1:8000/')} in your browser.\n")
     if state.want_email:
-        print(f"Test email anytime with: {colorize('section', _wizard_action_command(method, '--send-test-email', state.config_path, state.env_path, web_dashboard=state.want_web, host_os=state.container_host))}")
+        print(f"Test email anytime with: {colorize('section', _wizard_action_command(method, '--send-test-email', state.config_path, state.env_path, host_os=state.container_host))}")
     if state.want_webhook:
-        print(f"Test webhook anytime with: {colorize('section', _wizard_action_command(method, '--send-test-webhook', state.config_path, state.env_path, web_dashboard=state.want_web, host_os=state.container_host))}")
+        print(f"Test webhook anytime with: {colorize('section', _wizard_action_command(method, '--send-test-webhook', state.config_path, state.env_path, host_os=state.container_host))}")
 
     if doctor_failures:
         print(colorize("warning", "Setup was saved but doctor found failures. Fix them before starting monitoring."))
@@ -12603,7 +12616,7 @@ def run_main():
             method = _wizard_install_method()
             selected_env = env_path or Path.cwd() / ".env"
             doctor_command = _wizard_action_command(method, "--doctor", cfg_path, selected_env, args.usernames)
-            monitor_command = _wizard_action_command(method, "", cfg_path, selected_env, args.usernames)
+            monitor_command = _wizard_action_command(method, "", cfg_path, selected_env, args.usernames, web_dashboard=WEB_DASHBOARD_ENABLED)
             print(colorize("header", "\nNext steps\n"))
             print("Check the imported session and setup:")
             print(colorize("section", f"    {doctor_command}\n"))
@@ -13308,7 +13321,7 @@ def run_main():
         print("     INSTAGRAM MONITOR - WEB DASHBOARD MODE")
         print("═" * 80)
         print(f"\n* Status: Waiting for targets...")
-        print(f"* Web UI: http://{WEB_DASHBOARD_HOST}:{WEB_DASHBOARD_PORT}/")
+        print(f"* Web UI: {_web_dashboard_browser_url()}")
         print("\n* Info: No initial targets specified on command line.")
         print("  Please open the Web UI above to manually add Instagram users for monitoring.")
         print("  You can also configure sessions and settings directly from the dashboard.")
