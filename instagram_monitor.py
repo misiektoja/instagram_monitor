@@ -11001,10 +11001,24 @@ def _wizard_action_command(method: str, action: str, config_path, env_path, targ
     if action:
         parts.append(action)
     parts.extend(_wizard_quote_argument(target) for target in targets)
-    selected_config = _wizard_container_path(config_path) if method in ("docker", "compose") else str(Path(config_path).expanduser().resolve())
-    selected_env = _wizard_container_path(env_path) if method in ("docker", "compose") else str(Path(env_path).expanduser().resolve())
-    parts.extend(("--config-file", _wizard_quote_argument(selected_config), "--env-file", _wizard_quote_argument(selected_env)))
+    if config_path is not None:
+        selected_config = _wizard_container_path(config_path) if method in ("docker", "compose") else str(Path(config_path).expanduser().resolve())
+        parts.extend(("--config-file", _wizard_quote_argument(selected_config)))
+    if env_path is not None:
+        selected_env = "none" if str(env_path).casefold() == "none" else _wizard_container_path(env_path) if method in ("docker", "compose") else str(Path(env_path).expanduser().resolve())
+        parts.extend(("--env-file", _wizard_quote_argument(selected_env)))
     return " ".join(parts)
+
+
+# Prints the install-aware monitoring command after a successful Doctor run
+def _wizard_print_monitor_after_doctor(config_path, env_path, targets=(), web_dashboard: bool = False) -> None:
+    method = _wizard_install_method()
+    command = _wizard_action_command(method, "", config_path, env_path, targets, web_dashboard=web_dashboard)
+    print(colorize("header", "\nNext steps\n"))
+    print("After Doctor passes, start monitoring:")
+    print(colorize("section", f"    {command}\n"))
+    if web_dashboard:
+        print(f"Then open {colorize('link', _web_dashboard_browser_url())} in your browser.\n")
 
 
 # Returns the full Firefox import command with an optional exact dotenv destination
@@ -12960,7 +12974,18 @@ def run_main():
 
     # Run preflight checks once the effective session mode and targets are resolved
     if getattr(args, "doctor", False):
-        sys.exit(1 if run_doctor(targets) else 0)
+        doctor_failures = run_doctor(targets)
+        if not doctor_failures:
+            explicit_targets = bool(getattr(args, "targets", None) or getattr(args, "usernames", None))
+            command_targets = targets if explicit_targets else ()
+            selected_env = "none" if args.env_file and str(args.env_file).casefold() == "none" else env_path
+            if targets or WEB_DASHBOARD_ENABLED:
+                _wizard_print_monitor_after_doctor(cfg_path, selected_env, command_targets, web_dashboard=WEB_DASHBOARD_ENABLED)
+            else:
+                print(colorize("header", "\nNext steps\n"))
+                print("Doctor passed, but no monitoring target or Web Dashboard is configured.")
+                print(colorize("section", f"    {_wizard_cmd_prefix(_wizard_install_method())} --setup\n"))
+        sys.exit(1 if doctor_failures else 0)
 
     # Auto-disable Follower Churn Detection if session or lists are skipped
     if FOLLOWERS_CHURN_DETECTION:
