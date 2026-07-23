@@ -47,6 +47,8 @@ After setup finishes, start monitoring with the files created by the wizard:
 docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --config-file /data/instagram_monitor.conf --env-file /data/.env
 ```
 
+If setup enabled the Web Dashboard, add `-p 127.0.0.1:8000:8000` before the image name. The exact command printed by setup includes it only when needed.
+
 The setup command pulls the current image. Both commands keep configuration and downloaded files in the current directory. They keep the saved Instagram login in the Docker volume named `instagram_monitor_session`.
 
 In Windows Command Prompt replace `${PWD}` with `%cd%`.
@@ -64,6 +66,8 @@ After setup finishes, start monitoring:
 ```sh
 docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --config-file /data/instagram_monitor.conf --env-file /data/.env
 ```
+
+If setup enabled the Web Dashboard, add `-p 127.0.0.1:8000:8000` before the image name. The exact command printed by setup includes it only when needed.
 
 #### Docker Compose - shorter recurring commands
 
