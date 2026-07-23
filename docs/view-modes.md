@@ -60,6 +60,8 @@ instagram_monitor target1 target2 --dashboard
 
 The Web Dashboard runs a small web server on your computer. By default, open `http://127.0.0.1:8000/` in a browser on the same computer. The `127.0.0.1` address is local, so other devices cannot connect unless you change the server and Docker settings.
 
+In a container the server must bind to `0.0.0.0` so Docker can forward traffic. That value means every container network interface. It is not a browser destination. Use the published host address `http://127.0.0.1:8000/` instead.
+
 **Key Features:**
 
 - **Full Control Panel**: Add or remove monitoring targets directly from the browser.
@@ -87,7 +89,7 @@ instagram_monitor --web-dashboard
 
 The Web Dashboard requires `flask`, which is included in normal installations. If it is missing, Instagram Monitor disables the dashboard but keeps console monitoring active.
 
-Docker Compose exposes the default dashboard only at `127.0.0.1` on the host. Use `docker compose up --no-log-prefix` if setup enabled the Web Dashboard. For a one-off Compose command, add `--service-ports`:
+Docker Compose exposes the default dashboard only at `127.0.0.1` on the host. Use `docker compose up --no-log-prefix` if setup enabled the Web Dashboard. For a one-off Compose command, add `--service-ports`. A plain `docker compose run --rm` starts the server but does not publish the service port:
 
 ```sh
 docker compose run --rm --service-ports instagram_monitor target1 target2 --web-dashboard
