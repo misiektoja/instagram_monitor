@@ -68,6 +68,8 @@ The wizard recommends importing a saved Firefox login. On macOS and Linux it can
 
 The wizard detects PyPI, a downloaded script, Docker or Docker Compose and prints matching commands. It also formats file paths for the current operating system.
 
+Container setup destinations must stay inside `/data`. That directory is the current host directory mounted into the temporary setup container, so files written there survive `--rm`. The wizard rejects paths such as `/tmp/instagram_monitor.conf` instead of printing a command for a different file.
+
 Firefox import works in every local installation without an extra package. Chrome, Brave and Chromium import works on macOS and Linux with the optional browser dependency. Container setup uses Firefox because Chromium cookie decryption needs a password service from the host that is not available inside the container. See [Session Login Using Browser Cookies](configuration.md#option-3-session-login-using-browser-cookies-recommended).
 
 If no targets or Web Dashboard setting have been saved, running the tool with no arguments opens the wizard in an interactive terminal. If `TARGET_USERNAMES` contains saved targets, the same command starts monitoring them. If only the Web Dashboard is enabled, it starts an empty browser control panel where you can add targets.
