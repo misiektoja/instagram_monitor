@@ -1,26 +1,28 @@
 # instagram_monitor release notes
 
-# Changes in 3.6.2 (23 Jul 2026)
+# Changes in 3.7 (23 Jul 2026)
+
+Version **3.7** makes **Docker onboarding portable across macOS, Linux and Windows**. It adds **host-aware Firefox session import** and keeps setup files safe on the persistent **`/data` bind mount**. Generated recovery commands now preserve **targets, custom files and Web Dashboard ports** from import through Doctor and launch.
 
 **Features and improvements**:
 
-- **IMPROVE:** Kept Firefox session import as the recommended Docker setup choice while deferring the import until setup files are saved. The wizard now asks which host environment runs Docker then prints the matching read-only import command for macOS, standard Linux, Snap, Flatpak, Windows PowerShell or Windows Command Prompt
-- **NEW:** Added Windows-host Firefox session import for direct Docker and Docker Compose through the normal `%APPDATA%\Mozilla\Firefox` profile root with shell-specific PowerShell and Command Prompt commands
-- **IMPROVE:** Expanded direct Docker and Docker Compose Firefox import documentation with complete commands for every supported host profile layout
-- **IMPROVE:** Preserved setup guidance across one-time session imports by keeping terminal history visible and repeating the exact Doctor and monitoring commands after a successful Firefox import
-- **IMPROVE:** Printed the install-aware monitoring command after a successful Doctor run while preserving explicit targets, selected files and Web Dashboard port publishing
+- **IMPROVE:** Kept Firefox session import as the **recommended Docker setup choice** while deferring the import until setup files are saved. The wizard now asks which host environment runs Docker then prints the matching read-only import command for macOS, standard Linux, Snap, Flatpak, Windows PowerShell or Windows Command Prompt
+- **NEW:** Added **Windows-host Firefox session import** for direct Docker and Docker Compose through the normal `%APPDATA%\Mozilla\Firefox` profile root with shell-specific PowerShell and Command Prompt commands
+- **IMPROVE:** Expanded direct Docker and Docker Compose Firefox import documentation with **complete commands for every supported host profile layout**
+- **IMPROVE:** Preserved **setup guidance across one-time session imports** by keeping terminal history visible and repeating the exact Doctor and monitoring commands after a successful Firefox import
+- **IMPROVE:** Printed the **install-aware monitoring command** after a successful Doctor run while preserving explicit targets, selected files and Web Dashboard port publishing
 
 **Bug fixes**:
 
-- **BUGFIX:** Stopped the setup wizard from offering Doctor before a deferred Firefox session import succeeds, avoiding expected authentication failures during incomplete Docker setup
-- **BUGFIX:** Removed Linux user mapping from generated macOS Docker commands while preserving host UID and GID mapping for Linux commands
-- **BUGFIX:** Anchored default container setup files to the bind-mounted `/data` directory so the generated configuration and dotenv files survive the temporary setup container
-- **BUGFIX:** Preserved Web Dashboard port publishing in Docker and Docker Compose monitoring commands printed after Firefox import then replaced container-only `0.0.0.0` browser links with the reachable loopback URL
-- **BUGFIX:** Rejected Docker setup destinations outside `/data` instead of saving ephemeral files then printing commands for different paths
-- **BUGFIX:** Generated direct Docker commands with `${PWD}` for macOS shells, native Linux hosts and Windows PowerShell then switched to `%cd%` for Windows Command Prompt while retaining Linux user mapping
-- **BUGFIX:** Prevented local setup from offering immediate monitoring after a selected browser import was declined or failed unless Doctor validates an existing session
-- **BUGFIX:** Rejected conflicting standalone actions and setup commands containing monitoring targets instead of silently ignoring part of the command
-- **BUGFIX:** Matched generated Docker and one-off Compose port publishing to a non-default Web Dashboard port
+- **BUGFIX:** Stopped the setup wizard from offering **Doctor before a deferred Firefox session import succeeds**, avoiding expected authentication failures during incomplete Docker setup
+- **BUGFIX:** Removed **Linux user mapping from generated macOS Docker commands** while preserving host UID and GID mapping for Linux commands
+- **BUGFIX:** Anchored **default container setup files** to the bind-mounted **`/data` directory** so the generated configuration and dotenv files survive the temporary setup container
+- **BUGFIX:** Preserved **Web Dashboard port publishing** in Docker and Docker Compose monitoring commands printed after Firefox import then replaced container-only `0.0.0.0` browser links with the reachable loopback URL
+- **BUGFIX:** Rejected **Docker setup destinations outside `/data`** instead of saving ephemeral files then printing commands for different paths
+- **BUGFIX:** Generated direct Docker commands with **`${PWD}` for macOS, Linux and Windows PowerShell** then switched to `%cd%` for Windows Command Prompt while retaining Linux user mapping
+- **BUGFIX:** Prevented local setup from offering **immediate monitoring after a declined or failed browser import** unless Doctor validates an existing session
+- **BUGFIX:** Rejected **conflicting standalone actions and setup targets** instead of silently ignoring part of the command
+- **BUGFIX:** Matched generated Docker and one-off Compose port publishing to a **non-default Web Dashboard port**
 - **BUGFIX:** Restricted terminal time highlighting to valid complete clock values so Docker mappings such as `8000:8000` are no longer partially colored as dates
 
 # Changes in 3.6.1 (22 Jul 2026)
