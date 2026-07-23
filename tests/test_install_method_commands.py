@@ -4,6 +4,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+
 
 # Forces _wizard_install_method to a known launch environment for one assertion
 def _force_env(monkeypatch, im_module, *, dockerenv: bool, docker_env: bool, compose_env: bool, argv0: str):
@@ -50,14 +52,16 @@ class TestCmdPrefix:
         assert "-p 127.0.0.1:8000:8000" not in im_module._wizard_cmd_prefix("docker")
         assert "-p 127.0.0.1:8000:8000" in im_module._wizard_cmd_prefix("docker", web_dashboard=True)
 
-    def test_docker_reuses_effective_identity_and_selinux_mount(self, im_module, monkeypatch):
+    def test_docker_uses_host_shell_identity_on_linux_and_no_override_on_macos(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module.os, "getuid", lambda: 1234, raising=False)
         monkeypatch.setattr(im_module.os, "getgid", lambda: 5678, raising=False)
 
         prefix = im_module._wizard_cmd_prefix("docker")
 
-        assert "--user 1234:5678" in prefix
+        assert '--user "$(id -u):$(id -g)"' in prefix
         assert '-v "$PWD:/data:z"' in prefix
+        assert "--user" not in im_module._wizard_cmd_prefix("docker", host_os="macos")
+        assert '--user "$(id -u):$(id -g)"' in im_module._wizard_cmd_prefix("docker", host_os="linux")
 
     def test_compose_only_web_adds_service_ports(self, im_module):
         assert im_module._wizard_cmd_prefix("compose") == "docker compose run --rm instagram_monitor"
@@ -68,13 +72,14 @@ class TestFirefoxImportCmd:
     def test_non_container_has_no_mount(self, im_module):
         assert im_module._firefox_import_cmd("pip") == "instagram_monitor --import-browser-session --browser firefox"
 
-    def test_docker_mounts_profile_before_image(self, im_module):
-        cmd = im_module._firefox_import_cmd("docker")
-        assert '-v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor' in cmd
-        assert cmd.endswith("--import-browser-session --browser firefox")
-
-    def test_compose_mounts_profile_before_service(self, im_module):
-        assert im_module._firefox_import_cmd("compose") == 'docker compose run --rm -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox'
+    @pytest.mark.parametrize("host_os,source", [("macos", '"${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"'), ("linux", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"')])
+    def test_container_commands_mount_selected_host_profile(self, im_module, host_os, source):
+        docker = im_module._firefox_import_cmd("docker", host_os=host_os)
+        compose = im_module._firefox_import_cmd("compose", host_os=host_os)
+        assert f"-v {source} misiektoja/instagram-monitor" in docker
+        assert ('--user "$(id -u):$(id -g)"' in docker) is host_os.startswith("linux")
+        assert docker.endswith("--import-browser-session --browser firefox")
+        assert compose == f"docker compose run --rm -v {source} instagram_monitor --import-browser-session --browser firefox"
 
 
 class TestFirefoxProfileDiscovery:
