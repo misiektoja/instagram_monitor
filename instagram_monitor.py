@@ -11588,7 +11588,10 @@ def _wizard_destinations(method: str, config_file=None, env_file=None):
 def _wizard_launch_monitor(arguments) -> int:
     command = [str(argument) for argument in arguments]
     if system() == "Windows":
-        return subprocess.run(command, check=False).returncode
+        try:
+            return subprocess.run(command, check=False).returncode
+        except KeyboardInterrupt:
+            return 0
     os.execv(command[0], command)
     return 0
 
