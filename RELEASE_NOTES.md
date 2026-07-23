@@ -24,6 +24,7 @@ Version **3.7** makes **Docker onboarding portable across macOS, Linux and Windo
 - **BUGFIX:** Rejected **conflicting standalone actions and setup targets** instead of silently ignoring part of the command
 - **BUGFIX:** Matched generated Docker and one-off Compose port publishing to a **non-default Web Dashboard port**
 - **BUGFIX:** Restricted terminal time highlighting to valid complete clock values so Docker mappings such as `8000:8000` are no longer partially colored as dates
+- **BUGFIX:** Prevented a **Windows traceback after Ctrl+C** when monitoring was started directly from setup. The setup parent now treats its duplicate console interrupt as the same clean termination already handled by the monitoring child
 
 # Changes in 3.6.1 (22 Jul 2026)
 
