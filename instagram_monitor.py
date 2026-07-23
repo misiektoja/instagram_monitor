@@ -859,6 +859,12 @@ DOTENV_FILE = ""
 FIREFOX_MACOS_COOKIE = ""
 FIREFOX_WINDOWS_COOKIE = ""
 FIREFOX_LINUX_COOKIE = ""
+CONTAINER_FIREFOX_HOSTS = {
+    "macos": ("macOS", '"${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"'),
+    "linux": ("Linux with a standard Firefox package", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "linux-snap": ("Linux with Firefox from Snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "linux-flatpak": ("Linux with Firefox from Flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
+}
 INSTA_LOGFILE = ""
 OUTPUT_DIR = ""
 DISABLE_LOGGING = False
@@ -10933,13 +10939,14 @@ def _wizard_quote_argument(value) -> str:
 
 
 # Returns the command prefix used to invoke the tool for the detected install method
-def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, exact: bool = False) -> str:
+def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, exact: bool = False, host_os: Optional[str] = None) -> str:
     if method == "compose":
         service_ports = " --service-ports" if web_dashboard else ""
         return f"docker compose run --rm{service_ports} instagram_monitor"
     if method == "docker":
         web_port_flag = " -p 127.0.0.1:8000:8000" if web_dashboard else ""
-        user_flag = f" --user {os.getuid()}:{os.getgid()}" if hasattr(os, "getuid") and hasattr(os, "getgid") else ""
+        linux_user_mapping = host_os in ("linux", "linux-snap", "linux-flatpak") or (host_os is None and hasattr(os, "getuid") and os.getuid() != 10001)
+        user_flag = ' --user "$(id -u):$(id -g)"' if linux_user_mapping else ""
         return (f'docker run --rm -it --init{user_flag} -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor')
     return _wizard_render_command(_wizard_local_command_args(method, exact=exact))
 
@@ -10955,8 +10962,8 @@ def _wizard_container_path(path) -> str:
 
 
 # Builds one install-aware action command with safe paths and optional targets
-def _wizard_action_command(method: str, action: str, config_path, env_path, targets=(), web_dashboard: bool = False) -> str:
-    parts = [_wizard_cmd_prefix(method, web_dashboard=web_dashboard, exact=True)]
+def _wizard_action_command(method: str, action: str, config_path, env_path, targets=(), web_dashboard: bool = False, host_os: Optional[str] = None) -> str:
+    parts = [_wizard_cmd_prefix(method, web_dashboard=web_dashboard, exact=True, host_os=host_os)]
     if action:
         parts.append(action)
     parts.extend(_wizard_quote_argument(target) for target in targets)
@@ -10967,14 +10974,15 @@ def _wizard_action_command(method: str, action: str, config_path, env_path, targ
 
 
 # Returns the full Firefox import command with an optional exact dotenv destination
-def _firefox_import_cmd(method: str, env_path=None, exact: bool = False) -> str:
-    prefix = _wizard_cmd_prefix(method, exact=exact)
+def _firefox_import_cmd(method: str, env_path=None, exact: bool = False, host_os: Optional[str] = None) -> str:
+    selected_host = host_os or "linux"
+    prefix = _wizard_cmd_prefix(method, exact=exact, host_os=selected_host if method in ("docker", "compose") else host_os)
     if method not in ("docker", "compose"):
         command = f"{prefix} --import-browser-session --browser firefox"
         if env_path is not None:
             command += f" --env-file {_wizard_quote_argument(str(Path(env_path).expanduser().resolve()))}"
         return command
-    ff_mount = '-v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'
+    ff_mount = f"-v {CONTAINER_FIREFOX_HOSTS[selected_host][1]}"
     if method == "docker":
         with_mount = prefix.replace("misiektoja/instagram-monitor", f"{ff_mount} misiektoja/instagram-monitor")
     else:
@@ -11184,10 +11192,29 @@ class WizardSetupState:
     login_method: str
     session_username: str
     import_browser: Optional[str]
+    container_host: Optional[str]
     want_web: bool
     want_terminal: bool
     want_webhook: bool
     want_email: bool
+
+
+# Selects one supported Docker host and Firefox profile layout for deferred import
+def _wizard_select_container_firefox_host() -> Optional[str]:
+    options = [
+        ("macOS", "Use the Firefox profiles under Library/Application Support."),
+        ("Linux with a standard Firefox package", "Use the profiles under ~/.mozilla/firefox."),
+        ("Linux with Firefox from Snap", "Use the profiles under ~/snap/firefox."),
+        ("Linux with Firefox from Flatpak", "Use the profiles under ~/.var/app/org.mozilla.firefox."),
+        ("Windows or another system", "Firefox import after Docker setup is not currently available for this host."),
+    ]
+    selected = _wizard_ask_choice("Which operating system runs Docker and how was Firefox installed?", options)
+    if selected == len(options) - 1:
+        print()
+        print("  Firefox import after Docker setup is not currently available for this host.")
+        print("  Choose another login method or no login.")
+        return None
+    return ("macos", "linux", "linux-snap", "linux-flatpak")[selected]
 
 
 # Restores one editable section to its setup-start values and drops pending secrets
@@ -11232,7 +11259,8 @@ def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
     supported_browsers = _wizard_import_browsers(method)
     chromium_browsers = [browser for browser in supported_browsers if browser in CHROMIUM_IMPORT_BROWSERS]
     while True:
-        options = [("No login", "Sees new posts, bio and follower counts."), ("Import from Firefox, recommended", "Reuses a signed-in Firefox session with no additional package.")]
+        firefox_label = "Import from Firefox after setup, recommended" if method in ("docker", "compose") else "Import from Firefox, recommended"
+        options = [("No login", "Sees new posts, bio and follower counts."), (firefox_label, "Reuses a signed-in host Firefox profile through one read-only import command." if method in ("docker", "compose") else "Reuses a signed-in Firefox session with no additional package.")]
         actions = ["no-login", "firefox"]
         if chromium_browsers:
             chromium_description = "Import from a signed-in Chrome, Brave or Chromium profile." if _wizard_chromium_dependency_available() else "Setup can install the required pycookiecheat package now."
@@ -11249,11 +11277,17 @@ def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
                 continue
             if not _wizard_install_chromium_dependency(method):
                 continue
+        container_host = None
+        if action == "firefox" and method in ("docker", "compose"):
+            container_host = _wizard_select_container_firefox_host()
+            if container_host is None:
+                continue
         break
 
     state.login_method = action
     state.logged_in = action != "no-login"
     state.import_browser = None
+    state.container_host = container_host
     state.session_username = ""
     if action == "no-login":
         state.config_values.update({"SKIP_SESSION": True, "SESSION_USERNAME": ""})
@@ -11385,6 +11419,8 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
     print(f"  Session username: {session_summary}")
     if state.import_browser:
         print(f"  Browser: {browser_label(state.import_browser)}")
+    if state.container_host:
+        print(f"  Docker host: {CONTAINER_FIREFOX_HOSTS[state.container_host][0]}")
     print(f"  Interface: {interface}")
     print(f"  Email: {'enabled' if state.want_email else 'disabled'}")
     print(f"  Webhook: {'enabled' if state.want_webhook else 'disabled'}")
@@ -11433,11 +11469,10 @@ def _wizard_finish_browser_import(state: WizardSetupState, method: str) -> None:
     if not state.import_browser:
         return
     label = browser_label(state.import_browser)
-    retry_hint = f"{_wizard_cmd_prefix(method, exact=True)} --import-browser-session --browser {state.import_browser} --env-file {_wizard_quote_argument(str(state.env_path))}"
+    retry_hint = f"{_wizard_cmd_prefix(method, exact=True, host_os=state.container_host)} --import-browser-session --browser {state.import_browser} --env-file {_wizard_quote_argument(str(state.env_path))}"
     if method in ("docker", "compose"):
-        print(colorize("warning", f"Inside a container the {label} import needs your browser profile mounted, so it cannot run here."))
-        print("Run this once on the host before starting:")
-        print(colorize("section", f"  {_firefox_import_cmd(method, state.env_path, exact=True)}"))
+        state.config_values["SESSION_USERNAME"] = state.session_username
+        return
     elif _wizard_ask_yes_no(f"Import the {label} session now? (log in to Instagram in {label} first)", default=True):
         try:
             imported_username = None
@@ -11507,7 +11542,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     baseline_values = dict(globals())
     config_values = dict(baseline_values)
     config_values["DOTENV_FILE"] = str(env_path)
-    state = WizardSetupState(config_path, env_path, baseline_values, config_values, {}, [], True, False, "no-login", "", None, True, False, False, False)
+    state = WizardSetupState(config_path, env_path, baseline_values, config_values, {}, [], True, False, "no-login", "", None, None, True, False, False, False)
 
     print()
     _wizard_collect_target_section(state)
@@ -11554,25 +11589,33 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     if update_status is not None:
         print(f"  Secrets:       {update_status['path']}")
 
+    browser_import_pending = method in ("docker", "compose") and state.import_browser == "firefox" and state.container_host is not None
     doctor_failures = 0
     print()
-    if _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
+    if not browser_import_pending and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
         doctor_failures = run_doctor(state.targets)
 
     command_targets = [] if state.persist_targets else state.targets
-    run_command = _wizard_action_command(method, "", state.config_path, state.env_path, command_targets, web_dashboard=state.want_web)
-    doctor_command = _wizard_action_command(method, "--doctor", state.config_path, state.env_path, command_targets, web_dashboard=state.want_web)
+    run_command = _wizard_action_command(method, "", state.config_path, state.env_path, command_targets, web_dashboard=state.want_web, host_os=state.container_host)
+    doctor_command = _wizard_action_command(method, "--doctor", state.config_path, state.env_path, command_targets, web_dashboard=state.want_web, host_os=state.container_host)
     print(colorize("header", "\nNext steps\n"))
-    print("Check setup again:")
+    if browser_import_pending:
+        selected_host = cast(str, state.container_host)
+        host_label = CONTAINER_FIREFOX_HOSTS[selected_host][0]
+        print(f"Import Instagram login from Firefox on {host_label}:")
+        print(colorize("section", f"    {_firefox_import_cmd(method, state.env_path, exact=True, host_os=selected_host)}\n"))
+        print("After the import succeeds, check setup:")
+    else:
+        print("Check setup again:")
     print(colorize("section", f"    {doctor_command}\n"))
-    print("Start monitoring:")
+    print("After Doctor passes, start monitoring:" if browser_import_pending else "Start monitoring:")
     print(colorize("section", f"    {run_command}\n"))
     if state.want_web:
         print(f"Then open {colorize('link', 'http://127.0.0.1:8000/')} in your browser.\n")
     if state.want_email:
-        print(f"Test email anytime with: {colorize('section', _wizard_action_command(method, '--send-test-email', state.config_path, state.env_path, web_dashboard=state.want_web))}")
+        print(f"Test email anytime with: {colorize('section', _wizard_action_command(method, '--send-test-email', state.config_path, state.env_path, web_dashboard=state.want_web, host_os=state.container_host))}")
     if state.want_webhook:
-        print(f"Test webhook anytime with: {colorize('section', _wizard_action_command(method, '--send-test-webhook', state.config_path, state.env_path, web_dashboard=state.want_web))}")
+        print(f"Test webhook anytime with: {colorize('section', _wizard_action_command(method, '--send-test-webhook', state.config_path, state.env_path, web_dashboard=state.want_web, host_os=state.container_host))}")
 
     if doctor_failures:
         print(colorize("warning", "Setup was saved but doctor found failures. Fix them before starting monitoring."))
