@@ -117,17 +117,17 @@ class TestBrowserOnboarding:
             im_module._wizard_collect_login_section(state, "docker")
 
             assert captured[0][1][1][0] == "Import from Firefox after setup, recommended"
-            assert captured[1][0] == "Which operating system runs Docker and how was Firefox installed?"
+            assert captured[1][0] == "Which host environment runs Docker?"
             assert state.import_browser == "firefox"
             assert state.container_host == "macos"
 
-    @pytest.mark.parametrize("choice,expected", [(0, "macos"), (1, "linux"), (2, "linux-snap"), (3, "linux-flatpak")])
+    @pytest.mark.parametrize("choice,expected", [(0, "macos"), (1, "linux"), (2, "linux-snap"), (3, "linux-flatpak"), (4, "windows-powershell"), (5, "windows-cmd")])
     def test_container_firefox_host_selection(self, im_module, monkeypatch, choice, expected):
         monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: choice)
         assert im_module._wizard_select_container_firefox_host() == expected
 
     def test_unsupported_container_firefox_host_is_not_assumed(self, im_module, monkeypatch, capsys):
-        monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: 4)
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: 6)
         assert im_module._wizard_select_container_firefox_host() is None
         assert "not currently available for this host" in capsys.readouterr().out
 
