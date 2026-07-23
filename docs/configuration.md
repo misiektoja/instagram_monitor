@@ -7,7 +7,7 @@ Examples on this page use the PyPI command `instagram_monitor`. If you chose ano
 
 You can pass most settings as command-line options or save them in a configuration file for later runs.
 
-The easiest method is `instagram_monitor --setup`. The setup wizard checks the settings before saving them. If you allow it to replace an existing configuration, it first creates a backup whose name includes the current date and time.
+The easiest method is `instagram_monitor --setup`. The setup wizard checks the settings before saving them. If you allow it to replace an existing configuration, it first creates a backup whose name includes the current date and time. Replacement builds a fresh configuration from defaults, so settings that are not shown by the wizard are reset unless you restore them from the backup.
 
 If you want to edit the file manually, generate a default config template and save it to a file named `instagram_monitor.conf`:
 
