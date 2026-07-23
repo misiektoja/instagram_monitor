@@ -1,6 +1,6 @@
 # Installation
 
-Choose one installation method. You do not need both Python and Docker. PyPI is usually the easiest local option. Docker Compose is usually the easiest container option because it keeps your settings, private values, downloaded files and saved Instagram login when the container is replaced.
+Choose one installation method. You do not need both Python and Docker. PyPI is usually the easiest local option. The direct Docker image is the fastest container option. Docker Compose takes one extra download but gives you shorter commands for later runs.
 
 <a id="requirements"></a>
 ## Requirements
@@ -42,8 +42,8 @@ It should work on other versions of macOS, Linux, Unix and Windows as well.
 | --- | --- | --- |
 | PyPI | Most local users | `instagram_monitor [OPTIONS] [TARGET ...]` |
 | Manual script | Users who want to download and run one Python file | `python3 instagram_monitor.py [OPTIONS] [TARGET ...]` on macOS/Linux or `python instagram_monitor.py [OPTIONS] [TARGET ...]` on Windows |
-| Docker Compose | Users who want a reusable container setup | `docker compose run --rm instagram_monitor [OPTIONS] [TARGET ...]` |
-| Docker Hub image | Users who want to write each Docker option themselves | `docker run ... misiektoja/instagram-monitor:latest [OPTIONS] [TARGET ...]` |
+| Docker Hub image | Users who want the fastest container setup | `docker run ... misiektoja/instagram-monitor:latest [OPTIONS] [TARGET ...]` |
+| Docker Compose | Users who prefer shorter recurring commands after setup | `docker compose run --rm instagram_monitor [OPTIONS] [TARGET ...]` |
 
 Later pages use the short PyPI command unless Docker behaves differently. If you chose another method, keep the options after `instagram_monitor` but replace `instagram_monitor` with the command in the table. The setup wizard and `--help` also print commands for the detected installation.
 
@@ -101,15 +101,30 @@ python3 instagram_monitor.py --version
 
 Use `python instagram_monitor.py --version` on Windows.
 
+<a id="install-from-docker-hub"></a>
+### Install from Docker Hub
+
+The published [`misiektoja/instagram-monitor`](https://hub.docker.com/r/misiektoja/instagram-monitor) image supports `linux/amd64` and `linux/arm64`.
+
+No separate image download is required. Continue to [Quick Start](quick-start.md#new-here-run-the-setup-wizard). Its first-run command uses `docker run --pull=always` to pull the current image and start the setup wizard in one step.
+
+Normal monitoring commands reuse the installed image and do not check for a newer release. The [upgrade instructions](#upgrade-a-direct-docker-installation) pull explicitly when you choose to upgrade.
+
+Normal runs make the current directory available as `/data` in the container. Configuration and output written there remain on the host after the temporary container stops. The Docker volume named `instagram_monitor_session` keeps the saved Instagram login. On a native Linux container engine, the command also passes your numeric user and group IDs so new files belong to you. [Quick Start](quick-start.md#new-here-run-the-setup-wizard) shows the complete commands for macOS shells, Windows PowerShell and native Linux engines.
+
+The macOS shell and Windows PowerShell examples use `${PWD}`. In Windows Command Prompt use `%cd%` for the current directory. Native Linux examples use `$PWD` and add the host user mapping.
+
+The `:z` suffix lets Docker relabel the mounted directory on hosts that use SELinux. If your Docker-compatible runtime reports that `:z` is invalid, remove only `:z` and keep the rest of the mount.
+
+The published image includes all core dependencies but not the optional Chromium browser extra. Firefox works inside a container because its cookie database can be mounted as a read-only file. Chrome, Brave and Chromium need the host password service to decrypt cookies. A container cannot use that service.
+
 <a id="docker-compose"></a>
 ### Install with Docker Compose
 
-Create or choose a directory for Instagram Monitor. Download the Compose file into that directory, then run these commands from there:
+Compose adds a reusable project file and shorter commands for later runs. Create or choose a directory for Instagram Monitor and download the Compose file there:
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
-docker compose pull
-docker compose run --rm instagram_monitor --version
 ```
 
 You can also download [docker-compose.yml](https://github.com/misiektoja/instagram_monitor/blob/main/docker-compose.yml) in a browser or use the file from a cloned repository.
@@ -130,27 +145,7 @@ INSTAGRAM_MONITOR_GID=1000
 
 The values above are only examples. Use the numbers returned on your system. The setup wizard keeps unrelated entries in this file. Docker-compatible runtimes on macOS and Windows normally handle bind-mount ownership, so users on those systems can usually skip this step. If `/data` is not writable, set the host user and group IDs as shown above.
 
-Compose makes the current host directory available as `/data` inside the container. This is called a bind mount. The setup wizard creates `instagram_monitor.conf` and `.env` there, so the files remain on your computer when the container is replaced. A separate Docker volume named `instagram_monitor_session` keeps the saved Instagram login. Continue with [Quick Start](quick-start.md#new-here-run-the-setup-wizard).
-
-<a id="install-from-docker-hub"></a>
-### Install from Docker Hub
-
-The published [`misiektoja/instagram-monitor`](https://hub.docker.com/r/misiektoja/instagram-monitor) image supports `linux/amd64` and `linux/arm64`:
-
-```sh
-docker pull misiektoja/instagram-monitor:latest
-docker run --rm misiektoja/instagram-monitor:latest --version
-```
-
-Docker uses the copy of the image already stored on your computer. Run `docker pull` again when you want to upgrade. Normal monitoring commands do not download a newer image automatically.
-
-Normal runs make the current directory available as `/data` in the container. Configuration and output written there remain on the host after the temporary container stops. The Docker volume named `instagram_monitor_session` keeps the saved Instagram login. On a native Linux container engine, the command also passes your numeric user and group IDs so new files belong to you. [Quick Start](quick-start.md#new-here-run-the-setup-wizard) shows the complete commands for macOS shells, Windows PowerShell and native Linux engines.
-
-The macOS shell and Windows PowerShell examples use `${PWD}`. In Windows Command Prompt use `%cd%` for the current directory. Native Linux examples use `$PWD` and add the host user mapping.
-
-The `:z` suffix lets Docker relabel the mounted directory on hosts that use SELinux. If your Docker-compatible runtime reports that `:z` is invalid, remove only `:z` and keep the rest of the mount.
-
-The published image includes all core dependencies but not the optional Chromium browser extra. Firefox works inside a container because its cookie database can be mounted as a read-only file. Chrome, Brave and Chromium need the host password service to decrypt cookies. A container cannot use that service.
+Compose makes the current host directory available as `/data` inside the container. This is called a bind mount. The setup wizard creates `instagram_monitor.conf` and `.env` there, so the files remain on your computer when the container is replaced. A separate Docker volume named `instagram_monitor_session` keeps the saved Instagram login. Keep this directory and continue with [Quick Start](quick-start.md#new-here-run-the-setup-wizard). Its Compose setup command pulls the current image with `--pull=always`, so no separate pull command is needed during onboarding.
 
 <a id="build-image-locally"></a>
 ### Build the Docker Image Locally
