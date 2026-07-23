@@ -233,6 +233,17 @@ class TestPortableWizardCommands:
         run_mock.assert_called_once_with(arguments, check=False)
 
 
+    # A Windows parent launch treats duplicate Ctrl+C delivery as clean child termination
+    def test_windows_launch_handles_parent_keyboard_interrupt(self, im_module, monkeypatch):
+        run_mock = Mock(side_effect=KeyboardInterrupt)
+        monkeypatch.setattr(im_module, "system", lambda: "Windows")
+        monkeypatch.setattr(im_module.subprocess, "run", run_mock)
+        arguments = [r"C:\Python Dev\python.exe", r"C:\Python Dev\instagram_monitor.py", "--doctor"]
+
+        assert im_module._wizard_launch_monitor(arguments) == 0
+        run_mock.assert_called_once_with(arguments, check=False)
+
+
 class TestChromiumDependencyInstall:
     def test_install_uses_the_active_interpreter(self, im_module, monkeypatch):
         run_mock = Mock(return_value=SimpleNamespace(returncode=0))
