@@ -10974,7 +10974,7 @@ def _wizard_action_command(method: str, action: str, config_path, env_path, targ
 
 
 # Returns the full Firefox import command with an optional exact dotenv destination
-def _firefox_import_cmd(method: str, env_path=None, exact: bool = False, host_os: Optional[str] = None) -> str:
+def _firefox_import_cmd(method: str, env_path=None, exact: bool = False, host_os: Optional[str] = None, config_path=None, targets=()) -> str:
     selected_host = host_os or "linux"
     prefix = _wizard_cmd_prefix(method, exact=exact, host_os=selected_host if method in ("docker", "compose") else host_os)
     if method not in ("docker", "compose"):
@@ -10989,6 +10989,10 @@ def _firefox_import_cmd(method: str, env_path=None, exact: bool = False, host_os
         base, _, svc = prefix.rpartition(" ")
         with_mount = f"{base} {ff_mount} {svc}"
     command = f"{with_mount} --import-browser-session --browser firefox"
+    command += "".join(f" {_wizard_quote_argument(target)}" for target in targets)
+    if config_path is not None:
+        selected_config = _wizard_container_path(config_path) if method in ("docker", "compose") else str(Path(config_path).expanduser().resolve())
+        command += f" --config-file {_wizard_quote_argument(selected_config)}"
     if env_path is not None:
         command += f" --env-file {_wizard_quote_argument(_wizard_container_path(env_path))}"
     return command
@@ -11502,6 +11506,14 @@ def _wizard_finish_browser_import(state: WizardSetupState, method: str) -> None:
     state.config_values["SESSION_USERNAME"] = state.session_username
 
 
+# Resolves setup files to the container data mount or the local working directory
+def _wizard_destinations(method: str, config_file=None, env_file=None):
+    default_root = Path("/data") if method in ("docker", "compose") else Path.cwd()
+    config_path = Path(config_file) if config_file is not None else default_root / DEFAULT_CONFIG_FILENAME
+    env_path = Path(env_file) if env_file is not None else default_root / ".env"
+    return config_path.expanduser().resolve(), env_path.expanduser().resolve()
+
+
 # Starts monitoring with a Windows-safe child process or a POSIX process replacement
 def _wizard_launch_monitor(arguments) -> int:
     command = [str(argument) for argument in arguments]
@@ -11520,8 +11532,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         raise SystemExit(1)
 
     method = _wizard_install_method()
-    config_path = Path(config_file or DEFAULT_CONFIG_FILENAME).expanduser().resolve()
-    env_path = Path(env_file or ".env").expanduser().resolve()
+    config_path, env_path = _wizard_destinations(method, config_file, env_file)
 
     print(colorize("header", "\nSetup Wizard\n"))
     print("This asks a few questions and writes a ready-to-run configuration.")
@@ -11602,8 +11613,9 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     if browser_import_pending:
         selected_host = cast(str, state.container_host)
         host_label = CONTAINER_FIREFOX_HOSTS[selected_host][0]
+        print("Before import, open https://www.instagram.com/ in Firefox on the host and sign in to the Instagram account used for monitoring.\n")
         print(f"Import Instagram login from Firefox on {host_label}:")
-        print(colorize("section", f"    {_firefox_import_cmd(method, state.env_path, exact=True, host_os=selected_host)}\n"))
+        print(colorize("section", f"    {_firefox_import_cmd(method, state.env_path, exact=True, host_os=selected_host, config_path=state.config_path, targets=command_targets)}\n"))
         print("After the import succeeds, check setup:")
     else:
         print("Check setup again:")
@@ -11954,7 +11966,8 @@ def run_main():
     early_dashboard_enabled = "--dashboard" in sys.argv and "--no-dashboard" not in sys.argv
 
     # Clear screen BEFORE printing the header
-    clear_screen(CLEAR_SCREEN)
+    keep_cli_history = any(flag in sys.argv for flag in ("--import-browser-session", "--import-firefox-session", "--doctor"))
+    clear_screen(CLEAR_SCREEN and not keep_cli_history)
 
     if not (early_dashboard_enabled and RICH_AVAILABLE):
         print_startup_banner()
@@ -12585,6 +12598,16 @@ def run_main():
                 profile = select_chromium_profile_cli(browser, None)
 
         import_session(browser, cookie_path, session_path, profile=profile)
+        if cfg_path:
+            method = _wizard_install_method()
+            selected_env = env_path or Path.cwd() / ".env"
+            doctor_command = _wizard_action_command(method, "--doctor", cfg_path, selected_env, args.usernames)
+            monitor_command = _wizard_action_command(method, "", cfg_path, selected_env, args.usernames)
+            print(colorize("header", "\nNext steps\n"))
+            print("Check the imported session and setup:")
+            print(colorize("section", f"    {doctor_command}\n"))
+            print("After Doctor passes, start monitoring:")
+            print(colorize("section", f"    {monitor_command}\n"))
         sys.exit(0)
 
     local_tz = None
