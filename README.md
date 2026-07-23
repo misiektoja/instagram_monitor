@@ -161,12 +161,12 @@ For the manual single-file method, optional browser support and upgrade commands
 <a id="common-commands"></a>
 ## Common Commands
 
-Use [Quick Install & Run](#-quick-install-run) above for first-time setup. The table uses concise PyPI commands and includes Docker Compose where it provides a distinct saved-configuration shortcut. For manual script and direct Docker equivalents, see [Run Individual Commands](https://misiektoja.github.io/instagram_monitor/quick-start/#run-individual-commands).
+Use [Quick Install & Run](#-quick-install-run) above for first-time setup. The table uses PyPI commands. For manual script, direct Docker and Docker Compose equivalents, see [Run Individual Commands](https://misiektoja.github.io/instagram_monitor/quick-start/#run-individual-commands).
 
 | I want to... | Run this |
 | --- | --- |
 | Try public monitoring without a login | `instagram_monitor <target_insta_user>` |
-| Start targets saved in `TARGET_USERNAMES` | `instagram_monitor --config-file instagram_monitor.conf` or `docker compose up --no-log-prefix` |
+| Start targets saved in `TARGET_USERNAMES` | `instagram_monitor --config-file instagram_monitor.conf` |
 | Start a browser control panel without targets | `instagram_monitor --web-dashboard` |
 | Monitor several accounts | `instagram_monitor target_1 target_2` or `instagram_monitor --targets target_1,target_2` |
 | Check the selected login, connectivity and targets | `instagram_monitor --doctor` |
