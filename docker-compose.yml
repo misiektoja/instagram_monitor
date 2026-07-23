@@ -37,7 +37,7 @@ services:
       - INSTAGRAM_MONITOR_COMPOSE=1
     ports:
       # Keep the unauthenticated dashboard reachable only from this host
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${INSTAGRAM_MONITOR_WEB_DASHBOARD_PORT:-8000}:${INSTAGRAM_MONITOR_WEB_DASHBOARD_PORT:-8000}"
     volumes:
       # Generated files plus config and the .env secrets file live in the current
       # directory on the host.
