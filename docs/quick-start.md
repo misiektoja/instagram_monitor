@@ -3,34 +3,62 @@
 <a id="new-here-run-the-setup-wizard"></a>
 ## New here? Run the setup wizard
 
-First complete one method on the [Installation](installation.md) page. Then use the interactive setup wizard. It asks which Instagram accounts to monitor, whether to use a saved login, which interface to start and which alerts to enable. You can review and change your answers before saving. Regular settings go in `instagram_monitor.conf`. Private values such as passwords and webhook URLs go in `.env`.
+Quick Start configures an existing installation. If you opened this page first, choose [PyPI](installation.md#install-from-pypi), the [manual Python script](installation.md#manual-python-based-installation), the [Docker image](installation.md#install-from-docker-hub) or [Docker Compose](installation.md#docker-compose). Complete that method's prerequisites and return here.
+
+Then use the interactive setup wizard. It asks which Instagram accounts to monitor, whether to use a saved login, which interface to start and which alerts to enable. You can review and change your answers before saving. Regular settings go in `instagram_monitor.conf`. Private values such as passwords and webhook URLs go in `.env`.
 
 For a local install, the wizard can check the setup and start monitoring immediately. In a container, it prints the next Docker or Docker Compose commands to run.
 
-Before using Docker Compose on a native Linux container engine, run the two `export` commands under [Install with Docker Compose](installation.md#docker-compose). They pass your numeric user and group IDs to the container so files created in the current directory belong to you. Docker-compatible runtimes on macOS and Windows normally do not need this step.
+Use the tab that matches how you installed the tool. Copy and run only the commands in that tab.
 
-Use the command that matches how you run the tool:
+=== "PyPI"
 
-```sh
-# PyPI install
-instagram_monitor --setup
+    ```sh
+    instagram_monitor --setup
+    ```
 
-# Manual Python script on macOS or Linux
-python3 instagram_monitor.py --setup
+=== "Manual Python script on macOS or Linux"
 
-# Manual Python script on Windows
-python instagram_monitor.py --setup
+    ```sh
+    python3 instagram_monitor.py --setup
+    ```
 
-# Docker Compose (skip curl if you cloned the repository)
-curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
-docker compose run --rm instagram_monitor --setup
+=== "Manual Python script on Windows"
 
-# Docker image on macOS or Windows PowerShell
-docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
+    ```powershell
+    python instagram_monitor.py --setup
+    ```
 
-# Docker image on Linux
-docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
-```
+=== "Docker image on macOS or Windows PowerShell"
+
+    ```sh
+    docker run --rm --pull=always -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
+    ```
+
+=== "Docker image on Linux"
+
+    ```sh
+    docker run --rm --pull=always -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
+    ```
+
+=== "Docker Compose"
+
+    Run setup from the directory used during installation. You do not need to download `docker-compose.yml` again.
+
+    On a native Linux container engine, run these shell commands in the same terminal immediately before setup unless the variables are already set there or you saved the numeric values in the Compose `.env` file during installation. For permanent project values, use the numeric `.env` form under [Install with Docker Compose](installation.md#docker-compose). Docker-compatible runtimes on macOS and Windows should skip this export block.
+
+    ```sh
+    export INSTAGRAM_MONITOR_UID="$(id -u)"
+    export INSTAGRAM_MONITOR_GID="$(id -g)"
+    ```
+
+    Then run setup by itself:
+
+    ```sh
+    docker compose run --rm --pull=always instagram_monitor --setup
+    ```
+
+Run interactive setup commands by themselves instead of including them in a multi-command paste.
 
 In Windows Command Prompt replace `${PWD}` with `%cd%`. The `:z` suffix is for hosts that use SELinux. If your Docker-compatible runtime reports that it is invalid, remove only `:z`.
 
