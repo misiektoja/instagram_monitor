@@ -219,12 +219,12 @@ docker pull misiektoja/instagram-monitor:latest
 docker run --rm misiektoja/instagram-monitor:latest --version
 ```
 
-Start the tool again with the same `/data` mount, `instagram_monitor_session` volume and options you used before. If your command uses a version such as `3.6.2` instead of `latest`, replace that version yourself when you want to upgrade. Each release publishes `latest` plus tags in `vX.Y.Z` and `X.Y.Z` forms.
+Start the tool again with the same `/data` mount, `instagram_monitor_session` volume and options you used before. If your command uses a version such as `3.7` instead of `latest`, replace that version yourself when you want to upgrade. Each release publishes `latest` plus tags in `vX.Y.Z` and `X.Y.Z` forms.
 
-For example, to pin version 3.6.2:
+For example, to pin version 3.7:
 
 ```sh
-docker pull misiektoja/instagram-monitor:3.6.2
+docker pull misiektoja/instagram-monitor:3.7
 ```
 
 ### Upgrade a Locally Built Docker Image
