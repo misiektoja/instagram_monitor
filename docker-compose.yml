@@ -9,6 +9,7 @@
 #   3. Start the saved targets and selected interface:
 #        docker compose up --no-log-prefix
 #   4. Open the web dashboard at http://127.0.0.1:8000/ and add targets.
+#      0.0.0.0 is the internal server bind address, not a browser destination.
 #
 # To monitor specific targets from the command line instead of the dashboard,
 # override the command, e.g.:
