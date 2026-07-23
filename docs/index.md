@@ -19,45 +19,77 @@ Powerful, real-time OSINT suite for tracking every activity on Instagram - from 
 
 ### 🚀 Quick Install & Run
 
-Python from PyPI
+#### Python from PyPI
 
 ```sh
 pip install instagram_monitor
+```
+
+Run setup by itself:
+
+```sh
 instagram_monitor --setup
 ```
 
-Docker Compose
+#### Docker image - fastest container setup
 
-On a native Linux container engine, the container needs your numeric user ID and group ID so files it creates in the current directory belong to you instead of `root`. Run the two `export` commands in the same terminal before the Compose commands. Docker-compatible runtimes on macOS and Windows normally handle bind-mount ownership, so users on those systems can usually skip both `export` commands.
+##### macOS or Windows
+
+Use a macOS shell or Windows PowerShell with a Docker-compatible runtime that provides the `docker` CLI.
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
-export INSTAGRAM_MONITOR_UID="$(id -u)"
-export INSTAGRAM_MONITOR_GID="$(id -g)"
-docker compose run --rm instagram_monitor --setup
-docker compose up --no-log-prefix
+docker run --rm --pull=always -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
 ```
 
-Docker run
-
-On macOS shells or Windows PowerShell with a Docker-compatible runtime that provides the `docker` CLI:
+After setup finishes, start monitoring with the files created by the wizard:
 
 ```sh
-docker pull misiektoja/instagram-monitor:latest
-docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
 docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --config-file /data/instagram_monitor.conf --env-file /data/.env
 ```
 
-The first command starts the setup wizard. The second starts monitoring with the files created by the wizard. Both commands keep configuration and downloaded files in the current directory. They keep the saved Instagram login in the Docker volume named `instagram_monitor_session`.
+The setup command pulls the current image. Both commands keep configuration and downloaded files in the current directory. They keep the saved Instagram login in the Docker volume named `instagram_monitor_session`.
 
-These commands use macOS shell or Windows PowerShell syntax. In Windows Command Prompt replace `${PWD}` with `%cd%`.
+In Windows Command Prompt replace `${PWD}` with `%cd%`.
 
-On Linux, `--user "$(id -u):$(id -g)"` runs the container with your numeric user and group IDs. This lets the container write files that your host account can edit:
+##### Linux
+
+`--user "$(id -u):$(id -g)"` runs the container with your numeric user and group IDs. This lets the container write files that your host account can edit.
 
 ```sh
-docker pull misiektoja/instagram-monitor:latest
-docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
+docker run --rm --pull=always -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
+```
+
+After setup finishes, start monitoring:
+
+```sh
 docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --config-file /data/instagram_monitor.conf --env-file /data/.env
+```
+
+#### Docker Compose - shorter recurring commands
+
+Download the Compose file:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
+```
+
+On a native Linux container engine, export your numeric user ID and group ID so files created in the current directory belong to you instead of `root`. Docker-compatible runtimes on macOS and Windows normally do not need these values.
+
+```sh
+export INSTAGRAM_MONITOR_UID="$(id -u)"
+export INSTAGRAM_MONITOR_GID="$(id -g)"
+```
+
+Run setup by itself:
+
+```sh
+docker compose run --rm --pull=always instagram_monitor --setup
+```
+
+After setup finishes, start monitoring with the shorter recurring command:
+
+```sh
+docker compose up --no-log-prefix
 ```
 
 For the manual single-file method, optional browser support and upgrade commands for every method, see [Installation](installation.md).
