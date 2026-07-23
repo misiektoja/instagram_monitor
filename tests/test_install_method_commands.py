@@ -51,6 +51,7 @@ class TestCmdPrefix:
     def test_docker_only_web_adds_port_publish(self, im_module):
         assert "-p 127.0.0.1:8000:8000" not in im_module._wizard_cmd_prefix("docker")
         assert "-p 127.0.0.1:8000:8000" in im_module._wizard_cmd_prefix("docker", web_dashboard=True)
+        assert "-p 127.0.0.1:9123:9123" in im_module._wizard_cmd_prefix("docker", web_dashboard=True, web_dashboard_port=9123)
 
     def test_docker_uses_host_shell_identity_on_linux_and_no_override_on_macos(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module.os, "getuid", lambda: 1234, raising=False)
@@ -59,13 +60,14 @@ class TestCmdPrefix:
         prefix = im_module._wizard_cmd_prefix("docker")
 
         assert '--user "$(id -u):$(id -g)"' in prefix
-        assert '-v "$PWD:/data:z"' in prefix
+        assert '-v "${PWD}:/data:z"' in prefix
         assert "--user" not in im_module._wizard_cmd_prefix("docker", host_os="macos")
         assert '--user "$(id -u):$(id -g)"' in im_module._wizard_cmd_prefix("docker", host_os="linux")
 
     def test_compose_only_web_adds_service_ports(self, im_module):
         assert im_module._wizard_cmd_prefix("compose") == "docker compose run --rm instagram_monitor"
         assert im_module._wizard_cmd_prefix("compose", web_dashboard=True) == "docker compose run --rm --service-ports instagram_monitor"
+        assert im_module._wizard_cmd_prefix("compose", web_dashboard=True, web_dashboard_port=9123) == "docker compose run --rm -p 127.0.0.1:9123:9123 instagram_monitor"
 
 
 class TestWebDashboardBrowserUrl:
@@ -187,6 +189,16 @@ class TestPortableWizardCommands:
         config_path, env_path = im_module._wizard_destinations(method)
         assert config_path == Path("/data/instagram_monitor.conf")
         assert env_path == Path("/data/.env")
+
+    @pytest.mark.parametrize("method", ["docker", "compose"])
+    def test_container_setup_rejects_destinations_outside_data(self, im_module, method):
+        with pytest.raises(ValueError, match="must be inside /data"):
+            im_module._wizard_destinations(method, "/tmp/custom.conf", "/data/.env")
+        with pytest.raises(ValueError, match="must be inside /data"):
+            im_module._wizard_destinations(method, "/data/custom.conf", "/tmp/custom.env")
+
+    def test_container_paths_already_inside_data_are_preserved(self, im_module):
+        assert im_module._wizard_container_path("/data/nested/custom.conf") == "/data/nested/custom.conf"
 
     def test_action_command_quotes_custom_paths(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "system", lambda: "Linux")
