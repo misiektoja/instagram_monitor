@@ -277,16 +277,18 @@ class TestWizardSafetyGates:
             assert "--user" not in output
             assert "Run doctor now?" not in output
 
-    def test_browser_import_keeps_history_and_repeats_followup_commands(self, im_module, monkeypatch, capsys):
+    @pytest.mark.parametrize("method,port_option", [("docker", "-p 127.0.0.1:8000:8000"), ("compose", "--service-ports")])
+    def test_browser_import_keeps_history_and_repeats_dashboard_ready_commands(self, im_module, monkeypatch, capsys, method, port_option):
         with make_test_directory() as directory_name:
             directory = Path(directory_name)
             config_path = directory / "instagram_monitor.conf"
             env_path = directory / ".env"
             cookie_path = directory / "cookies.sqlite"
-            config_path.write_text(f'TARGET_USERNAMES = ["target.user"]\nWEB_DASHBOARD_ENABLED = False\nDOTENV_FILE = {str(env_path)!r}\n', encoding="utf-8")
+            config_path.write_text(f'TARGET_USERNAMES = ["target.user"]\nWEB_DASHBOARD_ENABLED = True\nDOTENV_FILE = {str(env_path)!r}\n', encoding="utf-8")
             env_path.write_text("", encoding="utf-8")
             cookie_path.write_text("", encoding="utf-8")
             protect_setup_globals(im_module, monkeypatch)
+            monkeypatch.setattr(im_module, "_wizard_install_method", lambda: method)
             monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--import-browser-session", "--browser", "firefox", "--config-file", str(config_path), "--env-file", str(env_path), "--no-color"])
             monkeypatch.setattr(im_module.signal, "signal", lambda *args, **kwargs: None)
             clear_mock = Mock()
@@ -304,8 +306,11 @@ class TestWizardSafetyGates:
             import_mock.assert_called_once()
             output = capsys.readouterr().out
             assert "Check the imported session and setup:" in output
-            assert f"--doctor --config-file {config_path}" in output
             assert "After Doctor passes, start monitoring:" in output
+            doctor_output, monitor_output = output.split("After Doctor passes, start monitoring:", 1)
+            assert "--doctor" in doctor_output
+            assert port_option not in doctor_output
+            assert port_option in monitor_output
 
     def test_bare_launch_reads_saved_targets_before_first_run_decision(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
