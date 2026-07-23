@@ -11575,7 +11575,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         print(colorize("error", f"Could not write config file '{state.config_path}': {exc}"))
         raise SystemExit(1) from None
 
-    if state.secret_updates:
+    if state.secret_updates or not state.env_path.exists():
         try:
             update_status = update_dotenv_file(state.env_path, state.secret_updates)
         except Exception as exc:
@@ -11598,7 +11598,8 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     if write_status["backup_path"]:
         print(f"  Backup:        {write_status['backup_path']}")
     if update_status is not None:
-        print(f"  Secrets:       {update_status['path']}")
+        label = "Secrets" if state.secret_updates else "Dotenv"
+        print(f"  {label + ':':<15}{update_status['path']}")
 
     browser_import_pending = method in ("docker", "compose") and state.import_browser == "firefox" and state.container_host is not None
     doctor_failures = 0
