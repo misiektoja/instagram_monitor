@@ -154,6 +154,33 @@ class TestRunDoctor:
         assert calls == [[]]
         clear_mock.assert_called_once_with(False)
 
+    def test_cli_doctor_success_prints_monitoring_command(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--env-file", "none", "--no-color"])
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets: 0)
+
+        with pytest.raises(SystemExit) as exc:
+            im_module.run_main()
+
+        assert exc.value.code == 0
+        output = capsys.readouterr().out
+        assert "After Doctor passes, start monitoring:" in output
+        assert "target.user --env-file none" in output
+        assert "--doctor" not in output.split("After Doctor passes, start monitoring:", 1)[1]
+
+    def test_cli_doctor_failure_does_not_print_monitoring_command(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--env-file", "none", "--no-color"])
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets: 1)
+
+        with pytest.raises(SystemExit) as exc:
+            im_module.run_main()
+
+        assert exc.value.code == 1
+        assert "After Doctor passes, start monitoring:" not in capsys.readouterr().out
+
 
 class TestDoctorDeliveryTests:
     # Separate default-no decisions can skip both delivery channels without sending
