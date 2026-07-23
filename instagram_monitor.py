@@ -10954,25 +10954,44 @@ def _wizard_quote_argument(value) -> str:
 
 
 # Returns the command prefix used to invoke the tool for the detected install method
-def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, exact: bool = False, host_os: Optional[str] = None) -> str:
+def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, exact: bool = False, host_os: Optional[str] = None, web_dashboard_port: Optional[int] = None) -> str:
+    selected_web_port = web_dashboard_port if web_dashboard_port is not None else WEB_DASHBOARD_PORT
     if method == "compose":
-        service_ports = " --service-ports" if web_dashboard else ""
-        return f"docker compose run --rm{service_ports} instagram_monitor"
+        port_flag = ""
+        if web_dashboard:
+            port_flag = " --service-ports" if selected_web_port == 8000 else f" -p 127.0.0.1:{selected_web_port}:{selected_web_port}"
+        return f"docker compose run --rm{port_flag} instagram_monitor"
     if method == "docker":
-        web_port_flag = " -p 127.0.0.1:8000:8000" if web_dashboard else ""
+        web_port_flag = f" -p 127.0.0.1:{selected_web_port}:{selected_web_port}" if web_dashboard else ""
         linux_user_mapping = host_os in ("linux", "linux-snap", "linux-flatpak") or (host_os is None and hasattr(os, "getuid") and os.getuid() != 10001)
         user_flag = ' --user "$(id -u):$(id -g)"' if linux_user_mapping else ""
-        return (f'docker run --rm -it --init{user_flag} -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor')
+        return (f'docker run --rm -it --init{user_flag} -v "${{PWD}}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor')
     return _wizard_render_command(_wizard_local_command_args(method, exact=exact))
+
+
+# Rejects container setup destinations that would disappear with the temporary container
+def _wizard_validate_destination(method: str, path, label: str) -> Path:
+    resolved = Path(path).expanduser().resolve()
+    if method in ("docker", "compose"):
+        try:
+            resolved.relative_to(Path("/data"))
+        except ValueError:
+            raise ValueError(f"{label} must be inside /data so it remains on the host after the setup container exits")
+    return resolved
 
 
 # Converts a wizard destination into the matching path inside the data container mount
 def _wizard_container_path(path) -> str:
     resolved = Path(path).expanduser().resolve()
     try:
+        resolved.relative_to(Path("/data"))
+        return resolved.as_posix()
+    except ValueError:
+        pass
+    try:
         relative = resolved.relative_to(Path.cwd().resolve())
     except ValueError:
-        relative = Path(resolved.name)
+        raise ValueError(f"Container path '{resolved}' is outside the /data bind mount") from None
     return str(PurePosixPath("/data") / PurePosixPath(relative.as_posix()))
 
 
@@ -11250,7 +11269,7 @@ def _wizard_reset_section(state: WizardSetupState, config_keys, secret_keys) -> 
 # Confirms replacement or selects another config destination before answers are collected
 def _wizard_choose_config_destination(config_path: Path) -> Path:
     selected = config_path.expanduser().resolve()
-    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. Replace it and create a timestamped backup?", default=False):
+    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. Replace it with a fresh configuration built from defaults and create a timestamped backup?", default=False):
         alternative = _wizard_ask_text("Another config destination or leave empty to cancel")
         if not alternative:
             print(colorize("warning", "Setup cancelled. Destination files were not changed."))
@@ -11405,16 +11424,25 @@ def _wizard_collect_email_section(state: WizardSetupState) -> None:
 
 # Lets the user change output files and recollects secret-dependent sections when needed
 def _wizard_collect_destination_section(state: WizardSetupState, method: str) -> None:
-    config_text = _wizard_ask_text("Configuration file destination", default=str(state.config_path), required=True)
-    selected_config = Path(config_text).expanduser().resolve()
+    while True:
+        config_text = _wizard_ask_text("Configuration file destination", default=str(state.config_path), required=True)
+        try:
+            selected_config = _wizard_validate_destination(method, config_text, "Configuration destination")
+            break
+        except ValueError as exc:
+            print(colorize("warning", f"  {exc}."))
     if selected_config != state.config_path:
         state.config_path = _wizard_choose_config_destination(selected_config)
     while True:
         env_text = _wizard_ask_text("Dotenv file destination", default=str(state.env_path), required=True)
-        if env_text.casefold() != "none":
+        if env_text.casefold() == "none":
+            print(colorize("warning", "  Setup needs a writable dotenv file and cannot use 'none'."))
+            continue
+        try:
+            selected_env = _wizard_validate_destination(method, env_text, "Dotenv destination")
             break
-        print(colorize("warning", "  Setup needs a writable dotenv file and cannot use 'none'."))
-    selected_env = Path(env_text).expanduser().resolve()
+        except ValueError as exc:
+            print(colorize("warning", f"  {exc}."))
     state.config_values["DOTENV_FILE"] = str(selected_env)
     if selected_env == state.env_path:
         return
@@ -11482,15 +11510,16 @@ def _wizard_review_setup(state: WizardSetupState, method: str) -> bool:
 
 
 # Completes a confirmed browser import before the final config is rendered
-def _wizard_finish_browser_import(state: WizardSetupState, method: str) -> None:
+def _wizard_finish_browser_import(state: WizardSetupState, method: str) -> bool:
     if not state.import_browser:
-        return
+        return True
     label = browser_label(state.import_browser)
     retry_hint = f"{_wizard_cmd_prefix(method, exact=True, host_os=state.container_host)} --import-browser-session --browser {state.import_browser} --env-file {_wizard_quote_argument(str(state.env_path))}"
     if method in ("docker", "compose"):
         state.config_values["SESSION_USERNAME"] = state.session_username
-        return
-    elif _wizard_ask_yes_no(f"Import the {label} session now? (log in to Instagram in {label} first)", default=True):
+        return False
+    import_completed = False
+    if _wizard_ask_yes_no(f"Import the {label} session now? (log in to Instagram in {label} first)", default=True):
         try:
             imported_username = None
             if state.import_browser == "firefox":
@@ -11508,6 +11537,7 @@ def _wizard_finish_browser_import(state: WizardSetupState, method: str) -> None:
                 elif not state.session_username:
                     print(colorize("info", f"Detected username '{imported_username}' from the imported session."))
                 state.session_username = imported_username
+                import_completed = True
         except (SystemExit, Exception) as exc:
             print(colorize("warning", f"{label} import failed: {exc}"))
             print(f"You can retry later with: {retry_hint}")
@@ -11517,6 +11547,7 @@ def _wizard_finish_browser_import(state: WizardSetupState, method: str) -> None:
         print(colorize("warning", "No username was detected from the browser session."))
         state.session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
     state.config_values["SESSION_USERNAME"] = state.session_username
+    return import_completed
 
 
 # Resolves setup files to the container data mount or the local working directory
@@ -11524,7 +11555,7 @@ def _wizard_destinations(method: str, config_file=None, env_file=None):
     default_root = Path("/data") if method in ("docker", "compose") else Path.cwd()
     config_path = Path(config_file) if config_file is not None else default_root / DEFAULT_CONFIG_FILENAME
     env_path = Path(env_file) if env_file is not None else default_root / ".env"
-    return config_path.expanduser().resolve(), env_path.expanduser().resolve()
+    return _wizard_validate_destination(method, config_path, "Configuration destination"), _wizard_validate_destination(method, env_path, "Dotenv destination")
 
 
 # Starts monitoring with a Windows-safe child process or a POSIX process replacement
@@ -11545,7 +11576,11 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         raise SystemExit(1)
 
     method = _wizard_install_method()
-    config_path, env_path = _wizard_destinations(method, config_file, env_file)
+    try:
+        config_path, env_path = _wizard_destinations(method, config_file, env_file)
+    except ValueError as exc:
+        print(colorize("error", f"Setup cannot start: {exc}."))
+        raise SystemExit(1) from None
 
     print(colorize("header", "\nSetup Wizard\n"))
     print("This asks a few questions and writes a ready-to-run configuration.")
@@ -11579,7 +11614,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         raise SystemExit(1)
 
     print()
-    _wizard_finish_browser_import(state, method)
+    browser_import_complete = _wizard_finish_browser_import(state, method)
     state.config_values.update({"TARGET_USERNAMES": list(state.targets) if state.persist_targets else [], "SESSION_USERNAME": state.session_username, "SKIP_SESSION": not state.logged_in, "DOTENV_FILE": str(state.env_path)})
     config_content = generate_config_with_current_values(state.config_values)
     try:
@@ -11614,17 +11649,20 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         label = "Secrets" if state.secret_updates else "Dotenv"
         print(f"  {label + ':':<15}{update_status['path']}")
 
-    browser_import_pending = method in ("docker", "compose") and state.import_browser == "firefox" and state.container_host is not None
+    container_browser_import_pending = method in ("docker", "compose") and state.import_browser == "firefox" and state.container_host is not None and not browser_import_complete
+    local_browser_import_pending = method not in ("docker", "compose") and bool(state.import_browser) and not browser_import_complete
     doctor_failures = 0
+    doctor_ran = False
     print()
-    if not browser_import_pending and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
+    if not container_browser_import_pending and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
+        doctor_ran = True
         doctor_failures = run_doctor(state.targets)
 
     command_targets = [] if state.persist_targets else state.targets
     run_command = _wizard_action_command(method, "", state.config_path, state.env_path, command_targets, web_dashboard=state.want_web, host_os=state.container_host)
     doctor_command = _wizard_action_command(method, "--doctor", state.config_path, state.env_path, command_targets, host_os=state.container_host)
     print(colorize("header", "\nNext steps\n"))
-    if browser_import_pending:
+    if container_browser_import_pending:
         selected_host = cast(str, state.container_host)
         host_label = CONTAINER_FIREFOX_HOSTS[selected_host][0]
         print("Before import, open https://www.instagram.com/ in Firefox on the host and sign in to the Instagram account used for monitoring.\n")
@@ -11634,7 +11672,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     else:
         print("Check setup again:")
     print(colorize("section", f"    {doctor_command}\n"))
-    print("After Doctor passes, start monitoring:" if browser_import_pending else "Start monitoring:")
+    print("After Doctor passes, start monitoring:" if container_browser_import_pending or local_browser_import_pending else "Start monitoring:")
     print(colorize("section", f"    {run_command}\n"))
     if state.want_web:
         print(f"Then open {colorize('link', 'http://127.0.0.1:8000/')} in your browser.\n")
@@ -11645,12 +11683,14 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
 
     if doctor_failures:
         print(colorize("warning", "Setup was saved but doctor found failures. Fix them before starting monitoring."))
-    elif method not in ("docker", "compose") and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True):
+    elif method not in ("docker", "compose") and (not local_browser_import_pending or doctor_ran) and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True):
         launch_arguments = _wizard_local_command_args(method, exact=True)
         launch_arguments.extend(command_targets)
         launch_arguments.extend(("--config-file", str(state.config_path), "--env-file", str(state.env_path)))
         sys.stdout.flush()
         raise SystemExit(_wizard_launch_monitor(launch_arguments))
+    elif local_browser_import_pending and not doctor_ran:
+        print(colorize("warning", "Monitoring was not offered because browser import has not completed. Import the session or run Doctor to validate an existing session first."))
     raise SystemExit(0)
 
 
@@ -12479,7 +12519,13 @@ def run_main():
 
     args = parser.parse_args()
 
+    import_requested = bool(args.import_firefox_session or args.import_browser_session)
+    requested_actions = [label for label, enabled in (("--setup", args.setup), ("--doctor", args.doctor), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--generate-config", args.generate_config is not None)) if enabled]
+    if len(requested_actions) > 1:
+        parser.error("standalone actions cannot be combined: " + ", ".join(requested_actions))
     if args.setup:
+        if args.usernames or args.targets:
+            parser.error("--setup cannot be combined with monitoring targets")
         if args.env_file and str(args.env_file).casefold() == "none":
             parser.error("--setup requires a dotenv destination and cannot use --env-file none")
         run_setup_wizard(config_file=args.config_file, env_file=args.env_file)
