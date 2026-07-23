@@ -51,7 +51,9 @@ If setup enabled the Web Dashboard, add `-p 127.0.0.1:8000:8000` before the imag
 
 The setup command pulls the current image. Both commands keep configuration and downloaded files in the current directory. They keep the saved Instagram login in the Docker volume named `instagram_monitor_session`.
 
-In Windows Command Prompt replace `${PWD}` with `%cd%`.
+In Windows Command Prompt replace `${PWD}` with `%cd%`. Windows hosts must use Linux containers.
+
+When setup asks how to import Firefox on Windows, choose PowerShell or Command Prompt. The wizard prints the matching direct Docker command with the current directory mounted at `/data`, the persistent Instagram session volume and the Firefox profile under `%APPDATA%\Mozilla\Firefox` mounted read-only. The same host choice also prints the matching Docker Compose import command.
 
 ##### Linux
 
