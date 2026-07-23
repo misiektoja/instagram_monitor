@@ -54,8 +54,6 @@ The setup command pulls the current image. Both commands keep configuration and 
 
 In Windows Command Prompt replace `${PWD}` with `%cd%`. Windows hosts must use Linux containers.
 
-When setup asks how to import Firefox on Windows, choose PowerShell or Command Prompt. The wizard prints the matching direct Docker command with the current directory mounted at `/data`, the persistent Instagram session volume and the Firefox profile under `%APPDATA%\Mozilla\Firefox` mounted read-only. The same host choice also prints the matching Docker Compose import command.
-
 ##### Linux
 
 `--user "$(id -u):$(id -g)"` runs the container with your numeric user and group IDs. This lets the container write files that your host account can edit.
@@ -80,12 +78,14 @@ Download the Compose file:
 curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
 ```
 
-On a native Linux container engine, export your numeric user ID and group ID so files created in the current directory belong to you instead of `root`. Docker-compatible runtimes on macOS and Windows normally do not need these values.
+Linux container engine requires to export your numeric user ID and group ID so files created in the current directory belong to you instead of `root`.
 
 ```sh
 export INSTAGRAM_MONITOR_UID="$(id -u)"
 export INSTAGRAM_MONITOR_GID="$(id -g)"
 ```
+
+Docker-compatible runtimes on macOS and Windows normally do not need these values.
 
 Run setup by itself:
 
@@ -238,35 +238,7 @@ See the [full Quick Start guide](https://misiektoja.github.io/instagram_monitor/
 | Check the selected login, connectivity and targets | `instagram_monitor --doctor` |
 | See stories, reels and follower details | Import a [browser session](https://misiektoja.github.io/instagram_monitor/configuration/#option-3-session-login-using-browser-cookies-recommended) then run `instagram_monitor -u <your_insta_user> <target_insta_user>` |
 
-<a id="manual-commands"></a>
-### Manual commands
-
-The examples below use a PyPI install. For a manual script install, replace `instagram_monitor` with `python3 instagram_monitor.py` on macOS or Linux and `python instagram_monitor.py` on Windows. Docker users can copy the complete command prefixes from the [Usage guide](https://misiektoja.github.io/instagram_monitor/usage/#command-format).
-
-Track a public account without logging in:
-
-```sh
-instagram_monitor <target_insta_user>
-```
-
-For stories, reels and follower changes, sign in through a supported browser then import the session:
-
-```sh
-instagram_monitor --import-browser-session --browser firefox
-instagram_monitor -u <your_insta_user> <target_insta_user>
-```
-
-Launch the [Web Dashboard](https://misiektoja.github.io/instagram_monitor/view-modes/#web-dashboard-mode) with monitoring:
-
-```sh
-instagram_monitor <target_insta_user> --web-dashboard
-```
-
-View every command:
-
-```sh
-instagram_monitor --help
-```
+For complete copy-paste commands for every installation method, see [Run Individual Commands](https://misiektoja.github.io/instagram_monitor/quick-start/#run-individual-commands).
 
 For container operation, browser profiles, email alerts, Discord, ntfy and advanced settings, see [Configuration](https://misiektoja.github.io/instagram_monitor/configuration/) and [Usage](https://misiektoja.github.io/instagram_monitor/usage/). Keep private webhook URLs in `.env` or enter them through the setup wizard. See [Webhook Notifications](https://misiektoja.github.io/instagram_monitor/usage/#webhook-notifications) for complete setup and testing instructions.
 
