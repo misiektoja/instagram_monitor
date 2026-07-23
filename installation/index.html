@@ -394,10 +394,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#install-with-docker-compose" class="md-nav__link">
+  <a href="#install-from-docker-hub" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install with Docker Compose
+        Install from Docker Hub
       
     </span>
   </a>
@@ -405,10 +405,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#install-from-docker-hub" class="md-nav__link">
+  <a href="#install-with-docker-compose" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install from Docker Hub
+        Install with Docker Compose
       
     </span>
   </a>
@@ -832,10 +832,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#install-with-docker-compose" class="md-nav__link">
+  <a href="#install-from-docker-hub" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install with Docker Compose
+        Install from Docker Hub
       
     </span>
   </a>
@@ -843,10 +843,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#install-from-docker-hub" class="md-nav__link">
+  <a href="#install-with-docker-compose" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install from Docker Hub
+        Install with Docker Compose
       
     </span>
   </a>
@@ -1000,7 +1000,7 @@
 
 
 <h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
-<p>Choose one installation method. You do not need both Python and Docker. PyPI is usually the easiest local option. Docker Compose is usually the easiest container option because it keeps your settings, private values, downloaded files and saved Instagram login when the container is replaced.</p>
+<p>Choose one installation method. You do not need both Python and Docker. PyPI is usually the easiest local option. The direct Docker image is the fastest container option. Docker Compose takes one extra download but gives you shorter commands for later runs.</p>
 <p><a id="requirements"></a></p>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <p>Choose either the Python path or the container path.</p>
@@ -1053,14 +1053,14 @@
 <td><code>python3 instagram_monitor.py [OPTIONS] [TARGET ...]</code> on macOS/Linux or <code>python instagram_monitor.py [OPTIONS] [TARGET ...]</code> on Windows</td>
 </tr>
 <tr>
-<td>Docker Compose</td>
-<td>Users who want a reusable container setup</td>
-<td><code>docker compose run --rm instagram_monitor [OPTIONS] [TARGET ...]</code></td>
+<td>Docker Hub image</td>
+<td>Users who want the fastest container setup</td>
+<td><code>docker run ... misiektoja/instagram-monitor:latest [OPTIONS] [TARGET ...]</code></td>
 </tr>
 <tr>
-<td>Docker Hub image</td>
-<td>Users who want to write each Docker option themselves</td>
-<td><code>docker run ... misiektoja/instagram-monitor:latest [OPTIONS] [TARGET ...]</code></td>
+<td>Docker Compose</td>
+<td>Users who prefer shorter recurring commands after setup</td>
+<td><code>docker compose run --rm instagram_monitor [OPTIONS] [TARGET ...]</code></td>
 </tr>
 </tbody>
 </table>
@@ -1094,12 +1094,20 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>python3<span class="w"> </span>instagram_monitor.py<span class="w"> </span>--version
 </code></pre></div>
 <p>Use <code>python instagram_monitor.py --version</code> on Windows.</p>
+<p><a id="install-from-docker-hub"></a></p>
+<h3 id="install-from-docker-hub">Install from Docker Hub<a class="headerlink" href="#install-from-docker-hub" title="Permanent link">&para;</a></h3>
+<p>The published <a href="https://hub.docker.com/r/misiektoja/instagram-monitor"><code>misiektoja/instagram-monitor</code></a> image supports <code>linux/amd64</code> and <code>linux/arm64</code>.</p>
+<p>No separate image download is required. Continue to <a href="../quick-start/#new-here-run-the-setup-wizard">Quick Start</a>. Its first-run command uses <code>docker run --pull=always</code> to pull the current image and start the setup wizard in one step.</p>
+<p>Normal monitoring commands reuse the installed image and do not check for a newer release. The <a href="#upgrade-a-direct-docker-installation">upgrade instructions</a> pull explicitly when you choose to upgrade.</p>
+<p>Normal runs make the current directory available as <code>/data</code> in the container. Configuration and output written there remain on the host after the temporary container stops. The Docker volume named <code>instagram_monitor_session</code> keeps the saved Instagram login. On a native Linux container engine, the command also passes your numeric user and group IDs so new files belong to you. <a href="../quick-start/#new-here-run-the-setup-wizard">Quick Start</a> shows the complete commands for macOS shells, Windows PowerShell and native Linux engines.</p>
+<p>The macOS shell and Windows PowerShell examples use <code>${PWD}</code>. In Windows Command Prompt use <code>%cd%</code> for the current directory. Native Linux examples use <code>$PWD</code> and add the host user mapping.</p>
+<p>On Windows, configure Docker Desktop or another Docker-compatible runtime to use Linux containers. Guided setup supports Firefox import from the normal <code>%APPDATA%\Mozilla\Firefox</code> profile root and prints shell-specific commands for PowerShell or Command Prompt.</p>
+<p>The <code>:z</code> suffix lets Docker relabel the mounted directory on hosts that use SELinux. If your Docker-compatible runtime reports that <code>:z</code> is invalid, remove only <code>:z</code> and keep the rest of the mount.</p>
+<p>The published image includes all core dependencies but not the optional Chromium browser extra. Firefox works inside a container because its cookie database can be mounted as a read-only file. Chrome, Brave and Chromium need the host password service to decrypt cookies. A container cannot use that service.</p>
 <p><a id="docker-compose"></a></p>
 <h3 id="install-with-docker-compose">Install with Docker Compose<a class="headerlink" href="#install-with-docker-compose" title="Permanent link">&para;</a></h3>
-<p>Create or choose a directory for Instagram Monitor. Download the Compose file into that directory, then run these commands from there:</p>
+<p>Compose adds a reusable project file and shorter commands for later runs. Create or choose a directory for Instagram Monitor and download the Compose file there:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>pull
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>instagram_monitor<span class="w"> </span>--version
 </code></pre></div>
 <p>You can also download <a href="https://github.com/misiektoja/instagram_monitor/blob/main/docker-compose.yml">docker-compose.yml</a> in a browser or use the file from a cloned repository.</p>
 <p>On a native Linux container engine, the container does not automatically know which host user should own new files. Export your numeric user ID and group ID so configuration, logs and downloads created by the container belong to your account instead of <code>root</code>:</p>
@@ -1111,23 +1119,12 @@
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="na">INSTAGRAM_MONITOR_GID</span><span class="o">=</span><span class="s">1000</span>
 </code></pre></div>
 <p>The values above are only examples. Use the numbers returned on your system. The setup wizard keeps unrelated entries in this file. Docker-compatible runtimes on macOS and Windows normally handle bind-mount ownership, so users on those systems can usually skip this step. If <code>/data</code> is not writable, set the host user and group IDs as shown above.</p>
-<p>Compose makes the current host directory available as <code>/data</code> inside the container. This is called a bind mount. The setup wizard creates <code>instagram_monitor.conf</code> and <code>.env</code> there, so the files remain on your computer when the container is replaced. A separate Docker volume named <code>instagram_monitor_session</code> keeps the saved Instagram login. Continue with <a href="../quick-start/#new-here-run-the-setup-wizard">Quick Start</a>.</p>
-<p><a id="install-from-docker-hub"></a></p>
-<h3 id="install-from-docker-hub">Install from Docker Hub<a class="headerlink" href="#install-from-docker-hub" title="Permanent link">&para;</a></h3>
-<p>The published <a href="https://hub.docker.com/r/misiektoja/instagram-monitor"><code>misiektoja/instagram-monitor</code></a> image supports <code>linux/amd64</code> and <code>linux/arm64</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>docker<span class="w"> </span>pull<span class="w"> </span>misiektoja/instagram-monitor:latest
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--version
-</code></pre></div>
-<p>Docker uses the copy of the image already stored on your computer. Run <code>docker pull</code> again when you want to upgrade. Normal monitoring commands do not download a newer image automatically.</p>
-<p>Normal runs make the current directory available as <code>/data</code> in the container. Configuration and output written there remain on the host after the temporary container stops. The Docker volume named <code>instagram_monitor_session</code> keeps the saved Instagram login. On a native Linux container engine, the command also passes your numeric user and group IDs so new files belong to you. <a href="../quick-start/#new-here-run-the-setup-wizard">Quick Start</a> shows the complete commands for macOS shells, Windows PowerShell and native Linux engines.</p>
-<p>The macOS shell and Windows PowerShell examples use <code>${PWD}</code>. In Windows Command Prompt use <code>%cd%</code> for the current directory. Native Linux examples use <code>$PWD</code> and add the host user mapping.</p>
-<p>The <code>:z</code> suffix lets Docker relabel the mounted directory on hosts that use SELinux. If your Docker-compatible runtime reports that <code>:z</code> is invalid, remove only <code>:z</code> and keep the rest of the mount.</p>
-<p>The published image includes all core dependencies but not the optional Chromium browser extra. Firefox works inside a container because its cookie database can be mounted as a read-only file. Chrome, Brave and Chromium need the host password service to decrypt cookies. A container cannot use that service.</p>
+<p>Compose makes the current host directory available as <code>/data</code> inside the container. This is called a bind mount. The setup wizard creates <code>instagram_monitor.conf</code> and <code>.env</code> there, so the files remain on your computer when the container is replaced. A separate Docker volume named <code>instagram_monitor_session</code> keeps the saved Instagram login. Keep this directory and continue with <a href="../quick-start/#new-here-run-the-setup-wizard">Quick Start</a>. Its Compose setup command pulls the current image with <code>--pull=always</code>, so no separate pull command is needed during onboarding.</p>
 <p><a id="build-image-locally"></a></p>
 <h3 id="build-the-docker-image-locally">Build the Docker Image Locally<a class="headerlink" href="#build-the-docker-image-locally" title="Permanent link">&para;</a></h3>
 <p>From a cloned repository:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>docker<span class="w"> </span>build<span class="w"> </span>--pull<span class="w"> </span>--tag<span class="w"> </span>instagram-monitor:local<span class="w"> </span>.
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>instagram-monitor:local<span class="w"> </span>--version
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>docker<span class="w"> </span>build<span class="w"> </span>--pull<span class="w"> </span>--tag<span class="w"> </span>instagram-monitor:local<span class="w"> </span>.
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>instagram-monitor:local<span class="w"> </span>--version
 </code></pre></div>
 <p>To use this image through Compose, comment out <code>image:</code> in <code>docker-compose.yml</code> and uncomment <code>build: .</code>.</p>
 <p><a id="next-step"></a></p>
@@ -1137,51 +1134,51 @@
 <h2 id="upgrading">Upgrading<a class="headerlink" href="#upgrading" title="Permanent link">&para;</a></h2>
 <p>Upgrading the package or image does not upgrade or remove your configuration, <code>.env</code> secrets or downloaded files. Keep those files in the same working directory or another persistent location. Container users should also keep the <code>instagram_monitor_session</code> volume because it contains the saved Instagram login.</p>
 <h3 id="upgrade-a-pypi-installation">Upgrade a PyPI Installation<a class="headerlink" href="#upgrade-a-pypi-installation" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>instagram_monitor
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>instagram_monitor<span class="w"> </span>--version
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>instagram_monitor
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>instagram_monitor<span class="w"> </span>--version
 </code></pre></div>
 <p>Retain the optional browser extra if you use Chrome, Brave or Chromium import:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span><span class="s2">&quot;instagram_monitor[browser]&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span><span class="s2">&quot;instagram_monitor[browser]&quot;</span>
 </code></pre></div>
 <h3 id="upgrade-a-manual-installation">Upgrade a Manual Installation<a class="headerlink" href="#upgrade-a-manual-installation" title="Permanent link">&para;</a></h3>
 <p>Replace <a href="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py">instagram_monitor.py</a> and <a href="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt">requirements.txt</a> with the newest copies. You can download them in a browser, use the files from an updated clone or run:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt
-<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>-r<span class="w"> </span>requirements.txt
-<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>python3<span class="w"> </span>instagram_monitor.py<span class="w"> </span>--version
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>python3<span class="w"> </span>instagram_monitor.py<span class="w"> </span>--version
 </code></pre></div>
 <p>Refresh the dependencies even when <code>requirements.txt</code> appears unchanged because a new release may add or change a required library.</p>
 <p>Use <code>python instagram_monitor.py --version</code> on Windows. If you modified the script itself, save your changes before replacing it then reapply them to the new version.</p>
 <h3 id="upgrade-a-docker-compose-installation">Upgrade a Docker Compose Installation<a class="headerlink" href="#upgrade-a-docker-compose-installation" title="Permanent link">&para;</a></h3>
 <p>Stop an attached run with <code>Ctrl+C</code>. From the directory that contains <code>docker-compose.yml</code> run:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>pull
-<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>--no-log-prefix
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>pull
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>--no-log-prefix
 </code></pre></div>
 <p>Compose replaces the service container with one based on the current <code>latest</code> image. The host files <code>instagram_monitor.conf</code> and <code>.env</code> remain in place with all downloaded output. The named <code>instagram_monitor_session</code> volume also remains available.</p>
 <h3 id="upgrade-a-direct-docker-installation">Upgrade a Direct Docker Installation<a class="headerlink" href="#upgrade-a-direct-docker-installation" title="Permanent link">&para;</a></h3>
 <p>Stop the current run then pull the current image:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>docker<span class="w"> </span>pull<span class="w"> </span>misiektoja/instagram-monitor:latest
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--version
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>docker<span class="w"> </span>pull<span class="w"> </span>misiektoja/instagram-monitor:latest
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--version
 </code></pre></div>
-<p>Start the tool again with the same <code>/data</code> mount, <code>instagram_monitor_session</code> volume and options you used before. If your command uses a version such as <code>3.6.1</code> instead of <code>latest</code>, replace that version yourself when you want to upgrade. Each release publishes <code>latest</code> plus tags in <code>vX.Y.Z</code> and <code>X.Y.Z</code> forms.</p>
-<p>For example, to pin version 3.6.1:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>docker<span class="w"> </span>pull<span class="w"> </span>misiektoja/instagram-monitor:3.6.1
+<p>Start the tool again with the same <code>/data</code> mount, <code>instagram_monitor_session</code> volume and options you used before. If your command uses a version such as <code>3.7</code> instead of <code>latest</code>, replace that version yourself when you want to upgrade. Each release publishes <code>latest</code> plus tags in <code>vX.Y.Z</code> and <code>X.Y.Z</code> forms.</p>
+<p>For example, to pin version 3.7:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>docker<span class="w"> </span>pull<span class="w"> </span>misiektoja/instagram-monitor:3.7
 </code></pre></div>
 <h3 id="upgrade-a-locally-built-docker-image">Upgrade a Locally Built Docker Image<a class="headerlink" href="#upgrade-a-locally-built-docker-image" title="Permanent link">&para;</a></h3>
 <p>Update the cloned repository then rebuild while refreshing the base image:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>docker<span class="w"> </span>build<span class="w"> </span>--pull<span class="w"> </span>--tag<span class="w"> </span>instagram-monitor:local<span class="w"> </span>.
-<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>instagram-monitor:local<span class="w"> </span>--version
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>docker<span class="w"> </span>build<span class="w"> </span>--pull<span class="w"> </span>--tag<span class="w"> </span>instagram-monitor:local<span class="w"> </span>.
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>instagram-monitor:local<span class="w"> </span>--version
 </code></pre></div>
 <h3 id="repair-an-older-container-session-volume">Repair an Older Container Session Volume<a class="headerlink" href="#repair-an-older-container-session-volume" title="Permanent link">&para;</a></h3>
 <p>This section applies only if a session volume created by an older release reports <code>Permission denied</code> after an upgrade. Current releases set up new volumes automatically. To repair an older Compose volume once, run:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--user<span class="w"> </span><span class="m">10001</span>:10001<span class="w"> </span>--entrypoint<span class="w"> </span>chmod<span class="w"> </span>instagram_monitor<span class="w"> </span><span class="m">1777</span><span class="w"> </span>/home/instagram/.config/instaloader
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--user<span class="w"> </span><span class="m">10001</span>:10001<span class="w"> </span>--entrypoint<span class="w"> </span>chmod<span class="w"> </span>instagram_monitor<span class="w"> </span><span class="m">1777</span><span class="w"> </span>/home/instagram/.config/instaloader
 </code></pre></div>
 <p>For the direct Docker volume named <code>instagram_monitor_session</code>, use:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--user<span class="w"> </span><span class="m">10001</span>:10001<span class="w"> </span>--entrypoint<span class="w"> </span>chmod<span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span><span class="m">1777</span><span class="w"> </span>/home/instagram/.config/instaloader
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--user<span class="w"> </span><span class="m">10001</span>:10001<span class="w"> </span>--entrypoint<span class="w"> </span>chmod<span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span><span class="m">1777</span><span class="w"> </span>/home/instagram/.config/instaloader
 </code></pre></div>
 <h3 id="check-upgrade">Check Upgrade<a class="headerlink" href="#check-upgrade" title="Permanent link">&para;</a></h3>
 <p>After any upgrade, run the doctor command for your installation:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>instagram_monitor<span class="w"> </span>--doctor
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>instagram_monitor<span class="w"> </span>--doctor
 </code></pre></div>
 <p>For Docker Compose use <code>docker compose run --rm instagram_monitor --doctor</code>. For a direct image use the normal <code>/data</code> and session mounts plus <code>--doctor</code>.</p>
 

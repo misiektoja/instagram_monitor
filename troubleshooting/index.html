@@ -522,6 +522,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#container-dashboard-does-not-open" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Container Dashboard Does Not Open
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#choosing-the-right-logging-level" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -632,6 +643,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#container-dashboard-does-not-open" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Container Dashboard Does Not Open
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#choosing-the-right-logging-level" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -685,6 +707,19 @@
 </code></pre></div>
 <p>Doctor exits after the report and does not start monitoring or the Web Dashboard. The Compose command therefore does not need <code>--service-ports</code>. The setup wizard also offers to run Doctor after saving.</p>
 <p>For more detail, add <code>--debug</code> to Doctor or a normal run. Debug output includes HTTP details and internal decisions. It may also contain private data. Remove cookies, passwords, tokens and webhook URLs before sharing it.</p>
+<p><a id="container-dashboard-does-not-open"></a></p>
+<h2 id="container-dashboard-does-not-open">Container Dashboard Does Not Open<a class="headerlink" href="#container-dashboard-does-not-open" title="Permanent link">&para;</a></h2>
+<p>Open the default dashboard at <a href="http://127.0.0.1:8000/">http://127.0.0.1:8000/</a>. Do not enter <code>http://0.0.0.0:8000/</code> in the browser. <code>0.0.0.0</code> is the server bind address inside the container.</p>
+<p>For a one-off Compose run, the command must contain <code>--service-ports</code> before the service name:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--service-ports<span class="w"> </span>instagram_monitor<span class="w"> </span>&lt;target&gt;<span class="w"> </span>--web-dashboard
+</code></pre></div>
+<p>For direct Docker, the command must contain <code>-p 127.0.0.1:8000:8000</code> before the image name:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-p<span class="w"> </span><span class="m">127</span>.0.0.1:8000:8000<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>&lt;target&gt;<span class="w"> </span>--web-dashboard
+</code></pre></div>
+<p>Check the <code>PORTS</code> column while the container is running:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>docker<span class="w"> </span>ps
+</code></pre></div>
+<p><code>127.0.0.1:8000-&gt;8000/tcp</code> means the port is published correctly. A value containing only <code>8000/tcp</code> means the server can listen inside the container but the host browser cannot reach it. Dockerfile <code>EXPOSE 8000</code> does not publish the port.</p>
 <p><a id="choosing-the-right-logging-level"></a></p>
 <h2 id="choosing-the-right-logging-level">Choosing the Right Logging Level<a class="headerlink" href="#choosing-the-right-logging-level" title="Permanent link">&para;</a></h2>
 <ul>

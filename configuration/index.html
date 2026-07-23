@@ -938,7 +938,7 @@
 <p><a id="configuration-file"></a></p>
 <h2 id="configuration-file">Configuration File<a class="headerlink" href="#configuration-file" title="Permanent link">&para;</a></h2>
 <p>You can pass most settings as command-line options or save them in a configuration file for later runs.</p>
-<p>The easiest method is <code>instagram_monitor --setup</code>. The setup wizard checks the settings before saving them. If you allow it to replace an existing configuration, it first creates a backup whose name includes the current date and time.</p>
+<p>The easiest method is <code>instagram_monitor --setup</code>. The setup wizard checks the settings before saving them. If you allow it to replace an existing configuration, it first creates a backup whose name includes the current date and time. Replacement builds a fresh configuration from defaults, so settings that are not shown by the wizard are reset unless you restore them from the backup.</p>
 <p>If you want to edit the file manually, generate a default config template and save it to a file named <code>instagram_monitor.conf</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># On macOS, Linux or Windows Command Prompt (cmd.exe)</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>instagram_monitor<span class="w"> </span>--generate-config<span class="w"> </span>&gt;<span class="w"> </span>instagram_monitor.conf

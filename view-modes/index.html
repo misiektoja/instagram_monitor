@@ -760,6 +760,7 @@
 <p><a id="web-dashboard-mode"></a></p>
 <h2 id="web-dashboard">Web Dashboard<a class="headerlink" href="#web-dashboard" title="Permanent link">&para;</a></h2>
 <p>The Web Dashboard runs a small web server on your computer. By default, open <code>http://127.0.0.1:8000/</code> in a browser on the same computer. The <code>127.0.0.1</code> address is local, so other devices cannot connect unless you change the server and Docker settings.</p>
+<p>In a container the server must bind to <code>0.0.0.0</code> so Docker can forward traffic. That value means every container network interface. It is not a browser destination. Use the published host address <code>http://127.0.0.1:8000/</code> instead.</p>
 <p><strong>Key Features:</strong></p>
 <ul>
 <li><strong>Full Control Panel</strong>: Add or remove monitoring targets directly from the browser.</li>
@@ -783,10 +784,15 @@
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>instagram_monitor<span class="w"> </span>--web-dashboard
 </code></pre></div>
 <p>The Web Dashboard requires <code>flask</code>, which is included in normal installations. If it is missing, Instagram Monitor disables the dashboard but keeps console monitoring active.</p>
-<p>Docker Compose exposes the default dashboard only at <code>127.0.0.1</code> on the host. Use <code>docker compose up --no-log-prefix</code> if setup enabled the Web Dashboard. For a one-off Compose command, add <code>--service-ports</code>:</p>
+<p>Docker Compose exposes the default dashboard only at <code>127.0.0.1</code> on the host. Use <code>docker compose up --no-log-prefix</code> if setup enabled the Web Dashboard. For a one-off Compose command, add <code>--service-ports</code>. A plain <code>docker compose run --rm</code> starts the server but does not publish the service port:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--service-ports<span class="w"> </span>instagram_monitor<span class="w"> </span>target1<span class="w"> </span>target2<span class="w"> </span>--web-dashboard
 </code></pre></div>
-<p>For direct Docker, add <code>-p 127.0.0.1:8000:8000</code> before the image name. The complete mount and port forms are under <a href="../usage/#monitoring-mode">Monitoring Mode</a>.</p>
+<p>Compose declares its host port even when the saved configuration disables the Web Dashboard. If port 8000 is already used and you do not need the dashboard, use the plain <code>docker compose run --rm instagram_monitor ...</code> form without <code>--service-ports</code>.</p>
+<p>For a custom dashboard port, set the same port in <code>instagram_monitor.conf</code> and in the project <code>.env</code> used by Compose:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>INSTAGRAM_MONITOR_WEB_DASHBOARD_PORT=9000
+</code></pre></div>
+<p>The Compose mapping then becomes <code>127.0.0.1:9000:9000</code>. One-off commands printed by the tool use an explicit matching <code>-p</code> mapping for nondefault ports.</p>
+<p>For direct Docker, add <code>-p 127.0.0.1:8000:8000</code> before the image name. Replace both occurrences of <code>8000</code> when <code>WEB_DASHBOARD_PORT</code> uses another value. The complete mount and port forms are under <a href="../usage/#monitoring-mode">Monitoring Mode</a>.</p>
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="90%"/>
 </p>

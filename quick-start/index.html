@@ -692,33 +692,51 @@
 <h1 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h1>
 <p><a id="new-here-run-the-setup-wizard"></a></p>
 <h2 id="new-here-run-the-setup-wizard">New here? Run the setup wizard<a class="headerlink" href="#new-here-run-the-setup-wizard" title="Permanent link">&para;</a></h2>
-<p>First complete one method on the <a href="../installation/">Installation</a> page. Then use the interactive setup wizard. It asks which Instagram accounts to monitor, whether to use a saved login, which interface to start and which alerts to enable. You can review and change your answers before saving. Regular settings go in <code>instagram_monitor.conf</code>. Private values such as passwords and webhook URLs go in <code>.env</code>.</p>
+<p>Quick Start configures an existing installation. If you opened this page first, choose <a href="../installation/#install-from-pypi">PyPI</a>, the <a href="../installation/#manual-python-based-installation">manual Python script</a>, the <a href="../installation/#install-from-docker-hub">Docker image</a> or <a href="../installation/#docker-compose">Docker Compose</a>. Complete that method's prerequisites and return here.</p>
+<p>Then use the interactive setup wizard. It asks which Instagram accounts to monitor, whether to use a saved login, which interface to start and which alerts to enable. You can review and change your answers before saving. Regular settings go in <code>instagram_monitor.conf</code>. Private values such as passwords and webhook URLs go in <code>.env</code>.</p>
 <p>For a local install, the wizard can check the setup and start monitoring immediately. In a container, it prints the next Docker or Docker Compose commands to run.</p>
-<p>Before using Docker Compose on a native Linux container engine, run the two <code>export</code> commands under <a href="../installation/#docker-compose">Install with Docker Compose</a>. They pass your numeric user and group IDs to the container so files created in the current directory belong to you. Docker-compatible runtimes on macOS and Windows normally do not need this step.</p>
-<p>Use the command that matches how you run the tool:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># PyPI install</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>instagram_monitor<span class="w"> </span>--setup
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Manual Python script on macOS or Linux</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>python3<span class="w"> </span>instagram_monitor.py<span class="w"> </span>--setup
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Manual Python script on Windows</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>python<span class="w"> </span>instagram_monitor.py<span class="w"> </span>--setup
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Docker Compose (skip curl if you cloned the repository)</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>instagram_monitor<span class="w"> </span>--setup
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="c1"># Docker image on macOS or Windows PowerShell</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="c1"># Docker image on Linux</span>
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
+<p>Use the tab that matches how you installed the tool. Copy and run only the commands in that tab.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:6"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><input id="__tabbed_1_4" name="__tabbed_1" type="radio" /><input id="__tabbed_1_5" name="__tabbed_1" type="radio" /><input id="__tabbed_1_6" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">PyPI</label><label for="__tabbed_1_2">Manual Python script on macOS or Linux</label><label for="__tabbed_1_3">Manual Python script on Windows</label><label for="__tabbed_1_4">Docker image on macOS or Windows PowerShell</label><label for="__tabbed_1_5">Docker image on Linux</label><label for="__tabbed_1_6">Docker Compose</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>instagram_monitor<span class="w"> </span>--setup
 </code></pre></div>
-<p>In Windows Command Prompt replace <code>${PWD}</code> with <code>%cd%</code>. The <code>:z</code> suffix is for hosts that use SELinux. If your Docker-compatible runtime reports that it is invalid, remove only <code>:z</code>.</p>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>python3<span class="w"> </span>instagram_monitor.py<span class="w"> </span>--setup
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">python</span> <span class="n">instagram_monitor</span><span class="p">.</span><span class="n">py</span> <span class="p">-</span><span class="n">-setup</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--pull<span class="o">=</span>always<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--pull<span class="o">=</span>always<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<p>Run setup from the directory used during installation. You do not need to download <code>docker-compose.yml</code> again.</p>
+<p>On a native Linux container engine, run these shell commands in the same terminal immediately before setup unless the variables are already set there or you saved the numeric values in the Compose <code>.env</code> file during installation. For permanent project values, use the numeric <code>.env</code> form under <a href="../installation/#docker-compose">Install with Docker Compose</a>. Docker-compatible runtimes on macOS and Windows should skip this export block.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_UID</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">&quot;</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_GID</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span>
+</code></pre></div>
+<p>Then run setup by itself:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--pull<span class="o">=</span>always<span class="w"> </span>instagram_monitor<span class="w"> </span>--setup
+</code></pre></div>
+</div>
+</div>
+</div>
+<p>Run interactive setup commands by themselves instead of including them in a multi-command paste.</p>
+<p>In Windows Command Prompt replace <code>${PWD}</code> with <code>%cd%</code>. Windows hosts must use Linux containers. The <code>:z</code> suffix is for hosts that use SELinux. If your Docker-compatible runtime reports that it is invalid, remove only <code>:z</code>.</p>
 <p>In this documentation, a <strong>target</strong> is an Instagram account you want to monitor. The <strong>session account</strong> is the Instagram account that Instagram Monitor uses to sign in. They can be different accounts.</p>
 <p>The wizard recommends importing a saved Firefox login. On macOS and Linux it can also import from Chrome, Brave or Chromium. Those three browsers require the optional <code>pycookiecheat</code> package. If it is missing, the wizard can install it in a local Python installation.</p>
 <p>The wizard detects PyPI, a downloaded script, Docker or Docker Compose and prints matching commands. It also formats file paths for the current operating system.</p>
+<p>Container setup destinations must stay inside <code>/data</code>. That directory is the current host directory mounted into the temporary setup container, so files written there survive <code>--rm</code>. The wizard rejects paths such as <code>/tmp/instagram_monitor.conf</code> instead of printing a command for a different file.</p>
+<p>For Docker or Docker Compose, choose <strong>Import from Firefox after setup</strong>. The wizard asks whether Docker runs on macOS, standard Linux, Linux with Snap, Linux with Flatpak, Windows PowerShell or Windows Command Prompt. It then prints the matching command to mount the signed-in host profile read-only once and save the imported login in the persistent <code>instagram_monitor_session</code> volume. Windows commands use the Firefox profile under <code>%APPDATA%\Mozilla\Firefox</code>.</p>
 <p>Firefox import works in every local installation without an extra package. Chrome, Brave and Chromium import works on macOS and Linux with the optional browser dependency. Container setup uses Firefox because Chromium cookie decryption needs a password service from the host that is not available inside the container. See <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">Session Login Using Browser Cookies</a>.</p>
 <p>If no targets or Web Dashboard setting have been saved, running the tool with no arguments opens the wizard in an interactive terminal. If <code>TARGET_USERNAMES</code> contains saved targets, the same command starts monitoring them. If only the Web Dashboard is enabled, it starts an empty browser control panel where you can add targets.</p>
 <p><a id="not-sure-which-mode-you-want"></a></p>
@@ -762,24 +780,24 @@
 </tr>
 </tbody>
 </table>
-<p><a id="manual-commands"></a></p>
+<p><a id="run-individual-commands"></a></p>
 <h2 id="run-individual-commands">Run Individual Commands<a class="headerlink" href="#run-individual-commands" title="Permanent link">&para;</a></h2>
 <p>The examples below use PyPI. For a manual script, replace <code>instagram_monitor</code> with <code>python3 instagram_monitor.py</code> on macOS or Linux. Use <code>python instagram_monitor.py</code> on Windows. Docker users should copy the matching prefix under <a href="../usage/#command-format">Command Format by Installation Method</a>.</p>
 <p>Track a public account in <a href="../configuration/#no-login-mode-without-session-login">No-Login Mode</a>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;
 </code></pre></div>
 <p>For stories, reels and detailed follower changes, use <a href="../configuration/#logged-in-mode-with-session-login">Logged-In Mode</a>. Log in to Instagram in a supported browser then import the session. Firefox is the recommended local path:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>instagram_monitor<span class="w"> </span>-u<span class="w"> </span>&lt;your_insta_user&gt;<span class="w"> </span>&lt;target_insta_user&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>instagram_monitor<span class="w"> </span>-u<span class="w"> </span>&lt;your_insta_user&gt;<span class="w"> </span>&lt;target_insta_user&gt;
 </code></pre></div>
 <p>The import converts the browser login into a saved Instaloader session. The value passed to <code>-u</code> must be the username of that logged-in account. Container users must use the same <code>instagram_monitor_session</code> Docker volume for the import and later monitoring runs. The complete import command is under <a href="../usage/#container-operation">Container Operation</a>.</p>
 <p>Launch the <a href="../view-modes/#web-dashboard-mode">Web Dashboard</a> with a target or as an empty control panel:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--web-dashboard
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>instagram_monitor<span class="w"> </span>--web-dashboard
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--web-dashboard
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>instagram_monitor<span class="w"> </span>--web-dashboard
 </code></pre></div>
 <p>A one-off Compose command needs <code>--service-ports</code> so the browser can reach the dashboard. A direct Docker command needs a port mapping. Both complete commands are under <a href="../usage/#monitoring-mode">Monitoring Mode</a>.</p>
 <p>View every command-line option plus examples adapted to the detected installation:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>instagram_monitor<span class="w"> </span>--help
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>instagram_monitor<span class="w"> </span>--help
 </code></pre></div>
 
 
