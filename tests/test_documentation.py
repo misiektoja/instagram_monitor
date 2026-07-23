@@ -134,12 +134,13 @@ def test_firefox_docs_cover_container_host_layouts():
     compose = read_asset("docker-compose.yml")
     firefox_section = usage.split("### Import Firefox into the Container Session", 1)[1].split("<a id=\"email-notifications\"></a>", 1)[0]
     assert "installed natively, through Snap or through Flatpak" in configuration
-    mounts = ('-v "${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"')
+    mounts = ('-v "${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$env:APPDATA\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"', '-v "%APPDATA%\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"')
     for mount in mounts:
         assert firefox_section.count(mount) == 2
         assert mount in compose
-    assert firefox_section.count("docker run --rm -it --init") == 4
-    assert firefox_section.count("docker compose run --rm -v") == 4
+    assert firefox_section.count("docker run --rm -it --init") == 6
+    assert firefox_section.count("docker compose run --rm -v") == 6
+    assert '-v "%cd%:/data:z"' in firefox_section
     assert "Run Doctor only after that import succeeds" in usage
     assert "Do not add `:z` or `:Z` to the whole Firefox profile mount" in usage
 
