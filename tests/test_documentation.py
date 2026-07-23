@@ -101,6 +101,8 @@ def test_dashboard_docs_explain_container_port_publication():
     compose = read_asset("docker-compose.yml")
     assert "It is not a browser destination" in view_modes
     assert "A plain `docker compose run --rm` starts the server but does not publish the service port" in view_modes
+    assert "INSTAGRAM_MONITOR_WEB_DASHBOARD_PORT=9000" in view_modes
+    assert "${INSTAGRAM_MONITOR_WEB_DASHBOARD_PORT:-8000}" in compose
     assert "Do not enter `http://0.0.0.0:8000/` in the browser" in troubleshooting
     assert "`127.0.0.1:8000->8000/tcp` means the port is published correctly" in troubleshooting
     assert "A value containing only `8000/tcp`" in troubleshooting
@@ -112,6 +114,7 @@ def test_configuration_docs_explain_generation_and_precedence():
     configuration = read_asset("docs/configuration.md")
     assert "writes the template directly as UTF-8" in configuration
     assert "creates a backup whose name includes the current date and time" in configuration
+    assert "fresh configuration from defaults" in configuration
     assert "Usernames written directly after the command and usernames passed through `--targets` are combined" in configuration
 
 
@@ -121,6 +124,7 @@ def test_quick_start_covers_direct_docker_host_variants():
     assert '=== "Docker image on macOS or Windows PowerShell"' in quick_start
     assert '=== "Docker image on Linux"' in quick_start
     assert "instagram_monitor_session:/home/instagram/.config/instaloader" in quick_start
+    assert "Container setup destinations must stay inside `/data`" in quick_start
 
 
 # Verifies Firefox guidance covers every supported container host layout for direct Docker and Compose
