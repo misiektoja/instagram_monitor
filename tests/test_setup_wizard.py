@@ -262,6 +262,7 @@ class TestWizardSafetyGates:
                 im_module.run_setup_wizard(config_file=directory / "instagram_monitor.conf", env_file=directory / ".env")
 
             assert error.value.code == 0
+            assert (directory / ".env").read_text(encoding="utf-8") == ""
             ask_mock.assert_not_called()
             doctor_mock.assert_not_called()
             output = capsys.readouterr().out
