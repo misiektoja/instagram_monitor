@@ -241,12 +241,43 @@ class TestSectionOrder:
 
 
 class TestWizardSafetyGates:
+    def test_declined_local_browser_import_without_doctor_does_not_offer_start(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            questions = []
+            answers = iter([False, False])
+            protect_setup_globals(im_module, monkeypatch)
+            monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+            monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "pip")
+            monkeypatch.setattr(im_module, "_wizard_collect_target_section", lambda state: state.targets.append("target.user"))
+            monkeypatch.setattr(im_module, "_wizard_collect_login_section", lambda state, method: (setattr(state, "logged_in", True), setattr(state, "login_method", "firefox"), setattr(state, "session_username", "login.user"), setattr(state, "import_browser", "firefox")))
+            monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: None)
+            monkeypatch.setattr(im_module, "_wizard_collect_email_section", lambda state: None)
+            monkeypatch.setattr(im_module, "_wizard_collect_webhook_section", lambda state: None)
+            monkeypatch.setattr(im_module, "_wizard_review_setup", lambda state, method: True)
+            monkeypatch.setattr(im_module, "run_doctor", Mock(side_effect=AssertionError("doctor ran")))
+            monkeypatch.setattr(im_module, "_wizard_launch_monitor", Mock(side_effect=AssertionError("monitor started")))
+            # Captures the declined import and Doctor prompts while rejecting any unexpected start prompt
+            def ask_yes_no(question, default=True):
+                questions.append(question)
+                return next(answers)
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", ask_yes_no)
+
+            with pytest.raises(SystemExit) as error:
+                im_module.run_setup_wizard(config_file=directory / "instagram_monitor.conf", env_file=directory / ".env")
+
+            assert error.value.code == 0
+            assert all(not question.startswith("Start monitoring now?") for question in questions)
+            assert "Monitoring was not offered because browser import has not completed" in capsys.readouterr().out
+
     def test_deferred_macos_firefox_setup_skips_doctor_and_orders_commands(self, im_module, monkeypatch, capsys):
         with make_test_directory() as directory_name:
             directory = Path(directory_name)
+            monkeypatch.chdir(directory)
             protect_setup_globals(im_module, monkeypatch)
             monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
             monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "docker")
+            monkeypatch.setattr(im_module, "_wizard_validate_destination", lambda method, path, label: Path(path).expanduser().resolve())
             monkeypatch.setattr(im_module, "_wizard_collect_target_section", lambda state: state.targets.append("target.user"))
             monkeypatch.setattr(im_module, "_wizard_collect_login_section", lambda state, method: (setattr(state, "logged_in", True), setattr(state, "login_method", "firefox"), setattr(state, "session_username", "login.user"), setattr(state, "import_browser", "firefox"), setattr(state, "container_host", "macos")))
             monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: None)
@@ -398,3 +429,15 @@ class TestWizardSafetyGates:
 
             assert error.value.code == 0
             assert all(not question.startswith("Start monitoring now?") for question in questions)
+
+    def test_standalone_actions_cannot_be_combined(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--setup", "--doctor"])
+        monkeypatch.setattr(im_module.signal, "signal", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_startup_banner", lambda: None)
+
+        with pytest.raises(SystemExit) as error:
+            im_module.run_main()
+
+        assert error.value.code == 2
+        assert "standalone actions cannot be combined: --setup, --doctor" in capsys.readouterr().err
