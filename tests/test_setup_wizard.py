@@ -1,7 +1,9 @@
 """Tests for the staged setup wizard and its safety gates."""
 
-from pathlib import Path
+import os
 import tempfile
+from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -12,9 +14,15 @@ ARTIFACT_ROOT = PROJECT_ROOT / "local" / "test_artifacts"
 
 
 # Creates a disposable setup destination below the project local directory
+@contextmanager
 def make_test_directory():
     ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
-    return tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT)
+    previous_directory = Path.cwd()
+    with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+        try:
+            yield directory_name
+        finally:
+            os.chdir(previous_directory)
 
 
 # Registers setup-mutated globals with monkeypatch so each test restores them

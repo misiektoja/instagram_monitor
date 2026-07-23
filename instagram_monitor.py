@@ -10974,23 +10974,30 @@ def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, exact: bool = F
 
 # Rejects container setup destinations that would disappear with the temporary container
 def _wizard_validate_destination(method: str, path, label: str) -> Path:
-    resolved = Path(path).expanduser().resolve()
     if method in ("docker", "compose"):
+        expanded = Path(path).expanduser()
+        portable = PurePosixPath(expanded.as_posix())
         try:
-            resolved.relative_to(Path("/data"))
+            relative = portable.relative_to(PurePosixPath("/data"))
         except ValueError:
             raise ValueError(f"{label} must be inside /data so it remains on the host after the setup container exits")
-    return resolved
+        if ".." in relative.parts:
+            raise ValueError(f"{label} must be inside /data so it remains on the host after the setup container exits")
+        return Path(PurePosixPath("/data", *relative.parts).as_posix())
+    return Path(path).expanduser().resolve()
 
 
 # Converts a wizard destination into the matching path inside the data container mount
 def _wizard_container_path(path) -> str:
-    resolved = Path(path).expanduser().resolve()
+    expanded = Path(path).expanduser()
+    portable = PurePosixPath(expanded.as_posix())
     try:
-        resolved.relative_to(Path("/data"))
-        return resolved.as_posix()
+        relative = portable.relative_to(PurePosixPath("/data"))
+        if ".." not in relative.parts:
+            return PurePosixPath("/data", *relative.parts).as_posix()
     except ValueError:
         pass
+    resolved = expanded.resolve()
     try:
         relative = resolved.relative_to(Path.cwd().resolve())
     except ValueError:
