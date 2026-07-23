@@ -52,7 +52,9 @@ If setup enabled the Web Dashboard, add `-p 127.0.0.1:8000:8000` before the imag
 
 The setup command pulls the current image. Both commands keep configuration and downloaded files in the current directory. They keep the saved Instagram login in the Docker volume named `instagram_monitor_session`.
 
-In Windows Command Prompt replace `${PWD}` with `%cd%`.
+In Windows Command Prompt replace `${PWD}` with `%cd%`. Windows hosts must use Linux containers.
+
+When setup asks how to import Firefox on Windows, choose PowerShell or Command Prompt. The wizard prints the matching direct Docker command with the current directory mounted at `/data`, the persistent Instagram session volume and the Firefox profile under `%APPDATA%\Mozilla\Firefox` mounted read-only. The same host choice also prints the matching Docker Compose import command.
 
 ##### Linux
 
@@ -218,6 +220,8 @@ docker compose run --rm --pull=always instagram_monitor --setup
 ```
 
 Running the tool with no arguments offers the wizard if you have not saved any targets or enabled the Web Dashboard. If targets are already saved, it starts monitoring them. The wizard detects the installation method and shows the commands that match it.
+
+Firefox import is the recommended logged-in path for local and container installs. Docker setup asks for the host environment then prints a matching one-time read-only import command for macOS, Linux, Windows PowerShell or Windows Command Prompt. Later runs reuse the Instaloader session saved in the `instagram_monitor_session` volume. Chromium-based import remains unavailable inside containers because it requires the host password service.
 
 See the [full Quick Start guide](https://misiektoja.github.io/instagram_monitor/quick-start/) for browser choices, saved targets, configuration backups and setup recovery.
 
