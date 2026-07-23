@@ -5,7 +5,7 @@
 #        export INSTAGRAM_MONITOR_UID="$(id -u)"
 #        export INSTAGRAM_MONITOR_GID="$(id -g)"
 #   2. Generate a config (the wizard configures the dashboard for container access):
-#        docker compose run --rm instagram_monitor --setup
+#        docker compose run --rm --pull=always instagram_monitor --setup
 #   3. Start the saved targets and selected interface:
 #        docker compose up --no-log-prefix
 #   4. Open the web dashboard at http://127.0.0.1:8000/ and add targets.
