@@ -81,6 +81,12 @@ class TestFirefoxImportCmd:
         assert docker.endswith("--import-browser-session --browser firefox")
         assert compose == f"docker compose run --rm -v {source} instagram_monitor --import-browser-session --browser firefox"
 
+    def test_setup_import_command_carries_config_and_targets(self, im_module, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        command = im_module._firefox_import_cmd("docker", tmp_path / ".env", host_os="macos", config_path=tmp_path / "instagram_monitor.conf", targets=["target.user"])
+        assert "--import-browser-session --browser firefox target.user" in command
+        assert "--config-file /data/instagram_monitor.conf --env-file /data/.env" in command
+
 
 class TestFirefoxProfileDiscovery:
     # Verifies native, Snap and Flatpak Firefox profiles are discovered without duplicate cookie paths
@@ -148,6 +154,13 @@ class TestWizardBrowserDesc:
 
 
 class TestPortableWizardCommands:
+    @pytest.mark.parametrize("method", ["docker", "compose"])
+    def test_container_setup_destinations_use_data_mount(self, im_module, method, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        config_path, env_path = im_module._wizard_destinations(method)
+        assert config_path == Path("/data/instagram_monitor.conf")
+        assert env_path == Path("/data/.env")
+
     def test_action_command_quotes_custom_paths(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "system", lambda: "Linux")
         monkeypatch.setattr(im_module.sys, "executable", "/opt/Python Runtime/python3")
