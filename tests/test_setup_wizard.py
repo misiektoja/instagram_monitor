@@ -265,13 +265,46 @@ class TestWizardSafetyGates:
             ask_mock.assert_not_called()
             doctor_mock.assert_not_called()
             output = capsys.readouterr().out
+            prerequisite_index = output.index("Before import, open https://www.instagram.com/ in Firefox on the host")
             import_index = output.index("Import Instagram login from Firefox on macOS:")
             doctor_index = output.index("After the import succeeds, check setup:")
             start_index = output.index("After Doctor passes, start monitoring:")
-            assert import_index < doctor_index < start_index
+            assert prerequisite_index < import_index < doctor_index < start_index
             assert '${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro' in output
+            assert "--config-file /data/" in output
+            assert "instagram_monitor.conf" in output
             assert "--user" not in output
             assert "Run doctor now?" not in output
+
+    def test_browser_import_keeps_history_and_repeats_followup_commands(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            config_path = directory / "instagram_monitor.conf"
+            env_path = directory / ".env"
+            cookie_path = directory / "cookies.sqlite"
+            config_path.write_text(f'TARGET_USERNAMES = ["target.user"]\nWEB_DASHBOARD_ENABLED = False\nDOTENV_FILE = {str(env_path)!r}\n', encoding="utf-8")
+            env_path.write_text("", encoding="utf-8")
+            cookie_path.write_text("", encoding="utf-8")
+            protect_setup_globals(im_module, monkeypatch)
+            monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--import-browser-session", "--browser", "firefox", "--config-file", str(config_path), "--env-file", str(env_path), "--no-color"])
+            monkeypatch.setattr(im_module.signal, "signal", lambda *args, **kwargs: None)
+            clear_mock = Mock()
+            monkeypatch.setattr(im_module, "clear_screen", clear_mock)
+            monkeypatch.setattr(im_module, "print_startup_banner", lambda: None)
+            monkeypatch.setattr(im_module, "get_firefox_cookiefile", lambda: str(cookie_path))
+            import_mock = Mock(return_value="login.user")
+            monkeypatch.setattr(im_module, "import_session", import_mock)
+
+            with pytest.raises(SystemExit) as error:
+                im_module.run_main()
+
+            assert error.value.code == 0
+            clear_mock.assert_called_once_with(False)
+            import_mock.assert_called_once()
+            output = capsys.readouterr().out
+            assert "Check the imported session and setup:" in output
+            assert f"--doctor --config-file {config_path}" in output
+            assert "After Doctor passes, start monitoring:" in output
 
     def test_bare_launch_reads_saved_targets_before_first_run_decision(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
