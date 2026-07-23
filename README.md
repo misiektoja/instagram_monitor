@@ -161,7 +161,7 @@ For the manual single-file method, optional browser support and upgrade commands
 <a id="common-commands"></a>
 ## Common Commands
 
-Use [Quick Install & Run](#-quick-install-run) above for first-time setup. The examples below use the PyPI command. For manual script, direct Docker and Docker Compose equivalents, see [Run Individual Commands](https://misiektoja.github.io/instagram_monitor/quick-start/#run-individual-commands).
+Use [Quick Install & Run](#-quick-install-run) above for first-time setup. The table uses concise PyPI commands and includes Docker Compose where it provides a distinct saved-configuration shortcut. For manual script and direct Docker equivalents, see [Run Individual Commands](https://misiektoja.github.io/instagram_monitor/quick-start/#run-individual-commands).
 
 | I want to... | Run this |
 | --- | --- |
