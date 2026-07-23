@@ -27,7 +27,7 @@ def protect_setup_globals(im_module, monkeypatch):
 # Builds a minimal editable state for one setup-section unit test
 def make_setup_state(im_module, directory: Path):
     baseline = dict(vars(im_module))
-    return im_module.WizardSetupState(directory / "instagram_monitor.conf", directory / ".env", baseline, dict(baseline), {}, ["target.user"], True, False, "no-login", "", None, False, False, False, False)
+    return im_module.WizardSetupState(directory / "instagram_monitor.conf", directory / ".env", baseline, dict(baseline), {}, ["target.user"], True, False, "no-login", "", None, None, False, False, False, False)
 
 
 class TestEditableReview:
@@ -101,6 +101,35 @@ class TestBrowserOnboarding:
             assert state.login_method == "chromium"
             assert state.import_browser == "chrome"
             assert state.logged_in is True
+
+    def test_docker_firefox_is_deferred_and_collects_host_layout(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            captured = []
+            choices = iter([1, 0])
+            # Selects Firefox then macOS while recording the displayed choices
+            def choose(question, options, default_index=0):
+                captured.append((question, options))
+                return next(choices)
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", choose)
+            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: "login.user")
+
+            im_module._wizard_collect_login_section(state, "docker")
+
+            assert captured[0][1][1][0] == "Import from Firefox after setup, recommended"
+            assert captured[1][0] == "Which operating system runs Docker and how was Firefox installed?"
+            assert state.import_browser == "firefox"
+            assert state.container_host == "macos"
+
+    @pytest.mark.parametrize("choice,expected", [(0, "macos"), (1, "linux"), (2, "linux-snap"), (3, "linux-flatpak")])
+    def test_container_firefox_host_selection(self, im_module, monkeypatch, choice, expected):
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: choice)
+        assert im_module._wizard_select_container_firefox_host() == expected
+
+    def test_unsupported_container_firefox_host_is_not_assumed(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: 4)
+        assert im_module._wizard_select_container_firefox_host() is None
+        assert "not currently available for this host" in capsys.readouterr().out
 
 
 class TestPromptWording:
@@ -212,6 +241,38 @@ class TestSectionOrder:
 
 
 class TestWizardSafetyGates:
+    def test_deferred_macos_firefox_setup_skips_doctor_and_orders_commands(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            protect_setup_globals(im_module, monkeypatch)
+            monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+            monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "docker")
+            monkeypatch.setattr(im_module, "_wizard_collect_target_section", lambda state: state.targets.append("target.user"))
+            monkeypatch.setattr(im_module, "_wizard_collect_login_section", lambda state, method: (setattr(state, "logged_in", True), setattr(state, "login_method", "firefox"), setattr(state, "session_username", "login.user"), setattr(state, "import_browser", "firefox"), setattr(state, "container_host", "macos")))
+            monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: None)
+            monkeypatch.setattr(im_module, "_wizard_collect_email_section", lambda state: None)
+            monkeypatch.setattr(im_module, "_wizard_collect_webhook_section", lambda state: None)
+            monkeypatch.setattr(im_module, "_wizard_review_setup", lambda state, method: True)
+            ask_mock = Mock(side_effect=AssertionError("Doctor prompt was offered before Firefox import"))
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", ask_mock)
+            doctor_mock = Mock(side_effect=AssertionError("Doctor ran before Firefox import"))
+            monkeypatch.setattr(im_module, "run_doctor", doctor_mock)
+
+            with pytest.raises(SystemExit) as error:
+                im_module.run_setup_wizard(config_file=directory / "instagram_monitor.conf", env_file=directory / ".env")
+
+            assert error.value.code == 0
+            ask_mock.assert_not_called()
+            doctor_mock.assert_not_called()
+            output = capsys.readouterr().out
+            import_index = output.index("Import Instagram login from Firefox on macOS:")
+            doctor_index = output.index("After the import succeeds, check setup:")
+            start_index = output.index("After Doctor passes, start monitoring:")
+            assert import_index < doctor_index < start_index
+            assert '${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro' in output
+            assert "--user" not in output
+            assert "Run doctor now?" not in output
+
     def test_bare_launch_reads_saved_targets_before_first_run_decision(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
             config_path = Path(directory_name) / "instagram_monitor.conf"
