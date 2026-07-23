@@ -20,6 +20,8 @@
 #   Linux:         docker compose run --rm -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
 #   Linux Snap:    docker compose run --rm -v "$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
 #   Linux Flatpak: docker compose run --rm -v "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
+#   Windows PowerShell: docker compose run --rm -v "$env:APPDATA\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
+#   Windows Command Prompt: docker compose run --rm -v "%APPDATA%\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
 
 services:
   instagram_monitor:
