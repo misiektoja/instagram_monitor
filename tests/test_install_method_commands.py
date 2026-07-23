@@ -68,6 +68,33 @@ class TestCmdPrefix:
         assert im_module._wizard_cmd_prefix("compose", web_dashboard=True) == "docker compose run --rm --service-ports instagram_monitor"
 
 
+class TestWebDashboardBrowserUrl:
+    @pytest.mark.parametrize("bind_host,expected", [("0.0.0.0", "http://127.0.0.1:8123/"), ("::", "http://127.0.0.1:8123/"), ("127.0.0.1", "http://127.0.0.1:8123/"), ("::1", "http://[::1]:8123/"), ("dashboard.local", "http://dashboard.local:8123/")])
+    def test_server_bind_is_rendered_as_a_browser_safe_url(self, im_module, bind_host, expected):
+        assert im_module._web_dashboard_browser_url(bind_host, 8123) == expected
+
+    def test_container_startup_prints_browser_url_and_publish_hint(self, im_module, monkeypatch, capsys):
+        app = Mock()
+        thread = Mock()
+        monkeypatch.setattr(im_module, "FLASK_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_HOST", "0.0.0.0")
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_PORT", 8000)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_APP", None)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_THREAD", None)
+        monkeypatch.setattr(im_module, "create_web_dashboard_app", lambda: app)
+        monkeypatch.setattr(im_module, "_running_in_container", lambda: True)
+        monkeypatch.setattr(im_module.threading, "Thread", Mock(return_value=thread))
+
+        assert im_module.start_web_dashboard_server() is True
+
+        output = capsys.readouterr().out
+        assert "Open Web Dashboard in your browser:\thttp://127.0.0.1:8000/" in output
+        assert "0.0.0.0" not in output
+        assert "Use -p 127.0.0.1:8000:8000 or Compose --service-ports" in output
+        thread.start.assert_called_once_with()
+
+
 class TestFirefoxImportCmd:
     def test_non_container_has_no_mount(self, im_module):
         assert im_module._firefox_import_cmd("pip") == "instagram_monitor --import-browser-session --browser firefox"
