@@ -864,6 +864,8 @@ CONTAINER_FIREFOX_HOSTS = {
     "linux": ("Linux with a standard Firefox package", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
     "linux-snap": ("Linux with Firefox from Snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
     "linux-flatpak": ("Linux with Firefox from Flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "windows-powershell": ("Windows PowerShell", '"$env:APPDATA\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "windows-cmd": ("Windows Command Prompt", '"%APPDATA%\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'),
 }
 INSTA_LOGFILE = ""
 OUTPUT_DIR = ""
@@ -10965,7 +10967,8 @@ def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, exact: bool = F
         web_port_flag = f" -p 127.0.0.1:{selected_web_port}:{selected_web_port}" if web_dashboard else ""
         linux_user_mapping = host_os in ("linux", "linux-snap", "linux-flatpak") or (host_os is None and hasattr(os, "getuid") and os.getuid() != 10001)
         user_flag = ' --user "$(id -u):$(id -g)"' if linux_user_mapping else ""
-        return (f'docker run --rm -it --init{user_flag} -v "${{PWD}}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor')
+        current_directory = "%cd%" if host_os == "windows-cmd" else "${PWD}"
+        return (f'docker run --rm -it --init{user_flag} -v "{current_directory}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor')
     return _wizard_render_command(_wizard_local_command_args(method, exact=exact))
 
 
@@ -11258,15 +11261,17 @@ def _wizard_select_container_firefox_host() -> Optional[str]:
         ("Linux with a standard Firefox package", "Use the profiles under ~/.mozilla/firefox."),
         ("Linux with Firefox from Snap", "Use the profiles under ~/snap/firefox."),
         ("Linux with Firefox from Flatpak", "Use the profiles under ~/.var/app/org.mozilla.firefox."),
-        ("Windows or another system", "Firefox import after Docker setup is not currently available for this host."),
+        ("Windows PowerShell", "Use the Firefox profiles under $env:APPDATA."),
+        ("Windows Command Prompt", "Use the Firefox profiles under %APPDATA%."),
+        ("Another system", "Firefox import after Docker setup is not currently available for this host."),
     ]
-    selected = _wizard_ask_choice("Which operating system runs Docker and how was Firefox installed?", options)
+    selected = _wizard_ask_choice("Which host environment runs Docker?", options)
     if selected == len(options) - 1:
         print()
         print("  Firefox import after Docker setup is not currently available for this host.")
         print("  Choose another login method or no login.")
         return None
-    return ("macos", "linux", "linux-snap", "linux-flatpak")[selected]
+    return ("macos", "linux", "linux-snap", "linux-flatpak", "windows-powershell", "windows-cmd")[selected]
 
 
 # Restores one editable section to its setup-start values and drops pending secrets
