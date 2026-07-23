@@ -73,6 +73,10 @@ def test_container_onboarding_prioritizes_direct_docker_and_isolates_setup():
     assert "| Set up Instagram Monitor for the first time |" not in readme
     assert "https://misiektoja.github.io/instagram_monitor/quick-start/#run-individual-commands" in readme
     assert "https://misiektoja.github.io/instagram_monitor/quick-start/" in readme
+    common_section = readme.split("## Common Commands", 1)[1].split('<a id="documentation"></a>', 1)[0]
+    common_table = common_section.split("| I want to... | Run this |", 1)[1].split("\n\n", 1)[0]
+    assert "The table uses PyPI commands." in common_section
+    assert "docker compose" not in common_table
 
 
 # Verifies manual upgrade guidance repeats linked files and direct download commands
