@@ -92,7 +92,19 @@ For a one-off Compose run, `--service-ports` makes the dashboard port available 
 docker compose run --rm --service-ports instagram_monitor <target_insta_user> --web-dashboard
 ```
 
-For direct Docker, add `-p 127.0.0.1:8000:8000` before the image name. Then open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) on the same computer.
+For direct Docker on macOS or Windows PowerShell, publish the dashboard port before the image name:
+
+```sh
+docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -p 127.0.0.1:8000:8000 misiektoja/instagram-monitor:latest <target_insta_user> --web-dashboard
+```
+
+On native Linux, use the same port mapping with the host identity:
+
+```sh
+docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -p 127.0.0.1:8000:8000 misiektoja/instagram-monitor:latest <target_insta_user> --web-dashboard
+```
+
+Then open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) on the same computer. Inside the container the server listens on `0.0.0.0:8000` so Docker can forward traffic. `0.0.0.0` is a server bind address, not an address to enter in a browser. Dockerfile `EXPOSE 8000` metadata also does not publish the port by itself.
 
 The configuration file search order and setting precedence are documented under [Configuration File](configuration.md#configuration-file). To select another file explicitly, use `--config-file`:
 
@@ -181,6 +193,8 @@ In direct Docker commands, refer to files from the current host directory throug
 ```sh
 docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest <target_insta_user> --config-file /data/instagram_monitor.conf --env-file /data/.env
 ```
+
+If the saved configuration enables the Web Dashboard, add `-p 127.0.0.1:8000:8000` before the image name. The exact monitoring command printed by setup includes this mapping.
 
 Use the same `instagram_monitor_session` volume during browser import and every later logged-in run. Otherwise the later container cannot find the imported session.
 
