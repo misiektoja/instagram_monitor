@@ -95,7 +95,17 @@ Docker Compose exposes the default dashboard only at `127.0.0.1` on the host. Us
 docker compose run --rm --service-ports instagram_monitor target1 target2 --web-dashboard
 ```
 
-For direct Docker, add `-p 127.0.0.1:8000:8000` before the image name. The complete mount and port forms are under [Monitoring Mode](usage.md#monitoring-mode).
+Compose declares its host port even when the saved configuration disables the Web Dashboard. If port 8000 is already used and you do not need the dashboard, use the plain `docker compose run --rm instagram_monitor ...` form without `--service-ports`.
+
+For a custom dashboard port, set the same port in `instagram_monitor.conf` and in the project `.env` used by Compose:
+
+```dotenv
+INSTAGRAM_MONITOR_WEB_DASHBOARD_PORT=9000
+```
+
+The Compose mapping then becomes `127.0.0.1:9000:9000`. One-off commands printed by the tool use an explicit matching `-p` mapping for nondefault ports.
+
+For direct Docker, add `-p 127.0.0.1:8000:8000` before the image name. Replace both occurrences of `8000` when `WEB_DASHBOARD_PORT` uses another value. The complete mount and port forms are under [Monitoring Mode](usage.md#monitoring-mode).
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="90%"/>
