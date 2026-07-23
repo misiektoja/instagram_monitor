@@ -108,13 +108,20 @@ def test_quick_start_covers_direct_docker_host_variants():
     assert "instagram_monitor_session:/home/instagram/.config/instaloader" in quick_start
 
 
-# Verifies Firefox guidance covers Linux package variants for local and container imports
-def test_firefox_docs_cover_snap_and_flatpak():
+# Verifies Firefox guidance covers every supported container host layout for direct Docker and Compose
+def test_firefox_docs_cover_container_host_layouts():
     configuration = read_asset("docs/configuration.md")
     usage = read_asset("docs/usage.md")
+    compose = read_asset("docker-compose.yml")
+    firefox_section = usage.split("### Import Firefox into the Container Session", 1)[1].split("<a id=\"email-notifications\"></a>", 1)[0]
     assert "installed natively, through Snap or through Flatpak" in configuration
-    assert '-v "$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"' in usage
-    assert '-v "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"' in usage
+    mounts = ('-v "${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"')
+    for mount in mounts:
+        assert firefox_section.count(mount) == 2
+        assert mount in compose
+    assert firefox_section.count("docker run --rm -it --init") == 4
+    assert firefox_section.count("docker compose run --rm -v") == 4
+    assert "Run Doctor only after that import succeeds" in usage
     assert "Do not add `:z` or `:Z` to the whole Firefox profile mount" in usage
 
 
