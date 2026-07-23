@@ -32,6 +32,31 @@ Doctor exits after the report and does not start monitoring or the Web Dashboard
 
 For more detail, add `--debug` to Doctor or a normal run. Debug output includes HTTP details and internal decisions. It may also contain private data. Remove cookies, passwords, tokens and webhook URLs before sharing it.
 
+<a id="container-dashboard-does-not-open"></a>
+## Container Dashboard Does Not Open
+
+Open the default dashboard at [http://127.0.0.1:8000/](http://127.0.0.1:8000/). Do not enter `http://0.0.0.0:8000/` in the browser. `0.0.0.0` is the server bind address inside the container.
+
+For a one-off Compose run, the command must contain `--service-ports` before the service name:
+
+```sh
+docker compose run --rm --service-ports instagram_monitor <target> --web-dashboard
+```
+
+For direct Docker, the command must contain `-p 127.0.0.1:8000:8000` before the image name:
+
+```sh
+docker run --rm -it --init -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -p 127.0.0.1:8000:8000 misiektoja/instagram-monitor:latest <target> --web-dashboard
+```
+
+Check the `PORTS` column while the container is running:
+
+```sh
+docker ps
+```
+
+`127.0.0.1:8000->8000/tcp` means the port is published correctly. A value containing only `8000/tcp` means the server can listen inside the container but the host browser cannot reach it. Dockerfile `EXPOSE 8000` does not publish the port.
+
 <a id="choosing-the-right-logging-level"></a>
 ## Choosing the Right Logging Level
 
