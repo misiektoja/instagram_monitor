@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://misiektoja.github.io/instagram_monitor/quick-start/">
+        <link rel="canonical" href="https://misiektoja.github.io/instagram_monitor/setup-and-first-run/">
       
       
         <link rel="prev" href="../installation/">
@@ -27,7 +27,7 @@
     
     
       
-        <title>Quick Start - instagram_monitor</title>
+        <title>Setup & First Run - instagram_monitor</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#quick-start" class="md-skip">
+        <a href="#setup-first-run" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Quick Start
+              Setup & First Run
             
           </span>
         </div>
@@ -332,7 +332,7 @@
   <span class="md-ellipsis">
     
   
-    Quick Start
+    Setup & First Run
   
 
     
@@ -350,7 +350,7 @@
   <span class="md-ellipsis">
     
   
-    Quick Start
+    Setup & First Run
   
 
     
@@ -376,10 +376,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#new-here-run-the-setup-wizard" class="md-nav__link">
+  <a href="#run-the-setup-wizard" class="md-nav__link">
     <span class="md-ellipsis">
       
-        New here? Run the setup wizard
+        Run the setup wizard
       
     </span>
   </a>
@@ -402,6 +402,17 @@
     <span class="md-ellipsis">
       
         Run Individual Commands
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-step" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Step
       
     </span>
   </a>
@@ -632,10 +643,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#new-here-run-the-setup-wizard" class="md-nav__link">
+  <a href="#run-the-setup-wizard" class="md-nav__link">
     <span class="md-ellipsis">
       
-        New here? Run the setup wizard
+        Run the setup wizard
       
     </span>
   </a>
@@ -664,6 +675,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#next-step" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Step
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -681,7 +703,7 @@
 
 
   
-    <a href="https://github.com/misiektoja/instagram_monitor/edit/main/docs/quick-start.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/misiektoja/instagram_monitor/edit/main/docs/setup-and-first-run.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -689,10 +711,10 @@
   
 
 
-<h1 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h1>
+<h1 id="setup-first-run">Setup &amp; First Run<a class="headerlink" href="#setup-first-run" title="Permanent link">&para;</a></h1>
 <p><a id="new-here-run-the-setup-wizard"></a></p>
-<h2 id="new-here-run-the-setup-wizard">New here? Run the setup wizard<a class="headerlink" href="#new-here-run-the-setup-wizard" title="Permanent link">&para;</a></h2>
-<p>Quick Start configures an existing installation. If you opened this page first, choose <a href="../installation/#install-from-pypi">PyPI</a>, the <a href="../installation/#manual-python-based-installation">manual Python script</a>, the <a href="../installation/#install-from-docker-hub">Docker image</a> or <a href="../installation/#docker-compose">Docker Compose</a>. Complete that method's prerequisites and return here.</p>
+<h2 id="run-the-setup-wizard">Run the setup wizard<a class="headerlink" href="#run-the-setup-wizard" title="Permanent link">&para;</a></h2>
+<p>This page assumes Instagram Monitor is already installed (see <a href="../installation/">Installation</a>). It walks through the interactive setup wizard then your first monitoring run. If you opened this page first, choose <a href="../installation/#install-from-pypi">PyPI</a>, the <a href="../installation/#manual-python-based-installation">manual Python script</a>, the <a href="../installation/#install-from-docker-hub">Docker image</a> or <a href="../installation/#docker-compose">Docker Compose</a>, finish that method's steps then return here.</p>
 <p>Then use the interactive setup wizard. It asks which Instagram accounts to monitor, whether to use a saved login, which interface to start and which alerts to enable. You can review and change your answers before saving. Regular settings go in <code>instagram_monitor.conf</code>. Private values such as passwords and webhook URLs go in <code>.env</code>.</p>
 <p>For a local install, the wizard can check the setup and start monitoring immediately. In a container, it prints the next Docker or Docker Compose commands to run.</p>
 <p>Use the tab that matches how you installed the tool. Copy and run only the commands in that tab.</p>
@@ -799,6 +821,9 @@
 <p>View every command-line option plus examples adapted to the detected installation:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>instagram_monitor<span class="w"> </span>--help
 </code></pre></div>
+<p><a id="next-step"></a></p>
+<h2 id="next-step">Next Step<a class="headerlink" href="#next-step" title="Permanent link">&para;</a></h2>
+<p>With a login chosen and a first run working, continue to <a href="../configuration/">Configuration</a> for settings precedence, saved targets, session login, SMTP and secrets. See <a href="../view-modes/">View Modes</a> for the text, terminal and web dashboards then <a href="../usage/">Usage</a> for command formats, monitoring, container operation, notifications and output.</p>
 
 
 

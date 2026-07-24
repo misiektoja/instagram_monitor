@@ -522,14 +522,14 @@
   
   
     <li class="md-nav__item">
-      <a href="quick-start/" class="md-nav__link">
+      <a href="setup-and-first-run/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Quick Start
+    Setup & First Run
   
 
     
@@ -960,11 +960,12 @@
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="100%"/>
 </p>
 
+<p><a id="-quick-install-run"></a></p>
 <h3 id="quick-install-run">🚀 Quick Install &amp; Run<a class="headerlink" href="#quick-install-run" title="Permanent link">&para;</a></h3>
 <h4 id="python-from-pypi">Python from PyPI<a class="headerlink" href="#python-from-pypi" title="Permanent link">&para;</a></h4>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span>instagram_monitor
 </code></pre></div>
-<p>Run setup by itself:</p>
+<p>Run setup wizard:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>instagram_monitor<span class="w"> </span>--setup
 </code></pre></div>
 <h4 id="docker-image-fastest-container-setup">Docker image - fastest container setup<a class="headerlink" href="#docker-image-fastest-container-setup" title="Permanent link">&para;</a></h4>
@@ -972,36 +973,24 @@
 <p>Use a macOS shell or Windows PowerShell with a Docker-compatible runtime that provides the <code>docker</code> CLI.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--pull<span class="o">=</span>always<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
 </code></pre></div>
-<p>After setup finishes, start monitoring with the files created by the wizard:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--config-file<span class="w"> </span>/data/instagram_monitor.conf<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
-</code></pre></div>
-<p>If setup enabled the Web Dashboard, add <code>-p 127.0.0.1:8000:8000</code> before the image name. The exact command printed by setup includes it only when needed.</p>
-<p>The setup command pulls the current image. Both commands keep configuration and downloaded files in the current directory. They keep the saved Instagram login in the Docker volume named <code>instagram_monitor_session</code>.</p>
-<p>In Windows Command Prompt replace <code>${PWD}</code> with <code>%cd%</code>. Windows hosts must use Linux containers.</p>
-<p>When setup asks how to import Firefox on Windows, choose PowerShell or Command Prompt. The wizard prints the matching direct Docker command with the current directory mounted at <code>/data</code>, the persistent Instagram session volume and the Firefox profile under <code>%APPDATA%\Mozilla\Firefox</code> mounted read-only. The same host choice also prints the matching Docker Compose import command.</p>
+<p>In Windows Command Prompt replace <code>${PWD}</code> with <code>%cd%</code> above.</p>
 <h5 id="linux">Linux<a class="headerlink" href="#linux" title="Permanent link">&para;</a></h5>
-<p><code>--user "$(id -u):$(id -g)"</code> runs the container with your numeric user and group IDs. This lets the container write files that your host account can edit.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--pull<span class="o">=</span>always<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
+<p>Run the container with your numeric user and group IDs (<code>--user "$(id -u):$(id -g)"</code> below). This lets the container write files that your host account can edit.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--pull<span class="o">=</span>always<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
 </code></pre></div>
-<p>After setup finishes, start monitoring:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--config-file<span class="w"> </span>/data/instagram_monitor.conf<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
-</code></pre></div>
-<p>If setup enabled the Web Dashboard, add <code>-p 127.0.0.1:8000:8000</code> before the image name. The exact command printed by setup includes it only when needed.</p>
 <h4 id="docker-compose-shorter-recurring-commands">Docker Compose - shorter recurring commands<a class="headerlink" href="#docker-compose-shorter-recurring-commands" title="Permanent link">&para;</a></h4>
 <p>Download the Compose file:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
 </code></pre></div>
-<p>On a native Linux container engine, export your numeric user ID and group ID so files created in the current directory belong to you instead of <code>root</code>. Docker-compatible runtimes on macOS and Windows normally do not need these values.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_UID</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">&quot;</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_GID</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span>
+<p>Linux container engine requires to export your numeric user ID and group ID so files created in the current directory belong to you instead of <code>root</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_UID</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">&quot;</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_GID</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span>
 </code></pre></div>
-<p>Run setup by itself:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--pull<span class="o">=</span>always<span class="w"> </span>instagram_monitor<span class="w"> </span>--setup
+<p>Docker-compatible runtimes on macOS and Windows normally do not need these values.</p>
+<p>Run setup wizard:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--pull<span class="o">=</span>always<span class="w"> </span>instagram_monitor<span class="w"> </span>--setup
 </code></pre></div>
-<p>After setup finishes, start monitoring with the shorter recurring command:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>--no-log-prefix
-</code></pre></div>
-<p>For the manual single-file method, optional browser support and upgrade commands for every method, see <a href="installation/">Installation</a>.</p>
+<p>For the manual single-file method, optional browser support and upgrade commands for every installation method, see <a href="https://misiektoja.github.io/instagram_monitor/installation/">Installation</a>.</p>
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_demo.gif" alt="instagram_monitor demo: install, setup wizard and run" width="100%"/>
 </p>
