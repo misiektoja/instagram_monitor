@@ -26,7 +26,7 @@ Powerful, real-time OSINT suite for tracking every activity on Instagram - from 
 pip install instagram_monitor
 ```
 
-Run setup by itself:
+Run setup wizard:
 
 ```sh
 instagram_monitor --setup
@@ -42,33 +42,15 @@ Use a macOS shell or Windows PowerShell with a Docker-compatible runtime that pr
 docker run --rm --pull=always -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
 ```
 
-After setup finishes, start monitoring with the files created by the wizard:
-
-```sh
-docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --config-file /data/instagram_monitor.conf --env-file /data/.env
-```
-
-If setup enabled the Web Dashboard, add `-p 127.0.0.1:8000:8000` before the image name. The exact command printed by setup includes it only when needed.
-
-The setup command pulls the current image. Both commands keep configuration and downloaded files in the current directory. They keep the saved Instagram login in the Docker volume named `instagram_monitor_session`.
-
-In Windows Command Prompt replace `${PWD}` with `%cd%`. Windows hosts must use Linux containers.
+In Windows Command Prompt replace `${PWD}` with `%cd%` above.
 
 ##### Linux
 
-`--user "$(id -u):$(id -g)"` runs the container with your numeric user and group IDs. This lets the container write files that your host account can edit.
+Run the container with your numeric user and group IDs (`--user "$(id -u):$(id -g)"` below). This lets the container write files that your host account can edit.
 
 ```sh
 docker run --rm --pull=always -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
 ```
-
-After setup finishes, start monitoring:
-
-```sh
-docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --config-file /data/instagram_monitor.conf --env-file /data/.env
-```
-
-If setup enabled the Web Dashboard, add `-p 127.0.0.1:8000:8000` before the image name. The exact command printed by setup includes it only when needed.
 
 #### Docker Compose - shorter recurring commands
 
@@ -87,16 +69,10 @@ export INSTAGRAM_MONITOR_GID="$(id -g)"
 
 Docker-compatible runtimes on macOS and Windows normally do not need these values.
 
-Run setup by itself:
+Run setup wizard:
 
 ```sh
 docker compose run --rm --pull=always instagram_monitor --setup
-```
-
-After setup finishes, start monitoring with the shorter recurring command:
-
-```sh
-docker compose up --no-log-prefix
 ```
 
 For the manual single-file method, optional browser support and upgrade commands for every installation method, see [Installation](https://misiektoja.github.io/instagram_monitor/installation/).
