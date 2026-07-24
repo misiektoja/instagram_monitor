@@ -1,9 +1,9 @@
-# Quick Start
+# Setup & First Run
 
 <a id="new-here-run-the-setup-wizard"></a>
-## New here? Run the setup wizard
+## Run the setup wizard
 
-Quick Start configures an existing installation. If you opened this page first, choose [PyPI](installation.md#install-from-pypi), the [manual Python script](installation.md#manual-python-based-installation), the [Docker image](installation.md#install-from-docker-hub) or [Docker Compose](installation.md#docker-compose). Complete that method's prerequisites and return here.
+This page assumes Instagram Monitor is already installed (see [Installation](installation.md)). It walks through the interactive setup wizard then your first monitoring run. If you opened this page first, choose [PyPI](installation.md#install-from-pypi), the [manual Python script](installation.md#manual-python-based-installation), the [Docker image](installation.md#install-from-docker-hub) or [Docker Compose](installation.md#docker-compose), finish that method's steps then return here.
 
 Then use the interactive setup wizard. It asks which Instagram accounts to monitor, whether to use a saved login, which interface to start and which alerts to enable. You can review and change your answers before saving. Regular settings go in `instagram_monitor.conf`. Private values such as passwords and webhook URLs go in `.env`.
 
@@ -125,3 +125,8 @@ View every command-line option plus examples adapted to the detected installatio
 ```sh
 instagram_monitor --help
 ```
+
+<a id="next-step"></a>
+## Next Step
+
+With a login chosen and a first run working, continue to [Configuration](configuration.md) for settings precedence, saved targets, session login, SMTP and secrets. See [View Modes](view-modes.md) for the text, terminal and web dashboards then [Usage](usage.md) for command formats, monitoring, container operation, notifications and output.
