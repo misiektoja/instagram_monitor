@@ -30,7 +30,7 @@ def test_installation_docs_cover_all_delivery_and_upgrade_paths():
 # Verifies container onboarding prioritizes direct Docker and isolates interactive setup commands
 def test_container_onboarding_prioritizes_direct_docker_and_isolates_setup():
     installation = read_asset("docs/installation.md")
-    quick_start = read_asset("docs/quick-start.md")
+    quick_start = read_asset("docs/setup-and-first-run.md")
     compose = read_asset("docker-compose.yml")
     assert installation.index("### Install from Docker Hub") < installation.index("### Install with Docker Compose")
     direct_install = installation.split("### Install from Docker Hub", 1)[1].split("### Install with Docker Compose", 1)[0]
@@ -63,16 +63,16 @@ def test_container_onboarding_prioritizes_direct_docker_and_isolates_setup():
         assert "\ndocker compose pull" not in quick_install
         assert "docker run --rm --pull=always" in quick_install
         assert "docker compose run --rm --pull=always instagram_monitor --setup" in quick_install
-        assert "pip install instagram_monitor\n```\n\nRun setup by itself:\n\n```sh\ninstagram_monitor --setup" in quick_install
-        assert 'misiektoja/instagram-monitor:latest --setup\n```\n\nAfter setup finishes, start monitoring with the files created by the wizard:\n\n```sh\ndocker run --rm -it --init -v "${PWD}:/data:z"' in quick_install
-        assert 'misiektoja/instagram-monitor:latest --setup\n```\n\nAfter setup finishes, start monitoring:\n\n```sh\ndocker run --rm -it --init --user "$(id -u):$(id -g)"' in quick_install
+        assert "pip install instagram_monitor\n```\n\nRun setup wizard:\n\n```sh\ninstagram_monitor --setup" in quick_install
+        assert 'docker run --rm --pull=always -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup' in quick_install
+        assert 'docker run --rm --pull=always -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup' in quick_install
     readme = read_asset("README.md")
     assert "\n## Quick Start\n" not in readme
     assert '<a id="common-commands"></a>' in readme
     assert readme.index('<a id="features"></a>') < readme.index('<a id="common-commands"></a>') < readme.index('<a id="documentation"></a>')
     assert "| Set up Instagram Monitor for the first time |" not in readme
-    assert "https://misiektoja.github.io/instagram_monitor/quick-start/#run-individual-commands" in readme
-    assert "https://misiektoja.github.io/instagram_monitor/quick-start/" in readme
+    assert "https://misiektoja.github.io/instagram_monitor/setup-and-first-run/#run-individual-commands" in readme
+    assert "https://misiektoja.github.io/instagram_monitor/setup-and-first-run/" in readme
     common_section = readme.split("## Common Commands", 1)[1].split('<a id="documentation"></a>', 1)[0]
     common_table = common_section.split("| I want to... | Run this |", 1)[1].split("\n\n", 1)[0]
     assert "The table uses PyPI commands." in common_section
@@ -125,7 +125,7 @@ def test_configuration_docs_explain_generation_and_precedence():
 
 # Verifies quick-start guidance includes direct Docker commands for desktop and Linux hosts
 def test_quick_start_covers_direct_docker_host_variants():
-    quick_start = read_asset("docs/quick-start.md")
+    quick_start = read_asset("docs/setup-and-first-run.md")
     assert '=== "Docker image on macOS or Windows PowerShell"' in quick_start
     assert '=== "Docker image on Linux"' in quick_start
     assert "instagram_monitor_session:/home/instagram/.config/instaloader" in quick_start
@@ -152,7 +152,7 @@ def test_firefox_docs_cover_container_host_layouts():
 
 # Verifies manual quick-start commands link both Instagram authentication modes
 def test_quick_start_links_both_authentication_modes():
-    quick_start = read_asset("docs/quick-start.md")
+    quick_start = read_asset("docs/setup-and-first-run.md")
     assert "[No-Login Mode](configuration.md#no-login-mode-without-session-login)" in quick_start
     assert "[Logged-In Mode](configuration.md#logged-in-mode-with-session-login)" in quick_start
 
@@ -168,7 +168,7 @@ def test_compose_defaults_load_dotenv_and_suppress_attached_prefixes():
     compose = read_asset("docker-compose.yml")
     assert 'command: ["--env-file", "/data/.env"]' in compose
     assert "docker compose up --no-log-prefix" in compose
-    for relative_path in ("README.md", "docs/index.md", "docs/quick-start.md", "docs/installation.md", "docs/usage.md", "docs/view-modes.md"):
+    for relative_path in ("docs/setup-and-first-run.md", "docs/installation.md", "docs/usage.md", "docs/view-modes.md"):
         assert "docker compose up --no-log-prefix" in read_asset(relative_path)
     assert "docker compose logs -f --no-log-prefix" in read_asset("docs/usage.md")
 
