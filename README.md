@@ -137,7 +137,7 @@ For the manual single-file method, optional browser support and upgrade commands
 <a id="common-commands"></a>
 ## Common Commands
 
-Use [Quick Install & Run](#-quick-install-run) above for first-time setup. The table uses PyPI commands. For manual script, direct Docker and Docker Compose equivalents, see [Run Individual Commands](https://misiektoja.github.io/instagram_monitor/quick-start/#run-individual-commands).
+Use [Quick Install & Run](#-quick-install-run) above for first-time setup. The table uses PyPI commands. For manual script, direct Docker and Docker Compose equivalents, see [Run Individual Commands](https://misiektoja.github.io/instagram_monitor/setup-and-first-run/#run-individual-commands).
 
 | I want to... | Run this |
 | --- | --- |
@@ -150,7 +150,7 @@ Use [Quick Install & Run](#-quick-install-run) above for first-time setup. The t
 
 Running the tool with no arguments offers the wizard if you have not saved any targets or enabled the Web Dashboard. If targets are already saved, it starts monitoring them.
 
-For browser choices, saved targets, configuration backups and setup recovery, see the [full Quick Start guide](https://misiektoja.github.io/instagram_monitor/quick-start/).
+For browser choices, saved targets, configuration backups and setup recovery, see the [full Setup & First Run guide](https://misiektoja.github.io/instagram_monitor/setup-and-first-run/).
 
 For container operation, browser profiles, email alerts, Discord, ntfy and advanced settings, see [Configuration](https://misiektoja.github.io/instagram_monitor/configuration/) and [Usage](https://misiektoja.github.io/instagram_monitor/usage/). Keep private webhook URLs in `.env` or enter them through the setup wizard. See [Webhook Notifications](https://misiektoja.github.io/instagram_monitor/usage/#webhook-notifications) for complete setup and testing instructions.
 
@@ -160,7 +160,7 @@ For container operation, browser profiles, email alerts, Discord, ntfy and advan
 Full documentation is available at **[misiektoja.github.io/instagram_monitor](https://misiektoja.github.io/instagram_monitor/)**:
 
 - [Installation](https://misiektoja.github.io/instagram_monitor/installation/) - PyPI, manual script, Docker installation and upgrades
-- [Quick Start](https://misiektoja.github.io/instagram_monitor/quick-start/) - setup wizard, login choices and first run
+- [Setup & First Run](https://misiektoja.github.io/instagram_monitor/setup-and-first-run/) - setup wizard, login choices and first run
 - [Configuration](https://misiektoja.github.io/instagram_monitor/configuration/) - settings precedence, saved targets, session login, SMTP and secrets
 - [View Modes](https://misiektoja.github.io/instagram_monitor/view-modes/) - text, terminal and web dashboards
 - [Usage](https://misiektoja.github.io/instagram_monitor/usage/) - command formats, monitoring, container operation, notifications, proxy and output
