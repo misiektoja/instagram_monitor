@@ -951,7 +951,7 @@ CLI_CONFIG_PATH = None
 nl_ch = "\n"
 
 DOCUMENTATION_URL = "https://misiektoja.github.io/instagram_monitor"
-QUICK_START_GUIDE_URL = DOCUMENTATION_URL + "/quick-start/"
+QUICK_START_GUIDE_URL = DOCUMENTATION_URL + "/setup-and-first-run/"
 CONFIG_FILE_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#configuration-file"
 SESSION_IMPORT_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#option-3-session-login-using-browser-cookies-recommended"
 SMTP_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#smtp-settings"
