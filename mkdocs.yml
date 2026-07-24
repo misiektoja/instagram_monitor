@@ -70,7 +70,7 @@ validation:
 nav:
   - Home: index.md
   - Installation: installation.md
-  - Quick Start: quick-start.md
+  - Setup & First Run: setup-and-first-run.md
   - Configuration: configuration.md
   - View Modes: view-modes.md
   - Usage: usage.md
