@@ -1,5 +1,11 @@
 # instagram_monitor release notes
 
+# Changes in 3.7.1 (24 Jul 2026)
+
+**Bug fixes**:
+
+- **BUGFIX:** Updated the built-in guide link to the renamed **Setup & First Run** page so CLI help and recovery guidance no longer point to the retired Quick Start URL
+
 # Changes in 3.7 (23 Jul 2026)
 
 Version **3.7** makes **Docker onboarding portable across macOS, Linux and Windows**. It adds **host-aware Firefox session import** and keeps setup files safe on the persistent **`/data` bind mount**. Generated recovery commands now preserve **targets, custom files and Web Dashboard ports** from import through Doctor and launch.
