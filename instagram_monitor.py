@@ -285,8 +285,15 @@ CHECK_INTERNET_URL = 'https://www.instagram.com/'
 # Timeout used when checking initial internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
 
-# URL used to determine IP address
-IP_ADDRESS_URL = 'https://httpbin.org/ip'
+# URL or list of URLs used to determine IP address
+# If first URL doesn't provide a valid response, retries will iterate through the list
+IP_ADDRESS_URL = [
+    "https://checkip.amazonaws.com",
+    "https://api.ipify.org?format=json",
+    "https://api.my-ip.io/ip.json",
+    "https://ipinfo.io/json",
+    "https://httpbin.org/ip",
+]
 
 # Limit fetching updates to specific hours of the day?
 # If True, the tool will only fetch updates within the defined hour ranges below
@@ -846,7 +853,13 @@ ADVANCED_FOLLOWEE_FETCH = False
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
-IP_ADDRESS_URL = ""
+IP_ADDRESS_URL = [
+    "https://checkip.amazonaws.com",
+    "https://api.ipify.org?format=json",
+    "https://api.my-ip.io/ip.json",
+    "https://ipinfo.io/json",
+    "https://httpbin.org/ip",
+]
 CHECK_POSTS_IN_HOURS_RANGE = False
 HOURS_VERBOSE = False
 MIN_H1 = 0
@@ -4512,15 +4525,21 @@ def interruptible_sleep(seconds, stop_event=None):
     return stop_event.wait(seconds)
 
 
-# Fetches the current outbound IP via IP_ADDRESS_URL, tolerating JSON and plain-text responses
-def get_ip_address(max_retries=5, timeout=10, retry_delay=5, long_retry=120, long_retry_attempts=3, stop_event=None):
+# Fetches the current outbound IP via IP_ADDRESS_URL, tolerating JSON and plain-text responses.
+def get_ip_address(max_retries=3, timeout=10, retry_delay=5, long_retry=120, long_retry_attempts=3, stop_event=None):
+    urls = IP_ADDRESS_URL if isinstance(IP_ADDRESS_URL, list) else [IP_ADDRESS_URL]
+    if isinstance(urls, list) and len(urls) > long_retry_attempts:
+        long_retry_attemps = len(urls)
+
     last_err = None
+    site_index = 0
     for long_attempt in range(1, long_retry_attempts + 1):
         for attempt in range(1, max_retries + 1):
             if stop_event is not None and stop_event.is_set():
                 return f"(unavailable: {format_error_message(last_err) if last_err else 'stopped'})"
+            url = urls[site_index % len(urls)]
             try:
-                ip_response = req.get(IP_ADDRESS_URL, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
+                ip_response = req.get(url, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
                 ip_response.raise_for_status()
                 try:
                     data = ip_response.json()
@@ -4534,9 +4553,11 @@ def get_ip_address(max_retries=5, timeout=10, retry_delay=5, long_retry=120, lon
                 text = (ip_response.text or "").strip()
                 if text:
                     return text.splitlines()[0].strip()
-                raise ValueError(f"empty response body from {IP_ADDRESS_URL}")
+                raise ValueError(f"empty response body from {url}")
             except Exception as e:
                 last_err = e
+                site_index += 1  # rotate on any failure
+                debug_print(f"error during get_ip_address() from {url}")
                 if attempt < max_retries and interruptible_sleep(retry_delay, stop_event):
                     return f"(unavailable: {format_error_message(last_err)})"
         if long_attempt < long_retry_attempts:
