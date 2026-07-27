@@ -95,9 +95,11 @@ WEBHOOK_ENABLED = False
 # Can also be set via the --webhook-provider flag
 WEBHOOK_PROVIDER = "discord"
 
-# Private destination used to send webhook notifications
+# Private HTTPS destination used to send webhook notifications
 # Discord: Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL
 # ntfy: complete topic URL such as https://ntfy.sh/your-private-topic
+# Recommended: save it through a hidden prompt with instagram_monitor --set-webhook-url
+# For one run, --webhook-url overrides it but may expose the URL in shell history or process listings
 # Prefer an environment variable or dotenv file instead of storing this private URL here
 WEBHOOK_URL = ""
 
@@ -119,7 +121,8 @@ WEBHOOK_FOLLOWERS_NOTIFICATION = False
 # Can also be enabled via the --webhook-errors flag
 WEBHOOK_ERROR_NOTIFICATION = False
 
-# Optional static request headers for advanced webhook integrations
+# Optional request headers for advanced webhook integrations
+# Values support the same placeholders as WEBHOOK_TEMPLATE and are validated after expansion
 WEBHOOK_HEADERS = {}
 
 # Optional ntfy access token for Bearer authentication
@@ -548,18 +551,23 @@ DASHBOARD_SHOW_CHECK_SECONDS = True
 # Advanced Webhook Settings
 # ----------------------------
 
-# Webhook request payload template
+# Discord-format webhook request payload template
 # Supported placeholders include title, description, version, image_url, fields, fields_str, color, timestamp,
 # username and avatar_url
 #
-# The default template is for Discord
+# A dictionary or list is sent as JSON while a string is sent as the raw request body
+# Dictionary payloads always disable Discord mentions even if the template requests them
 WEBHOOK_TEMPLATE = {
     "username": "Instagram Monitor",
+    "allowed_mentions": {
+        "parse": []
+    },
     "embeds": [{
         "title": "{title}",
         "description": "{description}",
         "color": "{color}",
         "fields": "{fields}",
+        "timestamp": "{timestamp}",
         "footer": {
             "text": "Instagram Monitor v{version}"
         },
@@ -569,8 +577,9 @@ WEBHOOK_TEMPLATE = {
     }]
 }
 
-# Optional transformations applied to WEBHOOK_TEMPLATE and WEBHOOK_HEADERS
+# Optional string transformations applied before WEBHOOK_TEMPLATE and WEBHOOK_HEADERS are rendered
 # Tuple format: (field_to_target, method_name, *optional_arguments)
+# Invalid transforms stop delivery before a webhook request is attempted
 #
 # Examples:
 #   [
@@ -845,6 +854,69 @@ def update_dotenv_file(destination, updates):
     return {"path": str(destination_path), "updated_keys": tuple(key for key, _ in update_items)}
 
 
+# Raised when private webhook URL entry cannot be completed safely
+class WebhookConfigurationError(Exception):
+    pass
+
+
+# Resolves the writable dotenv destination used by private webhook entry
+def resolve_webhook_env_path(env_file=None, cwd=None):
+    if env_file is not None and str(env_file).casefold() == "none":
+        raise WebhookConfigurationError("Webhook setup requires a dotenv destination. Replace '--env-file none' with a writable path.")
+    base_directory = Path.cwd() if cwd is None else Path(cwd)
+    destination = base_directory / ".env" if env_file is None else Path(env_file).expanduser()
+    return destination.resolve()
+
+
+# Checks whether a dotenv file already contains one named assignment
+def _dotenv_contains_key(destination, key):
+    destination_path = Path(destination)
+    if not destination_path.exists():
+        return False
+    try:
+        lines = destination_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        raise WebhookConfigurationError(f"Could not read dotenv destination '{destination_path}'. Check that it is a readable UTF-8 file.") from None
+    assignment_pattern = re.compile(rf"^\s*(?:export\s+)?{re.escape(key)}\s*=")
+    return any(assignment_pattern.match(line) for line in lines)
+
+
+# Checks and safely stores one privately entered webhook URL
+def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpass_func=None, config_path=None):
+    destination = resolve_webhook_env_path(env_file)
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
+    if not terminal_is_interactive:
+        raise WebhookConfigurationError("--set-webhook-url requires an interactive terminal. Run it in a terminal window so the webhook URL stays hidden while you paste it.")
+    prompt = input if input_func is None else input_func
+    if _dotenv_contains_key(destination, "WEBHOOK_URL"):
+        try:
+            confirmed = prompt(f"Replace the saved webhook URL in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            confirmed = False
+        if not confirmed:
+            raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
+    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
+    try:
+        webhook_url = hidden_prompt("Paste the Discord or ntfy webhook URL (input hidden): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.") from None
+    if not validate_webhook_url(webhook_url):
+        raise WebhookConfigurationError("That does not look like a complete HTTPS webhook URL. The private settings file was not changed.")
+    try:
+        update_dotenv_file(destination, {"WEBHOOK_URL": webhook_url})
+    except Exception:
+        raise WebhookConfigurationError(f"Could not save the webhook URL in '{destination}'. Check file permissions or choose another path with --env-file.") from None
+    selected_config = config_path or find_config_file()
+    method = _wizard_install_method()
+    test_command = _wizard_action_command(method, "--send-test-webhook", selected_config, destination)
+    doctor_command = _wizard_action_command(method, "--doctor", selected_config, destination)
+    print("* Webhook URL looks valid")
+    print(f"* Updated private settings file: {destination}")
+    print(f"Send a test webhook:\n    {test_command}\n")
+    print(f"Check the complete setup:\n    {doctor_command}\n")
+    return str(destination)
+
+
 # Default dummy values so linters shut up
 # Do not change values below - modify them in the configuration section or config file instead
 SESSION_USERNAME = ""
@@ -939,6 +1011,8 @@ NTFY_MESSAGE_LIMIT_BYTES = 4096
 WEBHOOK_USERNAME = "Instagram Monitor"
 WEBHOOK_AVATAR_URL = ""
 WEBHOOK_HEADERS = {}
+WEBHOOK_TEMPLATE = {}
+WEBHOOK_TRANSFORMS = []
 NTFY_ACCESS_TOKEN = ""
 WEBHOOK_STATUS_NOTIFICATION = True
 WEBHOOK_FOLLOWERS_NOTIFICATION = True
@@ -1107,9 +1181,11 @@ from dateutil import relativedelta
 from dateutil.parser import isoparse, parse
 import calendar
 import requests as req
+WEBHOOK_SESSION = req.Session()
 import shutil
 import smtplib
 import ssl
+from email.utils import parsedate_to_datetime
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -1589,11 +1665,20 @@ from glob import glob
 import sqlite3
 from sqlite3 import OperationalError, connect
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from urllib.parse import urlsplit
 from dataclasses import dataclass
 from functools import wraps
 import traceback
 import copy
 import math
+
+# Keep webhook delivery independent from Instagram retries and long server timers
+WEBHOOK_MAX_ATTEMPTS = 2
+WEBHOOK_MAX_RETRY_AFTER_SECONDS = 5.0
+WEBHOOK_FALLBACK_RETRY_SECONDS = 1.0
+WEBHOOK_TIMEOUT_SECONDS = 10
+NTFY_IMAGE_UPLOAD_LIMIT_BYTES = 5 * 1024 * 1024
+
 try:
     from tqdm import tqdm
 except ModuleNotFoundError:
@@ -2279,7 +2364,7 @@ def create_web_dashboard_app():
                         note = " (max 3600s limit)"
                 elif key == 'webhook_url':
                     if processed_val and not validate_webhook_url(processed_val):
-                        print(f"* Error: Invalid webhook URL format. Must be HTTPS or HTTP URL. '{processed_val}'")
+                        print("* Error: Invalid webhook URL format. Must be a complete HTTPS URL without embedded credentials.")
                         return current_val
                 elif key == 'webhook_provider':
                     processed_val = normalized_webhook_provider(processed_val)
@@ -2287,7 +2372,7 @@ def create_web_dashboard_app():
                         print("* Error: Invalid webhook provider. Must be 'discord' or 'ntfy'.")
                         return current_val
                 elif key == 'proxy_url':
-                    if processed_val and not validate_webhook_url(processed_val):
+                    if processed_val and not validate_proxy_url(processed_val):
                         print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{mask_url_credentials(processed_val)}'")
                         return current_val
                 elif key == 'proxy_cert':
@@ -2305,7 +2390,10 @@ def create_web_dashboard_app():
                         print("* Error: Cannot select 'curl_cffi' backend because the 'curl_cffi' package is not installed.")
                         return current_val
 
-                changes.append(f"'{key}' changed from {current_val} to {processed_val}{note}")
+                if key == "webhook_url":
+                    changes.append("'webhook_url' updated")
+                else:
+                    changes.append(f"'{key}' changed from {current_val} to {processed_val}{note}")
                 return processed_val
             return current_val
 
@@ -2336,7 +2424,7 @@ def create_web_dashboard_app():
         PROXY_CERT_PATH = str(update_setting('proxy_cert', PROXY_CERT_PATH, str))
         PROXY_WEBHOOKS = bool(update_setting('proxy_webhooks', PROXY_WEBHOOKS, bool))
         requested_proxy_enabled = bool(update_setting('proxy_enabled', PROXY_ENABLED, bool))
-        if requested_proxy_enabled and not (PROXY_URL and validate_webhook_url(PROXY_URL)):
+        if requested_proxy_enabled and not (PROXY_URL and validate_proxy_url(PROXY_URL)):
             print("* Error: Cannot enable proxy without a valid PROXY_URL. Keeping proxy disabled.")
             PROXY_ENABLED = False
         else:
@@ -4152,20 +4240,26 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     return 0
 
 
-# Validates webhook URL format
+# Returns whether a webhook URL is a complete private HTTPS link
 def validate_webhook_url(url):
-    if not url:
-        return False
-    if not (url.startswith('https://') or url.startswith('http://')):
+    if not isinstance(url, str) or not url.strip():
         return False
     try:
-        from urllib.parse import urlparse
-        parsed = urlparse(url)
-        if not parsed.netloc or parsed.scheme not in ('https', 'http'):
-            return False
-        return True
-    except Exception:
+        parsed = urlsplit(url.strip())
+    except ValueError:
         return False
+    return parsed.scheme.casefold() == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password and bool(parsed.path.strip("/"))
+
+
+# Returns whether a proxy URL uses a supported HTTP scheme and has a host
+def validate_proxy_url(url):
+    if not isinstance(url, str) or not url.strip():
+        return False
+    try:
+        parsed = urlsplit(url.strip())
+    except ValueError:
+        return False
+    return parsed.scheme.casefold() in ("https", "http") and bool(parsed.hostname)
 
 
 # Converts a complete ntfy URL or valid ntfy.sh topic name into a complete topic URL
@@ -4187,6 +4281,33 @@ def normalized_webhook_provider(provider=None) -> str:
         return ""
     normalized = selected_provider.strip().casefold()
     return normalized if normalized in ("discord", "ntfy") else ""
+
+
+# Parses a webhook rate-limit delay and caps untrusted server values to a short wait
+def webhook_retry_after_seconds(response) -> float:
+    candidates = []
+    headers = getattr(response, "headers", {}) or {}
+    if hasattr(headers, "get"):
+        candidates.append(headers.get("Retry-After"))
+    try:
+        response_payload = response.json()
+    except Exception:
+        response_payload = None
+    if isinstance(response_payload, dict):
+        candidates.append(response_payload.get("retry_after"))
+    for candidate in candidates:
+        if candidate is None or candidate == "":
+            continue
+        try:
+            seconds = float(candidate)
+        except (TypeError, ValueError):
+            try:
+                retry_at = parsedate_to_datetime(str(candidate))
+                seconds = (retry_at - datetime.now(retry_at.tzinfo)).total_seconds()
+            except Exception:
+                continue
+        return max(0.0, min(seconds, WEBHOOK_MAX_RETRY_AFTER_SECONDS))
+    return WEBHOOK_FALLBACK_RETRY_SECONDS
 
 
 # Escapes Discord markdown for display-only text
@@ -4331,6 +4452,8 @@ def format_payload(template, payload):
         return {k: format_payload(v, payload) for k, v in template.items()}
     elif isinstance(template, list):
         return [format_payload(i, payload) for i in template]
+    elif isinstance(template, tuple):
+        return tuple(format_payload(i, payload) for i in template)
     elif isinstance(template, str):
         if template == "{fields}":
             return payload.get("fields", [])
@@ -4342,6 +4465,43 @@ def format_payload(template, payload):
             # Return template as-is if placeholder key is missing from payload
             return template
     return template
+
+
+# Returns a configuration error for unsafe or unsupported webhook customization
+def validate_webhook_customization(provider=None) -> Optional[str]:
+    selected_provider = normalized_webhook_provider(provider)
+    if selected_provider == "discord":
+        if not isinstance(WEBHOOK_USERNAME, str):
+            return "WEBHOOK_USERNAME must be a string"
+        if not isinstance(WEBHOOK_AVATAR_URL, str):
+            return "WEBHOOK_AVATAR_URL must be a string"
+        if WEBHOOK_AVATAR_URL.strip() and not validate_webhook_url(WEBHOOK_AVATAR_URL):
+            return "WEBHOOK_AVATAR_URL must contain a complete HTTPS link without embedded credentials"
+        if not isinstance(WEBHOOK_TEMPLATE, (dict, list, str)):
+            return "WEBHOOK_TEMPLATE must be a dictionary, list or string"
+    if not isinstance(WEBHOOK_TRANSFORMS, (list, tuple)):
+        return "WEBHOOK_TRANSFORMS must be a list or tuple"
+    for index, transform in enumerate(WEBHOOK_TRANSFORMS):
+        if not isinstance(transform, (list, tuple)) or len(transform) < 2 or not isinstance(transform[0], str) or not isinstance(transform[1], str):
+            return f"WEBHOOK_TRANSFORMS entry {index + 1} must contain a field name and string method name"
+        if transform[1].startswith("_") or not callable(getattr("", transform[1], None)):
+            return f"WEBHOOK_TRANSFORMS entry {index + 1} uses an unsupported string method"
+    return None
+
+
+# Applies configured string transformations to one webhook value mapping
+def apply_webhook_transforms(payload: dict) -> dict:
+    transformed = dict(payload)
+    for index, transform in enumerate(WEBHOOK_TRANSFORMS):
+        field = transform[0]
+        method_name = transform[1]
+        if field not in transformed or not isinstance(transformed[field], str):
+            continue
+        try:
+            transformed[field] = getattr(transformed[field], method_name)(*transform[2:])
+        except Exception as exc:
+            raise ValueError(f"WEBHOOK_TRANSFORMS entry {index + 1} could not apply {field}.{method_name}") from exc
+    return transformed
 
 
 # Truncates text to a UTF-8 byte limit without returning a partial character
@@ -4421,6 +4581,38 @@ def build_webhook_headers(provider: str, payload: dict) -> dict[str, str]:
     return headers
 
 
+# Returns webhook diagnostic text with configured private values removed
+def sanitize_webhook_error_text(value) -> str:
+    sanitized = apply_privacy_substitutions(str(value or ""))
+    for private_value in (WEBHOOK_URL, NTFY_ACCESS_TOKEN):
+        if isinstance(private_value, str) and private_value:
+            sanitized = sanitized.replace(private_value, "[private value]")
+    return sanitized
+
+
+# Loads one bounded local image for an ntfy attachment
+def build_ntfy_local_image(local_image_file=None):
+    if not local_image_file:
+        return None
+    try:
+        image_path = Path(local_image_file)
+        if not image_path.is_file():
+            return None
+        if image_path.stat().st_size > NTFY_IMAGE_UPLOAD_LIMIT_BYTES:
+            raise ValueError(f"image exceeds {NTFY_IMAGE_UPLOAD_LIMIT_BYTES} bytes")
+        image_bytes = image_path.read_bytes()
+        if not image_bytes:
+            raise ValueError("image is empty")
+        filename = image_path.name
+        if "\r" in filename or "\n" in filename:
+            raise ValueError("image filename contains line breaks")
+        content_types = {".gif": "image/gif", ".png": "image/png", ".webp": "image/webp"}
+        return image_bytes, filename, content_types.get(image_path.suffix.casefold(), "image/jpeg")
+    except Exception as exc:
+        debug_print(f"NTFY image preparation failed, sending text only: {sanitize_webhook_error_text(exc)}")
+        return None
+
+
 # Sends one webhook notification through the selected provider
 def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status"):
     if not WEBHOOK_ENABLED or not WEBHOOK_URL:
@@ -4429,17 +4621,19 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     title = apply_privacy_substitutions(title)
     description = apply_privacy_substitutions(description)
 
-    # Validate webhook URL
     if not validate_webhook_url(WEBHOOK_URL):
-        debug_print("* Webhook error: Invalid webhook URL format")
+        print("* Webhook error: WEBHOOK_URL must contain a complete HTTPS link without embedded credentials")
         return 1
 
     provider = normalized_webhook_provider()
     if not provider:
         print("* Webhook error: WEBHOOK_PROVIDER must be discord or ntfy")
         return 1
+    customization_error = validate_webhook_customization(provider)
+    if customization_error is not None:
+        print(f"* Webhook error: {customization_error}")
+        return 1
 
-    # Check if this notification type is enabled
     if notification_type == "status" and not WEBHOOK_STATUS_NOTIFICATION:
         return 1
     elif notification_type == "followers" and not WEBHOOK_FOLLOWERS_NOTIFICATION:
@@ -4477,26 +4671,19 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         payload["image"] = {"url": f"attachment://{filename}"}
 
     if WEBHOOK_USERNAME:
-        payload["username"] = WEBHOOK_USERNAME
+        payload["username"] = WEBHOOK_USERNAME.strip()[:80]
 
     if WEBHOOK_AVATAR_URL:
-        payload["avatar_url"] = WEBHOOK_AVATAR_URL
-
-    for transform in WEBHOOK_TRANSFORMS:  # type: ignore
-        field = transform[0]
-        method_name = transform[1]
-        args = transform[2:]
-        if field in payload and isinstance(payload[field], str):
-            try:
-                method = getattr(payload[field], method_name)
-                payload[field] = method(*args)
-            except (AttributeError, TypeError) as e:
-                print(f"* Transformation error on {field}.{method_name}: {e}")
+        payload["avatar_url"] = WEBHOOK_AVATAR_URL.strip()
 
     try:
+        payload = apply_webhook_transforms(payload)
         final_headers = build_webhook_headers(provider, payload)
-    except ValueError as e:
-        print(f"* Webhook error: {e}")
+        final_payload = format_payload(WEBHOOK_TEMPLATE, payload) if provider == "discord" else None  # type: ignore
+        if isinstance(final_payload, dict):
+            final_payload["allowed_mentions"] = {"parse": []}
+    except Exception as exc:
+        print(f"* Webhook error: {sanitize_webhook_error_text(exc)}")
         return 1
 
     if PROXY_ENABLED and PROXY_WEBHOOKS:
@@ -4506,16 +4693,20 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         final_post_proxy = {}
         final_post_proxy_ssl = True
 
-    max_retries = 3
-    retry_delay = 2
-
-    for attempt in range(max_retries):
+    ntfy_title, ntfy_message = build_ntfy_webhook_message(str(payload["title"]), str(payload["description"]), payload["fields"], webhook_image_url) if provider == "ntfy" else ("", "")
+    ntfy_image = build_ntfy_local_image(local_image_file) if provider == "ntfy" else None
+    use_ntfy_image = ntfy_image is not None
+    last_error = None
+    for attempt in range(WEBHOOK_MAX_ATTEMPTS):
         try:
             if provider == "ntfy":
-                ntfy_title, ntfy_message = build_ntfy_webhook_message(str(payload["title"]), str(payload["description"]), payload["fields"], webhook_image_url)
-                response = req.post(str(WEBHOOK_URL), headers=final_headers, data=ntfy_message.encode("utf-8"), params={"title": ntfy_title}, timeout=10, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                if use_ntfy_image and ntfy_image is not None:
+                    image_bytes, image_filename, image_content_type = ntfy_image
+                    attachment_headers = {**final_headers, "Content-Type": image_content_type, "X-Filename": image_filename}
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=attachment_headers, data=image_bytes, params={"title": ntfy_title, "message": ntfy_message}, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                else:
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, data=ntfy_message.encode("utf-8"), params={"title": ntfy_title}, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy)
             else:
-                final_payload = format_payload(WEBHOOK_TEMPLATE, payload)  # type: ignore
                 if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
                     filename = os.path.basename(local_image_file)
                     try:
@@ -4527,34 +4718,52 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                             "file": (filename, f, "image/jpeg"),
                             "payload_json": (None, json.dumps(final_payload))
                         }
-                        response = req.post(str(WEBHOOK_URL), headers=final_headers, files=files, timeout=10, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                        response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, files=files, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy)
                 elif isinstance(final_payload, str):
-                    response = req.post(WEBHOOK_URL, headers=final_headers, data=final_payload, timeout=10, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, data=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy)
                 else:
-                    response = req.post(WEBHOOK_URL, headers=final_headers, json=final_payload, timeout=10, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, json=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy)
 
-            if response.status_code in (200, 204):
+            if 200 <= response.status_code <= 299:
                 print("* Webhook notification sent successfully")
                 return 0
-
-            print(f"* Webhook error: HTTP {response.status_code} - {response.text[:200]}")
-            if response.status_code != 429:
+            last_error = response
+            if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
+                use_ntfy_image = False
+                delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS if response.status_code >= 500 else 0.0
+                debug_print(f"NTFY attachment returned HTTP {response.status_code}. Falling back to a text-only alert")
+                if delay:
+                    time.sleep(delay)
+                continue
+            retryable = response.status_code == 429 or 500 <= response.status_code <= 599
+            if not retryable or attempt == WEBHOOK_MAX_ATTEMPTS - 1:
+                response_text = sanitize_webhook_error_text(getattr(response, "text", ""))[:200]
+                suffix = f" - {response_text}" if response_text else ""
+                print(f"* Webhook error: HTTP {response.status_code}{suffix}")
                 print(colorize("info", "To fix: check that WEBHOOK_PROVIDER matches the saved Discord or ntfy URL then test it with --send-test-webhook."))
                 print(f"Guide: {WEBHOOK_GUIDE_URL}")
                 return 1
-
-        except (req.exceptions.RequestException, req.exceptions.ConnectionError, req.exceptions.Timeout) as e:
-            if attempt < max_retries - 1:
-                debug_print(f"* Webhook attempt {attempt + 1} failed: {e}. Retrying in {retry_delay}s...")
-                time.sleep(retry_delay)
+            delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS
+            debug_print(f"Webhook delivery returned HTTP {response.status_code}. Retrying once in {delay:g} seconds")
+            time.sleep(delay)
+        except req.exceptions.RequestException as exc:
+            last_error = exc
+            if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
+                use_ntfy_image = False
+                debug_print(f"NTFY attachment delivery failed. Falling back to a text-only alert: {sanitize_webhook_error_text(exc)}")
+                time.sleep(WEBHOOK_FALLBACK_RETRY_SECONDS)
                 continue
-            else:
-                print(f"* Error sending webhook: {e}")
+            if attempt == WEBHOOK_MAX_ATTEMPTS - 1:
+                print(f"* Error sending webhook: {sanitize_webhook_error_text(exc)}")
                 return 1
-        except Exception as e:
-            print(f"* Unexpected error sending webhook: {e}")
+            debug_print(f"Webhook delivery failed. Retrying once in {WEBHOOK_FALLBACK_RETRY_SECONDS:g} seconds: {sanitize_webhook_error_text(exc)}")
+            time.sleep(WEBHOOK_FALLBACK_RETRY_SECONDS)
+        except Exception as exc:
+            print(f"* Unexpected error sending webhook: {sanitize_webhook_error_text(exc)}")
             return 1
 
+    if last_error is not None:
+        print(f"* Error sending webhook: {sanitize_webhook_error_text(last_error)}")
     return 1
 
 
@@ -11175,6 +11384,9 @@ def _build_help_epilog() -> str:
         "\n"
         "  # Point-and-click web dashboard (add targets in the browser)\n"
         f"  {web_prefix} --web-dashboard\n"
+        "\n"
+        "  # Save a Discord or ntfy webhook URL through a hidden prompt\n"
+        f"  {prefix} --set-webhook-url\n"
     )
 
 
@@ -11469,9 +11681,9 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
             if validate_webhook_url(webhook_url):
                 break
             if provider == "ntfy":
-                print(colorize("warning", "  Enter a complete HTTP(S) ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores."))
+                print(colorize("warning", "  Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores."))
             else:
-                print(colorize("warning", "  That does not look like a complete HTTP(S) webhook URL. Copy it from the service and try again."))
+                print(colorize("warning", "  That does not look like a complete HTTPS webhook URL. Copy it from the service and try again."))
         state.secret_updates["WEBHOOK_URL"] = webhook_url
     if provider == "ntfy":
         _wizard_collect_ntfy_access_token(state.secret_updates, state.env_path)
@@ -12036,10 +12248,14 @@ def run_doctor(targets) -> int:
         _doctor_line("fail", "Webhook provider is invalid", "Set WEBHOOK_PROVIDER to 'discord' or 'ntfy'.")
     elif not validate_webhook_url(WEBHOOK_URL):
         fails += 1
-        _doctor_line("fail", "Webhook URL is not a valid HTTP(S) URL", "Check WEBHOOK_URL.")
+        _doctor_line("fail", "Webhook URL is not a complete HTTPS URL", "Use a complete HTTPS destination with a path and no embedded credentials.")
     else:
+        customization_error = validate_webhook_customization(normalized_webhook_provider())
         header_error = validate_webhook_headers(normalized_webhook_provider())
-        if header_error is not None:
+        if customization_error is not None:
+            fails += 1
+            _doctor_line("fail", "Webhook customization is invalid", customization_error)
+        elif header_error is not None:
             fails += 1
             _doctor_line("fail", "Webhook headers are invalid", header_error)
         else:
@@ -12067,7 +12283,7 @@ def run_main():
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
 
-    if "--generate-config" in sys.argv:
+    if "--generate-config" in sys.argv and "--set-webhook-url" not in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
         # Check if a filename was provided after --generate-config
         try:
@@ -12086,7 +12302,7 @@ def run_main():
         sys.stdout.buffer.flush()
         sys.exit(0)
 
-    if "--version" in sys.argv:
+    if "--version" in sys.argv and "--set-webhook-url" not in sys.argv:
         print(f"{os.path.basename(sys.argv[0])} v{VERSION}")
         sys.exit(0)
 
@@ -12103,7 +12319,7 @@ def run_main():
     early_dashboard_enabled = "--dashboard" in sys.argv and "--no-dashboard" not in sys.argv
 
     # Clear screen BEFORE printing the header
-    keep_cli_history = any(flag in sys.argv for flag in ("--import-browser-session", "--import-firefox-session", "--doctor"))
+    keep_cli_history = any(flag in sys.argv for flag in ("--import-browser-session", "--import-firefox-session", "--set-webhook-url", "--doctor"))
     clear_screen(CLEAR_SCREEN and not keep_cli_history)
 
     if not (early_dashboard_enabled and RICH_AVAILABLE):
@@ -12167,6 +12383,12 @@ def run_main():
         dest="doctor",
         action="store_true",
         help="Run preflight checks with separately approved notification delivery tests and exit",
+    )
+    conf.add_argument(
+        "--set-webhook-url",
+        dest="set_webhook_url",
+        action="store_true",
+        help="Save a Discord or ntfy webhook URL through a hidden prompt",
     )
 
     # Session login credentials
@@ -12603,7 +12825,7 @@ def run_main():
     args = parser.parse_args()
 
     import_requested = bool(args.import_firefox_session or args.import_browser_session)
-    requested_actions = [label for label, enabled in (("--setup", args.setup), ("--doctor", args.doctor), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--generate-config", args.generate_config is not None)) if enabled]
+    requested_actions = [label for label, enabled in (("--setup", args.setup), ("--set-webhook-url", args.set_webhook_url), ("--doctor", args.doctor), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--generate-config", args.generate_config is not None)) if enabled]
     if len(requested_actions) > 1:
         parser.error("standalone actions cannot be combined: " + ", ".join(requested_actions))
     if args.setup:
@@ -12612,6 +12834,20 @@ def run_main():
         if args.env_file and str(args.env_file).casefold() == "none":
             parser.error("--setup requires a dotenv destination and cannot use --env-file none")
         run_setup_wizard(config_file=args.config_file, env_file=args.env_file)
+        sys.exit(0)
+    if args.set_webhook_url:
+        if args.usernames or args.targets:
+            parser.error("--set-webhook-url cannot be combined with monitoring targets")
+        set_webhook_conflicts = [label for label, enabled in (("--webhook-url", bool(args.webhook_url)), ("--webhook-provider", bool(args.webhook_provider)), ("--webhook", args.webhook_enabled is True), ("--no-webhook", args.no_webhook is True), ("--webhook-status", args.webhook_status is True), ("--webhook-followers", args.webhook_followers is True), ("--webhook-errors", args.webhook_errors is True)) if enabled]
+        if set_webhook_conflicts:
+            parser.error("--set-webhook-url cannot be combined with " + ", ".join(set_webhook_conflicts))
+        if args.env_file and str(args.env_file).casefold() == "none":
+            parser.error("--set-webhook-url requires a writable dotenv destination and cannot use --env-file none")
+        try:
+            run_set_webhook_url(env_file=args.env_file, config_path=args.config_file)
+        except WebhookConfigurationError as exc:
+            print(f"* Error: {exc}")
+            sys.exit(1)
         sys.exit(0)
 
     if args.config_file:
@@ -12808,7 +13044,7 @@ def run_main():
         if not PROXY_URL:
             print(f"* Error: Proxies are enabled but PROXY_URL is missing! Please set it in config file or via --proxy-url flag")
             sys.exit(1)
-        if not validate_webhook_url(PROXY_URL):
+        if not validate_proxy_url(PROXY_URL):
             print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{mask_url_credentials(PROXY_URL)}'")
             sys.exit(1)
         if PROXY_CERT_PATH:
@@ -12855,7 +13091,7 @@ def run_main():
     # Webhook configuration
     if args.webhook_url:
         if not validate_webhook_url(args.webhook_url):
-            print(f"* Error: Invalid webhook URL format. Must be HTTPS or HTTP URL.")
+            print("* Error: Invalid webhook URL format. Must be a complete HTTPS URL without embedded credentials.")
             sys.exit(1)
         WEBHOOK_URL = str(args.webhook_url or "")
         WEBHOOK_ENABLED = True
@@ -12871,12 +13107,15 @@ def run_main():
 
     if args.webhook_status is True:
         WEBHOOK_STATUS_NOTIFICATION = True
+        WEBHOOK_ENABLED = True
 
     if args.webhook_followers is True:
         WEBHOOK_FOLLOWERS_NOTIFICATION = True
+        WEBHOOK_ENABLED = True
 
     if args.webhook_errors is True:
         WEBHOOK_ERROR_NOTIFICATION = True
+        WEBHOOK_ENABLED = True
 
     if args.send_test_email:
         print("* Sending test email notification ...\n")
@@ -13323,7 +13562,7 @@ def run_main():
             templates_display = "Auto-detect" + (f" ({detected})" if detected else "")
         summary_rows.append((f"* Web Dashboard templates:\t\t{templates_display}", False, True))
 
-    summary_rows.append((f"* Webhook notifications:\t\t{WEBHOOK_ENABLED}" + (f" ({str(WEBHOOK_URL)[:50]}...)" if WEBHOOK_ENABLED and WEBHOOK_URL and len(str(WEBHOOK_URL)) > 50 else (f" ({WEBHOOK_URL})" if WEBHOOK_ENABLED and WEBHOOK_URL else "")), False, True))
+    summary_rows.append((f"* Webhook notifications:\t\t{WEBHOOK_ENABLED}" + (" (private URL configured)" if WEBHOOK_ENABLED and WEBHOOK_URL else ""), False, True))
     if WEBHOOK_ENABLED:
         summary_rows.append((f"*   Webhook provider:\t\t\t{normalized_webhook_provider() or 'Invalid'}", False, True))
         summary_rows.append((f"*   Webhook on status/profile changes:\t{WEBHOOK_STATUS_NOTIFICATION}", False, True))
