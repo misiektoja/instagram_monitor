@@ -20,9 +20,17 @@ def make_test_directory():
 
 class _FakeResponse:
     # Stores the HTTP status and text returned by a fake webhook call
-    def __init__(self, status_code=204, text=""):
+    def __init__(self, status_code=204, text="", headers=None, json_payload=None):
         self.status_code = status_code
         self.text = text
+        self.headers = headers or {}
+        self.json_payload = json_payload
+
+    # Returns the configured JSON body or raises when none was supplied
+    def json(self):
+        if self.json_payload is None:
+            raise ValueError("No JSON body")
+        return self.json_payload
 
 
 class TestSendWebhook:
@@ -37,7 +45,7 @@ class TestSendWebhook:
         monkeypatch.setattr(im_module, "WEBHOOK_HEADERS", {"X-Title": "{title}"})
         monkeypatch.setattr(im_module, "WEBHOOK_TRANSFORMS", [("title", "replace", "secret", "masked")])
         monkeypatch.setattr(im_module, "PRIVACY_SUBSTITUTIONS", [("realuser", "User1")])
-        monkeypatch.setattr(im_module.req, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
 
         rc = im_module.send_webhook("realuser secret", "desc realuser", fields=[{"name": "realuser field", "value": long_value, "inline": True}], image_url="https://example.com/image.jpg")
 
@@ -54,6 +62,7 @@ class TestSendWebhook:
         assert payload["embeds"][0]["fields"][0]["name"] == "User1 field"
         assert payload["embeds"][0]["fields"][0]["value"] == "x" * im_module.WEBHOOK_FIELD_VALUE_LIMIT
         assert payload["embeds"][0]["fields"][0]["inline"] is True
+        assert payload["allowed_mentions"] == {"parse": []}
 
     # A string webhook template is sent as raw data instead of JSON
     def test_string_template_uses_data_post(self, im_module, monkeypatch):
@@ -63,7 +72,7 @@ class TestSendWebhook:
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://example.com/hook")
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "WEBHOOK_TEMPLATE", "{title}:{fields_str}")
-        monkeypatch.setattr(im_module.req, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
 
         rc = im_module.send_webhook("Title", "desc", fields=[{"name": "Name", "value": "Value"}])
 
@@ -80,24 +89,52 @@ class TestSendWebhook:
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://example.com/hook")
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", False)
-        monkeypatch.setattr(im_module.req, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
 
         assert im_module.send_webhook("Title", "desc", notification_type="status") == 1
         assert calls == []
 
     # HTTP 429 responses are retried and a later success is reported as delivered
     def test_rate_limit_response_retries(self, im_module, monkeypatch):
-        responses = [_FakeResponse(429, "slow down"), _FakeResponse(204, "")]
+        responses = [_FakeResponse(429, "slow down", headers={"Retry-After": "999"}), _FakeResponse(204, "")]
         calls = []
+        sleeps = []
 
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://example.com/hook")
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
-        monkeypatch.setattr(im_module.time, "sleep", lambda seconds: None)
-        monkeypatch.setattr(im_module.req, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or responses.pop(0))
+        monkeypatch.setattr(im_module.time, "sleep", sleeps.append)
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or responses.pop(0))
 
         assert im_module.send_webhook("Title", "desc") == 0
         assert len(calls) == 2
+        assert sleeps == [im_module.WEBHOOK_MAX_RETRY_AFTER_SECONDS]
+
+    # HTTP 5xx responses are retried once while every 2xx response is accepted
+    def test_server_error_retries_then_accepts_any_2xx(self, im_module, monkeypatch):
+        responses = [_FakeResponse(503, "temporarily unavailable"), _FakeResponse(202, "accepted")]
+        sleeps = []
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://example.com/hook")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module.time, "sleep", sleeps.append)
+        post = Mock(side_effect=responses)
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", post)
+
+        assert im_module.send_webhook("Title", "desc") == 0
+        assert post.call_count == 2
+        assert sleeps == [im_module.WEBHOOK_FALLBACK_RETRY_SECONDS]
+
+    # Non-retryable client errors fail after one request
+    def test_client_error_is_not_retried(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://example.com/hook")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        post = Mock(return_value=_FakeResponse(400, "bad request"))
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", post)
+
+        assert im_module.send_webhook("Title", "desc") == 1
+        post.assert_called_once()
 
     # A native ntfy call sends UTF-8 text, field details and the title query parameter
     def test_ntfy_payload_uses_native_topic_api(self, im_module, monkeypatch):
@@ -106,7 +143,7 @@ class TestSendWebhook:
         monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "ntfy")
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.sh/private-topic?auth=private-value")
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
-        monkeypatch.setattr(im_module.req, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse(200))
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse(200))
 
         rc = im_module.send_webhook("Instagram title za\u017c\u00f3\u0142\u0107", "Body: Bj\u00f6rk", fields=[{"name": "Count", "value": "3"}], image_url="https://example.com/image.jpg")
 
@@ -126,7 +163,7 @@ class TestSendWebhook:
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.example.test/private-topic")
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "WEBHOOK_HEADERS", {"Authorization": "Basic shared-private-value", "X-Monitor": "instagram"})
-        monkeypatch.setattr(im_module.req, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse(200))
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse(200))
 
         assert im_module.send_webhook("Title", "Body") == 0
         headers = calls[0][1]["headers"]
@@ -144,7 +181,7 @@ class TestSendWebhook:
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "WEBHOOK_HEADERS", {"authorization": "Basic older-value", "Content-Type": "application/json", "X-Priority": "high"})
         monkeypatch.setattr(im_module, "NTFY_ACCESS_TOKEN", "tk_private_access_token")
-        monkeypatch.setattr(im_module.req, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse(200))
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse(200))
 
         assert im_module.send_webhook("Title", "Body") == 0
         headers = calls[0][1]["headers"]
@@ -162,7 +199,7 @@ class TestSendWebhook:
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.example.test/private-topic")
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "NTFY_ACCESS_TOKEN", token)
-        monkeypatch.setattr(im_module.req, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse(200))
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse(200))
 
         assert im_module.send_webhook("Title", "Body") == 1
         assert calls == []
@@ -175,7 +212,7 @@ class TestSendWebhook:
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://example.com/hook")
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "WEBHOOK_HEADERS", headers)
-        monkeypatch.setattr(im_module.req, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
 
         assert im_module.send_webhook("Title", "Body") == 1
         assert calls == []
@@ -187,10 +224,55 @@ class TestSendWebhook:
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://example.com/hook")
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "WEBHOOK_HEADERS", {"X-Title": "{title}"})
-        monkeypatch.setattr(im_module.req, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
 
         assert im_module.send_webhook("first\nsecond", "Body") == 1
         assert calls == []
+
+    # Custom templates cannot re-enable Discord mentions
+    def test_custom_template_cannot_enable_mentions(self, im_module, monkeypatch):
+        calls = []
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://example.com/hook")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_TEMPLATE", {"content": "{title}: {description}", "allowed_mentions": {"parse": ["everyone"]}})
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
+
+        assert im_module.send_webhook("@everyone", "@here") == 0
+        assert calls[0][1]["json"]["allowed_mentions"] == {"parse": []}
+
+    # Unsafe transforms and avatar URLs fail before a webhook request is attempted
+    @pytest.mark.parametrize("attribute,value", [("WEBHOOK_TRANSFORMS", [("title", "__class__")]), ("WEBHOOK_TRANSFORMS", [("title",)]), ("WEBHOOK_AVATAR_URL", "http://example.com/avatar.png"), ("WEBHOOK_TEMPLATE", 3)])
+    def test_invalid_webhook_customization_is_rejected(self, im_module, monkeypatch, attribute, value):
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://example.com/hook")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, attribute, value)
+        post = Mock(side_effect=AssertionError("webhook request attempted"))
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", post)
+
+        assert im_module.send_webhook("Title", "Body") == 1
+        post.assert_not_called()
+
+    # An ntfy image upload failure falls back to one text-only request
+    def test_ntfy_image_failure_falls_back_to_text(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            image_path = Path(directory_name) / "profile.jpg"
+            image_path.write_bytes(b"fake-image")
+            responses = [_FakeResponse(413, "attachment too large"), _FakeResponse(200)]
+            calls = []
+            monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+            monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "ntfy")
+            monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.example.test/private-topic")
+            monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+            monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or responses.pop(0))
+
+            assert im_module.send_webhook("Title", "Body", local_image_file=str(image_path)) == 0
+            assert calls[0][1]["data"] == b"fake-image"
+            assert calls[0][1]["params"] == {"title": "Title", "message": "Body"}
+            assert calls[0][1]["headers"]["X-Filename"] == "profile.jpg"
+            assert calls[1][1]["data"] == b"Body"
+            assert calls[1][1]["params"] == {"title": "Title"}
 
     # Ntfy message truncation respects its UTF-8 byte limit without splitting a character
     def test_ntfy_message_is_bounded_by_utf8_bytes(self, im_module):
@@ -206,10 +288,45 @@ class TestSendWebhook:
         monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "unsupported")
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://example.com/hook")
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
-        monkeypatch.setattr(im_module.req, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
 
         assert im_module.send_webhook("Title", "Body") == 1
         assert calls == []
+
+
+# Private webhook entry requires a terminal and a complete HTTPS URL
+def test_set_webhook_url_requires_safe_input(im_module):
+    with make_test_directory() as directory_name:
+        env_path = Path(directory_name) / ".env"
+        with pytest.raises(im_module.WebhookConfigurationError, match="interactive terminal"):
+            im_module.run_set_webhook_url(env_file=env_path, interactive=False)
+        with pytest.raises(im_module.WebhookConfigurationError, match="complete HTTPS"):
+            im_module.run_set_webhook_url(env_file=env_path, interactive=True, getpass_func=lambda prompt: "http://example.com/hook")
+        assert not env_path.exists()
+
+
+# Private webhook entry writes only the dotenv file and never displays the URL
+def test_set_webhook_url_persists_privately(im_module, monkeypatch, capsys):
+    with make_test_directory() as directory_name:
+        env_path = Path(directory_name) / ".env"
+        webhook_url = "https://example.test/private-hook"
+        monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
+
+        result = im_module.run_set_webhook_url(env_file=env_path, interactive=True, getpass_func=lambda prompt: webhook_url)
+
+        assert result == str(env_path.resolve())
+        assert dotenv_values(env_path, interpolate=False)["WEBHOOK_URL"] == webhook_url
+        assert webhook_url not in capsys.readouterr().out
+
+
+# Declining replacement leaves an existing private webhook URL unchanged
+def test_set_webhook_url_declined_replacement_is_non_destructive(im_module):
+    with make_test_directory() as directory_name:
+        env_path = Path(directory_name) / ".env"
+        env_path.write_text('WEBHOOK_URL="https://example.test/original"\n', encoding="utf-8")
+        with pytest.raises(im_module.WebhookConfigurationError, match="cancelled"):
+            im_module.run_set_webhook_url(env_file=env_path, interactive=True, input_func=lambda prompt: "no", getpass_func=lambda prompt: "https://example.test/replacement")
+        assert dotenv_values(env_path, interpolate=False)["WEBHOOK_URL"] == "https://example.test/original"
 
 
 # Full setup expands a bare ntfy topic and persists both ntfy secrets only in the dotenv file
