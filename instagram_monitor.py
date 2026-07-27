@@ -27,25 +27,31 @@ VERSION = "3.7.1"
 # ---------------------------
 
 CONFIG_BLOCK = """
-# Session login (Logged-in mode) is required for some features such as retrieving the list of followings/followers
-# or detailed posts/reels/stories info
+# ----------------------------
+# Login and Session
+# ----------------------------
+
+# Logged-in mode is required for complete follower and following lists or detailed post, reel and story information
 #
-# The tool still works without login (No-login mode), but in a limited way
+# The tool also works in a limited no-login mode
 #
-# For session login (Logged-in mode), you'll need to log in with your Instagram username and password
-#
-# Provide the username below (or use the -u flag)
+# Instagram username used for logged-in mode
+# Can also be set via the -u flag
 SESSION_USERNAME = ""
 
 # Provide the password using one of the following methods:
 #   - Log in via web browser and import session cookie: instagram_monitor --import-browser-session --browser firefox (also chrome, brave or chromium)
 #   - Log in using instaloader: instaloader -l <SESSION_USERNAME>
-#   - Pass it at runtime with -p / --session-password
+#   - Pass it at runtime with -p or --session-password
 #   - Set it as an environment variable (e.g. export SESSION_PASSWORD=...)
 #   - Add it to ".env" file (SESSION_PASSWORD=...) for persistent use
 # Fallback:
 #   - Hard-code it in the code or config file
 SESSION_PASSWORD = ""
+
+# ----------------------------
+# Email Notifications
+# ----------------------------
 
 # SMTP settings for sending email notifications
 # If left as-is, no email notifications will be sent
@@ -63,51 +69,103 @@ SMTP_SSL = True
 SENDER_EMAIL = "your_sender_email"
 RECEIVER_EMAIL = "your_receiver_email"
 
-# Whether to send an email on new post/reel/story, bio change, new follow, profile pic or visibility change
+# Whether to send an email on new posts, reels, stories, bio changes, follows, profile picture changes or visibility changes
 # Can also be enabled via the -s flag
 STATUS_NOTIFICATION = False
 
-# Whether to send an email on new followers
-# Only applies if STATUS_NOTIFICATION / -s is enabled
+# Whether to include follower changes in email notifications
+# Only applies if STATUS_NOTIFICATION or -s is enabled
 # Can also be enabled via the -m flag
 FOLLOWERS_NOTIFICATION = False
 
-# Whether to send an email on errors
+# Whether to send an email on monitoring errors
 # Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
 
+# ----------------------------
+# Webhook Notifications
+# ----------------------------
+
+# Master switch for webhook notifications through Discord or ntfy
+# Event settings below select which notifications are sent
+# Can also be enabled via the --webhook flag
+WEBHOOK_ENABLED = False
+
+# Service used to deliver webhook notifications: "discord" or "ntfy"
+# Can also be set via the --webhook-provider flag
+WEBHOOK_PROVIDER = "discord"
+
+# Private destination used to send webhook notifications
+# Discord: Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL
+# ntfy: complete topic URL such as https://ntfy.sh/your-private-topic
+# Prefer an environment variable or dotenv file instead of storing this private URL here
+WEBHOOK_URL = ""
+
+# Discord display name (leave empty to use the webhook default)
+WEBHOOK_USERNAME = "Instagram Monitor"
+
+# Discord avatar URL (leave empty to use the webhook default)
+WEBHOOK_AVATAR_URL = ""
+
+# Whether to send a webhook notification on new posts, reels, stories, bio changes, profile picture changes or visibility changes
+# Can also be enabled via the --webhook-status flag
+WEBHOOK_STATUS_NOTIFICATION = False
+
+# Whether to send a webhook notification on follower changes
+# Can also be enabled via the --webhook-followers flag
+WEBHOOK_FOLLOWERS_NOTIFICATION = False
+
+# Whether to send a webhook notification on monitoring errors
+# Can also be enabled via the --webhook-errors flag
+WEBHOOK_ERROR_NOTIFICATION = False
+
+# Optional static request headers for advanced webhook integrations
+WEBHOOK_HEADERS = {}
+
+# Optional ntfy access token for Bearer authentication
+# Prefer an environment variable or dotenv file instead of storing this token here
+NTFY_ACCESS_TOKEN = ""
+
+# ----------------------------
+# Monitoring Settings
+# ----------------------------
+
 # Number of consecutive errors required before triggering an alert
-# Useful to avoid spamming on transient network glitches
+# Useful for avoiding repeated alerts during transient network problems
 # Can also be set via the --error-threshold flag
 ERROR_FAILURE_THRESHOLD = 2
 
-# How often to check for user activity; in seconds
+# How often to check for user activity in seconds
 # Can also be set using the -c flag
-INSTA_CHECK_INTERVAL = 5400  # 1,5 hours
+INSTA_CHECK_INTERVAL = 5400  # 1.5 hours
 
-# To avoid captcha checks and bot detection, the actual INSTA_CHECK_INTERVAL interval is randomized using the values below
-# Final interval = INSTA_CHECK_INTERVAL +/- RANDOM_SLEEP_DIFF
+# Randomize the actual check interval to reduce captcha checks and bot detection
+# Final interval ranges from INSTA_CHECK_INTERVAL - RANDOM_SLEEP_DIFF_LOW to
+# INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH
 # Can also be set using -i (low) and -j (high) flags
-RANDOM_SLEEP_DIFF_LOW = 900  # -15 min (-i)
-RANDOM_SLEEP_DIFF_HIGH = 180  # +3 min (-j)
+RANDOM_SLEEP_DIFF_LOW = 900  # -15 minutes (-i)
+RANDOM_SLEEP_DIFF_HIGH = 180  # +3 minutes (-j)
 
-# Set your local time zone so that Instagram timestamps are converted accordingly (e.g. 'Europe/Warsaw')
+# Local time zone used to convert Instagram timestamps (for example "Europe/Warsaw")
 # Use this command to list all time zones supported by pytz:
 #   python3 -c "import pytz; print('\\n'.join(pytz.all_timezones))"
-# If set to 'Auto', the tool will try to detect your local time zone automatically (requires tzlocal)
+# Set to "Auto" to detect the local time zone automatically (requires tzlocal)
 LOCAL_TIMEZONE = 'Auto'
 
-# Time format settings
-# Set to True to use 12-hour format (AM/PM) instead of default 24-hour format
-# Can be also toggled via Web Dashboard
+# Whether to use 12-hour times with AM/PM instead of the default 24-hour format
+# Can also be changed in the Web Dashboard
 TIME_FORMAT_12H = False
+
+# ----------------------------
+# Content and Change Detection
+# ----------------------------
 
 # Detect profile picture changes in console output and enabled email or webhook status notifications
 # If enabled, the current profile picture is saved as:
 #   - instagram_<username>_profile_pic.jpg (initial)
 #   - instagram_<username>_profile_pic_YYmmdd_HHMM.jpg (on change)
 # The binary JPGs are compared to detect changes
-# Can also be disabled by using -k flag
+# Can also be disabled via the -k flag
 DETECT_CHANGED_PROFILE_PIC = True
 
 # Whether to download thumbnail images for posts, reels and stories
@@ -126,51 +184,61 @@ PROFILE_PIC_FILE_EMPTY = "instagram_profile_pic_empty.jpg"
 # Leave empty to disable this feature
 IMGCAT_PATH = "imgcat"
 
-# Skip session login (no list of followers/followings and detailed posts/reels/stories info will be fetched)
+# ----------------------------
+# Instagram Data Collection
+# ----------------------------
+
+# Whether to skip session login
+# No follower or following lists and no detailed post, reel or story information will be fetched
 # Can also be enabled via the -l flag
 SKIP_SESSION = False
 
-# Do not fetch followers list (only relevant if session login is used and SKIP_SESSION is False)
+# Whether to skip the follower list
+# Only applies when session login is used and SKIP_SESSION is False
 # Can also be enabled via the -f flag
 SKIP_FOLLOWERS = False
 
-# Do not fetch followings list (only relevant if session login is used and SKIP_SESSION is False)
+# Whether to skip the following list
+# Only applies when session login is used and SKIP_SESSION is False
 # Can also be enabled via the -g flag
 SKIP_FOLLOWINGS = False
 
-# Do not fetch detailed story info (like story date, expiry, images/videos etc.)
+# Whether to skip detailed story information such as dates, expiry times, images and videos
 # Only relevant if session login is used and SKIP_SESSION is False
 # Can also be enabled via the -r flag
 SKIP_GETTING_STORY_DETAILS = False
 
-# Do not fetch detailed post/reel info (like post/reel date, number of likes, comments, description,
-# tagged users, location, images/videos etc.)
+# Whether to skip detailed post and reel information such as dates, likes, comments, descriptions, tagged users,
+# locations and media
 # Can also be enabled via the -w flag
 SKIP_GETTING_POSTS_DETAILS = False
 
-# Fetch extra post details (list of comments and likes)
+# Whether to fetch extra post details including comment and like lists
 # Only relevant if session login is used and SKIP_SESSION is False
 # Can also be enabled via the -t flag
 GET_MORE_POST_DETAILS = False
 
-# Detect "collab" posts that leak from PRIVATE accounts via the public web_profile_info endpoint
+# Whether to detect "collab" posts exposed from private accounts through the public web_profile_info endpoint
 # When a private account co-authors a post with a public account that post stays visible in the
 # private account's timeline media. This probes for such leaked posts and reports new ones over time
-# Only kicks in for accounts whose posts are otherwise not viewable (private and not followed by you)
+# Only applies to accounts whose posts are otherwise unavailable
 # Can be disabled via the --no-detect-collab-posts flag
 DETECT_COLLAB_POSTS = True
 
-# When enabled, fetches the full list of followers and followings every check (not just when the count changes) and
-# compares usernames to detect who followed/unfollowed even when counts remain the same (churn detection)
-# This is useful for detecting when someone unfollows and someone else follows in the same interval, keeping the count unchanged
+# Whether to fetch complete follower and following lists on every check to detect churn
+# This detects follow and unfollow changes even when the total count stays the same
 FOLLOWERS_CHURN_DETECTION = False
 
 # Whether to skip reporting and notifications for follower and following changes
-# (new follows, unfollows and count changes)
+# Includes new follows, unfollows and count changes
 SKIP_FOLLOW_CHANGES = False
 
-# Make the tool behave more like a human by performing random feed / profile / hashtag / followee actions
-# Used only with session login (Logged-in mode), always disabled without login (No-login mode)
+# ----------------------------
+# Request Behavior
+# ----------------------------
+
+# Whether to simulate human activity with random feed, profile, hashtag and following actions
+# Only applies in logged-in mode
 BE_HUMAN = False
 
 # Approximate number of simulated human actions to perform per 24 hours
@@ -179,32 +247,33 @@ DAILY_HUMAN_HITS = 5
 # List of hashtags to browse
 MY_HASHTAGS = ["travel", "food", "nature"]
 
-# Set to True to enable verbose output during human simulation actions
+# Whether to show verbose output for simulated human actions
 BE_HUMAN_VERBOSE = False
 
 # Whether to enable human-like HTTP jitter and back-off wrapper
 ENABLE_JITTER = False
 
-# Set to True to enable verbose output for HTTP jitter/back-off wrappers
+# Whether to show verbose output for HTTP jitter and back-off wrappers
 JITTER_VERBOSE = False
 
-# Set to True to skip the per-request WRAP-REQ/WRAP-SEND log lines from the HTTP jitter/back-off wrappers
+# Whether to hide per-request WRAP-REQ and WRAP-SEND log lines from the HTTP wrappers
 # These can be overwhelming in debug or jitter-verbose mode and are not needed in most cases
 SKIP_WRAP_MESSAGES = False
 
-# Optional Follower and Followee Adjustments
+# ----------------------------
+# Follower Fetching Limits
+# ----------------------------
 #
-# This allows control of the fetching of followers and followees, which may be beneficial in avoiding account flagging by Instagram.
-# It breaks up fetching into batches with a delay in between up to a total maximum.
+# These settings divide follower and following retrieval into delayed batches
 #   *_PER_BATCH       = number of accounts to fetch at one time before pausing (0 to disable [no limit])
 #   *_DELAY_PER_BATCH = delay between batches (0 to disable [no delay])
 #   *_LIMIT_TO_FETCH  = total accounts to fetch via multiple batches (0 to disable [no limit])
 #
-# There are 4 valid configurations, and the script will indicate if incorrectly configured:
+# Supported configurations:
 #   Disabled
 #   Maximum of XXX accounts
-#   Maximum of XXX accounts in batches of YYY accounts with ZZZ second delay
-#   Batches of YYY accounts with ZZZ second delay
+#   Maximum of XXX accounts in batches of YYY accounts with a ZZZ-second delay
+#   Batches of YYY accounts with a ZZZ-second delay
 FOLLOWERS_PER_BATCH      = 0
 FOLLOWEES_PER_BATCH      = 0
 FOLLOWER_LIMIT_TO_FETCH  = 0
@@ -212,34 +281,42 @@ FOLLOWER_DELAY_PER_BATCH = 0
 FOLLOWEE_LIMIT_TO_FETCH  = 0
 FOLLOWEE_DELAY_PER_BATCH = 0
 
-# Optional Privacy Substitutions
-# This allows you to substitute any string for another in all messaging, logging, webhooks, emails, and both dashboards.
-# For instance, you may want to change a particular Instagram username to a more friendly name, or you could mask a name.
+# ----------------------------
+# Privacy
+# ----------------------------
+
+# Optional substitutions applied to console messages, logs, webhooks, emails and dashboards
+# Use these to replace a username with a friendly label or mask private text
 #
-# Provide a list of (search, replace) tuples. Any search term will be substituted with the replace term.
+# Provide a list of (search, replacement) tuples
 #
 # Example:
-# PRIVACY_SUBSTITUTIONS = [ ("a.username", "XXX"), ("sdfsdf747475475", "Bobby") ]
+# PRIVACY_SUBSTITUTIONS = [("a.username", "XXX"), ("sdfsdf747475475", "Bobby")]
 #
-PRIVACY_SUBSTITUTIONS = [ ]
+PRIVACY_SUBSTITUTIONS = []
 
-# Optional: Enable proxy support for networking traffic
+# ----------------------------
+# Network Settings
+# ----------------------------
+
+# Whether to route network traffic through PROXY_URL
 #
-# Note: even when PROXY_ENABLED is False, the underlying 'requests' library still
-# honors HTTP_PROXY / HTTPS_PROXY / NO_PROXY environment variables by default.
-# If those are set in your shell or systemd unit, they will silently be applied.
-# Unset them (or run with env -i) to guarantee a direct connection
+# The requests library honors HTTP_PROXY, HTTPS_PROXY and NO_PROXY environment variables even when this is False
+# Unset those variables to guarantee a direct connection
 PROXY_ENABLED = False
-# URL for proxy (required if using proxies)
+
+# Proxy URL required when PROXY_ENABLED is True
 PROXY_URL = ""
-# Provide a local SSL certificate to use with proxy
+
+# Optional local TLS certificate used by the proxy
 PROXY_CERT_PATH = ""
-# Enables use of proxy for Webhooks (some proxies don't support POST requests)
+
+# Whether webhook requests should use the proxy
 PROXY_WEBHOOKS = False
 
-# Optional: specify web browser user agent manually
+# Optional desktop browser user agent
 #
-# For session login using Firefox cookies, ensure this matches your Firefox web browser's user agent
+# When importing Firefox cookies this should match the Firefox user agent
 #
 # Some examples:
 # Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0
@@ -249,7 +326,7 @@ PROXY_WEBHOOKS = False
 # Can also be set using the --user-agent flag
 USER_AGENT = ""
 
-# Optional: specify mobile device user agent manually
+# Optional mobile browser user agent
 #
 # Some examples:
 # Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0
@@ -268,28 +345,30 @@ USER_AGENT_MOBILE = ""
 HTTP_BACKEND = "curl_cffi"
 
 # Browser profile curl_cffi impersonates when HTTP_BACKEND is "curl_cffi"
-# - "auto" (default): pick the impersonation target that matches USER_AGENT, so the TLS, HTTP/2 and
-#   client-hint headers stay consistent with the browser identity (and with a Firefox-imported session)
-# - or pin a specific target, e.g. "chrome", "safari", "safari_ios", "edge", "firefox"
-#   (see curl_cffi docs for the full list)
+# - "auto" (default): match USER_AGENT so TLS, HTTP/2 and client-hint headers use one browser identity
+# - A target such as "chrome", "safari", "safari_ios", "edge" or "firefox"
+# See the curl_cffi documentation for the complete list
 # Can also be set using the --impersonate flag
 CURL_CFFI_IMPERSONATE = "auto"
 
-# How often to print a "liveness check" message to the output; in seconds
+# How often to print a liveness message in seconds
 # Set to 0 to disable
 LIVENESS_CHECK_INTERVAL = 43200  # 12 hours
 
 # URL used to verify internet connectivity at startup
 CHECK_INTERNET_URL = 'https://www.instagram.com/'
 
-# Timeout used when checking initial internet connectivity; in seconds
+# Timeout used when checking initial internet connectivity in seconds
 CHECK_INTERNET_TIMEOUT = 5
 
 # URL used to determine IP address
 IP_ADDRESS_URL = 'https://httpbin.org/ip'
 
-# Limit fetching updates to specific hours of the day?
-# If True, the tool will only fetch updates within the defined hour ranges below
+# ----------------------------
+# Restricted Monitoring Hours
+# ----------------------------
+
+# Whether to fetch updates only during the hour ranges below
 #
 # Notes:
 # - The configured ranges are treated as hour buckets (HH:00..HH:59)
@@ -297,7 +376,7 @@ IP_ADDRESS_URL = 'https://httpbin.org/ip'
 # - Invalid hours (outside 0-23) are ignored
 CHECK_POSTS_IN_HOURS_RANGE = False
 
-# Set to True to enable verbose output for performing updates during certain hours
+# Whether to show verbose output for restricted monitoring hours
 HOURS_VERBOSE = False
 
 # First range of hours to check (if CHECK_POSTS_IN_HOURS_RANGE is True)
@@ -315,6 +394,10 @@ MAX_H2 = 23
 # Delay for fetching other data to avoid captcha checks and detection of automated tools
 NEXT_OPERATION_DELAY = 0.7
 
+# ----------------------------
+# Files and Storage
+# ----------------------------
+
 # CSV file to write all activities and profile changes
 # Can also be set using the -b flag
 #
@@ -330,8 +413,8 @@ NEXT_OPERATION_DELAY = 0.7
 #    - Single-target mode: OUTPUT_DIR/csvs/<filename> (uses basename of CSV_FILE)
 CSV_FILE = ""
 
-# Location of the optional dotenv file which can keep secrets
-# If not specified it will try to auto-search for .env files
+# Optional dotenv file used to store secrets
+# Leave empty to search automatically for .env files
 # To disable auto-search, set this to the literal string "none"
 # Can also be set using the --env-file flag
 DOTENV_FILE = ""
@@ -342,13 +425,13 @@ FIREFOX_WINDOWS_COOKIE = "~/AppData/Roaming/Mozilla/Firefox/Profiles/*/cookies.s
 # Native Linux path, with Snap and Flatpak paths discovered automatically too
 FIREFOX_LINUX_COOKIE = "~/.mozilla/firefox/*/cookies.sqlite"
 
-# Base name for the log file. Output will be saved to target-specific log files.
-# If OUTPUT_DIR is set, log will be saved to OUTPUT_DIR/<username>/logs/<INSTA_LOGFILE>.log
+# Base name for target-specific log files
+# If OUTPUT_DIR is set the log is saved to OUTPUT_DIR/<username>/logs/<INSTA_LOGFILE>.log
 # Otherwise, it will be saved to <INSTA_LOGFILE>_<username>.log in current working dir
 INSTA_LOGFILE = "instagram_monitor"
 
-# Optional: specify directory layout for generated files
-# If set, all downloaded files (images, videos, json, logs) will be saved under this directory
+# Optional base directory for generated files
+# If set all downloaded files are saved under this directory
 #
 # Structure (single-target mode):
 #   OUTPUT_DIR/
@@ -376,64 +459,69 @@ OUTPUT_DIR = ""
 # Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
+# ----------------------------
+# Terminal Output
+# ----------------------------
+
 # Width of horizontal line
 HORIZONTAL_LINE = 113
 
 # Whether to clear the terminal screen after starting the tool
 CLEAR_SCREEN = True
 
-# Value used by signal handlers to increase/decrease user activity check interval (INSTA_CHECK_INTERVAL); in seconds
-INSTA_CHECK_SIGNAL_VALUE = 300  # 5 min
+# Amount added to or removed from INSTA_CHECK_INTERVAL by signal handlers in seconds
+INSTA_CHECK_SIGNAL_VALUE = 300  # 5 minutes
 
-# Enable verbose mode for operational status updates (can also be enabled via --verbose flag)
+# Whether to enable verbose operational output
 # Shows calculated sleep durations, next check timestamps and liveness confirmations
+# Can also be enabled via the --verbose flag
 VERBOSE_MODE = False
 
-# Enable debug mode for full technical logging (can also be enabled via --debug flag)
+# Whether to enable debug output
 # Shows every API request and internal state changes
+# Can also be enabled via the --debug flag
 DEBUG_MODE = False
 
 # ----------------------------
-# Multi-target monitoring mode
+# Multi-target Monitoring
 # ----------------------------
-# If you pass multiple targets on CLI (e.g. instagram_monitor user1 user2), the tool will run them in one process
-# You can optionally define defaults here too:
+
+# Pass multiple targets on the command line to monitor them in one process
+# You can also define default targets here:
 #
 # TARGET_USERNAMES = ["user1", "user2"]
 #
 # CLI targets take precedence over TARGET_USERNAMES
 TARGET_USERNAMES = []
 
-#
-# When monitoring multiple targets in one process, this controls how long (in seconds) to wait between starting each
-# target's monitoring loop to spread requests in time
+# Delay between starting each target loop in seconds
 #
 # - Set to 0 to auto-spread targets evenly across INSTA_CHECK_INTERVAL
-# - You can override via --targets-stagger flag
+# - Can also be set via the --targets-stagger flag
 MULTI_TARGET_STAGGER = 0
 
-#
-# Adds a small random jitter (seconds) to each target start time to avoid perfectly periodic patterns
+# Random jitter added to each target start time in seconds
 MULTI_TARGET_STAGGER_JITTER = 5
 
-#
-# If True, serializes all HTTP calls (via a global lock) across targets. Recommended for multi-target mode.
+# Whether to serialize all HTTP calls across targets
+# Recommended for multi-target mode
 MULTI_TARGET_SERIALIZE_HTTP = True
 
 # ----------------------------
-# Terminal Dashboard Settings
+# Terminal Dashboard
 # ----------------------------
 
-# Enable terminal dashboard (live view)
-# Set to False to use traditional text output
-# Can be enabled via --dashboard flag
+# Whether to enable the live terminal dashboard
+# When disabled the tool uses traditional text output
+# Can also be enabled via the --dashboard flag
 DASHBOARD_ENABLED = False
 
 # ----------------------------
-# Web Dashboard Settings
+# Web Dashboard
 # ----------------------------
-# Enable web-based dashboard (runs on localhost)
-# Can be enabled via --web-dashboard flag
+
+# Whether to enable the web dashboard
+# Can also be enabled via the --web-dashboard flag
 WEB_DASHBOARD_ENABLED = False
 
 # Port for the web dashboard server
@@ -449,55 +537,22 @@ WEB_DASHBOARD_HOST = '127.0.0.1'
 # Can also be set via --web-dashboard-template-dir flag
 WEB_DASHBOARD_TEMPLATE_DIR = ""
 
-# ---------------------------------
-# Terminal + Web Dashboard Settings
-# ---------------------------------
+# ----------------------------
+# Shared Dashboard Settings
+# ----------------------------
 
-# Show seconds in dashboard "Last Check" / "Next Check" fields (global + per-target)
-# Set to False if you prefer more compact times (HH:MM) without seconds
+# Whether to show seconds in dashboard Last Check and Next Check fields
 DASHBOARD_SHOW_CHECK_SECONDS = True
 
 # ----------------------------
-# Webhook Notifications
+# Advanced Webhook Settings
 # ----------------------------
 
-# Master switch for webhook notifications through Discord or ntfy
-# At least one event type below must also be enabled
-# Can also be enabled via the --webhook flag
-WEBHOOK_ENABLED = False
-
-# Service used to deliver webhook notifications: "discord" or "ntfy"
-# Can also be set via the --webhook-provider flag
-WEBHOOK_PROVIDER = "discord"
-
-# Private destination used to send webhook notifications
-# Discord: Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL
-# ntfy: complete topic URL such as https://ntfy.sh/your-private-topic
-# Prefer an environment variable or dotenv file instead of storing this private URL here
-WEBHOOK_URL = ""
-
-# Discord display name (leave empty to use the webhook default)
-WEBHOOK_USERNAME = "Instagram Monitor"
-
-# Discord avatar URL (leave empty to use the webhook default)
-WEBHOOK_AVATAR_URL = ""
-
-# Whether to send a webhook on status changes such as new posts, reels, stories, bio, profile picture or visibility
-# Can also be enabled via the --webhook-status flag
-WEBHOOK_STATUS_NOTIFICATION = False
-
-# Whether to send a webhook on follower changes
-# Can also be enabled via the --webhook-followers flag
-WEBHOOK_FOLLOWERS_NOTIFICATION = False
-
-# Whether to send a webhook on monitoring errors
-# Can also be enabled via the --webhook-errors flag
-WEBHOOK_ERROR_NOTIFICATION = False
-
 # Webhook request payload template
-# Substitutions will apply for items in {}, which can include title, description, version, image_url, fields, fields_str, color, timestamp, username, avatar_url
+# Supported placeholders include title, description, version, image_url, fields, fields_str, color, timestamp,
+# username and avatar_url
 #
-# The default template is for Discord:
+# The default template is for Discord
 WEBHOOK_TEMPLATE = {
     "username": "Instagram Monitor",
     "embeds": [{
@@ -514,20 +569,10 @@ WEBHOOK_TEMPLATE = {
     }]
 }
 
-# Optional static request headers for advanced webhook integrations
-# Prefer NTFY_ACCESS_TOKEN in an environment variable or dotenv file for ntfy Bearer authentication
-# Some examples:
-#   {
-#       "Content-Type": "application/json",
-#       "Authorization": "Bearer tk_redacted"
-#   }
-WEBHOOK_HEADERS = {}
-NTFY_ACCESS_TOKEN = ""
-
-# Transformations to apply to WEBHOOK_TEMPLATE and WEBHOOK_HEADERS as a list of tuples, but it can be empty
-# tuple format is: (field_to_target, method_name, *optional_arguments)
+# Optional transformations applied to WEBHOOK_TEMPLATE and WEBHOOK_HEADERS
+# Tuple format: (field_to_target, method_name, *optional_arguments)
 #
-# Some examples:
+# Examples:
 #   [
 #       ("title", "upper"),                       # Make title all uppercase
 #       ("description", "replace", "**", ""),     # Remove bold markdown in description
@@ -543,6 +588,10 @@ WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
 WEBHOOK_EMBED_TITLE_LIMIT = 256
 WEBHOOK_MAX_FIELDS = 25
 NTFY_MESSAGE_LIMIT_BYTES = 4096
+
+# ----------------------------
+# Terminal Appearance
+# ----------------------------
 
 # Whether to use coloured output in the terminal (auto-disabled if the terminal
 # does not appear to support colours or when output is redirected to a file)
@@ -581,7 +630,7 @@ COLOR_THEME = {
     # Boolean values
     "boolean_true": "green",
     "boolean_false": "red",
-    # Counters / Diffs
+    # Counters and differences
     "count_up": "green",
     "count_down": "red",
     "link": "blue underline",
