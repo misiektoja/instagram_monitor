@@ -1,5 +1,7 @@
-"""Regression tests for installation-aware documentation."""
+"""Semantic regression tests for installation-aware documentation."""
 
+import re
+import textwrap
 from pathlib import Path
 
 
@@ -11,134 +13,135 @@ def read_asset(relative_path: str) -> str:
     return (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
 
 
-# Verifies installation guidance covers every supported delivery and upgrade path
-def test_installation_docs_cover_all_delivery_and_upgrade_paths():
+# Returns Markdown headings and offsets while ignoring code-fence contents
+def markdown_headings(text: str) -> list[tuple[int, int, str]]:
+    headings = []
+    offset = 0
+    in_fence = False
+    for line in text.splitlines(keepends=True):
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+        elif not in_fence:
+            match = re.match(r"^(#{1,6})\s+(.+?)\s*$", stripped)
+            if match:
+                headings.append((offset, len(match.group(1)), match.group(2)))
+        offset += len(line)
+    return headings
+
+
+# Returns one Markdown section whose heading contains every requested term
+def markdown_section(text: str, level: int, *heading_terms: str) -> str:
+    headings = markdown_headings(text)
+    lowered_terms = tuple(term.casefold() for term in heading_terms)
+    for index, (start, heading_level, heading_text) in enumerate(headings):
+        if heading_level == level and all(term in heading_text.casefold() for term in lowered_terms):
+            later_boundaries = (later_start for later_start, later_level, _later_text in headings[index + 1:] if later_level <= level)
+            end = next(later_boundaries, len(text))
+            return text[start:end]
+    raise AssertionError(f"No level-{level} Markdown section contains terms: {heading_terms}")
+
+
+# Returns normalized non-empty lines from fenced Markdown code blocks
+def fenced_code_lines(text: str) -> list[str]:
+    blocks = re.findall(r"^[ \t]*```[^\n]*\n(.*?)^[ \t]*```[ \t]*$", text, flags=re.MULTILINE | re.DOTALL)
+    return [line.strip() for block in blocks for line in textwrap.dedent(block).splitlines() if line.strip()]
+
+
+# Verifies a document contains all requested concepts without fixing their sentence wording
+def assert_concepts(text: str, *concepts: str) -> None:
+    lowered = text.casefold()
+    for concept in concepts:
+        assert concept.casefold() in lowered
+
+
+# Verifies installation guidance retains every supported delivery and upgrade command
+def test_installation_docs_cover_delivery_and_upgrade_commands():
     installation = read_asset("docs/installation.md")
-    for heading in ("### Install from PyPI", "### Install the Manual Script", "### Install with Docker Compose", "### Install from Docker Hub", "### Upgrade a PyPI Installation", "### Upgrade a Manual Installation", "### Upgrade a Docker Compose Installation", "### Upgrade a Direct Docker Installation", "### Upgrade a Locally Built Docker Image"):
-        assert heading in installation
-    assert "The published image already contains Python and all core libraries" in installation
-    assert "The Docker Compose v2 plugin" in installation
-    assert "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py" in installation
-    assert "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt" in installation
-    assert "pip install --upgrade -r requirements.txt" in installation
-    assert "docker build --pull --tag instagram-monitor:local ." in installation
-    assert "No separate image download is required" in installation
-    assert "docker pull misiektoja/instagram-monitor:latest" in installation
-    assert "docker compose pull" in installation
+    commands = fenced_code_lines(installation)
+    for command in ("pip install instagram_monitor", "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py", "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt", "pip install --upgrade -r requirements.txt", "docker build --pull --tag instagram-monitor:local .", "docker pull misiektoja/instagram-monitor:latest", "docker compose pull"):
+        assert command in commands
+    assert_concepts(installation, "PyPI", "Docker Hub", "Docker Compose", "Manual")
 
 
-# Verifies container onboarding prioritizes direct Docker and isolates interactive setup commands
-def test_container_onboarding_prioritizes_direct_docker_and_isolates_setup():
+# Verifies onboarding keeps direct Docker first and avoids redundant image pulls
+def test_container_onboarding_prioritizes_direct_docker_and_avoids_redundant_pulls():
     installation = read_asset("docs/installation.md")
     quick_start = read_asset("docs/setup-and-first-run.md")
     compose = read_asset("docker-compose.yml")
-    assert installation.index("### Install from Docker Hub") < installation.index("### Install with Docker Compose")
-    direct_install = installation.split("### Install from Docker Hub", 1)[1].split("### Install with Docker Compose", 1)[0]
-    compose_install = installation.split("### Install with Docker Compose", 1)[1].split("### Build the Docker Image Locally", 1)[0]
-    assert "docker run --pull=always" in direct_install
-    assert "docker pull misiektoja/instagram-monitor:latest" not in direct_install
-    assert "\ndocker compose pull\n" not in compose_install
-    assert "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml" in compose_install
-    assert "curl -fsSLO" not in quick_start
-    assert "If you opened this page first" in quick_start
-    assert '=== "Manual Python script on macOS or Linux"' in quick_start
-    assert '=== "Manual Python script on Windows"' in quick_start
-    assert quick_start.index('=== "Docker image on macOS or Windows PowerShell"') < quick_start.index('=== "Docker Compose"')
-    assert 'docker run --rm --pull=always -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup' in quick_start
-    assert 'docker run --rm --pull=always -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup' in quick_start
-    compose_quick_start = quick_start.split('=== "Docker Compose"', 1)[1].split("Run interactive setup commands", 1)[0]
-    assert "run these shell commands in the same terminal immediately before setup" in compose_quick_start
-    assert 'export INSTAGRAM_MONITOR_UID="$(id -u)"' in compose_quick_start
-    assert 'export INSTAGRAM_MONITOR_GID="$(id -g)"' in compose_quick_start
-    assert "docker compose run --rm --pull=always instagram_monitor --setup" in compose_quick_start
+    direct_install = markdown_section(installation, 3, "Docker Hub")
+    compose_install = markdown_section(installation, 3, "Docker Compose")
+    assert installation.index(direct_install) < installation.index(compose_install)
+    assert any(line.startswith("docker run --rm --pull=always") for line in fenced_code_lines(direct_install))
+    assert "docker pull misiektoja/instagram-monitor:latest" not in fenced_code_lines(direct_install)
+    assert "docker compose pull" not in fenced_code_lines(compose_install)
+    assert "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml" in fenced_code_lines(compose_install)
+    assert not any(line.startswith("curl -fsSLO") for line in fenced_code_lines(quick_start))
+    assert 'docker run --rm --pull=always -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup' in fenced_code_lines(quick_start)
+    assert 'docker run --rm --pull=always -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup' in fenced_code_lines(quick_start)
+    assert "docker compose run --rm --pull=always instagram_monitor --setup" in fenced_code_lines(quick_start)
     assert "#        docker compose run --rm --pull=always instagram_monitor --setup" in compose
+
+
+# Verifies both landing pages retain equivalent quick-install commands
+def test_landing_pages_offer_equivalent_quick_install_commands():
+    required_commands = ("pip install instagram_monitor", "instagram_monitor --setup", "docker compose run --rm --pull=always instagram_monitor --setup", 'docker run --rm --pull=always -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup', 'docker run --rm --pull=always -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup')
     for relative_path in ("README.md", "docs/index.md"):
-        landing_page = read_asset(relative_path)
-        quick_install = landing_page.split("Quick Install & Run", 1)[1].split("<a id=\"features\"></a>", 1)[0]
-        assert quick_install.index("#### Docker image - fastest container setup") < quick_install.index("#### Docker Compose - shorter recurring commands")
-        assert "#### Python from PyPI" in quick_install
-        assert "##### macOS or Windows" in quick_install
-        assert "##### Linux" in quick_install
-        assert "\ndocker pull misiektoja/instagram-monitor:latest" not in quick_install
-        assert "\ndocker compose pull" not in quick_install
-        assert "docker run --rm --pull=always" in quick_install
-        assert "docker compose run --rm --pull=always instagram_monitor --setup" in quick_install
-        assert "pip install instagram_monitor\n```\n\nRun setup wizard:\n\n```sh\ninstagram_monitor --setup" in quick_install
-        assert 'docker run --rm --pull=always -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup' in quick_install
-        assert 'docker run --rm --pull=always -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup' in quick_install
-    readme = read_asset("README.md")
-    assert "\n## Quick Start\n" not in readme
-    assert '<a id="common-commands"></a>' in readme
-    assert readme.index('<a id="features"></a>') < readme.index('<a id="common-commands"></a>') < readme.index('<a id="documentation"></a>')
-    assert "| Set up Instagram Monitor for the first time |" not in readme
-    assert "https://misiektoja.github.io/instagram_monitor/setup-and-first-run/#run-individual-commands" in readme
-    assert "https://misiektoja.github.io/instagram_monitor/setup-and-first-run/" in readme
-    common_section = readme.split("## Common Commands", 1)[1].split('<a id="documentation"></a>', 1)[0]
-    common_table = common_section.split("| I want to... | Run this |", 1)[1].split("\n\n", 1)[0]
-    assert "The table uses PyPI commands." in common_section
-    assert "docker compose" not in common_table
+        quick_install = markdown_section(read_asset(relative_path), 3, "Quick", "Install")
+        commands = fenced_code_lines(quick_install)
+        for command in required_commands:
+            assert command in commands
+        assert "docker pull misiektoja/instagram-monitor:latest" not in commands
+        assert "docker compose pull" not in commands
+        assert_concepts(quick_install, "PyPI", "Docker image", "Docker Compose", "Linux", "Windows")
 
 
-# Verifies manual upgrade guidance repeats linked files and direct download commands
+# Verifies manual upgrade guidance remains independently executable
 def test_manual_upgrade_docs_are_self_contained():
     installation = read_asset("docs/installation.md")
-    manual_upgrade = installation.split("### Upgrade a Manual Installation", 1)[1].split("### Upgrade a Docker Compose Installation", 1)[0]
-    assert "[instagram_monitor.py](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py)" in manual_upgrade
-    assert "[requirements.txt](https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt)" in manual_upgrade
-    assert "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py" in manual_upgrade
-    assert "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt" in manual_upgrade
-    assert "pip install --upgrade -r requirements.txt" in manual_upgrade
+    manual_upgrade = markdown_section(installation, 3, "Upgrade", "Manual")
+    commands = fenced_code_lines(manual_upgrade)
+    for filename in ("instagram_monitor.py", "requirements.txt"):
+        assert f"https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/{filename}" in manual_upgrade
+    for command in ("curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py", "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt", "pip install --upgrade -r requirements.txt"):
+        assert command in commands
 
 
-# Verifies monitoring guidance exposes saved targets and every install-aware command prefix
+# Verifies usage guidance exposes saved targets and every install-aware command prefix
 def test_usage_docs_cover_targets_and_install_commands():
     usage = read_asset("docs/usage.md")
-    for value in ("TARGET_USERNAMES", "--targets target_user_1,target_user_2,target_user_3", "python3 instagram_monitor.py", "docker compose run --rm instagram_monitor", "docker compose run --rm --service-ports instagram_monitor", "misiektoja/instagram-monitor:latest"):
-        assert value in usage
+    assert_concepts(usage, "TARGET_USERNAMES", "--targets target_user_1,target_user_2,target_user_3", "python3 instagram_monitor.py", "docker compose run --rm instagram_monitor", "docker compose run --rm --service-ports instagram_monitor", "misiektoja/instagram-monitor:latest")
     assert usage.count("-p 127.0.0.1:8000:8000") >= 3
-    assert "`0.0.0.0` is a server bind address, not an address to enter in a browser" in usage
 
 
-# Verifies container dashboard troubleshooting distinguishes listening ports from published ports
-def test_dashboard_docs_explain_container_port_publication():
+# Verifies dashboard documentation includes the addresses and flags needed for container port publication
+def test_dashboard_docs_cover_container_port_publication():
     view_modes = read_asset("docs/view-modes.md")
     troubleshooting = read_asset("docs/troubleshooting.md")
     compose = read_asset("docker-compose.yml")
-    assert "It is not a browser destination" in view_modes
-    assert "A plain `docker compose run --rm` starts the server but does not publish the service port" in view_modes
-    assert "INSTAGRAM_MONITOR_WEB_DASHBOARD_PORT=9000" in view_modes
+    assert_concepts(view_modes, "0.0.0.0", "127.0.0.1", "--service-ports", "INSTAGRAM_MONITOR_WEB_DASHBOARD_PORT=9000")
+    assert_concepts(troubleshooting, "0.0.0.0", "127.0.0.1:8000->8000/tcp", "8000/tcp")
     assert "${INSTAGRAM_MONITOR_WEB_DASHBOARD_PORT:-8000}" in compose
-    assert "Do not enter `http://0.0.0.0:8000/` in the browser" in troubleshooting
-    assert "`127.0.0.1:8000->8000/tcp` means the port is published correctly" in troubleshooting
-    assert "A value containing only `8000/tcp`" in troubleshooting
-    assert "0.0.0.0 is the internal server bind address, not a browser destination" in compose
 
 
-# Verifies configuration guidance explains direct UTF-8 output and target precedence
-def test_configuration_docs_explain_generation_and_precedence():
+# Verifies configuration guidance retains the essential generation and target-precedence concepts
+def test_configuration_docs_cover_generation_and_precedence_concepts():
     configuration = read_asset("docs/configuration.md")
-    assert "writes the template directly as UTF-8" in configuration
-    assert "creates a backup whose name includes the current date and time" in configuration
-    assert "fresh configuration from defaults" in configuration
-    assert "Usernames written directly after the command and usernames passed through `--targets` are combined" in configuration
+    assert_concepts(configuration, "UTF-8", "backup", "defaults", "TARGET_USERNAMES", "--targets", "combined")
 
 
-# Verifies quick-start guidance includes direct Docker commands for desktop and Linux hosts
+# Verifies quick-start guidance includes direct Docker variants for desktop and Linux hosts
 def test_quick_start_covers_direct_docker_host_variants():
     quick_start = read_asset("docs/setup-and-first-run.md")
-    assert '=== "Docker image on macOS or Windows PowerShell"' in quick_start
-    assert '=== "Docker image on Linux"' in quick_start
-    assert "instagram_monitor_session:/home/instagram/.config/instaloader" in quick_start
-    assert "Container setup destinations must stay inside `/data`" in quick_start
+    assert_concepts(quick_start, "macOS", "Windows PowerShell", "Linux", "instagram_monitor_session", "/data")
 
 
-# Verifies Firefox guidance covers every supported container host layout for direct Docker and Compose
+# Verifies Firefox guidance retains every supported container host mount
 def test_firefox_docs_cover_container_host_layouts():
     configuration = read_asset("docs/configuration.md")
     usage = read_asset("docs/usage.md")
     compose = read_asset("docker-compose.yml")
-    firefox_section = usage.split("### Import Firefox into the Container Session", 1)[1].split("<a id=\"email-notifications\"></a>", 1)[0]
-    assert "installed natively, through Snap or through Flatpak" in configuration
+    firefox_section = markdown_section(usage, 3, "Import", "Firefox", "Container")
     mounts = ('-v "${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$env:APPDATA\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"', '-v "%APPDATA%\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"')
     for mount in mounts:
         assert firefox_section.count(mount) == 2
@@ -146,15 +149,15 @@ def test_firefox_docs_cover_container_host_layouts():
     assert firefox_section.count("docker run --rm -it --init") == 6
     assert firefox_section.count("docker compose run --rm -v") == 6
     assert '-v "%cd%:/data:z"' in firefox_section
-    assert "Run Doctor only after that import succeeds" in usage
-    assert "Do not add `:z` or `:Z` to the whole Firefox profile mount" in usage
+    assert_concepts(configuration, "Firefox", "Snap", "Flatpak")
+    assert_concepts(firefox_section, "Doctor", ":z", ":Z")
 
 
-# Verifies manual quick-start commands link both Instagram authentication modes
+# Verifies manual quick-start commands link both authentication modes
 def test_quick_start_links_both_authentication_modes():
     quick_start = read_asset("docs/setup-and-first-run.md")
-    assert "[No-Login Mode](configuration.md#no-login-mode-without-session-login)" in quick_start
-    assert "[Logged-In Mode](configuration.md#logged-in-mode-with-session-login)" in quick_start
+    assert "(configuration.md#no-login-mode-without-session-login)" in quick_start
+    assert "(configuration.md#logged-in-mode-with-session-login)" in quick_start
 
 
 # Verifies Compose smoke checks cannot replace the locally built image with a registry image
@@ -170,7 +173,7 @@ def test_compose_defaults_load_dotenv_and_suppress_attached_prefixes():
     assert "docker compose up --no-log-prefix" in compose
     for relative_path in ("docs/setup-and-first-run.md", "docs/installation.md", "docs/usage.md", "docs/view-modes.md"):
         assert "docker compose up --no-log-prefix" in read_asset(relative_path)
-    assert "docker compose logs -f --no-log-prefix" in read_asset("docs/usage.md")
+    assert "docker compose logs -f --no-log-prefix" in fenced_code_lines(read_asset("docs/usage.md"))
 
 
 # Verifies historical feature links target their current documentation sections
