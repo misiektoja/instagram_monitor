@@ -54,7 +54,52 @@ jobs:
         run: python -m pip install -e ".[test]"
 
       - name: Run setup wizard smoke tests
-        run: python -m pytest tests/test_setup_wizard.py tests/test_install_method_commands.py tests/test_config_generation.py tests/test_webhook_delivery.py
+        run: python -m pytest tests/test_setup_wizard.py tests/test_install_method_commands.py tests/test_config_generation.py tests/test_webhook_delivery.py tests/test_packaging.py
+
+  browser-e2e:
+    name: dashboard browser E2E (Chromium)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install test and browser dependencies
+        run: python -m pip install -e '.[test,e2e]'
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run browser E2E tests
+        run: python -m pytest tests/test_browser_e2e.py
+
+  docs-check:
+    name: documentation strict build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install documentation dependencies
+        run: python -m pip install -r docs/requirements.txt
+
+      - name: Build documentation with strict validation
+        run: mkdocs build --strict --site-dir local/docs-site
 
   container-smoke:
     name: container smoke checks
