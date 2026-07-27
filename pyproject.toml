@@ -41,7 +41,8 @@ classifiers = [
 keywords = ["instagram", "monitoring", "tracking", "real-time", "osint", "instaloader"]
 
 [project.optional-dependencies]
-test = ["pytest>=7.0"]
+test = ["build>=1.2", "pytest>=7.0", "setuptools>=61.0", "wheel"]
+e2e = ["playwright>=1.49", "pytest>=7.0"]
 # Needed only to import Chrome/Brave/Chromium sessions (--browser chrome|brave|chromium); macOS and Linux only
 browser = ["pycookiecheat>=0.8"]
 
@@ -67,3 +68,6 @@ include-package-data = true
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-ra"
+markers = [
+  "e2e: browser-level tests that require Playwright and Chromium",
+]
