@@ -458,43 +458,39 @@ WEB_DASHBOARD_TEMPLATE_DIR = ""
 DASHBOARD_SHOW_CHECK_SECONDS = True
 
 # ----------------------------
-# Webhook Integration
+# Webhook Notifications
 # ----------------------------
-# Discord and ntfy limits (for reference and validation)
-WEBHOOK_FIELD_VALUE_LIMIT = 1024
-WEBHOOK_FIELD_NAME_LIMIT = 256
-WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
-WEBHOOK_EMBED_TITLE_LIMIT = 256
-WEBHOOK_MAX_FIELDS = 25
-NTFY_MESSAGE_LIMIT_BYTES = 4096
 
-# Enable webhook notifications through Discord or ntfy
+# Master switch for webhook notifications through Discord or ntfy
+# At least one event type below must also be enabled
 # Can also be enabled via the --webhook flag
 WEBHOOK_ENABLED = False
 
-# Available providers: discord, ntfy
+# Service used to deliver webhook notifications: "discord" or "ntfy"
+# Can also be set via the --webhook-provider flag
 WEBHOOK_PROVIDER = "discord"
 
-# Discord webhook URL or complete ntfy topic URL
-# For Discord: Right-click channel -> Edit Channel -> Integrations -> Webhooks -> Copy Webhook URL
-# For ntfy: use a hard-to-guess topic URL such as https://ntfy.sh/your-private-topic
+# Private destination used to send webhook notifications
+# Discord: Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL
+# ntfy: complete topic URL such as https://ntfy.sh/your-private-topic
+# Prefer an environment variable or dotenv file instead of storing this private URL here
 WEBHOOK_URL = ""
 
-# Webhook username to display (leave empty for default)
+# Discord display name (leave empty to use the webhook default)
 WEBHOOK_USERNAME = "Instagram Monitor"
 
-# Webhook avatar URL (leave empty for default)
+# Discord avatar URL (leave empty to use the webhook default)
 WEBHOOK_AVATAR_URL = ""
 
-# Send webhook on status changes (new posts/reels/stories, bio, profile pic, visibility)
+# Whether to send a webhook on status changes such as new posts, reels, stories, bio, profile picture or visibility
 # Can also be enabled via the --webhook-status flag
 WEBHOOK_STATUS_NOTIFICATION = False
 
-# Send webhook on follower changes
+# Whether to send a webhook on follower changes
 # Can also be enabled via the --webhook-followers flag
 WEBHOOK_FOLLOWERS_NOTIFICATION = False
 
-# Send webhook on errors
+# Whether to send a webhook on monitoring errors
 # Can also be enabled via the --webhook-errors flag
 WEBHOOK_ERROR_NOTIFICATION = False
 
@@ -538,6 +534,15 @@ NTFY_ACCESS_TOKEN = ""
 #       ("description", "strip")                  # Remove leading/trailing whitespace
 #   ]
 WEBHOOK_TRANSFORMS = []
+
+# Discord and ntfy payload limits used for validation
+# Change these only if the provider limits change
+WEBHOOK_FIELD_VALUE_LIMIT = 1024
+WEBHOOK_FIELD_NAME_LIMIT = 256
+WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
+WEBHOOK_EMBED_TITLE_LIMIT = 256
+WEBHOOK_MAX_FIELDS = 25
+NTFY_MESSAGE_LIMIT_BYTES = 4096
 
 # Whether to use coloured output in the terminal (auto-disabled if the terminal
 # does not appear to support colours or when output is redirected to a file)
