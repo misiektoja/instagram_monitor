@@ -449,3 +449,15 @@ class TestWizardSafetyGates:
 
         assert error.value.code == 2
         assert "standalone actions cannot be combined: --setup, --doctor" in capsys.readouterr().err
+
+    def test_private_webhook_entry_rejects_runtime_webhook_overrides(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--set-webhook-url", "--webhook-url", "https://example.test/hook"])
+        monkeypatch.setattr(im_module.signal, "signal", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_startup_banner", lambda: None)
+
+        with pytest.raises(SystemExit) as error:
+            im_module.run_main()
+
+        assert error.value.code == 2
+        assert "--set-webhook-url cannot be combined with --webhook-url" in capsys.readouterr().err
