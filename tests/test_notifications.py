@@ -4,17 +4,27 @@ import pytest
 
 
 class TestValidateWebhookUrl:
-    @pytest.mark.parametrize("url", ["https://discord.com/api/webhooks/123/abc", "http://example.com/hook", "https://example.com"])
+    @pytest.mark.parametrize("url", ["https://discord.com/api/webhooks/123/abc", "https://example.com/hook", "https://ntfy.example.test/private-topic?auth=value"])
     def test_valid_urls(self, im_module, url):
         assert im_module.validate_webhook_url(url) is True
 
-    @pytest.mark.parametrize("url", ["", None, "ftp://example.com", "discord.com/webhook", "https://"])
+    @pytest.mark.parametrize("url", ["", None, "http://example.com/hook", "https://user:password@example.com/hook", "https://example.com", "ftp://example.com/hook", "discord.com/webhook", "https://"])
     def test_invalid_urls(self, im_module, url):
         assert im_module.validate_webhook_url(url) is False
 
 
+class TestValidateProxyUrl:
+    @pytest.mark.parametrize("url", ["http://example.com", "https://example.com:8443", "http://user:password@example.com:3128"])
+    def test_valid_urls(self, im_module, url):
+        assert im_module.validate_proxy_url(url) is True
+
+    @pytest.mark.parametrize("url", ["", None, "ftp://example.com", "https://"])
+    def test_invalid_urls(self, im_module, url):
+        assert im_module.validate_proxy_url(url) is False
+
+
 class TestNormalizeNtfyTopicUrl:
-    @pytest.mark.parametrize("value,expected", [("https://ntfy.example.test/private-topic?auth=value", "https://ntfy.example.test/private-topic?auth=value"), ("http://ntfy.internal/private-topic", "http://ntfy.internal/private-topic"), (" private_Topic-123 ", "https://ntfy.sh/private_Topic-123"), ("a" * 64, f"https://ntfy.sh/{'a' * 64}"), ("a" * 65, ""), ("ntfy.sh/private-topic", ""), ("private.topic", ""), ("private/topic", ""), (None, "")])
+    @pytest.mark.parametrize("value,expected", [("https://ntfy.example.test/private-topic?auth=value", "https://ntfy.example.test/private-topic?auth=value"), ("http://ntfy.internal/private-topic", ""), (" private_Topic-123 ", "https://ntfy.sh/private_Topic-123"), ("a" * 64, f"https://ntfy.sh/{'a' * 64}"), ("a" * 65, ""), ("ntfy.sh/private-topic", ""), ("private.topic", ""), ("private/topic", ""), (None, "")])
     def test_normalization(self, im_module, value, expected):
         assert im_module.normalize_ntfy_topic_url(value) == expected
 
