@@ -240,6 +240,14 @@ instagram_monitor --send-test-email
 
 A `.env` file is a plain text file that holds private values separately from regular configuration. Store `SESSION_PASSWORD`, `SMTP_PASSWORD`, `WEBHOOK_URL`, `NTFY_ACCESS_TOKEN` and `PROXY_URL` there. Do not commit this file or share it.
 
+The recommended way to save a Discord or ntfy destination is:
+
+```sh
+instagram_monitor --set-webhook-url
+```
+
+Paste the complete HTTPS URL at the hidden prompt. Instagram Monitor validates it then updates `WEBHOOK_URL` in `.env` without displaying the value. Use `--env-file PATH` with this command to select another dotenv destination.
+
 You can use operating system environment variables instead of a file. Set them with `export` on Linux, Unix, macOS or WSL:
 
 ```sh
