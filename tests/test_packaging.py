@@ -93,7 +93,7 @@ def test_installed_console_version_and_help(package_test_directory: Path, instal
     assert version_result.returncode == 0
     assert re.search(r"^instagram_monitor(?:\.py)? v\d", version_result.stdout)
     assert help_result.returncode == 0
-    for option in ("--setup", "--doctor", "--generate-config", "--web-dashboard", "--webhook-provider"):
+    for option in ("--setup", "--doctor", "--generate-config", "--set-webhook-url", "--web-dashboard", "--webhook-provider"):
         assert option in help_result.stdout
 
 
