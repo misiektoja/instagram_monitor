@@ -42,6 +42,8 @@ def test_webhook_provider_detection(im_module, url, expected):
 
 # Verifies SIGHUP redetects ntfy and schedules active Instaloader sessions for proxy refresh
 def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, monkeypatch):
+    if not hasattr(im_module.signal, "SIGHUP"):
+        pytest.skip("SIGHUP is unavailable on Windows")
     replacements = {"WEBHOOK_URL": "https://ntfy.sh/new-private-topic", "PROXY_URL": "https://new-user:new-password@proxy.example.test"}
     monkeypatch.setattr(im_module, "DOTENV_FILE", "test.env")
     monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/123/old-token")
@@ -54,7 +56,7 @@ def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, mon
     session = SimpleNamespace(proxies={"https": "https://old-user:old-password@proxy.example.test"}, verify=True)
     bot = SimpleNamespace(context=SimpleNamespace(_session=session))
     with patch("dotenv.load_dotenv"), patch.object(im_module.os, "getenv", side_effect=replacements.get), patch.object(im_module, "log_activity"):
-        im_module.reload_secrets_signal_handler(getattr(im_module.signal, "SIGHUP", im_module.signal.SIGTERM), None)
+        im_module.reload_secrets_signal_handler(im_module.signal.SIGHUP, None)
         im_module.refresh_proxy_if_needed(bot, "target")
     assert im_module.WEBHOOK_PROVIDER == "ntfy"
     assert im_module.PROXY_REFRESH_VERSION == 5
