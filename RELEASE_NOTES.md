@@ -1,5 +1,24 @@
 # instagram_monitor release notes
 
+# Changes in 3.8 (TBD)
+
+Version **3.8** strengthens Discord and ntfy delivery while making private webhook setup consistent with Spotify Monitor.
+
+**Features and improvements**:
+
+- **NEW:** Added **`--set-webhook-url`** to validate and save a complete HTTPS Discord or ntfy destination through a hidden prompt without exposing it in terminal output
+- **IMPROVE:** Required complete HTTPS webhook and avatar URLs with a path and no embedded credentials while preserving separate HTTP and credential support for proxy URLs
+- **IMPROVE:** Isolated webhook requests from Instagram transport behavior, limited delivery to two bounded attempts, accepted every HTTP 2xx response, honored capped HTTP 429 delays and retried HTTP 5xx failures once
+- **IMPROVE:** Added native ntfy local-image attachments with a 5 MiB limit and automatic text-only fallback when image preparation or upload fails
+- **IMPROVE:** Rejected unsafe templates, avatar URLs, transforms and expanded headers before delivery then forced Discord mention suppression for every dictionary payload
+- **IMPROVE:** Made `--webhook-status`, `--webhook-followers` and `--webhook-errors` enable the webhook master switch for the current run
+- **IMPROVE:** Aligned the generated configuration template and webhook documentation with Spotify Monitor terminology, private setup guidance and advanced customization behavior
+- **IMPROVE:** Split the concise startup notification summary into separate **email** and **webhook** rows so each channel's enabled alert categories stay readable without wrapping on narrow terminals
+
+**Bug fixes**:
+
+- **BUGFIX:** Stopped startup summaries and Web Dashboard setting-change logs from writing private webhook URLs to logs
+
 # Changes in 3.7.1 (24 Jul 2026)
 
 **Bug fixes**:
