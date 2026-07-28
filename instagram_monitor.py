@@ -3670,6 +3670,27 @@ def print_startup_banner() -> None:
     print(colorize("info", f"                   v{VERSION}\n"))
 
 
+# Returns enabled email notification category names in display order
+def _startup_email_notification_categories() -> List[str]:
+    settings = ((STATUS_NOTIFICATION, "status/profile changes"), (FOLLOWERS_NOTIFICATION, "followers"), (ERROR_NOTIFICATION, "errors"))
+    return [label for enabled, label in settings if enabled]
+
+
+# Returns enabled webhook notification category names in display order
+def _startup_webhook_notification_categories() -> List[str]:
+    settings = ((WEBHOOK_STATUS_NOTIFICATION, "status/profile changes"), (WEBHOOK_FOLLOWERS_NOTIFICATION, "followers"), (WEBHOOK_ERROR_NOTIFICATION, "errors"))
+    return [label for enabled, label in settings if WEBHOOK_ENABLED and enabled]
+
+
+# Builds the concise terminal-only notification summary rows
+def _startup_notification_summary_rows() -> List[Tuple[str, bool, bool]]:
+    email_categories = _startup_email_notification_categories()
+    webhook_categories = _startup_webhook_notification_categories()
+    email_state = "On (" + ", ".join(email_categories) + ")" if email_categories else "Off"
+    webhook_state = "On (" + ", ".join(webhook_categories) + ")" if webhook_categories else "Off"
+    return [(f"* Notifications (email):\t\t{email_state}", True, False), (f"* Notifications (webhook):\t\t{webhook_state}", True, False)]
+
+
 # Helper to apply a block style while preserving internal highlights
 def _apply_style_nested(line, style_name):
     start_style = _COLOR_STYLES.get(style_name)
@@ -13461,9 +13482,8 @@ def run_main():
         hours_ranges_str = format_hour_range(0, 23)
     summary_rows.append(("* Hours for fetching updates:\t\t" + hours_ranges_str, bool(CHECK_POSTS_IN_HOURS_RANGE), True))
 
-    # Concise one-line notifications summary (terminal only); the detailed rows below carry the full breakdown to the log/--verbose
-    email_on = bool(STATUS_NOTIFICATION or FOLLOWERS_NOTIFICATION or ERROR_NOTIFICATION)
-    summary_rows.append((f"* Notifications:\t\t\t[email = {'on' if email_on else 'off'}] [webhook = {'on' if WEBHOOK_ENABLED else 'off'}]", True, False))
+    # Concise per-channel notification rows stay terminal-only while the detailed rows below carry the full breakdown to the log and --verbose
+    summary_rows.extend(_startup_notification_summary_rows())
     summary_rows.append((f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]", False, True))
 
     summary_rows.append((f"* Session Mode:\t\t\t\t{mode_of_the_tool}", True, True))
