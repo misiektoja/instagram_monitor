@@ -18,6 +18,7 @@ Version **3.8** strengthens Discord and ntfy delivery while making private webho
 **Bug fixes**:
 
 - **BUGFIX:** Stopped startup summaries and Web Dashboard setting-change logs from writing private webhook URLs to logs
+- **BUGFIX:** Kept long ntfy messages below its 4 KB attachment boundary, added a visible truncation explanation and preserved complete UTF-8 characters
 
 # Changes in 3.7.1 (24 Jul 2026)
 
