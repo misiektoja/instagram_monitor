@@ -123,13 +123,13 @@ For direct Docker, add `-p 127.0.0.1:8000:8000` before the image name. Replace b
 Both dashboards offer two views:
 
 1. **User Mode** (`user`):
-   - Simple, minimal interface.
-   - Focuses on core stats and latest activity.
-   - Ideal for "always-on" monitoring.
+    - Simple, minimal interface.
+    - Focuses on core stats and latest activity.
+    - Ideal for "always-on" monitoring.
 
 2. **Config Mode** (`config`):
-   - Detailed view showing all internal settings.
-   - Displays User Agent strings, Hour Ranges, Jitter status and more.
-   - Useful for auditing your setup and verifying configuration.
+    - Detailed view showing all internal settings.
+    - Displays User Agent strings, Hour Ranges, Jitter status and more.
+    - Useful for auditing your setup and verifying configuration.
 
 Switch views with the **'m'** key in the Terminal Dashboard or the view button in the Web Dashboard.

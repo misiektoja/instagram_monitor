@@ -1,5 +1,27 @@
 # instagram_monitor release notes
 
+This is a high-level summary of the most important changes.
+
+# Changes in 3.8 (TBD)
+
+Version **3.8** strengthens **Discord and ntfy webhook delivery**, adds safer **private URL setup** and brings better notification controls.
+
+**Features and improvements**:
+
+- **NEW:** Added private **webhook URL setup** through `--set-webhook-url` with hidden entry and complete HTTPS destination validation
+- **IMPROVE:** Added stricter **webhook request validation** for destinations, avatars, templates, transforms and expanded headers plus Discord mention suppression
+- **IMPROVE:** Added **bounded webhook delivery** with isolated requests, capped rate-limit delays, one retry for temporary failures and automatic provider correction across CLI, Doctor and Web Dashboard flows
+- **IMPROVE:** Added **native ntfy image attachments** with a 5 MiB limit and automatic text-only fallback when image preparation or upload fails
+- **IMPROVE:** Made the **status, follower and error webhook controls** enable webhook delivery for the current run
+- **IMPROVE:** Split the startup notification summary into compact **email and webhook rows** across concise, verbose and logged views
+
+**Bug fixes**:
+
+- **BUGFIX:** Stopped startup summaries and Web Dashboard setting-change logs from writing private webhook URLs to logs
+- **BUGFIX:** Kept long ntfy messages below its 4 KB attachment boundary, added a visible truncation explanation and preserved complete UTF-8 characters
+- **BUGFIX:** Restored green `On` and red `Off` status cues in compact notification rows without coloring category text
+- **BUGFIX:** Made `SIGHUP` apply rotated proxy credentials to active Instaloader sessions and redetect Discord or ntfy when the private webhook destination changes
+
 # Changes in 3.7.1 (24 Jul 2026)
 
 **Bug fixes**:

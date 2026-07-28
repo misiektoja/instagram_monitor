@@ -84,6 +84,16 @@ class TestGenerateConfigWithCurrentValues:
         assert "SESSION_USERNAME" in rendered
         assert rendered.count("#") > 10
 
+    # Generated webhook defaults document private entry and suppress Discord mentions
+    def test_webhook_defaults_match_safe_user_experience(self, im_module):
+        rendered = im_module.generate_config_with_current_values()
+        namespace: dict = {}
+        exec(rendered, namespace)
+
+        assert "instagram_monitor --set-webhook-url" in rendered
+        assert namespace["WEBHOOK_TEMPLATE"]["allowed_mentions"] == {"parse": []}
+        assert namespace["WEBHOOK_TEMPLATE"]["embeds"][0]["timestamp"] == "{timestamp}"
+
     # Generated config retains safe template values for secrets and custom headers
     def test_secret_values_and_webhook_headers_are_never_rendered(self, im_module, monkeypatch):
         secrets = {

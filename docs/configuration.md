@@ -175,10 +175,10 @@ Every supported browser can have several profiles with separate cookies. Use one
 
 - **Pick by name** with `--browser-profile`. Use the Firefox profile name (e.g. `default-release`) or the Chromium profile directory (e.g. `Default`, `Profile 1`):
 
-  ```sh
-  instagram_monitor --import-browser-session --browser chrome --browser-profile "Profile 1"
-  instagram_monitor --import-browser-session --browser firefox --browser-profile "default-release"
-  ```
+    ```sh
+    instagram_monitor --import-browser-session --browser chrome --browser-profile "Profile 1"
+    instagram_monitor --import-browser-session --browser firefox --browser-profile "default-release"
+    ```
 
 - **Let it prompt you.** If you do not pass `--browser-profile` and several profiles exist, the tool lists them so you can choose.
 - **On the [Web Dashboard](view-modes.md#web-dashboard-mode)**, pick the browser, click **Import** and select a profile if prompted.
@@ -239,6 +239,14 @@ instagram_monitor --send-test-email
 ## Storing Secrets
 
 A `.env` file is a plain text file that holds private values separately from regular configuration. Store `SESSION_PASSWORD`, `SMTP_PASSWORD`, `WEBHOOK_URL`, `NTFY_ACCESS_TOKEN` and `PROXY_URL` there. Do not commit this file or share it.
+
+The recommended way to save a Discord or ntfy destination is:
+
+```sh
+instagram_monitor --set-webhook-url
+```
+
+Paste the complete HTTPS URL at the hidden prompt. Instagram Monitor validates it then updates only `WEBHOOK_URL` in `.env` without displaying the value. Standard Discord and public `ntfy.sh` URLs select the matching request format automatically. Configure `WEBHOOK_PROVIDER` in `instagram_monitor.conf` for a self-hosted or compatible endpoint. Use `--env-file PATH` with this command to select another dotenv destination.
 
 You can use operating system environment variables instead of a file. Set them with `export` on Linux, Unix, macOS or WSL:
 

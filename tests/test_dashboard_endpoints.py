@@ -58,6 +58,19 @@ class TestDashboardSettings:
         assert response.status_code == 200
         assert im_module.WEBHOOK_PROVIDER == "ntfy"
 
+    # Settings POST corrects a stale provider when a known webhook URL identifies its service
+    def test_settings_autodetects_webhook_provider(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/123/private-token")
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"webhook_url": "https://ntfy.sh/private-topic"})
+
+        assert response.status_code == 200
+        assert im_module.WEBHOOK_PROVIDER == "ntfy"
+
     # Settings POST clamps too-small intervals and reports the adjusted change
     def test_settings_post_clamps_check_interval(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)

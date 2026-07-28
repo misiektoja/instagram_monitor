@@ -300,7 +300,7 @@ Example email:
 
 Instagram Monitor can send event notifications to **Discord** or **ntfy**. A webhook is a URL that accepts a message from another application. Webhook settings do not affect email settings.
 
-`WEBHOOK_PROVIDER` tells Instagram Monitor which message format the URL expects. The default is `"discord"`.
+`WEBHOOK_PROVIDER` tells Instagram Monitor which message format the URL expects. The default is `"discord"`. Standard Discord and public `ntfy.sh` URLs automatically select the matching format if this configured value is stale. Self-hosted ntfy and compatible endpoints still use the configured provider. An explicit `--webhook-provider` override always wins.
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_discord.png" alt="instagram_monitor_discord_screenshot" width="80%"/>
@@ -318,17 +318,17 @@ To create a Discord Webhook URL:
 3.  **Create Webhook**: Go to **Integrations** in the left menu -> **Webhooks** -> **New Webhook**.
 4.  **Copy URL**: Click on the new webhook (often named "Spidey Bot", you can rename it) and click **Copy Webhook URL**.
 
-Keep `WEBHOOK_PROVIDER = "discord"` in `instagram_monitor.conf`.
+Keep `WEBHOOK_PROVIDER = "discord"` in `instagram_monitor.conf`. Standard Discord webhook URLs are also recognized automatically.
 
 #### ntfy
 
 For ntfy.sh or a self-hosted ntfy server:
 
 1. Choose a hard-to-guess topic such as `instagram-monitor-long-random-value`.
-2. In the setup wizard, enter either an ntfy.sh topic name or a complete topic URL such as `https://ntfy.sh/instagram-monitor-long-random-value`. The wizard expands a bare topic name to an ntfy.sh URL. For a self-hosted server, the Web Dashboard or manual configuration, enter the complete HTTP or HTTPS URL.
-3. Set `WEBHOOK_PROVIDER = "ntfy"` in `instagram_monitor.conf`.
+2. In the setup wizard, enter either an ntfy.sh topic name or a complete topic URL such as `https://ntfy.sh/instagram-monitor-long-random-value`. The wizard expands a bare topic name to an ntfy.sh URL. For a self-hosted server, the Web Dashboard or manual configuration, enter the complete HTTPS topic URL.
+3. Public `ntfy.sh` URLs are recognized automatically. Set `WEBHOOK_PROVIDER = "ntfy"` in `instagram_monitor.conf` for a self-hosted ntfy server.
 
-Instagram Monitor sends the alert subject as the ntfy title. The alert text and event details become the message. Existing query parameters in the topic URL are preserved, including the ntfy [`auth` query parameter](https://docs.ntfy.sh/publish/#authentication).
+Instagram Monitor sends the alert subject as the ntfy title. The alert text and event details become the message. Existing query parameters in the topic URL are preserved, including the ntfy [`auth` query parameter](https://docs.ntfy.sh/publish/#authentication). Long ntfy messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments.
 
 For a protected topic, the setup wizard asks for the ntfy access token in a hidden prompt and stores it in `.env`. For manual setup, add:
 
@@ -346,7 +346,9 @@ WEBHOOK_HEADERS = {
 }
 ```
 
-For ntfy, Instagram Monitor sets the required plain-text `Content-Type`. Store Bearer tokens in `NTFY_ACCESS_TOKEN` inside `.env`. A token in the regular config is easier to expose or commit accidentally. The tool validates header names and values before sending a request.
+Header values support the same placeholders as `WEBHOOK_TEMPLATE`. Instagram Monitor validates headers before and after placeholder expansion so formatted values cannot introduce invalid names, non-string values or line breaks. For ntfy, Instagram Monitor sets the required plain-text `Content-Type`. Store Bearer tokens in `NTFY_ACCESS_TOKEN` inside `.env`. A token in the regular config is easier to expose or commit accidentally.
+
+When an alert includes a downloaded local image, Instagram Monitor uploads it as a native ntfy attachment up to 5 MiB. If image preparation or upload fails, it sends the alert as text so an image problem cannot suppress the notification. Existing remote image URLs remain links in the message.
 
 Anyone who knows an unprotected ntfy.sh topic name can read or publish to it. Reserve and protect the topic through an ntfy account when possible. Otherwise use a long random name, keep it private and do not copy the example name above.
 
@@ -357,10 +359,14 @@ Choose one method:
 
 - set `WEBHOOK_ENABLED = True`, select `WEBHOOK_PROVIDER` and put `WEBHOOK_URL` in `.env`
 - use an [environment variable](configuration.md#storing-secrets) for `WEBHOOK_URL`
-- pass `--webhook-url`. If the URL is already saved, pass `--webhook`
+- save it through the hidden `--set-webhook-url` prompt
+- pass `--webhook-url` for one run. If the URL is already saved, pass `--webhook`
 - enable it through the **Settings** page in the Web Dashboard
 
 ```sh
+# Save a private destination without displaying it
+instagram_monitor --set-webhook-url
+
 # Enable Discord with URL
 instagram_monitor <target_insta_user> --webhook-provider discord --webhook-url "https://discord.com/api/webhooks/..."
 
@@ -371,6 +377,8 @@ instagram_monitor <target_insta_user> --webhook-provider ntfy --webhook-url "htt
 instagram_monitor <target_insta_user> --webhook
 instagram_monitor <target_insta_user> --no-webhook
 ```
+
+Webhook and avatar URLs must be complete HTTPS links with a path and no embedded credentials. Known Discord and `ntfy.sh` destinations correct a stale configured provider at runtime. A URL passed through `--webhook-url` may remain visible in shell history or process listings, so prefer `--set-webhook-url` for normal setup.
 
 <a id="3-test-your-settings"></a>
 ### 3. Test Your Settings
@@ -388,7 +396,7 @@ instagram_monitor --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-pr
 <a id="4-advanced-configuration"></a>
 ### 4. Advanced Configuration
 
-By default, all webhook notification types (status, followers, errors) are **disabled**. You must explicitly enable what you want the tool to send:
+By default, all webhook notification types (status, followers, errors) are **disabled**. You must explicitly enable what you want the tool to send. Enabling an event flag also enables the webhook master switch:
 
 - Use `--webhook-status` to toggle status notifications (new posts, reels, stories, bio, visibility, profile pic)
 - Use `--webhook-followers` to toggle follower/following change notifications
@@ -411,6 +419,12 @@ WEBHOOK_STATUS_NOTIFICATION = False
 WEBHOOK_FOLLOWERS_NOTIFICATION = False
 WEBHOOK_ERROR_NOTIFICATION = False
 ```
+
+`WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` customize Discord-format messages. `WEBHOOK_TEMPLATE` supports `title`, `description`, `version`, `image_url`, `fields`, `fields_str`, `color`, `timestamp`, `username` and `avatar_url` placeholders. A dictionary or list is sent as JSON while a string is sent as the raw body for compatible advanced integrations.
+
+`WEBHOOK_TRANSFORMS` applies configured string methods before the template and headers are rendered. Invalid templates, avatar URLs, transforms or expanded headers fail before any request is attempted. Dictionary payloads always replace `allowed_mentions` with `{"parse": []}` so notification text cannot trigger `@everyone`, `@here` or user mentions.
+
+Webhook delivery uses an isolated session with a 10-second timeout and at most two attempts. It accepts every HTTP 2xx response, retries HTTP 429 according to a server delay capped at 5 seconds and retries HTTP 5xx once. Other HTTP 4xx responses fail immediately.
 
 <a id="follower-churn-detection"></a>
 ## Follower Churn Detection

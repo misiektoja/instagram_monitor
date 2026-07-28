@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.7.1
+v3.8
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -20,32 +20,38 @@ flask (optional - for web dashboard)
 rich (optional - for terminal dashboard)
 """
 
-VERSION = "3.7.1"
+VERSION = "3.8"
 
 # ---------------------------
 # CONFIGURATION SECTION START
 # ---------------------------
 
 CONFIG_BLOCK = """
-# Session login (Logged-in mode) is required for some features such as retrieving the list of followings/followers
-# or detailed posts/reels/stories info
+# ----------------------------
+# Login and Session
+# ----------------------------
+
+# Logged-in mode is required for complete follower and following lists or detailed post, reel and story information
 #
-# The tool still works without login (No-login mode), but in a limited way
+# The tool also works in a limited no-login mode
 #
-# For session login (Logged-in mode), you'll need to log in with your Instagram username and password
-#
-# Provide the username below (or use the -u flag)
+# Instagram username used for logged-in mode
+# Can also be set via the -u flag
 SESSION_USERNAME = ""
 
 # Provide the password using one of the following methods:
 #   - Log in via web browser and import session cookie: instagram_monitor --import-browser-session --browser firefox (also chrome, brave or chromium)
 #   - Log in using instaloader: instaloader -l <SESSION_USERNAME>
-#   - Pass it at runtime with -p / --session-password
+#   - Pass it at runtime with -p or --session-password
 #   - Set it as an environment variable (e.g. export SESSION_PASSWORD=...)
 #   - Add it to ".env" file (SESSION_PASSWORD=...) for persistent use
 # Fallback:
 #   - Hard-code it in the code or config file
 SESSION_PASSWORD = ""
+
+# ----------------------------
+# Email Notifications
+# ----------------------------
 
 # SMTP settings for sending email notifications
 # If left as-is, no email notifications will be sent
@@ -63,51 +69,107 @@ SMTP_SSL = True
 SENDER_EMAIL = "your_sender_email"
 RECEIVER_EMAIL = "your_receiver_email"
 
-# Whether to send an email on new post/reel/story, bio change, new follow, profile pic or visibility change
+# Whether to send an email on new posts, reels, stories, bio changes, follows, profile picture changes or visibility changes
 # Can also be enabled via the -s flag
 STATUS_NOTIFICATION = False
 
-# Whether to send an email on new followers
-# Only applies if STATUS_NOTIFICATION / -s is enabled
+# Whether to include follower changes in email notifications
+# Only applies if STATUS_NOTIFICATION or -s is enabled
 # Can also be enabled via the -m flag
 FOLLOWERS_NOTIFICATION = False
 
-# Whether to send an email on errors
+# Whether to send an email on monitoring errors
 # Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
 
+# ----------------------------
+# Webhook Notifications
+# ----------------------------
+
+# Master switch for webhook notifications through Discord or ntfy
+# Event settings below select which notifications are sent
+# Can also be enabled via the --webhook flag
+WEBHOOK_ENABLED = False
+
+# Service used to deliver webhook notifications: "discord" or "ntfy"
+# Known Discord and ntfy.sh URLs correct a mismatched configured value at runtime
+# Can also be set via the --webhook-provider flag
+WEBHOOK_PROVIDER = "discord"
+
+# Private HTTPS destination used to send webhook notifications
+# Discord: Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL
+# ntfy: complete topic URL such as https://ntfy.sh/your-private-topic
+# Recommended: save it through a hidden prompt with instagram_monitor --set-webhook-url
+# For one run, --webhook-url overrides it but may expose the URL in shell history or process listings
+# Prefer an environment variable or dotenv file instead of storing this private URL here
+WEBHOOK_URL = "your_webhook_url"
+
+# Discord display name (leave empty to use the webhook default)
+WEBHOOK_USERNAME = "Instagram Monitor"
+
+# Discord avatar URL (leave empty to use the webhook default)
+WEBHOOK_AVATAR_URL = ""
+
+# Whether to send a webhook notification on new posts, reels, stories, bio changes, profile picture changes or visibility changes
+# Can also be enabled via the --webhook-status flag
+WEBHOOK_STATUS_NOTIFICATION = False
+
+# Whether to send a webhook notification on follower changes
+# Can also be enabled via the --webhook-followers flag
+WEBHOOK_FOLLOWERS_NOTIFICATION = False
+
+# Whether to send a webhook notification on monitoring errors
+# Can also be enabled via the --webhook-errors flag
+WEBHOOK_ERROR_NOTIFICATION = False
+
+# Optional request headers for advanced webhook integrations
+# Values support the same placeholders as WEBHOOK_TEMPLATE and are validated after expansion
+WEBHOOK_HEADERS = {}
+
+# Optional ntfy access token for Bearer authentication
+# Prefer an environment variable or dotenv file instead of storing this token here
+NTFY_ACCESS_TOKEN = ""
+
+# ----------------------------
+# Monitoring Settings
+# ----------------------------
+
 # Number of consecutive errors required before triggering an alert
-# Useful to avoid spamming on transient network glitches
+# Useful for avoiding repeated alerts during transient network problems
 # Can also be set via the --error-threshold flag
 ERROR_FAILURE_THRESHOLD = 2
 
-# How often to check for user activity; in seconds
+# How often to check for user activity in seconds
 # Can also be set using the -c flag
-INSTA_CHECK_INTERVAL = 5400  # 1,5 hours
+INSTA_CHECK_INTERVAL = 5400  # 1.5 hours
 
-# To avoid captcha checks and bot detection, the actual INSTA_CHECK_INTERVAL interval is randomized using the values below
-# Final interval = INSTA_CHECK_INTERVAL +/- RANDOM_SLEEP_DIFF
+# Randomize the actual check interval to reduce captcha checks and bot detection
+# Final interval ranges from INSTA_CHECK_INTERVAL - RANDOM_SLEEP_DIFF_LOW to
+# INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH
 # Can also be set using -i (low) and -j (high) flags
-RANDOM_SLEEP_DIFF_LOW = 900  # -15 min (-i)
-RANDOM_SLEEP_DIFF_HIGH = 180  # +3 min (-j)
+RANDOM_SLEEP_DIFF_LOW = 900  # -15 minutes (-i)
+RANDOM_SLEEP_DIFF_HIGH = 180  # +3 minutes (-j)
 
-# Set your local time zone so that Instagram timestamps are converted accordingly (e.g. 'Europe/Warsaw')
+# Local time zone used to convert Instagram timestamps (for example "Europe/Warsaw")
 # Use this command to list all time zones supported by pytz:
 #   python3 -c "import pytz; print('\\n'.join(pytz.all_timezones))"
-# If set to 'Auto', the tool will try to detect your local time zone automatically (requires tzlocal)
+# Set to "Auto" to detect the local time zone automatically (requires tzlocal)
 LOCAL_TIMEZONE = 'Auto'
 
-# Time format settings
-# Set to True to use 12-hour format (AM/PM) instead of default 24-hour format
-# Can be also toggled via Web Dashboard
+# Whether to use 12-hour times with AM/PM instead of the default 24-hour format
+# Can also be changed in the Web Dashboard
 TIME_FORMAT_12H = False
+
+# ----------------------------
+# Content and Change Detection
+# ----------------------------
 
 # Detect profile picture changes in console output and enabled email or webhook status notifications
 # If enabled, the current profile picture is saved as:
 #   - instagram_<username>_profile_pic.jpg (initial)
 #   - instagram_<username>_profile_pic_YYmmdd_HHMM.jpg (on change)
 # The binary JPGs are compared to detect changes
-# Can also be disabled by using -k flag
+# Can also be disabled via the -k flag
 DETECT_CHANGED_PROFILE_PIC = True
 
 # Whether to download thumbnail images for posts, reels and stories
@@ -126,51 +188,61 @@ PROFILE_PIC_FILE_EMPTY = "instagram_profile_pic_empty.jpg"
 # Leave empty to disable this feature
 IMGCAT_PATH = "imgcat"
 
-# Skip session login (no list of followers/followings and detailed posts/reels/stories info will be fetched)
+# ----------------------------
+# Instagram Data Collection
+# ----------------------------
+
+# Whether to skip session login
+# No follower or following lists and no detailed post, reel or story information will be fetched
 # Can also be enabled via the -l flag
 SKIP_SESSION = False
 
-# Do not fetch followers list (only relevant if session login is used and SKIP_SESSION is False)
+# Whether to skip the follower list
+# Only applies when session login is used and SKIP_SESSION is False
 # Can also be enabled via the -f flag
 SKIP_FOLLOWERS = False
 
-# Do not fetch followings list (only relevant if session login is used and SKIP_SESSION is False)
+# Whether to skip the following list
+# Only applies when session login is used and SKIP_SESSION is False
 # Can also be enabled via the -g flag
 SKIP_FOLLOWINGS = False
 
-# Do not fetch detailed story info (like story date, expiry, images/videos etc.)
+# Whether to skip detailed story information such as dates, expiry times, images and videos
 # Only relevant if session login is used and SKIP_SESSION is False
 # Can also be enabled via the -r flag
 SKIP_GETTING_STORY_DETAILS = False
 
-# Do not fetch detailed post/reel info (like post/reel date, number of likes, comments, description,
-# tagged users, location, images/videos etc.)
+# Whether to skip detailed post and reel information such as dates, likes, comments, descriptions, tagged users,
+# locations and media
 # Can also be enabled via the -w flag
 SKIP_GETTING_POSTS_DETAILS = False
 
-# Fetch extra post details (list of comments and likes)
+# Whether to fetch extra post details including comment and like lists
 # Only relevant if session login is used and SKIP_SESSION is False
 # Can also be enabled via the -t flag
 GET_MORE_POST_DETAILS = False
 
-# Detect "collab" posts that leak from PRIVATE accounts via the public web_profile_info endpoint
+# Whether to detect "collab" posts exposed from private accounts through the public web_profile_info endpoint
 # When a private account co-authors a post with a public account that post stays visible in the
 # private account's timeline media. This probes for such leaked posts and reports new ones over time
-# Only kicks in for accounts whose posts are otherwise not viewable (private and not followed by you)
+# Only applies to accounts whose posts are otherwise unavailable
 # Can be disabled via the --no-detect-collab-posts flag
 DETECT_COLLAB_POSTS = True
 
-# When enabled, fetches the full list of followers and followings every check (not just when the count changes) and
-# compares usernames to detect who followed/unfollowed even when counts remain the same (churn detection)
-# This is useful for detecting when someone unfollows and someone else follows in the same interval, keeping the count unchanged
+# Whether to fetch complete follower and following lists on every check to detect churn
+# This detects follow and unfollow changes even when the total count stays the same
 FOLLOWERS_CHURN_DETECTION = False
 
 # Whether to skip reporting and notifications for follower and following changes
-# (new follows, unfollows and count changes)
+# Includes new follows, unfollows and count changes
 SKIP_FOLLOW_CHANGES = False
 
-# Make the tool behave more like a human by performing random feed / profile / hashtag / followee actions
-# Used only with session login (Logged-in mode), always disabled without login (No-login mode)
+# ----------------------------
+# Request Behavior
+# ----------------------------
+
+# Whether to simulate human activity with random feed, profile, hashtag and following actions
+# Only applies in logged-in mode
 BE_HUMAN = False
 
 # Approximate number of simulated human actions to perform per 24 hours
@@ -179,32 +251,33 @@ DAILY_HUMAN_HITS = 5
 # List of hashtags to browse
 MY_HASHTAGS = ["travel", "food", "nature"]
 
-# Set to True to enable verbose output during human simulation actions
+# Whether to show verbose output for simulated human actions
 BE_HUMAN_VERBOSE = False
 
 # Whether to enable human-like HTTP jitter and back-off wrapper
 ENABLE_JITTER = False
 
-# Set to True to enable verbose output for HTTP jitter/back-off wrappers
+# Whether to show verbose output for HTTP jitter and back-off wrappers
 JITTER_VERBOSE = False
 
-# Set to True to skip the per-request WRAP-REQ/WRAP-SEND log lines from the HTTP jitter/back-off wrappers
+# Whether to hide per-request WRAP-REQ and WRAP-SEND log lines from the HTTP wrappers
 # These can be overwhelming in debug or jitter-verbose mode and are not needed in most cases
 SKIP_WRAP_MESSAGES = False
 
-# Optional Follower and Followee Adjustments
+# ----------------------------
+# Follower Fetching Limits
+# ----------------------------
 #
-# This allows control of the fetching of followers and followees, which may be beneficial in avoiding account flagging by Instagram.
-# It breaks up fetching into batches with a delay in between up to a total maximum.
+# These settings divide follower and following retrieval into delayed batches
 #   *_PER_BATCH       = number of accounts to fetch at one time before pausing (0 to disable [no limit])
 #   *_DELAY_PER_BATCH = delay between batches (0 to disable [no delay])
 #   *_LIMIT_TO_FETCH  = total accounts to fetch via multiple batches (0 to disable [no limit])
 #
-# There are 4 valid configurations, and the script will indicate if incorrectly configured:
+# Supported configurations:
 #   Disabled
 #   Maximum of XXX accounts
-#   Maximum of XXX accounts in batches of YYY accounts with ZZZ second delay
-#   Batches of YYY accounts with ZZZ second delay
+#   Maximum of XXX accounts in batches of YYY accounts with a ZZZ-second delay
+#   Batches of YYY accounts with a ZZZ-second delay
 FOLLOWERS_PER_BATCH      = 0
 FOLLOWEES_PER_BATCH      = 0
 FOLLOWER_LIMIT_TO_FETCH  = 0
@@ -212,34 +285,42 @@ FOLLOWER_DELAY_PER_BATCH = 0
 FOLLOWEE_LIMIT_TO_FETCH  = 0
 FOLLOWEE_DELAY_PER_BATCH = 0
 
-# Optional Privacy Substitutions
-# This allows you to substitute any string for another in all messaging, logging, webhooks, emails, and both dashboards.
-# For instance, you may want to change a particular Instagram username to a more friendly name, or you could mask a name.
+# ----------------------------
+# Privacy
+# ----------------------------
+
+# Optional substitutions applied to console messages, logs, webhooks, emails and dashboards
+# Use these to replace a username with a friendly label or mask private text
 #
-# Provide a list of (search, replace) tuples. Any search term will be substituted with the replace term.
+# Provide a list of (search, replacement) tuples
 #
 # Example:
-# PRIVACY_SUBSTITUTIONS = [ ("a.username", "XXX"), ("sdfsdf747475475", "Bobby") ]
+# PRIVACY_SUBSTITUTIONS = [("a.username", "XXX"), ("sdfsdf747475475", "Bobby")]
 #
-PRIVACY_SUBSTITUTIONS = [ ]
+PRIVACY_SUBSTITUTIONS = []
 
-# Optional: Enable proxy support for networking traffic
+# ----------------------------
+# Network Settings
+# ----------------------------
+
+# Whether to route network traffic through PROXY_URL
 #
-# Note: even when PROXY_ENABLED is False, the underlying 'requests' library still
-# honors HTTP_PROXY / HTTPS_PROXY / NO_PROXY environment variables by default.
-# If those are set in your shell or systemd unit, they will silently be applied.
-# Unset them (or run with env -i) to guarantee a direct connection
+# The requests library honors HTTP_PROXY, HTTPS_PROXY and NO_PROXY environment variables even when this is False
+# Unset those variables to guarantee a direct connection
 PROXY_ENABLED = False
-# URL for proxy (required if using proxies)
+
+# Proxy URL required when PROXY_ENABLED is True
 PROXY_URL = ""
-# Provide a local SSL certificate to use with proxy
+
+# Optional local TLS certificate used by the proxy
 PROXY_CERT_PATH = ""
-# Enables use of proxy for Webhooks (some proxies don't support POST requests)
+
+# Whether webhook requests should use the proxy
 PROXY_WEBHOOKS = False
 
-# Optional: specify web browser user agent manually
+# Optional desktop browser user agent
 #
-# For session login using Firefox cookies, ensure this matches your Firefox web browser's user agent
+# When importing Firefox cookies this should match the Firefox user agent
 #
 # Some examples:
 # Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0
@@ -249,7 +330,7 @@ PROXY_WEBHOOKS = False
 # Can also be set using the --user-agent flag
 USER_AGENT = ""
 
-# Optional: specify mobile device user agent manually
+# Optional mobile browser user agent
 #
 # Some examples:
 # Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0
@@ -268,21 +349,20 @@ USER_AGENT_MOBILE = ""
 HTTP_BACKEND = "curl_cffi"
 
 # Browser profile curl_cffi impersonates when HTTP_BACKEND is "curl_cffi"
-# - "auto" (default): pick the impersonation target that matches USER_AGENT, so the TLS, HTTP/2 and
-#   client-hint headers stay consistent with the browser identity (and with a Firefox-imported session)
-# - or pin a specific target, e.g. "chrome", "safari", "safari_ios", "edge", "firefox"
-#   (see curl_cffi docs for the full list)
+# - "auto" (default): match USER_AGENT so TLS, HTTP/2 and client-hint headers use one browser identity
+# - A target such as "chrome", "safari", "safari_ios", "edge" or "firefox"
+# See the curl_cffi documentation for the complete list
 # Can also be set using the --impersonate flag
 CURL_CFFI_IMPERSONATE = "auto"
 
-# How often to print a "liveness check" message to the output; in seconds
+# How often to print a liveness message in seconds
 # Set to 0 to disable
 LIVENESS_CHECK_INTERVAL = 43200  # 12 hours
 
 # URL used to verify internet connectivity at startup
 CHECK_INTERNET_URL = 'https://www.instagram.com/'
 
-# Timeout used when checking initial internet connectivity; in seconds
+# Timeout used when checking initial internet connectivity in seconds
 CHECK_INTERNET_TIMEOUT = 5
 
 # URL or list of URLs used to determine IP address
@@ -295,8 +375,11 @@ IP_ADDRESS_URL = [
     "https://httpbin.org/ip",
 ]
 
-# Limit fetching updates to specific hours of the day?
-# If True, the tool will only fetch updates within the defined hour ranges below
+# ----------------------------
+# Restricted Monitoring Hours
+# ----------------------------
+
+# Whether to fetch updates only during the hour ranges below
 #
 # Notes:
 # - The configured ranges are treated as hour buckets (HH:00..HH:59)
@@ -304,7 +387,7 @@ IP_ADDRESS_URL = [
 # - Invalid hours (outside 0-23) are ignored
 CHECK_POSTS_IN_HOURS_RANGE = False
 
-# Set to True to enable verbose output for performing updates during certain hours
+# Whether to show verbose output for restricted monitoring hours
 HOURS_VERBOSE = False
 
 # First range of hours to check (if CHECK_POSTS_IN_HOURS_RANGE is True)
@@ -322,6 +405,10 @@ MAX_H2 = 23
 # Delay for fetching other data to avoid captcha checks and detection of automated tools
 NEXT_OPERATION_DELAY = 0.7
 
+# ----------------------------
+# Files and Storage
+# ----------------------------
+
 # CSV file to write all activities and profile changes
 # Can also be set using the -b flag
 #
@@ -337,8 +424,8 @@ NEXT_OPERATION_DELAY = 0.7
 #    - Single-target mode: OUTPUT_DIR/csvs/<filename> (uses basename of CSV_FILE)
 CSV_FILE = ""
 
-# Location of the optional dotenv file which can keep secrets
-# If not specified it will try to auto-search for .env files
+# Optional dotenv file used to store secrets
+# Leave empty to search automatically for .env files
 # To disable auto-search, set this to the literal string "none"
 # Can also be set using the --env-file flag
 DOTENV_FILE = ""
@@ -349,13 +436,13 @@ FIREFOX_WINDOWS_COOKIE = "~/AppData/Roaming/Mozilla/Firefox/Profiles/*/cookies.s
 # Native Linux path, with Snap and Flatpak paths discovered automatically too
 FIREFOX_LINUX_COOKIE = "~/.mozilla/firefox/*/cookies.sqlite"
 
-# Base name for the log file. Output will be saved to target-specific log files.
-# If OUTPUT_DIR is set, log will be saved to OUTPUT_DIR/<username>/logs/<INSTA_LOGFILE>.log
+# Base name for target-specific log files
+# If OUTPUT_DIR is set the log is saved to OUTPUT_DIR/<username>/logs/<INSTA_LOGFILE>.log
 # Otherwise, it will be saved to <INSTA_LOGFILE>_<username>.log in current working dir
 INSTA_LOGFILE = "instagram_monitor"
 
-# Optional: specify directory layout for generated files
-# If set, all downloaded files (images, videos, json, logs) will be saved under this directory
+# Optional base directory for generated files
+# If set all downloaded files are saved under this directory
 #
 # Structure (single-target mode):
 #   OUTPUT_DIR/
@@ -383,64 +470,69 @@ OUTPUT_DIR = ""
 # Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
+# ----------------------------
+# Terminal Output
+# ----------------------------
+
 # Width of horizontal line
 HORIZONTAL_LINE = 113
 
 # Whether to clear the terminal screen after starting the tool
 CLEAR_SCREEN = True
 
-# Value used by signal handlers to increase/decrease user activity check interval (INSTA_CHECK_INTERVAL); in seconds
-INSTA_CHECK_SIGNAL_VALUE = 300  # 5 min
+# Amount added to or removed from INSTA_CHECK_INTERVAL by signal handlers in seconds
+INSTA_CHECK_SIGNAL_VALUE = 300  # 5 minutes
 
-# Enable verbose mode for operational status updates (can also be enabled via --verbose flag)
+# Whether to enable verbose operational output
 # Shows calculated sleep durations, next check timestamps and liveness confirmations
+# Can also be enabled via the --verbose flag
 VERBOSE_MODE = False
 
-# Enable debug mode for full technical logging (can also be enabled via --debug flag)
+# Whether to enable debug output
 # Shows every API request and internal state changes
+# Can also be enabled via the --debug flag
 DEBUG_MODE = False
 
 # ----------------------------
-# Multi-target monitoring mode
+# Multi-target Monitoring
 # ----------------------------
-# If you pass multiple targets on CLI (e.g. instagram_monitor user1 user2), the tool will run them in one process
-# You can optionally define defaults here too:
+
+# Pass multiple targets on the command line to monitor them in one process
+# You can also define default targets here:
 #
 # TARGET_USERNAMES = ["user1", "user2"]
 #
 # CLI targets take precedence over TARGET_USERNAMES
 TARGET_USERNAMES = []
 
-#
-# When monitoring multiple targets in one process, this controls how long (in seconds) to wait between starting each
-# target's monitoring loop to spread requests in time
+# Delay between starting each target loop in seconds
 #
 # - Set to 0 to auto-spread targets evenly across INSTA_CHECK_INTERVAL
-# - You can override via --targets-stagger flag
+# - Can also be set via the --targets-stagger flag
 MULTI_TARGET_STAGGER = 0
 
-#
-# Adds a small random jitter (seconds) to each target start time to avoid perfectly periodic patterns
+# Random jitter added to each target start time in seconds
 MULTI_TARGET_STAGGER_JITTER = 5
 
-#
-# If True, serializes all HTTP calls (via a global lock) across targets. Recommended for multi-target mode.
+# Whether to serialize all HTTP calls across targets
+# Recommended for multi-target mode
 MULTI_TARGET_SERIALIZE_HTTP = True
 
 # ----------------------------
-# Terminal Dashboard Settings
+# Terminal Dashboard
 # ----------------------------
 
-# Enable terminal dashboard (live view)
-# Set to False to use traditional text output
-# Can be enabled via --dashboard flag
+# Whether to enable the live terminal dashboard
+# When disabled the tool uses traditional text output
+# Can also be enabled via the --dashboard flag
 DASHBOARD_ENABLED = False
 
 # ----------------------------
-# Web Dashboard Settings
+# Web Dashboard
 # ----------------------------
-# Enable web-based dashboard (runs on localhost)
-# Can be enabled via --web-dashboard flag
+
+# Whether to enable the web dashboard
+# Can also be enabled via the --web-dashboard flag
 WEB_DASHBOARD_ENABLED = False
 
 # Port for the web dashboard server
@@ -456,66 +548,34 @@ WEB_DASHBOARD_HOST = '127.0.0.1'
 # Can also be set via --web-dashboard-template-dir flag
 WEB_DASHBOARD_TEMPLATE_DIR = ""
 
-# ---------------------------------
-# Terminal + Web Dashboard Settings
-# ---------------------------------
+# ----------------------------
+# Shared Dashboard Settings
+# ----------------------------
 
-# Show seconds in dashboard "Last Check" / "Next Check" fields (global + per-target)
-# Set to False if you prefer more compact times (HH:MM) without seconds
+# Whether to show seconds in dashboard Last Check and Next Check fields
 DASHBOARD_SHOW_CHECK_SECONDS = True
 
 # ----------------------------
-# Webhook Integration
+# Advanced Webhook Settings
 # ----------------------------
-# Discord and ntfy limits (for reference and validation)
-WEBHOOK_FIELD_VALUE_LIMIT = 1024
-WEBHOOK_FIELD_NAME_LIMIT = 256
-WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
-WEBHOOK_EMBED_TITLE_LIMIT = 256
-WEBHOOK_MAX_FIELDS = 25
-NTFY_MESSAGE_LIMIT_BYTES = 4096
 
-# Enable webhook notifications through Discord or ntfy
-# Can also be enabled via the --webhook flag
-WEBHOOK_ENABLED = False
-
-# Available providers: discord, ntfy
-WEBHOOK_PROVIDER = "discord"
-
-# Discord webhook URL or complete ntfy topic URL
-# For Discord: Right-click channel -> Edit Channel -> Integrations -> Webhooks -> Copy Webhook URL
-# For ntfy: use a hard-to-guess topic URL such as https://ntfy.sh/your-private-topic
-WEBHOOK_URL = ""
-
-# Webhook username to display (leave empty for default)
-WEBHOOK_USERNAME = "Instagram Monitor"
-
-# Webhook avatar URL (leave empty for default)
-WEBHOOK_AVATAR_URL = ""
-
-# Send webhook on status changes (new posts/reels/stories, bio, profile pic, visibility)
-# Can also be enabled via the --webhook-status flag
-WEBHOOK_STATUS_NOTIFICATION = False
-
-# Send webhook on follower changes
-# Can also be enabled via the --webhook-followers flag
-WEBHOOK_FOLLOWERS_NOTIFICATION = False
-
-# Send webhook on errors
-# Can also be enabled via the --webhook-errors flag
-WEBHOOK_ERROR_NOTIFICATION = False
-
-# Webhook request payload template
-# Substitutions will apply for items in {}, which can include title, description, version, image_url, fields, fields_str, color, timestamp, username, avatar_url
+# Discord-format webhook request payload template
+# Supported placeholders include title, description, version, image_url, fields, fields_str, color, timestamp,
+# username and avatar_url
 #
-# The default template is for Discord:
+# A dictionary or list is sent as JSON while a string is sent as the raw request body
+# Dictionary payloads always disable Discord mentions even if the template requests them
 WEBHOOK_TEMPLATE = {
     "username": "Instagram Monitor",
+    "allowed_mentions": {
+        "parse": []
+    },
     "embeds": [{
         "title": "{title}",
         "description": "{description}",
         "color": "{color}",
         "fields": "{fields}",
+        "timestamp": "{timestamp}",
         "footer": {
             "text": "Instagram Monitor v{version}"
         },
@@ -525,26 +585,30 @@ WEBHOOK_TEMPLATE = {
     }]
 }
 
-# Optional static request headers for advanced webhook integrations
-# Prefer NTFY_ACCESS_TOKEN in an environment variable or dotenv file for ntfy Bearer authentication
-# Some examples:
-#   {
-#       "Content-Type": "application/json",
-#       "Authorization": "Bearer tk_redacted"
-#   }
-WEBHOOK_HEADERS = {}
-NTFY_ACCESS_TOKEN = ""
-
-# Transformations to apply to WEBHOOK_TEMPLATE and WEBHOOK_HEADERS as a list of tuples, but it can be empty
-# tuple format is: (field_to_target, method_name, *optional_arguments)
+# Optional string transformations applied before WEBHOOK_TEMPLATE and WEBHOOK_HEADERS are rendered
+# Tuple format: (field_to_target, method_name, *optional_arguments)
+# Invalid transforms stop delivery before a webhook request is attempted
 #
-# Some examples:
+# Examples:
 #   [
 #       ("title", "upper"),                       # Make title all uppercase
 #       ("description", "replace", "**", ""),     # Remove bold markdown in description
 #       ("description", "strip")                  # Remove leading/trailing whitespace
 #   ]
 WEBHOOK_TRANSFORMS = []
+
+# Discord and ntfy payload limits used for validation
+# Change these only if the provider limits change
+WEBHOOK_FIELD_VALUE_LIMIT = 1024
+WEBHOOK_FIELD_NAME_LIMIT = 256
+WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
+WEBHOOK_EMBED_TITLE_LIMIT = 256
+WEBHOOK_MAX_FIELDS = 25
+NTFY_MESSAGE_LIMIT_BYTES = 4095
+
+# ----------------------------
+# Terminal Appearance
+# ----------------------------
 
 # Whether to use coloured output in the terminal (auto-disabled if the terminal
 # does not appear to support colours or when output is redirected to a file)
@@ -583,7 +647,7 @@ COLOR_THEME = {
     # Boolean values
     "boolean_true": "green",
     "boolean_false": "red",
-    # Counters / Diffs
+    # Counters and differences
     "count_up": "green",
     "count_down": "red",
     "link": "blue underline",
@@ -798,6 +862,69 @@ def update_dotenv_file(destination, updates):
     return {"path": str(destination_path), "updated_keys": tuple(key for key, _ in update_items)}
 
 
+# Raised when private webhook URL entry cannot be completed safely
+class WebhookConfigurationError(Exception):
+    pass
+
+
+# Resolves the writable dotenv destination used by private webhook entry
+def resolve_webhook_env_path(env_file=None, cwd=None):
+    if env_file is not None and str(env_file).casefold() == "none":
+        raise WebhookConfigurationError("Webhook setup requires a dotenv destination. Replace '--env-file none' with a writable path.")
+    base_directory = Path.cwd() if cwd is None else Path(cwd)
+    destination = base_directory / ".env" if env_file is None else Path(env_file).expanduser()
+    return destination.resolve()
+
+
+# Checks whether a dotenv file already contains one named assignment
+def _dotenv_contains_key(destination, key):
+    destination_path = Path(destination)
+    if not destination_path.exists():
+        return False
+    try:
+        lines = destination_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        raise WebhookConfigurationError(f"Could not read dotenv destination '{destination_path}'. Check that it is a readable UTF-8 file.") from None
+    assignment_pattern = re.compile(rf"^\s*(?:export\s+)?{re.escape(key)}\s*=")
+    return any(assignment_pattern.match(line) for line in lines)
+
+
+# Checks and safely stores one privately entered webhook URL
+def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpass_func=None, config_path=None):
+    destination = resolve_webhook_env_path(env_file)
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
+    if not terminal_is_interactive:
+        raise WebhookConfigurationError("--set-webhook-url requires an interactive terminal. Run it in a terminal window so the webhook URL stays hidden while you paste it.")
+    prompt = input if input_func is None else input_func
+    if _dotenv_contains_key(destination, "WEBHOOK_URL"):
+        try:
+            confirmed = prompt(f"Replace the saved webhook URL in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            confirmed = False
+        if not confirmed:
+            raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
+    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
+    try:
+        webhook_url = hidden_prompt("Paste the Discord or ntfy webhook URL (input hidden): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.") from None
+    if not validate_webhook_url(webhook_url):
+        raise WebhookConfigurationError("That does not look like a complete HTTPS webhook URL. The private settings file was not changed.")
+    try:
+        update_dotenv_file(destination, {"WEBHOOK_URL": webhook_url})
+    except Exception:
+        raise WebhookConfigurationError(f"Could not save the webhook URL in '{destination}'. Check file permissions or choose another path with --env-file.") from None
+    selected_config = config_path or find_config_file()
+    method = _wizard_install_method()
+    test_command = _wizard_action_command(method, "--send-test-webhook", selected_config, destination)
+    doctor_command = _wizard_action_command(method, "--doctor", selected_config, destination)
+    print("* Webhook URL looks valid")
+    print(f"* Updated private settings file: {destination}")
+    print(f"Send a test webhook:\n    {test_command}\n")
+    print(f"Check the complete setup:\n    {doctor_command}\n")
+    return str(destination)
+
+
 # Default dummy values so linters shut up
 # Do not change values below - modify them in the configuration section or config file instead
 SESSION_USERNAME = ""
@@ -894,10 +1021,12 @@ WEBHOOK_ENABLED = False
 WEBHOOK_URL = ""
 WEBHOOK_PROVIDER = "discord"
 WEBHOOK_EMBED_TITLE_LIMIT = 256
-NTFY_MESSAGE_LIMIT_BYTES = 4096
+NTFY_MESSAGE_LIMIT_BYTES = 4095
 WEBHOOK_USERNAME = "Instagram Monitor"
 WEBHOOK_AVATAR_URL = ""
 WEBHOOK_HEADERS = {}
+WEBHOOK_TEMPLATE = {}
+WEBHOOK_TRANSFORMS = []
 NTFY_ACCESS_TOKEN = ""
 WEBHOOK_STATUS_NOTIFICATION = True
 WEBHOOK_FOLLOWERS_NOTIFICATION = True
@@ -1066,9 +1195,11 @@ from dateutil import relativedelta
 from dateutil.parser import isoparse, parse
 import calendar
 import requests as req
+WEBHOOK_SESSION = req.Session()
 import shutil
 import smtplib
 import ssl
+from email.utils import parsedate_to_datetime
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -1548,11 +1679,21 @@ from glob import glob
 import sqlite3
 from sqlite3 import OperationalError, connect
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from urllib.parse import urlsplit
 from dataclasses import dataclass
 from functools import wraps
 import traceback
 import copy
 import math
+
+# Keep webhook delivery independent from Instagram retries and long server timers
+WEBHOOK_MAX_ATTEMPTS = 2
+WEBHOOK_MAX_RETRY_AFTER_SECONDS = 5.0
+WEBHOOK_FALLBACK_RETRY_SECONDS = 1.0
+WEBHOOK_TIMEOUT_SECONDS = 10
+NTFY_TRUNCATION_SUFFIX = "\n\n[Notification truncated to fit ntfy's 4 KB message limit]"
+NTFY_IMAGE_UPLOAD_LIMIT_BYTES = 5 * 1024 * 1024
+
 try:
     from tqdm import tqdm
 except ModuleNotFoundError:
@@ -2238,7 +2379,7 @@ def create_web_dashboard_app():
                         note = " (max 3600s limit)"
                 elif key == 'webhook_url':
                     if processed_val and not validate_webhook_url(processed_val):
-                        print(f"* Error: Invalid webhook URL format. Must be HTTPS or HTTP URL. '{processed_val}'")
+                        print("* Error: Invalid webhook URL format. Must be a complete HTTPS URL without embedded credentials.")
                         return current_val
                 elif key == 'webhook_provider':
                     processed_val = normalized_webhook_provider(processed_val)
@@ -2246,7 +2387,7 @@ def create_web_dashboard_app():
                         print("* Error: Invalid webhook provider. Must be 'discord' or 'ntfy'.")
                         return current_val
                 elif key == 'proxy_url':
-                    if processed_val and not validate_webhook_url(processed_val):
+                    if processed_val and not validate_proxy_url(processed_val):
                         print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{mask_url_credentials(processed_val)}'")
                         return current_val
                 elif key == 'proxy_cert':
@@ -2264,7 +2405,10 @@ def create_web_dashboard_app():
                         print("* Error: Cannot select 'curl_cffi' backend because the 'curl_cffi' package is not installed.")
                         return current_val
 
-                changes.append(f"'{key}' changed from {current_val} to {processed_val}{note}")
+                if key == "webhook_url":
+                    changes.append("'webhook_url' updated")
+                else:
+                    changes.append(f"'{key}' changed from {current_val} to {processed_val}{note}")
                 return processed_val
             return current_val
 
@@ -2281,6 +2425,7 @@ def create_web_dashboard_app():
         WEBHOOK_ENABLED = bool(update_setting('webhook_enabled', WEBHOOK_ENABLED, bool))
         WEBHOOK_URL = str(update_setting('webhook_url', WEBHOOK_URL, str))
         WEBHOOK_PROVIDER = str(update_setting('webhook_provider', WEBHOOK_PROVIDER, str))
+        apply_webhook_provider_autodetection()
         WEBHOOK_STATUS_NOTIFICATION = bool(update_setting('webhook_status', WEBHOOK_STATUS_NOTIFICATION, bool))
         WEBHOOK_FOLLOWERS_NOTIFICATION = bool(update_setting('webhook_followers', WEBHOOK_FOLLOWERS_NOTIFICATION, bool))
         WEBHOOK_ERROR_NOTIFICATION = bool(update_setting('webhook_errors', WEBHOOK_ERROR_NOTIFICATION, bool))
@@ -2295,7 +2440,7 @@ def create_web_dashboard_app():
         PROXY_CERT_PATH = str(update_setting('proxy_cert', PROXY_CERT_PATH, str))
         PROXY_WEBHOOKS = bool(update_setting('proxy_webhooks', PROXY_WEBHOOKS, bool))
         requested_proxy_enabled = bool(update_setting('proxy_enabled', PROXY_ENABLED, bool))
-        if requested_proxy_enabled and not (PROXY_URL and validate_webhook_url(PROXY_URL)):
+        if requested_proxy_enabled and not (PROXY_URL and validate_proxy_url(PROXY_URL)):
             print("* Error: Cannot enable proxy without a valid PROXY_URL. Keeping proxy disabled.")
             PROXY_ENABLED = False
         else:
@@ -3441,6 +3586,7 @@ _ONLINE_WORD_RE = re.compile(r"(\b(?!stop\s+)(?:online|Yes)\b)", re.IGNORECASE)
 _OFFLINE_WORD_RE = re.compile(r"(\b(?:offline|No)\b)", re.IGNORECASE)
 _BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
 _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
+_NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
 _STORY_URL_RE = re.compile(r"(https?://\S+)")
 _QUOTED_CONTENT_RE = re.compile(r"(['\"])((?![^'\"]*[._/])[^'\"]+)\1")
 _STATUS_CHANGE_RE = re.compile(r"^(.*? changed (?:status|mode|bio|followers|followings|profile picture) from\s+)(.+?)(\s+to\s+)(.+?)(.*)$")
@@ -3541,6 +3687,27 @@ def print_startup_banner() -> None:
     print(colorize("info", f"                   v{VERSION}\n"))
 
 
+# Returns enabled email notification category names in display order
+def _startup_email_notification_categories() -> List[str]:
+    settings = ((STATUS_NOTIFICATION, "status/profile changes"), (FOLLOWERS_NOTIFICATION, "followers"), (ERROR_NOTIFICATION, "errors"))
+    return [label for enabled, label in settings if enabled]
+
+
+# Returns enabled webhook notification category names in display order
+def _startup_webhook_notification_categories() -> List[str]:
+    settings = ((WEBHOOK_STATUS_NOTIFICATION, "status/profile changes"), (WEBHOOK_FOLLOWERS_NOTIFICATION, "followers"), (WEBHOOK_ERROR_NOTIFICATION, "errors"))
+    return [label for enabled, label in settings if WEBHOOK_ENABLED and enabled]
+
+
+# Builds notification summary rows shared by concise, verbose and logged views
+def _startup_notification_summary_rows() -> List[Tuple[str, bool, bool]]:
+    email_categories = _startup_email_notification_categories()
+    webhook_categories = _startup_webhook_notification_categories()
+    email_state = "On (" + ", ".join(email_categories) + ")" if email_categories else "Off"
+    webhook_state = "On (" + ", ".join(webhook_categories) + ")" if webhook_categories else "Off"
+    return [(f"* Notifications (email):\t\t{email_state}", True, True), (f"* Notifications (webhook):\t\t{webhook_state}", True, True)]
+
+
 # Helper to apply a block style while preserving internal highlights
 def _apply_style_nested(line, style_name):
     start_style = _COLOR_STYLES.get(style_name)
@@ -3564,6 +3731,12 @@ def _colorize_line(line):
     # lines which remain plain
     if line.startswith("* Sending email"):
         return line
+
+    notification_match = _NOTIFICATION_SUMMARY_STATE_RE.match(line)
+    if notification_match:
+        prefix, state, suffix = notification_match.groups()
+        state_style = "boolean_true" if state == "On" else "boolean_false"
+        return f"{prefix}{colorize(state_style, state)}{suffix}"
 
     is_summary_line = any(line.startswith(p) for p in ("* Output directory:", "* Hours for fetching:", "* Skip fetching:", "* Email notifications:", "* Recheck All:", "* Followers: reported", "* Followings: reported", "* Followers (", "* Followings (", "User ID:", "* Browser user agent:", "* Mobile user agent:"))
 
@@ -4111,20 +4284,26 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     return 0
 
 
-# Validates webhook URL format
+# Returns whether a webhook URL is a complete private HTTPS link
 def validate_webhook_url(url):
-    if not url:
-        return False
-    if not (url.startswith('https://') or url.startswith('http://')):
+    if not isinstance(url, str) or not url.strip():
         return False
     try:
-        from urllib.parse import urlparse
-        parsed = urlparse(url)
-        if not parsed.netloc or parsed.scheme not in ('https', 'http'):
-            return False
-        return True
-    except Exception:
+        parsed = urlsplit(url.strip())
+    except ValueError:
         return False
+    return parsed.scheme.casefold() == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password and bool(parsed.path.strip("/"))
+
+
+# Returns whether a proxy URL uses a supported HTTP scheme and has a host
+def validate_proxy_url(url):
+    if not isinstance(url, str) or not url.strip():
+        return False
+    try:
+        parsed = urlsplit(url.strip())
+    except ValueError:
+        return False
+    return parsed.scheme.casefold() in ("https", "http") and bool(parsed.hostname)
 
 
 # Converts a complete ntfy URL or valid ntfy.sh topic name into a complete topic URL
@@ -4146,6 +4325,63 @@ def normalized_webhook_provider(provider=None) -> str:
         return ""
     normalized = selected_provider.strip().casefold()
     return normalized if normalized in ("discord", "ntfy") else ""
+
+
+# Detects Discord and public ntfy webhook providers from distinctive URL shapes
+def detect_webhook_provider(url) -> str:
+    if not validate_webhook_url(url):
+        return ""
+    try:
+        parsed = urlsplit(str(url).strip())
+    except ValueError:
+        return ""
+    hostname = parsed.hostname.casefold() if parsed.hostname else ""
+    if hostname == "ntfy.sh":
+        return "ntfy"
+    discord_host = hostname in ("discord.com", "discordapp.com") or hostname.endswith(".discord.com") or hostname.endswith(".discordapp.com")
+    discord_path = re.match(r"^/api(?:/v[0-9]+)?/webhooks/[0-9]+/[^/]+/?$", parsed.path) is not None
+    return "discord" if discord_host and discord_path else ""
+
+
+# Corrects a configured provider when one distinctive webhook URL identifies its service
+def apply_webhook_provider_autodetection(explicit_provider=False, announce=True) -> str:
+    global WEBHOOK_PROVIDER
+    if explicit_provider:
+        return normalized_webhook_provider()
+    detected_provider = detect_webhook_provider(WEBHOOK_URL)
+    configured_provider = normalized_webhook_provider()
+    if detected_provider and detected_provider != configured_provider:
+        WEBHOOK_PROVIDER = detected_provider
+        if announce:
+            print(f"* Warning: Configured webhook provider did not match the URL. Using {detected_provider}.")
+    return normalized_webhook_provider()
+
+
+# Parses a webhook rate-limit delay and caps untrusted server values to a short wait
+def webhook_retry_after_seconds(response) -> float:
+    candidates = []
+    headers = getattr(response, "headers", {}) or {}
+    if hasattr(headers, "get"):
+        candidates.append(headers.get("Retry-After"))
+    try:
+        response_payload = response.json()
+    except Exception:
+        response_payload = None
+    if isinstance(response_payload, dict):
+        candidates.append(response_payload.get("retry_after"))
+    for candidate in candidates:
+        if candidate is None or candidate == "":
+            continue
+        try:
+            seconds = float(candidate)
+        except (TypeError, ValueError):
+            try:
+                retry_at = parsedate_to_datetime(str(candidate))
+                seconds = (retry_at - datetime.now(retry_at.tzinfo)).total_seconds()
+            except Exception:
+                continue
+        return max(0.0, min(seconds, WEBHOOK_MAX_RETRY_AFTER_SECONDS))
+    return WEBHOOK_FALLBACK_RETRY_SECONDS
 
 
 # Escapes Discord markdown for display-only text
@@ -4290,6 +4526,8 @@ def format_payload(template, payload):
         return {k: format_payload(v, payload) for k, v in template.items()}
     elif isinstance(template, list):
         return [format_payload(i, payload) for i in template]
+    elif isinstance(template, tuple):
+        return tuple(format_payload(i, payload) for i in template)
     elif isinstance(template, str):
         if template == "{fields}":
             return payload.get("fields", [])
@@ -4303,12 +4541,52 @@ def format_payload(template, payload):
     return template
 
 
-# Truncates text to a UTF-8 byte limit without returning a partial character
-def truncate_utf8_bytes(text: str, max_bytes: int) -> str:
+# Returns a configuration error for unsafe or unsupported webhook customization
+def validate_webhook_customization(provider=None) -> Optional[str]:
+    selected_provider = normalized_webhook_provider(provider)
+    if selected_provider == "discord":
+        if not isinstance(WEBHOOK_USERNAME, str):
+            return "WEBHOOK_USERNAME must be a string"
+        if not isinstance(WEBHOOK_AVATAR_URL, str):
+            return "WEBHOOK_AVATAR_URL must be a string"
+        if WEBHOOK_AVATAR_URL.strip() and not validate_webhook_url(WEBHOOK_AVATAR_URL):
+            return "WEBHOOK_AVATAR_URL must contain a complete HTTPS link without embedded credentials"
+        if not isinstance(WEBHOOK_TEMPLATE, (dict, list, str)):
+            return "WEBHOOK_TEMPLATE must be a dictionary, list or string"
+    if not isinstance(WEBHOOK_TRANSFORMS, (list, tuple)):
+        return "WEBHOOK_TRANSFORMS must be a list or tuple"
+    for index, transform in enumerate(WEBHOOK_TRANSFORMS):
+        if not isinstance(transform, (list, tuple)) or len(transform) < 2 or not isinstance(transform[0], str) or not isinstance(transform[1], str):
+            return f"WEBHOOK_TRANSFORMS entry {index + 1} must contain a field name and string method name"
+        if transform[1].startswith("_") or not callable(getattr("", transform[1], None)):
+            return f"WEBHOOK_TRANSFORMS entry {index + 1} uses an unsupported string method"
+    return None
+
+
+# Applies configured string transformations to one webhook value mapping
+def apply_webhook_transforms(payload: dict) -> dict:
+    transformed = dict(payload)
+    for index, transform in enumerate(WEBHOOK_TRANSFORMS):
+        field = transform[0]
+        method_name = transform[1]
+        if field not in transformed or not isinstance(transformed[field], str):
+            continue
+        try:
+            transformed[field] = getattr(transformed[field], method_name)(*transform[2:])
+        except Exception as exc:
+            raise ValueError(f"WEBHOOK_TRANSFORMS entry {index + 1} could not apply {field}.{method_name}") from exc
+    return transformed
+
+
+# Truncates text to a UTF-8 byte limit with an optional suffix and no partial character
+def truncate_utf8_bytes(text: str, max_bytes: int, suffix: str = "") -> str:
     encoded = text.encode("utf-8")
     if len(encoded) <= max_bytes:
         return text
-    return encoded[:max_bytes].decode("utf-8", errors="ignore")
+    encoded_suffix = suffix.encode("utf-8")
+    if len(encoded_suffix) >= max_bytes:
+        return encoded_suffix[:max_bytes].decode("utf-8", errors="ignore")
+    return encoded[:max_bytes - len(encoded_suffix)].decode("utf-8", errors="ignore") + suffix
 
 
 # Builds one bounded ntfy title and message pair from the shared webhook content
@@ -4319,7 +4597,7 @@ def build_ntfy_webhook_message(title: str, description: str, fields=None, image_
         message_parts.extend(f"{field['name']}: {field['value']}" for field in fields)
     if image_url:
         message_parts.append(f"Image: {image_url}")
-    safe_message = truncate_utf8_bytes("\n\n".join(message_parts), NTFY_MESSAGE_LIMIT_BYTES)
+    safe_message = truncate_utf8_bytes("\n\n".join(message_parts), NTFY_MESSAGE_LIMIT_BYTES, NTFY_TRUNCATION_SUFFIX)
     return safe_title, safe_message
 
 
@@ -4380,6 +4658,38 @@ def build_webhook_headers(provider: str, payload: dict) -> dict[str, str]:
     return headers
 
 
+# Returns webhook diagnostic text with configured private values removed
+def sanitize_webhook_error_text(value) -> str:
+    sanitized = apply_privacy_substitutions(str(value or ""))
+    for private_value in (WEBHOOK_URL, NTFY_ACCESS_TOKEN):
+        if isinstance(private_value, str) and private_value:
+            sanitized = sanitized.replace(private_value, "[private value]")
+    return sanitized
+
+
+# Loads one bounded local image for an ntfy attachment
+def build_ntfy_local_image(local_image_file=None):
+    if not local_image_file:
+        return None
+    try:
+        image_path = Path(local_image_file)
+        if not image_path.is_file():
+            return None
+        if image_path.stat().st_size > NTFY_IMAGE_UPLOAD_LIMIT_BYTES:
+            raise ValueError(f"image exceeds {NTFY_IMAGE_UPLOAD_LIMIT_BYTES} bytes")
+        image_bytes = image_path.read_bytes()
+        if not image_bytes:
+            raise ValueError("image is empty")
+        filename = image_path.name
+        if "\r" in filename or "\n" in filename:
+            raise ValueError("image filename contains line breaks")
+        content_types = {".gif": "image/gif", ".png": "image/png", ".webp": "image/webp"}
+        return image_bytes, filename, content_types.get(image_path.suffix.casefold(), "image/jpeg")
+    except Exception as exc:
+        debug_print(f"NTFY image preparation failed, sending text only: {sanitize_webhook_error_text(exc)}")
+        return None
+
+
 # Sends one webhook notification through the selected provider
 def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status"):
     if not WEBHOOK_ENABLED or not WEBHOOK_URL:
@@ -4388,17 +4698,19 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     title = apply_privacy_substitutions(title)
     description = apply_privacy_substitutions(description)
 
-    # Validate webhook URL
     if not validate_webhook_url(WEBHOOK_URL):
-        debug_print("* Webhook error: Invalid webhook URL format")
+        print("* Webhook error: WEBHOOK_URL must contain a complete HTTPS link without embedded credentials")
         return 1
 
     provider = normalized_webhook_provider()
     if not provider:
         print("* Webhook error: WEBHOOK_PROVIDER must be discord or ntfy")
         return 1
+    customization_error = validate_webhook_customization(provider)
+    if customization_error is not None:
+        print(f"* Webhook error: {customization_error}")
+        return 1
 
-    # Check if this notification type is enabled
     if notification_type == "status" and not WEBHOOK_STATUS_NOTIFICATION:
         return 1
     elif notification_type == "followers" and not WEBHOOK_FOLLOWERS_NOTIFICATION:
@@ -4436,26 +4748,19 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         payload["image"] = {"url": f"attachment://{filename}"}
 
     if WEBHOOK_USERNAME:
-        payload["username"] = WEBHOOK_USERNAME
+        payload["username"] = WEBHOOK_USERNAME.strip()[:80]
 
     if WEBHOOK_AVATAR_URL:
-        payload["avatar_url"] = WEBHOOK_AVATAR_URL
-
-    for transform in WEBHOOK_TRANSFORMS:  # type: ignore
-        field = transform[0]
-        method_name = transform[1]
-        args = transform[2:]
-        if field in payload and isinstance(payload[field], str):
-            try:
-                method = getattr(payload[field], method_name)
-                payload[field] = method(*args)
-            except (AttributeError, TypeError) as e:
-                print(f"* Transformation error on {field}.{method_name}: {e}")
+        payload["avatar_url"] = WEBHOOK_AVATAR_URL.strip()
 
     try:
+        payload = apply_webhook_transforms(payload)
         final_headers = build_webhook_headers(provider, payload)
-    except ValueError as e:
-        print(f"* Webhook error: {e}")
+        final_payload = format_payload(WEBHOOK_TEMPLATE, payload) if provider == "discord" else None  # type: ignore
+        if isinstance(final_payload, dict):
+            final_payload["allowed_mentions"] = {"parse": []}
+    except Exception as exc:
+        print(f"* Webhook error: {sanitize_webhook_error_text(exc)}")
         return 1
 
     if PROXY_ENABLED and PROXY_WEBHOOKS:
@@ -4465,16 +4770,20 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         final_post_proxy = {}
         final_post_proxy_ssl = True
 
-    max_retries = 3
-    retry_delay = 2
-
-    for attempt in range(max_retries):
+    ntfy_title, ntfy_message = build_ntfy_webhook_message(str(payload["title"]), str(payload["description"]), payload["fields"], webhook_image_url) if provider == "ntfy" else ("", "")
+    ntfy_image = build_ntfy_local_image(local_image_file) if provider == "ntfy" else None
+    use_ntfy_image = ntfy_image is not None
+    last_error = None
+    for attempt in range(WEBHOOK_MAX_ATTEMPTS):
         try:
             if provider == "ntfy":
-                ntfy_title, ntfy_message = build_ntfy_webhook_message(str(payload["title"]), str(payload["description"]), payload["fields"], webhook_image_url)
-                response = req.post(str(WEBHOOK_URL), headers=final_headers, data=ntfy_message.encode("utf-8"), params={"title": ntfy_title}, timeout=10, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                if use_ntfy_image and ntfy_image is not None:
+                    image_bytes, image_filename, image_content_type = ntfy_image
+                    attachment_headers = {**final_headers, "Content-Type": image_content_type, "X-Filename": image_filename}
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=attachment_headers, data=image_bytes, params={"title": ntfy_title, "message": ntfy_message}, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                else:
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, data=ntfy_message.encode("utf-8"), params={"title": ntfy_title}, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy)
             else:
-                final_payload = format_payload(WEBHOOK_TEMPLATE, payload)  # type: ignore
                 if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
                     filename = os.path.basename(local_image_file)
                     try:
@@ -4486,34 +4795,52 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                             "file": (filename, f, "image/jpeg"),
                             "payload_json": (None, json.dumps(final_payload))
                         }
-                        response = req.post(str(WEBHOOK_URL), headers=final_headers, files=files, timeout=10, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                        response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, files=files, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy)
                 elif isinstance(final_payload, str):
-                    response = req.post(WEBHOOK_URL, headers=final_headers, data=final_payload, timeout=10, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, data=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy)
                 else:
-                    response = req.post(WEBHOOK_URL, headers=final_headers, json=final_payload, timeout=10, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, json=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy)
 
-            if response.status_code in (200, 204):
+            if 200 <= response.status_code <= 299:
                 print("* Webhook notification sent successfully")
                 return 0
-
-            print(f"* Webhook error: HTTP {response.status_code} - {response.text[:200]}")
-            if response.status_code != 429:
+            last_error = response
+            if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
+                use_ntfy_image = False
+                delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS if response.status_code >= 500 else 0.0
+                debug_print(f"NTFY attachment returned HTTP {response.status_code}. Falling back to a text-only alert")
+                if delay:
+                    time.sleep(delay)
+                continue
+            retryable = response.status_code == 429 or 500 <= response.status_code <= 599
+            if not retryable or attempt == WEBHOOK_MAX_ATTEMPTS - 1:
+                response_text = sanitize_webhook_error_text(getattr(response, "text", ""))[:200]
+                suffix = f" - {response_text}" if response_text else ""
+                print(f"* Webhook error: HTTP {response.status_code}{suffix}")
                 print(colorize("info", "To fix: check that WEBHOOK_PROVIDER matches the saved Discord or ntfy URL then test it with --send-test-webhook."))
                 print(f"Guide: {WEBHOOK_GUIDE_URL}")
                 return 1
-
-        except (req.exceptions.RequestException, req.exceptions.ConnectionError, req.exceptions.Timeout) as e:
-            if attempt < max_retries - 1:
-                debug_print(f"* Webhook attempt {attempt + 1} failed: {e}. Retrying in {retry_delay}s...")
-                time.sleep(retry_delay)
+            delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS
+            debug_print(f"Webhook delivery returned HTTP {response.status_code}. Retrying once in {delay:g} seconds")
+            time.sleep(delay)
+        except req.exceptions.RequestException as exc:
+            last_error = exc
+            if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
+                use_ntfy_image = False
+                debug_print(f"NTFY attachment delivery failed. Falling back to a text-only alert: {sanitize_webhook_error_text(exc)}")
+                time.sleep(WEBHOOK_FALLBACK_RETRY_SECONDS)
                 continue
-            else:
-                print(f"* Error sending webhook: {e}")
+            if attempt == WEBHOOK_MAX_ATTEMPTS - 1:
+                print(f"* Error sending webhook: {sanitize_webhook_error_text(exc)}")
                 return 1
-        except Exception as e:
-            print(f"* Unexpected error sending webhook: {e}")
+            debug_print(f"Webhook delivery failed. Retrying once in {WEBHOOK_FALLBACK_RETRY_SECONDS:g} seconds: {sanitize_webhook_error_text(exc)}")
+            time.sleep(WEBHOOK_FALLBACK_RETRY_SECONDS)
+        except Exception as exc:
+            print(f"* Unexpected error sending webhook: {sanitize_webhook_error_text(exc)}")
             return 1
 
+    if last_error is not None:
+        print(f"* Error sending webhook: {sanitize_webhook_error_text(last_error)}")
     return 1
 
 
@@ -4608,26 +4935,24 @@ def set_instaloader_proxies(instabot):
     instabot.context._session.verify = get_proxies_ssl()
 
 
-# Reapplies proxy settings on the bot when the web dashboard has bumped PROXY_REFRESH_VERSION since last check
+# Reapplies proxy settings on the bot when runtime configuration has bumped PROXY_REFRESH_VERSION
 def refresh_proxy_if_needed(bot, user):
     global PROXY_REFRESH_VERSION
 
-    # proxies can only change during runtime if web dashboard is used to make a settings change
-    if WEB_DASHBOARD_ENABLED:
-        with PROXY_REFRESH_LOCK:
-            current_version = PROXY_REFRESH_VERSION
+    with PROXY_REFRESH_LOCK:
+        current_version = PROXY_REFRESH_VERSION
 
-        if getattr(_thread_local, 'last_proxy_version', 0) != current_version:
-            _thread_local.last_proxy_version = current_version
+    if getattr(_thread_local, 'last_proxy_version', 0) != current_version:
+        _thread_local.last_proxy_version = current_version
 
-            try:
-                print(f"* Proxy configuration refreshed for user {user} due to web dashboard settings change (version {current_version})")
-                log_activity(f"Proxy configuration refreshed via web dashboard (version {current_version})", user=user)
-                set_instaloader_proxies(bot)
-            except Exception as e:
-                error_msg = format_error_message(e)
-                print(f"* Error refreshing proxies for {user}: {error_msg}")
-                log_activity(f"Proxy refresh failed: {error_msg}", user=user, level='error')
+        try:
+            print(f"* Proxy configuration refreshed for user {user} after runtime settings change (version {current_version})")
+            log_activity(f"Proxy configuration refreshed after runtime settings change (version {current_version})", user=user)
+            set_instaloader_proxies(bot)
+        except Exception as e:
+            error_msg = format_error_message(e)
+            print(f"* Error refreshing proxies for {user}: {error_msg}")
+            log_activity(f"Proxy refresh failed: {error_msg}", user=user, level='error')
 
 
 TPrivacyContent = TypeVar("TPrivacyContent")
@@ -5088,6 +5413,7 @@ def decrease_check_signal_handler(sig, frame):
 
 # Signal handler for SIGHUP allowing to reload secrets from .env
 def reload_secrets_signal_handler(sig, frame):
+    global PROXY_REFRESH_VERSION, WEBHOOK_PROVIDER
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
 
@@ -5110,13 +5436,24 @@ def reload_secrets_signal_handler(sig, frame):
             env_path = None
             print("* python-dotenv not installed, skipping env-var reload")
 
+    proxy_url_changed = False
+    webhook_url_changed = False
     if env_path:
         for secret in SECRET_KEYS:
             old_val = globals().get(secret)
             val = os.getenv(secret)
             if val is not None and val != old_val:
                 globals()[secret] = val
+                if secret == "PROXY_URL":
+                    proxy_url_changed = True
+                if secret == "WEBHOOK_URL":
+                    webhook_url_changed = True
                 print(f"* Reloaded {secret} from {env_path}")
+    if proxy_url_changed:
+        PROXY_REFRESH_VERSION += 1
+        print(f"* Scheduled proxy session refresh (version {PROXY_REFRESH_VERSION})")
+    if webhook_url_changed:
+        apply_webhook_provider_autodetection()
 
     print_cur_ts()
 
@@ -11142,6 +11479,9 @@ def _build_help_epilog() -> str:
         "\n"
         "  # Point-and-click web dashboard (add targets in the browser)\n"
         f"  {web_prefix} --web-dashboard\n"
+        "\n"
+        "  # Save a Discord or ntfy webhook URL through a hidden prompt\n"
+        f"  {prefix} --set-webhook-url\n"
     )
 
 
@@ -11436,9 +11776,9 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
             if validate_webhook_url(webhook_url):
                 break
             if provider == "ntfy":
-                print(colorize("warning", "  Enter a complete HTTP(S) ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores."))
+                print(colorize("warning", "  Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores."))
             else:
-                print(colorize("warning", "  That does not look like a complete HTTP(S) webhook URL. Copy it from the service and try again."))
+                print(colorize("warning", "  That does not look like a complete HTTPS webhook URL. Copy it from the service and try again."))
         state.secret_updates["WEBHOOK_URL"] = webhook_url
     if provider == "ntfy":
         _wizard_collect_ntfy_access_token(state.secret_updates, state.env_path)
@@ -12003,10 +12343,14 @@ def run_doctor(targets) -> int:
         _doctor_line("fail", "Webhook provider is invalid", "Set WEBHOOK_PROVIDER to 'discord' or 'ntfy'.")
     elif not validate_webhook_url(WEBHOOK_URL):
         fails += 1
-        _doctor_line("fail", "Webhook URL is not a valid HTTP(S) URL", "Check WEBHOOK_URL.")
+        _doctor_line("fail", "Webhook URL is not a complete HTTPS URL", "Use a complete HTTPS destination with a path and no embedded credentials.")
     else:
+        customization_error = validate_webhook_customization(normalized_webhook_provider())
         header_error = validate_webhook_headers(normalized_webhook_provider())
-        if header_error is not None:
+        if customization_error is not None:
+            fails += 1
+            _doctor_line("fail", "Webhook customization is invalid", customization_error)
+        elif header_error is not None:
             fails += 1
             _doctor_line("fail", "Webhook headers are invalid", header_error)
         else:
@@ -12034,7 +12378,7 @@ def run_main():
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
 
-    if "--generate-config" in sys.argv:
+    if "--generate-config" in sys.argv and "--set-webhook-url" not in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
         # Check if a filename was provided after --generate-config
         try:
@@ -12053,7 +12397,7 @@ def run_main():
         sys.stdout.buffer.flush()
         sys.exit(0)
 
-    if "--version" in sys.argv:
+    if "--version" in sys.argv and "--set-webhook-url" not in sys.argv:
         print(f"{os.path.basename(sys.argv[0])} v{VERSION}")
         sys.exit(0)
 
@@ -12070,7 +12414,7 @@ def run_main():
     early_dashboard_enabled = "--dashboard" in sys.argv and "--no-dashboard" not in sys.argv
 
     # Clear screen BEFORE printing the header
-    keep_cli_history = any(flag in sys.argv for flag in ("--import-browser-session", "--import-firefox-session", "--doctor"))
+    keep_cli_history = any(flag in sys.argv for flag in ("--import-browser-session", "--import-firefox-session", "--set-webhook-url", "--doctor"))
     clear_screen(CLEAR_SCREEN and not keep_cli_history)
 
     if not (early_dashboard_enabled and RICH_AVAILABLE):
@@ -12134,6 +12478,12 @@ def run_main():
         dest="doctor",
         action="store_true",
         help="Run preflight checks with separately approved notification delivery tests and exit",
+    )
+    conf.add_argument(
+        "--set-webhook-url",
+        dest="set_webhook_url",
+        action="store_true",
+        help="Save a Discord or ntfy webhook URL through a hidden prompt",
     )
 
     # Session login credentials
@@ -12570,7 +12920,7 @@ def run_main():
     args = parser.parse_args()
 
     import_requested = bool(args.import_firefox_session or args.import_browser_session)
-    requested_actions = [label for label, enabled in (("--setup", args.setup), ("--doctor", args.doctor), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--generate-config", args.generate_config is not None)) if enabled]
+    requested_actions = [label for label, enabled in (("--setup", args.setup), ("--set-webhook-url", args.set_webhook_url), ("--doctor", args.doctor), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--generate-config", args.generate_config is not None)) if enabled]
     if len(requested_actions) > 1:
         parser.error("standalone actions cannot be combined: " + ", ".join(requested_actions))
     if args.setup:
@@ -12579,6 +12929,20 @@ def run_main():
         if args.env_file and str(args.env_file).casefold() == "none":
             parser.error("--setup requires a dotenv destination and cannot use --env-file none")
         run_setup_wizard(config_file=args.config_file, env_file=args.env_file)
+        sys.exit(0)
+    if args.set_webhook_url:
+        if args.usernames or args.targets:
+            parser.error("--set-webhook-url cannot be combined with monitoring targets")
+        set_webhook_conflicts = [label for label, enabled in (("--webhook-url", bool(args.webhook_url)), ("--webhook-provider", bool(args.webhook_provider)), ("--webhook", args.webhook_enabled is True), ("--no-webhook", args.no_webhook is True), ("--webhook-status", args.webhook_status is True), ("--webhook-followers", args.webhook_followers is True), ("--webhook-errors", args.webhook_errors is True)) if enabled]
+        if set_webhook_conflicts:
+            parser.error("--set-webhook-url cannot be combined with " + ", ".join(set_webhook_conflicts))
+        if args.env_file and str(args.env_file).casefold() == "none":
+            parser.error("--set-webhook-url requires a writable dotenv destination and cannot use --env-file none")
+        try:
+            run_set_webhook_url(env_file=args.env_file, config_path=args.config_file)
+        except WebhookConfigurationError as exc:
+            print(f"* Error: {exc}")
+            sys.exit(1)
         sys.exit(0)
 
     if args.config_file:
@@ -12775,7 +13139,7 @@ def run_main():
         if not PROXY_URL:
             print(f"* Error: Proxies are enabled but PROXY_URL is missing! Please set it in config file or via --proxy-url flag")
             sys.exit(1)
-        if not validate_webhook_url(PROXY_URL):
+        if not validate_proxy_url(PROXY_URL):
             print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{mask_url_credentials(PROXY_URL)}'")
             sys.exit(1)
         if PROXY_CERT_PATH:
@@ -12822,13 +13186,15 @@ def run_main():
     # Webhook configuration
     if args.webhook_url:
         if not validate_webhook_url(args.webhook_url):
-            print(f"* Error: Invalid webhook URL format. Must be HTTPS or HTTP URL.")
+            print("* Error: Invalid webhook URL format. Must be a complete HTTPS URL without embedded credentials.")
             sys.exit(1)
         WEBHOOK_URL = str(args.webhook_url or "")
         WEBHOOK_ENABLED = True
 
     if args.webhook_provider:
         WEBHOOK_PROVIDER = str(args.webhook_provider)
+
+    apply_webhook_provider_autodetection(explicit_provider=bool(args.webhook_provider))
 
     if args.webhook_enabled is True:
         WEBHOOK_ENABLED = True
@@ -12838,12 +13204,15 @@ def run_main():
 
     if args.webhook_status is True:
         WEBHOOK_STATUS_NOTIFICATION = True
+        WEBHOOK_ENABLED = True
 
     if args.webhook_followers is True:
         WEBHOOK_FOLLOWERS_NOTIFICATION = True
+        WEBHOOK_ENABLED = True
 
     if args.webhook_errors is True:
         WEBHOOK_ERROR_NOTIFICATION = True
+        WEBHOOK_ENABLED = True
 
     if args.send_test_email:
         print("* Sending test email notification ...\n")
@@ -13189,10 +13558,8 @@ def run_main():
         hours_ranges_str = format_hour_range(0, 23)
     summary_rows.append(("* Hours for fetching updates:\t\t" + hours_ranges_str, bool(CHECK_POSTS_IN_HOURS_RANGE), True))
 
-    # Concise one-line notifications summary (terminal only); the detailed rows below carry the full breakdown to the log/--verbose
-    email_on = bool(STATUS_NOTIFICATION or FOLLOWERS_NOTIFICATION or ERROR_NOTIFICATION)
-    summary_rows.append((f"* Notifications:\t\t\t[email = {'on' if email_on else 'off'}] [webhook = {'on' if WEBHOOK_ENABLED else 'off'}]", True, False))
-    summary_rows.append((f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]", False, True))
+    # Reuse the same compact per-channel notification rows in every summary view
+    summary_rows.extend(_startup_notification_summary_rows())
 
     summary_rows.append((f"* Session Mode:\t\t\t\t{mode_of_the_tool}", True, True))
     summary_rows.append((f"* Human mode:\t\t\t\t{BE_HUMAN}" + (f" (Verbose)" if BE_HUMAN_VERBOSE else ""), bool(BE_HUMAN), True))
@@ -13289,13 +13656,6 @@ def run_main():
             detected = _peek_web_dashboard_template_dir_autodetect()
             templates_display = "Auto-detect" + (f" ({detected})" if detected else "")
         summary_rows.append((f"* Web Dashboard templates:\t\t{templates_display}", False, True))
-
-    summary_rows.append((f"* Webhook notifications:\t\t{WEBHOOK_ENABLED}" + (f" ({str(WEBHOOK_URL)[:50]}...)" if WEBHOOK_ENABLED and WEBHOOK_URL and len(str(WEBHOOK_URL)) > 50 else (f" ({WEBHOOK_URL})" if WEBHOOK_ENABLED and WEBHOOK_URL else "")), False, True))
-    if WEBHOOK_ENABLED:
-        summary_rows.append((f"*   Webhook provider:\t\t\t{normalized_webhook_provider() or 'Invalid'}", False, True))
-        summary_rows.append((f"*   Webhook on status/profile changes:\t{WEBHOOK_STATUS_NOTIFICATION}", False, True))
-        summary_rows.append((f"*   Webhook on follow changes:\t\t{WEBHOOK_FOLLOWERS_NOTIFICATION}", False, True))
-        summary_rows.append((f"*   Webhook on errors:\t\t\t{WEBHOOK_ERROR_NOTIFICATION}", False, True))
 
     summary_rows.append((f"* Verbose mode:\t\t\t\t{VERBOSE_MODE}", bool(VERBOSE_MODE), True))
     summary_rows.append((f"* Debug mode:\t\t\t\t{DEBUG_MODE}", bool(DEBUG_MODE), True))
