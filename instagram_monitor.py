@@ -3682,13 +3682,13 @@ def _startup_webhook_notification_categories() -> List[str]:
     return [label for enabled, label in settings if WEBHOOK_ENABLED and enabled]
 
 
-# Builds the concise terminal-only notification summary rows
+# Builds notification summary rows shared by concise, verbose and logged views
 def _startup_notification_summary_rows() -> List[Tuple[str, bool, bool]]:
     email_categories = _startup_email_notification_categories()
     webhook_categories = _startup_webhook_notification_categories()
     email_state = "On (" + ", ".join(email_categories) + ")" if email_categories else "Off"
     webhook_state = "On (" + ", ".join(webhook_categories) + ")" if webhook_categories else "Off"
-    return [(f"* Notifications (email):\t\t{email_state}", True, False), (f"* Notifications (webhook):\t\t{webhook_state}", True, False)]
+    return [(f"* Notifications (email):\t\t{email_state}", True, True), (f"* Notifications (webhook):\t\t{webhook_state}", True, True)]
 
 
 # Helper to apply a block style while preserving internal highlights
@@ -13482,9 +13482,8 @@ def run_main():
         hours_ranges_str = format_hour_range(0, 23)
     summary_rows.append(("* Hours for fetching updates:\t\t" + hours_ranges_str, bool(CHECK_POSTS_IN_HOURS_RANGE), True))
 
-    # Concise per-channel notification rows stay terminal-only while the detailed rows below carry the full breakdown to the log and --verbose
+    # Reuse the same compact per-channel notification rows in every summary view
     summary_rows.extend(_startup_notification_summary_rows())
-    summary_rows.append((f"* Email notifications:\t\t\t[new posts/reels/stories/followings/bio/profile picture/visibility = {STATUS_NOTIFICATION}]\n*\t\t\t\t\t[followers = {FOLLOWERS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]", False, True))
 
     summary_rows.append((f"* Session Mode:\t\t\t\t{mode_of_the_tool}", True, True))
     summary_rows.append((f"* Human mode:\t\t\t\t{BE_HUMAN}" + (f" (Verbose)" if BE_HUMAN_VERBOSE else ""), bool(BE_HUMAN), True))
@@ -13581,13 +13580,6 @@ def run_main():
             detected = _peek_web_dashboard_template_dir_autodetect()
             templates_display = "Auto-detect" + (f" ({detected})" if detected else "")
         summary_rows.append((f"* Web Dashboard templates:\t\t{templates_display}", False, True))
-
-    summary_rows.append((f"* Webhook notifications:\t\t{WEBHOOK_ENABLED}" + (" (private URL configured)" if WEBHOOK_ENABLED and WEBHOOK_URL else ""), False, True))
-    if WEBHOOK_ENABLED:
-        summary_rows.append((f"*   Webhook provider:\t\t\t{normalized_webhook_provider() or 'Invalid'}", False, True))
-        summary_rows.append((f"*   Webhook on status/profile changes:\t{WEBHOOK_STATUS_NOTIFICATION}", False, True))
-        summary_rows.append((f"*   Webhook on follow changes:\t\t{WEBHOOK_FOLLOWERS_NOTIFICATION}", False, True))
-        summary_rows.append((f"*   Webhook on errors:\t\t\t{WEBHOOK_ERROR_NOTIFICATION}", False, True))
 
     summary_rows.append((f"* Verbose mode:\t\t\t\t{VERBOSE_MODE}", bool(VERBOSE_MODE), True))
     summary_rows.append((f"* Debug mode:\t\t\t\t{DEBUG_MODE}", bool(DEBUG_MODE), True))
