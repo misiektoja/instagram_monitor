@@ -92,6 +92,7 @@ ERROR_NOTIFICATION = True
 WEBHOOK_ENABLED = False
 
 # Service used to deliver webhook notifications: "discord" or "ntfy"
+# Known Discord and ntfy.sh URLs correct a mismatched configured value at runtime
 # Can also be set via the --webhook-provider flag
 WEBHOOK_PROVIDER = "discord"
 
@@ -2411,6 +2412,7 @@ def create_web_dashboard_app():
         WEBHOOK_ENABLED = bool(update_setting('webhook_enabled', WEBHOOK_ENABLED, bool))
         WEBHOOK_URL = str(update_setting('webhook_url', WEBHOOK_URL, str))
         WEBHOOK_PROVIDER = str(update_setting('webhook_provider', WEBHOOK_PROVIDER, str))
+        apply_webhook_provider_autodetection()
         WEBHOOK_STATUS_NOTIFICATION = bool(update_setting('webhook_status', WEBHOOK_STATUS_NOTIFICATION, bool))
         WEBHOOK_FOLLOWERS_NOTIFICATION = bool(update_setting('webhook_followers', WEBHOOK_FOLLOWERS_NOTIFICATION, bool))
         WEBHOOK_ERROR_NOTIFICATION = bool(update_setting('webhook_errors', WEBHOOK_ERROR_NOTIFICATION, bool))
@@ -4303,6 +4305,36 @@ def normalized_webhook_provider(provider=None) -> str:
         return ""
     normalized = selected_provider.strip().casefold()
     return normalized if normalized in ("discord", "ntfy") else ""
+
+
+# Detects Discord and public ntfy webhook providers from distinctive URL shapes
+def detect_webhook_provider(url) -> str:
+    if not validate_webhook_url(url):
+        return ""
+    try:
+        parsed = urlsplit(str(url).strip())
+    except ValueError:
+        return ""
+    hostname = parsed.hostname.casefold() if parsed.hostname else ""
+    if hostname == "ntfy.sh":
+        return "ntfy"
+    discord_host = hostname in ("discord.com", "discordapp.com") or hostname.endswith(".discord.com") or hostname.endswith(".discordapp.com")
+    discord_path = re.match(r"^/api(?:/v[0-9]+)?/webhooks/[0-9]+/[^/]+/?$", parsed.path) is not None
+    return "discord" if discord_host and discord_path else ""
+
+
+# Corrects a configured provider when one distinctive webhook URL identifies its service
+def apply_webhook_provider_autodetection(explicit_provider=False, announce=True) -> str:
+    global WEBHOOK_PROVIDER
+    if explicit_provider:
+        return normalized_webhook_provider()
+    detected_provider = detect_webhook_provider(WEBHOOK_URL)
+    configured_provider = normalized_webhook_provider()
+    if detected_provider and detected_provider != configured_provider:
+        WEBHOOK_PROVIDER = detected_provider
+        if announce:
+            print(f"* Warning: Configured webhook provider did not match the URL. Using {detected_provider}.")
+    return normalized_webhook_provider()
 
 
 # Parses a webhook rate-limit delay and caps untrusted server values to a short wait
@@ -13123,6 +13155,8 @@ def run_main():
 
     if args.webhook_provider:
         WEBHOOK_PROVIDER = str(args.webhook_provider)
+
+    apply_webhook_provider_autodetection(explicit_provider=bool(args.webhook_provider))
 
     if args.webhook_enabled is True:
         WEBHOOK_ENABLED = True
