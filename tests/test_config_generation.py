@@ -84,6 +84,17 @@ class TestGenerateConfigWithCurrentValues:
         assert "SESSION_USERNAME" in rendered
         assert rendered.count("#") > 10
 
+    # Generated config preserves a customized ordered IP lookup endpoint list
+    def test_ip_address_urls_round_trip_from_runtime_values(self, im_module, monkeypatch):
+        custom_urls = ["https://primary.example.test/ip", "https://backup.example.test/ip"]
+        monkeypatch.setattr(im_module, "IP_ADDRESS_URL", custom_urls)
+
+        rendered = im_module.generate_config_with_current_values()
+        namespace: dict = {}
+        exec(rendered, namespace)
+
+        assert namespace["IP_ADDRESS_URL"] == custom_urls
+
     # Generated webhook defaults document private entry and suppress Discord mentions
     def test_webhook_defaults_match_safe_user_experience(self, im_module):
         rendered = im_module.generate_config_with_current_values()
