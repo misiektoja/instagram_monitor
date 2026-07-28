@@ -518,6 +518,7 @@ Additional options:
 
 - `PROXY_CERT_PATH` or `--proxy-cert` selects a local certificate used to verify the proxy connection
 - `PROXY_WEBHOOKS` or `--enable-proxy-webhooks` also sends webhook requests through the proxy. It is off by default because some proxies do not allow these requests
+- `IP_ADDRESS_URL` selects one trusted IP lookup URL or an ordered non-empty list of fallback URLs
 
 `PROXY_URL` may contain a username and password. The tool masks it in output. Store it through an [environment variable or `.env` file](configuration.md#storing-secrets).
 
@@ -526,7 +527,14 @@ PROXY_ENABLED = True
 PROXY_URL = "http://user:pass@host:port"
 PROXY_CERT_PATH = ""
 PROXY_WEBHOOKS = False
+IP_ADDRESS_URL = [
+    "https://checkip.amazonaws.com",
+    "https://api.ipify.org?format=json",
+    "https://api.my-ip.io/v2/ip.json",
+]
 ```
+
+The proxy IP check tries each endpoint in order without pausing between different providers. It waits for the long retry delay only after the complete list fails. Only valid IPv4 or IPv6 responses are displayed. See [Proxy IP Lookup Endpoints](configuration.md#proxy-ip-lookup-endpoints) for validation and privacy details.
 
 The Python `requests` library reads `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` from the process environment even when `PROXY_ENABLED` is `False`. Check and unset those variables if you need a direct connection.
 

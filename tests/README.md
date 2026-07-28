@@ -26,6 +26,7 @@ installed copy of the package.
 | File | Area under test |
 | --- | --- |
 | `test_config_generation.py` | Config inline-comment splitting, value formatting, `generate_config_with_current_values` round-trip |
+| `test_proxy_ip.py` | Proxy IP endpoint validation, IPv4/IPv6 parsing, ordered failover and retry timing |
 | `test_time_and_dates.py` | `display_time`, `calculate_timespan`, hour formatting, timezone conversions |
 | `test_privacy.py` | `apply_privacy_substitutions` (string/dict/list recursion, invalid entries) |
 | `test_notifications.py` | Webhook URL validation, Discord markdown escaping, credential masking, payload templating |
