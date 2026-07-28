@@ -2,7 +2,8 @@
 
 from pathlib import Path
 import tempfile
-from unittest.mock import Mock
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import pytest
 from dotenv import dotenv_values
@@ -37,6 +38,27 @@ class _FakeResponse:
 # Verifies distinctive Discord and public ntfy URLs select the proper payload provider
 def test_webhook_provider_detection(im_module, url, expected):
     assert im_module.detect_webhook_provider(url) == expected
+
+
+# Verifies SIGHUP redetects ntfy and schedules active Instaloader sessions for proxy refresh
+def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, monkeypatch):
+    replacements = {"WEBHOOK_URL": "https://ntfy.sh/new-private-topic", "PROXY_URL": "https://new-user:new-password@proxy.example.test"}
+    monkeypatch.setattr(im_module, "DOTENV_FILE", "test.env")
+    monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/123/old-token")
+    monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(im_module, "PROXY_ENABLED", True)
+    monkeypatch.setattr(im_module, "PROXY_URL", "https://old-user:old-password@proxy.example.test")
+    monkeypatch.setattr(im_module, "PROXY_REFRESH_VERSION", 4)
+    monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", False)
+    monkeypatch.setattr(im_module._thread_local, "last_proxy_version", 4, raising=False)
+    session = SimpleNamespace(proxies={"https": "https://old-user:old-password@proxy.example.test"}, verify=True)
+    bot = SimpleNamespace(context=SimpleNamespace(_session=session))
+    with patch("dotenv.load_dotenv"), patch.object(im_module.os, "getenv", side_effect=replacements.get), patch.object(im_module, "log_activity"):
+        im_module.reload_secrets_signal_handler(im_module.signal.SIGHUP, None)
+        im_module.refresh_proxy_if_needed(bot, "target")
+    assert im_module.WEBHOOK_PROVIDER == "ntfy"
+    assert im_module.PROXY_REFRESH_VERSION == 5
+    assert session.proxies == {"http": replacements["PROXY_URL"], "https": replacements["PROXY_URL"]}
 
 
 class TestSendWebhook:
