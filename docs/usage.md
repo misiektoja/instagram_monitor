@@ -300,7 +300,7 @@ Example email:
 
 Instagram Monitor can send event notifications to **Discord** or **ntfy**. A webhook is a URL that accepts a message from another application. Webhook settings do not affect email settings.
 
-`WEBHOOK_PROVIDER` tells Instagram Monitor which message format the URL expects. The default is `"discord"`.
+`WEBHOOK_PROVIDER` tells Instagram Monitor which message format the URL expects. The default is `"discord"`. Standard Discord and public `ntfy.sh` URLs automatically select the matching format if this configured value is stale. Self-hosted ntfy and compatible endpoints still use the configured provider. An explicit `--webhook-provider` override always wins.
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_discord.png" alt="instagram_monitor_discord_screenshot" width="80%"/>
@@ -318,7 +318,7 @@ To create a Discord Webhook URL:
 3.  **Create Webhook**: Go to **Integrations** in the left menu -> **Webhooks** -> **New Webhook**.
 4.  **Copy URL**: Click on the new webhook (often named "Spidey Bot", you can rename it) and click **Copy Webhook URL**.
 
-Keep `WEBHOOK_PROVIDER = "discord"` in `instagram_monitor.conf`.
+Keep `WEBHOOK_PROVIDER = "discord"` in `instagram_monitor.conf`. Standard Discord webhook URLs are also recognized automatically.
 
 #### ntfy
 
@@ -326,7 +326,7 @@ For ntfy.sh or a self-hosted ntfy server:
 
 1. Choose a hard-to-guess topic such as `instagram-monitor-long-random-value`.
 2. In the setup wizard, enter either an ntfy.sh topic name or a complete topic URL such as `https://ntfy.sh/instagram-monitor-long-random-value`. The wizard expands a bare topic name to an ntfy.sh URL. For a self-hosted server, the Web Dashboard or manual configuration, enter the complete HTTPS topic URL.
-3. Set `WEBHOOK_PROVIDER = "ntfy"` in `instagram_monitor.conf`.
+3. Public `ntfy.sh` URLs are recognized automatically. Set `WEBHOOK_PROVIDER = "ntfy"` in `instagram_monitor.conf` for a self-hosted ntfy server.
 
 Instagram Monitor sends the alert subject as the ntfy title. The alert text and event details become the message. Existing query parameters in the topic URL are preserved, including the ntfy [`auth` query parameter](https://docs.ntfy.sh/publish/#authentication). Long ntfy messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments.
 
@@ -378,7 +378,7 @@ instagram_monitor <target_insta_user> --webhook
 instagram_monitor <target_insta_user> --no-webhook
 ```
 
-Webhook and avatar URLs must be complete HTTPS links with a path and no embedded credentials. A URL passed through `--webhook-url` may remain visible in shell history or process listings, so prefer `--set-webhook-url` for normal setup.
+Webhook and avatar URLs must be complete HTTPS links with a path and no embedded credentials. Known Discord and `ntfy.sh` destinations correct a stale configured provider at runtime. A URL passed through `--webhook-url` may remain visible in shell history or process listings, so prefer `--set-webhook-url` for normal setup.
 
 <a id="3-test-your-settings"></a>
 ### 3. Test Your Settings
