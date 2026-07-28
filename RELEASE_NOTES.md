@@ -13,7 +13,7 @@ Version **3.8** strengthens Discord and ntfy delivery while making private webho
 - **IMPROVE:** Rejected unsafe templates, avatar URLs, transforms and expanded headers before delivery then forced Discord mention suppression for every dictionary payload
 - **IMPROVE:** Made `--webhook-status`, `--webhook-followers` and `--webhook-errors` enable the webhook master switch for the current run
 - **IMPROVE:** Aligned the generated configuration template and webhook documentation with Spotify Monitor terminology, private setup guidance and advanced customization behavior
-- **IMPROVE:** Split the concise startup notification summary into separate **email** and **webhook** rows so each channel's enabled alert categories stay readable without wrapping on narrow terminals
+- **IMPROVE:** Split the startup notification summary into separate **email** and **webhook** rows then reused the same compact channel rollups in concise, verbose and logged views
 
 **Bug fixes**:
 
