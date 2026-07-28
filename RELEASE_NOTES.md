@@ -4,7 +4,7 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.8 (TBD)
 
-Version **3.8** strengthens **Discord and ntfy webhook delivery**, adds safer **private URL setup** and brings better notification controls.
+Version **3.8** strengthens **Discord and ntfy webhook delivery**, adds safer **private URL setup**, improves **proxy IP detection** and brings better notification controls.
 
 **Features and improvements**:
 
@@ -14,6 +14,7 @@ Version **3.8** strengthens **Discord and ntfy webhook delivery**, adds safer **
 - **IMPROVE:** Added **native ntfy image attachments** with a 5 MiB limit and automatic text-only fallback when image preparation or upload fails
 - **IMPROVE:** Made the **status, follower and error webhook controls** enable webhook delivery for the current run
 - **IMPROVE:** Split the startup notification summary into compact **email and webhook rows** across concise, verbose and logged views
+- **IMPROVE:** Added ordered **proxy IP lookup fallback endpoints** with backward-compatible single-URL configuration, IPv4 and IPv6 validation plus documented privacy controls
 
 **Bug fixes**:
 
@@ -21,6 +22,7 @@ Version **3.8** strengthens **Discord and ntfy webhook delivery**, adds safer **
 - **BUGFIX:** Kept long ntfy messages below its 4 KB attachment boundary, added a visible truncation explanation and preserved complete UTF-8 characters
 - **BUGFIX:** Restored green `On` and red `Off` status cues in compact notification rows without coloring category text
 - **BUGFIX:** Made `SIGHUP` apply rotated proxy credentials to active Instaloader sessions and redetect Discord or ntfy when the private webhook destination changes
+- **BUGFIX:** Made proxy IP failover try every configured endpoint before the long retry delay, reject invalid successful responses without crashing and preserve custom endpoint lists in generated configuration
 
 # Changes in 3.7.1 (24 Jul 2026)
 
