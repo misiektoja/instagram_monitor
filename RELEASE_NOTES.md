@@ -20,6 +20,7 @@ Version **3.8** strengthens **Discord and ntfy webhook delivery**, adds safer **
 - **BUGFIX:** Stopped startup summaries and Web Dashboard setting-change logs from writing private webhook URLs to logs
 - **BUGFIX:** Kept long ntfy messages below its 4 KB attachment boundary, added a visible truncation explanation and preserved complete UTF-8 characters
 - **BUGFIX:** Restored green `On` and red `Off` status cues in compact notification rows without coloring category text
+- **BUGFIX:** Made `SIGHUP` apply rotated proxy credentials to active Instaloader sessions and redetect Discord or ntfy when the private webhook destination changes
 
 # Changes in 3.7.1 (24 Jul 2026)
 
