@@ -15,6 +15,18 @@ class TestStartupNotificationSummary:
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", webhook_enabled)
         assert im_module._startup_notification_summary_rows() == [(f"* Notifications (email):\t\t{expected_email}", True, True), (f"* Notifications (webhook):\t\t{expected_webhook}", True, True)]
 
+    # Verifies compact notification rows color only their On or Off state
+    def test_channel_rows_color_on_off_state(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+        monkeypatch.setattr(im_module, "_COLOR_STYLES", {"boolean_true": "\033[32m", "boolean_false": "\033[31m"})
+        monkeypatch.setattr(im_module, "DASHBOARD_ENABLED", False)
+        monkeypatch.setattr(im_module, "RICH_AVAILABLE", False)
+        text = "* Notifications (email):\t\tOn (status/profile changes, followers, errors)\n* Notifications (webhook):\t\tOff\n"
+        expected = "* Notifications (email):\t\t\033[32mOn\033[0m (status/profile changes, followers, errors)\n* Notifications (webhook):\t\t\033[31mOff\033[0m\n"
+        colored = im_module.apply_color_to_text(text)
+        assert colored == expected
+        assert im_module.ANSI_ESCAPE_RE.sub("", colored) == text
+
 
 class TestValidateWebhookUrl:
     @pytest.mark.parametrize("url", ["https://discord.com/api/webhooks/123/abc", "https://example.com/hook", "https://ntfy.example.test/private-topic?auth=value"])
