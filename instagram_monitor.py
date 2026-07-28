@@ -365,15 +365,9 @@ CHECK_INTERNET_URL = 'https://www.instagram.com/'
 # Timeout used when checking initial internet connectivity in seconds
 CHECK_INTERNET_TIMEOUT = 5
 
-# URL or list of URLs used to determine IP address
-# If first URL doesn't provide a valid response, retries will iterate through the list
-IP_ADDRESS_URL = [
-    "https://checkip.amazonaws.com",
-    "https://api.ipify.org?format=json",
-    "https://api.my-ip.io/ip.json",
-    "https://ipinfo.io/json",
-    "https://httpbin.org/ip",
-]
+# Complete HTTP or HTTPS URL or ordered non-empty list of URLs used to determine the proxy IP address
+# Each retry cycle tries every URL before waiting for the long retry delay
+IP_ADDRESS_URL = ["https://checkip.amazonaws.com", "https://api.ipify.org?format=json", "https://api.my-ip.io/v2/ip.json", "https://ipinfo.io/json", "https://httpbin.org/ip"]
 
 # ----------------------------
 # Restricted Monitoring Hours
@@ -980,13 +974,7 @@ ADVANCED_FOLLOWEE_FETCH = False
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
-IP_ADDRESS_URL = [
-    "https://checkip.amazonaws.com",
-    "https://api.ipify.org?format=json",
-    "https://api.my-ip.io/ip.json",
-    "https://ipinfo.io/json",
-    "https://httpbin.org/ip",
-]
+IP_ADDRESS_URL = ["https://checkip.amazonaws.com", "https://api.ipify.org?format=json", "https://api.my-ip.io/v2/ip.json", "https://ipinfo.io/json", "https://httpbin.org/ip"]
 CHECK_POSTS_IN_HOURS_RANGE = False
 HOURS_VERBOSE = False
 MIN_H1 = 0
@@ -4852,47 +4840,99 @@ def interruptible_sleep(seconds, stop_event=None):
     return stop_event.wait(seconds)
 
 
-# Fetches the current outbound IP via IP_ADDRESS_URL, tolerating JSON and plain-text responses.
+# Returns a validated ordered list of configured IP lookup endpoints
+def normalize_ip_address_urls(value=None) -> list[str]:
+    configured = IP_ADDRESS_URL if value is None else value
+    if isinstance(configured, str):
+        candidates = [configured]
+    elif isinstance(configured, list):
+        candidates = configured
+    else:
+        raise ValueError("IP_ADDRESS_URL must be a complete HTTP or HTTPS URL or a list of URLs")
+    if not candidates:
+        raise ValueError("IP_ADDRESS_URL must contain at least one URL")
+
+    urls = []
+    for index, candidate in enumerate(candidates, start=1):
+        if not isinstance(candidate, str) or not candidate.strip():
+            raise ValueError(f"IP_ADDRESS_URL entry {index} must be a non-empty URL string")
+        url = candidate.strip()
+        parsed = urlsplit(url)
+        if parsed.scheme.lower() not in ("http", "https") or not parsed.hostname:
+            raise ValueError(f"IP_ADDRESS_URL entry {index} must be a complete HTTP or HTTPS URL")
+        if parsed.username or parsed.password:
+            raise ValueError(f"IP_ADDRESS_URL entry {index} must not contain embedded credentials")
+        urls.append(url)
+    return urls
+
+
+# Extracts and validates an IPv4 or IPv6 address from one lookup response
+def _extract_ip_address_response(ip_response) -> str:
+    try:
+        data = ip_response.json()
+    except ValueError:
+        data = None
+
+    candidates = []
+    if isinstance(data, dict):
+        for key in ("origin", "ip", "ip_addr", "address", "query"):
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                candidates.append(value)
+    elif isinstance(data, str) and data.strip():
+        candidates.append(data)
+    else:
+        text = (ip_response.text or "").strip()
+        if text:
+            candidates.append(text.splitlines()[0])
+
+    for candidate in candidates:
+        normalized = candidate.strip().split(",")[0].strip()
+        try:
+            return str(ipaddress.ip_address(normalized))
+        except ValueError:
+            continue
+    raise ValueError("response did not contain a valid IPv4 or IPv6 address")
+
+
+# Fetches the current outbound IP by trying every configured endpoint before each long retry
 def get_ip_address(max_retries=3, timeout=10, retry_delay=5, long_retry=120, long_retry_attempts=3, stop_event=None):
-    urls = IP_ADDRESS_URL if isinstance(IP_ADDRESS_URL, list) else [IP_ADDRESS_URL]
-    if isinstance(urls, list) and len(urls) > long_retry_attempts:
-        long_retry_attemps = len(urls)
+    try:
+        urls = normalize_ip_address_urls()
+        if not isinstance(max_retries, int) or max_retries < 1:
+            raise ValueError("max_retries must be at least 1")
+        if not isinstance(long_retry_attempts, int) or long_retry_attempts < 1:
+            raise ValueError("long_retry_attempts must be at least 1")
+    except ValueError as exc:
+        debug_print(f"get_ip_address configuration error: {exc}")
+        return f"(unavailable: {format_error_message(exc)})"
 
     last_err = None
-    site_index = 0
+    attempts_per_cycle = max(max_retries, len(urls))
     for long_attempt in range(1, long_retry_attempts + 1):
-        for attempt in range(1, max_retries + 1):
+        for attempt_index in range(attempts_per_cycle):
             if stop_event is not None and stop_event.is_set():
                 return f"(unavailable: {format_error_message(last_err) if last_err else 'stopped'})"
-            url = urls[site_index % len(urls)]
+            url = urls[attempt_index % len(urls)]
             try:
                 ip_response = req.get(url, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
                 ip_response.raise_for_status()
-                try:
-                    data = ip_response.json()
-                except ValueError:
-                    data = None
-                if isinstance(data, dict):
-                    for key in ('origin', 'ip', 'ip_addr', 'address', 'query'):
-                        val = data.get(key)
-                        if isinstance(val, str) and val.strip():
-                            return val.strip().split(',')[0].strip()
-                text = (ip_response.text or "").strip()
-                if text:
-                    return text.splitlines()[0].strip()
-                raise ValueError(f"empty response body from {url}")
-            except Exception as e:
-                last_err = e
-                site_index += 1  # rotate on any failure
-                debug_print(f"error during get_ip_address() from {url}")
-                if attempt < max_retries and interruptible_sleep(retry_delay, stop_event):
-                    return f"(unavailable: {format_error_message(last_err)})"
+                return _extract_ip_address_response(ip_response)
+            except Exception as exc:
+                last_err = exc
+                debug_print(f"get_ip_address endpoint failed at {mask_url_credentials(url)}: {format_error_message(exc)}")
+
+            next_attempt = attempt_index + 1
+            completed_endpoint_pass = next_attempt % len(urls) == 0
+            if next_attempt < attempts_per_cycle and completed_endpoint_pass and interruptible_sleep(retry_delay, stop_event):
+                return f"(unavailable: {format_error_message(last_err)})"
+
         if long_attempt < long_retry_attempts:
-            debug_print(f"get_ip_address: all {max_retries} attempts failed in loop {long_attempt}/{long_retry_attempts}, retrying in {long_retry} seconds: {last_err}")
+            debug_print(f"get_ip_address: all {attempts_per_cycle} endpoint attempts failed in cycle {long_attempt}/{long_retry_attempts}, retrying in {long_retry} seconds: {last_err}")
             if interruptible_sleep(long_retry, stop_event):
                 return f"(unavailable: {format_error_message(last_err) if last_err else 'stopped'})"
         else:
-            debug_print(f"get_ip_address failed after {long_retry_attempts} loops of {max_retries} attempts: {last_err}")
+            debug_print(f"get_ip_address failed after {long_retry_attempts} cycles of {attempts_per_cycle} endpoint attempts: {last_err}")
     return f"(unavailable: {format_error_message(last_err) if last_err else 'unknown error'})"
 
 
