@@ -154,6 +154,21 @@ class TestRunDoctor:
         assert calls == [[]]
         clear_mock.assert_called_once_with(False)
 
+    # Doctor receives the autodetected provider after runtime options are applied
+    def test_cli_doctor_autodetects_ntfy_provider(self, im_module, monkeypatch):
+        providers = []
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--doctor", "--webhook-url", "https://ntfy.sh/private-topic", "--no-color"])
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets: providers.append(im_module.WEBHOOK_PROVIDER) or 0)
+
+        with pytest.raises(SystemExit) as exc:
+            im_module.run_main()
+
+        assert exc.value.code == 0
+        assert providers == ["ntfy"]
+
     def test_cli_doctor_success_prints_monitoring_command(self, im_module, monkeypatch, capsys):
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--env-file", "none", "--no-color"])
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
