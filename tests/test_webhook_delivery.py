@@ -33,6 +33,12 @@ class _FakeResponse:
         return self.json_payload
 
 
+@pytest.mark.parametrize("url,expected", [("https://discord.com/api/webhooks/123/token", "discord"), ("https://canary.discord.com/api/v10/webhooks/123/token", "discord"), ("https://ntfy.sh/private-topic", "ntfy"), ("https://ntfy.example.test/private-topic", ""), ("https://example.test/custom-hook", "")])
+# Verifies distinctive Discord and public ntfy URLs select the proper payload provider
+def test_webhook_provider_detection(im_module, url, expected):
+    assert im_module.detect_webhook_provider(url) == expected
+
+
 class TestSendWebhook:
     # A successful JSON webhook call formats payload, headers, fields and privacy substitutions
     def test_json_payload_is_sanitized_and_posted(self, im_module, monkeypatch):
@@ -154,6 +160,21 @@ class TestSendWebhook:
         assert kwargs["params"] == {"title": "Instagram title za\u017c\u00f3\u0142\u0107"}
         assert kwargs["headers"]["Content-Type"] == "text/plain; charset=utf-8"
         assert "json" not in kwargs
+
+    # A known ntfy URL corrects a stale configured provider and sends native text
+    def test_runtime_provider_detection_corrects_config_mismatch(self, im_module, monkeypatch, capsys):
+        calls = []
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.sh/private-topic")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse(200))
+
+        assert im_module.apply_webhook_provider_autodetection() == "ntfy"
+        assert "Using ntfy" in capsys.readouterr().out
+        assert im_module.send_webhook("Instagram title", "Native body") == 0
+        assert calls[0][1]["data"] == b"Native body"
+        assert "json" not in calls[0][1]
 
     # Static custom headers are copied to native ntfy requests
     def test_ntfy_custom_headers_are_preserved(self, im_module, monkeypatch):
@@ -317,7 +338,9 @@ def test_set_webhook_url_persists_privately(im_module, monkeypatch, capsys):
         result = im_module.run_set_webhook_url(env_file=env_path, interactive=True, getpass_func=lambda prompt: webhook_url)
 
         assert result == str(env_path.resolve())
-        assert dotenv_values(env_path, interpolate=False)["WEBHOOK_URL"] == webhook_url
+        dotenv = dotenv_values(env_path, interpolate=False)
+        assert dotenv["WEBHOOK_URL"] == webhook_url
+        assert "WEBHOOK_PROVIDER" not in dotenv
         assert webhook_url not in capsys.readouterr().out
 
 
@@ -366,6 +389,7 @@ def test_setup_wizard_persists_ntfy_secrets_privately(im_module, monkeypatch, ca
         assert token not in config
         assert dotenv["WEBHOOK_URL"] == topic_url
         assert dotenv["NTFY_ACCESS_TOKEN"] == token
+        assert "WEBHOOK_PROVIDER" not in dotenv
         output = capsys.readouterr().out
         assert topic_name not in output
         assert topic_url not in output
