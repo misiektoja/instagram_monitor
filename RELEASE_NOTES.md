@@ -1,19 +1,19 @@
 # instagram_monitor release notes
 
+This is a high-level summary of the most important changes.
+
 # Changes in 3.8 (TBD)
 
-Version **3.8** strengthens Discord and ntfy delivery while making private webhook setup consistent with Spotify Monitor.
+Version **3.8** strengthens **Discord and ntfy webhook delivery**, adds safer **private URL setup** and brings better notification controls.
 
 **Features and improvements**:
 
-- **NEW:** Added **`--set-webhook-url`** to validate and save a complete HTTPS Discord or ntfy destination through a hidden prompt without exposing it in terminal output
-- **IMPROVE:** Required complete HTTPS webhook and avatar URLs with a path and no embedded credentials while preserving separate HTTP and credential support for proxy URLs
-- **IMPROVE:** Isolated webhook requests from Instagram transport behavior, limited delivery to two bounded attempts, accepted every HTTP 2xx response, honored capped HTTP 429 delays and retried HTTP 5xx failures once
-- **IMPROVE:** Added native ntfy local-image attachments with a 5 MiB limit and automatic text-only fallback when image preparation or upload fails
-- **IMPROVE:** Rejected unsafe templates, avatar URLs, transforms and expanded headers before delivery then forced Discord mention suppression for every dictionary payload
-- **IMPROVE:** Made `--webhook-status`, `--webhook-followers` and `--webhook-errors` enable the webhook master switch for the current run
-- **IMPROVE:** Split the startup notification summary into separate **email** and **webhook** rows then reused the same compact channel rollups in concise, verbose and logged views
-- **IMPROVE:** Added automatic webhook provider correction for standard Discord and `ntfy.sh` URLs across CLI, Doctor and Web Dashboard flows
+- **NEW:** Added private **webhook URL setup** through `--set-webhook-url` with hidden entry and complete HTTPS destination validation
+- **IMPROVE:** Added stricter **webhook request validation** for destinations, avatars, templates, transforms and expanded headers plus Discord mention suppression
+- **IMPROVE:** Added **bounded webhook delivery** with isolated requests, capped rate-limit delays, one retry for temporary failures and automatic provider correction across CLI, Doctor and Web Dashboard flows
+- **IMPROVE:** Added **native ntfy image attachments** with a 5 MiB limit and automatic text-only fallback when image preparation or upload fails
+- **IMPROVE:** Made the **status, follower and error webhook controls** enable webhook delivery for the current run
+- **IMPROVE:** Split the startup notification summary into compact **email and webhook rows** across concise, verbose and logged views
 
 **Bug fixes**:
 
