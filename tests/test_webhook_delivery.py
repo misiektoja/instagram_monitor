@@ -274,12 +274,14 @@ class TestSendWebhook:
             assert calls[1][1]["data"] == b"Body"
             assert calls[1][1]["params"] == {"title": "Title"}
 
-    # Ntfy message truncation respects its UTF-8 byte limit without splitting a character
-    def test_ntfy_message_is_bounded_by_utf8_bytes(self, im_module):
-        title, message = im_module.build_ntfy_webhook_message("Title", ("a" * (im_module.NTFY_MESSAGE_LIMIT_BYTES - 1)) + "\U0001f3a5")
+    # Long ntfy messages stay below the server attachment boundary with a visible truncation marker
+    def test_ntfy_message_stays_below_attachment_boundary(self, im_module):
+        title, message = im_module.build_ntfy_webhook_message("Title", ("a" * im_module.NTFY_MESSAGE_LIMIT_BYTES) + "\U0001f3a5")
         assert title == "Title"
-        assert len(message.encode("utf-8")) == im_module.NTFY_MESSAGE_LIMIT_BYTES - 1
-        assert not message.endswith("\U0001f3a5")
+        assert message.endswith(im_module.NTFY_TRUNCATION_SUFFIX)
+        assert len(message.encode("utf-8")) <= im_module.NTFY_MESSAGE_LIMIT_BYTES
+        assert len(message.encode("utf-8")) < 4096
+        assert "\ufffd" not in message
 
     # An unsupported provider fails before any webhook request is attempted
     def test_invalid_webhook_provider_is_rejected(self, im_module, monkeypatch):
