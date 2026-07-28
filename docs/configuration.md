@@ -175,10 +175,10 @@ Every supported browser can have several profiles with separate cookies. Use one
 
 - **Pick by name** with `--browser-profile`. Use the Firefox profile name (e.g. `default-release`) or the Chromium profile directory (e.g. `Default`, `Profile 1`):
 
-  ```sh
-  instagram_monitor --import-browser-session --browser chrome --browser-profile "Profile 1"
-  instagram_monitor --import-browser-session --browser firefox --browser-profile "default-release"
-  ```
+    ```sh
+    instagram_monitor --import-browser-session --browser chrome --browser-profile "Profile 1"
+    instagram_monitor --import-browser-session --browser firefox --browser-profile "default-release"
+    ```
 
 - **Let it prompt you.** If you do not pass `--browser-profile` and several profiles exist, the tool lists them so you can choose.
 - **On the [Web Dashboard](view-modes.md#web-dashboard-mode)**, pick the browser, click **Import** and select a profile if prompted.
