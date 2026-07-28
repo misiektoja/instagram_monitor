@@ -4914,26 +4914,24 @@ def set_instaloader_proxies(instabot):
     instabot.context._session.verify = get_proxies_ssl()
 
 
-# Reapplies proxy settings on the bot when the web dashboard has bumped PROXY_REFRESH_VERSION since last check
+# Reapplies proxy settings on the bot when runtime configuration has bumped PROXY_REFRESH_VERSION
 def refresh_proxy_if_needed(bot, user):
     global PROXY_REFRESH_VERSION
 
-    # proxies can only change during runtime if web dashboard is used to make a settings change
-    if WEB_DASHBOARD_ENABLED:
-        with PROXY_REFRESH_LOCK:
-            current_version = PROXY_REFRESH_VERSION
+    with PROXY_REFRESH_LOCK:
+        current_version = PROXY_REFRESH_VERSION
 
-        if getattr(_thread_local, 'last_proxy_version', 0) != current_version:
-            _thread_local.last_proxy_version = current_version
+    if getattr(_thread_local, 'last_proxy_version', 0) != current_version:
+        _thread_local.last_proxy_version = current_version
 
-            try:
-                print(f"* Proxy configuration refreshed for user {user} due to web dashboard settings change (version {current_version})")
-                log_activity(f"Proxy configuration refreshed via web dashboard (version {current_version})", user=user)
-                set_instaloader_proxies(bot)
-            except Exception as e:
-                error_msg = format_error_message(e)
-                print(f"* Error refreshing proxies for {user}: {error_msg}")
-                log_activity(f"Proxy refresh failed: {error_msg}", user=user, level='error')
+        try:
+            print(f"* Proxy configuration refreshed for user {user} after runtime settings change (version {current_version})")
+            log_activity(f"Proxy configuration refreshed after runtime settings change (version {current_version})", user=user)
+            set_instaloader_proxies(bot)
+        except Exception as e:
+            error_msg = format_error_message(e)
+            print(f"* Error refreshing proxies for {user}: {error_msg}")
+            log_activity(f"Proxy refresh failed: {error_msg}", user=user, level='error')
 
 
 TPrivacyContent = TypeVar("TPrivacyContent")
@@ -5394,6 +5392,7 @@ def decrease_check_signal_handler(sig, frame):
 
 # Signal handler for SIGHUP allowing to reload secrets from .env
 def reload_secrets_signal_handler(sig, frame):
+    global PROXY_REFRESH_VERSION, WEBHOOK_PROVIDER
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
 
@@ -5416,13 +5415,24 @@ def reload_secrets_signal_handler(sig, frame):
             env_path = None
             print("* python-dotenv not installed, skipping env-var reload")
 
+    proxy_url_changed = False
+    webhook_url_changed = False
     if env_path:
         for secret in SECRET_KEYS:
             old_val = globals().get(secret)
             val = os.getenv(secret)
             if val is not None and val != old_val:
                 globals()[secret] = val
+                if secret == "PROXY_URL":
+                    proxy_url_changed = True
+                if secret == "WEBHOOK_URL":
+                    webhook_url_changed = True
                 print(f"* Reloaded {secret} from {env_path}")
+    if proxy_url_changed:
+        PROXY_REFRESH_VERSION += 1
+        print(f"* Scheduled proxy session refresh (version {PROXY_REFRESH_VERSION})")
+    if webhook_url_changed:
+        apply_webhook_provider_autodetection()
 
     print_cur_ts()
 
