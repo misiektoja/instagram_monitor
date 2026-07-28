@@ -4,7 +4,7 @@ import pytest
 
 
 class TestStartupNotificationSummary:
-    # Verifies concise startup rows keep email and webhook categories independent
+    # Verifies every startup view shares independent email and webhook category rows
     @pytest.mark.parametrize("email_flags,webhook_flags,webhook_enabled,expected_email,expected_webhook", [((), (), False, "Off", "Off"), (("STATUS_NOTIFICATION", "FOLLOWERS_NOTIFICATION", "ERROR_NOTIFICATION"), (), False, "On (status/profile changes, followers, errors)", "Off"), ((), ("WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_FOLLOWERS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"), True, "Off", "On (status/profile changes, followers, errors)"), (("STATUS_NOTIFICATION", "ERROR_NOTIFICATION"), ("WEBHOOK_FOLLOWERS_NOTIFICATION",), True, "On (status/profile changes, errors)", "On (followers)"), ((), ("WEBHOOK_ERROR_NOTIFICATION",), False, "Off", "Off")])
     def test_channel_rows(self, im_module, monkeypatch, email_flags, webhook_flags, webhook_enabled, expected_email, expected_webhook):
         all_flags = ("STATUS_NOTIFICATION", "FOLLOWERS_NOTIFICATION", "ERROR_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_FOLLOWERS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
@@ -13,7 +13,7 @@ class TestStartupNotificationSummary:
         for name in email_flags + webhook_flags:
             monkeypatch.setattr(im_module, name, True)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", webhook_enabled)
-        assert im_module._startup_notification_summary_rows() == [(f"* Notifications (email):\t\t{expected_email}", True, False), (f"* Notifications (webhook):\t\t{expected_webhook}", True, False)]
+        assert im_module._startup_notification_summary_rows() == [(f"* Notifications (email):\t\t{expected_email}", True, True), (f"* Notifications (webhook):\t\t{expected_webhook}", True, True)]
 
 
 class TestValidateWebhookUrl:
