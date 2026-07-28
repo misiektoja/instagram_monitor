@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.7.1
+v3.8
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -20,7 +20,7 @@ flask (optional - for web dashboard)
 rich (optional - for terminal dashboard)
 """
 
-VERSION = "3.7.1"
+VERSION = "3.8"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -101,7 +101,7 @@ WEBHOOK_PROVIDER = "discord"
 # Recommended: save it through a hidden prompt with instagram_monitor --set-webhook-url
 # For one run, --webhook-url overrides it but may expose the URL in shell history or process listings
 # Prefer an environment variable or dotenv file instead of storing this private URL here
-WEBHOOK_URL = ""
+WEBHOOK_URL = "your_webhook_url"
 
 # Discord display name (leave empty to use the webhook default)
 WEBHOOK_USERNAME = "Instagram Monitor"
@@ -596,7 +596,7 @@ WEBHOOK_FIELD_NAME_LIMIT = 256
 WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
 WEBHOOK_EMBED_TITLE_LIMIT = 256
 WEBHOOK_MAX_FIELDS = 25
-NTFY_MESSAGE_LIMIT_BYTES = 4096
+NTFY_MESSAGE_LIMIT_BYTES = 4095
 
 # ----------------------------
 # Terminal Appearance
@@ -1007,7 +1007,7 @@ WEBHOOK_ENABLED = False
 WEBHOOK_URL = ""
 WEBHOOK_PROVIDER = "discord"
 WEBHOOK_EMBED_TITLE_LIMIT = 256
-NTFY_MESSAGE_LIMIT_BYTES = 4096
+NTFY_MESSAGE_LIMIT_BYTES = 4095
 WEBHOOK_USERNAME = "Instagram Monitor"
 WEBHOOK_AVATAR_URL = ""
 WEBHOOK_HEADERS = {}
@@ -1677,6 +1677,7 @@ WEBHOOK_MAX_ATTEMPTS = 2
 WEBHOOK_MAX_RETRY_AFTER_SECONDS = 5.0
 WEBHOOK_FALLBACK_RETRY_SECONDS = 1.0
 WEBHOOK_TIMEOUT_SECONDS = 10
+NTFY_TRUNCATION_SUFFIX = "\n\n[Notification truncated to fit ntfy's 4 KB message limit]"
 NTFY_IMAGE_UPLOAD_LIMIT_BYTES = 5 * 1024 * 1024
 
 try:
@@ -4525,12 +4526,15 @@ def apply_webhook_transforms(payload: dict) -> dict:
     return transformed
 
 
-# Truncates text to a UTF-8 byte limit without returning a partial character
-def truncate_utf8_bytes(text: str, max_bytes: int) -> str:
+# Truncates text to a UTF-8 byte limit with an optional suffix and no partial character
+def truncate_utf8_bytes(text: str, max_bytes: int, suffix: str = "") -> str:
     encoded = text.encode("utf-8")
     if len(encoded) <= max_bytes:
         return text
-    return encoded[:max_bytes].decode("utf-8", errors="ignore")
+    encoded_suffix = suffix.encode("utf-8")
+    if len(encoded_suffix) >= max_bytes:
+        return encoded_suffix[:max_bytes].decode("utf-8", errors="ignore")
+    return encoded[:max_bytes - len(encoded_suffix)].decode("utf-8", errors="ignore") + suffix
 
 
 # Builds one bounded ntfy title and message pair from the shared webhook content
@@ -4541,7 +4545,7 @@ def build_ntfy_webhook_message(title: str, description: str, fields=None, image_
         message_parts.extend(f"{field['name']}: {field['value']}" for field in fields)
     if image_url:
         message_parts.append(f"Image: {image_url}")
-    safe_message = truncate_utf8_bytes("\n\n".join(message_parts), NTFY_MESSAGE_LIMIT_BYTES)
+    safe_message = truncate_utf8_bytes("\n\n".join(message_parts), NTFY_MESSAGE_LIMIT_BYTES, NTFY_TRUNCATION_SUFFIX)
     return safe_title, safe_message
 
 
