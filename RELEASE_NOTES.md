@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.8 (TBD)
+# Changes in 3.8 (30 Jul 2026)
 
 Version **3.8** strengthens **Discord and ntfy webhook delivery**, adds safer **private URL setup**, improves **proxy IP detection** and brings better notification controls.
 
