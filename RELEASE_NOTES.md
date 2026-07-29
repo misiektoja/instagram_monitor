@@ -8,13 +8,13 @@ Version **3.8** strengthens **Discord and ntfy webhook delivery**, adds safer **
 
 **Features and improvements**:
 
+- **IMPROVE:** Added ordered **proxy IP lookup fallback endpoints** with backward-compatible single-URL configuration, IPv4 and IPv6 validation plus documented privacy controls (thanks [@tomballgithub](https://github.com/tomballgithub), from [#113](https://github.com/misiektoja/instagram_monitor/pull/113))
 - **NEW:** Added private **webhook URL setup** through `--set-webhook-url` with hidden entry and complete HTTPS destination validation
 - **IMPROVE:** Added stricter **webhook request validation** for destinations, avatars, templates, transforms and expanded headers plus Discord mention suppression
 - **IMPROVE:** Added **bounded webhook delivery** with isolated requests, capped rate-limit delays, one retry for temporary failures and automatic provider correction across CLI, Doctor and Web Dashboard flows
 - **IMPROVE:** Added **native ntfy image attachments** with a 5 MiB limit and automatic text-only fallback when image preparation or upload fails
 - **IMPROVE:** Made the **status, follower and error webhook controls** enable webhook delivery for the current run
 - **IMPROVE:** Split the startup notification summary into compact **email and webhook rows** across concise, verbose and logged views
-- **IMPROVE:** Added ordered **proxy IP lookup fallback endpoints** with backward-compatible single-URL configuration, IPv4 and IPv6 validation plus documented privacy controls (thanks [@tomballgithub](https://github.com/tomballgithub), from [#113](https://github.com/misiektoja/instagram_monitor/pull/113))
 
 **Bug fixes**:
 
