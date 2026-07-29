@@ -1635,7 +1635,7 @@
 <p><a id="webhook-notifications"></a></p>
 <h2 id="webhook-notifications">Webhook Notifications<a class="headerlink" href="#webhook-notifications" title="Permanent link">&para;</a></h2>
 <p>Instagram Monitor can send event notifications to <strong>Discord</strong> or <strong>ntfy</strong>. A webhook is a URL that accepts a message from another application. Webhook settings do not affect email settings.</p>
-<p><code>WEBHOOK_PROVIDER</code> tells Instagram Monitor which message format the URL expects. The default is <code>"discord"</code>.</p>
+<p><code>WEBHOOK_PROVIDER</code> tells Instagram Monitor which message format the URL expects. The default is <code>"discord"</code>. Standard Discord and public <code>ntfy.sh</code> URLs automatically select the matching format if this configured value is stale. Self-hosted ntfy and compatible endpoints still use the configured provider. An explicit <code>--webhook-provider</code> override always wins.</p>
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_discord.png" alt="instagram_monitor_discord_screenshot" width="80%"/>
 </p>
@@ -1650,15 +1650,15 @@
 <li><strong>Create Webhook</strong>: Go to <strong>Integrations</strong> in the left menu -&gt; <strong>Webhooks</strong> -&gt; <strong>New Webhook</strong>.</li>
 <li><strong>Copy URL</strong>: Click on the new webhook (often named "Spidey Bot", you can rename it) and click <strong>Copy Webhook URL</strong>.</li>
 </ol>
-<p>Keep <code>WEBHOOK_PROVIDER = "discord"</code> in <code>instagram_monitor.conf</code>.</p>
+<p>Keep <code>WEBHOOK_PROVIDER = "discord"</code> in <code>instagram_monitor.conf</code>. Standard Discord webhook URLs are also recognized automatically.</p>
 <h4 id="ntfy">ntfy<a class="headerlink" href="#ntfy" title="Permanent link">&para;</a></h4>
 <p>For ntfy.sh or a self-hosted ntfy server:</p>
 <ol>
 <li>Choose a hard-to-guess topic such as <code>instagram-monitor-long-random-value</code>.</li>
-<li>In the setup wizard, enter either an ntfy.sh topic name or a complete topic URL such as <code>https://ntfy.sh/instagram-monitor-long-random-value</code>. The wizard expands a bare topic name to an ntfy.sh URL. For a self-hosted server, the Web Dashboard or manual configuration, enter the complete HTTP or HTTPS URL.</li>
-<li>Set <code>WEBHOOK_PROVIDER = "ntfy"</code> in <code>instagram_monitor.conf</code>.</li>
+<li>In the setup wizard, enter either an ntfy.sh topic name or a complete topic URL such as <code>https://ntfy.sh/instagram-monitor-long-random-value</code>. The wizard expands a bare topic name to an ntfy.sh URL. For a self-hosted server, the Web Dashboard or manual configuration, enter the complete HTTPS topic URL.</li>
+<li>Public <code>ntfy.sh</code> URLs are recognized automatically. Set <code>WEBHOOK_PROVIDER = "ntfy"</code> in <code>instagram_monitor.conf</code> for a self-hosted ntfy server.</li>
 </ol>
-<p>Instagram Monitor sends the alert subject as the ntfy title. The alert text and event details become the message. Existing query parameters in the topic URL are preserved, including the ntfy <a href="https://docs.ntfy.sh/publish/#authentication"><code>auth</code> query parameter</a>.</p>
+<p>Instagram Monitor sends the alert subject as the ntfy title. The alert text and event details become the message. Existing query parameters in the topic URL are preserved, including the ntfy <a href="https://docs.ntfy.sh/publish/#authentication"><code>auth</code> query parameter</a>. Long ntfy messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments.</p>
 <p>For a protected topic, the setup wizard asks for the ntfy access token in a hidden prompt and stores it in <code>.env</code>. For manual setup, add:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">&quot;tk_your_ntfy_access_token&quot;</span>
 </code></pre></div>
@@ -1668,7 +1668,8 @@
 <a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>    <span class="s2">&quot;Authorization&quot;</span><span class="p">:</span> <span class="s2">&quot;Basic your_base64_credentials&quot;</span><span class="p">,</span>
 <a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a><span class="p">}</span>
 </code></pre></div>
-<p>For ntfy, Instagram Monitor sets the required plain-text <code>Content-Type</code>. Store Bearer tokens in <code>NTFY_ACCESS_TOKEN</code> inside <code>.env</code>. A token in the regular config is easier to expose or commit accidentally. The tool validates header names and values before sending a request.</p>
+<p>Header values support the same placeholders as <code>WEBHOOK_TEMPLATE</code>. Instagram Monitor validates headers before and after placeholder expansion so formatted values cannot introduce invalid names, non-string values or line breaks. For ntfy, Instagram Monitor sets the required plain-text <code>Content-Type</code>. Store Bearer tokens in <code>NTFY_ACCESS_TOKEN</code> inside <code>.env</code>. A token in the regular config is easier to expose or commit accidentally.</p>
+<p>When an alert includes a downloaded local image, Instagram Monitor uploads it as a native ntfy attachment up to 5 MiB. If image preparation or upload fails, it sends the alert as text so an image problem cannot suppress the notification. Existing remote image URLs remain links in the message.</p>
 <p>Anyone who knows an unprotected ntfy.sh topic name can read or publish to it. Reserve and protect the topic through an ntfy account when possible. Otherwise use a long random name, keep it private and do not copy the example name above.</p>
 <p><a id="2-enable-in-the-tool"></a></p>
 <h3 id="2-enable-in-the-tool">2. Enable in the Tool<a class="headerlink" href="#2-enable-in-the-tool" title="Permanent link">&para;</a></h3>
@@ -1676,19 +1677,24 @@
 <ul>
 <li>set <code>WEBHOOK_ENABLED = True</code>, select <code>WEBHOOK_PROVIDER</code> and put <code>WEBHOOK_URL</code> in <code>.env</code></li>
 <li>use an <a href="../configuration/#storing-secrets">environment variable</a> for <code>WEBHOOK_URL</code></li>
-<li>pass <code>--webhook-url</code>. If the URL is already saved, pass <code>--webhook</code></li>
+<li>save it through the hidden <code>--set-webhook-url</code> prompt</li>
+<li>pass <code>--webhook-url</code> for one run. If the URL is already saved, pass <code>--webhook</code></li>
 <li>enable it through the <strong>Settings</strong> page in the Web Dashboard</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="c1"># Enable Discord with URL</span>
-<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--webhook-provider<span class="w"> </span>discord<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">&quot;https://discord.com/api/webhooks/...&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="c1"># Save a private destination without displaying it</span>
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a>instagram_monitor<span class="w"> </span>--set-webhook-url
 <a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a>
-<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a><span class="c1"># Enable ntfy with a topic URL</span>
-<a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--webhook-provider<span class="w"> </span>ntfy<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">&quot;https://ntfy.sh/your-private-topic&quot;</span>
+<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a><span class="c1"># Enable Discord with URL</span>
+<a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--webhook-provider<span class="w"> </span>discord<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">&quot;https://discord.com/api/webhooks/...&quot;</span>
 <a id="__codelineno-26-6" name="__codelineno-26-6" href="#__codelineno-26-6"></a>
-<a id="__codelineno-26-7" name="__codelineno-26-7" href="#__codelineno-26-7"></a><span class="c1"># Enable or disable a URL that is already saved</span>
-<a id="__codelineno-26-8" name="__codelineno-26-8" href="#__codelineno-26-8"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--webhook
-<a id="__codelineno-26-9" name="__codelineno-26-9" href="#__codelineno-26-9"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--no-webhook
+<a id="__codelineno-26-7" name="__codelineno-26-7" href="#__codelineno-26-7"></a><span class="c1"># Enable ntfy with a topic URL</span>
+<a id="__codelineno-26-8" name="__codelineno-26-8" href="#__codelineno-26-8"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--webhook-provider<span class="w"> </span>ntfy<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">&quot;https://ntfy.sh/your-private-topic&quot;</span>
+<a id="__codelineno-26-9" name="__codelineno-26-9" href="#__codelineno-26-9"></a>
+<a id="__codelineno-26-10" name="__codelineno-26-10" href="#__codelineno-26-10"></a><span class="c1"># Enable or disable a URL that is already saved</span>
+<a id="__codelineno-26-11" name="__codelineno-26-11" href="#__codelineno-26-11"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--webhook
+<a id="__codelineno-26-12" name="__codelineno-26-12" href="#__codelineno-26-12"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--no-webhook
 </code></pre></div>
+<p>Webhook and avatar URLs must be complete HTTPS links with a path and no embedded credentials. Known Discord and <code>ntfy.sh</code> destinations correct a stale configured provider at runtime. A URL passed through <code>--webhook-url</code> may remain visible in shell history or process listings, so prefer <code>--set-webhook-url</code> for normal setup.</p>
 <p><a id="3-test-your-settings"></a></p>
 <h3 id="3-test-your-settings">3. Test Your Settings<a class="headerlink" href="#3-test-your-settings" title="Permanent link">&para;</a></h3>
 <p>Send a test notification before starting monitoring:</p>
@@ -1700,7 +1706,7 @@
 </code></pre></div>
 <p><a id="4-advanced-configuration"></a></p>
 <h3 id="4-advanced-configuration">4. Advanced Configuration<a class="headerlink" href="#4-advanced-configuration" title="Permanent link">&para;</a></h3>
-<p>By default, all webhook notification types (status, followers, errors) are <strong>disabled</strong>. You must explicitly enable what you want the tool to send:</p>
+<p>By default, all webhook notification types (status, followers, errors) are <strong>disabled</strong>. You must explicitly enable what you want the tool to send. Enabling an event flag also enables the webhook master switch:</p>
 <ul>
 <li>Use <code>--webhook-status</code> to toggle status notifications (new posts, reels, stories, bio, visibility, profile pic)</li>
 <li>Use <code>--webhook-followers</code> to toggle follower/following change notifications</li>
@@ -1720,6 +1726,9 @@
 <a id="__codelineno-29-7" name="__codelineno-29-7" href="#__codelineno-29-7"></a><span class="na">WEBHOOK_FOLLOWERS_NOTIFICATION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">False</span>
 <a id="__codelineno-29-8" name="__codelineno-29-8" href="#__codelineno-29-8"></a><span class="na">WEBHOOK_ERROR_NOTIFICATION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">False</span>
 </code></pre></div></p>
+<p><code>WEBHOOK_USERNAME</code> and <code>WEBHOOK_AVATAR_URL</code> customize Discord-format messages. <code>WEBHOOK_TEMPLATE</code> supports <code>title</code>, <code>description</code>, <code>version</code>, <code>image_url</code>, <code>fields</code>, <code>fields_str</code>, <code>color</code>, <code>timestamp</code>, <code>username</code> and <code>avatar_url</code> placeholders. A dictionary or list is sent as JSON while a string is sent as the raw body for compatible advanced integrations.</p>
+<p><code>WEBHOOK_TRANSFORMS</code> applies configured string methods before the template and headers are rendered. Invalid templates, avatar URLs, transforms or expanded headers fail before any request is attempted. Dictionary payloads always replace <code>allowed_mentions</code> with <code>{"parse": []}</code> so notification text cannot trigger <code>@everyone</code>, <code>@here</code> or user mentions.</p>
+<p>Webhook delivery uses an isolated session with a 10-second timeout and at most two attempts. It accepts every HTTP 2xx response, retries HTTP 429 according to a server delay capped at 5 seconds and retries HTTP 5xx once. Other HTTP 4xx responses fail immediately.</p>
 <p><a id="follower-churn-detection"></a></p>
 <h2 id="follower-churn-detection">Follower Churn Detection<a class="headerlink" href="#follower-churn-detection" title="Permanent link">&para;</a></h2>
 <p>Follower churn detection downloads the complete follower and following lists on every check. It compares usernames even when the total counts have not changed. This can detect cases where:</p>
@@ -1793,13 +1802,20 @@
 <ul>
 <li><code>PROXY_CERT_PATH</code> or <code>--proxy-cert</code> selects a local certificate used to verify the proxy connection</li>
 <li><code>PROXY_WEBHOOKS</code> or <code>--enable-proxy-webhooks</code> also sends webhook requests through the proxy. It is off by default because some proxies do not allow these requests</li>
+<li><code>IP_ADDRESS_URL</code> selects one trusted IP lookup URL or an ordered non-empty list of fallback URLs</li>
 </ul>
 <p><code>PROXY_URL</code> may contain a username and password. The tool masks it in output. Store it through an <a href="../configuration/#storing-secrets">environment variable or <code>.env</code> file</a>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="na">PROXY_ENABLED</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
 <a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a><span class="na">PROXY_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;http://user:pass@host:port&quot;</span>
 <a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a><span class="na">PROXY_CERT_PATH</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;</span>
 <a id="__codelineno-34-4" name="__codelineno-34-4" href="#__codelineno-34-4"></a><span class="na">PROXY_WEBHOOKS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">False</span>
+<a id="__codelineno-34-5" name="__codelineno-34-5" href="#__codelineno-34-5"></a><span class="na">IP_ADDRESS_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[</span>
+<a id="__codelineno-34-6" name="__codelineno-34-6" href="#__codelineno-34-6"></a><span class="w">    </span><span class="na">&quot;https</span><span class="o">:</span><span class="s">//checkip.amazonaws.com&quot;,</span>
+<a id="__codelineno-34-7" name="__codelineno-34-7" href="#__codelineno-34-7"></a><span class="w">    </span><span class="na">&quot;https</span><span class="o">:</span><span class="s">//api.ipify.org?format=json&quot;,</span>
+<a id="__codelineno-34-8" name="__codelineno-34-8" href="#__codelineno-34-8"></a><span class="w">    </span><span class="na">&quot;https</span><span class="o">:</span><span class="s">//api.my-ip.io/v2/ip.json&quot;,</span>
+<a id="__codelineno-34-9" name="__codelineno-34-9" href="#__codelineno-34-9"></a><span class="na">]</span>
 </code></pre></div>
+<p>The proxy IP check tries each endpoint in order without pausing between different providers. It waits for the long retry delay only after the complete list fails. Only valid IPv4 or IPv6 responses are displayed. See <a href="../configuration/#proxy-ip-lookup-endpoints">Proxy IP Lookup Endpoints</a> for validation and privacy details.</p>
 <p>The Python <code>requests</code> library reads <code>HTTP_PROXY</code>, <code>HTTPS_PROXY</code> and <code>NO_PROXY</code> from the process environment even when <code>PROXY_ENABLED</code> is <code>False</code>. Check and unset those variables if you need a direct connection.</p>
 <p><a id="http-transport-backend"></a></p>
 <h2 id="http-transport-backend">HTTP Transport Backend<a class="headerlink" href="#http-transport-backend" title="Permanent link">&para;</a></h2>

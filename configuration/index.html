@@ -411,6 +411,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Configuration File">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#proxy-ip-lookup-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Proxy IP Lookup Endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -762,6 +779,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Configuration File">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#proxy-ip-lookup-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Proxy IP Lookup Endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -966,11 +1000,21 @@
 <li>Command-line options</li>
 </ol>
 <p>The <code>.env</code> and process environment layer applies only to <code>SESSION_PASSWORD</code>, <code>SMTP_PASSWORD</code>, <code>WEBHOOK_URL</code>, <code>PROXY_URL</code> and <code>NTFY_ACCESS_TOKEN</code>. For these keys, a value in the selected <code>.env</code> file replaces a value that was already exported in the shell. Use <code>--config-file PATH</code> and <code>--env-file PATH</code> if you do not want automatic file discovery.</p>
+<h3 id="proxy-ip-lookup-endpoints">Proxy IP Lookup Endpoints<a class="headerlink" href="#proxy-ip-lookup-endpoints" title="Permanent link">&para;</a></h3>
+<p>When proxy routing is enabled, Instagram Monitor checks the proxy exit address through <code>IP_ADDRESS_URL</code>. The setting accepts one complete HTTP or HTTPS URL or an ordered non-empty list:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="na">IP_ADDRESS_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span><span class="na">&quot;https</span><span class="o">:</span><span class="s">//checkip.amazonaws.com&quot;,</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="na">&quot;https</span><span class="o">:</span><span class="s">//api.ipify.org?format=json&quot;,</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="na">&quot;https</span><span class="o">:</span><span class="s">//api.my-ip.io/v2/ip.json&quot;,</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="na">]</span>
+</code></pre></div>
+<p>Each retry cycle tries every configured endpoint in order before the long retry delay. A response is accepted only when a recognized JSON field or plain-text body contains a valid IPv4 or IPv6 address. Empty lists, incomplete URLs and URLs with embedded credentials are rejected with an unavailable status instead of crashing monitoring.</p>
+<p>Each public lookup service can observe the proxy exit IP. Set one trusted endpoint or a self-hosted service if you do not want fallback requests sent to multiple providers. These lookup requests do not include Instagram session credentials.</p>
 <p>Save one or more monitoring targets through setup or set <code>TARGET_USERNAMES</code> yourself:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="na">TARGET_USERNAMES</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[&quot;target_user_1&quot;, &quot;target_user_2&quot;]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="na">TARGET_USERNAMES</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[&quot;target_user_1&quot;, &quot;target_user_2&quot;]</span>
 </code></pre></div>
 <p>Usernames written directly after the command and usernames passed through <code>--targets</code> are combined. If the command contains any targets, that combined list replaces <code>TARGET_USERNAMES</code> for that run. To use only the saved targets, run:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>instagram_monitor<span class="w"> </span>--config-file<span class="w"> </span>instagram_monitor.conf
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>instagram_monitor<span class="w"> </span>--config-file<span class="w"> </span>instagram_monitor.conf
 </code></pre></div>
 <p>You can also change most settings and generate a config file through the <a href="../view-modes/#web-dashboard-mode">Web Dashboard</a>.</p>
 <p><a id="no-login-mode-without-session-login"></a></p>
@@ -989,27 +1033,27 @@
 <p><a id="option-2-session-login-via-instaloader-better-but-can-be-detected"></a></p>
 <h3 id="option-2-session-login-via-instaloader-better-but-can-be-detected">Option 2: Session Login via Instaloader (better, but can be detected)<a class="headerlink" href="#option-2-session-login-via-instaloader-better-but-can-be-detected" title="Permanent link">&para;</a></h3>
 <p>This method uses the Instaloader command to sign in once and save the resulting session:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>instaloader<span class="w"> </span>-l<span class="w"> </span>&lt;your_insta_user&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>instaloader<span class="w"> </span>-l<span class="w"> </span>&lt;your_insta_user&gt;
 </code></pre></div>
 <p>Later runs reuse the saved session instead of sending the password again. Instagram can still detect or limit the monitoring requests.</p>
 <p>The local command above stores the session in your user profile. Docker containers have a separate file system, so create the session inside the <code>instagram_monitor_session</code> volume that later monitoring runs use:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--entrypoint<span class="w"> </span>instaloader<span class="w"> </span>instagram_monitor<span class="w"> </span>-l<span class="w"> </span>&lt;your_insta_user&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--entrypoint<span class="w"> </span>instaloader<span class="w"> </span>instagram_monitor<span class="w"> </span>-l<span class="w"> </span>&lt;your_insta_user&gt;
 </code></pre></div>
 <p>For a direct image, mount the normal session volume and override the entry point:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>--entrypoint<span class="w"> </span>instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>-l<span class="w"> </span>&lt;your_insta_user&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>--entrypoint<span class="w"> </span>instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>-l<span class="w"> </span>&lt;your_insta_user&gt;
 </code></pre></div>
 <p>For device consistency, set <code>USER_AGENT</code> to match Instaloader's Chrome user agent (see <a href="#user-agent">User Agent</a> below).</p>
 <p><a id="option-3-session-login-using-browser-cookies-recommended"></a></p>
 <h3 id="option-3-session-login-using-browser-cookies-recommended">Option 3: Session Login Using Browser Cookies (recommended)<a class="headerlink" href="#option-3-session-login-using-browser-cookies-recommended" title="Permanent link">&para;</a></h3>
 <p>This method reuses an Instagram login that already works in a supported browser. Firefox has the widest platform support. Chrome, Brave and Chromium are also supported on macOS and Linux but need an optional package.</p>
 <p>Log in to your account (<code>your_insta_user</code>) in the browser, then run:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox
 </code></pre></div>
 <p><code>--browser</code> accepts <code>firefox</code> (default), <code>chrome</code>, <code>brave</code> or <code>chromium</code>. The older <code>--import-firefox-session</code> flag still works as an alias for <code>--browser firefox</code>.</p>
 <p>You can also import through the <a href="../view-modes/#web-dashboard-mode">Web Dashboard</a>. Open the <strong>Session</strong> page, select the browser and click <strong>Import</strong>. If the browser has several profiles, select the profile that contains the Instagram login you want to use.</p>
 <p>The tool reads the cookies from the selected browser profile and saves a session in Instaloader's format. It does not change the browser profile.</p>
 <p>Profile selection works the same way for every browser (see <a href="#selecting-a-browser-profile">Selecting a browser profile</a> below). To pick a specific Firefox profile by name:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--browser-profile<span class="w"> </span><span class="s2">&quot;default-release&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--browser-profile<span class="w"> </span><span class="s2">&quot;default-release&quot;</span>
 </code></pre></div>
 <p>On Linux, Firefox profiles installed natively, through Snap or through Flatpak are discovered automatically. You can adjust the default Firefox cookie directory permanently via <code>FIREFOX_*_COOKIE</code> configuration options. The advanced <code>--cookie-file</code> option covers any other layout.</p>
 <p><a id="which-browsers-are-supported"></a></p>
@@ -1051,26 +1095,28 @@
 <p><a id="importing-from-chrome-brave-or-chromium"></a></p>
 <h4 id="importing-from-chrome-brave-or-chromium">Importing from Chrome, Brave or Chromium<a class="headerlink" href="#importing-from-chrome-brave-or-chromium" title="Permanent link">&para;</a></h4>
 <p>Chrome, Brave and Chromium encrypt their cookies. Instagram Monitor uses the optional <a href="https://github.com/n8henrie/pycookiecheat"><code>pycookiecheat</code></a> package to decrypt them on macOS and Linux. For a PyPI installation, install it with the <code>browser</code> extra:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;instagram_monitor[browser]&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;instagram_monitor[browser]&quot;</span>
 </code></pre></div>
 <p>If you run the downloaded script or installed from <code>requirements.txt</code>, install it directly instead:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;pycookiecheat&gt;=0.8&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;pycookiecheat&gt;=0.8&quot;</span>
 </code></pre></div>
 <p>Then import the session:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>chrome
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>chrome
 </code></pre></div>
 <p>On Windows, Chrome 127 and newer prevent external programs from reading these cookies through app-bound encryption. Use Firefox import instead.</p>
 <p><a id="selecting-a-browser-profile"></a></p>
 <h4 id="selecting-a-browser-profile">Selecting a browser profile<a class="headerlink" href="#selecting-a-browser-profile" title="Permanent link">&para;</a></h4>
 <p>Every supported browser can have several profiles with separate cookies. Use one of these methods:</p>
 <ul>
-<li><strong>Pick by name</strong> with <code>--browser-profile</code>. Use the Firefox profile name (e.g. <code>default-release</code>) or the Chromium profile directory (e.g. <code>Default</code>, <code>Profile 1</code>):</li>
-</ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>chrome<span class="w"> </span>--browser-profile<span class="w"> </span><span class="s2">&quot;Profile 1&quot;</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--browser-profile<span class="w"> </span><span class="s2">&quot;default-release&quot;</span>
+<li>
+<p><strong>Pick by name</strong> with <code>--browser-profile</code>. Use the Firefox profile name (e.g. <code>default-release</code>) or the Chromium profile directory (e.g. <code>Default</code>, <code>Profile 1</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>chrome<span class="w"> </span>--browser-profile<span class="w"> </span><span class="s2">&quot;Profile 1&quot;</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--browser-profile<span class="w"> </span><span class="s2">&quot;default-release&quot;</span>
 </code></pre></div>
-<ul>
-<li><strong>Let it prompt you.</strong> If you do not pass <code>--browser-profile</code> and several profiles exist, the tool lists them so you can choose.</li>
+</li>
+<li>
+<p><strong>Let it prompt you.</strong> If you do not pass <code>--browser-profile</code> and several profiles exist, the tool lists them so you can choose.</p>
+</li>
 <li><strong>On the <a href="../view-modes/#web-dashboard-mode">Web Dashboard</a></strong>, pick the browser, click <strong>Import</strong> and select a profile if prompted.</li>
 <li><strong>Advanced:</strong> point <code>--cookie-file</code> at a specific cookie database (Firefox <code>cookies.sqlite</code> or a Chromium <code>Cookies</code> file). This overrides <code>--browser-profile</code>.</li>
 </ul>
@@ -1086,49 +1132,53 @@
 <li>set this value through <code>USER_AGENT</code>, the <code>--user-agent</code> option or the <a href="../view-modes/#web-dashboard-mode">Web Dashboard</a></li>
 </ul>
 <p>If you created the session with Instaloader instead (Option 2 above), match Instaloader's user agent rather than a browser's. Instaloader logs in with a Chrome user agent, so set <code>USER_AGENT</code> to a matching Chrome string to keep the same device consistency. You can print the exact value Instaloader uses with:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;from instaloader.instaloadercontext import default_user_agent; print(default_user_agent())&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;from instaloader.instaloadercontext import default_user_agent; print(default_user_agent())&quot;</span>
 </code></pre></div>
 <p>With the default <code>auto</code> setting under <a href="../usage/#http-transport-backend">HTTP Transport Backend</a>, <code>curl_cffi</code> selects a matching browser network profile. For example, a Chrome user agent selects a Chrome profile.</p>
 <p><a id="time-zone"></a></p>
 <h2 id="time-zone">Time Zone<a class="headerlink" href="#time-zone" title="Permanent link">&para;</a></h2>
 <p>Instagram Monitor detects the local time zone automatically. Set <code>LOCAL_TIMEZONE</code> in <code>instagram_monitor.conf</code> if the detected value is wrong or if monitoring should use another time zone:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="na">LOCAL_TIMEZONE</span><span class="o">=</span><span class="s">&#39;Europe/Warsaw&#39;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="na">LOCAL_TIMEZONE</span><span class="o">=</span><span class="s">&#39;Europe/Warsaw&#39;</span>
 </code></pre></div>
 <p>You can get the list of all time zones supported by pytz like this:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import pytz; print(&#39;\n&#39;.join(pytz.all_timezones))&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import pytz; print(&#39;\n&#39;.join(pytz.all_timezones))&quot;</span>
 </code></pre></div>
 <p>Set <code>TIME_FORMAT_12H = True</code> to display times in 12-hour format instead of the default 24-hour format.</p>
 <p><a id="smtp-settings"></a></p>
 <h2 id="smtp-settings">SMTP Settings<a class="headerlink" href="#smtp-settings" title="Permanent link">&para;</a></h2>
 <p>Email notifications need the SMTP server details for the email account that sends the messages. Add them to <code>instagram_monitor.conf</code> or use the setup wizard.</p>
 <p>Send one test message to verify the settings:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>instagram_monitor<span class="w"> </span>--send-test-email
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>instagram_monitor<span class="w"> </span>--send-test-email
 </code></pre></div>
 <p><a id="storing-secrets"></a></p>
 <h2 id="storing-secrets">Storing Secrets<a class="headerlink" href="#storing-secrets" title="Permanent link">&para;</a></h2>
 <p>A <code>.env</code> file is a plain text file that holds private values separately from regular configuration. Store <code>SESSION_PASSWORD</code>, <code>SMTP_PASSWORD</code>, <code>WEBHOOK_URL</code>, <code>NTFY_ACCESS_TOKEN</code> and <code>PROXY_URL</code> there. Do not commit this file or share it.</p>
+<p>The recommended way to save a Discord or ntfy destination is:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>instagram_monitor<span class="w"> </span>--set-webhook-url
+</code></pre></div>
+<p>Paste the complete HTTPS URL at the hidden prompt. Instagram Monitor validates it then updates only <code>WEBHOOK_URL</code> in <code>.env</code> without displaying the value. Standard Discord and public <code>ntfy.sh</code> URLs select the matching request format automatically. Configure <code>WEBHOOK_PROVIDER</code> in <code>instagram_monitor.conf</code> for a self-hosted or compatible endpoint. Use <code>--env-file PATH</code> with this command to select another dotenv destination.</p>
 <p>You can use operating system environment variables instead of a file. Set them with <code>export</code> on Linux, Unix, macOS or WSL:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SESSION_PASSWORD</span><span class="o">=</span><span class="s2">&quot;your_instagram_session_password&quot;</span>
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SMTP_PASSWORD</span><span class="o">=</span><span class="s2">&quot;your_smtp_password&quot;</span>
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">WEBHOOK_URL</span><span class="o">=</span><span class="s2">&quot;https://discord.com/api/webhooks/...&quot;</span>
-<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="nb">export</span><span class="w"> </span><span class="nv">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s2">&quot;tk_your_ntfy_access_token&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SESSION_PASSWORD</span><span class="o">=</span><span class="s2">&quot;your_instagram_session_password&quot;</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SMTP_PASSWORD</span><span class="o">=</span><span class="s2">&quot;your_smtp_password&quot;</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">WEBHOOK_URL</span><span class="o">=</span><span class="s2">&quot;https://discord.com/api/webhooks/...&quot;</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="nb">export</span><span class="w"> </span><span class="nv">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s2">&quot;tk_your_ntfy_access_token&quot;</span>
 </code></pre></div>
 <p>On <strong>Windows Command Prompt</strong> use <code>set</code> instead of <code>export</code> and on <strong>Windows PowerShell</strong> use <code>$env</code>.</p>
 <p>To keep the values between terminal sessions, store them in <code>.env</code>. The repository includes an <a href="https://github.com/misiektoja/instagram_monitor/blob/main/.env.example">.env.example</a> template:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nb">test</span><span class="w"> </span>-e<span class="w"> </span>.env<span class="w"> </span><span class="o">||</span><span class="w"> </span>cp<span class="w"> </span>.env.example<span class="w"> </span>.env
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="nb">test</span><span class="w"> </span>-e<span class="w"> </span>.env<span class="w"> </span><span class="o">||</span><span class="w"> </span>cp<span class="w"> </span>.env.example<span class="w"> </span>.env
 </code></pre></div>
 <p>This leaves an existing <code>.env</code> untouched, including any secrets saved by the setup wizard.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="na">SESSION_PASSWORD</span><span class="o">=</span><span class="s">&quot;your_instagram_session_password&quot;</span>
-<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="na">SMTP_PASSWORD</span><span class="o">=</span><span class="s">&quot;your_smtp_password&quot;</span>
-<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="na">WEBHOOK_URL</span><span class="o">=</span><span class="s">&quot;https://discord.com/api/webhooks/...&quot;</span>
-<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">&quot;tk_your_ntfy_access_token&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="na">SESSION_PASSWORD</span><span class="o">=</span><span class="s">&quot;your_instagram_session_password&quot;</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="na">SMTP_PASSWORD</span><span class="o">=</span><span class="s">&quot;your_smtp_password&quot;</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="na">WEBHOOK_URL</span><span class="o">=</span><span class="s">&quot;https://discord.com/api/webhooks/...&quot;</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">&quot;tk_your_ntfy_access_token&quot;</span>
 </code></pre></div>
 <p>By default, the tool looks for <code>.env</code> in the current directory. If it is not there, the search continues in each parent directory.</p>
 <p>Select another file with <code>DOTENV_FILE</code> or <code>--env-file</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--env-file<span class="w"> </span>/path/.env-instagram_monitor
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--env-file<span class="w"> </span>/path/.env-instagram_monitor
 </code></pre></div>
 <p>You can also disable <code>.env</code> auto-search with <code>DOTENV_FILE = "none"</code> or <code>--env-file none</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--env-file<span class="w"> </span>none
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--env-file<span class="w"> </span>none
 </code></pre></div>
 <p>As a fallback, you can store secrets in the configuration file. Avoid putting secrets directly in the source code.</p>
 

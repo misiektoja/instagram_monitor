@@ -487,6 +487,24 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         
   
@@ -503,6 +521,36 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#browser-e2e" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browser E2E
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -555,6 +603,25 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#browser-e2e" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browser E2E
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -579,14 +646,27 @@
 
 
 <h1 id="testing">Testing<a class="headerlink" href="#testing" title="Permanent link">&para;</a></h1>
-<p>The <a href="https://github.com/misiektoja/instagram_monitor/tree/main/tests/">tests directory</a> contains a <a href="https://docs.pytest.org/">pytest</a> suite for contributors. It checks configuration parsing, time formatting, scheduling, privacy substitutions, notifications, follower comparisons, CSV output, session error handling and user agent generation. The tests do not contact Instagram. Network functions are replaced with local test doubles.</p>
+<p>The <a href="https://github.com/misiektoja/instagram_monitor/tree/main/tests/">tests directory</a> contains a <a href="https://docs.pytest.org/">pytest</a> suite for contributors. It checks configuration parsing, time formatting, scheduling, privacy substitutions, notifications, follower comparisons, CSV output, session error handling and user agent generation. It also builds the wheel, installs its console command and verifies documentation contracts. The tests do not contact Instagram. Network functions are replaced with local test doubles.</p>
 <p>Install the test dependencies and run the suite:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># from the repository root</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;.[test]&#39;</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest
 </code></pre></div>
-<p>GitHub Actions runs the same suite for pull requests and pushes to <code>main</code> or <code>dev</code>. It tests every supported Python version. See the <a href="https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/tests.yml">test workflow</a>. The suite must pass before a release is published to PyPI or Docker Hub.</p>
+<p>GitHub Actions runs the same suite for pull requests and pushes to <code>main</code> or <code>dev</code>. It tests every supported Python version plus the installed command on Windows. See the <a href="https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/tests.yml">test workflow</a>. The workflow also performs a strict MkDocs build, container smoke checks and a real Chromium dashboard flow. The suite must pass before a release is published to PyPI or Docker Hub.</p>
 <p>The suite intentionally excludes tests that sign in to Instagram because automated test logins could trigger security checks or suspension.</p>
+<h2 id="browser-e2e">Browser E2E<a class="headerlink" href="#browser-e2e" title="Permanent link">&para;</a></h2>
+<p>The browser test starts the dashboard on an ephemeral loopback port. Chromium
+loads the rendered page, verifies target status, opens target management and
+adds a target without starting Instagram monitoring.</p>
+<p>Install the optional browser dependencies:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;.[test,e2e]&#39;</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>python<span class="w"> </span>-m<span class="w"> </span>playwright<span class="w"> </span>install<span class="w"> </span>chromium
+</code></pre></div>
+<p>Run the browser test:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/test_browser_e2e.py
+</code></pre></div>
+<p>The default test dependency set does not install Chromium. In that environment
+pytest reports the browser module as skipped.</p>
 
 
 
