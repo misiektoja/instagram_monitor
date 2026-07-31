@@ -1,6 +1,10 @@
 # Installation
 
-Choose one installation method. You do not need both Python and Docker. PyPI is usually the easiest local option. The direct Docker image is the fastest container option. Docker Compose takes one extra download but gives you shorter commands for later runs.
+Choose one installation method. You do not need both Python and Docker.
+
+PyPI is usually the easiest local option. If you are new to Python or unsure whether Python is ready, follow [New to Python: check and install](#new-to-python-install-everything).
+
+The direct Docker image is the fastest container option. Docker Compose takes one extra download but gives you shorter commands for later runs.
 
 <a id="requirements"></a>
 ## Requirements
@@ -175,13 +179,15 @@ pip install instagram_monitor
 instagram_monitor --version
 ```
 
-Firefox session import needs no extra dependency. To import sessions from Chrome, Brave or Chromium on macOS or Linux, install the browser extra:
+Each command below that uses square brackets installs the base `instagram_monitor` package plus the named optional dependency. Run only the command that matches your needs. You do not need to run the plain install command first.
+
+Firefox session import needs no extra dependency. To import sessions from Chrome, Brave or Chromium on macOS or Linux install the browser extra:
 
 ```sh
 pip install "instagram_monitor[browser]"
 ```
 
-The second command installs the base package too. You do not need to run both install commands.
+This installs Instagram Monitor and the optional `pycookiecheat` dependency.
 
 <a id="manual-python-based-installation"></a>
 ### Install the Manual Script
