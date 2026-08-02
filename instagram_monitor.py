@@ -11281,7 +11281,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             time.sleep(r_sleep_time)
 
 
-# Helper to resolve log and CSV paths for a specific target
+# Resolves log and CSV paths for a specific target
 def get_target_paths(user):
     # Use DASHBOARD_DATA to check if we are in single-target mode
     targets_list = DASHBOARD_DATA.get('targets_list', [])
@@ -11332,6 +11332,17 @@ def get_target_paths(user):
                 target_log = str(log_path.parent / f"{log_path.stem}{suffix}{log_path.suffix}")
 
     return target_csv, target_log
+
+
+# Checks whether the runtime can create or update one resolved output file
+def output_destination_is_writable(destination) -> bool:
+    path = Path(os.path.expanduser(str(destination)))
+    if path.exists():
+        return path.is_file() and os.access(path, os.W_OK)
+    parent = path.parent
+    while not parent.exists() and parent != parent.parent:
+        parent = parent.parent
+    return parent.is_dir() and os.access(parent, os.W_OK)
 
 
 # Returns whether the process is running inside the supported container image
@@ -12339,6 +12350,18 @@ def run_doctor(targets) -> int:
     placeholders = ("", "your_smtp_password")
     present_secrets = [k for k in SECRET_KEYS if globals().get(k) and globals().get(k) not in placeholders]
     _doctor_line("info", "Secrets from environment/.env", ", ".join(present_secrets) if present_secrets else "none set")
+    if DISABLE_LOGGING:
+        _doctor_line("info", "Output logging is disabled")
+    elif targets:
+        for target in targets:
+            _, target_log = get_target_paths(target)
+            if output_destination_is_writable(target_log):
+                _doctor_line("ok", f"Log destination for '{target}' appears writable", f"Path: {target_log}")
+            else:
+                fails += 1
+                _doctor_line("fail", f"Log destination for '{target}' is not writable", f"Path: {target_log}")
+    else:
+        _doctor_line("info", "Log destination will be finalized after a target is selected", f"Base path: {INSTA_LOGFILE}")
 
     # Build a single bot for the live checks (reuses the globally installed HTTP backend)
     bot = None
