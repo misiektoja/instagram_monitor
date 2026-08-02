@@ -11962,13 +11962,13 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
     print(colorize("header", "\nSetup summary\n"))
     print(f"  Targets: {', '.join(state.targets)}")
     print(f"  Persist targets: {'yes' if state.persist_targets else 'no'}")
+    print(f"  Polling interval: {_wizard_format_duration(int(state.config_values['INSTA_CHECK_INTERVAL']))}")
     print(f"  Login: {state.login_method}")
     print(f"  Session username: {session_summary}")
     if state.import_browser:
         print(f"  Browser: {browser_label(state.import_browser)}")
     if state.container_host:
         print(f"  Docker host: {CONTAINER_FIREFOX_HOSTS[state.container_host][0]}")
-    print(f"  Polling interval: {_wizard_format_duration(int(state.config_values['INSTA_CHECK_INTERVAL']))}")
     print(f"  Interface: {interface}")
     print(f"  Email: {'enabled' if state.want_email else 'disabled'}")
     print(f"  Webhook: {'enabled' if state.want_webhook else 'disabled'}")
@@ -11979,15 +11979,15 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
 
 # Opens one selected setup section then returns to the summary
 def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
-    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets and persistence", "Change monitored accounts and whether they are saved."), ("Login and session", "Change no-login, browser or credential settings."), ("Polling interval", "Change how often Instagram is checked."), ("Interface", "Change the dashboard or plain text mode."), ("Email alerts", "Change SMTP settings."), ("Webhook alerts", "Change Discord or ntfy settings."), ("File destinations", "Change the config or dotenv path."), ("Return to summary", "Keep every current answer.")])
+    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets and persistence", "Change monitored accounts and whether they are saved."), ("Polling interval", "Change how often Instagram is checked."), ("Login and session", "Change no-login, browser or credential settings."), ("Interface", "Change the dashboard or plain text mode."), ("Email alerts", "Change SMTP settings."), ("Webhook alerts", "Change Discord or ntfy settings."), ("File destinations", "Change the config or dotenv path."), ("Return to summary", "Keep every current answer.")])
     if section == 0:
         print()
         _wizard_collect_target_section(state)
     elif section == 1:
-        _wizard_collect_login_section(state, method)
-    elif section == 2:
         print()
         _wizard_collect_polling_section(state)
+    elif section == 2:
+        _wizard_collect_login_section(state, method)
     elif section == 3:
         _wizard_collect_interface_section(state, method)
     elif section == 4:
@@ -12114,8 +12114,8 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
 
     print()
     _wizard_collect_target_section(state)
-    _wizard_collect_login_section(state, method)
     _wizard_collect_polling_section(state)
+    _wizard_collect_login_section(state, method)
     _wizard_collect_interface_section(state, method)
     _wizard_collect_email_section(state)
     _wizard_collect_webhook_section(state)
