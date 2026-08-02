@@ -12223,7 +12223,7 @@ def _doctor_line(status: str, label: str, detail: str = "") -> None:
     mark, theme = marks.get(status, ("[ -- ]", "info"))
     print(f"{colorize(theme, mark)} {label}")
     if detail:
-        print(detail)
+        print(f"  {detail}")
 
 
 # Prints an inline 'doing X...' status that the upcoming result line overwrites, on interactive terminals only
@@ -12322,16 +12322,18 @@ def run_doctor(targets) -> int:
     ]
     for name, present, what in deps:
         if present:
-            _doctor_line("ok", f"{name} installed", f"Enables {what}")
+            detail = "Used only for importing sessions from Chromium-based browsers. Firefox session import does not need it" if name == "pycookiecheat" else f"Used for {what}"
+            _doctor_line("ok", f"{name} installed", detail)
         else:
             warns += 1
-            _doctor_line("warn", f"{name} not installed", f"Optional: enables {what}. Install with: pip install {name}")
+            detail = f"Required only for importing sessions from Chromium-based browsers. Firefox session import is unaffected. Install with: pip install {name}" if name == "pycookiecheat" else f"Optional: used for {what}. Install with: pip install {name}"
+            _doctor_line("warn", f"{name} not installed", detail)
 
     # Configuration and secrets
     print(colorize("section", "\nConfiguration"))
     cfg = find_config_file(CLI_CONFIG_PATH)
     if cfg:
-        _doctor_line("ok", "Config file", cfg)
+        _doctor_line("ok", "Config file", f"Path: {cfg}")
     else:
         _doctor_line("info", "Config file", "none found - using defaults and CLI flags (create one with --setup)")
     placeholders = ("", "your_smtp_password")
