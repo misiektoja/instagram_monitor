@@ -219,8 +219,8 @@ class TestPromptWording:
 
 
 class TestSectionOrder:
-    # Verifies initial setup collects email before webhook settings
-    def test_initial_setup_matches_spotify_notification_order(self, im_module, monkeypatch):
+    # Verifies initial setup collects polling before login with one blank line
+    def test_initial_setup_matches_spotify_notification_order(self, im_module, monkeypatch, capsys):
         with make_test_directory() as directory_name:
             directory = Path(directory_name)
             calls = []
@@ -228,8 +228,8 @@ class TestSectionOrder:
             monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
             monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
             monkeypatch.setattr(im_module, "_wizard_collect_target_section", lambda state: calls.append("target"))
-            monkeypatch.setattr(im_module, "_wizard_collect_login_section", lambda state, method: calls.append("login"))
-            monkeypatch.setattr(im_module, "_wizard_collect_polling_section", lambda state: calls.append("polling"))
+            monkeypatch.setattr(im_module, "_wizard_collect_login_section", lambda state, method: (calls.append("login"), print("\nHow do you want to access Instagram?")))
+            monkeypatch.setattr(im_module, "_wizard_collect_polling_section", lambda state: (calls.append("polling"), print("Instagram polling interval [5400s - 1h 30m]:")))
             monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: calls.append("interface"))
             monkeypatch.setattr(im_module, "_wizard_collect_email_section", lambda state: calls.append("email"))
             monkeypatch.setattr(im_module, "_wizard_collect_webhook_section", lambda state: calls.append("webhook"))
@@ -238,8 +238,11 @@ class TestSectionOrder:
             with pytest.raises(SystemExit) as error:
                 im_module.run_setup_wizard(config_file=directory / "instagram_monitor.conf", env_file=directory / ".env")
 
+            output = capsys.readouterr().out
             assert error.value.code == 1
-            assert calls == ["target", "login", "polling", "interface", "email", "webhook", "review"]
+            assert calls == ["target", "polling", "login", "interface", "email", "webhook", "review"]
+            assert "Instagram polling interval [5400s - 1h 30m]:\n\nHow do you want to access Instagram?" in output
+            assert "Instagram polling interval [5400s - 1h 30m]:\n\n\nHow do you want to access Instagram?" not in output
 
     # Verifies a changed dotenv destination recollects email before webhook settings
     def test_destination_change_matches_spotify_notification_order(self, im_module, monkeypatch):
@@ -257,16 +260,19 @@ class TestSectionOrder:
 
             assert calls == ["login", "email", "webhook"]
 
-    # Verifies the setup editor lists email before webhook settings
-    def test_editor_matches_spotify_notification_order(self, im_module, monkeypatch):
+    # Verifies the setup summary and editor put polling before login
+    def test_editor_matches_spotify_notification_order(self, im_module, monkeypatch, capsys):
         with make_test_directory() as directory_name:
             state = make_setup_state(im_module, Path(directory_name))
             labels = []
             monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: labels.extend(label for label, _ in options) or 7)
 
+            im_module._wizard_print_setup_summary(state, "manual")
+            summary = capsys.readouterr().out
             im_module._wizard_edit_setup_section(state, "manual")
 
-            assert labels == ["Targets and persistence", "Login and session", "Polling interval", "Interface", "Email alerts", "Webhook alerts", "File destinations", "Return to summary"]
+            assert summary.index("Polling interval:") < summary.index("Login:")
+            assert labels == ["Targets and persistence", "Polling interval", "Login and session", "Interface", "Email alerts", "Webhook alerts", "File destinations", "Return to summary"]
 
 
 class TestWizardSafetyGates:
