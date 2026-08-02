@@ -11568,6 +11568,42 @@ def _wizard_ask_text(question: str, default: str = "", required: bool = False) -
         print(colorize("warning", "  This value is required."))
 
 
+# Converts a duration to a compact seconds plus human-readable wizard label
+def _wizard_format_duration(seconds: int) -> str:
+    remaining = seconds
+    parts = []
+    for suffix, count in (("d", 86400), ("h", 3600), ("m", 60), ("s", 1)):
+        value, remaining = divmod(remaining, count)
+        if value:
+            parts.append(f"{value}{suffix}")
+    raw = f"{seconds}s"
+    readable = " ".join(parts) or raw
+    return raw if readable == raw else f"{raw} - {readable}"
+
+
+# Parses one positive whole-number duration with an optional time unit
+def _wizard_parse_duration(value: str) -> Optional[int]:
+    match = re.fullmatch(r"([1-9]\d*)\s*([a-z]*)", value.strip().casefold())
+    if not match:
+        return None
+    unit_seconds = {"": 1, "s": 1, "sec": 1, "secs": 1, "second": 1, "seconds": 1, "m": 60, "min": 60, "mins": 60, "minute": 60, "minutes": 60, "h": 3600, "hr": 3600, "hrs": 3600, "hour": 3600, "hours": 3600, "d": 86400, "day": 86400, "days": 86400}
+    multiplier = unit_seconds.get(match.group(2))
+    return int(match.group(1)) * multiplier if multiplier is not None else None
+
+
+# Prompts until the user provides a positive duration or accepts the readable default
+def _wizard_ask_duration(question: str, default: int) -> int:
+    prompt_text = f"{question} [{_wizard_format_duration(default)}]: "
+    while True:
+        value = _wizard_input(colorize("info", prompt_text)).strip()
+        if not value:
+            return default
+        parsed = _wizard_parse_duration(value)
+        if parsed is not None:
+            return parsed
+        print(colorize("warning", "  Enter a positive duration such as 120, 120s, 2m, 1h or 1d."))
+
+
 # Reads a required secret through getpass without echoing the entered value
 def _wizard_ask_secret(question: str) -> str:
     while True:
@@ -11738,6 +11774,12 @@ def _wizard_collect_target_section(state: WizardSetupState) -> None:
     print()
     state.persist_targets = _wizard_ask_yes_no("Save the target(s) in the config file too?", default=state.persist_targets)
     state.config_values["TARGET_USERNAMES"] = list(targets) if state.persist_targets else []
+
+
+# Collects the polling interval using the current answer as its default
+def _wizard_collect_polling_section(state: WizardSetupState) -> None:
+    current_interval = int(state.config_values.get("INSTA_CHECK_INTERVAL", INSTA_CHECK_INTERVAL))
+    state.config_values["INSTA_CHECK_INTERVAL"] = _wizard_ask_duration("Instagram polling interval (seconds or use s/m/h/d)", current_interval)
 
 
 # Collects one login method with separate Firefox and Chromium paths
@@ -11915,6 +11957,7 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
         print(f"  Browser: {browser_label(state.import_browser)}")
     if state.container_host:
         print(f"  Docker host: {CONTAINER_FIREFOX_HOSTS[state.container_host][0]}")
+    print(f"  Polling interval: {_wizard_format_duration(int(state.config_values['INSTA_CHECK_INTERVAL']))}")
     print(f"  Interface: {interface}")
     print(f"  Email: {'enabled' if state.want_email else 'disabled'}")
     print(f"  Webhook: {'enabled' if state.want_webhook else 'disabled'}")
@@ -11925,19 +11968,22 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
 
 # Opens one selected setup section then returns to the summary
 def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
-    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets and persistence", "Change monitored accounts and whether they are saved."), ("Login and session", "Change no-login, browser or credential settings."), ("Interface", "Change the dashboard or plain text mode."), ("Email alerts", "Change SMTP settings."), ("Webhook alerts", "Change Discord or ntfy settings."), ("File destinations", "Change the config or dotenv path."), ("Return to summary", "Keep every current answer.")])
+    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets and persistence", "Change monitored accounts and whether they are saved."), ("Login and session", "Change no-login, browser or credential settings."), ("Polling interval", "Change how often Instagram is checked."), ("Interface", "Change the dashboard or plain text mode."), ("Email alerts", "Change SMTP settings."), ("Webhook alerts", "Change Discord or ntfy settings."), ("File destinations", "Change the config or dotenv path."), ("Return to summary", "Keep every current answer.")])
     if section == 0:
         print()
         _wizard_collect_target_section(state)
     elif section == 1:
         _wizard_collect_login_section(state, method)
     elif section == 2:
-        _wizard_collect_interface_section(state, method)
+        print()
+        _wizard_collect_polling_section(state)
     elif section == 3:
-        _wizard_collect_email_section(state)
+        _wizard_collect_interface_section(state, method)
     elif section == 4:
-        _wizard_collect_webhook_section(state)
+        _wizard_collect_email_section(state)
     elif section == 5:
+        _wizard_collect_webhook_section(state)
+    elif section == 6:
         print()
         _wizard_collect_destination_section(state, method)
 
@@ -12058,6 +12104,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     print()
     _wizard_collect_target_section(state)
     _wizard_collect_login_section(state, method)
+    _wizard_collect_polling_section(state)
     _wizard_collect_interface_section(state, method)
     _wizard_collect_email_section(state)
     _wizard_collect_webhook_section(state)
