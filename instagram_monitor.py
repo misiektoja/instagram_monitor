@@ -13135,7 +13135,9 @@ def run_main():
         if local_tz:
             LOCAL_TIMEZONE = str(local_tz)
         else:
-            print("* Error: Cannot detect local timezone, consider setting LOCAL_TIMEZONE to your local timezone manually !")
+            print("* Error: Cannot detect local timezone.")
+            print("* Hint: This can happen if the optional 'tzlocal' library is missing. Install it with: pip install tzlocal")
+            print("* Or set LOCAL_TIMEZONE to your local timezone manually.")
             sys.exit(1)
     else:
         if not is_valid_timezone(LOCAL_TIMEZONE):
