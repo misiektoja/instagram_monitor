@@ -93,6 +93,7 @@ class TestRunDoctor:
         assert rc == 0
         assert "Instagram reachable" in out
         assert "No-login mode" in out
+        assert "ASCII_LOG_SEPARATORS resolves" not in out
 
     def test_missing_session_fails(self, im_module, monkeypatch, capsys):
         _setup_no_network(monkeypatch, im_module)
