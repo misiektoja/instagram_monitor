@@ -66,6 +66,24 @@ class TestRunDoctor:
         out = capsys.readouterr().out
         assert "pycookiecheat installed\n  Used only for importing sessions from Chromium-based browsers. Firefox session import does not need it" in out
 
+    # Verifies Doctor checks and displays the final target-specific log filename
+    def test_log_destination_uses_final_target_path(self, im_module, monkeypatch, capsys):
+        _setup_no_network(monkeypatch, im_module)
+        writable = Mock(return_value=True)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", True, raising=False)
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "", raising=False)
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", False, raising=False)
+        monkeypatch.setattr(im_module, "INSTA_LOGFILE", "instagram_monitor", raising=False)
+        monkeypatch.setattr(im_module, "OUTPUT_DIR", "", raising=False)
+        monkeypatch.setitem(im_module.DASHBOARD_DATA, "targets_list", ["friend"])
+        monkeypatch.setattr(im_module, "output_destination_is_writable", writable)
+
+        im_module.run_doctor(["friend"])
+
+        out = capsys.readouterr().out
+        assert "Log destination for 'friend' appears writable\n  Path: instagram_monitor_friend.log" in out
+        writable.assert_called_once_with("instagram_monitor_friend.log")
+
     def test_all_pass_no_login_returns_zero(self, im_module, monkeypatch, capsys):
         _setup_no_network(monkeypatch, im_module)
         monkeypatch.setattr(im_module, "SKIP_SESSION", True, raising=False)
