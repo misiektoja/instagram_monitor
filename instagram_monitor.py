@@ -464,6 +464,12 @@ OUTPUT_DIR = ""
 # Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
+# Controls conversion of separator-only log lines to ASCII:
+#   "Auto" - enable on Windows only (default)
+#   "On"   - enable on every operating system
+#   "Off"  - preserve Unicode separators in logs
+ASCII_LOG_SEPARATORS = "Auto"
+
 # ----------------------------
 # Terminal Output
 # ----------------------------
@@ -998,6 +1004,7 @@ CONTAINER_FIREFOX_HOSTS = {
 INSTA_LOGFILE = ""
 OUTPUT_DIR = ""
 DISABLE_LOGGING = False
+ASCII_LOG_SEPARATORS = "Auto"
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 INSTA_CHECK_SIGNAL_VALUE = 0
@@ -3877,6 +3884,21 @@ def apply_color_to_text(text):
     return "".join(parts)
 
 
+# Reports whether separator-only log lines should use ASCII on this system
+def ascii_log_separators_enabled():
+    mode = str(ASCII_LOG_SEPARATORS).strip().lower()
+    if mode not in {"auto", "on", "off"}:
+        raise ValueError("ASCII_LOG_SEPARATORS must be 'Auto', 'On' or 'Off'")
+    return mode == "on" or (mode == "auto" and platform.system() == "Windows")
+
+
+# Converts Unicode-only horizontal separator lines to ASCII when configured
+def normalize_log_separators(message):
+    if not ascii_log_separators_enabled():
+        return message
+    return re.sub(r"(?m)^─+$", lambda match: match.group(0).replace("─", "-"), message)
+
+
 # Logger class to output messages to stdout and log files
 class Logger(object):
     def __init__(self, main_filename=None):
@@ -3940,7 +3962,7 @@ class Logger(object):
                     self.terminal.flush()
 
             # Expand tabs for file output and ensure ANSI codes are stripped
-            clean_message = ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8)
+            clean_message = normalize_log_separators(ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8))
 
             # Always log to main log if available
             if self.main_log:
@@ -3974,7 +3996,7 @@ class Logger(object):
         with STDOUT_LOCK:
             message = apply_privacy_substitutions(message)
             colorized_message = apply_color_to_text(message)
-            clean_message = ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8)
+            clean_message = normalize_log_separators(ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8))
             if self.main_log:
                 self.main_log.write(clean_message)
                 self.main_log.flush()
@@ -7816,7 +7838,7 @@ def close_pbar():
                     if logger_instance is not None:
                         # We want to write to logs but NOT the terminal again (pbar.close already did that), so we strip colors and
                         # write to main/target logs manually
-                        clean_final = ANSI_ESCAPE_RE.sub("", final_str).expandtabs(8) + "\n"
+                        clean_final = normalize_log_separators(ANSI_ESCAPE_RE.sub("", final_str).expandtabs(8) + "\n")
                         # debug_print(f"[close_pbar] clean_final: {clean_final.strip()}")
 
                         with STDOUT_LOCK:
@@ -13525,6 +13547,12 @@ def run_main():
     if args.no_color is True:
         COLORED_OUTPUT = False
 
+    try:
+        ascii_log_separators_enabled()
+    except ValueError as e:
+        print(f"* Error: {e}")
+        sys.exit(1)
+
     if args.disable_logging is True:
         DISABLE_LOGGING = True
 
@@ -13681,6 +13709,7 @@ def run_main():
             summary_rows.append((f"* CSV logging enabled:\t\t\tFalse", False, True))
 
     summary_rows.append((f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""), bool(DISABLE_LOGGING), True))
+    summary_rows.append((f"* ASCII log separators:\t\t\t{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})", False, True))
 
     if OUTPUT_DIR:
         output_dir_desc = "(root for user data & logs)" if len(targets) == 1 else "(container for per-user subdirectories & logs)"
