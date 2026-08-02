@@ -157,7 +157,7 @@ Every operating system uses the same command:
 
     instagram_monitor --setup
 
-The setup wizard can import a signed-in Firefox session, save the accounts to monitor and configure the interface and alerts. Continue to [Setup & First Run](setup-and-first-run.md) for a walkthrough of its questions.
+The setup wizard can import a signed-in Firefox session, save the accounts to monitor and configure the polling interval, interface and alerts. Continue to [Setup & First Run](setup-and-first-run.md) for a walkthrough of its questions.
 
 <a id="installation"></a>
 ## Choose an Installation Method
