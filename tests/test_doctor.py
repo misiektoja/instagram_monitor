@@ -37,7 +37,7 @@ class TestDoctorLine:
         out = capsys.readouterr().out
         assert "the-label" in out
         assert "the-detail" in out
-        assert not any(line.startswith((" ", "\t")) for line in out.splitlines())
+        assert out.splitlines()[-1] == "  the-detail"
 
 
 class TestDoctorProgress:
@@ -54,6 +54,18 @@ class TestDoctorProgress:
 
 
 class TestRunDoctor:
+    # Verifies Chromium dependency guidance explicitly preserves Firefox import support
+    def test_browser_dependency_scope_is_explicit(self, im_module, monkeypatch, capsys):
+        _setup_no_network(monkeypatch, im_module)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", True, raising=False)
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "", raising=False)
+        monkeypatch.setattr("importlib.util.find_spec", lambda name: object())
+
+        im_module.run_doctor([])
+
+        out = capsys.readouterr().out
+        assert "pycookiecheat installed\n  Used only for importing sessions from Chromium-based browsers. Firefox session import does not need it" in out
+
     def test_all_pass_no_login_returns_zero(self, im_module, monkeypatch, capsys):
         _setup_no_network(monkeypatch, im_module)
         monkeypatch.setattr(im_module, "SKIP_SESSION", True, raising=False)
