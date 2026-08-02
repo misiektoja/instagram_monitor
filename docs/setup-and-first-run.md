@@ -5,7 +5,7 @@
 
 This page assumes Instagram Monitor is already installed (see [Installation](installation.md)). It walks through the interactive setup wizard then your first monitoring run. If you opened this page first, choose [PyPI](installation.md#install-from-pypi), the [manual Python script](installation.md#manual-python-based-installation), the [Docker image](installation.md#install-from-docker-hub) or [Docker Compose](installation.md#docker-compose), finish that method's steps then return here.
 
-Then use the interactive setup wizard. It asks which Instagram accounts to monitor, whether to use a saved login, which interface to start and which alerts to enable. You can review and change your answers before saving. Regular settings go in `instagram_monitor.conf`. Private values such as passwords and webhook URLs go in `.env`.
+Then use the interactive setup wizard. It asks which Instagram accounts to monitor, whether to use a saved login, how often to poll, which interface to start and which alerts to enable. The polling interval accepts seconds directly or a positive whole number followed by `s`, `m`, `h` or `d`. You can review and change your answers before saving. Regular settings go in `instagram_monitor.conf`. Private values such as passwords and webhook URLs go in `.env`.
 
 For a local install, the wizard can check the setup and start monitoring immediately. In a container, it prints the next Docker or Docker Compose commands to run.
 
