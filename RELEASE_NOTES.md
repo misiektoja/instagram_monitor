@@ -10,7 +10,7 @@ Version **3.8.1** improves startup guidance when automatic timezone detection is
 
 - **IMPROVE:** Improved the error message when timezone auto-detection fails to hint about the missing optional `tzlocal` library and how to install it
 - **IMPROVE:** Added `ASCII_LOG_SEPARATORS` with `"Auto"`, `"On"` and `"Off"` modes. The default uses ASCII separator-only log lines on Windows while terminal separators stay Unicode and all log content stays UTF-8
-- **IMPROVE:** Added the polling interval to the setup wizard with duration inputs such as `30s`, `2m`, `1h` and `1d` while continuing to save the interval as seconds
+- **IMPROVE:** Added the polling interval to the setup wizard with duration inputs such as `30s`, `2m`, `1.5h`, `1h 30m` and `1d` while continuing to save the interval as seconds
 
 **Bug fixes**:
 
