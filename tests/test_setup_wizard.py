@@ -38,9 +38,9 @@ def make_setup_state(im_module, directory: Path):
     return im_module.WizardSetupState(directory / "instagram_monitor.conf", directory / ".env", baseline, dict(baseline), {}, ["target.user"], True, False, "no-login", "", None, None, False, False, False, False)
 
 
-# Verifies duration input accepts bare seconds and common unit forms
+# Verifies duration input accepts bare seconds plus single, decimal and compound unit forms
 def test_duration_helper_accepts_supported_units(im_module, monkeypatch):
-    for value, expected in (("120", 120), ("120s", 120), ("2m", 120), ("2 mins", 120), ("1h", 3600), ("1 day", 86400)):
+    for value, expected in (("120", 120), ("120s", 120), ("2m", 120), ("2 mins", 120), ("1h", 3600), ("1.5h", 5400), ("1h 30m", 5400), ("1 day", 86400)):
         monkeypatch.setattr(im_module, "_wizard_input", Mock(return_value=value))
         assert im_module._wizard_ask_duration("Polling interval", 5400) == expected
 
