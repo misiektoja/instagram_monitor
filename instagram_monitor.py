@@ -8338,6 +8338,32 @@ def is_session_flagged(error_msg, bot):
     return False
 
 
+# Sends enabled email and webhook alerts exactly when a monitoring error streak reaches the configured threshold
+def notify_monitoring_error(user, error_msg, failure_count, check_interval):
+    if failure_count != ERROR_FAILURE_THRESHOLD:
+        return False
+
+    notified = False
+    if ERROR_NOTIFICATION:
+        alert_subject = f"instagram_monitor: error for {user} (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD})"
+        alert_body = f"An error occurred for user {user} (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(check_interval)} ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+        alert_body_html = f"An error occurred for user <b>{user}</b> (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD}):<br><br><b>{error_msg}</b><br><br>Check interval: <b>{display_time(check_interval)}</b> ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+        print(f"* Sending error notification to {RECEIVER_EMAIL} (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD})")
+        send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
+        notified = True
+
+    if WEBHOOK_ENABLED and WEBHOOK_ERROR_NOTIFICATION:
+        send_webhook(
+            title=f"Error for {user}",
+            description=f"{error_msg}\n(failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD})",
+            color=0xFF0000,
+            notification_type="error"
+        )
+        notified = True
+
+    return notified
+
+
 # Sends a one-off email and webhook alert when the session account or IP is flagged, bypassing ERROR_FAILURE_THRESHOLD since a flag is terminal and operator-actionable
 def notify_session_flagged(user, err_str, error_msg):
     # One shared session flag trips every target thread, so de-dupe within the flag-probe window to alert once instead of once per target
@@ -9921,8 +9947,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     alive_counter = 0
 
-    email_sent = False
-
     # Primary loop
     consecutive_main_errors = 0
     consecutive_behuman_errors = 0
@@ -9988,8 +10012,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 debug_print(f"Profile loaded: followers={followers_count}, following={followings_count}, posts={posts_count}")
                 debug_print(f"Previous load : followers={followers_old_count}, following={followings_old_count}, posts={posts_count_old}")
-                consecutive_main_errors = 0
-
                 if not skip_session and can_view:
                     reels_count = get_total_reels_count(user, bot, skip_session)
                     debug_print(f"Reels count: {reels_count}")
@@ -10008,8 +10030,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 debug_print(f"Story available: {has_story}")
 
                 profile_image_url = profile.profile_pic_url_no_iphone
-                email_sent = False
-
                 # Prepare target data for both Dashboard and Web Dashboard
                 target_data = {
                     user: {
@@ -10071,21 +10091,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 # A flagged session/IP is terminal and operator-actionable, so detect it up front to alert immediately and skip the generic threshold alert below
                 session_flagged = is_session_flagged(error_msg, bot)
 
-                if not session_flagged and ERROR_NOTIFICATION and consecutive_main_errors == ERROR_FAILURE_THRESHOLD:
-                    alert_subject = f"instagram_monitor: error for {user} (failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD})"
-                    alert_body = f"An error occurred for user {user} (failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    alert_body_html = f"An error occurred for user <b>{user}</b> (failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):<br><br><b>{error_msg}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-
-                    print(f"* Sending error notification to {RECEIVER_EMAIL} (failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD})")
-                    send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
-
-                    if WEBHOOK_ENABLED and WEBHOOK_ERROR_NOTIFICATION:
-                        send_webhook(
-                            title=f"Error for {user}",
-                            description=f"{error_msg}\n(failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD})",
-                            color=0xFF0000,
-                            notification_type="error"
-                        )
+                if not session_flagged:
+                    notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
 
                 # Handle session recovery for automated checks/challenge errors
                 if session_flagged:
@@ -10156,22 +10163,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                     print("* Session might not be valid anymore! Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page.")
-                    if ERROR_NOTIFICATION and not email_sent:
-                        m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
-
-                        m_body = f"Session might not be valid anymore.\n\nSession: {session_label()}\nTarget: {user}\n\nError: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                        print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                        m_body_html = f"Session might not be valid anymore.<br><br>Session: <b>{session_label()}</b><br>Target: <b>{user}</b><br><br>Error: <i>{e}</i>{get_cur_ts('<br><br>Timestamp: ')}"
-                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-                        email_sent = True
-
-                    # Send webhook notification for session error
-                    send_webhook(
-                        "⚠️ Session Error",
-                        f"Session might not be valid anymore.\n\nTarget: **{user}**\nError: `{e}`",
-                        color=0x1f1f1f,  # Dark/Black
-                        notification_type="error"
-                    )
 
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
@@ -10183,24 +10174,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
             if (next((s for s in get_thread_output() if "HTTP redirect from" in s), None)):
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
+                consecutive_main_errors += 1
+                error_msg = f"HTTP redirect while checking {user}: {get_thread_output()}"
                 print("* Session might not be valid anymore! Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page.")
                 print(f"Retrying in {display_time(r_sleep_time)}")
-                if ERROR_NOTIFICATION and not email_sent:
-                    m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
-
-                    m_body = f"Session might not be valid anymore.\n\nSession: {session_label()}\nTarget: {user}\n\nOutput: {get_thread_output()}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                    m_body_html = f"Session might not be valid anymore.<br><br>Session: <b>{session_label()}</b><br>Target: <b>{user}</b><br><br>Output: <i>{get_thread_output()}</i>{get_cur_ts('<br><br>Timestamp: ')}"
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-                    email_sent = True
-
-                # Send webhook notification for session error (redirect)
-                send_webhook(
-                    "⚠️ Session Error (Redirect)",
-                    f"Session might not be valid anymore (HTTP redirect).\n\nTarget: **{user}**",
-                    color=0x1f1f1f,  # Dark/Black
-                    notification_type="error"
-                )
+                notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
                 r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
@@ -10947,25 +10925,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
                     r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
                     error_msg = format_error_message(e)
+                    consecutive_main_errors += 1
                     print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
                     if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                         print("* Session might not be valid anymore! Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page.")
-                        if ERROR_NOTIFICATION and not email_sent:
-                            m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
-
-                            m_body = f"Session might not be valid anymore.\n\nSession: {session_label()}\nTarget: {user}\n\nError: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                            print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                            m_body_html = f"Session might not be valid anymore.<br><br>Session: <b>{session_label()}</b><br>Target: <b>{user}</b><br><br>Error: <i>{e}</i>{get_cur_ts('<br><br>Timestamp: ')}"
-                            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-                            email_sent = True
-
-                        # Send webhook notification for session error (inside post details loop)
-                        send_webhook(
-                            "⚠️ Session Error",
-                            f"Session might not be valid anymore.\n\nTarget: **{user}**\nError: `{e}`",
-                            color=0x1f1f1f,  # Dark/Black
-                            notification_type="error"
-                        )
+                    notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
 
                     print_cur_ts()
 
@@ -11182,6 +11146,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 # print("─" * HORIZONTAL_LINE)
 
         alive_counter += 1
+
+        if in_allowed_hours:
+            consecutive_main_errors = 0
 
         if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
             print_cur_ts("Liveness check, timestamp:\t")
