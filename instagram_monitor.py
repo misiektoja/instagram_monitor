@@ -11559,14 +11559,26 @@ def _wizard_format_duration(seconds: int) -> str:
     return raw if readable == raw else f"{raw} - {readable}"
 
 
-# Parses one positive whole-number duration with an optional time unit
+# Parses one positive setup duration from whole or compound time units
 def _wizard_parse_duration(value: str) -> Optional[int]:
-    match = re.fullmatch(r"([1-9]\d*)\s*([a-z]*)", value.strip().casefold())
-    if not match:
+    normalized = value.strip().casefold()
+    matches = list(re.finditer(r"(\d+(?:\.\d+)?)\s*([a-z]*)", normalized))
+    if not matches:
         return None
     unit_seconds = {"": 1, "s": 1, "sec": 1, "secs": 1, "second": 1, "seconds": 1, "m": 60, "min": 60, "mins": 60, "minute": 60, "minutes": 60, "h": 3600, "hr": 3600, "hrs": 3600, "hour": 3600, "hours": 3600, "d": 86400, "day": 86400, "days": 86400}
-    multiplier = unit_seconds.get(match.group(2))
-    return int(match.group(1)) * multiplier if multiplier is not None else None
+    cursor = 0
+    total = 0.0
+    for match in matches:
+        if normalized[cursor:match.start()].strip():
+            return None
+        multiplier = unit_seconds.get(match.group(2))
+        if multiplier is None or len(matches) > 1 and not match.group(2):
+            return None
+        total += float(match.group(1)) * multiplier
+        cursor = match.end()
+    if normalized[cursor:].strip() or total < 1 or not total.is_integer():
+        return None
+    return int(total)
 
 
 # Prompts until the user provides a positive duration or accepts the readable default
@@ -11579,7 +11591,7 @@ def _wizard_ask_duration(question: str, default: int) -> int:
         parsed = _wizard_parse_duration(value)
         if parsed is not None:
             return parsed
-        print(colorize("warning", "  Enter a positive duration such as 120, 120s, 2m, 1h or 1d."))
+        print(colorize("warning", "  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d."))
 
 
 # Reads a required secret through getpass without echoing the entered value
