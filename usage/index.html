@@ -1507,6 +1507,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>instagram_monitor<span class="w"> </span>target_user_1<span class="w"> </span>target_user_2<span class="w"> </span>--targets-stagger<span class="w"> </span><span class="m">300</span>
 </code></pre></div>
 <p>The tool saves text output to <code>instagram_monitor_&lt;suffix&gt;.log</code>. Change the name through <code>INSTA_LOGFILE</code>. Disable file logging through <code>DISABLE_LOGGING</code> or <code>-d</code>.</p>
+<p>Set <code>ASCII_LOG_SEPARATORS</code> to <code>"Auto"</code> (default) to use ASCII separator-only lines on Windows, <code>"On"</code> to use them on every operating system or <code>"Off"</code> to preserve Unicode separators in logs everywhere. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.</p>
 <ul>
 <li>In single-target mode, <code>&lt;suffix&gt;</code> is the username.</li>
 <li>In multi-target mode, <code>&lt;suffix&gt;</code> is the sorted list of target usernames joined with underscores.</li>
