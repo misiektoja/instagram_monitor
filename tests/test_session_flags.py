@@ -61,6 +61,42 @@ class TestIsSessionFlagged:
         assert im_module.is_session_flagged("ProfileNotExistsException: target gone", _FakeBot()) is False
 
 
+class TestNotifyMonitoringError:
+    # Captures thresholded channel delivery without contacting SMTP or webhook endpoints
+    def _capture(self, im_module, monkeypatch):
+        calls = {"email": [], "webhook": []}
+        monkeypatch.setattr(im_module, "send_email", lambda *a, **k: calls["email"].append((a, k)))
+        monkeypatch.setattr(im_module, "send_webhook", lambda *a, **k: calls["webhook"].append((a, k)))
+        monkeypatch.setattr(im_module, "ERROR_FAILURE_THRESHOLD", 2)
+        monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "ops@example.com", raising=False)
+        monkeypatch.setattr(im_module, "SMTP_SSL", True, raising=False)
+        return calls
+
+    def test_email_and_webhook_send_once_at_threshold(self, im_module, monkeypatch):
+        calls = self._capture(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+
+        results = [im_module.notify_monitoring_error("targetuser", "401 Unauthorized", failure_count, 60) for failure_count in (1, 2, 3)]
+
+        assert results == [False, True, False]
+        assert len(calls["email"]) == 1
+        assert len(calls["webhook"]) == 1
+        assert "failure #2, threshold: 2" in calls["email"][0][0][0]
+        assert "failure #2, threshold: 2" in calls["webhook"][0][1]["description"]
+
+    def test_webhook_threshold_does_not_depend_on_email_toggle(self, im_module, monkeypatch):
+        calls = self._capture(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+
+        assert im_module.notify_monitoring_error("targetuser", "401 Unauthorized", 2, 60) is True
+        assert calls["email"] == []
+        assert len(calls["webhook"]) == 1
+
+
 class TestNotifySessionFlagged:
     """A flag is terminal and operator-actionable, so the alert must fire on detection regardless of ERROR_FAILURE_THRESHOLD."""
 

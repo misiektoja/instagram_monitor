@@ -38,6 +38,24 @@ def make_setup_state(im_module, directory: Path):
     return im_module.WizardSetupState(directory / "instagram_monitor.conf", directory / ".env", baseline, dict(baseline), {}, ["target.user"], True, False, "no-login", "", None, None, False, False, False, False)
 
 
+# Verifies duration input accepts bare seconds plus single, decimal and compound unit forms
+def test_duration_helper_accepts_supported_units(im_module, monkeypatch):
+    for value, expected in (("120", 120), ("120s", 120), ("2m", 120), ("2 mins", 120), ("1h", 3600), ("1.5h", 5400), ("1h 30m", 5400), ("1 day", 86400)):
+        monkeypatch.setattr(im_module, "_wizard_input", Mock(return_value=value))
+        assert im_module._wizard_ask_duration("Polling interval", 5400) == expected
+
+
+# Verifies regular setup accepts unit-based polling intervals and stores seconds
+def test_polling_section_uses_duration_input(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        duration_mock = Mock(return_value=7200)
+        monkeypatch.setattr(im_module, "_wizard_ask_duration", duration_mock)
+        im_module._wizard_collect_polling_section(state)
+        assert state.config_values["INSTA_CHECK_INTERVAL"] == 7200
+        duration_mock.assert_called_once_with("Instagram polling interval (seconds or use s/m/h/d)", im_module.INSTA_CHECK_INTERVAL)
+
+
 class TestEditableReview:
     def test_discard_leaves_destination_files_unchanged(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
@@ -50,6 +68,7 @@ class TestEditableReview:
             monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
             monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
             monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: "target.user")
+            monkeypatch.setattr(im_module, "_wizard_ask_duration", lambda question, default: default)
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
             monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
 
@@ -72,6 +91,7 @@ class TestEditableReview:
             monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
             monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
             monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: next(targets))
+            monkeypatch.setattr(im_module, "_wizard_ask_duration", lambda question, default: default)
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
             monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
             monkeypatch.setattr(im_module, "run_doctor", Mock(side_effect=AssertionError("doctor called")))
@@ -199,8 +219,8 @@ class TestPromptWording:
 
 
 class TestSectionOrder:
-    # Verifies initial setup collects email before webhook settings
-    def test_initial_setup_matches_spotify_notification_order(self, im_module, monkeypatch):
+    # Verifies initial setup collects polling before login with one blank line
+    def test_initial_setup_matches_spotify_notification_order(self, im_module, monkeypatch, capsys):
         with make_test_directory() as directory_name:
             directory = Path(directory_name)
             calls = []
@@ -208,7 +228,8 @@ class TestSectionOrder:
             monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
             monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
             monkeypatch.setattr(im_module, "_wizard_collect_target_section", lambda state: calls.append("target"))
-            monkeypatch.setattr(im_module, "_wizard_collect_login_section", lambda state, method: calls.append("login"))
+            monkeypatch.setattr(im_module, "_wizard_collect_login_section", lambda state, method: (calls.append("login"), print("\nHow do you want to access Instagram?")))
+            monkeypatch.setattr(im_module, "_wizard_collect_polling_section", lambda state: (calls.append("polling"), print("Instagram polling interval [5400s - 1h 30m]:")))
             monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: calls.append("interface"))
             monkeypatch.setattr(im_module, "_wizard_collect_email_section", lambda state: calls.append("email"))
             monkeypatch.setattr(im_module, "_wizard_collect_webhook_section", lambda state: calls.append("webhook"))
@@ -217,8 +238,11 @@ class TestSectionOrder:
             with pytest.raises(SystemExit) as error:
                 im_module.run_setup_wizard(config_file=directory / "instagram_monitor.conf", env_file=directory / ".env")
 
+            output = capsys.readouterr().out
             assert error.value.code == 1
-            assert calls == ["target", "login", "interface", "email", "webhook", "review"]
+            assert calls == ["target", "polling", "login", "interface", "email", "webhook", "review"]
+            assert "Instagram polling interval [5400s - 1h 30m]:\n\nHow do you want to access Instagram?" in output
+            assert "Instagram polling interval [5400s - 1h 30m]:\n\n\nHow do you want to access Instagram?" not in output
 
     # Verifies a changed dotenv destination recollects email before webhook settings
     def test_destination_change_matches_spotify_notification_order(self, im_module, monkeypatch):
@@ -236,16 +260,19 @@ class TestSectionOrder:
 
             assert calls == ["login", "email", "webhook"]
 
-    # Verifies the setup editor lists email before webhook settings
-    def test_editor_matches_spotify_notification_order(self, im_module, monkeypatch):
+    # Verifies the setup summary and editor put polling before login
+    def test_editor_matches_spotify_notification_order(self, im_module, monkeypatch, capsys):
         with make_test_directory() as directory_name:
             state = make_setup_state(im_module, Path(directory_name))
             labels = []
-            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: labels.extend(label for label, _ in options) or 6)
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: labels.extend(label for label, _ in options) or 7)
 
+            im_module._wizard_print_setup_summary(state, "manual")
+            summary = capsys.readouterr().out
             im_module._wizard_edit_setup_section(state, "manual")
 
-            assert labels == ["Targets and persistence", "Login and session", "Interface", "Email alerts", "Webhook alerts", "File destinations", "Return to summary"]
+            assert summary.index("Polling interval:") < summary.index("Login:")
+            assert labels == ["Targets and persistence", "Polling interval", "Login and session", "Interface", "Email alerts", "Webhook alerts", "File destinations", "Return to summary"]
 
 
 class TestWizardSafetyGates:
@@ -259,6 +286,7 @@ class TestWizardSafetyGates:
             monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "pip")
             monkeypatch.setattr(im_module, "_wizard_collect_target_section", lambda state: state.targets.append("target.user"))
             monkeypatch.setattr(im_module, "_wizard_collect_login_section", lambda state, method: (setattr(state, "logged_in", True), setattr(state, "login_method", "firefox"), setattr(state, "session_username", "login.user"), setattr(state, "import_browser", "firefox")))
+            monkeypatch.setattr(im_module, "_wizard_collect_polling_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: None)
             monkeypatch.setattr(im_module, "_wizard_collect_email_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_webhook_section", lambda state: None)
@@ -288,6 +316,7 @@ class TestWizardSafetyGates:
             monkeypatch.setattr(im_module, "_wizard_validate_destination", lambda method, path, label: Path(path).expanduser().resolve())
             monkeypatch.setattr(im_module, "_wizard_collect_target_section", lambda state: state.targets.append("target.user"))
             monkeypatch.setattr(im_module, "_wizard_collect_login_section", lambda state, method: (setattr(state, "logged_in", True), setattr(state, "login_method", "firefox"), setattr(state, "session_username", "login.user"), setattr(state, "import_browser", "firefox"), setattr(state, "container_host", "macos")))
+            monkeypatch.setattr(im_module, "_wizard_collect_polling_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: None)
             monkeypatch.setattr(im_module, "_wizard_collect_email_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_webhook_section", lambda state: None)
@@ -399,6 +428,7 @@ class TestWizardSafetyGates:
             monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
             monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
             monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: "target.user")
+            monkeypatch.setattr(im_module, "_wizard_ask_duration", lambda question, default: default)
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
             monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
             monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda *args, **kwargs: "https://discord.example.test/hook")
@@ -423,6 +453,7 @@ class TestWizardSafetyGates:
             monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
             monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
             monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: "target.user")
+            monkeypatch.setattr(im_module, "_wizard_ask_duration", lambda question, default: default)
             # Captures every yes or no question to prove Start is never offered
             def ask_yes_no(question, default=True):
                 questions.append(question)

@@ -395,6 +395,7 @@ def test_setup_wizard_persists_ntfy_secrets_privately(im_module, monkeypatch, ca
         monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
         monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
         monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: "target.user")
+        monkeypatch.setattr(im_module, "_wizard_ask_duration", lambda question, default: default)
         monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
         monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
         monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda *args, **kwargs: next(secrets))

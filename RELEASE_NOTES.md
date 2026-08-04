@@ -2,6 +2,22 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.8.1 (04 Aug 2026)
+
+Version **3.8.1** streamlines first-time setup and diagnostics, adds portable logs and prevents webhook noise from repeated monitoring failures.
+
+**Features and improvements**:
+
+- **IMPROVE:** **Clear timezone recovery** - When automatic detection fails, the startup error now identifies the optional `tzlocal` dependency, shows how to install it and explains that `LOCAL_TIMEZONE` can be set manually
+- **IMPROVE:** **Portable log separators** - The new `ASCII_LOG_SEPARATORS` setting controls whether separator-only lines saved to log files use ASCII hyphens. `"Auto"` enables them on Windows by default, `"On"` enables them on every operating system and `"Off"` preserves Unicode separators. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
+- **IMPROVE:** **Flexible setup intervals** - The setup wizard accepts polling interval durations such as `30s`, `2m`, `1.5h`, `1h 30m` and `1d` while still saving the value as seconds
+- **IMPROVE:** **Actionable Doctor output** - Details remain attached to their checks, final target-specific log destinations are validated and `pycookiecheat` is clearly identified as a Chromium-only import dependency that Firefox does not need
+- **IMPROVE:** **Beginner Python installation walkthroughs** - New Windows, macOS and Linux instructions guide first-time Python users from checking prerequisites through installation and the setup wizard
+
+**Bug fixes**:
+
+- **BUGFIX:** **Thresholded monitoring alerts** - `ERROR_FAILURE_THRESHOLD` now applies consistently to email and webhook errors so repeated session failures alert once at the configured count instead of sending a webhook on every retry. Alerts for flagged sessions remain immediate (closes [#116](https://github.com/misiektoja/instagram_monitor/issues/116))
+
 # Changes in 3.8 (30 Jul 2026)
 
 Version **3.8** strengthens **Discord and ntfy webhook delivery**, adds safer **private URL setup**, improves **proxy IP detection** and brings better notification controls.

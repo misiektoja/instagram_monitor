@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.8
+v3.8.1
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -20,7 +20,7 @@ flask (optional - for web dashboard)
 rich (optional - for terminal dashboard)
 """
 
-VERSION = "3.8"
+VERSION = "3.8.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -463,6 +463,12 @@ OUTPUT_DIR = ""
 # Whether to disable logging to instagram_monitor_<username>.log
 # Can also be disabled via the -d flag
 DISABLE_LOGGING = False
+
+# Controls conversion of separator-only log lines to ASCII:
+#   "Auto" - enable on Windows only (default)
+#   "On"   - enable on every operating system
+#   "Off"  - preserve Unicode separators in logs
+ASCII_LOG_SEPARATORS = "Auto"
 
 # ----------------------------
 # Terminal Output
@@ -998,6 +1004,7 @@ CONTAINER_FIREFOX_HOSTS = {
 INSTA_LOGFILE = ""
 OUTPUT_DIR = ""
 DISABLE_LOGGING = False
+ASCII_LOG_SEPARATORS = "Auto"
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 INSTA_CHECK_SIGNAL_VALUE = 0
@@ -3877,6 +3884,21 @@ def apply_color_to_text(text):
     return "".join(parts)
 
 
+# Reports whether separator-only log lines should use ASCII on this system
+def ascii_log_separators_enabled():
+    mode = str(ASCII_LOG_SEPARATORS).strip().lower()
+    if mode not in {"auto", "on", "off"}:
+        raise ValueError("ASCII_LOG_SEPARATORS must be 'Auto', 'On' or 'Off'")
+    return mode == "on" or (mode == "auto" and platform.system() == "Windows")
+
+
+# Converts Unicode-only horizontal separator lines to ASCII when configured
+def normalize_log_separators(message):
+    if not ascii_log_separators_enabled():
+        return message
+    return re.sub(r"(?m)^─+$", lambda match: match.group(0).replace("─", "-"), message)
+
+
 # Logger class to output messages to stdout and log files
 class Logger(object):
     def __init__(self, main_filename=None):
@@ -3940,7 +3962,7 @@ class Logger(object):
                     self.terminal.flush()
 
             # Expand tabs for file output and ensure ANSI codes are stripped
-            clean_message = ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8)
+            clean_message = normalize_log_separators(ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8))
 
             # Always log to main log if available
             if self.main_log:
@@ -3974,7 +3996,7 @@ class Logger(object):
         with STDOUT_LOCK:
             message = apply_privacy_substitutions(message)
             colorized_message = apply_color_to_text(message)
-            clean_message = ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8)
+            clean_message = normalize_log_separators(ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8))
             if self.main_log:
                 self.main_log.write(clean_message)
                 self.main_log.flush()
@@ -7816,7 +7838,7 @@ def close_pbar():
                     if logger_instance is not None:
                         # We want to write to logs but NOT the terminal again (pbar.close already did that), so we strip colors and
                         # write to main/target logs manually
-                        clean_final = ANSI_ESCAPE_RE.sub("", final_str).expandtabs(8) + "\n"
+                        clean_final = normalize_log_separators(ANSI_ESCAPE_RE.sub("", final_str).expandtabs(8) + "\n")
                         # debug_print(f"[close_pbar] clean_final: {clean_final.strip()}")
 
                         with STDOUT_LOCK:
@@ -8314,6 +8336,32 @@ def is_session_flagged(error_msg, bot):
     if is_profile_not_found_error(error_msg):
         return probe_session_flagged(bot)
     return False
+
+
+# Sends enabled email and webhook alerts exactly when a monitoring error streak reaches the configured threshold
+def notify_monitoring_error(user, error_msg, failure_count, check_interval):
+    if failure_count != ERROR_FAILURE_THRESHOLD:
+        return False
+
+    notified = False
+    if ERROR_NOTIFICATION:
+        alert_subject = f"instagram_monitor: error for {user} (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD})"
+        alert_body = f"An error occurred for user {user} (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(check_interval)} ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+        alert_body_html = f"An error occurred for user <b>{user}</b> (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD}):<br><br><b>{error_msg}</b><br><br>Check interval: <b>{display_time(check_interval)}</b> ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+        print(f"* Sending error notification to {RECEIVER_EMAIL} (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD})")
+        send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
+        notified = True
+
+    if WEBHOOK_ENABLED and WEBHOOK_ERROR_NOTIFICATION:
+        send_webhook(
+            title=f"Error for {user}",
+            description=f"{error_msg}\n(failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD})",
+            color=0xFF0000,
+            notification_type="error"
+        )
+        notified = True
+
+    return notified
 
 
 # Sends a one-off email and webhook alert when the session account or IP is flagged, bypassing ERROR_FAILURE_THRESHOLD since a flag is terminal and operator-actionable
@@ -9899,8 +9947,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
     alive_counter = 0
 
-    email_sent = False
-
     # Primary loop
     consecutive_main_errors = 0
     consecutive_behuman_errors = 0
@@ -9966,8 +10012,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 debug_print(f"Profile loaded: followers={followers_count}, following={followings_count}, posts={posts_count}")
                 debug_print(f"Previous load : followers={followers_old_count}, following={followings_old_count}, posts={posts_count_old}")
-                consecutive_main_errors = 0
-
                 if not skip_session and can_view:
                     reels_count = get_total_reels_count(user, bot, skip_session)
                     debug_print(f"Reels count: {reels_count}")
@@ -9986,8 +10030,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 debug_print(f"Story available: {has_story}")
 
                 profile_image_url = profile.profile_pic_url_no_iphone
-                email_sent = False
-
                 # Prepare target data for both Dashboard and Web Dashboard
                 target_data = {
                     user: {
@@ -10049,21 +10091,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 # A flagged session/IP is terminal and operator-actionable, so detect it up front to alert immediately and skip the generic threshold alert below
                 session_flagged = is_session_flagged(error_msg, bot)
 
-                if not session_flagged and ERROR_NOTIFICATION and consecutive_main_errors == ERROR_FAILURE_THRESHOLD:
-                    alert_subject = f"instagram_monitor: error for {user} (failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD})"
-                    alert_body = f"An error occurred for user {user} (failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    alert_body_html = f"An error occurred for user <b>{user}</b> (failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):<br><br><b>{error_msg}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-
-                    print(f"* Sending error notification to {RECEIVER_EMAIL} (failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD})")
-                    send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
-
-                    if WEBHOOK_ENABLED and WEBHOOK_ERROR_NOTIFICATION:
-                        send_webhook(
-                            title=f"Error for {user}",
-                            description=f"{error_msg}\n(failure #{consecutive_main_errors}, threshold: {ERROR_FAILURE_THRESHOLD})",
-                            color=0xFF0000,
-                            notification_type="error"
-                        )
+                if not session_flagged:
+                    notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
 
                 # Handle session recovery for automated checks/challenge errors
                 if session_flagged:
@@ -10134,22 +10163,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                 if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                     print("* Session might not be valid anymore! Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page.")
-                    if ERROR_NOTIFICATION and not email_sent:
-                        m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
-
-                        m_body = f"Session might not be valid anymore.\n\nSession: {session_label()}\nTarget: {user}\n\nError: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                        print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                        m_body_html = f"Session might not be valid anymore.<br><br>Session: <b>{session_label()}</b><br>Target: <b>{user}</b><br><br>Error: <i>{e}</i>{get_cur_ts('<br><br>Timestamp: ')}"
-                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-                        email_sent = True
-
-                    # Send webhook notification for session error
-                    send_webhook(
-                        "⚠️ Session Error",
-                        f"Session might not be valid anymore.\n\nTarget: **{user}**\nError: `{e}`",
-                        color=0x1f1f1f,  # Dark/Black
-                        notification_type="error"
-                    )
 
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
@@ -10161,24 +10174,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
             if (next((s for s in get_thread_output() if "HTTP redirect from" in s), None)):
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
+                consecutive_main_errors += 1
+                error_msg = f"HTTP redirect while checking {user}: {get_thread_output()}"
                 print("* Session might not be valid anymore! Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page.")
                 print(f"Retrying in {display_time(r_sleep_time)}")
-                if ERROR_NOTIFICATION and not email_sent:
-                    m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
-
-                    m_body = f"Session might not be valid anymore.\n\nSession: {session_label()}\nTarget: {user}\n\nOutput: {get_thread_output()}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                    m_body_html = f"Session might not be valid anymore.<br><br>Session: <b>{session_label()}</b><br>Target: <b>{user}</b><br><br>Output: <i>{get_thread_output()}</i>{get_cur_ts('<br><br>Timestamp: ')}"
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-                    email_sent = True
-
-                # Send webhook notification for session error (redirect)
-                send_webhook(
-                    "⚠️ Session Error (Redirect)",
-                    f"Session might not be valid anymore (HTTP redirect).\n\nTarget: **{user}**",
-                    color=0x1f1f1f,  # Dark/Black
-                    notification_type="error"
-                )
+                notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
                 r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
@@ -10925,25 +10925,11 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
                     r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
                     error_msg = format_error_message(e)
+                    consecutive_main_errors += 1
                     print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
                     if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
                         print("* Session might not be valid anymore! Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page.")
-                        if ERROR_NOTIFICATION and not email_sent:
-                            m_subject = f"instagram_monitor: session error! (session: {session_label()}, target: {user})"
-
-                            m_body = f"Session might not be valid anymore.\n\nSession: {session_label()}\nTarget: {user}\n\nError: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                            print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                            m_body_html = f"Session might not be valid anymore.<br><br>Session: <b>{session_label()}</b><br>Target: <b>{user}</b><br><br>Error: <i>{e}</i>{get_cur_ts('<br><br>Timestamp: ')}"
-                            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-                            email_sent = True
-
-                        # Send webhook notification for session error (inside post details loop)
-                        send_webhook(
-                            "⚠️ Session Error",
-                            f"Session might not be valid anymore.\n\nTarget: **{user}**\nError: `{e}`",
-                            color=0x1f1f1f,  # Dark/Black
-                            notification_type="error"
-                        )
+                    notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
 
                     print_cur_ts()
 
@@ -11161,6 +11147,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
         alive_counter += 1
 
+        if in_allowed_hours:
+            consecutive_main_errors = 0
+
         if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
             print_cur_ts("Liveness check, timestamp:\t")
             alive_counter = 0
@@ -11259,7 +11248,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             time.sleep(r_sleep_time)
 
 
-# Helper to resolve log and CSV paths for a specific target
+# Resolves log and CSV paths for a specific target
 def get_target_paths(user):
     # Use DASHBOARD_DATA to check if we are in single-target mode
     targets_list = DASHBOARD_DATA.get('targets_list', [])
@@ -11310,6 +11299,17 @@ def get_target_paths(user):
                 target_log = str(log_path.parent / f"{log_path.stem}{suffix}{log_path.suffix}")
 
     return target_csv, target_log
+
+
+# Checks whether the runtime can create or update one resolved output file
+def output_destination_is_writable(destination) -> bool:
+    path = Path(os.path.expanduser(str(destination)))
+    if path.exists():
+        return path.is_file() and os.access(path, os.W_OK)
+    parent = path.parent
+    while not parent.exists() and parent != parent.parent:
+        parent = parent.parent
+    return parent.is_dir() and os.access(parent, os.W_OK)
 
 
 # Returns whether the process is running inside the supported container image
@@ -11546,6 +11546,54 @@ def _wizard_ask_text(question: str, default: str = "", required: bool = False) -
         print(colorize("warning", "  This value is required."))
 
 
+# Converts a duration to a compact seconds plus human-readable wizard label
+def _wizard_format_duration(seconds: int) -> str:
+    remaining = seconds
+    parts = []
+    for suffix, count in (("d", 86400), ("h", 3600), ("m", 60), ("s", 1)):
+        value, remaining = divmod(remaining, count)
+        if value:
+            parts.append(f"{value}{suffix}")
+    raw = f"{seconds}s"
+    readable = " ".join(parts) or raw
+    return raw if readable == raw else f"{raw} - {readable}"
+
+
+# Parses one positive setup duration from whole or compound time units
+def _wizard_parse_duration(value: str) -> Optional[int]:
+    normalized = value.strip().casefold()
+    matches = list(re.finditer(r"(\d+(?:\.\d+)?)\s*([a-z]*)", normalized))
+    if not matches:
+        return None
+    unit_seconds = {"": 1, "s": 1, "sec": 1, "secs": 1, "second": 1, "seconds": 1, "m": 60, "min": 60, "mins": 60, "minute": 60, "minutes": 60, "h": 3600, "hr": 3600, "hrs": 3600, "hour": 3600, "hours": 3600, "d": 86400, "day": 86400, "days": 86400}
+    cursor = 0
+    total = 0.0
+    for match in matches:
+        if normalized[cursor:match.start()].strip():
+            return None
+        multiplier = unit_seconds.get(match.group(2))
+        if multiplier is None or len(matches) > 1 and not match.group(2):
+            return None
+        total += float(match.group(1)) * multiplier
+        cursor = match.end()
+    if normalized[cursor:].strip() or total < 1 or not total.is_integer():
+        return None
+    return int(total)
+
+
+# Prompts until the user provides a positive duration or accepts the readable default
+def _wizard_ask_duration(question: str, default: int) -> int:
+    prompt_text = f"{question} [{_wizard_format_duration(default)}]: "
+    while True:
+        value = _wizard_input(colorize("info", prompt_text)).strip()
+        if not value:
+            return default
+        parsed = _wizard_parse_duration(value)
+        if parsed is not None:
+            return parsed
+        print(colorize("warning", "  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d."))
+
+
 # Reads a required secret through getpass without echoing the entered value
 def _wizard_ask_secret(question: str) -> str:
     while True:
@@ -11718,6 +11766,12 @@ def _wizard_collect_target_section(state: WizardSetupState) -> None:
     state.config_values["TARGET_USERNAMES"] = list(targets) if state.persist_targets else []
 
 
+# Collects the polling interval using the current answer as its default
+def _wizard_collect_polling_section(state: WizardSetupState) -> None:
+    current_interval = int(state.config_values.get("INSTA_CHECK_INTERVAL", INSTA_CHECK_INTERVAL))
+    state.config_values["INSTA_CHECK_INTERVAL"] = _wizard_ask_duration("Instagram polling interval (seconds or use s/m/h/d)", current_interval)
+
+
 # Collects one login method with separate Firefox and Chromium paths
 def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
     _wizard_reset_section(state, WIZARD_LOGIN_CONFIG_KEYS, ("SESSION_PASSWORD",))
@@ -11887,6 +11941,7 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
     print(colorize("header", "\nSetup summary\n"))
     print(f"  Targets: {', '.join(state.targets)}")
     print(f"  Persist targets: {'yes' if state.persist_targets else 'no'}")
+    print(f"  Polling interval: {_wizard_format_duration(int(state.config_values['INSTA_CHECK_INTERVAL']))}")
     print(f"  Login: {state.login_method}")
     print(f"  Session username: {session_summary}")
     if state.import_browser:
@@ -11903,19 +11958,22 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
 
 # Opens one selected setup section then returns to the summary
 def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
-    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets and persistence", "Change monitored accounts and whether they are saved."), ("Login and session", "Change no-login, browser or credential settings."), ("Interface", "Change the dashboard or plain text mode."), ("Email alerts", "Change SMTP settings."), ("Webhook alerts", "Change Discord or ntfy settings."), ("File destinations", "Change the config or dotenv path."), ("Return to summary", "Keep every current answer.")])
+    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets and persistence", "Change monitored accounts and whether they are saved."), ("Polling interval", "Change how often Instagram is checked."), ("Login and session", "Change no-login, browser or credential settings."), ("Interface", "Change the dashboard or plain text mode."), ("Email alerts", "Change SMTP settings."), ("Webhook alerts", "Change Discord or ntfy settings."), ("File destinations", "Change the config or dotenv path."), ("Return to summary", "Keep every current answer.")])
     if section == 0:
         print()
         _wizard_collect_target_section(state)
     elif section == 1:
-        _wizard_collect_login_section(state, method)
+        print()
+        _wizard_collect_polling_section(state)
     elif section == 2:
-        _wizard_collect_interface_section(state, method)
+        _wizard_collect_login_section(state, method)
     elif section == 3:
-        _wizard_collect_email_section(state)
+        _wizard_collect_interface_section(state, method)
     elif section == 4:
-        _wizard_collect_webhook_section(state)
+        _wizard_collect_email_section(state)
     elif section == 5:
+        _wizard_collect_webhook_section(state)
+    elif section == 6:
         print()
         _wizard_collect_destination_section(state, method)
 
@@ -12035,6 +12093,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
 
     print()
     _wizard_collect_target_section(state)
+    _wizard_collect_polling_section(state)
     _wizard_collect_login_section(state, method)
     _wizard_collect_interface_section(state, method)
     _wizard_collect_email_section(state)
@@ -12154,7 +12213,7 @@ def _doctor_line(status: str, label: str, detail: str = "") -> None:
     mark, theme = marks.get(status, ("[ -- ]", "info"))
     print(f"{colorize(theme, mark)} {label}")
     if detail:
-        print(detail)
+        print(f"  {detail}")
 
 
 # Prints an inline 'doing X...' status that the upcoming result line overwrites, on interactive terminals only
@@ -12253,21 +12312,35 @@ def run_doctor(targets) -> int:
     ]
     for name, present, what in deps:
         if present:
-            _doctor_line("ok", f"{name} installed", f"Enables {what}")
+            detail = "Used only for importing sessions from Chromium-based browsers. Firefox session import does not need it" if name == "pycookiecheat" else f"Used for {what}"
+            _doctor_line("ok", f"{name} installed", detail)
         else:
             warns += 1
-            _doctor_line("warn", f"{name} not installed", f"Optional: enables {what}. Install with: pip install {name}")
+            detail = f"Required only for importing sessions from Chromium-based browsers. Firefox session import is unaffected. Install with: pip install {name}" if name == "pycookiecheat" else f"Optional: used for {what}. Install with: pip install {name}"
+            _doctor_line("warn", f"{name} not installed", detail)
 
     # Configuration and secrets
     print(colorize("section", "\nConfiguration"))
     cfg = find_config_file(CLI_CONFIG_PATH)
     if cfg:
-        _doctor_line("ok", "Config file", cfg)
+        _doctor_line("ok", "Config file", f"Path: {cfg}")
     else:
         _doctor_line("info", "Config file", "none found - using defaults and CLI flags (create one with --setup)")
     placeholders = ("", "your_smtp_password")
     present_secrets = [k for k in SECRET_KEYS if globals().get(k) and globals().get(k) not in placeholders]
     _doctor_line("info", "Secrets from environment/.env", ", ".join(present_secrets) if present_secrets else "none set")
+    if DISABLE_LOGGING:
+        _doctor_line("info", "Output logging is disabled")
+    elif targets:
+        for target in targets:
+            _, target_log = get_target_paths(target)
+            if output_destination_is_writable(target_log):
+                _doctor_line("ok", f"Log destination for '{target}' appears writable", f"Path: {target_log}")
+            else:
+                fails += 1
+                _doctor_line("fail", f"Log destination for '{target}' is not writable", f"Path: {target_log}")
+    else:
+        _doctor_line("info", "Log destination will be finalized after a target is selected", f"Base path: {INSTA_LOGFILE}")
 
     # Build a single bot for the live checks (reuses the globally installed HTTP backend)
     bot = None
@@ -13135,7 +13208,9 @@ def run_main():
         if local_tz:
             LOCAL_TIMEZONE = str(local_tz)
         else:
-            print("* Error: Cannot detect local timezone, consider setting LOCAL_TIMEZONE to your local timezone manually !")
+            print("* Error: Cannot detect local timezone.")
+            print("* Hint: This can happen if the optional 'tzlocal' library is missing. Install it with: pip install tzlocal")
+            print("* Or set LOCAL_TIMEZONE to your local timezone manually.")
             sys.exit(1)
     else:
         if not is_valid_timezone(LOCAL_TIMEZONE):
@@ -13523,6 +13598,12 @@ def run_main():
     if args.no_color is True:
         COLORED_OUTPUT = False
 
+    try:
+        ascii_log_separators_enabled()
+    except ValueError as e:
+        print(f"* Error: {e}")
+        sys.exit(1)
+
     if args.disable_logging is True:
         DISABLE_LOGGING = True
 
@@ -13679,6 +13760,7 @@ def run_main():
             summary_rows.append((f"* CSV logging enabled:\t\t\tFalse", False, True))
 
     summary_rows.append((f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""), bool(DISABLE_LOGGING), True))
+    summary_rows.append((f"* ASCII log separators:\t\t\t{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})", False, True))
 
     if OUTPUT_DIR:
         output_dir_desc = "(root for user data & logs)" if len(targets) == 1 else "(container for per-user subdirectories & logs)"
