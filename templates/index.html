@@ -792,6 +792,7 @@
                                 <th>Reels</th>
                                 <th>Story</th>
                                 <th>Status</th>
+                                <th>Analysis</th>
                             </tr>
                         </thead>
                         <tbody id="dashboard-targets-simple-body">
@@ -2157,7 +2158,12 @@
                                 <button class="btn btn-danger btn-sm" onclick="stopMonitoring('${escapeHtml(name)}')" title="Stop">⏹️</button>
                                 <button class="btn btn-danger btn-sm" onclick="removeTarget('${escapeHtml(name)}')" title="Remove">🗑️</button>
                             </div>
-                        </td>` : ''}
+                        </td>` : `
+                        <td>
+                            <div class="target-actions">
+                                <button class="btn btn-secondary btn-sm" onclick="showFollowAnalysis('${escapeHtml(name)}')" title="Follow analysis">📊</button>
+                            </div>
+                        </td>`}
                     </tr>
                 `;
             };
