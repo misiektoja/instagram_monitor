@@ -2167,6 +2167,20 @@ def create_web_dashboard_app():
                 data = apply_privacy_substitutions(data)
             return jsonify(data)  # type: ignore
 
+    @app.route('/api/follow-analysis/<username>')
+    def api_follow_analysis(username):  # type: ignore
+        # Compute follow relationships (mutual, not-following-back, fans) for a target
+        # from its already-saved follower/following lists; makes no network requests
+        user = (username or "").strip().lower()
+        if not user:
+            return jsonify({'success': False, 'error': 'Username required'}), 400  # type: ignore
+        try:
+            # Mirror get_target_paths(): the saved lists are nested per user only when several targets are monitored
+            analysis = analyze_follows_for_user(user, is_multi=len(DASHBOARD_DATA.get('targets_list', [])) > 1)
+        except Exception as e:
+            return jsonify({'success': False, 'error': format_error_message(e)}), 500  # type: ignore
+        return jsonify({'success': True, 'analysis': apply_privacy_substitutions(analysis)})  # type: ignore
+
     # Catch TemplateNotFound specifically to show friendly error
     if jinja2 is not None:
         @app.errorhandler(jinja2.exceptions.TemplateNotFound)  # type: ignore
@@ -12291,6 +12305,142 @@ def _doctor_offer_notification_tests(smtp_ready: bool, webhook_ready: bool) -> i
     return failures
 
 
+# Resolves the saved follower/following JSON list paths for a target, mirroring the layouts the monitor writes to: OUTPUT_DIR/json for a single target, OUTPUT_DIR/<user>/json for multiple targets and the working directory when OUTPUT_DIR is unset
+def get_follow_list_paths(user, is_multi=False):
+    if OUTPUT_DIR:
+        json_dir = os.path.join(OUTPUT_DIR, user, "json") if is_multi else os.path.join(OUTPUT_DIR, "json")
+    else:
+        json_dir = ""
+    followers_file = os.path.join(json_dir, f"instagram_{user}_followers.json")
+    followings_file = os.path.join(json_dir, f"instagram_{user}_followings.json")
+    return followers_file, followings_file
+
+
+# Loads a saved [count, [usernames...]] follow list; returns (reported_count, usernames_set, status) where status is 'ok', 'missing' or 'corrupt'
+def load_saved_follow_list(path):
+    if not os.path.isfile(path):
+        return 0, set(), "missing"
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return 0, set(), "corrupt"
+    if not isinstance(data, list) or len(data) < 2 or not isinstance(data[1], list):
+        return 0, set(), "corrupt"
+    reported = data[0] if isinstance(data[0], int) else len(data[1])
+    usernames = {str(u).strip() for u in data[1] if str(u).strip()}
+    return reported, usernames, "ok"
+
+
+# Computes mutual / not-following-back / fan relationships for a target purely from its already-saved follower and following lists (no network requests); returns a JSON-serializable dict
+def analyze_follows_for_user(user, is_multi=False):
+    followers_file, followings_file = get_follow_list_paths(user, is_multi)
+
+    # Lists saved by an earlier run with a different number of targets live in the other OUTPUT_DIR layout, so fall back to it when the expected one holds nothing
+    if OUTPUT_DIR and not (os.path.isfile(followers_file) or os.path.isfile(followings_file)):
+        alt_followers_file, alt_followings_file = get_follow_list_paths(user, not is_multi)
+        if os.path.isfile(alt_followers_file) or os.path.isfile(alt_followings_file):
+            followers_file, followings_file = alt_followers_file, alt_followings_file
+
+    followers_reported, followers, followers_status = load_saved_follow_list(followers_file)
+    followings_reported, followings, followings_status = load_saved_follow_list(followings_file)
+
+    result = {
+        "user": user,
+        "followers_file": followers_file,
+        "followings_file": followings_file,
+        "available": False,
+        "notes": [],
+        "followers_count": followers_reported,
+        "followings_count": followings_reported,
+        "followers_fetched": len(followers),
+        "followings_fetched": len(followings),
+        "mutual_count": 0,
+        "not_following_back": [],
+        "fans": [],
+        "mutual": [],
+    }
+
+    missing = [label for label, status in (("followers", followers_status), ("followings", followings_status)) if status == "missing"]
+    corrupt = [label for label, status in (("followers", followers_status), ("followings", followings_status)) if status == "corrupt"]
+    if missing:
+        searched = followers_file if "followers" in missing else followings_file
+        result["notes"].append(f"No saved {' and '.join(missing)} list found for '{user}' (looked in '{os.path.dirname(searched) or os.getcwd()}'). Run the monitor once in Logged-in mode so the lists are downloaded first.")
+    if corrupt:
+        result["notes"].append(f"Saved {' and '.join(corrupt)} list for '{user}' is unreadable or malformed and was skipped.")
+
+    if followers_status != "ok" or followings_status != "ok":
+        return result
+
+    result["available"] = True
+    result["not_following_back"] = sorted(followings - followers)  # the target follows them, they do not follow back
+    result["fans"] = sorted(followers - followings)                # they follow the target, the target does not follow back
+    result["mutual"] = sorted(followers & followings)
+    result["mutual_count"] = len(result["mutual"])
+
+    # A private target or an interrupted download stores fewer handles than the reported total; the analysis then covers only what was saved
+    if followers_reported and len(followers) < followers_reported:
+        result["notes"].append(f"Follower list is partial ({len(followers)} of {followers_reported} saved). Analysis covers the saved handles only.")
+    if followings_reported and len(followings) < followings_reported:
+        result["notes"].append(f"Following list is partial ({len(followings)} of {followings_reported} saved). Analysis covers the saved handles only.")
+
+    return result
+
+
+# Prints the follow relationship analysis for each target from saved lists and returns a process exit code (0 when at least one target had usable saved lists)
+def run_follow_analysis(targets) -> int:
+    # Standalone actions run before stdout is wrapped by Logger/ColorStream, so identity masking is applied here at the point of display
+    def masked(text: str) -> str:
+        return apply_privacy_substitutions(text)
+
+    print(colorize("header", f"\nInstagram Monitor v{VERSION} - Follow Analysis\n"))
+    print("Reading the saved follower and following lists. No network requests are made.\n")
+
+    if not targets:
+        print(colorize("warning", "* No target specified. Pass a TARGET_USERNAME or set TARGET_USERNAMES in the config."))
+        return 1
+
+    is_multi = len(targets) > 1
+    analyzed = 0
+    for user in targets:
+        result = analyze_follows_for_user(user, is_multi)
+        display_user = masked(user)
+        print(colorize("section", f"Target: {display_user}"))
+
+        if not result["available"]:
+            for note in result["notes"]:
+                _doctor_line("warn", masked(note))
+            print("")
+            continue
+
+        analyzed += 1
+        _doctor_line("info", f"Followers: {result['followers_fetched']}")
+        _doctor_line("info", f"Followings: {result['followings_fetched']}")
+        _doctor_line("info", f"Mutual (follow each other): {result['mutual_count']}")
+        for note in result["notes"]:
+            _doctor_line("warn", masked(note))
+
+        not_back = result["not_following_back"]
+        fans = result["fans"]
+
+        print(colorize("section", f"\nNot following back ({len(not_back)}) - {display_user} follows them, they do not follow back:"))
+        if not_back:
+            for u in not_back:
+                print(masked(f"- {u} [ https://www.instagram.com/{u}/ ]"))
+        else:
+            print("- none")
+
+        print(colorize("section", f"\nFans ({len(fans)}) - they follow {display_user}, {display_user} does not follow back:"))
+        if fans:
+            for u in fans:
+                print(masked(f"- {u} [ https://www.instagram.com/{u}/ ]"))
+        else:
+            print("- none")
+        print("")
+
+    return 0 if analyzed else 1
+
+
 # Runs preflight checks plus approved delivery tests and returns the number of failures
 def run_doctor(targets) -> int:
     import importlib.util
@@ -12527,7 +12677,7 @@ def run_main():
     early_dashboard_enabled = "--dashboard" in sys.argv and "--no-dashboard" not in sys.argv
 
     # Clear screen BEFORE printing the header
-    keep_cli_history = any(flag in sys.argv for flag in ("--import-browser-session", "--import-firefox-session", "--set-webhook-url", "--doctor"))
+    keep_cli_history = any(flag in sys.argv for flag in ("--import-browser-session", "--import-firefox-session", "--set-webhook-url", "--doctor", "--analyze-follows"))
     clear_screen(CLEAR_SCREEN and not keep_cli_history)
 
     if not (early_dashboard_enabled and RICH_AVAILABLE):
@@ -12891,6 +13041,12 @@ def run_main():
         default=None,
         help="Number of consecutive errors required to trigger an alert (default: 2)"
     )
+    opts.add_argument(
+        "--analyze-follows",
+        dest="analyze_follows",
+        action="store_true",
+        help="Analyze follow relationships (mutual, not-following-back, fans) for the target(s) from the already-saved follower/following lists and exit; makes no network requests"
+    )
 
     # Terminal dashboard options
     term_opts = parser.add_argument_group("Terminal dashboard")
@@ -13033,7 +13189,7 @@ def run_main():
     args = parser.parse_args()
 
     import_requested = bool(args.import_firefox_session or args.import_browser_session)
-    requested_actions = [label for label, enabled in (("--setup", args.setup), ("--set-webhook-url", args.set_webhook_url), ("--doctor", args.doctor), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--generate-config", args.generate_config is not None)) if enabled]
+    requested_actions = [label for label, enabled in (("--setup", args.setup), ("--set-webhook-url", args.set_webhook_url), ("--doctor", args.doctor), ("--analyze-follows", args.analyze_follows), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--generate-config", args.generate_config is not None)) if enabled]
     if len(requested_actions) > 1:
         parser.error("standalone actions cannot be combined: " + ", ".join(requested_actions))
     if args.setup:
@@ -13263,7 +13419,7 @@ def run_main():
                 print(f"* Error: Proxy certificate file does not exist. '{PROXY_CERT_PATH}'")
                 sys.exit(1)
 
-    if not args.doctor and not check_internet():
+    if not args.doctor and not args.analyze_follows and not check_internet():
         sys.exit(1)
 
     # Advanced Follower/Followee Fetching Settings
@@ -13413,7 +13569,7 @@ def run_main():
         WEB_DASHBOARD_HOST = "0.0.0.0"
 
     # Allow empty targets with specific flags
-    if not targets and not WEB_DASHBOARD_ENABLED and not args.doctor:
+    if not targets and not WEB_DASHBOARD_ENABLED and not args.doctor and not args.analyze_follows:
         utility_flags = {
             "--no-color", "-h", "--help",
             "--web-dashboard", "--version"
@@ -13506,6 +13662,10 @@ def run_main():
                 print("Doctor passed, but no monitoring target or Web Dashboard is configured.")
                 print(colorize("section", f"    {_wizard_cmd_prefix(_wizard_install_method())} --setup\n"))
         sys.exit(1 if doctor_failures else 0)
+
+    # Offline follow relationship analysis: read the already-saved lists, print the result and exit (no network requests, no monitoring loop)
+    if getattr(args, "analyze_follows", False):
+        sys.exit(run_follow_analysis(targets))
 
     # Auto-disable Follower Churn Detection if session or lists are skipped
     if FOLLOWERS_CHURN_DETECTION:

@@ -125,6 +125,7 @@ For the manual single-file method, optional browser support and upgrade commands
 - **CSV Logging**: Log all activities and profile changes with timestamps.
 - **Flexible Config**: Support for files, dotenv and environment variables.
 - **Follower Churn**: Detailed tracking of exactly who followed or unfollowed.
+- **Follow Analysis**: Offline mutual / not-following-back / fans breakdown from already-saved lists (`--analyze-follows`).
 - **Batched Fetching**: Throttle follower/following downloads into delayed batches.
 - **Remote Control**: Manage tracking features via signals or the web UI.
 - **Docker Ready**: Run via Docker Hub, Docker Compose or local image build with persisted config, dotenv and sessions.

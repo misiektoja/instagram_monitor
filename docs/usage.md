@@ -472,6 +472,37 @@ To enable skipping follow changes:
 instagram_monitor <target_insta_user> --skip-follow-changes
 ```
 
+<a id="follow-relationship-analysis"></a>
+## Follow Relationship Analysis
+
+Follow relationship analysis reports the mutual, not-following-back and fan relationships for a target. It works entirely offline: it reads the follower and following lists the monitor has already saved and makes no additional Instagram requests.
+
+The categories are:
+
+- **Mutual**: accounts that follow the target and that the target follows back
+- **Not following back**: accounts the target follows that do not follow the target back
+- **Fans**: accounts that follow the target while the target does not follow them back
+
+Both saved lists are required, so the analysis reflects the target's follow graph as of the last time the monitor downloaded them.
+
+Run it with the `--analyze-follows` flag. It prints the analysis and exits without starting the monitoring loop:
+
+```sh
+instagram_monitor <target_insta_user> --analyze-follows
+```
+
+Multiple targets are supported (positional usernames or `TARGET_USERNAMES` from the config):
+
+```sh
+instagram_monitor user1 user2 --analyze-follows
+```
+
+The analysis needs the saved lists `instagram_<user>_followers.json` and `instagram_<user>_followings.json`. These are produced when the monitor runs in [Logged-In Mode](configuration.md#logged-in-mode-with-session-login) with follower/following fetching enabled. They are read from the JSON directory described in [Output Directory](#output-directory), so they resolve under `OUTPUT_DIR/json/` for a single target, `OUTPUT_DIR/<username>/json/` for multiple targets, or the working directory when no output directory is set.
+
+If the lists have not been downloaded yet, the command names the directory it searched and explains that the monitor has to run once first. Private accounts or interrupted downloads may store partial lists; in that case the analysis covers only the saved handles and prints a note. A list that cannot be parsed is skipped with a warning instead of crashing the command.
+
+The same analysis is available in the **Web Dashboard**: use the 📊 button next to a target to open its follow analysis.
+
 <a id="advanced-followerfollowing-fetching"></a>
 ## Advanced Follower/Following Fetching
 

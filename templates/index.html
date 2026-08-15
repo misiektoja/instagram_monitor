@@ -1560,6 +1560,19 @@
         </div>
     </div>
 
+    <!-- Follow Analysis Modal -->
+    <div class="modal-overlay" id="modal-follow-analysis">
+        <div class="modal" style="max-width: 640px;">
+            <div class="modal-header">
+                <h2 class="modal-title">📊 Follow Analysis</h2>
+                <button class="modal-close" onclick="hideModal('follow-analysis')">&times;</button>
+            </div>
+            <div class="modal-body" id="follow-analysis-body" style="max-height: 70vh; overflow: auto;">
+                <div class="empty-state"><p>Loading…</p></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast -->
     <div class="toast" id="toast">
         <span id="toast-message"></span>
@@ -2107,6 +2120,7 @@
                             <td>
                                 <div class="target-actions">
                                     <button class="btn btn-secondary btn-sm" onclick="triggerCheck('${escapeHtml(name)}')" title="Recheck">🔄</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="showFollowAnalysis('${escapeHtml(name)}')" title="Follow analysis">📊</button>
                                     <button class="btn btn-success btn-sm" onclick="startMonitoring('${escapeHtml(name)}')" title="Start">▶️</button>
                                     <button class="btn btn-danger btn-sm" onclick="stopMonitoring('${escapeHtml(name)}')" title="Stop">⏹️</button>
                                     <button class="btn btn-danger btn-sm" onclick="removeTarget('${escapeHtml(name)}')" title="Remove">🗑️</button>
@@ -2138,6 +2152,7 @@
                         <td>
                             <div class="target-actions">
                                 <button class="btn btn-secondary btn-sm" onclick="triggerCheck('${escapeHtml(name)}')" title="Recheck">🔄</button>
+                                <button class="btn btn-secondary btn-sm" onclick="showFollowAnalysis('${escapeHtml(name)}')" title="Follow analysis">📊</button>
                                 <button class="btn btn-success btn-sm" onclick="startMonitoring('${escapeHtml(name)}')" title="Start">▶️</button>
                                 <button class="btn btn-danger btn-sm" onclick="stopMonitoring('${escapeHtml(name)}')" title="Stop">⏹️</button>
                                 <button class="btn btn-danger btn-sm" onclick="removeTarget('${escapeHtml(name)}')" title="Remove">🗑️</button>
@@ -2408,6 +2423,51 @@
             } catch (err) {
                 showToast('Failed to trigger check', 'error');
             }
+        }
+
+        // Fetches and renders the offline follow relationship analysis for a target (mutual, not-following-back, fans)
+        async function showFollowAnalysis(username) {
+            const body = document.getElementById('follow-analysis-body');
+            body.innerHTML = `<div class="empty-state"><p>Loading analysis for <strong>${escapeHtml(username)}</strong>…</p></div>`;
+            showModal('follow-analysis');
+            try {
+                const response = await fetch(`/api/follow-analysis/${encodeURIComponent(username)}`);
+                const data = await response.json();
+                if (!data.success) {
+                    body.innerHTML = `<div class="empty-state"><p>${escapeHtml(data.error || 'Could not analyze follows')}</p></div>`;
+                    return;
+                }
+                body.innerHTML = renderFollowAnalysis(username, data.analysis);
+            } catch (err) {
+                body.innerHTML = `<div class="empty-state"><p>Failed to load follow analysis</p></div>`;
+            }
+        }
+
+        // Builds the HTML for a follow analysis result: summary counts, notes and the not-following-back / fans lists
+        function renderFollowAnalysis(username, a) {
+            const notes = (a.notes || []).map(n => `<p style="color:#f0ad4e;margin:4px 0;">⚠️ ${escapeHtml(n)}</p>`).join('');
+            if (!a.available) {
+                return `<h3 style="margin-bottom:8px;">@${escapeHtml(username)}</h3>${notes || '<div class="empty-state"><p>No saved lists to analyze yet.</p></div>'}`;
+            }
+            const userList = (list) => list.length
+                ? `<ul style="margin:8px 0 0;padding-left:18px;line-height:1.7;">${list.map(u =>
+                    `<li><a href="https://www.instagram.com/${encodeURIComponent(u)}/" target="_blank" style="color:inherit;">${escapeHtml(u)}</a></li>`).join('')}</ul>`
+                : '<p style="opacity:0.7;margin:8px 0 0;">None</p>';
+            return `
+                <h3 style="margin-bottom:12px;">@${escapeHtml(username)}</h3>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+                    <span class="badge badge-success">Followers: ${a.followers_fetched}</span>
+                    <span class="badge badge-success">Following: ${a.followings_fetched}</span>
+                    <span class="badge badge-success">Mutual: ${a.mutual_count}</span>
+                </div>
+                ${notes}
+                <h4 style="margin:16px 0 0;">Not following back (${a.not_following_back.length})</h4>
+                <p style="opacity:0.7;font-size:12px;margin:2px 0 0;">@${escapeHtml(username)} follows them, they do not follow back.</p>
+                ${userList(a.not_following_back)}
+                <h4 style="margin:16px 0 0;">Fans (${a.fans.length})</h4>
+                <p style="opacity:0.7;font-size:12px;margin:2px 0 0;">They follow @${escapeHtml(username)}, @${escapeHtml(username)} does not follow back.</p>
+                ${userList(a.fans)}
+            `;
         }
 
         function getSettingsFromForm() {
