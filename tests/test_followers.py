@@ -62,3 +62,10 @@ class TestCompareAndLogFollowerChanges:
         # The added username lands in New and the removed one lands in Old
         assert rows[1][2] == "drop"
         assert rows[2][3] == "join"
+
+
+class TestShouldNotifyFollowChange:
+    # Complete comparisons suppress count-only noise while unavailable or partial comparisons preserve count alerts
+    @pytest.mark.parametrize("count_changed,added_list,removed_list,list_comparison_complete,expected", [(True, "", "", True, False), (False, "", "", True, False), (True, "", "", False, True), (False, "- joined", "", True, True), (False, "", "- left", True, True), (False, "- joined", "", False, True), (False, "", "", False, False)])
+    def test_notification_evidence(self, im_module, count_changed, added_list, removed_list, list_comparison_complete, expected):
+        assert im_module.should_notify_follow_change(count_changed, added_list, removed_list, list_comparison_complete) is expected
