@@ -29,11 +29,11 @@ class TestStartupNotificationSummary:
 
 
 class TestValidateWebhookUrl:
-    @pytest.mark.parametrize("url", ["https://discord.com/api/webhooks/123/abc", "https://example.com/hook", "https://ntfy.example.test/private-topic?auth=value"])
+    @pytest.mark.parametrize("url", ["https://discord.com/api/webhooks/123/abc", "https://example.com/hook", "https://example.com/", "https://example.com", "https://example.com/?token=value", "https://ntfy.example.test/private-topic?auth=value"])
     def test_valid_urls(self, im_module, url):
         assert im_module.validate_webhook_url(url) is True
 
-    @pytest.mark.parametrize("url", ["", None, "http://example.com/hook", "https://user:password@example.com/hook", "https://example.com", "ftp://example.com/hook", "discord.com/webhook", "https://"])
+    @pytest.mark.parametrize("url", ["", None, "http://example.com/hook", "https://user:password@example.com/hook", "ftp://example.com/hook", "discord.com/webhook", "https://"])
     def test_invalid_urls(self, im_module, url):
         assert im_module.validate_webhook_url(url) is False
 
