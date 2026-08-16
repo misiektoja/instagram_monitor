@@ -75,7 +75,7 @@ You can also change most settings and generate a config file through the [Web Da
 <a id="no-login-mode-without-session-login"></a>
 ## No-Login Mode (No Session Login)
 
-This mode does not sign in to Instagram. It can monitor new or deleted regular posts, bio changes and follower or following counts for public accounts. It cannot monitor reels or stories. It also cannot tell you which specific accounts followed or unfollowed the target.
+This mode does not sign in to Instagram. It can monitor new or deleted regular posts, bio changes and follower or following counts for public accounts. Follower and following notifications report count changes without usernames because complete list comparison is unavailable. It cannot monitor reels or stories. It also cannot tell you which specific accounts followed or unfollowed the target.
 
 No-login mode needs no Instagram credentials and makes fewer requests than logged-in mode. Instagram can still limit or block public requests, so this mode does not guarantee uninterrupted access.
 

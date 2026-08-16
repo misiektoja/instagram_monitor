@@ -356,7 +356,7 @@ def test_set_webhook_url_requires_safe_input(im_module):
 def test_set_webhook_url_persists_privately(im_module, monkeypatch, capsys):
     with make_test_directory() as directory_name:
         env_path = Path(directory_name) / ".env"
-        webhook_url = "https://example.test/private-hook"
+        webhook_url = "https://example.test"
         monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
 
         result = im_module.run_set_webhook_url(env_file=env_path, interactive=True, getpass_func=lambda prompt: webhook_url)

@@ -380,7 +380,7 @@ instagram_monitor <target_insta_user> --webhook
 instagram_monitor <target_insta_user> --no-webhook
 ```
 
-Webhook and avatar URLs must be complete HTTPS links with a path and no embedded credentials. Known Discord and `ntfy.sh` destinations correct a stale configured provider at runtime. A URL passed through `--webhook-url` may remain visible in shell history or process listings, so prefer `--set-webhook-url` for normal setup.
+Webhook and avatar URLs must be complete HTTPS links with a hostname and no embedded credentials. Root endpoints work with or without a trailing slash. Known Discord and `ntfy.sh` destinations correct a stale configured provider at runtime. A URL passed through `--webhook-url` may remain visible in shell history or process listings, so prefer `--set-webhook-url` for normal setup.
 
 <a id="3-test-your-settings"></a>
 ### 3. Test Your Settings
@@ -443,6 +443,8 @@ To enable follower churn detection:
 - or toggle it via the **Settings** menu in the **Web Dashboard**
 
 This feature requires [Logged-In Mode](configuration.md#logged-in-mode-with-session-login). It is disabled when `SKIP_FOLLOW_CHANGES` is active.
+
+After a complete list comparison, email and webhook alerts require at least one added or removed username. Reported count fluctuations with an unchanged complete list are ignored. When a complete comparison is unavailable because list fetching is disabled, fails or uses a configured maximum, alerts fall back to reported count changes without claiming which usernames changed.
 
 ```sh
 instagram_monitor <target_insta_user> --followers-churn

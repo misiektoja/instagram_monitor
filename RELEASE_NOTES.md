@@ -2,6 +2,14 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.8.2 (TBD)
+
+Version **3.8.2** prevents empty follower alerts without hiding count changes when complete Instagram lists are unavailable and accepts webhook services hosted at a root HTTPS endpoint.
+
+**Bug fixes**:
+
+- **BUGFIX:** **Reliable follower and following notifications** - Email and webhook alerts now ignore reported count fluctuations only after a complete list comparison confirms that no usernames changed. No-login mode, skipped or failed list fetches and configured fetch limits retain count-change alerts. Webhook and avatar validation also accepts root HTTPS endpoints with or without a trailing slash (closes [#118](https://github.com/misiektoja/instagram_monitor/issues/118) and [#119](https://github.com/misiektoja/instagram_monitor/issues/119))
+
 # Changes in 3.8.1 (04 Aug 2026)
 
 Version **3.8.1** streamlines first-time setup and diagnostics, adds portable logs and prevents webhook noise from repeated monitoring failures.
