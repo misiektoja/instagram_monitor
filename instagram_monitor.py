@@ -4302,7 +4302,7 @@ def validate_webhook_url(url):
         parsed = urlsplit(url.strip())
     except ValueError:
         return False
-    return parsed.scheme.casefold() == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password and (bool(parsed.path.strip("/")) or parsed.path == "/")
+    return parsed.scheme.casefold() == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password and (parsed.path in ("", "/") or bool(parsed.path.strip("/")))
 
 
 # Returns whether a proxy URL uses a supported HTTP scheme and has a host
@@ -4482,6 +4482,12 @@ def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_
             print()
 
     return (added_list, removed_list, added_list_html, removed_list_html, added_list_webhook, removed_list_webhook, added_mbody, removed_mbody)
+
+
+# Returns whether a follower or following change has enough evidence to notify
+def should_notify_follow_change(count_changed, added_list, removed_list, list_comparison_complete):
+    list_changed = bool(added_list or removed_list)
+    return list_changed if list_comparison_complete else bool(count_changed or list_changed)
 
 
 # Helper function to send follower/following change webhooks
@@ -10221,6 +10227,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 removed_followings_list_webhook = ""
                 added_followings_mbody = ""
                 removed_followings_mbody = ""
+                followings_list_comparison_complete = False
 
                 if not skip_follow_changes and not skip_session and not skip_followings and can_view:
                     try:
@@ -10282,6 +10289,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_list_webhook, removed_followings_list_webhook, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
                                     user, "followings", followings_old, followings, csv_file_name
                                 )
+                                followings_list_comparison_complete = not FOLLOWEE_LIMIT_TO_FETCH and not (stop_event is not None and stop_event.is_set())
                         else:
                             # If baseline wasn't available (e.g. initial fetch failed), establish it now
                             followings_baseline_available = True
@@ -10289,7 +10297,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         followings_old = followings
 
                 if not skip_follow_changes:
-                    if STATUS_NOTIFICATION and (added_followings_list or removed_followings_list):
+                    notify_followings_change = should_notify_follow_change(followings_count != followings_old_count, added_followings_list, removed_followings_list, followings_list_comparison_complete)
+                    if STATUS_NOTIFICATION and notify_followings_change:
                         if followings_count != followings_old_count:
                             m_subject = f"Instagram user {user} followings number has changed! ({followings_diff_str}, {followings_old_count} -> {followings_count})"
                         else:
@@ -10321,7 +10330,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
                     # Send webhook notification for followings change (independent of email notifications) only if something changed
-                    if added_followings_list or removed_followings_list:
+                    if notify_followings_change:
                         webhook_result = send_follower_change_webhook(
                             user, "followings", followings_old_count, followings_count,
                             added_followings_list_webhook, removed_followings_list_webhook
@@ -10367,6 +10376,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                 removed_followers_list_webhook = ""
                 added_followers_mbody = ""
                 removed_followers_mbody = ""
+                followers_list_comparison_complete = False
 
                 if not skip_follow_changes and not skip_session and not skip_followers and can_view:
                     try:
@@ -10428,6 +10438,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_list_webhook, removed_followers_list_webhook, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
                                     user, "followers", followers_old, followers, csv_file_name
                                 )
+                                followers_list_comparison_complete = not FOLLOWER_LIMIT_TO_FETCH and not (stop_event is not None and stop_event.is_set())
                         else:
                             # If baseline wasn't available (e.g. initial fetch failed), establish it now
                             followers_baseline_available = True
@@ -10435,7 +10446,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         followers_old = followers
 
                 if not skip_follow_changes:
-                    if STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION and (added_followers_list or removed_followers_list):
+                    notify_followers_change = should_notify_follow_change(followers_count != followers_old_count, added_followers_list, removed_followers_list, followers_list_comparison_complete)
+                    if STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION and notify_followers_change:
                         if followers_count != followers_old_count:
                             m_subject = f"Instagram user {user} followers number has changed! ({followers_diff_str}, {followers_old_count} -> {followers_count})"
                         else:
@@ -10467,7 +10479,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
                     # Send webhook notification for followers change (independent of email notifications) only if something changed
-                    if added_followers_list or removed_followers_list:
+                    if notify_followers_change:
                         webhook_result = send_follower_change_webhook(
                             user, "followers", followers_old_count, followers_count,
                             added_followers_list_webhook, removed_followers_list_webhook
