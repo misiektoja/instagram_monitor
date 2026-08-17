@@ -1082,21 +1082,21 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label class="form-label">Base Interval (sec)</label>
-                            <input type="number" class="form-input" id="check-interval" min="300">
+                            <input type="number" class="form-input" id="check-interval" min="300" max="86400">
                         </div>
                         <div class="form-group">
                             <label class="form-label">Liveness Check (sec)</label>
-                            <input type="number" class="form-input" id="liveness-check-interval" min="0">
+                            <input type="number" class="form-input" id="liveness-check-interval" min="0" max="2678400">
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label class="form-label">Random Variation Low (sec)</label>
-                            <input type="number" class="form-input" id="random-low" min="0">
+                            <input type="number" class="form-input" id="random-low" min="0" max="3600">
                         </div>
                         <div class="form-group">
                             <label class="form-label">Random Variation High (sec)</label>
-                            <input type="number" class="form-input" id="random-high" min="0">
+                            <input type="number" class="form-input" id="random-high" min="0" max="3600">
                         </div>
                     </div>
                     <p style="font-size: 11px; color: #666; margin-top: -10px;">
@@ -1304,7 +1304,7 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label">SMTP Port</label>
-                            <input type="number" class="form-input" id="smtp-port" placeholder="587">
+                            <input type="number" class="form-input" id="smtp-port" min="1" max="65535" placeholder="587">
                         </div>
                     </div>
                     <div class="form-row">
@@ -2489,17 +2489,8 @@
                 });
                 const data = await response.json();
                 if (data.success) {
-                    if (data.changes && data.changes.length > 0) {
-                        const hasLimit = data.changes.some(c => c.includes('(min 300s limit)'));
-                        if (hasLimit) {
-                            showToast('Settings saved (some values capped to limits)', 'warning');
-                        } else {
-                            showToast('Settings saved');
-                        }
-                    } else {
-                        showToast('Settings saved');
-                    }
-                    // Refresh values from backend to reflect any server-side adjustments (like limits)
+                    showToast('Settings saved');
+                    // Refresh values from the backend after the atomic settings update
                     fetchSettings();
                 } else {
                     showToast(data.error || 'Failed to save settings', 'error');
