@@ -3,6 +3,8 @@
 from datetime import datetime, timedelta
 import os
 
+import pytest
+
 
 # Creates a Flask test client with the repository template directory configured
 def _dashboard_client(im_module, monkeypatch):
@@ -34,6 +36,17 @@ class TestDashboardStatus:
 
 
 class TestDashboardSettings:
+    # Settings form numeric bounds match the server-side validation contract
+    def test_settings_form_exposes_server_numeric_bounds(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+
+        html = client.get("/").get_data(as_text=True)
+
+        assert 'id="check-interval" min="300" max="86400"' in html
+        assert 'id="liveness-check-interval" min="0" max="2678400"' in html
+        assert 'id="random-low" min="0" max="3600"' in html
+        assert 'id="smtp-port" min="1" max="65535"' in html
+
     # Settings GET reports whether an SMTP password is configured without exposing the secret
     def test_settings_get_hides_smtp_password(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)
@@ -89,23 +102,88 @@ class TestDashboardSettings:
         assert response.status_code == 200
         assert im_module.WEBHOOK_PROVIDER == "ntfy"
 
-    # Settings POST clamps too-small intervals and reports the adjusted change
-    def test_settings_post_clamps_check_interval(self, im_module, monkeypatch):
+    # Settings POST rejects a too-small interval without changing the live value
+    def test_settings_post_rejects_too_small_check_interval(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", 5400)
-        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
-        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
 
         response = client.post("/api/settings", json={"check_interval": 10})
 
-        assert response.status_code == 200
+        assert response.status_code == 400
         data = response.get_json()
-        assert data["success"] is True
-        assert im_module.INSTA_CHECK_INTERVAL == 300
-        assert data["changes"] == ["'check_interval' changed from 5400 to 300 (min 300s limit)"]
+        assert data["success"] is False
+        assert "between 300 and 86400" in data["error"]
+        assert im_module.INSTA_CHECK_INTERVAL == 5400
+
+    # Malformed setting types and out-of-range numbers return explicit client errors
+    @pytest.mark.parametrize("payload,error_text", [({"email_notifications": "false"}, "must be a boolean"), ({"check_interval": True}, "must be an integer"), ({"check_interval": 300.5}, "must be an integer"), ({"smtp_port": 0}, "between 1 and 65535"), ({"liveness_check_interval": -1}, "between 0 and 2678400"), ({"min_h1": 24}, "between 0 and 23"), ({"webhook_provider": "teams"}, "must be 'discord' or 'ntfy'")])
+    def test_settings_post_rejects_malformed_values(self, im_module, monkeypatch, payload, error_text):
+        client = _dashboard_client(im_module, monkeypatch)
+
+        response = client.post("/api/settings", json=payload)
+
+        assert response.status_code == 400
+        assert response.get_json()["success"] is False
+        assert error_text in response.get_json()["error"]
+
+    # Validation completes before any setting mutates so a mixed payload is atomic
+    def test_settings_post_rejects_payload_without_partial_mutation(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", 5400)
+
+        response = client.post("/api/settings", json={"email_notifications": False, "check_interval": "fast"})
+
+        assert response.status_code == 400
+        assert im_module.STATUS_NOTIFICATION is True
+        assert im_module.INSTA_CHECK_INTERVAL == 5400
+
+    # Settings POST rejects non-object JSON including an empty list
+    def test_settings_post_rejects_non_object_json(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+
+        response = client.post("/api/settings", json=[])
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Invalid data format"
+
+    # Hour ranges reject reversed endpoints even when only one endpoint changes
+    def test_settings_post_rejects_reversed_hour_range(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "MIN_H1", 8)
+        monkeypatch.setattr(im_module, "MAX_H1", 17)
+
+        response = client.post("/api/settings", json={"min_h1": 20})
+
+        assert response.status_code == 400
+        assert "cannot be greater" in response.get_json()["error"]
+        assert im_module.MIN_H1 == 8
+
+    # Valid interval changes recompute the cycle-based liveness threshold
+    def test_settings_post_recomputes_liveness_counter(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", 3600)
+        monkeypatch.setattr(im_module, "LIVENESS_CHECK_INTERVAL", 43200)
+        monkeypatch.setattr(im_module, "LIVENESS_CHECK_COUNTER", 12)
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"check_interval": 7200, "liveness_check_interval": 21600})
+
+        assert response.status_code == 200
+        assert im_module.LIVENESS_CHECK_COUNTER == 3
 
 
 class TestDashboardConfigAndSession:
+    # Config generation rejects non-object JSON instead of raising an endpoint error
+    def test_generate_config_rejects_non_object_json(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+
+        response = client.post("/api/generate-config", json=[])
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Invalid data format"
+
     # Config generation rejects paths before writing any file
     def test_generate_config_rejects_path_filename(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)
@@ -163,6 +241,32 @@ class TestDashboardConfigAndSession:
         finally:
             if os.path.isfile(session_file):
                 os.remove(session_file)
+
+    # Session clear removes every canonical and legacy candidate that exists
+    def test_session_clear_removes_all_session_candidates(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        local_dir = os.path.join(os.path.dirname(os.path.abspath(im_module.__file__)), "local")
+        os.makedirs(local_dir, exist_ok=True)
+        session_files = [os.path.join(local_dir, "test_session_canonical"), os.path.join(local_dir, "test_session_legacy")]
+        try:
+            for session_file in session_files:
+                with open(session_file, "w", encoding="utf-8") as handle:
+                    handle.write("session")
+            monkeypatch.setattr(im_module, "SESSION_USERNAME", "session_user")
+            monkeypatch.setattr(im_module, "SKIP_SESSION", False)
+            monkeypatch.setattr(im_module, "get_session_file_candidates", lambda username: session_files)
+            monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+            monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+            response = client.post("/api/session/clear")
+
+            assert response.status_code == 200
+            assert response.get_json()["files_removed"] == 2
+            assert not any(os.path.exists(session_file) for session_file in session_files)
+        finally:
+            for session_file in session_files:
+                if os.path.isfile(session_file):
+                    os.remove(session_file)
 
     # Chromium profile detection returns the explicit unsupported-platform error on Windows
     def test_chromium_profiles_reports_windows_unsupported(self, im_module, monkeypatch):
@@ -234,6 +338,31 @@ class TestDashboardSecurityAndLifecycle:
         finally:
             if os.path.isfile(media_file):
                 os.remove(media_file)
+
+    # Consecutive dashboard items cannot reuse media paths from the prior item
+    def test_dashboard_media_metadata_does_not_reuse_prior_item_files(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_MEDIA_FILES", {})
+        local_dir = os.path.join(os.path.dirname(os.path.abspath(im_module.__file__)), "local")
+        os.makedirs(local_dir, exist_ok=True)
+        image_file = os.path.join(local_dir, "test_dashboard_item_image.jpg")
+        video_file = os.path.join(local_dir, "test_dashboard_item_video.mp4")
+        try:
+            with open(image_file, "wb") as handle:
+                handle.write(b"image")
+            with open(video_file, "wb") as handle:
+                handle.write(b"video")
+
+            first = im_module.get_dashboard_media_metadata("https://example.com/first.jpg", image_file, video_file)
+            second = im_module.get_dashboard_media_metadata("https://example.com/second.jpg", None, None)
+
+            assert first["file_path"] == video_file
+            assert first["url"].startswith("/media/")
+            assert first["video_url"].startswith("/media/")
+            assert second == {"file_path": None, "url": "https://example.com/second.jpg", "video_url": None}
+        finally:
+            for media_file in (image_file, video_file):
+                if os.path.isfile(media_file):
+                    os.remove(media_file)
 
     # A timed-out stop retains thread ownership and blocks a duplicate start
     def test_timed_out_stop_retains_thread_registry(self, im_module, monkeypatch):
