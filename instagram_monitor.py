@@ -260,7 +260,7 @@ ENABLE_JITTER = False
 # Whether to show verbose output for HTTP jitter and back-off wrappers
 JITTER_VERBOSE = False
 
-# Whether to hide per-request WRAP-REQ and WRAP-SEND log lines from the HTTP wrappers
+# Whether to hide per-request WRAP-REQ log lines from the Instagram HTTP wrapper
 # These can be overwhelming in debug or jitter-verbose mode and are not needed in most cases
 SKIP_WRAP_MESSAGES = False
 
@@ -1015,6 +1015,7 @@ MULTI_TARGET_SERIALIZE_HTTP = False
 WEBHOOK_ENABLED = False
 WEBHOOK_URL = ""
 WEBHOOK_PROVIDER = "discord"
+WEBHOOK_FIELD_VALUE_LIMIT = 1024
 WEBHOOK_EMBED_TITLE_LIMIT = 256
 NTFY_MESSAGE_LIMIT_BYTES = 4095
 WEBHOOK_USERNAME = "Instagram Monitor"
@@ -1071,6 +1072,8 @@ FLAGGED_PROBE_TTL = 300
 
 # Default value for network-related timeouts in functions
 FUNCTION_TIMEOUT = 15
+MEDIA_DOWNLOAD_MAX_BYTES = 100 * 1024 * 1024
+MEDIA_DOWNLOAD_CHUNK_BYTES = 64 * 1024
 
 # Computed later once final INSTA_CHECK_INTERVAL is known (config/env/CLI) and updated on SIGTRAP/SIGABRT
 LIVENESS_CHECK_COUNTER = 0
@@ -1274,6 +1277,17 @@ def register_dashboard_media_file(filename):
         while len(WEB_DASHBOARD_MEDIA_FILES) > WEB_DASHBOARD_MEDIA_LIMIT:
             WEB_DASHBOARD_MEDIA_FILES.pop(next(iter(WEB_DASHBOARD_MEDIA_FILES)))
     return f"/media/{token}"
+
+
+# Resolves saved media and safe dashboard URLs without carrying state between items
+def get_dashboard_media_metadata(remote_image_url, image_filename=None, video_filename=None):
+    image_exists = bool(image_filename and os.path.isfile(image_filename))
+    video_exists = bool(video_filename and os.path.isfile(video_filename))
+    return {
+        'file_path': video_filename if video_exists else image_filename if image_exists else None,
+        'url': register_dashboard_media_file(image_filename) if image_exists else remote_image_url,
+        'video_url': register_dashboard_media_file(video_filename) if video_exists else None,
+    }
 
 
 # Returns the current broadcast generation for session and live-setting changes
@@ -1722,6 +1736,9 @@ def _install_copy_session_proxy_patch() -> None:
             new.verify = getattr(session, "verify", True)
         except Exception:
             pass
+        wrapper = globals().get('ensure_instagram_session_wrapped')
+        if callable(wrapper):
+            wrapper(new)
         return new
 
     _patched_copy_session._proxies_patched = True  # type: ignore
@@ -1893,11 +1910,8 @@ PROGRESS_BAR_LOCK = threading.RLock()
 # Global lock for session file load/save (Instaloader session file is shared across targets)
 SESSION_FILE_LOCK = threading.Lock()
 
-# Global lock to guard one-time requests monkey-patching across threads
+# Global lock to guard per-session Instagram request wrapping across threads
 REQUESTS_PATCH_LOCK = threading.Lock()
-
-# Whether requests Session methods have already been monkey-patched
-REQUESTS_PATCHED = False
 
 # Per-thread output buffers for redirect/session detection (multi-target safe)
 LAST_OUTPUT_BY_THREAD = {}
@@ -2390,7 +2404,7 @@ def create_web_dashboard_app():
         update_ui_data(is_monitoring=active)
         return jsonify({'success': stopped})  # type: ignore
 
-    def apply_settings_update(data: dict):
+    def apply_settings_update(data: Any):
         """
         Apply settings from Web UI payload to globals
         """
@@ -2413,6 +2427,65 @@ def create_web_dashboard_app():
         if not isinstance(data, dict):
             return False, [], 'Invalid data format', 400
 
+        boolean_keys = {
+            'email_notifications', 'follower_notifications', 'error_notifications', 'webhook_enabled', 'webhook_status', 'webhook_followers', 'webhook_errors',
+            'proxy_enabled', 'proxy_webhooks', 'followers_churn', 'verbose_mode', 'debug_mode', 'be_human', 'skip_followers', 'skip_followings',
+            'skip_follow_changes', 'skip_stories', 'skip_posts', 'get_more_post_details', 'detect_collab_posts', 'profile_pic_changes', 'skip_session_login',
+            'logging_enabled', 'check_posts_in_hours_range', 'hours_verbose', 'dashboard_show_check_seconds', 'time_format_12h', 'smtp_ssl'
+        }
+        integer_ranges = {
+            'check_interval': (300, 86400),
+            'random_low': (0, 3600),
+            'random_high': (0, 3600),
+            'liveness_check_interval': (0, 2678400),
+            'smtp_port': (1, 65535),
+            'min_h1': (0, 23),
+            'max_h1': (0, 23),
+            'min_h2': (0, 23),
+            'max_h2': (0, 23),
+        }
+        string_keys = {'webhook_url', 'webhook_provider', 'proxy_url', 'proxy_cert', 'http_backend', 'impersonate', 'smtp_host', 'smtp_user', 'smtp_password', 'sender_email', 'receiver_email', 'csv_filename'}
+
+        for key in boolean_keys:
+            if key in data and type(data[key]) is not bool:
+                return False, [], f"'{key}' must be a boolean", 400
+        for key, (minimum, maximum) in integer_ranges.items():
+            if key not in data:
+                continue
+            if type(data[key]) is not int:
+                return False, [], f"'{key}' must be an integer", 400
+            if not minimum <= data[key] <= maximum:
+                return False, [], f"'{key}' must be between {minimum} and {maximum}", 400
+        for key in string_keys:
+            if key in data and not isinstance(data[key], str):
+                return False, [], f"'{key}' must be text", 400
+
+        current_hours = {'min_h1': MIN_H1, 'max_h1': MAX_H1, 'min_h2': MIN_H2, 'max_h2': MAX_H2}
+        for min_key, max_key in (('min_h1', 'max_h1'), ('min_h2', 'max_h2')):
+            minimum = data.get(min_key, current_hours[min_key])
+            maximum = data.get(max_key, current_hours[max_key])
+            if (minimum or maximum) and minimum > maximum:
+                return False, [], f"'{min_key}' cannot be greater than '{max_key}'", 400
+
+        if data.get('webhook_url') and not validate_webhook_url(data['webhook_url']):
+            return False, [], "'webhook_url' must be a complete HTTPS URL without embedded credentials", 400
+        if 'webhook_provider' in data and not normalized_webhook_provider(data['webhook_provider']):
+            return False, [], "'webhook_provider' must be 'discord' or 'ntfy'", 400
+        if data.get('proxy_url') and not validate_proxy_url(data['proxy_url']):
+            return False, [], "'proxy_url' must be a complete HTTP or HTTPS URL", 400
+        if data.get('proxy_enabled') and not validate_proxy_url(data.get('proxy_url', PROXY_URL)):
+            return False, [], "'proxy_enabled' requires a valid proxy URL", 400
+        if data.get('proxy_cert'):
+            expanded_cert = os.path.expanduser(data['proxy_cert'])
+            if not os.path.isfile(expanded_cert):
+                return False, [], "'proxy_cert' must identify an existing file", 400
+        if 'http_backend' in data:
+            requested_backend = data['http_backend'].strip().lower()
+            if requested_backend not in ('curl_cffi', 'requests'):
+                return False, [], "'http_backend' must be 'curl_cffi' or 'requests'", 400
+            if requested_backend == 'curl_cffi' and not _CURL_CFFI_AVAILABLE:
+                return False, [], "'http_backend' cannot use curl_cffi because it is not installed", 400
+
         changes: list[str] = []
 
         def update_setting(key, current_val, cast_func=None):
@@ -2428,18 +2501,7 @@ def create_web_dashboard_app():
             if processed_val != current_val:
                 # Special validation for some fields
                 note = ""
-                if key == 'check_interval':
-                    if processed_val < 300:
-                        processed_val = 300
-                        note = " (min 300s limit)"
-                    elif processed_val > 86400:  # Max 1 day to prevent excessive sleep
-                        processed_val = 86400
-                        note = " (max 86400s limit)"
-                elif key in ['random_low', 'random_high']:
-                    processed_val = max(0, min(processed_val, 3600))  # Max 1 hour to prevent excessive randomization
-                    if processed_val == 3600:
-                        note = " (max 3600s limit)"
-                elif key == 'webhook_url':
+                if key == 'webhook_url':
                     if processed_val and not validate_webhook_url(processed_val):
                         print("* Error: Invalid webhook URL format. Must be a complete HTTPS URL without embedded credentials.")
                         return current_val
@@ -2541,6 +2603,7 @@ def create_web_dashboard_app():
         MAX_H2 = int(update_setting('max_h2', MAX_H2, int))
         DASHBOARD_SHOW_CHECK_SECONDS = bool(update_setting('dashboard_show_check_seconds', DASHBOARD_SHOW_CHECK_SECONDS, bool))
         TIME_FORMAT_12H = bool(update_setting('time_format_12h', TIME_FORMAT_12H, bool))
+        recompute_liveness_check_counter()
 
         # HTTP transport backend
         HTTP_BACKEND = str(update_setting('http_backend', HTTP_BACKEND, str))
@@ -2667,7 +2730,7 @@ def create_web_dashboard_app():
             jsonify_func = cast(Callable[..., Any], jsonify)
             return jsonify_func(data)
         elif flask_request.method == 'POST':  # type: ignore
-            data = flask_request.get_json(silent=True) or {}  # type: ignore
+            data = flask_request.get_json(silent=True)  # type: ignore
             ok, changes, err, code = apply_settings_update(data)
             if not ok:
                 return jsonify({'success': False, 'error': err}), code  # type: ignore
@@ -2675,7 +2738,9 @@ def create_web_dashboard_app():
 
     @app.route('/api/generate-config', methods=['POST'])  # type: ignore[misc]
     def api_generate_config():  # type: ignore[return]
-        data = flask_request.get_json(silent=True) or {}  # type: ignore
+        data = flask_request.get_json(silent=True)  # type: ignore
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'error': 'Invalid data format'}), 400  # type: ignore
         filename = str(data.get('filename') or DEFAULT_CONFIG_FILENAME).strip()
         settings_payload = data.get('settings') or {}
 
@@ -5626,11 +5691,47 @@ def reload_secrets_signal_handler(sig, frame):
     print_cur_ts()
 
 
-# Saves user's image / video to selected file name
+# Validates downloaded media using its declared type and file signature
+def is_valid_downloaded_media(filename, content_type):
+    try:
+        if os.path.getsize(filename) <= 0:
+            return False
+        with open(filename, 'rb') as handle:
+            header = handle.read(32)
+    except OSError:
+        return False
+    image_signature = header.startswith((b'\xff\xd8\xff', b'\x89PNG\r\n\x1a\n', b'GIF87a', b'GIF89a')) or (header.startswith(b'RIFF') and header[8:12] == b'WEBP')
+    iso_media_brand = header[8:12] if len(header) >= 12 and header[4:8] == b'ftyp' else b''
+    iso_image_brands = {b'avif', b'avis', b'heic', b'heix', b'hevc', b'hevx', b'mif1', b'msf1'}
+    image_signature = image_signature or iso_media_brand in iso_image_brands
+    video_signature = (bool(iso_media_brand) and iso_media_brand not in iso_image_brands) or header.startswith(b'\x1aE\xdf\xa3')
+    normalized_type = str(content_type or '').split(';', 1)[0].strip().lower()
+    if normalized_type.startswith('image/'):
+        return image_signature
+    if normalized_type.startswith('video/'):
+        return video_signature
+    if normalized_type in ('', 'application/octet-stream'):
+        return image_signature or video_signature
+    return False
+
+
+# Downloads validated media to a bounded temporary file then atomically replaces the destination
 def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0):
+    temporary_path = None
+    image_video_response = None
+    expected_bytes = None
     try:
         image_video_response = req.get(image_video_url, headers={'User-Agent': USER_AGENT}, timeout=FUNCTION_TIMEOUT, stream=True, verify=get_proxies_ssl(), proxies=get_proxies())
-        image_video_response.raise_for_status()
+        if image_video_response.status_code != 200:
+            return False
+        content_length = image_video_response.headers.get('content-length')
+        if content_length:
+            try:
+                expected_bytes = int(content_length)
+                if expected_bytes < 0 or expected_bytes > MEDIA_DOWNLOAD_MAX_BYTES:
+                    return False
+            except (TypeError, ValueError):
+                return False
         url_time = image_video_response.headers.get('last-modified')
         url_time_in_tz_ts = 0
         if url_time and not custom_mdate_ts:
@@ -5640,18 +5741,46 @@ def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0):
             else:
                 url_time_in_tz_ts = 0
 
-        if image_video_response.status_code == 200:
-            os.makedirs(os.path.dirname(os.path.abspath(image_video_file_name)), exist_ok=True)
-            with open(image_video_file_name, 'wb') as f:
-                image_video_response.raw.decode_content = True
-                shutil.copyfileobj(image_video_response.raw, f)
-            if url_time_in_tz_ts and not custom_mdate_ts:
-                os.utime(image_video_file_name, (url_time_in_tz_ts, url_time_in_tz_ts))
-            elif custom_mdate_ts:
-                os.utime(image_video_file_name, (custom_mdate_ts, custom_mdate_ts))
+        destination = os.path.abspath(image_video_file_name)
+        destination_dir = os.path.dirname(destination)
+        os.makedirs(destination_dir, exist_ok=True)
+        downloaded_bytes = 0
+        with tempfile.NamedTemporaryFile(mode='wb', dir=destination_dir, prefix=f".{os.path.basename(destination)}.", suffix='.tmp', delete=False) as handle:
+            temporary_path = handle.name
+            for chunk in image_video_response.iter_content(chunk_size=MEDIA_DOWNLOAD_CHUNK_BYTES):
+                if not chunk:
+                    continue
+                downloaded_bytes += len(chunk)
+                if downloaded_bytes > MEDIA_DOWNLOAD_MAX_BYTES:
+                    return False
+                handle.write(chunk)
+            handle.flush()
+            os.fsync(handle.fileno())
+        content_encoding = str(image_video_response.headers.get('content-encoding') or '').strip().lower()
+        if expected_bytes is not None and content_encoding in ('', 'identity') and downloaded_bytes != expected_bytes:
+            return False
+        if not is_valid_downloaded_media(temporary_path, image_video_response.headers.get('content-type')):
+            return False
+        os.replace(temporary_path, destination)
+        temporary_path = None
+        if url_time_in_tz_ts and not custom_mdate_ts:
+            os.utime(destination, (url_time_in_tz_ts, url_time_in_tz_ts))
+        elif custom_mdate_ts:
+            os.utime(destination, (custom_mdate_ts, custom_mdate_ts))
         return True
     except Exception:
         return False
+    finally:
+        if image_video_response is not None:
+            try:
+                image_video_response.close()
+            except Exception:
+                pass
+        if temporary_path and os.path.isfile(temporary_path):
+            try:
+                os.remove(temporary_path)
+            except OSError:
+                pass
 
 
 # Compares two image files
@@ -6128,7 +6257,11 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
     if is_new and STATUS_NOTIFICATION:
         m_subject = f"Instagram private user {user} has a leaked collab {source} - {get_short_date_from_ts(post_dt)}"
         m_body = f"Leaked collab {source} detected for private Instagram user {user} (revealed via a public collaborator)\n\nDate: {get_date_from_ts(post_dt)}\n{source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nOwner: https://www.instagram.com/{owner}/\nCollaborators: {collab_str}\nLikes: {likes}\nComments: {comments}\nDescription:\n\n{caption}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-        m_body_html = f"Leaked collab {source} detected for private Instagram user <b>{user}</b> (revealed via a public collaborator){pic_saved_html}<br><br>Date: <b>{get_date_from_ts(post_dt)}</b><br>{source.capitalize()} URL: <a href=\"{post_url}\">{post_url}</a><br>Profile URL: <a href=\"https://www.instagram.com/{insta_username}/\">https://www.instagram.com/{insta_username}/</a><br>Owner: <a href=\"https://www.instagram.com/{owner}/\">{owner}</a><br>Collaborators: {escape(collab_str)}<br>Likes: {likes}<br>Comments: {comments}<br>Description:<br><br>{escape(str(caption))}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+        safe_post_url = escape(post_url, quote=True)
+        safe_profile_url = escape(f"https://www.instagram.com/{insta_username}/", quote=True)
+        safe_owner = escape(str(owner), quote=True)
+        safe_owner_url = escape(f"https://www.instagram.com/{owner}/", quote=True)
+        m_body_html = f"Leaked collab {source} detected for private Instagram user <b>{user}</b> (revealed via a public collaborator){pic_saved_html}<br><br>Date: <b>{get_date_from_ts(post_dt)}</b><br>{source.capitalize()} URL: <a href=\"{safe_post_url}\">{safe_post_url}</a><br>Profile URL: <a href=\"{safe_profile_url}\">{safe_profile_url}</a><br>Owner: <a href=\"{safe_owner_url}\">{safe_owner}</a><br>Collaborators: {escape(collab_str)}<br>Likes: {likes}<br>Comments: {comments}<br>Description:<br><br>{escape(str(caption))}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
         print(f"\n* Sending email notification to {RECEIVER_EMAIL}")
         if pic_saved_html and image_filename and os.path.isfile(image_filename):
             send_email(m_subject, m_body, m_body_html, SMTP_SSL, image_filename, "collab_pic")
@@ -6165,22 +6298,14 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
             notification_type="status"
         )
 
-    saved_file_path = None
-    if video_filename and os.path.isfile(video_filename):
-        saved_file_path = video_filename
-    elif image_filename and os.path.isfile(image_filename):
-        saved_file_path = image_filename
-
-    display_url = post.get("display_url", "")
-    if image_filename and os.path.isfile(image_filename):
-        display_url = register_dashboard_media_file(image_filename)
+    dashboard_media = get_dashboard_media_metadata(post.get("display_url", ""), image_filename, video_filename)
 
     return {
         "type": f"Leaked Collab {source.capitalize()}",
         "caption": caption[:50] + "..." if caption and len(caption) > 50 else caption,
-        "url": display_url,
-        "video_url": register_dashboard_media_file(video_filename),
-        "file_path": saved_file_path,
+        "url": dashboard_media['url'],
+        "video_url": dashboard_media['video_url'],
+        "file_path": dashboard_media['file_path'],
         "post_url": post_url,
         "timestamp": get_short_date_from_ts(post_dt, show_year=True),
         "timestamp_ts": int(post_dt.timestamp()) if isinstance(post_dt, datetime) else None,
@@ -6443,7 +6568,7 @@ def get_firefox_cookie_dict(cookiefile):
                 )
             except OperationalError:
                 cookie_iter = conn.execute(
-                    "SELECT name, value FROM moz_cookies WHERE host LIKE '%instagram.com'"
+                    "SELECT name, value FROM moz_cookies WHERE host = 'instagram.com' OR host LIKE '%.instagram.com'"
                 )
             return dict(cookie_iter)
     except sqlite3.DatabaseError:
@@ -7773,9 +7898,6 @@ def print_check_timing(r_sleep_time, prefix="", user=None):
 def setup_pbar(total_expected, title):
     global START_TIME, NAME_COUNT, WRAPPER_COUNT, pbar
 
-    # Ensure request hooks are active so progress updates are tracked even without jitter or serialization
-    ensure_requests_monkey_patched()
-
     # Use thread-local storage for multi-target safety
     if not hasattr(_thread_local, 'pbar'):
         _thread_local.pbar = None  # type: ignore[misc]
@@ -7991,10 +8113,12 @@ def instagram_wrap_request(orig_request):
     @wraps(orig_request)
     def wrapper(*args, **kwargs):
         global NAME_COUNT, START_TIME, WRAPPER_COUNT, pbar
-        method = kwargs.get("method") or (args[1] if len(args) > 1 else None)
+        method = kwargs.get("method") or (args[0] if args else None)
         if method and isinstance(method, str):
             method = method.upper()
-        url = kwargs.get("url") or (args[2] if len(args) > 2 else None)
+        url = kwargs.get("url") or (args[1] if len(args) > 1 else None)
+        if not is_instagram_request_url(url):
+            return orig_request(*args, **kwargs)
         if not SKIP_WRAP_MESSAGES:
             if DEBUG_MODE:
                 debug_print(f"[WRAP-REQ] {method} {url}")
@@ -8160,44 +8284,26 @@ def instagram_wrap_request(orig_request):
     return wrapper
 
 
-# Monkey-patches Instagram prepared-request send to add human-like jitter
-def instagram_wrap_send(orig_send):
-    @wraps(orig_send)
-    def wrapper(*args, **kwargs):
-        req_obj = args[1] if len(args) > 1 else kwargs.get("request")
-        method = getattr(req_obj, "method", None)
-        if method and isinstance(method, str):
-            method = method.upper()
-        url = getattr(req_obj, "url", None)
-        if not SKIP_WRAP_MESSAGES:
-            if DEBUG_MODE:
-                debug_print(f"[WRAP-SEND] {method} {url}")
-            elif JITTER_VERBOSE:
-                print(f"* [WRAP-SEND] {method} {url}")
-
-        def _do_send():
-            if ENABLE_JITTER:
-                time.sleep(random.uniform(0.8, 3.0))
-            return orig_send(*args, **kwargs)
-
-        if MULTI_TARGET_SERIALIZE_HTTP:
-            with HTTP_SERIAL_LOCK:
-                return _do_send()
-        return _do_send()
-    return wrapper
+# Returns whether a request URL belongs to Instagram or is a relative Instagram API path
+def is_instagram_request_url(url):
+    if not isinstance(url, str) or not url:
+        return True
+    parsed = urlsplit(url)
+    if not parsed.hostname:
+        return True
+    hostname = parsed.hostname.rstrip('.').lower()
+    return hostname == 'instagram.com' or hostname.endswith('.instagram.com')
 
 
-# Ensures requests Session monkey-patch is applied once in a thread-safe way
-def ensure_requests_monkey_patched():
-    global REQUESTS_PATCHED
-    if REQUESTS_PATCHED:
+# Wraps only one Instaloader session instead of patching every Requests session
+def ensure_instagram_session_wrapped(session):
+    if getattr(session, '_instagram_monitor_wrapped', False):
         return
     with REQUESTS_PATCH_LOCK:
-        if REQUESTS_PATCHED:
+        if getattr(session, '_instagram_monitor_wrapped', False):
             return
-        req.Session.request = instagram_wrap_request(req.Session.request)
-        req.Session.send = instagram_wrap_send(req.Session.send)
-        REQUESTS_PATCHED = True
+        session.request = instagram_wrap_request(session.request)
+        session._instagram_monitor_wrapped = True
 
 
 # Returns a dictionary containing all current configuration settings
@@ -8853,6 +8959,41 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
     return results
 
 
+# Sends independent email and webhook notifications for one new story item
+def send_story_item_notifications(user, story_type, local_ts, expire_ts, story_mentions, story_hashtags, story_caption, r_sleep_time, story_thumbnail_url, story_image_filename=None):
+    local_image_file = str(story_image_filename) if story_image_filename and os.path.isfile(story_image_filename) else ""
+    has_local_image = bool(local_image_file)
+    story_mentions_text = f"\nMentions: {story_mentions}" if story_mentions else ""
+    story_hashtags_text = f"\nHashtags: {story_hashtags}" if story_hashtags else ""
+    story_caption_text = f"\nDescription:\n\n{story_caption}" if story_caption else ""
+    if STATUS_NOTIFICATION:
+        m_subject = f"Instagram user {user} has a new story item ({get_short_date_from_ts(int(local_ts))})"
+        m_body = f"Instagram user {user} has a new story item\n\nDate: {get_date_from_ts(int(local_ts))}\nExpiry: {get_date_from_ts(int(expire_ts))}\nType: {story_type}{story_mentions_text}{story_hashtags_text}{story_caption_text}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+        mentions_html = f"<br>Mentions: {escape(str(story_mentions))}" if story_mentions else ""
+        hashtags_html = f"<br>Hashtags: {escape(str(story_hashtags))}" if story_hashtags else ""
+        caption_html = f"<br>Description:<br><br>{escape(str(story_caption)).replace(chr(10), '<br>')}" if story_caption else ""
+        image_html = '<br><br><img src="cid:story_pic" width="50%">' if has_local_image else ""
+        m_body_html = f"Instagram user <b>{user}</b> has a new story item{image_html}<br><br>Date: <b>{get_date_from_ts(int(local_ts))}</b><br>Expiry: {get_date_from_ts(int(expire_ts))}<br>Type: {story_type}{mentions_html}{hashtags_html}{caption_html}<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+        print(f"* Sending email notification to {RECEIVER_EMAIL}")
+        if has_local_image:
+            send_email(m_subject, m_body, m_body_html, SMTP_SSL, local_image_file, "story_pic")
+        else:
+            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+
+    story_webhook_fields = [
+        {"name": "Date", "value": get_date_from_ts(int(local_ts)), "inline": True},
+        {"name": "Expiry", "value": get_date_from_ts(int(expire_ts)), "inline": True},
+        {"name": "Type", "value": story_type, "inline": True},
+    ]
+    if story_mentions:
+        story_webhook_fields.append({"name": "Mentions", "value": str(story_mentions)})
+    if story_hashtags:
+        story_webhook_fields.append({"name": "Hashtags", "value": str(story_hashtags)})
+    if story_caption:
+        story_webhook_fields.append({"name": "Description", "value": (story_caption[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(story_caption) > WEBHOOK_FIELD_VALUE_LIMIT else story_caption})
+    return send_webhook(f"📖 {user} New Story Item", f"User **{user}** posted a new story item!", color=0xe91e63, fields=story_webhook_fields, local_image_file=local_image_file or None, image_url=story_thumbnail_url if story_thumbnail_url and not has_local_image else None, notification_type="status")
+
+
 # Monitors activity of the specified Instagram user
 def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None, manual_recheck=False, skip_follow_changes=False):  # type: ignore[reportComplexity]
     global pbar, DASHBOARD_DATA, VERBOSE_MODE, CHECK_COUNT, NEXT_CHECK_TIME, NEXT_CHECK_DISPLAY
@@ -8904,10 +9045,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
     bot = None
 
     try:
-        # Apply request monkey-patch for jitter or serialized HTTP mode even when no progress bar is created
-        if ENABLE_JITTER or MULTI_TARGET_SERIALIZE_HTTP:
-            ensure_requests_monkey_patched()
-
         bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True, quiet=True)
 
         # Inject proxy and cert into Instaloader's session
@@ -8915,10 +9052,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
             set_instaloader_proxies(bot)
 
         ctx = bot.context
-
-        orig_request = ctx._session.request
-
         session = ctx._session
+        ensure_instagram_session_wrapped(session)
 
         if not skip_session and SESSION_USERNAME:
             try:
@@ -9634,6 +9769,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     i = 0
                     for story_item in story.get_items():
                         i += 1
+                        story_video_filename = None
+                        story_image_filename = None
 
                         utc_dt = story_item.date_utc
                         local_dt = convert_utc_datetime_to_tz_datetime(utc_dt)
@@ -9724,25 +9861,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             print(f"* Error: {e}")
 
                         # Update last_story for dashboard (this loop runs from oldest to newest usually, so we update on each)
-                        # Determine which file was saved (video or image)
-                        saved_file_path = None
-                        if story_video_url and 'story_video_filename' in locals() and os.path.isfile(story_video_filename):
-                            saved_file_path = story_video_filename
-                        elif DOWNLOAD_THUMBNAILS and story_thumbnail_url and 'story_image_filename' in locals() and os.path.isfile(story_image_filename):
-                            saved_file_path = story_image_filename
-
-                        # Prefer image thumbnail for display in dashboards
-                        display_url = None
-                        if 'story_image_filename' in locals() and os.path.isfile(story_image_filename):
-                            display_url = register_dashboard_media_file(story_image_filename)
-                        else:
-                            display_url = story_thumbnail_url
+                        dashboard_media = get_dashboard_media_metadata(story_thumbnail_url, story_image_filename, story_video_filename)
 
                         last_story = {
                             'type': story_type,
                             'caption': story_caption[:50] + "..." if story_caption and len(story_caption) > 50 else (story_caption or ""),
-                            'url': display_url,
-                            'file_path': saved_file_path if saved_file_path else None,
+                            'url': dashboard_media['url'],
+                            'video_url': dashboard_media['video_url'],
+                            'file_path': dashboard_media['file_path'],
                             'post_url': f"https://www.instagram.com/stories/{user}/",
                             'timestamp': get_short_date_from_ts(local_dt),
                             'timestamp_ts': int(local_dt.timestamp()) if isinstance(local_dt, datetime) else None
@@ -9877,6 +10003,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         if post_comments_list:
             print(f"Comments list:{post_comments_list}")
 
+        video_filename = None
+        image_filename = None
         if video_url:
             if highestinsta_dt and highestinsta_dt.timestamp() > 0:
                 video_filename = f'instagram_{user}_{last_source.lower()}_{highestinsta_dt.strftime("%Y%m%d_%H%M%S")}.mp4'
@@ -9912,25 +10040,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     pass
 
         # Update last_post for dashboard
-        # Determine which file was saved (video or image)
-        saved_file_path = None
-        if video_url and 'video_filename' in locals() and os.path.isfile(video_filename):
-            saved_file_path = video_filename
-        elif DOWNLOAD_THUMBNAILS and thumbnail_url and 'image_filename' in locals() and os.path.isfile(image_filename):
-            saved_file_path = image_filename
-
-        # Prefer image thumbnail for display in dashboards
-        display_url = None
-        if 'image_filename' in locals() and os.path.isfile(image_filename):
-            display_url = register_dashboard_media_file(image_filename)
-        else:
-            display_url = thumbnail_url
+        dashboard_media = get_dashboard_media_metadata(thumbnail_url, image_filename, video_filename)
 
         last_post = {
             'type': last_source.capitalize(),
             'caption': caption[:50] + "..." if caption and len(caption) > 50 else (caption or ""),
-            'url': display_url,
-            'file_path': saved_file_path if saved_file_path else None,
+            'url': dashboard_media['url'],
+            'video_url': dashboard_media['video_url'],
+            'file_path': dashboard_media['file_path'],
             'post_url': post_url,
             'timestamp': get_short_date_from_ts(highestinsta_dt, show_year=True),
             'timestamp_ts': int(highestinsta_dt.timestamp()) if isinstance(highestinsta_dt, datetime) else None
@@ -10671,7 +10788,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     m_subject = f"Instagram user {user} bio has changed!"
 
                     m_body = f"Instagram user {user} bio has changed\n\nOld bio:\n\n{bio_old}\n\nNew bio:\n\n{bio}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"Instagram user <b>{user}</b> bio has changed<br><br><b>Old bio:</b><br><br>{bio_old.replace(chr(10), '<br>')}<br><br><b>New bio:</b><br><br>{bio.replace(chr(10), '<br>')}<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                    m_body_html = f"Instagram user <b>{user}</b> bio has changed<br><br><b>Old bio:</b><br><br>{escape(str(bio_old)).replace(chr(10), '<br>')}<br><br><b>New bio:</b><br><br>{escape(str(bio)).replace(chr(10), '<br>')}<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
                     print(f"* Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
@@ -10828,6 +10945,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         i = 0
                         for story_item in story.get_items():
                             i += 1
+                            story_video_filename = None
+                            story_image_filename = None
 
                             utc_dt = story_item.date_utc
                             local_dt = convert_utc_datetime_to_tz_datetime(utc_dt)
@@ -10861,26 +10980,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             story_mentions = story_item.caption_mentions
                             story_hashtags = story_item.caption_hashtags
 
-                            story_mentions_m_body = ""
-                            story_mentions_m_body_html = ""
                             if story_mentions:
-                                story_mentions_m_body = f"\nMentions: {story_mentions}"
-                                story_mentions_m_body_html = f"<br>Mentions: {story_mentions}"
                                 print(f"Mentions:\t\t\t\t{story_mentions}")
 
-                            story_hashtags_m_body = ""
-                            story_hashtags_m_body_html = ""
                             if story_hashtags:
-                                story_hashtags_m_body = f"\nHashtags: {story_hashtags}"
-                                story_hashtags_m_body_html = f"<br>Hashtags: {story_hashtags}"
                                 print(f"Hashtags:\t\t\t\t{story_hashtags}")
 
-                            story_caption_m_body = ""
-                            story_caption_m_body_html = ""
                             story_caption = story_item.caption
                             if story_caption:
-                                story_caption_m_body = f"\nDescription:\n\n{story_caption}"
-                                story_caption_m_body_html = f"<br>Description:<br><br>{story_caption}"
                                 print(f"Description:\n\n{story_caption}\n")
                             else:
                                 print()
@@ -10900,7 +11007,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                     if save_pic_video(story_video_url, story_video_filename, local_ts):
                                         print(f"Story video saved for {user} to '{story_video_filename}'")
 
-                            m_body_html_pic_saved_text = ""
                             if DOWNLOAD_THUMBNAILS:
                                 if local_dt:
                                     story_image_filename = f'instagram_{user}_story_{local_dt.strftime("%Y%m%d_%H%M%S")}.jpg'
@@ -10912,7 +11018,6 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                                 if story_thumbnail_url:
                                     if not os.path.isfile(story_image_filename):
                                         if save_pic_video(story_thumbnail_url, story_image_filename, local_ts):
-                                            m_body_html_pic_saved_text = f'<br><br><img src="cid:story_pic" width="50%">'
                                             print(f"Story thumbnail image saved for {user} to '{story_image_filename}'")
                                             try:
                                                 if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
@@ -10928,66 +11033,21 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             except Exception as e:
                                 print(f"* Error: {e}")
 
-                            if STATUS_NOTIFICATION:
-                                m_subject = f"Instagram user {user} has a new story item ({get_short_date_from_ts(int(local_ts))})"
-
-                                m_body = f"Instagram user {user} has a new story item\n\nDate: {get_date_from_ts(int(local_ts))}\nExpiry: {get_date_from_ts(int(expire_ts))}\nType: {story_type}{story_mentions_m_body}{story_hashtags_m_body}{story_caption_m_body}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                m_body_html = f"Instagram user <b>{user}</b> has a new story item{m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(int(local_ts))}</b><br>Expiry: {get_date_from_ts(int(expire_ts))}<br>Type: {story_type}{story_mentions_m_body_html}{story_hashtags_m_body_html}{story_caption_m_body_html}<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-
-                                print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                                if m_body_html_pic_saved_text:
-                                    send_email(m_subject, m_body, m_body_html, SMTP_SSL, story_image_filename, "story_pic")
-                                else:
-                                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-
-                                # Send webhook for new story item
-                                story_webhook_fields = [
-                                    {"name": "Date", "value": get_date_from_ts(int(local_ts)), "inline": True},
-                                    {"name": "Expiry", "value": get_date_from_ts(int(expire_ts)), "inline": True},
-                                    {"name": "Type", "value": story_type, "inline": True},
-                                ]
-                                if story_mentions:
-                                    story_webhook_fields.append({"name": "Mentions", "value": str(story_mentions)})
-                                if story_hashtags:
-                                    story_webhook_fields.append({"name": "Hashtags", "value": str(story_hashtags)})
-                                if story_caption:
-                                    story_webhook_fields.append({"name": "Description", "value": (story_caption[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(story_caption) > WEBHOOK_FIELD_VALUE_LIMIT else story_caption})
-
-                                send_webhook(
-                                    f"📖 {user} New Story Item",
-                                    f"User **{user}** posted a new story item!",
-                                    color=0xe91e63,  # Pink
-                                    fields=story_webhook_fields,
-                                    local_image_file=story_image_filename if 'story_image_filename' in locals() and os.path.isfile(story_image_filename) else None,
-                                    image_url=story_thumbnail_url if story_thumbnail_url and not ('story_image_filename' in locals() and os.path.isfile(story_image_filename)) else None,
-                                    notification_type="status"
-                                )
+                            send_story_item_notifications(user, story_type, local_ts, expire_ts, story_mentions, story_hashtags, story_caption, r_sleep_time, story_thumbnail_url, story_image_filename)
 
                             print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                             print_cur_ts()
 
                             # Update web dashboard with the new story
                             if WEB_DASHBOARD_ENABLED:
-                                # Determine which file was saved (video or image)
-                                saved_file_path = None
-                                if 'story_video_filename' in locals() and os.path.isfile(story_video_filename):
-                                    saved_file_path = story_video_filename
-                                elif 'story_image_filename' in locals() and os.path.isfile(story_image_filename):
-                                    saved_file_path = story_image_filename
-
-                                # Prefer image thumbnail for display in dashboards
-                                display_url = None
-                                if 'story_image_filename' in locals() and os.path.isfile(story_image_filename):
-                                    display_url = register_dashboard_media_file(story_image_filename)
-                                else:
-                                    display_url = story_thumbnail_url
+                                dashboard_media = get_dashboard_media_metadata(story_thumbnail_url, story_image_filename, story_video_filename)
 
                                 new_story_update = {
                                     'type': f"Story {story_type}",
                                     'caption': story_caption[:50] + "..." if story_caption and len(story_caption) > 50 else (story_caption or ""),
-                                    'url': display_url,
-                                    'video_url': register_dashboard_media_file(story_video_filename) if 'story_video_filename' in locals() else None,
-                                    'file_path': saved_file_path if saved_file_path else None,
+                                    'url': dashboard_media['url'],
+                                    'video_url': dashboard_media['video_url'],
+                                    'file_path': dashboard_media['file_path'],
                                     'post_url': f"https://www.instagram.com/stories/{user}/",
                                     'timestamp': get_short_date_from_ts(local_dt),
                                     'timestamp_ts': int(local_dt.timestamp()) if isinstance(local_dt, datetime) else None,
@@ -11117,6 +11177,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                     error_msg = format_error_message(e)
                     print(f"* Error while getting post's likes list / comments list: {error_msg}")
 
+                video_filename = None
+                image_filename = None
                 if new_post:
 
                     post_url = f"https://www.instagram.com/{'reel' if last_source == 'reel' else 'p'}/{shortcode}/"
@@ -11198,7 +11260,9 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         m_subject = f"Instagram user {user} has a new {last_source.lower()} - {get_short_date_from_ts(highestinsta_dt)} (after {calculate_timespan(highestinsta_dt, highestinsta_dt_old, show_seconds=False)} - {get_short_date_from_ts(highestinsta_dt_old)})"
 
                         m_body = f"Instagram user {user} has a new {last_source.lower()} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n\nDate: {get_date_from_ts(highestinsta_dt)}\n{last_source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nLikes: {likes}\nComments: {comments}\nTagged: {tagged_users}{location_mbody}{location_mbody_str}\nDescription:\n\n{caption}\n{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{post_comments_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"Instagram user <b>{user}</b> has a new {last_source.lower()} after <b>{calculate_timespan(highestinsta_dt, highestinsta_dt_old)}</b> ({get_date_from_ts(highestinsta_dt_old)}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(highestinsta_dt)}</b><br>{last_source.capitalize()} URL: <a href=\"{post_url}\">{post_url}</a><br>Profile URL: <a href=\"https://www.instagram.com/{insta_username}/\">https://www.instagram.com/{insta_username}/</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {tagged_users}{location_mbody_html}{location_mbody_str}<br>Description:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                        safe_post_url = escape(post_url, quote=True)
+                        safe_profile_url = escape(f"https://www.instagram.com/{insta_username}/", quote=True)
+                        m_body_html = f"Instagram user <b>{user}</b> has a new {last_source.lower()} after <b>{calculate_timespan(highestinsta_dt, highestinsta_dt_old)}</b> ({get_date_from_ts(highestinsta_dt_old)}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(highestinsta_dt)}</b><br>{last_source.capitalize()} URL: <a href=\"{safe_post_url}\">{safe_post_url}</a><br>Profile URL: <a href=\"{safe_profile_url}\">{safe_profile_url}</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {escape(str(tagged_users))}{location_mbody_html}{escape(str(location_mbody_str))}<br>Description:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{escape(likes_users_list)}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
                         print(f"\n* Sending email notification to {RECEIVER_EMAIL}")
                         if m_body_html_pic_saved_text:
@@ -11226,8 +11290,8 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         f"User **{user}** posted a new **{last_source.lower()}**!",
                         color=0x1da1f2 if last_source == "post" else 0xff6b6b,  # Blue for post, coral for reel
                         fields=webhook_fields,
-                        local_image_file=image_filename if 'image_filename' in locals() and os.path.isfile(image_filename) else None,
-                        image_url=thumbnail_url if thumbnail_url and not ('image_filename' in locals() and os.path.isfile(image_filename)) else None,
+                        local_image_file=image_filename if image_filename and os.path.isfile(image_filename) else None,
+                        image_url=thumbnail_url if thumbnail_url and not (image_filename and os.path.isfile(image_filename)) else None,
                         notification_type="status"
                     )
                     if webhook_result != 0 and DEBUG_MODE:
@@ -11235,26 +11299,14 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
                     # Update web dashboard with the new post
                     if WEB_DASHBOARD_ENABLED:
-                        # Determine which file was saved (video or image)
-                        saved_file_path = None
-                        if 'video_filename' in locals() and os.path.isfile(video_filename):
-                            saved_file_path = video_filename
-                        elif 'image_filename' in locals() and os.path.isfile(image_filename):
-                            saved_file_path = image_filename
-
-                        # Prefer image thumbnail for display in dashboards
-                        display_url = None
-                        if 'image_filename' in locals() and os.path.isfile(image_filename):
-                            display_url = register_dashboard_media_file(image_filename)
-                        else:
-                            display_url = thumbnail_url
+                        dashboard_media = get_dashboard_media_metadata(thumbnail_url, image_filename, video_filename)
 
                         new_post_update = {
                             'type': last_source.capitalize(),
                             'caption': caption[:50] + "..." if caption and len(caption) > 50 else (caption or ""),
-                            'url': display_url,
-                            'video_url': register_dashboard_media_file(video_filename) if 'video_filename' in locals() else None,
-                            'file_path': saved_file_path if saved_file_path else None,
+                            'url': dashboard_media['url'],
+                            'video_url': dashboard_media['video_url'],
+                            'file_path': dashboard_media['file_path'],
                             'post_url': post_url,
                             'timestamp': get_short_date_from_ts(highestinsta_dt, show_year=True),
                             'timestamp_ts': int(highestinsta_dt.timestamp()) if isinstance(highestinsta_dt, datetime) else None,
