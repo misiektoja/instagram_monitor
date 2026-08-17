@@ -46,6 +46,24 @@ class TestDashboardSettings:
         assert data["smtp_password_set"] is True
         assert "smtp_password" not in data
 
+    # Settings GET reports configured URL state without returning either URL
+    def test_settings_get_hides_webhook_and_proxy_urls(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://example.com/private-hook")
+        monkeypatch.setattr(im_module, "PROXY_URL", "http://user:secret@proxy.example:8080")
+
+        data = client.get("/api/settings").get_json()
+
+        assert data["webhook_url"] == ""
+        assert data["webhook_url_set"] is True
+        assert data["proxy_url"] == ""
+        assert data["proxy_url_set"] is True
+        config = im_module.get_dashboard_config_data()
+        assert config["webhook_url"] == "Configured"
+        assert config["proxy_url"] == "Configured"
+        assert "private-hook" not in str(config)
+        assert "secret" not in str(config)
+
     # Settings GET and POST expose and update the non-secret webhook provider
     def test_settings_round_trip_webhook_provider(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)
@@ -112,6 +130,40 @@ class TestDashboardConfigAndSession:
         assert im_module.SESSION_USERNAME == "session_user"
         assert im_module.SKIP_SESSION is False
 
+    # Session POST rejects values that could escape paths or executable HTML contexts
+    def test_session_post_rejects_unsafe_username(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+
+        response = client.post("/api/session", json={"username": "../../<script>"})
+
+        assert response.status_code == 400
+        assert "Instagram username" in response.get_json()["error"]
+
+    # Session clear removes the resolved Instaloader file then broadcasts the mode change
+    def test_session_clear_removes_resolved_file(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        local_dir = os.path.join(os.path.dirname(os.path.abspath(im_module.__file__)), "local")
+        os.makedirs(local_dir, exist_ok=True)
+        session_file = os.path.join(local_dir, "test_session_target")
+        try:
+            with open(session_file, "w", encoding="utf-8") as handle:
+                handle.write("session")
+            monkeypatch.setattr(im_module, "SESSION_USERNAME", "session_user")
+            monkeypatch.setattr(im_module, "SKIP_SESSION", False)
+            monkeypatch.setattr(im_module, "get_session_file_candidates", lambda username: [session_file])
+            monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+            monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+            response = client.post("/api/session/clear")
+
+            assert response.status_code == 200
+            assert response.get_json()["files_removed"] == 1
+            assert not os.path.exists(session_file)
+            assert im_module.SKIP_SESSION is True
+        finally:
+            if os.path.isfile(session_file):
+                os.remove(session_file)
+
     # Chromium profile detection returns the explicit unsupported-platform error on Windows
     def test_chromium_profiles_reports_windows_unsupported(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)
@@ -152,3 +204,66 @@ class TestDashboardTestNotifications:
         assert response.get_json() == {"success": True}
         assert calls[0][0][0] == "instagram_monitor: test webhook"
         assert im_module.WEBHOOK_ENABLED is False
+
+
+class TestDashboardSecurityAndLifecycle:
+    # Target creation rejects a username before it can enter storage or rendering
+    def test_target_post_rejects_unsafe_username(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+
+        response = client.post("/api/targets", json={"username": "bad' onclick='alert(1)"})
+
+        assert response.status_code == 400
+        assert "bad' onclick='alert(1)" not in im_module.WEB_DASHBOARD_DATA.get("targets", {})
+
+    # Media serving allows registered files but cannot read arbitrary working-directory files
+    def test_media_route_only_serves_registered_files(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_MEDIA_FILES", {})
+        local_dir = os.path.join(os.path.dirname(os.path.abspath(im_module.__file__)), "local")
+        os.makedirs(local_dir, exist_ok=True)
+        media_file = os.path.join(local_dir, "test_dashboard_media.jpg")
+        try:
+            with open(media_file, "wb") as handle:
+                handle.write(b"image-data")
+            assert client.get("/media/instagram_monitor.py").status_code == 404
+            media_url = im_module.register_dashboard_media_file(media_file)
+            response = client.get(media_url)
+            assert response.status_code == 200
+            assert response.data == b"image-data"
+        finally:
+            if os.path.isfile(media_file):
+                os.remove(media_file)
+
+    # A timed-out stop retains thread ownership and blocks a duplicate start
+    def test_timed_out_stop_retains_thread_registry(self, im_module, monkeypatch):
+        class AliveThread:
+            # Reports a monitor that remains alive after join
+            def is_alive(self):
+                return True
+
+            # Simulates a join timeout without ending the monitor
+            def join(self, timeout=None):
+                return None
+
+        target = "target"
+        thread = AliveThread()
+        stop_event = im_module.threading.Event()
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_MONITOR_THREADS", {target: thread})
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_STOP_EVENTS", {target: stop_event})
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "update_ui_data", lambda *args, **kwargs: None)
+
+        assert im_module.stop_monitoring_for_target(target) is False
+        assert im_module.WEB_DASHBOARD_MONITOR_THREADS[target] is thread
+        assert im_module.start_monitoring_for_target(target) is False
+
+    # Generation broadcasts remain visible to every waiter until each observes them
+    def test_session_refresh_generation_is_not_consumed(self, im_module):
+        first = im_module.get_session_refresh_generation()
+        second = im_module.get_session_refresh_generation()
+
+        updated = im_module.notify_session_refresh()
+
+        assert im_module.wait_for_session_refresh(first, timeout=0) == updated
+        assert im_module.wait_for_session_refresh(second, timeout=0) == updated
