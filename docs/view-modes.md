@@ -60,6 +60,8 @@ instagram_monitor target1 target2 --dashboard
 
 The Web Dashboard runs a small web server on your computer. By default, open `http://127.0.0.1:8000/` in a browser on the same computer. The `127.0.0.1` address is local, so other devices cannot connect unless you change the server and Docker settings.
 
+The dashboard is intentionally designed for loopback use without a login screen. Keep the host port bound to `127.0.0.1` and do not expose it through a public reverse proxy. Dashboard media links can access only files registered by the running monitor. Saved webhook and proxy URLs are shown as configured without returning their private values to the browser. Enter a new URL only when you want to replace the saved value.
+
 In a container the server must bind to `0.0.0.0` so Docker can forward traffic. That value means every container network interface. It is not a browser destination. Use the published host address `http://127.0.0.1:8000/` instead.
 
 **Key Features:**
@@ -69,7 +71,7 @@ In a container the server must bind to `0.0.0.0` so Docker can forward traffic. 
 - **Live Activity Log**: A scrolling view of the last few events.
 - **Manual Trigger**: A "Recheck" button to force an immediate update for specific or all users.
 - **Remote Management**: Start or stop monitoring for specific or all targets with a single click.
-- **Synchronization**: Changes made in the web dashboard (like mode toggles) are reflected in the terminal instantly.
+- **Synchronization**: Saved setting and session changes wake active monitors then rebuild their monitoring context before the next check.
 - **Dynamic Configuration**: Configure sessions and settings without touching the terminal or config files.
 
 Enable it with `--web-dashboard` or `WEB_DASHBOARD_ENABLED = True`.
