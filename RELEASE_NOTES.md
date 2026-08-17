@@ -4,11 +4,14 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.8.2 (TBD)
 
-Version **3.8.2** prevents empty follower alerts without hiding count changes when complete Instagram lists are unavailable and accepts webhook services hosted at a root HTTPS endpoint.
+Version **3.8.2** prevents empty follower alerts without hiding count changes when complete Instagram lists are unavailable, accepts webhook services hosted at a root HTTPS endpoint and hardens long-running Web Dashboard monitoring.
 
 **Bug fixes**:
 
 - **BUGFIX:** **Reliable follower and following notifications** - Email and webhook alerts now ignore reported count fluctuations only after a complete list comparison confirms that no usernames changed. No-login mode, skipped or failed list fetches and configured fetch limits retain count-change alerts. Webhook and avatar validation also accepts root HTTPS endpoints with or without a trailing slash (closes [#118](https://github.com/misiektoja/instagram_monitor/issues/118) and [#119](https://github.com/misiektoja/instagram_monitor/issues/119))
+- **BUGFIX:** **Safe follower and following baselines** - Stopped, interrupted and intentionally limited username downloads no longer overwrite or become the saved comparison baseline. The last complete list remains available for a future complete comparison while reported count monitoring continues.
+- **BUGFIX:** **Reliable live dashboard control** - Saved settings and session changes now wake every active target without losing the shared refresh signal. A monitor that does not stop within the timeout retains ownership of its target so a duplicate monitoring thread cannot start.
+- **SECURITY:** **Loopback dashboard data boundaries** - Dashboard media URLs now serve only files registered by the monitor. Webhook and proxy URLs stay out of settings responses, usernames are validated before reaching paths or rendered actions and clearing a session removes supported Instaloader session locations without accepting path-like usernames. The dashboard remains intentionally unauthenticated for loopback use.
 
 # Changes in 3.8.1 (04 Aug 2026)
 
