@@ -88,3 +88,38 @@ class TestStoryWorkflows:
         assert last_story["url"] == "https://example.com/story.jpg"
         assert last_story["post_url"] == "https://www.instagram.com/stories/target/"
         assert last_story["timestamp_ts"] == 1710000000
+
+    # Story webhooks remain active when email status notifications are disabled
+    def test_story_item_webhook_is_independent_from_email(self, im_module, monkeypatch):
+        emails = []
+        webhooks = []
+        monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: emails.append((args, kwargs)))
+        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: webhooks.append((args, kwargs)) or 0)
+
+        result = im_module.send_story_item_notifications("target", "Image", 1710000000, 1710086400, [], [], "caption", 600, "https://example.com/story.jpg")
+
+        assert result == 0
+        assert emails == []
+        assert len(webhooks) == 1
+        assert webhooks[0][1]["notification_type"] == "status"
+        assert webhooks[0][1]["image_url"] == "https://example.com/story.jpg"
+
+    # Story email HTML escapes hostile mentions hashtags and multiline captions
+    def test_story_item_email_escapes_instagram_text(self, im_module, monkeypatch):
+        emails = []
+        webhooks = []
+        hostile_text = '<img src=x onerror="alert(1)">\nsecond line'
+        monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "receiver@example.com")
+        monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: emails.append((args, kwargs)) or 0)
+        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: webhooks.append((args, kwargs)) or 0)
+
+        im_module.send_story_item_notifications("target", "Image", 1710000000, 1710086400, [hostile_text], [hostile_text], hostile_text, 600, "https://example.com/story.jpg")
+
+        assert len(emails) == 1
+        html_body = emails[0][0][2]
+        assert "<img src=x" not in html_body
+        assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in html_body
+        assert "<br>second line" in html_body
+        assert len(webhooks) == 1
