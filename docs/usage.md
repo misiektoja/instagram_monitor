@@ -137,6 +137,8 @@ In Logged-In Mode, the tool also saves follower and following usernames in these
 
 These files provide a baseline for the next run. The tool compares the new lists with the saved lists to find added or removed usernames.
 
+Only a complete list download can replace this baseline. A configured maximum, stop request or interrupted download leaves the last complete file unchanged so a partial result cannot appear as a large follower or following removal.
+
 When the tool downloads follower or following lists, a terminal progress bar shows request counts, elapsed time and estimated time remaining. Intermediate progress is not written to the log. The final result is.
 
 Profile pictures are saved as `instagram_<username>_profile_pic*.jpg`.
@@ -503,6 +505,8 @@ The values select one of these modes. The tool prints the selected mode at start
 - **Maximum of N accounts in batches of Y with a Z-second delay**: set all three values
 
 This feature requires [Logged-In Mode](configuration.md#logged-in-mode-with-session-login).
+
+A maximum intentionally produces a partial list. Partial lists are not compared with or saved over the last complete baseline. Reported count changes remain available without claiming which usernames changed.
 
 <a id="routing-traffic-through-a-proxy"></a>
 ## Routing Traffic Through a Proxy
