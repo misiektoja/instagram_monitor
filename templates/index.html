@@ -2045,7 +2045,8 @@
                 let msgHtml = escapeHtml(a.message);
                 if (a.details && a.details.url) {
                     const isStory = a.details.is_story === true;
-                    msgHtml += ` <a href="${a.details.url}" target="_blank" ${isStory ? `onclick="confirmAnonymity(event, '${a.details.url}')"` : ''} class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
+                    const activityUrl = safeUrl(a.details.url);
+                    if (activityUrl) msgHtml += ` <a href="${escapeHtml(activityUrl)}" target="_blank" ${isStory ? 'onclick="confirmAnonymity(event, this.href)"' : ''} class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
                 }
                 return `
                 <div class="activity-item ${levelClass}">
@@ -2096,7 +2097,7 @@
                         <tr>
                             <td>
                                 <div class="target-name">
-                                    <div class="target-avatar">${displayName.charAt(0).toUpperCase()}</div>
+                                    <div class="target-avatar">${escapeHtml(displayName.charAt(0).toUpperCase())}</div>
                                     <span><a href="https://instagram.com/${encodeURIComponent(name)}" target="_blank" style="color: inherit; text-decoration: none;">${escapeHtml(displayName)}</a></span>
                                 </div>
                             </td>
@@ -2106,10 +2107,10 @@
                             <td><span class="badge badge-${statusClass}">${escapeHtml(statusVal)}</span></td>
                             <td>
                                 <div class="target-actions">
-                                    <button class="btn btn-secondary btn-sm" onclick="triggerCheck('${escapeHtml(name)}')" title="Recheck">🔄</button>
-                                    <button class="btn btn-success btn-sm" onclick="startMonitoring('${escapeHtml(name)}')" title="Start">▶️</button>
-                                    <button class="btn btn-danger btn-sm" onclick="stopMonitoring('${escapeHtml(name)}')" title="Stop">⏹️</button>
-                                    <button class="btn btn-danger btn-sm" onclick="removeTarget('${escapeHtml(name)}')" title="Remove">🗑️</button>
+                                    <button class="btn btn-secondary btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'recheck')" title="Recheck">🔄</button>
+                                    <button class="btn btn-success btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'start')" title="Start">▶️</button>
+                                    <button class="btn btn-danger btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'stop')" title="Stop">⏹️</button>
+                                    <button class="btn btn-danger btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'remove')" title="Remove">🗑️</button>
                                 </div>
                             </td>
                         </tr>
@@ -2120,7 +2121,7 @@
                     <tr>
                         <td>
                             <div class="target-name">
-                                <div class="target-avatar">${displayName.charAt(0).toUpperCase()}</div>
+                                <div class="target-avatar">${escapeHtml(displayName.charAt(0).toUpperCase())}</div>
                                 <div>
                                     <div><a href="https://instagram.com/${encodeURIComponent(name)}" target="_blank" style="color: inherit; text-decoration: none;">${escapeHtml(displayName)}</a></div>
                                     <div style="font-size: 12px; color: #666;">@${escapeHtml(displayName)}</div>
@@ -2137,10 +2138,10 @@
                         ${!isSimple ? `
                         <td>
                             <div class="target-actions">
-                                <button class="btn btn-secondary btn-sm" onclick="triggerCheck('${escapeHtml(name)}')" title="Recheck">🔄</button>
-                                <button class="btn btn-success btn-sm" onclick="startMonitoring('${escapeHtml(name)}')" title="Start">▶️</button>
-                                <button class="btn btn-danger btn-sm" onclick="stopMonitoring('${escapeHtml(name)}')" title="Stop">⏹️</button>
-                                <button class="btn btn-danger btn-sm" onclick="removeTarget('${escapeHtml(name)}')" title="Remove">🗑️</button>
+                                <button class="btn btn-secondary btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'recheck')" title="Recheck">🔄</button>
+                                <button class="btn btn-success btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'start')" title="Start">▶️</button>
+                                <button class="btn btn-danger btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'stop')" title="Stop">⏹️</button>
+                                <button class="btn btn-danger btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'remove')" title="Remove">🗑️</button>
                             </div>
                         </td>` : ''}
                     </tr>
@@ -2182,7 +2183,8 @@
                 let msgHtml = escapeHtml(a.message);
                 if (a.details && a.details.url) {
                     const isStory = a.details.is_story === true;
-                    msgHtml += ` <a href="${a.details.url}" target="_blank" ${isStory ? `onclick="confirmAnonymity(event, '${a.details.url}')"` : ''} class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
+                    const activityUrl = safeUrl(a.details.url);
+                    if (activityUrl) msgHtml += ` <a href="${escapeHtml(activityUrl)}" target="_blank" ${isStory ? 'onclick="confirmAnonymity(event, this.href)"' : ''} class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
                 }
                 return `
                 <div class="activity-item ${levelClass}">
@@ -2207,13 +2209,17 @@
 
             document.getElementById('webhook-enabled').checked = s.webhook_enabled || false;
             document.getElementById('webhook-provider').value = s.webhook_provider || 'discord';
-            document.getElementById('webhook-url').value = s.webhook_url || '';
+            const webhookUrl = document.getElementById('webhook-url');
+            webhookUrl.value = '';
+            webhookUrl.placeholder = s.webhook_url_set ? 'Configured - enter a new URL to replace it' : '';
             document.getElementById('webhook-status').checked = s.webhook_status || false;
             document.getElementById('webhook-followers').checked = s.webhook_followers || false;
             document.getElementById('webhook-errors').checked = s.webhook_errors || false;
 
             document.getElementById('proxy-enabled').checked = s.proxy_enabled || false;
-            document.getElementById('proxy-url').value = s.proxy_url || '';
+            const proxyUrl = document.getElementById('proxy-url');
+            proxyUrl.value = '';
+            proxyUrl.placeholder = s.proxy_url_set ? 'Configured - enter a new URL to replace it' : '';
             document.getElementById('proxy-cert').value = s.proxy_cert || '';
             document.getElementById('proxy-webhooks').checked = s.proxy_webhooks || false;
 
@@ -2411,7 +2417,7 @@
         }
 
         function getSettingsFromForm() {
-            return {
+            const formSettings = {
                 check_interval: parseInt(document.getElementById('check-interval').value),
                 liveness_check_interval: parseInt(document.getElementById('liveness-check-interval').value),
                 random_low: parseInt(document.getElementById('random-low').value),
@@ -2467,6 +2473,9 @@
                 sender_email: document.getElementById('sender-email').value,
                 receiver_email: document.getElementById('receiver-email').value
             };
+            if (!formSettings.webhook_url) delete formSettings.webhook_url;
+            if (!formSettings.proxy_url) delete formSettings.proxy_url;
+            return formSettings;
         }
 
         async function saveSettings() {
@@ -2841,6 +2850,26 @@
                 "'": '&#039;'
             };
             return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+
+        // Returns only browser-safe HTTP and HTTPS URLs
+        function safeUrl(value) {
+            try {
+                const url = new URL(String(value), window.location.origin);
+                if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+                return url.href;
+            } catch (_) {
+                return '';
+            }
+        }
+
+        // Dispatches a target action using the inert data attribute value
+        function handleTargetAction(button, action) {
+            const username = button.dataset.target;
+            if (action === 'recheck') triggerCheck(username);
+            else if (action === 'start') startMonitoring(username);
+            else if (action === 'stop') stopMonitoring(username);
+            else if (action === 'remove') removeTarget(username);
         }
 
         function confirmAnonymity(event, url) {
