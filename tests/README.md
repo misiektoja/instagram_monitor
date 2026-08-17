@@ -31,8 +31,8 @@ installed copy of the package.
 | `test_privacy.py` | `apply_privacy_substitutions` (string/dict/list recursion, invalid entries) |
 | `test_notifications.py` | Webhook URL validation, Discord markdown escaping, credential masking, payload templating |
 | `test_webhook_delivery.py` | `send_webhook` payload formatting, gates and retry behavior with fake HTTP |
-| `test_paginated_fetching.py` | `fetch_usernames_paginated` batching, limits and stop-event behavior |
-| `test_dashboard_endpoints.py` | Web Dashboard status, settings, config, session and test-notification endpoints |
+| `test_paginated_fetching.py` | `fetch_usernames_paginated` batching, limits, completion state and stop-event behavior |
+| `test_dashboard_endpoints.py` | Web Dashboard status, private settings, media access, target validation, monitor ownership, session signaling and test-notification endpoints |
 | `test_detection_workflows.py` | Posts/reels count change notifications and leaked-collab notification workflows |
 | `test_profile_picture_workflows.py` | Profile picture creation, removal, change notifications, CSV rows and file moves |
 | `test_story_workflows.py` | Startup story item CSV writing and dashboard update metadata with fake Instaloader data |
