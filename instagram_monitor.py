@@ -1617,6 +1617,22 @@ def _impersonate_target_from_ua(ua: str) -> str:
     return "chrome"
 
 
+# Returns the impersonation targets curl_cffi accepts, or an empty set when the installed build does not expose them
+def curl_cffi_supported_impersonate_targets() -> set:
+    if not _CURL_CFFI_AVAILABLE:
+        return set()
+    try:
+        import typing
+        from curl_cffi.requests import BrowserTypeLiteral
+        return {str(target) for target in typing.get_args(BrowserTypeLiteral)}
+    except Exception:
+        pass
+    try:
+        return {str(member.value) for member in _curl_requests.BrowserType}  # type: ignore[union-attr]
+    except Exception:
+        return set()
+
+
 # Returns the curl_cffi impersonation target, resolving "auto" from USER_AGENT so TLS matches the browser identity
 def _curl_cffi_impersonate_target() -> str:
     target = str(CURL_CFFI_IMPERSONATE or "auto").strip().lower()
@@ -2586,6 +2602,10 @@ def create_web_dashboard_app():
                 return False, [], "'http_backend' must be 'curl_cffi' or 'requests'", 400
             if requested_backend == 'curl_cffi' and not _CURL_CFFI_AVAILABLE:
                 return False, [], "'http_backend' cannot use curl_cffi because it is not installed", 400
+        if 'impersonate' in data:
+            impersonate_error = validate_impersonate_target(data['impersonate'])
+            if impersonate_error is not None:
+                return False, [], f"'impersonate' {impersonate_error}", 400
 
         # The CSV path decides where the monitor appends rows, so the dashboard may name a file but never a location.
         # An unchanged value is accepted so a CSV path set from the config or CLI still round-trips through the form
@@ -4618,6 +4638,18 @@ def validate_webhook_url(url):
     return parsed.scheme.casefold() == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password and (parsed.path in ("", "/") or bool(parsed.path.strip("/")))
 
 
+# Returns a configuration error when an impersonation target would make every Instagram request fail
+def validate_impersonate_target(target) -> Optional[str]:
+    candidate = str(target or "auto").strip().lower()
+    if candidate in ("", "auto"):
+        return None
+    supported = curl_cffi_supported_impersonate_targets()
+    # An older or newer curl_cffi may not expose its target list, so accept the value rather than reject a valid one
+    if not supported or candidate in supported:
+        return None
+    return f"'{candidate}' is not a browser profile curl_cffi can impersonate, use 'auto' or one of: {', '.join(sorted(supported)[:8])} ..."
+
+
 # Returns whether a proxy URL uses a supported HTTP scheme and has a host
 def validate_proxy_url(url):
     if not isinstance(url, str) or not url.strip():
@@ -5936,6 +5968,18 @@ def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0):
                 pass
 
 
+# Displays one saved image in the terminal through the configured imgcat binary, with optional spacing around it
+def display_image_in_terminal(image_file, blank_line_before: bool = False, blank_line_after: bool = False) -> None:
+    if not imgcat_exe:
+        return
+    if blank_line_before:
+        print()
+    # An argument vector keeps shell metacharacters in a configured path or output directory inert
+    subprocess.run([imgcat_exe, str(image_file)], check=True)
+    if blank_line_after:
+        print()
+
+
 # Compares two image files
 def compare_images(file1, file2):
     if not os.path.isfile(file1) or not os.path.isfile(file2):
@@ -5982,9 +6026,9 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
             try:
                 if imgcat_exe and not is_empty_profile_pic and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
                     if func_ver == 1:
-                        subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{profile_pic_file}\"", shell=True, check=True)
+                        display_image_in_terminal(profile_pic_file, blank_line_before=True)
                     else:
-                        subprocess.run(f"\"{imgcat_exe}\" \"{profile_pic_file}\" {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
+                        display_image_in_terminal(profile_pic_file, blank_line_after=True)
                 profile_pic_copy_filename = f'instagram_{user}_profile_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpg'
                 profile_pic_save_dir = os.path.dirname(profile_pic_file)
                 if profile_pic_save_dir:
@@ -6081,9 +6125,9 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 try:
                     if imgcat_exe and not is_empty_profile_pic_tmp and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
                         if func_ver == 1:
-                            subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{profile_pic_file_tmp}\"", shell=True, check=True)
+                            display_image_in_terminal(profile_pic_file_tmp, blank_line_before=True)
                         else:
-                            subprocess.run(f"\"{imgcat_exe}\" \"{profile_pic_file_tmp}\" {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
+                            display_image_in_terminal(profile_pic_file_tmp, blank_line_after=True)
                     profile_pic_copy_filename = f'instagram_{user}_profile_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpg'
                     profile_pic_save_dir = os.path.dirname(profile_pic_file)
                     if profile_pic_save_dir:
@@ -6145,7 +6189,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                         log_activity(f"Profile picture already exists (added {get_short_date_from_ts(profile_pic_mdate_dt, True)})", user=user)
                         try:
                             if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
-                                subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{profile_pic_file}\"", shell=True, check=True)
+                                display_image_in_terminal(profile_pic_file, blank_line_before=True)
                         except Exception:
                             pass
                     try:
@@ -6403,7 +6447,7 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
                 print(f"Collab {source} thumbnail image saved for {user} to '{image_filename}'")
                 try:
                     if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
-                        subprocess.run(f"\"{imgcat_exe}\" \"{image_filename}\"", shell=True, check=True)
+                        display_image_in_terminal(image_filename)
                 except Exception:
                     pass
 
@@ -8637,6 +8681,10 @@ def error_fix_hint(error_msg: str, is_logged_in: bool = False) -> str:
             hint += " If the username is correct, your session or IP may be temporarily flagged."
         return hint
 
+    # An unsupported impersonation target surfaces as a connection error, so name the real cause before the network hint
+    if "impersonat" in m:
+        return "To fix: the configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto', or pick a supported target such as chrome, safari, edge or firefox."
+
     # Network or connectivity problems
     if any(t in m for t in ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl")):
         return f"To fix: this looks like a network problem. Check your internet connection and proxy settings if --enable-proxy is set then try again.\nGuide: {PROXY_GUIDE_URL}"
@@ -10024,7 +10072,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             if os.path.isfile(story_image_filename):
                                 try:
                                     if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
-                                        subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{story_image_filename}\"", shell=True, check=True)
+                                        display_image_in_terminal(story_image_filename, blank_line_before=True)
                                         if i < stories_count:
                                             print()
                                 except Exception:
@@ -10211,7 +10259,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             if os.path.isfile(image_filename):
                 try:
                     if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
-                        subprocess.run(f"\"{imgcat_exe}\" \"{image_filename}\"", shell=True, check=True)
+                        display_image_in_terminal(image_filename)
                 except Exception:
                     pass
 
@@ -11197,7 +11245,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                                             print(f"Story thumbnail image saved for {user} to '{story_image_filename}'")
                                             try:
                                                 if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
-                                                    subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} \"{imgcat_exe}\" \"{story_image_filename}\"", shell=True, check=True)
+                                                    display_image_in_terminal(story_image_filename, blank_line_before=True)
                                                     if i < stories_count:
                                                         print()
                                             except Exception:
@@ -11422,7 +11470,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                                     print(f"{last_source.capitalize()} thumbnail image saved for {user} to '{image_filename}'")
                                     try:
                                         if imgcat_exe and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
-                                            subprocess.run(f"\"{imgcat_exe}\" \"{image_filename}\"", shell=True, check=True)
+                                            display_image_in_terminal(image_filename)
                                     except Exception:
                                         pass
 
@@ -13630,6 +13678,11 @@ def run_main():
 
     if args.impersonate:
         CURL_CFFI_IMPERSONATE = args.impersonate
+
+    impersonate_error = validate_impersonate_target(CURL_CFFI_IMPERSONATE)
+    if impersonate_error is not None:
+        print(f"* Error: CURL_CFFI_IMPERSONATE {impersonate_error}")
+        sys.exit(1)
 
     if str(HTTP_BACKEND).strip().lower() == "curl_cffi" and not _CURL_CFFI_AVAILABLE:
         print("* Warning: HTTP_BACKEND is 'curl_cffi' but the 'curl_cffi' package is not installed, using the 'requests' backend instead (run: pip3 install curl_cffi)")
