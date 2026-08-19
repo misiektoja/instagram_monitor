@@ -573,6 +573,8 @@ instagram_monitor <target_insta_user> --http-backend curl_cffi --impersonate fir
 
 See the [curl_cffi documentation](https://github.com/lexiforest/curl_cffi) for the full list of impersonation targets available in your installed version.
 
+The target is checked against that list at startup and when saved from the Web Dashboard. An unrecognized value stops the tool with a message naming supported targets, rather than letting every Instagram request fail later as a connection error.
+
 <a id="privacy-substitutions"></a>
 ## Privacy Substitutions
 
