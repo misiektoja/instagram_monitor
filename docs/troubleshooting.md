@@ -57,6 +57,25 @@ docker ps
 
 `127.0.0.1:8000->8000/tcp` means the port is published correctly. A value containing only `8000/tcp` means the server can listen inside the container but the host browser cannot reach it. Dockerfile `EXPOSE 8000` does not publish the port.
 
+<a id="dashboard-returns-403-or-415"></a>
+## Dashboard Returns 403 or 415
+
+The dashboard has no login, so it verifies how a request reached it. See [Request Protection](view-modes.md#dashboard-request-protection) for what the two rules cover.
+
+**HTTP 403 with "unrecognized Host header"** means the browser addressed the server under a name it does not answer to. Open it at [http://127.0.0.1:8000/](http://127.0.0.1:8000/). If you deliberately reach it under another name, such as a machine name on your own network or a reverse proxy, list that name:
+
+```ini
+WEB_DASHBOARD_ALLOWED_HOSTS = ["monitor.lan"]
+```
+
+**HTTP 403 with "cross-site" or "cross-origin"** means the request did not come from the dashboard page. Reload the dashboard in a normal browser tab rather than driving it from another page.
+
+**HTTP 415** means a request meant to change something arrived without a JSON body. When you call the API yourself, send `Content-Type: application/json`:
+
+```sh
+curl -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8000/api/monitoring/stop
+```
+
 <a id="choosing-the-right-logging-level"></a>
 ## Choosing the Right Logging Level
 
