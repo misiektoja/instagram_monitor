@@ -610,3 +610,31 @@ class TestDashboardCredentialBoundary:
 
         assert response.status_code == 200
         assert im_module.CSV_FILE == ""
+
+    # An ntfy bearer token is not carried to a webhook server the operator did not set it for
+    def test_ntfy_token_is_cleared_when_the_webhook_server_changes(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.example.org/private-topic")
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "ntfy")
+        monkeypatch.setattr(im_module, "NTFY_ACCESS_TOKEN", "tk_secret")
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"webhook_url": "https://attacker.example/topic"})
+
+        assert response.status_code == 200
+        assert im_module.NTFY_ACCESS_TOKEN == ""
+
+    # Changing only the topic on the same server keeps the token so self-hosted ntfy stays usable
+    def test_ntfy_token_survives_a_topic_change_on_the_same_server(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.example.org/private-topic")
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "ntfy")
+        monkeypatch.setattr(im_module, "NTFY_ACCESS_TOKEN", "tk_secret")
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"webhook_url": "https://ntfy.example.org/other-topic"})
+
+        assert response.status_code == 200
+        assert im_module.NTFY_ACCESS_TOKEN == "tk_secret"
