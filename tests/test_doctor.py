@@ -297,4 +297,4 @@ class TestDoctorDeliveryTests:
         monkeypatch.setattr(im_module, "send_webhook", delivery)
         assert im_module._doctor_send_test_webhook() == 0
         assert im_module.WEBHOOK_ENABLED is False
-        delivery.assert_called_once_with("Instagram Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type="doctor")
+        delivery.assert_called_once_with("Instagram Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type=im_module.WEBHOOK_TEST_NOTIFICATION_TYPE)
