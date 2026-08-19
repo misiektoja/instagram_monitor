@@ -141,6 +141,8 @@ Only a complete list download can replace this baseline. A configured maximum, s
 
 When the tool downloads follower or following lists, a terminal progress bar shows request counts, elapsed time and estimated time remaining. Intermediate progress is not written to the log. The final result is.
 
+With several targets, only one progress bar is drawn at a time because they share one terminal line. A target whose download starts while another bar is active fetches without a bar rather than waiting for it. The final result is logged either way.
+
 Profile pictures are saved as `instagram_<username>_profile_pic*.jpg`.
 
 Downloaded post and reel media use these names:
