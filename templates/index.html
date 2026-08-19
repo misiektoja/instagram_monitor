@@ -1912,7 +1912,7 @@
                 const caption = u.caption ? escapeHtml(u.caption) : '';
                 // These URLs arrive from the Instagram API, so restrict them to http/https and escape them
                 // before they enter an attribute, exactly as the activity feed does
-                const thumbnailUrl = safeUrl(u.url);
+                const thumbnailUrl = sameOriginUrl(u.url);
                 const postUrl = safeUrl(u.post_url);
                 const videoUrl = safeUrl(u.video_url);
                 const userPrefix = u.user ? `<span style="color: #888; margin-right: 4px;">[${escapeHtml(u.user)}]</span>` : '';
@@ -2850,6 +2850,18 @@
                 "'": '&#039;'
             };
             return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+
+        // Returns a URL only when it points back at this dashboard, so images cannot load from a third party.
+        // A remote thumbnail would otherwise reveal the viewer's address to Instagram's CDN on every refresh
+        function sameOriginUrl(value) {
+            const url = safeUrl(value);
+            if (!url) return '';
+            try {
+                return new URL(url).origin === window.location.origin ? url : '';
+            } catch (_) {
+                return '';
+            }
         }
 
         // Returns only browser-safe HTTP and HTTPS URLs
