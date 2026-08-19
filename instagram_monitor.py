@@ -709,9 +709,38 @@ def _format_config_value(value, prefer_double_quotes: bool) -> str:
     return repr(value)
 
 
-# Validates Python config content without executing it
+# Advanced settings documented for config files but deliberately kept out of the generated template
+EXTRA_CONFIG_KEYS = frozenset(("FLAGGED_PROBE_USERNAME", "FLAGGED_PROBE_TTL"))
+
+
+# Returns every setting name a config file may assign, taken from the built-in template plus documented extras
+def config_allowed_names() -> frozenset:
+    import ast
+    declared = {statement.targets[0].id for statement in ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec").body if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name)}
+    return frozenset(declared | EXTRA_CONFIG_KEYS)
+
+
+# Reads allowlisted literal assignments from config content without executing any of it
+def parse_config_content(content: str, filename: str = "<config>") -> dict:
+    import ast
+    allowed_names = config_allowed_names()
+    parsed_values = {}
+    for statement in ast.parse(content, filename, "exec").body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
+            raise ValueError(f"line {getattr(statement, 'lineno', '?')}: only 'NAME = value' settings are allowed, this file contains other code")
+        name = statement.targets[0].id
+        if name not in allowed_names:
+            raise ValueError(f"line {statement.lineno}: '{name}' is not a recognized setting")
+        try:
+            parsed_values[name] = ast.literal_eval(statement.value)
+        except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as exc:
+            raise ValueError(f"line {statement.lineno}: '{name}' must be a plain value such as text, a number, True, False, a list or a dictionary") from exc
+    return parsed_values
+
+
+# Validates config content through the same restricted parser used when a config file is loaded
 def validate_config_content(content: str, filename: str = "<generated-config>") -> None:
-    compile(content, filename, "exec")
+    parse_config_content(content, filename)
 
 
 # Renders CONFIG_BLOCK with selected runtime values substituted into simple one-line assignments
@@ -7013,6 +7042,43 @@ def find_config_file(cli_path=None):
         if p.is_file():
             return str(p)
     return None
+
+
+# Reads one UTF-8 config file into the given namespace, reporting why it was rejected
+def load_config_file(config_path, namespace=None) -> bool:
+    target_namespace = globals() if namespace is None else namespace
+    try:
+        content = Path(config_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"* Error loading config file '{config_path}': {format_error_message(exc)}")
+        print(colorize("info", "To fix: verify the file is readable and saved as UTF-8. You can regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'."))
+        print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
+        return False
+
+    try:
+        target_namespace.update(parse_config_content(content, str(config_path)))
+        return True
+    except SyntaxError as exc:
+        # A lone backslash in an unescaped Windows path is the usual cause, so retry with the backslashes doubled
+        if "unicodeescape" in str(exc) or "escape" in str(exc.msg or ""):
+            try:
+                target_namespace.update(parse_config_content(content.replace("\\", "\\\\"), str(config_path)))
+                print(f"* Warning: Backslashes in '{config_path}' were read literally. Use forward slashes (/) or doubled backslashes (\\\\) to silence this warning.")
+                return True
+            except (SyntaxError, ValueError):
+                pass
+        print(f"* Error loading config file '{config_path}':")
+        if exc.lineno:
+            print(f"Line {exc.lineno}: {(exc.text or '').rstrip()}")
+        print(f"Parser: {exc.msg}")
+        print(colorize("info", "To fix: check that line. Text values need matching quotes and Windows paths need forward slashes (/) or doubled backslashes (\\\\). You can also regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'."))
+        print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
+        return False
+    except ValueError as exc:
+        print(f"* Error loading config file '{config_path}': {exc}")
+        print(colorize("info", "To fix: a config file may only assign settings, such as INSTA_CHECK_INTERVAL = 5400. It cannot import modules, call functions or run other code. Regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'."))
+        print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
+        return False
 
 
 # Resolves an executable path by checking if it's a valid file or searching in $PATH
@@ -13516,41 +13582,8 @@ def run_main():
         print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
         sys.exit(1)
 
-    if cfg_path:
-        try:
-            with open(cfg_path, "r") as cf:
-                content = cf.read()
-                try:
-                    exec(content, globals())
-                except (SyntaxError, UnicodeDecodeError) as e:
-                    # Handle common Windows path escape issues (e.g. \U in \Users)
-                    # This happens because exec() treats the string as code with escape sequences
-                    if "unicodeescape" in str(e):
-                        # Attempt to fix by escaping backslashes (simple approach)
-                        # This is safe for most config values which are paths or simple strings
-                        fixed_content = content.replace('\\', '\\\\')
-                        try:
-                            exec(fixed_content, globals())
-                        except Exception as retry_e:
-                            # If even retry fails, show the original error but with a hint
-                            print(f"* Error loading config file '{cfg_path}': {e}")
-                            print(f"* Hint: Windows paths should use forward slashes (/) or escaped backslashes (\\\\)")
-                            sys.exit(1)
-                    else:
-                        raise e
-        except SyntaxError as e:
-            print(f"* Error loading config file '{cfg_path}':")
-            if e.lineno:
-                print(f"Line {e.lineno}: {(e.text or '').rstrip()}")
-            print(f"Parser: {e.msg}")
-            print(colorize("info", "To fix: check that line. Text values need matching quotes and Windows paths need forward slashes (/) or doubled backslashes (\\\\). You can also regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'."))
-            print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
-            sys.exit(1)
-        except Exception as e:
-            print(f"* Error loading config file '{cfg_path}': {type(e).__name__}: {e}")
-            print(colorize("info", "To fix: verify the file is readable and contains valid settings. You can regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'."))
-            print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
-            sys.exit(1)
+    if cfg_path and not load_config_file(cfg_path):
+        sys.exit(1)
 
     if args.output_dir:
         OUTPUT_DIR = os.path.expanduser(args.output_dir)
