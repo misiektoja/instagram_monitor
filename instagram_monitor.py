@@ -1246,6 +1246,7 @@ from dateutil.parser import isoparse, parse
 import calendar
 import requests as req
 WEBHOOK_SESSION = req.Session()
+import errno
 import shutil
 import smtplib
 import ssl
@@ -2050,7 +2051,9 @@ def run_flask_quietly(app, host, port, debug=False, use_reloader=False, threaded
             sys.stderr = old_stderr
 
             # Check if this is a port-in-use error
-            is_port_error = ((isinstance(e, OSError) and "Address already in use" in str(e)) or (isinstance(e, SystemExit) and e.code == 1))
+            # Match the address-in-use condition itself rather than any SystemExit(1), which would report an
+            # unrelated startup failure as a port conflict and hide its real cause
+            is_port_error = isinstance(e, OSError) and (getattr(e, "errno", None) in (errno.EADDRINUSE, errno.EACCES) or "Address already in use" in str(e))
 
             if is_port_error:
                 print("*" * HORIZONTAL_LINE)
@@ -2408,16 +2411,17 @@ def create_web_dashboard_app():
     def api_set_mode():  # type: ignore
         global DASHBOARD_MODE
         data = flask_request.get_json()  # type: ignore
-        if data and 'mode' in data:
-            DASHBOARD_MODE = data['mode']
-            with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-                WEB_DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
-            msg = f"Web Dashboard mode changed to: {DASHBOARD_MODE}"
-            log_activity(msg)
-            print(f"\n* {msg}")
-            print_cur_ts(newline=True)
-            return jsonify({'success': True, 'mode': DASHBOARD_MODE})  # type: ignore
-        return jsonify({'success': False}), 400  # type: ignore
+        # Every consumer compares against these two names, so an unrecognized value would silently pin the view
+        if not isinstance(data, dict) or data.get('mode') not in ('user', 'config'):
+            return jsonify({'success': False, 'error': "'mode' must be 'user' or 'config'"}), 400  # type: ignore
+        DASHBOARD_MODE = data['mode']
+        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+            WEB_DASHBOARD_DATA['dashboard_mode'] = DASHBOARD_MODE
+        msg = f"Web Dashboard mode changed to: {DASHBOARD_MODE}"
+        log_activity(msg)
+        print(f"\n* {msg}")
+        print_cur_ts(newline=True)
+        return jsonify({'success': True, 'mode': DASHBOARD_MODE})  # type: ignore
 
     @app.route('/api/trigger-check', methods=['POST'])
     def api_trigger_check():  # type: ignore
@@ -2937,6 +2941,9 @@ def create_web_dashboard_app():
             filename = DEFAULT_CONFIG_FILENAME
         if not is_plain_dashboard_filename(filename):
             return jsonify({'success': False, 'error': 'Invalid filename (paths are not allowed)'}), 400  # type: ignore
+        # A config destination must look like one, so this endpoint cannot overwrite a script or a dotfile
+        if not filename.casefold().endswith(".conf"):
+            return jsonify({'success': False, 'error': 'Config filename must end with .conf'}), 400  # type: ignore
         if len(filename) > 255:
             return jsonify({'success': False, 'error': 'Filename too long'}), 400  # type: ignore
 
@@ -5096,6 +5103,11 @@ def build_ntfy_local_image(local_image_file=None):
         return None
 
 
+# Encodes one ntfy message for an HTTP header, where ntfy expects a literal backslash-n for each line break
+def encode_ntfy_header_text(message: str) -> str:
+    return str(message).replace("\\", "\\\\").replace("\r\n", "\\n").replace("\r", "\\n").replace("\n", "\\n")
+
+
 # Sends one webhook notification through the selected provider
 def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status"):
     if not WEBHOOK_ENABLED or not WEBHOOK_URL:
@@ -5183,12 +5195,14 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     for attempt in range(WEBHOOK_MAX_ATTEMPTS):
         try:
             if provider == "ntfy":
+                # Alert text carries follower names, captions and bios, so it travels in headers or the body
+                # rather than the query string, which servers and proxies routinely record in access logs
                 if use_ntfy_image and ntfy_image is not None:
                     image_bytes, image_filename, image_content_type = ntfy_image
-                    attachment_headers = {**final_headers, "Content-Type": image_content_type, "X-Filename": image_filename}
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=attachment_headers, data=image_bytes, params={"title": ntfy_title, "message": ntfy_message}, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                    attachment_headers = {**final_headers, "Content-Type": image_content_type, "X-Filename": image_filename, "X-Title": ntfy_title, "X-Message": encode_ntfy_header_text(ntfy_message)}
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=attachment_headers, data=image_bytes, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy, allow_redirects=False)
                 else:
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, data=ntfy_message.encode("utf-8"), params={"title": ntfy_title}, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers={**final_headers, "X-Title": ntfy_title}, data=ntfy_message.encode("utf-8"), timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy, allow_redirects=False)
             else:
                 if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
                     filename = os.path.basename(local_image_file)
@@ -5201,11 +5215,11 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                             "file": (filename, f, "image/jpeg"),
                             "payload_json": (None, json.dumps(final_payload))
                         }
-                        response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, files=files, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                        response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, files=files, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy, allow_redirects=False)
                 elif isinstance(final_payload, str):
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, data=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, data=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy, allow_redirects=False)
                 else:
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, json=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy)
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, json=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy, allow_redirects=False)
 
             if 200 <= response.status_code <= 299:
                 print("* Webhook notification sent successfully")
@@ -6437,10 +6451,18 @@ def fetch_leaked_collab_posts(user: str, bot: instaloader.Instaloader) -> List[D
     return posts
 
 
+# Reduces an Instagram-supplied shortcode to the characters a real one uses, so it cannot steer a saved path
+def safe_media_shortcode(shortcode) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_-]", "", str(shortcode or ""))[:32]
+    return cleaned or "unknown"
+
+
 # Displays a leaked collab post from a private account with media download and returns dashboard metadata
 def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, Any], r_sleep_time: int, images_dir: str, videos_dir: str, user_root_path: Optional[str], is_new: bool = True, csv_file_name: str = "") -> Optional[Dict[str, Any]]:
     source = "reel" if post.get("is_video") else "post"
     shortcode = post.get("shortcode", "")
+    # The shortcode reaches a filename below, so keep the raw value for links and a sanitized one for paths
+    shortcode_for_path = safe_media_shortcode(shortcode)
     post_url = f"https://www.instagram.com/{'reel' if source == 'reel' else 'p'}/{shortcode}/"
     ts = post.get("ts", 0)
     post_dt = now_local()
@@ -6472,7 +6494,7 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
     image_filename = ""
     video_filename = ""
     if post.get("video_url"):
-        video_filename = f'instagram_{user}_collab_{source}_{shortcode}.mp4'
+        video_filename = f'instagram_{user}_collab_{source}_{shortcode_for_path}.mp4'
         if (user_root_path or OUTPUT_DIR) and videos_dir:
             video_filename = os.path.join(videos_dir, video_filename)
         if not os.path.isfile(video_filename):
@@ -6483,7 +6505,7 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
 
     pic_saved_html = ""
     if DOWNLOAD_THUMBNAILS and post.get("display_url"):
-        image_filename = f'instagram_{user}_collab_{source}_{shortcode}.jpg'
+        image_filename = f'instagram_{user}_collab_{source}_{shortcode_for_path}.jpg'
         if (user_root_path or OUTPUT_DIR) and images_dir:
             image_filename = os.path.join(images_dir, image_filename)
         if not os.path.isfile(image_filename):
