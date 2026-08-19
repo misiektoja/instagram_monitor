@@ -2309,7 +2309,7 @@
             if (!confirm(`Remove ${username} from monitoring?`)) return;
 
             try {
-                const response = await fetch(`/api/targets/${username}`, { method: 'DELETE' });
+                const response = await apiRequest(`/api/targets/${encodeURIComponent(username)}`, 'DELETE');
                 const data = await response.json();
                 if (data.success) {
                     showToast(`Removed target: ${username}`);
@@ -2530,7 +2530,7 @@
         async function testEmail() {
             try {
                 showToast('Sending test email...');
-                const response = await fetch('/api/test-email', { method: 'POST' });
+                const response = await apiRequest('/api/test-email');
                 const data = await response.json();
                 if (data.success) {
                     showToast('Test email sent successfully');
@@ -2545,7 +2545,7 @@
         async function testWebhook() {
             try {
                 showToast('Sending test webhook...');
-                const response = await fetch('/api/test-webhook', { method: 'POST' });
+                const response = await apiRequest('/api/test-webhook');
                 const data = await response.json();
                 if (data.success) {
                     showToast('Test webhook sent successfully');
@@ -2695,7 +2695,7 @@
         async function testSession() {
             try {
                 showToast('Testing session...');
-                const response = await fetch('/api/session/test', { method: 'POST' });
+                const response = await apiRequest('/api/session/test');
                 const data = await response.json();
                 if (data.success) {
                     showToast(`Session valid: ${escapeHtml(data.username)}`);
@@ -2716,7 +2716,7 @@
             }
             try {
                 showToast('Refreshing session...');
-                const response = await fetch('/api/session/refresh', { method: 'POST' });
+                const response = await apiRequest('/api/session/refresh');
                 const data = await response.json();
                 if (data.success) {
                     showToast(data.message || 'Session refreshed successfully');
@@ -2736,7 +2736,7 @@
             }
             try {
                 showToast('Clearing session...');
-                const response = await fetch('/api/session/clear', { method: 'POST' });
+                const response = await apiRequest('/api/session/clear');
                 const data = await response.json();
                 if (data.success) {
                     showToast(data.message || 'Session cleared');
@@ -2826,8 +2826,13 @@
             activities = [];
             renderActivities();
             renderDashboardActivities();
-            await fetch('/api/activity/clear', { method: 'POST' });
+            await apiRequest('/api/activity/clear');
             showToast('Activity log cleared');
+        }
+
+        // Sends one state-changing request with the JSON content type the server requires
+        function apiRequest(url, method = 'POST', payload = {}) {
+            return fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         }
 
         // HTML escaping function to prevent XSS
