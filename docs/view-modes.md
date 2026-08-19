@@ -62,7 +62,20 @@ The Web Dashboard runs a small web server on your computer. By default, open `ht
 
 The dashboard is intentionally designed for loopback use without a login screen. Keep the host port bound to `127.0.0.1` and do not expose it through a public reverse proxy. Dashboard media links can access only files registered by the running monitor. Saved webhook and proxy URLs are shown as configured without returning their private values to the browser. Enter a new URL only when you want to replace the saved value.
 
-Settings updates are validated as one operation before live values change. Malformed booleans, non-integer numeric fields, reversed hour ranges, invalid ports and unsafe URLs return an error without applying the rest of the payload. Polling intervals accepted by the dashboard range from 300 to 86400 seconds.
+<a id="dashboard-request-protection"></a>
+### Request Protection
+
+Because there is no login, the dashboard protects itself by checking who is asking rather than who is logged in. Two rules apply to every request:
+
+- **Accepted addresses.** The server answers only requests addressed to `127.0.0.1`, `localhost`, `::1` or the configured `WEB_DASHBOARD_HOST`. Anything else gets **HTTP 403**. This stops DNS rebinding, where a web page you visit points its own domain at `127.0.0.1` so the browser reaches your dashboard for it. Binding to the loopback interface alone does not stop that attack, because the request arrives from your own browser. Add a name to `WEB_DASHBOARD_ALLOWED_HOSTS` when you deliberately reach the dashboard under another address.
+- **Same-origin changes only.** Anything that changes state (adding targets, starting or stopping monitoring, saving settings, sending test notifications, clearing the activity log) must come from the dashboard page itself and carry `Content-Type: application/json`. A request that another website triggers in your browser is rejected with **HTTP 403**, and a request without a JSON body is rejected with **HTTP 415**. Without this, any page you happened to have open could stop your monitoring or force extra Instagram polling.
+
+Scripting the API yourself still works: send `Content-Type: application/json` and address the server as `127.0.0.1`.
+
+Settings updates are validated as one operation before live values change. Malformed booleans, non-integer numeric fields, reversed hour ranges, invalid ports and unsafe URLs return an error without applying the rest of the payload. Polling intervals accepted by the dashboard range from 300 to 86400 seconds. Two fields are deliberately narrow:
+
+- **CSV file name.** The dashboard names the CSV file but never chooses its location, so a value containing a path is rejected. An absolute path set through `CSV_FILE` or `-b` keeps working and still round-trips through the form unchanged.
+- **SMTP password.** A saved password belongs to the server it was entered for. Changing `SMTP_HOST` or `SMTP_PORT` without typing the password again clears it, so the tool never offers your credential to a different mail server. Re-enter the password in the same save to keep email working.
 
 In a container the server must bind to `0.0.0.0` so Docker can forward traffic. That value means every container network interface. It is not a browser destination. Use the published host address `http://127.0.0.1:8000/` instead.
 
