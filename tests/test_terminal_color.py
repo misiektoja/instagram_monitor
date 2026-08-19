@@ -17,3 +17,46 @@ def test_port_mapping_is_not_colored_as_a_time(im_module, monkeypatch):
 
     assert im_module._colorize_line(port_hint) == port_hint
     assert im_module._colorize_line("Next check at 21:07:39") == "Next check at \033[35m21:07:39\033[0m"
+
+
+# Verifies hostile terminal control sequences in remote text cannot drive the operator's terminal
+@pytest.mark.parametrize("hostile,expected", [
+    ("bio\x1b[2Jcleared", "bio[2Jcleared"),
+    ("bio\x1b]0;stolen title\x07", "bio]0;stolen title"),
+    ("visible\rhidden", "visiblehidden"),
+    ("bell\x07 and null\x00", "bell and null"),
+    ("delete\x7f and c1\x9b[3J", "delete and c1[3J"),
+])
+def test_sanitize_terminal_text_removes_control_sequences(im_module, hostile, expected):
+    assert im_module.sanitize_terminal_text(hostile) == expected
+
+
+# Verifies the tool's own colour codes and ordinary whitespace survive sanitization
+def test_sanitize_terminal_text_keeps_colours_and_layout(im_module):
+    coloured = "\033[36mInfo\033[0m\tvalue\nnext line"
+
+    assert im_module.sanitize_terminal_text(coloured) == coloured
+
+
+# Verifies remote text cannot smuggle an escape sequence between the tool's own colour codes
+def test_sanitize_terminal_text_cleans_between_colour_codes(im_module):
+    smuggled = "\033[36mlabel\033[0m \x1b[2J\033[31mvalue\033[0m"
+
+    assert im_module.sanitize_terminal_text(smuggled) == "\033[36mlabel\033[0m [2J\033[31mvalue\033[0m"
+
+
+# Verifies the terminal writer sanitizes remote text before it reaches the stream
+def test_logger_write_sanitizes_terminal_output(im_module, monkeypatch):
+    written = []
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", False)
+    monkeypatch.setattr(im_module, "DASHBOARD_ENABLED", False)
+    monkeypatch.setattr(im_module, "pbar", None)
+    logger = im_module.Logger.__new__(im_module.Logger)
+    logger.terminal = type("Stream", (), {"write": lambda self, text: written.append(text), "flush": lambda self: None})()
+    logger.target_logs = {}
+    logger.target_paths = {}
+    logger.main_log = None
+
+    logger.write("Bio:\x1b[2J\x1b]0;pwned\x07 done")
+
+    assert written == ["Bio:[2J]0;pwned done"]
