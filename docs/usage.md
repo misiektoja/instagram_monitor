@@ -397,6 +397,8 @@ instagram_monitor --send-test-webhook
 instagram_monitor --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-private-topic" --send-test-webhook
 ```
 
+A test notification is always delivered when the URL and provider are valid. It does not require the event switches below, so you can confirm delivery before deciding which notifications to enable.
+
 <a id="4-advanced-configuration"></a>
 ### 4. Advanced Configuration
 
@@ -584,6 +586,11 @@ PRIVACY_SUBSTITUTIONS = [ ("a.username", "Sarah"), ("some.other.user", "XXX") ]
 
 The replacement happens before output is displayed, logged or sent. Internal keys and file paths do not change, so the tool still uses the original usernames to find data. Invalid entries are ignored with a warning.
 
+<a id="terminal-safe-output"></a>
+## Terminal-Safe Output
+
+Biographies, captions, story text, comments and usernames come from Instagram and can contain terminal control sequences. Printed unchanged, those could clear your screen, retitle the window or overwrite a line you already read. The tool removes control characters from everything it prints and logs, keeping only tabs, newlines and its own colour codes. Nothing is lost from readable text.
+
 <a id="shadowban-and-flagged-account-detection"></a>
 ## Shadowban and Flagged Account Detection
 
@@ -632,6 +639,8 @@ The output path depends on whether the path is absolute or relative and whether 
 3. **Relative path without `OUTPUT_DIR`**
     * With one target, the path is relative to the current directory.
     * With several targets, one file per target is created in the current directory as `<CSV_FILE_basename>_<username>.csv`.
+
+A biography, caption or other Instagram text that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is written with a leading apostrophe. Spreadsheet software treats those characters as the start of a formula, so the apostrophe keeps the exported text as text. Numbers such as follower counts are unaffected.
 
 <a id="output-directory"></a>
 ## Output Directory
