@@ -1780,6 +1780,8 @@ WEBHOOK_MAX_ATTEMPTS = 2
 WEBHOOK_MAX_RETRY_AFTER_SECONDS = 5.0
 WEBHOOK_FALLBACK_RETRY_SECONDS = 1.0
 WEBHOOK_TIMEOUT_SECONDS = 10
+# Notification type used by operator-requested delivery tests, which must send regardless of the per-event WEBHOOK_* switches
+WEBHOOK_TEST_NOTIFICATION_TYPE = "test"
 NTFY_TRUNCATION_SUFFIX = "\n\n[Notification truncated to fit ntfy's 4 KB message limit]"
 NTFY_IMAGE_UPLOAD_LIMIT_BYTES = 5 * 1024 * 1024
 
@@ -2508,6 +2510,7 @@ def create_web_dashboard_app():
         """
         global INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
         global STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER
+        global NTFY_ACCESS_TOKEN
         global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, PROXY_REFRESH_VERSION
         global FOLLOWERS_CHURN_DETECTION, DEBUG_MODE, SESSION_USERNAME, VERBOSE_MODE
         global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SSL, SENDER_EMAIL, RECEIVER_EMAIL
@@ -2654,9 +2657,16 @@ def create_web_dashboard_app():
         ERROR_NOTIFICATION = bool(update_setting('error_notifications', ERROR_NOTIFICATION, bool))
 
         WEBHOOK_ENABLED = bool(update_setting('webhook_enabled', WEBHOOK_ENABLED, bool))
+        previous_webhook_host = _split_http_authority(urlsplit(str(WEBHOOK_URL or "").strip()).netloc)[0]
         WEBHOOK_URL = str(update_setting('webhook_url', WEBHOOK_URL, str))
         WEBHOOK_PROVIDER = str(update_setting('webhook_provider', WEBHOOK_PROVIDER, str))
         apply_webhook_provider_autodetection()
+
+        # NTFY_ACCESS_TOKEN is sent as a bearer credential to whatever WEBHOOK_URL points at, so moving the
+        # destination to another server must not carry it along. Changing the topic on the same server keeps it
+        if NTFY_ACCESS_TOKEN and _split_http_authority(urlsplit(str(WEBHOOK_URL or "").strip()).netloc)[0] != previous_webhook_host:
+            NTFY_ACCESS_TOKEN = ""
+            changes.append("'ntfy_access_token' cleared because the webhook server changed, set it again in your dotenv file")
         WEBHOOK_STATUS_NOTIFICATION = bool(update_setting('webhook_status', WEBHOOK_STATUS_NOTIFICATION, bool))
         WEBHOOK_FOLLOWERS_NOTIFICATION = bool(update_setting('webhook_followers', WEBHOOK_FOLLOWERS_NOTIFICATION, bool))
         WEBHOOK_ERROR_NOTIFICATION = bool(update_setting('webhook_errors', WEBHOOK_ERROR_NOTIFICATION, bool))
@@ -3206,7 +3216,7 @@ def create_web_dashboard_app():
         # Temporarily enable if we are testing
         old_webhook_enabled = WEBHOOK_ENABLED
         WEBHOOK_ENABLED = True
-        res = send_webhook("instagram_monitor: test webhook", "This is **test webhook** - your settings seems to be **correct** !", color=0x7289DA)
+        res = send_webhook("instagram_monitor: test webhook", "This is **test webhook** - your settings seems to be **correct** !", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE)
         WEBHOOK_ENABLED = old_webhook_enabled
 
         if res == 0:
@@ -3759,6 +3769,27 @@ def session_label() -> str:
 # ANSI escape sequence helper used for colouring and stripping colour codes
 ANSI_ESCAPE_RE = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
 
+# The only escape sequence this tool emits is an SGR colour/style change, so it is the only one worth keeping
+SGR_SEQUENCE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+# Every other control character is dropped, keeping only tab and newline. A carriage return would let remote
+# text overwrite an already printed line, and the inline doctor progress that uses one runs before this logger
+TERMINAL_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+# Removes terminal control sequences that Instagram-supplied text could use to drive the terminal, keeping this tool's own colours
+def sanitize_terminal_text(message):
+    if not isinstance(message, str) or not message:
+        return message
+    parts = []
+    position = 0
+    for match in SGR_SEQUENCE_RE.finditer(message):
+        parts.append(TERMINAL_CONTROL_RE.sub("", message[position:match.start()]))
+        parts.append(match.group(0))
+        position = match.end()
+    parts.append(TERMINAL_CONTROL_RE.sub("", message[position:]))
+    return "".join(parts)
+
 # Internal flag & style map for colour handling
 COLOR_ENABLED = False
 _COLOR_STYLES = {}
@@ -4226,7 +4257,7 @@ class Logger(object):
         global last_output
         with STDOUT_LOCK:
             # Apply color for terminal
-            message = apply_privacy_substitutions(message)
+            message = sanitize_terminal_text(apply_privacy_substitutions(message))
             colorized_message = apply_color_to_text(message)
 
             if message != '\n':
@@ -4268,7 +4299,7 @@ class Logger(object):
     # Writes a message to the terminal only (honouring colour), bypassing all log files
     def terminal_only(self, message):
         with STDOUT_LOCK:
-            message = apply_privacy_substitutions(message)
+            message = sanitize_terminal_text(apply_privacy_substitutions(message))
             colorized_message = apply_color_to_text(message)
             self.terminal.write(colorized_message)
             self.terminal.flush()
@@ -4276,7 +4307,7 @@ class Logger(object):
     # Writes a message to the log file(s) only (ANSI stripped), bypassing the terminal
     def log_only(self, message):
         with STDOUT_LOCK:
-            message = apply_privacy_substitutions(message)
+            message = sanitize_terminal_text(apply_privacy_substitutions(message))
             colorized_message = apply_color_to_text(message)
             clean_message = normalize_log_separators(ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8))
             if self.main_log:
@@ -4317,7 +4348,7 @@ class ColorStream(object):
         self.terminal = stream
 
     def write(self, message):
-        coloured = apply_color_to_text(apply_privacy_substitutions(message))
+        coloured = apply_color_to_text(sanitize_terminal_text(apply_privacy_substitutions(message)))
         self.terminal.write(coloured)
         self.terminal.flush()
 
@@ -5009,11 +5040,11 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         print(f"* Webhook error: {customization_error}")
         return 1
 
-    if notification_type == "status" and not WEBHOOK_STATUS_NOTIFICATION:
-        return 1
-    elif notification_type == "followers" and not WEBHOOK_FOLLOWERS_NOTIFICATION:
-        return 1
-    elif notification_type == "error" and not WEBHOOK_ERROR_NOTIFICATION:
+    # Event categories follow their configured switch. Operator-requested delivery tests are never gated,
+    # otherwise --send-test-webhook would report a failure without explaining that a switch suppressed it
+    event_switches = {"status": WEBHOOK_STATUS_NOTIFICATION, "followers": WEBHOOK_FOLLOWERS_NOTIFICATION, "error": WEBHOOK_ERROR_NOTIFICATION}
+    if notification_type in event_switches and not event_switches[notification_type]:
+        debug_print(f"Webhook for '{notification_type}' suppressed because its notification switch is disabled")
         return 1
 
     sanitized_fields = []
@@ -5362,6 +5393,11 @@ def debug_print(message):
         print(f"[DEBUG {timestamp}]{user_prefix} {message}")  # substitution applied in LOGGER.write
 
 
+# Prefixes one CSV value so spreadsheet software cannot evaluate Instagram-supplied text as a formula
+def escape_csv_formula(value):
+    return f"'{value}" if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r") else value
+
+
 # Initializes the CSV file
 def init_csv_file(csv_file_name):
     try:
@@ -5384,7 +5420,7 @@ def write_csv_entry(csv_file_name, timestamp, object_type, old, new):
         debug_print(f"Writing CSV entry to {csv_file_name}: Type={object_type}, Old={old}, New={new}")
         with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as csv_file:
             csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
-            csvwriter.writerow({'Date': timestamp, 'Type': object_type, 'Old': old, 'New': new})
+            csvwriter.writerow({'Date': escape_csv_formula(timestamp), 'Type': escape_csv_formula(object_type), 'Old': escape_csv_formula(old), 'New': escape_csv_formula(new)})
 
     except Exception as e:
         raise RuntimeError(f"Failed to write to CSV file '{csv_file_name}': {e}")
@@ -8868,9 +8904,10 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
             elif BE_HUMAN_VERBOSE:
                 print(f"* BeHuman #2 error: cannot view own profile: {e})")
 
-    # Browse a random hashtag
-    if random.random() < prob / 2:
-        tag = random.choice(MY_HASHTAGS)
+    # Browse a random hashtag (skipped when no hashtags are configured, so the rest of the simulation still runs)
+    browsable_hashtags = [tag for tag in MY_HASHTAGS if isinstance(tag, str) and tag.strip()] if isinstance(MY_HASHTAGS, (list, tuple)) else []
+    if browsable_hashtags and random.random() < prob / 2:
+        tag = random.choice(browsable_hashtags)
         try:
             posts = bot.get_hashtag_posts(tag)
             post = next(posts)
@@ -9111,8 +9148,30 @@ def send_story_item_notifications(user, story_type, local_ts, expire_ts, story_m
     return send_webhook(f"📖 {user} New Story Item", f"User **{user}** posted a new story item!", color=0xe91e63, fields=story_webhook_fields, local_image_file=local_image_file or None, image_url=story_thumbnail_url if story_thumbnail_url and not has_local_image else None, notification_type="status")
 
 
-# Monitors activity of the specified Instagram user
-def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None, manual_recheck=False, skip_follow_changes=False):  # type: ignore[reportComplexity]
+# Carries the values one monitoring pass must hand to its replacement when live settings change
+@dataclass
+class _MonitorRestart:
+    csv_file_name: str
+    manual_recheck: bool
+
+
+# Monitors activity of the specified Instagram user, starting a fresh pass whenever live settings change
+def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None, manual_recheck=False, skip_follow_changes=False):
+    # A settings or session change rebuilds the monitoring context. Looping here rather than re-entering the
+    # pass keeps the stack flat, so a long-lived dashboard session cannot exhaust it with repeated changes
+    while True:
+        outcome = _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user, signal_loading_complete, stop_event, user_root_path, manual_recheck, skip_follow_changes)
+        if not isinstance(outcome, _MonitorRestart):
+            return outcome
+        csv_file_name = outcome.csv_file_name
+        manual_recheck = outcome.manual_recheck
+        skip_session, skip_followers, skip_followings = SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS
+        skip_getting_story_details, skip_getting_posts_details = SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS
+        get_more_post_details, skip_follow_changes = GET_MORE_POST_DETAILS, SKIP_FOLLOW_CHANGES
+
+
+# Runs one monitoring pass for the specified Instagram user until it stops or needs a fresh context
+def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None, manual_recheck=False, skip_follow_changes=False):  # type: ignore[reportComplexity]
     global pbar, DASHBOARD_DATA, VERBOSE_MODE, CHECK_COUNT, NEXT_CHECK_TIME, NEXT_CHECK_DISPLAY
     user = normalize_instagram_username(user)
     session_refresh_generation = get_session_refresh_generation()
@@ -9223,7 +9282,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                             log_activity("Session refresh detected, resuming setup...", user=user)
                             print(f"* Session refresh detected for {user}, resuming setup...")
                             print_cur_ts(newline=True)
-                            return instagram_monitor_user(user, csv_file_name, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, wait_for_prev_user, signal_loading_complete, stop_event, user_root_path, manual_recheck, skip_follow_changes=SKIP_FOLLOW_CHANGES)
+                            return _MonitorRestart(csv_file_name, manual_recheck)
 
                     if stop_event and stop_event.is_set():
                         return
@@ -9441,7 +9500,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
                         get_more_post_details = GET_MORE_POST_DETAILS
 
                         # Re-run the function from the beginning to reset state with new settings
-                        return instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user, signal_loading_complete, stop_event, user_root_path, manual_recheck)
+                        return _MonitorRestart(csv_file_name, manual_recheck)
 
                 if stop_event and stop_event.is_set():
                     return
@@ -10335,7 +10394,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
         current_refresh_generation = get_session_refresh_generation()
         if current_refresh_generation != session_refresh_generation:
             log_activity("Live settings changed, rebuilding monitor context", user=user)
-            return instagram_monitor_user(user, get_target_paths(user)[0], SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, wait_for_prev_user, signal_loading_complete, stop_event, user_root_path, manual_recheck_active, skip_follow_changes=SKIP_FOLLOW_CHANGES)
+            return _MonitorRestart(get_target_paths(user)[0], manual_recheck_active)
 
         skip_session = SKIP_SESSION
         skip_followers = SKIP_FOLLOWERS
@@ -12593,7 +12652,7 @@ def _doctor_send_test_webhook() -> int:
     previous_enabled = WEBHOOK_ENABLED
     try:
         WEBHOOK_ENABLED = True
-        return send_webhook("Instagram Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type="doctor")
+        return send_webhook("Instagram Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE)
     finally:
         WEBHOOK_ENABLED = previous_enabled
 
@@ -13688,7 +13747,7 @@ def run_main():
         old_webhook_enabled = WEBHOOK_ENABLED
         WEBHOOK_ENABLED = True
 
-        if send_webhook("instagram_monitor: test webhook", "This is **test webhook** - your settings seems to be **correct** !", color=0x7289DA) == 0:
+        if send_webhook("instagram_monitor: test webhook", "This is **test webhook** - your settings seems to be **correct** !", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE) == 0:
             print("* Webhook sent successfully !")
         else:
             print("* Error: Test webhook notification failed. Check the error message above.")
@@ -13748,8 +13807,10 @@ def run_main():
         WEB_DASHBOARD_TEMPLATE_DIR = os.path.abspath(os.path.expanduser(args.web_dashboard_template_dir))
 
     # Container bridge networking needs the service to listen beyond its own loopback interface
+    web_dashboard_host_forced_by_container = False
     if WEB_DASHBOARD_ENABLED and _running_in_container() and WEB_DASHBOARD_HOST in ("127.0.0.1", "localhost", "::1"):
         WEB_DASHBOARD_HOST = "0.0.0.0"
+        web_dashboard_host_forced_by_container = True
 
     # Allow empty targets with specific flags
     if not targets and not WEB_DASHBOARD_ENABLED and not args.doctor:
@@ -14156,6 +14217,15 @@ def run_main():
             print("* WARNING: Web Dashboard is enabled, but 'Flask' library is missing!")
             print("* To fix this, please run: pip install flask")
             print("* Web Dashboard will NOT be available!")
+            print("*" * HORIZONTAL_LINE)
+
+        if web_dashboard_host_forced_by_container and FLASK_AVAILABLE:
+            print("\n" + "*" * HORIZONTAL_LINE)
+            print("* WARNING: Web Dashboard host changed from 127.0.0.1 to 0.0.0.0 because this is a container!")
+            print("* The server now listens on every container interface so Docker can forward traffic to it.")
+            print(f"* Publish it to your machine only: -p 127.0.0.1:{WEB_DASHBOARD_PORT}:{WEB_DASHBOARD_PORT}")
+            print(f"* Publishing it as -p {WEB_DASHBOARD_PORT}:{WEB_DASHBOARD_PORT} offers a dashboard with no login to your whole network.")
+            print("* Requests are still accepted only for 127.0.0.1, localhost, ::1 and WEB_DASHBOARD_ALLOWED_HOSTS.")
             print("*" * HORIZONTAL_LINE)
 
     # Initialize Rich console if available and enabled (can work alongside web dashboard)
