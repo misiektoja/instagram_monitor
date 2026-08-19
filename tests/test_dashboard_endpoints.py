@@ -232,7 +232,7 @@ class TestDashboardConfigAndSession:
             monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
             monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
 
-            response = client.post("/api/session/clear")
+            response = client.post("/api/session/clear", json={})
 
             assert response.status_code == 200
             assert response.get_json()["files_removed"] == 1
@@ -258,7 +258,7 @@ class TestDashboardConfigAndSession:
             monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
             monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
 
-            response = client.post("/api/session/clear")
+            response = client.post("/api/session/clear", json={})
 
             assert response.status_code == 200
             assert response.get_json()["files_removed"] == 2
@@ -287,7 +287,7 @@ class TestDashboardTestNotifications:
         monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: calls.append((args, kwargs)) or 0)
         monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
 
-        response = client.post("/api/test-email")
+        response = client.post("/api/test-email", json={})
 
         assert response.status_code == 200
         assert response.get_json() == {"success": True}
@@ -302,7 +302,7 @@ class TestDashboardTestNotifications:
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: calls.append((args, kwargs)) or 0)
         monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
 
-        response = client.post("/api/test-webhook")
+        response = client.post("/api/test-webhook", json={})
 
         assert response.status_code == 200
         assert response.get_json() == {"success": True}
@@ -396,3 +396,217 @@ class TestDashboardSecurityAndLifecycle:
 
         assert im_module.wait_for_session_refresh(first, timeout=0) == updated
         assert im_module.wait_for_session_refresh(second, timeout=0) == updated
+
+
+class TestDashboardRequestBoundary:
+    # Requests addressed to an unrecognized Host are refused so DNS rebinding cannot reach the dashboard
+    @pytest.mark.parametrize("method,path", [("get", "/api/status"), ("get", "/"), ("post", "/api/settings")])
+    def test_foreign_host_header_is_rejected(self, im_module, monkeypatch, method, path):
+        client = _dashboard_client(im_module, monkeypatch)
+
+        response = getattr(client, method)(path, headers={"Host": "attacker-controlled.example"})
+
+        assert response.status_code == 403
+        assert "Host header" in response.get_json()["error"]
+
+    # Loopback names stay reachable so the documented local workflow is unaffected
+    @pytest.mark.parametrize("host", ["127.0.0.1:8000", "localhost", "localhost:8000", "[::1]:8000"])
+    def test_loopback_host_headers_are_accepted(self, im_module, monkeypatch, host):
+        client = _dashboard_client(im_module, monkeypatch)
+
+        assert client.get("/api/status", headers={"Host": host}).status_code == 200
+
+    # A deliberately configured host name is accepted without loosening the default
+    def test_configured_allowed_host_is_accepted(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ALLOWED_HOSTS", ["monitor.lan"])
+        client = _dashboard_client(im_module, monkeypatch)
+
+        assert client.get("/api/status", headers={"Host": "monitor.lan:8000"}).status_code == 200
+        assert client.get("/api/status", headers={"Host": "other.lan:8000"}).status_code == 403
+
+    # The explicit wildcard opt-out accepts any Host for operators who front the dashboard themselves
+    def test_wildcard_allowed_host_accepts_any_name(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ALLOWED_HOSTS", ["*"])
+        client = _dashboard_client(im_module, monkeypatch)
+
+        assert client.get("/api/status", headers={"Host": "anything.example"}).status_code == 200
+
+    # A wildcard bind address is never treated as a name a browser may address the dashboard by
+    def test_wildcard_bind_address_does_not_widen_accepted_hosts(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_HOST", "0.0.0.0")
+        client = _dashboard_client(im_module, monkeypatch)
+
+        assert client.get("/api/status", headers={"Host": "127.0.0.1:8000"}).status_code == 200
+        assert client.get("/api/status", headers={"Host": "0.0.0.0:8000"}).status_code == 403
+
+    # A cross-site HTML form post cannot change dashboard state even with a valid Host
+    @pytest.mark.parametrize("path", ["/api/monitoring/stop", "/api/monitoring/start", "/api/trigger-check", "/api/activity/clear", "/api/test-email", "/api/test-webhook", "/api/settings"])
+    def test_cross_site_form_post_is_rejected(self, im_module, monkeypatch, path):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "stop_monitoring_for_target", lambda user: pytest.fail("monitoring was stopped by a cross-site request"))
+        monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: pytest.fail("email was sent by a cross-site request"))
+        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: pytest.fail("webhook was sent by a cross-site request"))
+
+        response = client.post(path, data="", content_type="application/x-www-form-urlencoded", headers={"Origin": "https://attacker.example", "Sec-Fetch-Site": "cross-site"})
+
+        assert response.status_code == 403
+
+    # A cross-origin JSON request is refused, which is the shape a rebound page would send
+    def test_cross_origin_json_post_is_rejected(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.org")
+
+        response = client.post("/api/settings", json={"smtp_host": "attacker.example"}, headers={"Origin": "https://attacker.example"})
+
+        assert response.status_code == 403
+        assert im_module.SMTP_HOST == "smtp.example.org"
+
+    # State-changing requests without a JSON body are refused even when no browser headers are present
+    @pytest.mark.parametrize("path", ["/api/monitoring/stop", "/api/activity/clear", "/api/test-email", "/api/test-webhook"])
+    def test_state_change_requires_json_content_type(self, im_module, monkeypatch, path):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "stop_monitoring_for_target", lambda user: pytest.fail("monitoring was stopped without a JSON request"))
+        monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: pytest.fail("email was sent without a JSON request"))
+        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: pytest.fail("webhook was sent without a JSON request"))
+
+        assert client.post(path, data="", content_type="application/x-www-form-urlencoded").status_code == 415
+
+    # Same-origin dashboard requests keep working with the headers a browser actually sends
+    def test_same_origin_request_is_accepted(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", 5400)
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"check_interval": 3600}, headers={"Host": "127.0.0.1:8000", "Origin": "http://127.0.0.1:8000", "Sec-Fetch-Site": "same-origin"})
+
+        assert response.status_code == 200
+        assert im_module.INSTA_CHECK_INTERVAL == 3600
+
+
+class TestDashboardCredentialBoundary:
+    # Repointing SMTP without re-entering the password drops it instead of offering it to the new server
+    def test_smtp_password_is_cleared_when_the_server_changes(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.org")
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "stored-secret")
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"smtp_host": "attacker.example"})
+
+        assert response.status_code == 200
+        assert im_module.SMTP_HOST == "attacker.example"
+        assert im_module.SMTP_PASSWORD == ""
+        assert any("smtp_password" in change and "cleared" in change for change in response.get_json()["changes"])
+
+    # Changing only the port also invalidates the stored password because the destination moved
+    def test_smtp_password_is_cleared_when_the_port_changes(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "SMTP_PORT", 587)
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "stored-secret")
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"smtp_port": 2525})
+
+        assert response.status_code == 200
+        assert im_module.SMTP_PASSWORD == ""
+
+    # Supplying the password alongside the new server keeps email working in the legitimate flow
+    def test_smtp_password_survives_a_server_change_when_supplied(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.org")
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "stored-secret")
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"smtp_host": "smtp.other.org", "smtp_password": "new-secret"})
+
+        assert response.status_code == 200
+        assert im_module.SMTP_PASSWORD == "new-secret"
+
+    # The masked placeholder is not a re-entered password, so it cannot carry the secret to a new server
+    def test_masked_smtp_password_does_not_survive_a_server_change(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.org")
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "stored-secret")
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"smtp_host": "attacker.example", "smtp_password": "********"})
+
+        assert response.status_code == 200
+        assert im_module.SMTP_PASSWORD == ""
+
+    # An unrelated settings change never disturbs the stored password
+    def test_smtp_password_is_untouched_without_a_server_change(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.org")
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "stored-secret")
+        monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", 5400)
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"check_interval": 3600})
+
+        assert response.status_code == 200
+        assert im_module.SMTP_PASSWORD == "stored-secret"
+
+    # The dashboard may name a CSV file but never choose where the monitor writes it
+    @pytest.mark.parametrize("candidate", ["/etc/cron.d/payload", "../escape.csv", "sub/dir.csv", "back\\slash.csv", ".."])
+    def test_csv_filename_rejects_paths(self, im_module, monkeypatch, candidate):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "CSV_FILE", "activity.csv")
+
+        response = client.post("/api/settings", json={"csv_filename": candidate})
+
+        assert response.status_code == 400
+        assert "without a path" in response.get_json()["error"]
+        assert im_module.CSV_FILE == "activity.csv"
+
+    # An over-long CSV name is refused before it reaches the filesystem
+    def test_csv_filename_rejects_over_long_names(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "CSV_FILE", "activity.csv")
+
+        response = client.post("/api/settings", json={"csv_filename": "a" * 256 + ".csv"})
+
+        assert response.status_code == 400
+        assert im_module.CSV_FILE == "activity.csv"
+
+    # A plain file name is still accepted so the documented dashboard workflow keeps working
+    def test_csv_filename_accepts_plain_name(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "CSV_FILE", "activity.csv")
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"csv_filename": "renamed.csv"})
+
+        assert response.status_code == 200
+        assert im_module.CSV_FILE == "renamed.csv"
+
+    # A CSV path configured outside the dashboard round-trips through the form without being rejected
+    def test_csv_filename_round_trips_an_externally_configured_path(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "CSV_FILE", "/var/log/instagram/activity.csv")
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"csv_filename": "/var/log/instagram/activity.csv"})
+
+        assert response.status_code == 200
+        assert im_module.CSV_FILE == "/var/log/instagram/activity.csv"
+
+    # Clearing the CSV name disables CSV logging instead of failing validation
+    def test_csv_filename_accepts_empty_value(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "CSV_FILE", "activity.csv")
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"csv_filename": ""})
+
+        assert response.status_code == 200
+        assert im_module.CSV_FILE == ""
