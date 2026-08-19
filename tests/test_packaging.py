@@ -106,3 +106,37 @@ def test_installed_console_generates_valid_config(package_test_directory: Path, 
     compile(generated, str(destination), "exec")
     assert "TARGET_USERNAMES" in generated
     assert "INSTA_CHECK_INTERVAL" in generated
+
+
+class TestWorkflowSupplyChain:
+    # Every third-party action is pinned to a commit, so a moved tag cannot change what runs with our secrets
+    def test_actions_are_pinned_to_commit_shas(self):
+        unpinned = []
+        for workflow in sorted((PROJECT_ROOT / ".github" / "workflows").glob("*.yml")):
+            for match in re.finditer(r"uses:\s*(\S+)", workflow.read_text(encoding="utf-8")):
+                reference = match.group(1)
+                if reference.startswith("./"):
+                    continue
+                action, _, ref = reference.partition("@")
+                if not re.fullmatch(r"[0-9a-f]{40}", ref):
+                    unpinned.append(f"{workflow.name}: {reference}")
+        assert unpinned == []
+
+    # Each pin records the human-readable version so updates stay reviewable
+    def test_pinned_actions_carry_a_version_comment(self):
+        missing = []
+        for workflow in sorted((PROJECT_ROOT / ".github" / "workflows").glob("*.yml")):
+            for line in workflow.read_text(encoding="utf-8").splitlines():
+                if "uses:" in line and "@" in line and "./" not in line and not re.search(r"#\s*v?\d", line):
+                    missing.append(f"{workflow.name}: {line.strip()}")
+        assert missing == []
+
+    # Event and input values never reach a shell directly, which would allow script injection
+    def test_run_steps_do_not_interpolate_event_values(self):
+        offenders = []
+        for workflow in sorted((PROJECT_ROOT / ".github" / "workflows").glob("*.yml")):
+            for block in re.findall(r"run: \|(.*?)(?=\n      [-a-zA-Z]|\Z)", workflow.read_text(encoding="utf-8"), re.S):
+                for line in block.splitlines():
+                    if "${{" in line:
+                        offenders.append(f"{workflow.name}: {line.strip()}")
+        assert offenders == []
