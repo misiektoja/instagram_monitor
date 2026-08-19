@@ -33,6 +33,21 @@ Without `--config-file`, Instagram Monitor uses the first configuration it finds
 
 An explicit `--config-file PATH` is always used and the command stops with an error if that file does not exist.
 
+<a id="what-a-configuration-file-may-contain"></a>
+### What a Configuration File May Contain
+
+A configuration file is a list of settings, not a program. Instagram Monitor reads it without running it, and accepts only lines of the form `SETTING = value` where the value is plain text, a number, `True`, `False`, `None`, a list, a tuple or a dictionary:
+
+```ini
+INSTA_CHECK_INTERVAL = 5400
+TARGET_USERNAMES = ["user1", "user2"]
+COLOR_THEME = { "header": "bright_cyan" }
+```
+
+Imports, function calls, conditions and any other code are rejected, and the setting name must be one Instagram Monitor recognizes. This matters because the first configuration searched is the one in your current directory: without this rule, starting the tool inside a downloaded archive or a shared directory that happened to contain an `instagram_monitor.conf` would run whatever that file contained.
+
+A rejected file changes nothing. The error names the line and the reason, and no setting from that file is applied.
+
 If the same setting appears in more than one place, the item later in this list wins:
 
 1. Built-in defaults
