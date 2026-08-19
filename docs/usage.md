@@ -604,7 +604,7 @@ FLAGGED_PROBE_TTL = 300
 <a id="reducing-jitter-log-noise"></a>
 ## Reducing Jitter Log Noise
 
-When **Jitter Mode** (or debug/verbose output) is enabled, the HTTP back-off wrapper prints a `WRAP-REQ` / `WRAP-SEND` line for every request, which can be overwhelming. Set `SKIP_WRAP_MESSAGES` to `True` to suppress those per-request lines while keeping the rest of the jitter behavior:
+When **Jitter Mode** (or debug/verbose output) is enabled, the Instagram HTTP backoff wrapper prints a `WRAP-REQ` line for each delayed request. Set `SKIP_WRAP_MESSAGES` to `True` to suppress those lines while keeping the rest of the jitter behavior:
 
 ```ini
 SKIP_WRAP_MESSAGES = True
@@ -663,6 +663,8 @@ The directory layout depends on the number of targets:
     - `OUTPUT_DIR/<username>/csvs/`
 
 Summary messages and errors that apply to the whole process are written to every active target log.
+
+Images and videos are streamed to a temporary file beside the destination with a 100 MiB limit. The monitor accepts only a complete HTTP 200 response with a recognized image or video signature then replaces the destination atomically. A truncated response, an HTML error page or another invalid response leaves an existing saved file untouched.
 
 <a id="detection-of-changed-profile-pictures"></a>
 ## Detection of Changed Profile Pictures
