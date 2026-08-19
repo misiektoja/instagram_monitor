@@ -3,6 +3,8 @@
 import tempfile
 from pathlib import Path
 
+import pytest
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT_ROOT = PROJECT_ROOT / "local" / "test_artifacts" / "media_downloads"
@@ -108,3 +110,27 @@ class TestMediaDownloads:
             assert im_module.save_pic_video("https://cdninstagram.com/photo.jpg", str(destination)) is False
             assert destination.read_bytes() == b"old-data"
             assert not list(destination.parent.glob(".*.tmp"))
+
+
+class TestShortcodePathSafety:
+    # A shortcode from the API reaches a filename, so anything outside its real alphabet is dropped
+    @pytest.mark.parametrize("hostile,expected", [
+        ("../../etc/passwd", "etcpasswd"),
+        ("a/b", "ab"),
+        ("..", "unknown"),
+        ("", "unknown"),
+        (None, "unknown"),
+        ("with space", "withspace"),
+        ("C:\\evil", "Cevil"),
+    ])
+    def test_hostile_shortcodes_cannot_steer_a_path(self, im_module, hostile, expected):
+        assert im_module.safe_media_shortcode(hostile) == expected
+
+    # A genuine shortcode is preserved so saved media keeps its recognizable name
+    @pytest.mark.parametrize("shortcode", ["CyR2f-Ap0Xk", "Bq_1-abcDEF", "abc123"])
+    def test_real_shortcodes_are_preserved(self, im_module, shortcode):
+        assert im_module.safe_media_shortcode(shortcode) == shortcode
+
+    # An overlong value cannot produce an unbounded filename
+    def test_length_is_bounded(self, im_module):
+        assert len(im_module.safe_media_shortcode("a" * 500)) == 32
