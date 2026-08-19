@@ -638,3 +638,19 @@ class TestDashboardCredentialBoundary:
 
         assert response.status_code == 200
         assert im_module.NTFY_ACCESS_TOKEN == "tk_secret"
+
+    # Setting a first webhook destination also clears a pre-existing token, because the token was never
+    # bound to a server the tool had seen. Recovery is the documented dotenv reload
+    def test_ntfy_token_is_cleared_when_a_first_destination_is_set(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "")
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "ntfy")
+        monkeypatch.setattr(im_module, "NTFY_ACCESS_TOKEN", "tk_secret")
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"webhook_url": "https://ntfy.example.org/topic"})
+
+        assert response.status_code == 200
+        assert im_module.NTFY_ACCESS_TOKEN == ""
+        assert any("ntfy_access_token" in change for change in response.get_json()["changes"])
