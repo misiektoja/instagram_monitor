@@ -654,3 +654,36 @@ class TestDashboardCredentialBoundary:
         assert response.status_code == 200
         assert im_module.NTFY_ACCESS_TOKEN == ""
         assert any("ntfy_access_token" in change for change in response.get_json()["changes"])
+
+    # The dashboard view mode is restricted to the two names every consumer understands
+    @pytest.mark.parametrize("payload", [{"mode": "hacked"}, {"mode": ""}, {"mode": None}, {}, {"mode": 1}])
+    def test_mode_rejects_unknown_values(self, im_module, monkeypatch, payload):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "DASHBOARD_MODE", "user")
+
+        response = client.post("/api/mode", json=payload)
+
+        assert response.status_code == 400
+        assert im_module.DASHBOARD_MODE == "user"
+
+    # Both supported modes still switch the view
+    @pytest.mark.parametrize("mode", ["user", "config"])
+    def test_mode_accepts_supported_values(self, im_module, monkeypatch, mode):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/mode", json={"mode": mode})
+
+        assert response.status_code == 200
+        assert im_module.DASHBOARD_MODE == mode
+
+    # A generated config must look like a config, so this endpoint cannot overwrite a script or dotfile
+    @pytest.mark.parametrize("filename", ["instagram_monitor.py", ".bashrc", "notes.txt", "config.conf.bak"])
+    def test_generate_config_requires_a_conf_suffix(self, im_module, monkeypatch, filename):
+        client = _dashboard_client(im_module, monkeypatch)
+
+        response = client.post("/api/generate-config", json={"filename": filename})
+
+        assert response.status_code == 400
+        assert "must end with .conf" in response.get_json()["error"]
