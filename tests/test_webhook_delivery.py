@@ -181,7 +181,10 @@ class TestSendWebhook:
         args, kwargs = calls[0]
         assert args == ("https://ntfy.sh/private-topic?auth=private-value",)
         assert kwargs["data"] == "Body: Bj\u00f6rk\n\nCount: 3\n\nImage: https://example.com/image.jpg".encode("utf-8")
-        assert kwargs["params"] == {"title": "Instagram title za\u017c\u00f3\u0142\u0107"}
+        assert kwargs["headers"]["X-Title"] == "Instagram title za\u017c\u00f3\u0142\u0107"
+        # Alert content must never travel in the query string, where servers and proxies log it
+        assert "params" not in kwargs
+        assert kwargs["allow_redirects"] is False
         assert kwargs["headers"]["Content-Type"] == "text/plain; charset=utf-8"
         assert "json" not in kwargs
 
@@ -314,10 +317,13 @@ class TestSendWebhook:
 
             assert im_module.send_webhook("Title", "Body", local_image_file=str(image_path)) == 0
             assert calls[0][1]["data"] == b"fake-image"
-            assert calls[0][1]["params"] == {"title": "Title", "message": "Body"}
+            assert calls[0][1]["headers"]["X-Title"] == "Title"
+            assert calls[0][1]["headers"]["X-Message"] == "Body"
+            assert "params" not in calls[0][1]
             assert calls[0][1]["headers"]["X-Filename"] == "profile.jpg"
             assert calls[1][1]["data"] == b"Body"
-            assert calls[1][1]["params"] == {"title": "Title"}
+            assert calls[1][1]["headers"]["X-Title"] == "Title"
+            assert "params" not in calls[1][1]
 
     # Long ntfy messages stay below the server attachment boundary with a visible truncation marker
     def test_ntfy_message_stays_below_attachment_boundary(self, im_module):
