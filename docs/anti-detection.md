@@ -30,6 +30,8 @@ After a check cycle, the tool may perform one or more of these requests:
 - fetch one post from a tag listed in `MY_HASHTAGS`
 - open the profile of an account followed by the session account
 
+Leaving `MY_HASHTAGS` empty simply skips the hashtag request. The other actions still run.
+
 By default, it performs about five of these actions over 24 hours. Change the limit with `DAILY_HUMAN_HITS`.
 
 Set `BE_HUMAN_VERBOSE = True` to log each action.
