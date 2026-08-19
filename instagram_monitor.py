@@ -541,6 +541,17 @@ WEB_DASHBOARD_PORT = 8000
 # Host for the web dashboard server (use '0.0.0.0' to allow external access, it is not recommended!)
 WEB_DASHBOARD_HOST = '127.0.0.1'
 
+# Extra host names the dashboard accepts in the HTTP Host header
+#
+# The dashboard has no login, so it answers only requests addressed to loopback names or to
+# WEB_DASHBOARD_HOST. This blocks DNS rebinding, where a web page you visit resolves its own
+# domain to 127.0.0.1 to reach the dashboard from the browser
+#
+# Add a host name here only when you deliberately reach the dashboard under another name,
+# for example "monitor.lan" or "192.168.1.10"
+# The single entry "*" accepts any Host header and removes this protection
+WEB_DASHBOARD_ALLOWED_HOSTS = []
+
 # Template directory for web dashboard
 # If empty, the tool will auto-detect the templates directory in this order:
 #   1. Current working directory
@@ -1039,6 +1050,7 @@ DASHBOARD_ENABLED = False
 WEB_DASHBOARD_ENABLED = False
 WEB_DASHBOARD_PORT = 8000
 WEB_DASHBOARD_HOST = '127.0.0.1'
+WEB_DASHBOARD_ALLOWED_HOSTS = []
 WEB_DASHBOARD_TEMPLATE_DIR = ""
 DASHBOARD_SHOW_CHECK_SECONDS = True
 THUMBNAILS_FORCED_BY_WEB = False
@@ -1994,11 +2006,72 @@ def run_flask_quietly(app, host, port, debug=False, use_reloader=False, threaded
         sys.stderr = old_stderr
 
 
+# Splits one HTTP authority into its lowercase host name and optional port
+def _split_http_authority(authority) -> Tuple[str, str]:
+    value = str(authority or "").strip().lower()
+    if value.startswith("["):
+        host, _, port = value.partition("]")
+        return host[1:].rstrip("."), port.lstrip(":")
+    host, _, port = value.partition(":")
+    return host.rstrip("."), port
+
+
+# Returns the host names the dashboard answers to, or {"*"} when the operator accepts any Host header
+def web_dashboard_allowed_hostnames() -> set:
+    if isinstance(WEB_DASHBOARD_ALLOWED_HOSTS, str):
+        configured = [WEB_DASHBOARD_ALLOWED_HOSTS]
+    elif isinstance(WEB_DASHBOARD_ALLOWED_HOSTS, (list, tuple)):
+        configured = list(WEB_DASHBOARD_ALLOWED_HOSTS)
+    else:
+        configured = []
+    if any(str(entry).strip() == "*" for entry in configured):
+        return {"*"}
+    hostnames = {"127.0.0.1", "localhost", "::1"}
+    for entry in [WEB_DASHBOARD_HOST, *configured]:
+        hostname = _split_http_authority(entry)[0]
+        # A wildcard bind address is where the server listens, never a name a browser can address it by
+        if hostname and hostname not in ("0.0.0.0", "::"):
+            hostnames.add(hostname)
+    return hostnames
+
+
+# Returns whether a request's Host header addresses the dashboard under an accepted name
+def is_allowed_dashboard_host(host_header) -> bool:
+    allowed = web_dashboard_allowed_hostnames()
+    if "*" in allowed:
+        return True
+    return _split_http_authority(host_header)[0] in allowed
+
+
+# Returns whether a browser Origin header identifies the same origin as the addressed dashboard
+def is_same_origin_dashboard_request(origin, host_header) -> bool:
+    origin_value = str(origin or "").strip()
+    if not origin_value or origin_value.casefold() == "null":
+        return False
+    try:
+        parsed = urlsplit(origin_value)
+    except ValueError:
+        return False
+    if parsed.scheme.casefold() not in ("http", "https"):
+        return False
+    origin_host, origin_port = _split_http_authority(parsed.netloc)
+    target_host, target_port = _split_http_authority(host_header)
+    default_port = "443" if parsed.scheme.casefold() == "https" else "80"
+    return bool(origin_host) and origin_host == target_host and (origin_port or default_port) == (target_port or default_port)
+
+
+# Returns whether a dashboard-supplied name is a plain file name carrying no path component
+def is_plain_dashboard_filename(value) -> bool:
+    name = str(value or "").strip()
+    return bool(name) and name not in (".", "..") and "/" not in name and "\\" not in name and os.path.basename(name) == name
+
+
 # Creates and configures the Flask web application
 def create_web_dashboard_app():
     """
-    Note: Web Dashboard is intended for localhost use only as current implementation does not have CSRF protection
-    (like Flask-WTF) or authentication
+    Note: the Web Dashboard has no login. It is protected instead by a request boundary that answers
+    only loopback (or explicitly allowed) Host headers and rejects cross-origin state-changing requests,
+    so a web page you visit cannot drive it. Keep it bound to 127.0.0.1 regardless.
     """
     global WEB_DASHBOARD_TEMPLATE_DIR
     if not FLASK_AVAILABLE:
@@ -2109,6 +2182,31 @@ def create_web_dashboard_app():
 
     # Update global variable so it shows in dashboard
     WEB_DASHBOARD_TEMPLATE_DIR = template_dir
+
+    # The dashboard is unauthenticated, so every request must prove it addressed this server directly
+    # and that anything changing state came from the dashboard page itself rather than another site
+    @app.before_request
+    def enforce_dashboard_request_boundary():  # type: ignore[misc]
+        if not is_allowed_dashboard_host(flask_request.host):  # type: ignore[union-attr]
+            return jsonify({'success': False, 'error': 'Request rejected: unrecognized Host header. Open the dashboard at its own address, or add the name to WEB_DASHBOARD_ALLOWED_HOSTS.'}), 403  # type: ignore
+
+        if flask_request.method in ('GET', 'HEAD', 'OPTIONS'):  # type: ignore[union-attr]
+            return None
+
+        # Browsers label the initiator of every request, so anything not started by this origin is refused
+        fetch_site = (flask_request.headers.get('Sec-Fetch-Site') or '').strip().casefold()  # type: ignore[union-attr]
+        if fetch_site and fetch_site not in ('same-origin', 'none'):
+            return jsonify({'success': False, 'error': 'Request rejected: cross-site requests cannot change dashboard state'}), 403  # type: ignore
+
+        origin = flask_request.headers.get('Origin')  # type: ignore[union-attr]
+        if origin and not is_same_origin_dashboard_request(origin, flask_request.host):  # type: ignore[union-attr]
+            return jsonify({'success': False, 'error': 'Request rejected: cross-origin requests cannot change dashboard state'}), 403  # type: ignore
+
+        # A JSON body cannot be produced by a plain cross-site HTML form, so it is required for every mutation
+        if (flask_request.mimetype or '').strip().casefold() != 'application/json':  # type: ignore[union-attr]
+            return jsonify({'success': False, 'error': 'Request rejected: state-changing requests must use Content-Type: application/json'}), 415  # type: ignore
+
+        return None
 
     @app.route('/')
     def index():  # type: ignore
@@ -2486,6 +2584,15 @@ def create_web_dashboard_app():
             if requested_backend == 'curl_cffi' and not _CURL_CFFI_AVAILABLE:
                 return False, [], "'http_backend' cannot use curl_cffi because it is not installed", 400
 
+        # The CSV path decides where the monitor appends rows, so the dashboard may name a file but never a location.
+        # An unchanged value is accepted so a CSV path set from the config or CLI still round-trips through the form
+        requested_csv_filename = str(data.get('csv_filename', '')).strip()
+        if 'csv_filename' in data and requested_csv_filename and requested_csv_filename != CSV_FILE:
+            if not is_plain_dashboard_filename(requested_csv_filename):
+                return False, [], "'csv_filename' must be a file name without a path", 400
+            if len(requested_csv_filename) > 255:
+                return False, [], "'csv_filename' is too long", 400
+
         changes: list[str] = []
 
         def update_setting(key, current_val, cast_func=None):
@@ -2610,6 +2717,8 @@ def create_web_dashboard_app():
         CURL_CFFI_IMPERSONATE = str(update_setting('impersonate', CURL_CFFI_IMPERSONATE, str))
 
         # SMTP
+        previous_smtp_host = SMTP_HOST
+        previous_smtp_port = SMTP_PORT
         SMTP_HOST = str(update_setting('smtp_host', SMTP_HOST, str))
         SMTP_PORT = int(update_setting('smtp_port', SMTP_PORT, int))
         SMTP_USER = str(update_setting('smtp_user', SMTP_USER, str))
@@ -2618,16 +2727,24 @@ def create_web_dashboard_app():
         RECEIVER_EMAIL = str(update_setting('receiver_email', RECEIVER_EMAIL, str))
 
         # Special case for SMTP_PASSWORD
+        smtp_password_supplied = False
         if 'smtp_password' in data and data['smtp_password']:
             if data['smtp_password'] != '********':
+                smtp_password_supplied = True
                 if data['smtp_password'] != SMTP_PASSWORD:
                     changes.append("'smtp_password' updated")
                     SMTP_PASSWORD = data['smtp_password']
 
+        # A saved SMTP password belongs to the server it was entered for. Pointing the tool at another
+        # server without re-entering it would hand that password to the new destination, so drop it instead
+        if (SMTP_HOST != previous_smtp_host or SMTP_PORT != previous_smtp_port) and not smtp_password_supplied and SMTP_PASSWORD:
+            SMTP_PASSWORD = ""
+            changes.append("'smtp_password' cleared because the SMTP server changed, re-enter it to send email again")
+
         # CSV
-        if 'csv_filename' in data and data['csv_filename'] != CSV_FILE:
-            changes.append(f"'csv_filename' changed from {CSV_FILE} to {data['csv_filename']}")
-            CSV_FILE = data['csv_filename']
+        if 'csv_filename' in data and requested_csv_filename != CSV_FILE:
+            changes.append(f"'csv_filename' changed from {CSV_FILE} to {requested_csv_filename}")
+            CSV_FILE = requested_csv_filename
 
         if changes:
             msg = "Settings updated: " + "; ".join(changes)
@@ -2747,7 +2864,7 @@ def create_web_dashboard_app():
         # Validate filename (filename only; no paths)
         if not filename:
             filename = DEFAULT_CONFIG_FILENAME
-        if os.path.basename(filename) != filename or "/" in filename or "\\" in filename:
+        if not is_plain_dashboard_filename(filename):
             return jsonify({'success': False, 'error': 'Invalid filename (paths are not allowed)'}), 400  # type: ignore
         if len(filename) > 255:
             return jsonify({'success': False, 'error': 'Filename too long'}), 400  # type: ignore
