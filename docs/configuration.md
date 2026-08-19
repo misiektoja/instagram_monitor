@@ -214,7 +214,7 @@ Every supported browser can have several profiles with separate cookies. Use one
     ```
 
 - **Let it prompt you.** If you do not pass `--browser-profile` and several profiles exist, the tool lists them so you can choose.
-- **On the [Web Dashboard](view-modes.md#web-dashboard-mode)**, pick the browser, click **Import** and select a profile if prompted.
+- **On the [Web Dashboard](view-modes.md#web-dashboard-mode)**, pick the browser, click **Import** and select a profile if prompted. The dashboard imports only from the profiles it detected, so it cannot be pointed at another file on your computer. Use `--cookie-file PATH` on the command line when you deliberately want a database from somewhere else.
 - **Advanced:** point `--cookie-file` at a specific cookie database (Firefox `cookies.sqlite` or a Chromium `Cookies` file). This overrides `--browser-profile`.
 
 For Chromium-based browsers, the tool finds the cookie database inside the selected profile. It supports both `<profile>/Cookies` and `<profile>/Network/Cookies` layouts.
