@@ -20,6 +20,11 @@ flask (optional - for web dashboard)
 rich (optional - for terminal dashboard)
 """
 
+# This module imports typing and other names well below the first annotated definition, which on Python
+# 3.9 through 3.13 would evaluate those annotations before the names exist. Deferring annotation evaluation
+# keeps the supported Python floor enforceable regardless of where an import sits in the file
+from __future__ import annotations
+
 VERSION = "3.8.1"
 
 # ---------------------------
@@ -1820,7 +1825,7 @@ from glob import glob
 import sqlite3
 from sqlite3 import OperationalError, connect
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, quote
 from dataclasses import dataclass
 from functools import wraps
 import traceback
@@ -3021,6 +3026,10 @@ def create_web_dashboard_app():
     def _handle_browser_import(browser, cookiefile=None, profile=None):
         global SESSION_USERNAME, SKIP_SESSION
         try:
+            # The dashboard may only import a database it enumerated itself, so a submitted path cannot
+            # reach an arbitrary file. The --cookie-file flag remains available for deliberate local use
+            if browser == 'firefox':
+                cookiefile = resolve_offered_firefox_cookiefile(cookiefile)
             username = normalize_instagram_username(import_browser_session_dashboard(browser, cookiefile, profile=profile))
         except CookieImportError as e:
             return jsonify({'success': False, 'error': str(e)}), 400  # type: ignore
@@ -6791,11 +6800,31 @@ class CookieImportError(Exception):
     pass
 
 
+# Returns the SQLite URI that opens one cookie database read-only, with the path encoded rather than interpolated
+def sqlite_immutable_uri(database_path) -> str:
+    # A raw '?' or '#' in the path would otherwise start URI parameters and could displace immutable=1
+    return "file:" + quote(PurePosixPath(Path(database_path).as_posix()).as_posix()) + "?immutable=1"
+
+
+# Returns the cookie database for one enumerated Firefox profile, refusing paths the tool did not offer
+def resolve_offered_firefox_cookiefile(requested_path):
+    requested = str(requested_path or "").strip()
+    if not requested:
+        raise CookieImportError("Cookie file path required")
+    canonical_request = os.path.realpath(os.path.expanduser(requested))
+    for profile in list_firefox_profiles():
+        if os.path.realpath(profile["path"]) == canonical_request:
+            return profile["path"]
+    raise CookieImportError("Select a Firefox profile from the detected list. Only cookie databases found in your Firefox profiles can be imported here.")
+
+
 # Reads Instagram session cookies from a Firefox cookies.sqlite file and returns them as a name to value dict
 def get_firefox_cookie_dict(cookiefile):
+    if not os.path.isfile(os.path.expanduser(str(cookiefile or ""))):
+        raise CookieImportError(f"Firefox cookie file '{cookiefile}' not found")
     try:
         # sqlite3's context manager only wraps a transaction, so the connection is closed explicitly
-        conn = connect(f"file:{cookiefile}?immutable=1", uri=True)
+        conn = connect(sqlite_immutable_uri(os.path.expanduser(str(cookiefile))), uri=True)
     except sqlite3.DatabaseError:
         raise CookieImportError(f"'{cookiefile}' is not a valid Firefox cookies.sqlite file")
     try:
