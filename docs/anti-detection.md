@@ -32,6 +32,8 @@ After a check cycle, the tool may perform one or more of these requests:
 
 Leaving `MY_HASHTAGS` empty simply skips the hashtag request. The other actions still run.
 
+The followee visit reads only the first page of accounts your session follows before picking one, so the simulation stays a few requests rather than paginating a large following list.
+
 By default, it performs about five of these actions over 24 hours. Change the limit with `DAILY_HUMAN_HITS`.
 
 Set `BE_HUMAN_VERBOSE = True` to log each action.
