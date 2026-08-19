@@ -76,6 +76,7 @@ Settings updates are validated as one operation before live values change. Malfo
 
 - **CSV file name.** The dashboard names the CSV file but never chooses its location, so a value containing a path is rejected. An absolute path set through `CSV_FILE` or `-b` keeps working and still round-trips through the form unchanged.
 - **SMTP password.** A saved password belongs to the server it was entered for. Changing `SMTP_HOST` or `SMTP_PORT` without typing the password again clears it, so the tool never offers your credential to a different mail server. Re-enter the password in the same save to keep email working.
+- **ntfy access token.** `NTFY_ACCESS_TOKEN` is sent as a bearer credential to whatever `WEBHOOK_URL` points at, so pointing the webhook at a different server clears it. Changing only the topic on the same server keeps it. Set the token again in your dotenv file and reload it with `SIGHUP`, or restart the tool.
 
 In a container the server must bind to `0.0.0.0` so Docker can forward traffic. That value means every container network interface. It is not a browser destination. Use the published host address `http://127.0.0.1:8000/` instead.
 
