@@ -56,3 +56,31 @@ class TestHumanSimulationHashtags:
         im_module.simulate_human_actions(bot, 86400)
 
         assert browsed == ["food"]
+
+
+class TestHumanSimulationFolloweeVisit:
+    # Only a bounded window of followees is pulled, so one profile visit cannot paginate a whole account
+    def test_followee_visit_reads_a_bounded_window(self, im_module, monkeypatch):
+        pulled = {"count": 0}
+
+        def endless_followees():
+            while True:
+                pulled["count"] += 1
+                yield SimpleNamespace(username=f"followee{pulled['count']}")
+
+        monkeypatch.setattr(im_module, "MY_HASHTAGS", [])
+        monkeypatch.setattr(im_module, "DAILY_HUMAN_HITS", 5)
+        monkeypatch.setattr(im_module, "CHECK_POSTS_IN_HOURS_RANGE", False)
+        monkeypatch.setattr(im_module, "DEBUG_MODE", False)
+        monkeypatch.setattr(im_module, "BE_HUMAN_VERBOSE", False)
+        monkeypatch.setattr(im_module.random, "random", lambda: 0.0)
+        monkeypatch.setattr(im_module.time, "sleep", lambda seconds: None)
+        monkeypatch.setattr(im_module.instaloader.Profile, "own_profile", staticmethod(lambda ctx: SimpleNamespace(get_followees=endless_followees)))
+        monkeypatch.setattr(im_module, "profile_from_username_resilient", lambda bot, username: SimpleNamespace(username=username))
+        bot = SimpleNamespace(context=SimpleNamespace(is_logged_in=True))
+        bot.get_explore_posts = lambda: iter([object()])
+        bot.get_hashtag_posts = lambda tag: iter([object()])
+
+        im_module.simulate_human_actions(bot, 86400)
+
+        assert pulled["count"] <= im_module.BE_HUMAN_FOLLOWEE_SAMPLE
