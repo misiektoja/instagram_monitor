@@ -4,14 +4,20 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.8.2 (TBD)
 
-Version **3.8.2** prevents empty follower alerts without hiding count changes when complete Instagram lists are unavailable, accepts webhook services hosted at a root HTTPS endpoint and hardens long-running Web Dashboard monitoring.
+Version **3.8.2** prevents empty follower alerts without hiding count changes when complete Instagram lists are unavailable, accepts webhook services hosted at a root HTTPS endpoint and hardens notifications, media downloads and long-running Web Dashboard monitoring.
 
 **Bug fixes**:
 
 - **BUGFIX:** **Reliable follower and following notifications** - Email and webhook alerts now ignore reported count fluctuations only after a complete list comparison confirms that no usernames changed. No-login mode, skipped or failed list fetches and configured fetch limits retain count-change alerts. Webhook and avatar validation also accepts root HTTPS endpoints with or without a trailing slash (closes [#118](https://github.com/misiektoja/instagram_monitor/issues/118) and [#119](https://github.com/misiektoja/instagram_monitor/issues/119))
 - **BUGFIX:** **Safe follower and following baselines** - Stopped, interrupted and intentionally limited username downloads no longer overwrite or become the saved comparison baseline. The last complete list remains available for a future complete comparison while reported count monitoring continues.
 - **BUGFIX:** **Reliable live dashboard control** - Saved settings and session changes now wake every active target without losing the shared refresh signal. A monitor that does not stop within the timeout retains ownership of its target so a duplicate monitoring thread cannot start.
+- **BUGFIX:** **Reliable story and dashboard media state** - New story-item webhooks no longer depend on email notification settings. Consecutive stories, posts and reels start with fresh media state so an item without a download cannot reuse the prior item's file or dashboard URL. Absolute output directories now use registered dashboard media links.
+- **BUGFIX:** **Safe atomic media downloads** - Images and videos are streamed to bounded temporary files, checked for complete HTTP 200 delivery and validated by media signature before atomically replacing saved files. Truncated responses, oversized bodies and HTML error pages leave existing files unchanged.
+- **BUGFIX:** **Strict live settings** - Web Dashboard updates now reject malformed types, unsafe URLs, invalid ports, out-of-range intervals and reversed hour ranges before changing any live value. Valid interval changes also recompute liveness scheduling immediately.
+- **BUGFIX:** **Scoped Instagram jitter** - Human-like delays and long Instagram rate-limit backoff now apply only to Instaloader's Instagram sessions. Webhooks, media downloads and proxy or IP checks remain independent.
+- **BUGFIX:** **Safer browser sessions** - Firefox fallback cookie imports accept only `instagram.com` and real subdomains instead of suffix lookalikes. Clearing a dashboard session removes canonical and supported legacy Instaloader files.
 - **SECURITY:** **Loopback dashboard data boundaries** - Dashboard media URLs now serve only files registered by the monitor. Webhook and proxy URLs stay out of settings responses, usernames are validated before reaching paths or rendered actions and clearing a session removes supported Instaloader session locations without accepting path-like usernames. The dashboard remains intentionally unauthenticated for loopback use.
+- **SECURITY:** **Notification HTML boundaries** - Instagram-controlled biographies, captions, mentions, hashtags, locations, usernames and comments are escaped before entering HTML email bodies.
 
 # Changes in 3.8.1 (04 Aug 2026)
 
