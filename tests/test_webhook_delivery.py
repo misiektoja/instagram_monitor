@@ -419,3 +419,36 @@ def test_setup_wizard_persists_ntfy_secrets_privately(im_module, monkeypatch, ca
         assert topic_name not in output
         assert topic_url not in output
         assert token not in output
+
+
+class TestWebhookDeliveryTests:
+    # An operator-requested delivery test sends even though every event switch is off by default
+    def test_delivery_test_bypasses_event_switches(self, im_module, monkeypatch):
+        posts = []
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_FOLLOWERS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", False)
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: posts.append(kwargs) or SimpleNamespace(status_code=204, text="", headers={}))
+
+        result = im_module.send_webhook("test", "body", notification_type=im_module.WEBHOOK_TEST_NOTIFICATION_TYPE)
+
+        assert result == 0
+        assert len(posts) == 1
+
+    # Real event categories still honour their configured switch so notifications stay opt-in
+    @pytest.mark.parametrize("notification_type", ["status", "followers", "error"])
+    def test_event_categories_still_honour_their_switch(self, im_module, monkeypatch, notification_type):
+        posts = []
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_FOLLOWERS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", False)
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: posts.append(kwargs) or SimpleNamespace(status_code=204, text="", headers={}))
+
+        assert im_module.send_webhook("t", "b", notification_type=notification_type) == 1
+        assert posts == []
