@@ -62,6 +62,8 @@ The Web Dashboard runs a small web server on your computer. By default, open `ht
 
 The dashboard is intentionally designed for loopback use without a login screen. Keep the host port bound to `127.0.0.1` and do not expose it through a public reverse proxy. Dashboard media links can access only files registered by the running monitor. Saved webhook and proxy URLs are shown as configured without returning their private values to the browser. Enter a new URL only when you want to replace the saved value.
 
+Settings updates are validated as one operation before live values change. Malformed booleans, non-integer numeric fields, reversed hour ranges, invalid ports and unsafe URLs return an error without applying the rest of the payload. Polling intervals accepted by the dashboard range from 300 to 86400 seconds.
+
 In a container the server must bind to `0.0.0.0` so Docker can forward traffic. That value means every container network interface. It is not a browser destination. Use the published host address `http://127.0.0.1:8000/` instead.
 
 **Key Features:**
