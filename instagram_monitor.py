@@ -1113,6 +1113,10 @@ FLAGGED_PROBE_TTL = 300
 
 # Default value for network-related timeouts in functions
 FUNCTION_TIMEOUT = 15
+
+# How many followees BeHuman pulls before picking one profile to visit, so the simulation stays cheap
+BE_HUMAN_FOLLOWEE_SAMPLE = 25
+
 MEDIA_DOWNLOAD_MAX_BYTES = 100 * 1024 * 1024
 MEDIA_DOWNLOAD_CHUNK_BYTES = 64 * 1024
 
@@ -1273,8 +1277,8 @@ DASHBOARD_DATA_LOCK = threading.RLock()
 WEB_DASHBOARD_MONITOR_LOCK = threading.RLock()
 SESSION_REFRESH_CONDITION = threading.Condition()
 SESSION_REFRESH_GENERATION = 0
-FLAGGED_PROBE_LOCK = threading.Lock()  # Serializes and dedupes flag-probe network calls
-FLAGGED_PROBE_CACHE = {'ts': 0.0, 'flagged': False}  # Cached flag-probe verdict with its timestamp
+FLAGGED_PROBE_LOCK = threading.Condition()  # Dedupes flag-probe network calls without holding a lock across one
+FLAGGED_PROBE_CACHE = {'ts': 0.0, 'flagged': False, 'in_flight': False}  # Cached flag-probe verdict with its timestamp
 FLAGGED_NOTIFY_LOCK = threading.Lock()  # Serializes flag-alert de-dup across concurrent target threads
 FLAGGED_NOTIFY_STATE = {'ts': 0.0}  # Timestamp of the last flag alert so one shared session flag alerts once per window
 PROXY_REFRESH_VERSION = 0
@@ -1314,6 +1318,9 @@ def register_dashboard_media_file(filename):
     canonical_path = os.path.realpath(filename)
     token = hashlib.sha256(canonical_path.encode('utf-8')).hexdigest()
     with WEB_DASHBOARD_DATA_LOCK:
+        # Re-registering moves an entry to the newest position, so a file the monitor still refreshes each
+        # cycle is not evicted ahead of one registered once and never seen again
+        WEB_DASHBOARD_MEDIA_FILES.pop(token, None)
         WEB_DASHBOARD_MEDIA_FILES[token] = canonical_path
         while len(WEB_DASHBOARD_MEDIA_FILES) > WEB_DASHBOARD_MEDIA_LIMIT:
             WEB_DASHBOARD_MEDIA_FILES.pop(next(iter(WEB_DASHBOARD_MEDIA_FILES)))
@@ -6787,18 +6794,24 @@ class CookieImportError(Exception):
 # Reads Instagram session cookies from a Firefox cookies.sqlite file and returns them as a name to value dict
 def get_firefox_cookie_dict(cookiefile):
     try:
-        with connect(f"file:{cookiefile}?immutable=1", uri=True) as conn:
-            try:
-                cookie_iter = conn.execute(
-                    "SELECT name, value FROM moz_cookies WHERE baseDomain='instagram.com'"
-                )
-            except OperationalError:
-                cookie_iter = conn.execute(
-                    "SELECT name, value FROM moz_cookies WHERE host = 'instagram.com' OR host LIKE '%.instagram.com'"
-                )
-            return dict(cookie_iter)
+        # sqlite3's context manager only wraps a transaction, so the connection is closed explicitly
+        conn = connect(f"file:{cookiefile}?immutable=1", uri=True)
     except sqlite3.DatabaseError:
         raise CookieImportError(f"'{cookiefile}' is not a valid Firefox cookies.sqlite file")
+    try:
+        try:
+            cookie_iter = conn.execute(
+                "SELECT name, value FROM moz_cookies WHERE baseDomain='instagram.com'"
+            )
+        except OperationalError:
+            cookie_iter = conn.execute(
+                "SELECT name, value FROM moz_cookies WHERE host = 'instagram.com' OR host LIKE '%.instagram.com'"
+            )
+        return dict(cookie_iter)
+    except sqlite3.DatabaseError:
+        raise CookieImportError(f"'{cookiefile}' is not a valid Firefox cookies.sqlite file")
+    finally:
+        conn.close()
 
 
 # Reads Instagram session cookies from a Chromium-based browser via pycookiecheat and returns them as a name to value dict
@@ -8182,8 +8195,11 @@ def setup_pbar(total_expected, title):
     if DASHBOARD_ENABLED and RICH_AVAILABLE:
         return
 
-    # Ensure only one progress bar writes to the terminal at a time in multi-target mode
-    PROGRESS_BAR_LOCK.acquire()
+    # Only one progress bar may own the terminal line at a time. A bar is a display nicety, so a target that
+    # cannot get it runs without one instead of blocking its whole fetch behind another target's download
+    if not PROGRESS_BAR_LOCK.acquire(blocking=False):
+        debug_print("Another target already owns the progress bar, continuing without one")
+        return
     _thread_local.pbar_lock_acquired = True  # type: ignore[misc]
 
     try:
@@ -8789,17 +8805,32 @@ def _run_flagged_probe(bot):
 def probe_session_flagged(bot):
     if bot is None:
         return False
-    now = time.time()
     with FLAGGED_PROBE_LOCK:
-        last_ts = FLAGGED_PROBE_CACHE['ts']
-        if last_ts and (now - last_ts) < FLAGGED_PROBE_TTL:
-            return FLAGGED_PROBE_CACHE['flagged']
+        while True:
+            last_ts = FLAGGED_PROBE_CACHE['ts']
+            if last_ts and (time.time() - last_ts) < FLAGGED_PROBE_TTL:
+                return FLAGGED_PROBE_CACHE['flagged']
+            if not FLAGGED_PROBE_CACHE['in_flight']:
+                FLAGGED_PROBE_CACHE['in_flight'] = True
+                break
+            # Another target is already probing, so wait for its verdict instead of starting a second request
+            FLAGGED_PROBE_LOCK.wait(FLAGGED_PROBE_TTL)
+
+    # The probe is a network round trip, so it runs outside the lock. Concurrent targets wait above rather
+    # than each blocking on a held lock for the duration of an Instagram request and its internal retries
+    flagged = False
+    try:
         flagged = _run_flagged_probe(bot)
-        FLAGGED_PROBE_CACHE['ts'] = time.time()
-        FLAGGED_PROBE_CACHE['flagged'] = flagged
-        verdict = "also unresolved, treating session as flagged" if flagged else "resolved, treating target as genuinely gone"
-        debug_print(f"Flag probe: canonical account '{FLAGGED_PROBE_USERNAME}' {verdict}")
-        return flagged
+    finally:
+        with FLAGGED_PROBE_LOCK:
+            FLAGGED_PROBE_CACHE['ts'] = time.time()
+            FLAGGED_PROBE_CACHE['flagged'] = flagged
+            FLAGGED_PROBE_CACHE['in_flight'] = False
+            FLAGGED_PROBE_LOCK.notify_all()
+
+    verdict = "also unresolved, treating session as flagged" if flagged else "resolved, treating target as genuinely gone"
+    debug_print(f"Flag probe: canonical account '{FLAGGED_PROBE_USERNAME}' {verdict}")
+    return flagged
 
 
 # Returns True when an error indicates the session account or IP itself is flagged rather than a single target being gone
@@ -9047,7 +9078,9 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
     if ctx.is_logged_in and random.random() < prob / 2:
         try:
             me = instaloader.Profile.own_profile(ctx)
-            followees = list(me.get_followees())
+            # Take a small window instead of the whole followee list. Paginating thousands of accounts to
+            # pick one profile to visit is the largest request burst in a feature meant to reduce detection
+            followees = list(islice(me.get_followees(), BE_HUMAN_FOLLOWEE_SAMPLE))
             if not followees:
                 if DEBUG_MODE:
                     debug_print("BeHuman #4 warning: you follow 0 accounts, skipping visit")
@@ -10840,10 +10873,6 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if not getattr(followings, 'complete', False) or (not followings and followings_count > 0):
                         followings = followings_old
                     else:
-                        if followings_count == followings_old_count and (added_followings_list or removed_followings_list):
-                            print(f"* Followings list changed for user {user} (count: {followings_count})")
-                            log_activity(f"Followings list changed: count remained same ({followings_count})", user=user)
-
                         if followings_baseline_available:
                             if not skip_follow_changes:
                                 added_followings_list, removed_followings_list, added_followings_list_html, removed_followings_list_html, added_followings_list_webhook, removed_followings_list_webhook, added_followings_mbody, removed_followings_mbody = compare_and_log_follower_changes(
@@ -10853,6 +10882,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         else:
                             # If baseline wasn't available (e.g. initial fetch failed), establish it now
                             followings_baseline_available = True
+
+                        # Reported after the comparison above, which is what fills the added and removed lists
+                        if followings_count == followings_old_count and (added_followings_list or removed_followings_list):
+                            print(f"* Followings list changed for user {user} (count: {followings_count})")
+                            log_activity(f"Followings list changed: count remained same ({followings_count})", user=user)
 
                         followings_old = followings
 
@@ -10987,10 +11021,6 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if not getattr(followers, 'complete', False) or (not followers and followers_count > 0):
                         followers = followers_old
                     else:
-                        if followers_count == followers_old_count and (added_followers_list or removed_followers_list):
-                            print(f"* Followers list changed for user {user} (count: {followers_count})")
-                            log_activity(f"Followers list changed: count remained same ({followers_count})", user=user)
-
                         if followers_baseline_available:
                             if not skip_follow_changes:
                                 added_followers_list, removed_followers_list, added_followers_list_html, removed_followers_list_html, added_followers_list_webhook, removed_followers_list_webhook, added_followers_mbody, removed_followers_mbody = compare_and_log_follower_changes(
@@ -11000,6 +11030,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         else:
                             # If baseline wasn't available (e.g. initial fetch failed), establish it now
                             followers_baseline_available = True
+
+                        # Reported after the comparison above, which is what fills the added and removed lists
+                        if followers_count == followers_old_count and (added_followers_list or removed_followers_list):
+                            print(f"* Followers list changed for user {user} (count: {followers_count})")
+                            log_activity(f"Followers list changed: count remained same ({followers_count})", user=user)
 
                         followers_old = followers
 
