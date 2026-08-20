@@ -1,0 +1,100 @@
+name: Bug report
+description: Monitoring stops, an alert is wrong or behavior does not match the documentation
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report a suspected vulnerability here. Follow [SECURITY.md](https://github.com/misiektoja/instagram_monitor/blob/main/SECURITY.md) instead.
+
+        Never paste a session cookie, an Instagram password, an SMTP password, a webhook URL or an ntfy token into an issue. Logs and `--doctor` output can contain the accounts you monitor, so redact anything you do not want public.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The steps, including the command you ran and the relevant settings from your configuration file. Redact usernames, credentials and webhook URLs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Doctor output
+      description: "Output of `instagram_monitor --doctor`, redacted. It reports the selected login method, connectivity, session state and target reachability."
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log or error output
+      description: "The error as printed or the relevant part of the log file. Adding `--debug` records the request flow."
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: instagram_monitor version
+      description: "Output of `instagram_monitor --version`."
+      placeholder: "3.9"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How it is installed
+      options:
+        - PyPI (pip install instagram_monitor)
+        - Standalone script
+        - Docker image
+        - Docker Compose
+        - From source
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and Python version
+      placeholder: macOS 26.1, Python 3.13.2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: login-mode
+    attributes:
+      label: Login method in use
+      options:
+        - Instaloader session login
+        - No login (public data only)
+        - Imported browser session (Firefox)
+        - Imported browser session (Chrome, Brave or Chromium)
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: view-mode
+    attributes:
+      label: View mode where it happens
+      options:
+        - Text output
+        - Terminal dashboard
+        - Web Dashboard
+        - Not specific to a view mode
+    validations:
+      required: false
