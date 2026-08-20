@@ -40,6 +40,99 @@ class TestDoctorLine:
         assert out.splitlines()[-1] == "  the-detail"
 
 
+class TestDoctorChecks:
+    # Checks are data, so a caller can assert on them without parsing rendered console output
+    def test_make_doctor_check_rejects_an_unknown_status(self, im_module):
+        with pytest.raises(ValueError, match="Unsupported doctor status"):
+            im_module.make_doctor_check("Environment", "broken", "label")
+
+    # A configuration rejected at startup becomes a failing check carrying its fix and guide
+    def test_configuration_rejection_becomes_a_failing_check(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
+        errors = [{"summary": "* Error loading config file 'x.conf':", "detail": "line 2: bad", "fix": "use documented settings."}]
+
+        checks = im_module.doctor_check_configuration([], errors, ())
+        failures = [check for check in checks if check.status == "fail"]
+
+        assert len(failures) == 1
+        assert failures[0].label == "Error loading config file 'x.conf'"
+        assert failures[0].fix == "use documented settings."
+        assert failures[0].guide == im_module.CONFIG_FILE_GUIDE_URL
+
+    # A retired setting is a warning that still names the file and links the guide
+    def test_retired_settings_become_a_warning_check(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: "im.conf")
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
+
+        checks = im_module.doctor_check_configuration([], (), ["DISCORD_MAX_FIELDS"])
+        warnings = [check for check in checks if check.status == "warn"]
+
+        assert len(warnings) == 1
+        assert "DISCORD_MAX_FIELDS" in warnings[0].detail
+        assert warnings[0].guide == im_module.CONFIG_FILE_GUIDE_URL
+
+    # Session advice is derived from the shared fix hints so Doctor and monitoring stay consistent
+    def test_session_failure_carries_the_shared_fix_hint(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "someacct", raising=False)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", False, raising=False)
+        report = im_module.DoctorReport()
+
+        class _NoSession:
+            def load_session_from_file(self, username):
+                raise FileNotFoundError()
+
+        report.bot = _NoSession()
+        checks = im_module.doctor_check_session(report)
+
+        assert checks[0].status == "fail"
+        assert "no saved session" in checks[0].fix
+        assert checks[0].guide == im_module.SESSION_IMPORT_GUIDE_URL
+
+    # A valid webhook configuration records readiness on the report for the later delivery offer
+    def test_valid_webhook_marks_the_report_ready(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SMTP_HOST", "your_smtp_server_ssl", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.sh/private-topic", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "ntfy", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_HEADERS", {}, raising=False)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        assert report.webhook_ready is True
+        assert any(check.status == "ok" and "Webhook URL" in check.label for check in checks)
+
+    # Every failure a user sees must offer an action, which is what the renderer guarantees
+    def test_renderer_prints_an_action_for_every_failure(self, im_module, capsys, monkeypatch):
+        monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+        report = im_module.DoctorReport()
+        report.checks = [
+            im_module.make_doctor_check("Session", "fail", "broken", "detail text", "do the thing.", "https://example.invalid/guide"),
+            im_module.make_doctor_check("Targets", "ok", "fine"),
+        ]
+
+        im_module.render_doctor_report(report)
+        out = capsys.readouterr().out
+
+        assert "[FAIL] broken\n  detail text\nTo fix: do the thing.\nGuide: https://example.invalid/guide" in out
+        assert "To fix:" not in out.split("[ OK ] fine", 1)[1]
+
+    # The renderer owns the 'To fix:' prefix, so a recorded action must not carry its own
+    def test_recorded_config_actions_do_not_repeat_the_prefix(self, im_module, tmp_path, monkeypatch):
+        monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
+        config_path = tmp_path / "im.conf"
+        config_path.write_text("NOT_A_REAL_SETTING = 1\n", encoding="utf-8")
+        errors = []
+
+        assert im_module.load_config_file(str(config_path), {}, error_out=errors, report_errors=False) is False
+        assert errors and not errors[0]["fix"].startswith("To fix:")
+
+        checks = im_module.doctor_check_configuration([], errors, ())
+        assert not any(check.fix.startswith("To fix:") for check in checks)
+
+
 class TestDoctorProgress:
     # Verifies doctor progress stops at the visible message and clears only that width
     def test_uses_visible_message_width(self, im_module, monkeypatch):
