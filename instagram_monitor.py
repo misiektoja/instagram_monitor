@@ -1853,7 +1853,7 @@ import sqlite3
 from sqlite3 import OperationalError, connect
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import urlsplit, quote
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import wraps
 import traceback
 import copy
@@ -7190,7 +7190,7 @@ def apply_early_output_config() -> None:
 def load_config_file(config_path, namespace=None, error_out=None, report_errors=True, retired_out=None) -> bool:
     target_namespace = globals() if namespace is None else namespace
 
-    # Prints one rejection exactly as before while also recording it for a caller that renders its own report
+    # Prints one rejection exactly as before while also recording the bare action for a caller that renders its own report
     def reject(summary: str, lines: Sequence[str], fix: str) -> bool:
         if error_out is not None:
             error_out.append({"summary": summary, "detail": " | ".join(line for line in lines if line), "fix": fix})
@@ -7198,14 +7198,14 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
             print(summary)
             for line in lines:
                 print(line)
-            print(colorize("info", fix))
+            print(colorize("info", f"To fix: {fix}"))
             print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
         return False
 
     try:
         content = Path(config_path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        return reject(f"* Error loading config file '{config_path}': {format_error_message(exc)}", (), "To fix: verify the file is readable and saved as UTF-8. You can regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'.")
+        return reject(f"* Error loading config file '{config_path}': {format_error_message(exc)}", (), "verify the file is readable and saved as UTF-8. You can regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'.")
 
     retired_settings = []
     try:
@@ -7232,9 +7232,9 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
         if exc.lineno:
             details.append(f"Line {exc.lineno}: {(exc.text or '').rstrip()}")
         details.append(f"Parser: {exc.msg}")
-        return reject(f"* Error loading config file '{config_path}':", details, "To fix: check that line. Text values need matching quotes and Windows paths need forward slashes (/) or doubled backslashes (\\\\). You can also regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'.")
+        return reject(f"* Error loading config file '{config_path}':", details, "check that line. Text values need matching quotes and Windows paths need forward slashes (/) or doubled backslashes (\\\\). You can also regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'.")
     except ValueError as exc:
-        return reject(f"* Error loading config file '{config_path}': {exc}", (), "To fix: a config file may only assign settings, such as INSTA_CHECK_INTERVAL = 5400. It cannot import modules, call functions or run other code. Regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'.")
+        return reject(f"* Error loading config file '{config_path}': {exc}", (), "a config file may only assign settings, such as INSTA_CHECK_INTERVAL = 5400. It cannot import modules, call functions or run other code. Regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'.")
 
 
 # Resolves an executable path by checking if it's a valid file or searching in $PATH
@@ -8878,45 +8878,53 @@ def session_recovery_command() -> str:
 
 
 # Returns a short actionable next-step hint for a known error message or an empty string when none applies
-def error_fix_hint(error_msg: str, is_logged_in: bool = False) -> str:
+def error_fix_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[str, str]:
     m = (error_msg or "").lower()
 
     # Rate limiting or TLS-fingerprint blocks
     if any(t in m for t in ("429", "too many requests", "wait a few minutes", "rate limit", "please wait")):
-        return f"To fix: Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users.\nGuide: {ANTI_DETECTION_INTERVAL_GUIDE_URL}"
+        return "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users.", ANTI_DETECTION_INTERVAL_GUIDE_URL
 
     # Challenge, checkpoint or shadowban
     if any(t in m for t in ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data")):
-        return f"To fix: Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'. Also raise the check interval.\nGuide: {ANTI_DETECTION_SESSION_GUIDE_URL}"
+        return f"Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'. Also raise the check interval.", ANTI_DETECTION_SESSION_GUIDE_URL
 
     # Missing session file
     if "session file" in m:
-        return f"To fix: no saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_user>'. In the Web Dashboard you can import from the Session page.\nGuide: {SESSION_IMPORT_GUIDE_URL}"
+        return f"no saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_user>'. In the Web Dashboard you can import from the Session page.", SESSION_IMPORT_GUIDE_URL
 
     # Invalid or expired session
     if any(t in m for t in ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required")):
-        return f"To fix: your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_user>'. In the Web Dashboard you can re-import from the Session page.\nGuide: {SESSION_IMPORT_GUIDE_URL}"
+        return f"your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_user>'. In the Web Dashboard you can re-import from the Session page.", SESSION_IMPORT_GUIDE_URL
 
     # Profile not found
     if any(t in m for t in ("profilenotexists", "does not exist", "not found", "404")):
-        hint = "To fix: check the target username is spelled correctly and the account still exists and is reachable."
+        fix = "check the target username is spelled correctly and the account still exists and is reachable."
         if is_logged_in:
-            hint += " If the username is correct, your session or IP may be temporarily flagged."
-        return hint
+            fix += " If the username is correct, your session or IP may be temporarily flagged."
+        return fix, ""
 
     # An unsupported impersonation target surfaces as a connection error, so name the real cause before the network hint
     if "impersonat" in m:
-        return "To fix: the configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto', or pick a supported target such as chrome, safari, edge or firefox."
+        return "the configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto', or pick a supported target such as chrome, safari, edge or firefox.", ""
 
     # Network or connectivity problems
     if any(t in m for t in ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl")):
-        return f"To fix: this looks like a network problem. Check your internet connection and proxy settings if --enable-proxy is set then try again.\nGuide: {PROXY_GUIDE_URL}"
+        return "this looks like a network problem. Check your internet connection and proxy settings if --enable-proxy is set then try again.", PROXY_GUIDE_URL
 
     # Deprecated GraphQL doc_id returning null data, or a temporary block
     if any(t in m for t in ("empty data for posts", "fetching post metadata failed", "not subscriptable")):
-        return "To fix: Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version; if you are already current, report it at https://github.com/misiektoja/instagram_monitor/issues)."
+        return "Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version; if you are already current, report it at https://github.com/misiektoja/instagram_monitor/issues).", ""
 
-    return ""
+    return "", ""
+
+
+# Formats the actionable fix for one error as the console block callers already print
+def error_fix_hint(error_msg: str, is_logged_in: bool = False) -> str:
+    fix, guide = error_fix_parts(error_msg, is_logged_in)
+    if not fix:
+        return ""
+    return f"To fix: {fix}" + (f"\nGuide: {guide}" if guide else "")
 
 
 # Prints an actionable fix hint for the given error to the console when one is available
@@ -12893,6 +12901,43 @@ def _wizard_should_offer_first_run(arguments, configured_targets, web_dashboard_
     return len(arguments) == 1 and not configured_targets and not web_dashboard_enabled
 
 
+# Stores one doctor result before the report is rendered, keeping the check separate from its presentation
+@dataclass(frozen=True)
+class DoctorCheck:
+    section: str
+    status: str
+    label: str
+    detail: str = ""
+    fix: str = ""
+    guide: str = ""
+
+
+# Collects doctor checks plus the shared state that later checks depend on
+@dataclass
+class DoctorReport:
+    checks: List[DoctorCheck] = field(default_factory=list)
+    bot: Any = None
+    smtp_ready: bool = False
+    webhook_ready: bool = False
+
+    # Returns how many recorded checks carry one status
+    def count(self, status: str) -> int:
+        return sum(check.status == status for check in self.checks)
+
+
+# Creates one validated doctor check
+def make_doctor_check(section: str, status: str, label: str, detail: str = "", fix: str = "", guide: str = "") -> DoctorCheck:
+    if status not in ("ok", "warn", "fail", "info"):
+        raise ValueError(f"Unsupported doctor status: {status}")
+    return DoctorCheck(section, status, label, detail, fix, guide)
+
+
+# Builds one doctor check from an error, reusing the shared fix hints so advice stays consistent
+def doctor_check_from_error(section: str, status: str, label: str, error_message: str, is_logged_in: bool = False, detail: str = "") -> DoctorCheck:
+    fix, guide = error_fix_parts(error_message, is_logged_in)
+    return make_doctor_check(section, status, label, detail, fix, guide)
+
+
 # Prints one doctor check line with a status marker and an optional detail or hint
 def _doctor_line(status: str, label: str, detail: str = "") -> None:
     marks = {"ok": ("[ OK ]", "boolean_true"), "warn": ("[WARN]", "warning"), "fail": ("[FAIL]", "error"), "info": ("[ -- ]", "info")}
@@ -12978,194 +13023,203 @@ def _doctor_offer_notification_tests(smtp_ready: bool, webhook_ready: bool) -> i
 
 
 # Runs preflight checks plus approved delivery tests and returns the number of failures
-def run_doctor(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = ()) -> int:
+def doctor_check_environment() -> List[DoctorCheck]:
     import importlib.util
 
-    fails = 0
-    warns = 0
-
-    print(colorize("header", f"\nInstagram Monitor v{VERSION} - Doctor\n"))
-    print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.\n")
-
-    # Environment and optional dependencies
-    print(colorize("section", "Environment"))
-    _doctor_line("info", f"Python {platform.python_version()}")
-    deps = [
+    checks = [make_doctor_check("Environment", "info", f"Python {platform.python_version()}")]
+    dependencies = (
         ("curl_cffi", _CURL_CFFI_AVAILABLE, "browser TLS impersonation that avoids first-request 429 blocks"),
         ("rich", RICH_AVAILABLE, "the Terminal Dashboard"),
         ("flask", FLASK_AVAILABLE, "the Web Dashboard"),
         ("pycookiecheat", importlib.util.find_spec("pycookiecheat") is not None, "session import from Chromium-based browsers"),
-    ]
-    for name, present, what in deps:
+    )
+    for name, present, what in dependencies:
         if present:
             detail = "Used only for importing sessions from Chromium-based browsers. Firefox session import does not need it" if name == "pycookiecheat" else f"Used for {what}"
-            _doctor_line("ok", f"{name} installed", detail)
+            checks.append(make_doctor_check("Environment", "ok", f"{name} installed", detail))
         else:
-            warns += 1
             detail = f"Required only for importing sessions from Chromium-based browsers. Firefox session import is unaffected. Install with: pip install {name}" if name == "pycookiecheat" else f"Optional: used for {what}. Install with: pip install {name}"
-            _doctor_line("warn", f"{name} not installed", detail)
+            checks.append(make_doctor_check("Environment", "warn", f"{name} not installed", detail))
+    return checks
 
-    # Configuration and secrets
-    print(colorize("section", "\nConfiguration"))
+
+# Reports the selected configuration, any startup rejection, known secrets and the final log destinations
+def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = ()) -> List[DoctorCheck]:
+    checks: List[DoctorCheck] = []
     cfg = find_config_file(CLI_CONFIG_PATH)
     if config_errors:
         for config_error in config_errors:
-            fails += 1
-            _doctor_line("fail", config_error["summary"].lstrip("* ").rstrip(":"), " | ".join(part for part in (config_error.get("detail"), config_error.get("fix")) if part))
+            checks.append(make_doctor_check("Configuration", "fail", config_error["summary"].lstrip("* ").rstrip(":"), config_error.get("detail", ""), config_error.get("fix", ""), CONFIG_FILE_GUIDE_URL))
     elif cfg:
-        _doctor_line("ok", "Config file", f"Path: {cfg}")
+        checks.append(make_doctor_check("Configuration", "ok", "Config file", f"Path: {cfg}"))
     else:
-        _doctor_line("info", "Config file", "none found - using defaults and CLI flags (create one with --setup)")
+        checks.append(make_doctor_check("Configuration", "info", "Config file", "none found - using defaults and CLI flags (create one with --setup)"))
     if retired_settings:
-        warns += 1
-        _doctor_line("warn", "Config file contains removed settings", describe_retired_settings(retired_settings, cfg))
+        checks.append(make_doctor_check("Configuration", "warn", "Config file contains removed settings", describe_retired_settings(retired_settings, cfg), "delete the reported settings, or regenerate the file with --generate-config.", CONFIG_FILE_GUIDE_URL))
+
     placeholders = ("", "your_smtp_password")
-    present_secrets = [k for k in SECRET_KEYS if globals().get(k) and globals().get(k) not in placeholders]
-    _doctor_line("info", "Secrets from environment/.env", ", ".join(present_secrets) if present_secrets else "none set")
+    present_secrets = [key for key in SECRET_KEYS if globals().get(key) and globals().get(key) not in placeholders]
+    checks.append(make_doctor_check("Configuration", "info", "Secrets from environment/.env", ", ".join(present_secrets) if present_secrets else "none set"))
+
     if DISABLE_LOGGING:
-        _doctor_line("info", "Output logging is disabled")
+        checks.append(make_doctor_check("Configuration", "info", "Output logging is disabled"))
     elif targets:
         for target in targets:
             _, target_log = get_target_paths(target)
             if output_destination_is_writable(target_log):
-                _doctor_line("ok", f"Log destination for '{target}' appears writable", f"Path: {target_log}")
+                checks.append(make_doctor_check("Configuration", "ok", f"Log destination for '{target}' appears writable", f"Path: {target_log}"))
             else:
-                fails += 1
-                _doctor_line("fail", f"Log destination for '{target}' is not writable", f"Path: {target_log}")
+                checks.append(make_doctor_check("Configuration", "fail", f"Log destination for '{target}' is not writable", f"Path: {target_log}", "choose a writable path with --output-dir or INSTA_LOGFILE, or disable logging with -d."))
     else:
-        _doctor_line("info", "Log destination will be finalized after a target is selected", f"Base path: {INSTA_LOGFILE}")
+        checks.append(make_doctor_check("Configuration", "info", "Log destination will be finalized after a target is selected", f"Base path: {INSTA_LOGFILE}"))
+    return checks
 
-    # Build a single bot for the live checks (reuses the globally installed HTTP backend)
-    bot = None
+
+# Builds the single Instaloader instance the live checks share and reports a failure to create it
+def doctor_prepare_bot(report: DoctorReport) -> List[DoctorCheck]:
     try:
-        bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True, quiet=True)
+        report.bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True, quiet=True)
         if PROXY_ENABLED:
-            set_instaloader_proxies(bot)
-    except Exception as e:
-        fails += 1
-        _doctor_line("fail", "Could not initialise Instaloader", format_error_message(e))
+            set_instaloader_proxies(report.bot)
+    except Exception as exc:
+        return [make_doctor_check("Configuration", "fail", "Could not initialise Instaloader", format_error_message(exc))]
+    return []
 
-    # Session
-    print(colorize("section", "\nSession"))
+
+# Validates the saved Instagram session, or explains that no-login mode needs none
+def doctor_check_session(report: DoctorReport, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
     if not logged_in:
-        _doctor_line("info", "No-login mode", "No session needed. Stories, reels and follower churn require Logged-in mode.")
-    elif bot is None:
-        warns += 1
-        _doctor_line("warn", "Skipped session check", "Instaloader could not be initialised")
-    else:
-        _doctor_progress(f"Validating session for {SESSION_USERNAME}")
-        try:
-            bot.load_session_from_file(SESSION_USERNAME)
-            who = bot.test_login()
-            _doctor_progress_clear()
-            if who:
-                _doctor_line("ok", f"Session valid for {who}")
-            else:
-                warns += 1
-                _doctor_line("warn", f"Session for {SESSION_USERNAME} is not logged in", error_fix_hint("login_required", True))
-        except FileNotFoundError:
-            _doctor_progress_clear()
-            fails += 1
-            _doctor_line("fail", f"No saved session for {SESSION_USERNAME}", error_fix_hint("session file not found", True))
-        except Exception as e:
-            _doctor_progress_clear()
-            fails += 1
-            msg = format_error_message(e)
-            _doctor_line("fail", f"Session check failed: {msg}", error_fix_hint(msg, True))
+        return [make_doctor_check("Session", "info", "No-login mode", "No session needed. Stories, reels and follower churn require Logged-in mode.")]
+    if report.bot is None:
+        return [make_doctor_check("Session", "warn", "Skipped session check", "Instaloader could not be initialised")]
+    if progress is not None:
+        progress(f"Validating session for {SESSION_USERNAME}")
+    try:
+        report.bot.load_session_from_file(SESSION_USERNAME)
+        who = report.bot.test_login()
+        if who:
+            return [make_doctor_check("Session", "ok", f"Session valid for {who}")]
+        return [doctor_check_from_error("Session", "warn", f"Session for {SESSION_USERNAME} is not logged in", "login_required", True)]
+    except FileNotFoundError:
+        return [doctor_check_from_error("Session", "fail", f"No saved session for {SESSION_USERNAME}", "session file not found", True)]
+    except Exception as exc:
+        message = format_error_message(exc)
+        return [doctor_check_from_error("Session", "fail", f"Session check failed: {message}", message, True)]
 
-    # Instagram connectivity
-    print(colorize("section", "\nConnectivity"))
-    if bot is None:
-        warns += 1
-        _doctor_line("warn", "Skipped connectivity check", "Instaloader could not be initialised")
-    else:
-        _doctor_progress("Contacting Instagram")
-        try:
-            profile_from_username_resilient(bot, FLAGGED_PROBE_USERNAME)
-            _doctor_progress_clear()
-            _doctor_line("ok", "Instagram reachable", f"Fetched public account '{FLAGGED_PROBE_USERNAME}'")
-        except Exception as e:
-            _doctor_progress_clear()
-            fails += 1
-            msg = format_error_message(e)
-            _doctor_line("fail", "Instagram not reachable or blocked", msg)
-            hint = error_fix_hint(msg, logged_in)
-            if hint:
-                print(hint)
 
-    # Targets
-    print(colorize("section", "\nTargets"))
+# Confirms Instagram answers a public profile request through the configured transport
+def doctor_check_connectivity(report: DoctorReport, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
+    if report.bot is None:
+        return [make_doctor_check("Connectivity", "warn", "Skipped connectivity check", "Instaloader could not be initialised")]
+    if progress is not None:
+        progress("Contacting Instagram")
+    try:
+        profile_from_username_resilient(report.bot, FLAGGED_PROBE_USERNAME)
+        return [make_doctor_check("Connectivity", "ok", "Instagram reachable", f"Fetched public account '{FLAGGED_PROBE_USERNAME}'")]
+    except Exception as exc:
+        message = format_error_message(exc)
+        logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
+        return [doctor_check_from_error("Connectivity", "fail", "Instagram not reachable or blocked", message, logged_in, message)]
+
+
+# Confirms each configured target profile can be fetched
+def doctor_check_targets(report: DoctorReport, targets, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     if not targets:
-        _doctor_line("info", "No targets configured", "Add them on the CLI, in the config, or via the Web Dashboard.")
-    elif bot is None:
-        warns += 1
-        _doctor_line("warn", "Skipped target checks", "Instaloader could not be initialised")
-    else:
-        for t in targets:
-            _doctor_progress(f"Looking up '{t}'")
-            try:
-                profile_from_username_resilient(bot, t)
-                _doctor_progress_clear()
-                _doctor_line("ok", f"Target '{t}' found")
-            except Exception as e:
-                _doctor_progress_clear()
-                warns += 1
-                msg = format_error_message(e)
-                _doctor_line("warn", f"Target '{t}' could not be fetched", msg)
-
-    # Notifications
-    print(colorize("section", "\nNotifications"))
-    smtp_configured = (SMTP_HOST and SMTP_HOST != "your_smtp_server_ssl" and SMTP_USER and SMTP_USER != "your_smtp_user" and SMTP_PASSWORD and SMTP_PASSWORD != "your_smtp_password")
-    smtp_ready = False
-    if not smtp_configured:
-        _doctor_line("info", "Email notifications not configured")
-    else:
-        _doctor_progress(f"Connecting to SMTP server {SMTP_HOST}")
+        return [make_doctor_check("Targets", "info", "No targets configured", "Add them on the CLI, in the config, or via the Web Dashboard.")]
+    if report.bot is None:
+        return [make_doctor_check("Targets", "warn", "Skipped target checks", "Instaloader could not be initialised")]
+    checks: List[DoctorCheck] = []
+    for target in targets:
+        if progress is not None:
+            progress(f"Looking up '{target}'")
         try:
-            ctx = ssl.create_default_context()
+            profile_from_username_resilient(report.bot, target)
+            checks.append(make_doctor_check("Targets", "ok", f"Target '{target}' found"))
+        except Exception as exc:
+            message = format_error_message(exc)
+            checks.append(doctor_check_from_error("Targets", "warn", f"Target '{target}' could not be fetched", message, True, message))
+    return checks
+
+
+# Checks SMTP login and webhook configuration without sending anything
+def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
+    checks: List[DoctorCheck] = []
+    smtp_configured = (SMTP_HOST and SMTP_HOST != "your_smtp_server_ssl" and SMTP_USER and SMTP_USER != "your_smtp_user" and SMTP_PASSWORD and SMTP_PASSWORD != "your_smtp_password")
+    if not smtp_configured:
+        checks.append(make_doctor_check("Notifications", "info", "Email notifications not configured"))
+    else:
+        if progress is not None:
+            progress(f"Connecting to SMTP server {SMTP_HOST}")
+        try:
+            context = ssl.create_default_context()
             smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=5)
             if SMTP_SSL:
-                smtp.starttls(context=ctx)
+                smtp.starttls(context=context)
             smtp.login(SMTP_USER, SMTP_PASSWORD)
             smtp.quit()
-            _doctor_progress_clear()
-            smtp_ready = True
-            _doctor_line("ok", "Email (SMTP) login works", "No email was sent during this passive check")
-        except Exception as e:
-            _doctor_progress_clear()
-            fails += 1
-            _doctor_line("fail", f"Email (SMTP) check failed: {e}", "Verify SMTP_HOST, SMTP_PORT and SMTP_SSL, and SMTP_USER/SMTP_PASSWORD. Gmail and similar need an app password.")
+            report.smtp_ready = True
+            checks.append(make_doctor_check("Notifications", "ok", "Email (SMTP) login works", "No email was sent during this passive check"))
+        except Exception as exc:
+            checks.append(make_doctor_check("Notifications", "fail", f"Email (SMTP) check failed: {exc}", "", "verify SMTP_HOST, SMTP_PORT and SMTP_SSL, and SMTP_USER/SMTP_PASSWORD. Gmail and similar need an app password.", SMTP_GUIDE_URL))
 
-    webhook_ready = False
     if not WEBHOOK_URL:
         if WEBHOOK_ENABLED:
-            warns += 1
-            _doctor_line("warn", "Webhook enabled but WEBHOOK_URL is empty", "Set WEBHOOK_URL (or via .env), or disable webhooks.")
+            checks.append(make_doctor_check("Notifications", "warn", "Webhook enabled but WEBHOOK_URL is empty", "", "set WEBHOOK_URL (or via .env), or disable webhooks.", WEBHOOK_GUIDE_URL))
         else:
-            _doctor_line("info", "Webhook notifications not configured")
-    elif not normalized_webhook_provider():
-        fails += 1
-        _doctor_line("fail", "Webhook provider is invalid", "Set WEBHOOK_PROVIDER to 'discord' or 'ntfy'.")
-    elif not validate_webhook_url(WEBHOOK_URL):
-        fails += 1
-        _doctor_line("fail", "Webhook URL is not a complete HTTPS URL", "Use a complete HTTPS destination with a path and no embedded credentials.")
+            checks.append(make_doctor_check("Notifications", "info", "Webhook notifications not configured"))
+        return checks
+    if not normalized_webhook_provider():
+        checks.append(make_doctor_check("Notifications", "fail", "Webhook provider is invalid", "", "set WEBHOOK_PROVIDER to 'discord' or 'ntfy'.", WEBHOOK_GUIDE_URL))
+        return checks
+    if not validate_webhook_url(WEBHOOK_URL):
+        checks.append(make_doctor_check("Notifications", "fail", "Webhook URL is not a complete HTTPS URL", "", "use a complete HTTPS destination with a path and no embedded credentials.", WEBHOOK_GUIDE_URL))
+        return checks
+
+    customization_error = validate_webhook_customization(normalized_webhook_provider())
+    header_error = validate_webhook_headers(normalized_webhook_provider())
+    if customization_error is not None:
+        checks.append(make_doctor_check("Notifications", "fail", "Webhook customization is invalid", customization_error, "correct the reported webhook customization setting.", WEBHOOK_GUIDE_URL))
+    elif header_error is not None:
+        checks.append(make_doctor_check("Notifications", "fail", "Webhook headers are invalid", header_error, "correct the reported WEBHOOK_HEADERS entry.", WEBHOOK_GUIDE_URL))
     else:
-        customization_error = validate_webhook_customization(normalized_webhook_provider())
-        header_error = validate_webhook_headers(normalized_webhook_provider())
-        if customization_error is not None:
-            fails += 1
-            _doctor_line("fail", "Webhook customization is invalid", customization_error)
-        elif header_error is not None:
-            fails += 1
-            _doctor_line("fail", "Webhook headers are invalid", header_error)
-        else:
-            webhook_ready = True
-            _doctor_line("ok", f"Webhook URL and headers look valid for {normalized_webhook_provider()}", "No webhook was sent during this passive check")
+        report.webhook_ready = True
+        checks.append(make_doctor_check("Notifications", "ok", f"Webhook URL and headers look valid for {normalized_webhook_provider()}", "No webhook was sent during this passive check"))
+    return checks
 
-    fails += _doctor_offer_notification_tests(smtp_ready, webhook_ready)
 
-    # Summary
+# Runs every preflight check in order and returns them with the shared state they produced
+def build_doctor_report(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), progress: Optional[Callable[[str], None]] = None) -> DoctorReport:
+    report = DoctorReport()
+    report.checks.extend(doctor_check_environment())
+    report.checks.extend(doctor_check_configuration(targets, config_errors, retired_settings))
+    report.checks.extend(doctor_prepare_bot(report))
+    report.checks.extend(doctor_check_session(report, progress))
+    report.checks.extend(doctor_check_connectivity(report, progress))
+    report.checks.extend(doctor_check_targets(report, targets, progress))
+    report.checks.extend(doctor_check_notifications(report, progress))
+    return report
+
+
+# Prints one sectioned doctor report, keeping the marker and indent format scripts and users already read
+def render_doctor_report(report: DoctorReport) -> None:
+    print(colorize("header", f"\nInstagram Monitor v{VERSION} - Doctor\n"))
+    print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.\n")
+    for index, section in enumerate(("Environment", "Configuration", "Session", "Connectivity", "Targets", "Notifications")):
+        section_checks = [check for check in report.checks if check.section == section]
+        if not section_checks:
+            continue
+        print(colorize("section", section if index == 0 else f"\n{section}"))
+        for check in section_checks:
+            _doctor_line(check.status, check.label, check.detail)
+            if check.fix and check.status in ("fail", "warn"):
+                print(f"To fix: {check.fix}")
+                if check.guide:
+                    print(f"Guide: {check.guide}")
+
+
+# Prints the closing summary for one rendered report
+def render_doctor_summary(fails: int, warns: int) -> None:
     print(colorize("header", "\nSummary"))
     if fails:
         print(colorize("error", f"  {fails} check(s) failed, {warns} warning(s). Fix the failures above before relying on the tool."))
@@ -13174,6 +13228,19 @@ def run_doctor(targets, config_errors: Sequence[dict] = (), retired_settings: Se
     else:
         print(colorize("boolean_true", "  All checks passed. You are good to go!"))
     print()
+
+
+# Runs doctor preflight plus approved delivery tests and returns the number of failed checks
+def run_doctor(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = ()) -> int:
+    progress = _doctor_progress if sys.stdout.isatty() else None
+    try:
+        report = build_doctor_report(targets, config_errors, retired_settings, progress)
+    finally:
+        _doctor_progress_clear()
+
+    render_doctor_report(report)
+    fails = report.count("fail") + _doctor_offer_notification_tests(report.smtp_ready, report.webhook_ready)
+    render_doctor_summary(fails, report.count("warn"))
     return fails
 
 
