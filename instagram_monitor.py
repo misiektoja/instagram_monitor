@@ -12951,6 +12951,9 @@ def _doctor_line(status: str, label: str, detail: str = "") -> None:
 def _doctor_progress(text: str) -> None:
     if not sys.stdout.isatty():
         return
+    previous_width = getattr(_doctor_progress, "width", 0)
+    if previous_width:
+        sys.stdout.write("\r" + " " * previous_width + "\r")
     line = f"{text} ..."
     _doctor_progress.width = len(line)  # type: ignore[attr-defined]
     sys.stdout.write("\r" + colorize("info", line))
