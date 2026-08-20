@@ -1,0 +1,51 @@
+name: Feature request
+description: Ask for a capability that instagram_monitor does not have yet
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The [documentation](https://misiektoja.github.io/instagram_monitor/) describes what is already supported, including view modes, notification channels, proxy handling and anti-detection controls. Check [Configuration](https://misiektoja.github.io/instagram_monitor/configuration/) before asking for a setting that may already exist.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The monitoring problem, not the implementation you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would solve it
+      description: The behavior, setting or command-line option you would like.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the tool this concerns
+      options:
+        - Monitoring and detection
+        - Notifications (email, Discord, ntfy, webhooks)
+        - Web Dashboard
+        - Terminal dashboard or text output
+        - Setup wizard and configuration
+        - Login, sessions and anti-detection
+        - Media downloads and CSV output
+        - Docker and deployment
+        - Documentation
+        - Other
+    validations:
+      required: false
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Current workaround
+      description: What you do today instead, if anything.
+    validations:
+      required: false
