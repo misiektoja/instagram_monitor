@@ -1175,6 +1175,12 @@ PROXY_GUIDE_URL = DOCUMENTATION_URL + "/usage/#routing-traffic-through-a-proxy"
 ANTI_DETECTION_INTERVAL_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#keep-the-polling-interval-reasonable"
 ANTI_DETECTION_SESSION_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#sign-in-using-session-mode-with-browser-cookies"
 
+# Placeholder values shipped in the sample configuration, which stand in for a setting the user has not filled in yet
+CONFIG_PLACEHOLDER_VALUES = frozenset({"your_smtp_server_ssl", "your_smtp_user", "your_smtp_password", "your_sender_email", "your_receiver_email", "your_webhook_url"})
+
+# Placeholder prefixes covering the SMTP host variants earlier releases shipped, such as 'your_smtp_server_plaintext'
+CONFIG_PLACEHOLDER_PREFIXES = ("your_smtp_server_",)
+
 # Progress Bar control items
 START_TIME = 0
 NAME_COUNT = 1
@@ -4647,10 +4653,17 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
         return '0 seconds'
 
 
+EMAIL_ADDRESS_RE = re.compile(r'[^@]+@[^@]+\.[^@]+')
+
+
+# Returns whether a value looks like an email address the SMTP server can accept
+def is_valid_email_address(value) -> bool:
+    return isinstance(value, str) and bool(EMAIL_ADDRESS_RE.search(value))
+
+
 # Sends email notification
 def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15):
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
-    email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
 
     subject = apply_privacy_substitutions(subject)
     body = apply_privacy_substitutions(body)
@@ -4671,7 +4684,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         print("Error sending email - SMTP settings are incorrect (invalid port number in SMTP_PORT)")
         return 1
 
-    if not email_re.search(str(SENDER_EMAIL)) or not email_re.search(str(RECEIVER_EMAIL)):
+    if not is_valid_email_address(SENDER_EMAIL) or not is_valid_email_address(RECEIVER_EMAIL):
         print("Error sending email - SMTP settings are incorrect (invalid email in SENDER_EMAIL or RECEIVER_EMAIL)")
         return 1
 
@@ -4726,13 +4739,12 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     return 0
 
 
-# Placeholder values shipped in the sample configuration, which stand in for a setting the user has not filled in yet
-CONFIG_PLACEHOLDER_VALUES = frozenset({"your_smtp_server_ssl", "your_smtp_user", "your_smtp_password", "your_sender_email", "your_receiver_email", "your_webhook_url"})
-
-
 # Returns whether a setting is empty or still holds the placeholder value shipped in the sample configuration
 def is_placeholder_setting(value) -> bool:
-    return not isinstance(value, str) or not value.strip() or value.strip() in CONFIG_PLACEHOLDER_VALUES
+    if not isinstance(value, str) or not value.strip():
+        return True
+    candidate = value.strip()
+    return candidate in CONFIG_PLACEHOLDER_VALUES or candidate.startswith(CONFIG_PLACEHOLDER_PREFIXES)
 
 
 # Returns whether a webhook URL is a complete private HTTPS link
@@ -13157,9 +13169,12 @@ def doctor_check_targets(report: DoctorReport, targets, progress: Optional[Calla
 # Checks SMTP login and webhook configuration without sending anything
 def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     checks: List[DoctorCheck] = []
-    smtp_configured = (SMTP_HOST and SMTP_HOST != "your_smtp_server_ssl" and SMTP_USER and SMTP_USER != "your_smtp_user" and SMTP_PASSWORD and SMTP_PASSWORD != "your_smtp_password")
+    smtp_configured = not is_placeholder_setting(SMTP_HOST) and not is_placeholder_setting(SMTP_USER) and not is_placeholder_setting(SMTP_PASSWORD)
+    invalid_addresses = [name for name, value in (("SENDER_EMAIL", SENDER_EMAIL), ("RECEIVER_EMAIL", RECEIVER_EMAIL)) if not is_valid_email_address(value)]
     if not smtp_configured:
         checks.append(make_doctor_check("Notifications", "info", "Email notifications not configured"))
+    elif invalid_addresses:
+        checks.append(make_doctor_check("Notifications", "fail", f"Email address is not set in {' and '.join(invalid_addresses)}", "", f"set {' and '.join(invalid_addresses)} to a real email address.", SMTP_GUIDE_URL))
     else:
         if progress is not None:
             progress(f"Connecting to SMTP server {SMTP_HOST}")
