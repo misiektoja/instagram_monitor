@@ -1179,6 +1179,7 @@ WEBHOOK_GUIDE_URL = DOCUMENTATION_URL + "/usage/#webhook-notifications"
 PROXY_GUIDE_URL = DOCUMENTATION_URL + "/usage/#routing-traffic-through-a-proxy"
 ANTI_DETECTION_INTERVAL_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#keep-the-polling-interval-reasonable"
 ANTI_DETECTION_SESSION_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#sign-in-using-session-mode-with-browser-cookies"
+CONNECTION_ERRORS_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#connection-errors-during-monitoring"
 
 # Placeholder values shipped in the sample configuration, which stand in for a setting the user has not filled in yet
 CONFIG_PLACEHOLDER_VALUES = frozenset({"your_smtp_server_ssl", "your_smtp_user", "your_smtp_password", "your_sender_email", "your_receiver_email", "your_webhook_url"})
@@ -8950,13 +8951,17 @@ def error_fix_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[str, st
     if "impersonat" in m:
         return "the configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto', or pick a supported target such as chrome, safari, edge or firefox.", ""
 
+    # An unresolvable proxy hostname is a proxy configuration problem, so it is the one resolution failure the proxy guide fits
+    if "could not resolve proxy" in m:
+        return "the proxy hostname you configured cannot be resolved. Check PROXY_URL for a typo and confirm the proxy host is reachable from this machine.", PROXY_GUIDE_URL
+
     # DNS failures are resolver-side, so they need their own fix before the generic network branch swallows them
-    if any(t in m for t in ("could not resolve host", "could not resolve proxy", "temporary failure in name resolution", "name or service not known", "nodename nor servname", "curl: (6)")):
-        return "your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com'), and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again.", PROXY_GUIDE_URL
+    if any(t in m for t in ("could not resolve host", "temporary failure in name resolution", "name or service not known", "nodename nor servname", "curl: (6)")):
+        return "your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com'), and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again.", CONNECTION_ERRORS_GUIDE_URL
 
     # Network or connectivity problems
     if any(t in m for t in ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl")):
-        return "this looks like a network problem. Check your internet connection and proxy settings if --enable-proxy is set then try again.", PROXY_GUIDE_URL
+        return "this looks like a network problem. Check your internet connection, then your proxy settings if --enable-proxy is set, then try again.", CONNECTION_ERRORS_GUIDE_URL
 
     # Deprecated GraphQL doc_id returning null data, or a temporary block
     if any(t in m for t in ("empty data for posts", "fetching post metadata failed", "not subscriptable")):
