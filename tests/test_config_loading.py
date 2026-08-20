@@ -122,3 +122,52 @@ class TestLoadConfigFile:
         assert im_module.load_config_file(str(config), namespace) is True
         assert namespace["OUTPUT_DIR"] == "C:\\Users\\monitor"
         assert "read literally" in capsys.readouterr().out
+
+
+class TestEarlyOutputConfig:
+    # Screen clearing happens before arguments are parsed, so the config value must still win
+    def test_clear_screen_from_config_is_applied_early(self, im_module, monkeypatch, tmp_path):
+        config = tmp_path / "instagram_monitor.conf"
+        config.write_text("CLEAR_SCREEN = False\nCOLORED_OUTPUT = False\n", encoding="utf-8")
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--config-file", str(config)])
+        monkeypatch.setattr(im_module, "CLEAR_SCREEN", True)
+        monkeypatch.setattr(im_module, "COLORED_OUTPUT", True)
+
+        im_module.apply_early_output_config()
+
+        assert im_module.CLEAR_SCREEN is False
+        assert im_module.COLORED_OUTPUT is False
+
+    # A config that does not mention these settings leaves the built-in defaults alone
+    def test_absent_settings_keep_defaults(self, im_module, monkeypatch, tmp_path):
+        config = tmp_path / "instagram_monitor.conf"
+        config.write_text("INSTA_CHECK_INTERVAL = 5400\n", encoding="utf-8")
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--config-file", str(config)])
+        monkeypatch.setattr(im_module, "CLEAR_SCREEN", True)
+
+        im_module.apply_early_output_config()
+
+        assert im_module.CLEAR_SCREEN is True
+
+    # A broken config stays silent here so the later load can report it with full detail
+    def test_broken_config_is_ignored_early(self, im_module, monkeypatch, tmp_path, capsys):
+        config = tmp_path / "instagram_monitor.conf"
+        config.write_text("import os\n", encoding="utf-8")
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--config-file", str(config)])
+        monkeypatch.setattr(im_module, "CLEAR_SCREEN", True)
+
+        im_module.apply_early_output_config()
+
+        assert im_module.CLEAR_SCREEN is True
+        assert capsys.readouterr().out == ""
+
+    # The config path is recovered from raw arguments in both accepted spellings
+    @pytest.mark.parametrize("arguments,expected", [
+        (["--config-file", "a.conf"], "a.conf"),
+        (["--config-file=b.conf"], "b.conf"),
+        (["target", "--config-file", "c.conf", "--debug"], "c.conf"),
+        (["--debug"], None),
+        ([], None),
+    ])
+    def test_config_file_argument_is_recovered(self, im_module, arguments, expected):
+        assert im_module.early_config_file_argument(arguments) == expected
