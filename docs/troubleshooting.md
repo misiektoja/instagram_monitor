@@ -34,6 +34,23 @@ Doctor exits after the report and does not start monitoring or the Web Dashboard
 
 For more detail, add `--debug` to Doctor or a normal run. Debug output includes HTTP details and internal decisions. It may also contain private data. Remove cookies, passwords, tokens and webhook URLs before sharing it.
 
+<a id="connection-errors-during-monitoring"></a>
+## Connection Errors During Monitoring
+
+When a check fails, Instagram Monitor prints the error, a `To fix:` action and a `Guide:` link where one applies, then retries automatically at the next interval. You do not need to restart the tool.
+
+A message naming `Could not resolve host` means the machine could not look up Instagram's address. This is a DNS problem on your side rather than an Instagram block, and it is common on devices that start monitoring before the network is fully up, such as a Raspberry Pi booting from cold. Check that name lookups work:
+
+```sh
+ping www.instagram.com
+```
+
+If that fails too, fix DNS first. When you use a VPN or a proxy, confirm it is running and allowed to resolve names. Monitoring recovers on its own once lookups succeed, so no action is needed inside Instagram Monitor.
+
+Other connection errors point elsewhere. `Max retries exceeded` or a timeout usually means the connection dropped or a proxy is unreachable, see [routing traffic through a proxy](usage.md#routing-traffic-through-a-proxy). `429` or `Too Many Requests` means Instagram is rate-limiting you, see [check intervals](anti-detection.md). A message about a redirect, a login or wrong credentials means the saved session expired, see [session import](configuration.md).
+
+For the underlying transport detail behind any of these, add `--debug`. Normal output omits it because it names internal HTTP library errors rather than anything you can act on.
+
 <a id="container-dashboard-does-not-open"></a>
 ## Container Dashboard Does Not Open
 
