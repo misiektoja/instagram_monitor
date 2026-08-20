@@ -20,6 +20,10 @@ class _FakeBot:
         return "me"
 
 
+def _unreachable_smtp(*args, **kwargs):
+    raise AssertionError("Doctor must not open an SMTP connection when the configuration cannot deliver")
+
+
 def _setup_no_network(monkeypatch, im):
     monkeypatch.setattr(im.instaloader, "Instaloader", lambda *a, **k: _FakeBot())
     monkeypatch.setattr(im, "profile_from_username_resilient", lambda bot, user: object())
@@ -101,6 +105,24 @@ class TestDoctorChecks:
 
         assert report.webhook_ready is True
         assert any(check.status == "ok" and "Webhook URL" in check.label for check in checks)
+
+    # Configured SMTP credentials with placeholder addresses cannot deliver, so Doctor must not report a working setup
+    def test_placeholder_email_addresses_fail_before_login(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.com", raising=False)
+        monkeypatch.setattr(im_module, "SMTP_USER", "user", raising=False)
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "secret", raising=False)
+        monkeypatch.setattr(im_module, "SENDER_EMAIL", "your_sender_email", raising=False)
+        monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "your_receiver_email", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "", raising=False)
+        monkeypatch.setattr(im_module.smtplib, "SMTP", _unreachable_smtp)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        assert report.smtp_ready is False
+        failure = next(check for check in checks if check.status == "fail")
+        assert failure.label == "Email address is not set in SENDER_EMAIL and RECEIVER_EMAIL"
+        assert failure.guide == im_module.SMTP_GUIDE_URL
 
     # The shipped WEBHOOK_URL placeholder means the webhook was never configured, not that it is broken
     def test_webhook_placeholder_is_not_a_failure(self, im_module, monkeypatch):
