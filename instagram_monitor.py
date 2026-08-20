@@ -7108,6 +7108,36 @@ def find_config_file(cli_path=None):
     return None
 
 
+# Returns the --config-file value from raw arguments, before argparse has run
+def early_config_file_argument(arguments=None):
+    values = list(sys.argv[1:] if arguments is None else arguments)
+    for index, argument in enumerate(values):
+        if argument == "--config-file" and index + 1 < len(values):
+            return values[index + 1]
+        if argument.startswith("--config-file="):
+            return argument.split("=", 1)[1]
+    return None
+
+
+# Applies the config settings that take effect before argument parsing, leaving errors to the later load
+def apply_early_output_config() -> None:
+    global CLEAR_SCREEN, COLORED_OUTPUT
+    try:
+        cli_path = early_config_file_argument()
+        config_path = find_config_file(os.path.expanduser(cli_path) if cli_path else None)
+        if not config_path:
+            return
+        # Reading a config no longer runs it, so this early peek cannot have side effects
+        values = parse_config_content(Path(config_path).read_text(encoding="utf-8"), str(config_path))
+    except Exception:
+        # A broken or unreadable config is reported with full detail once arguments are parsed
+        return
+    if isinstance(values.get("CLEAR_SCREEN"), bool):
+        CLEAR_SCREEN = values["CLEAR_SCREEN"]
+    if isinstance(values.get("COLORED_OUTPUT"), bool):
+        COLORED_OUTPUT = values["COLORED_OUTPUT"]
+
+
 # Reads one UTF-8 config file into the given namespace, reporting why it was rejected
 def load_config_file(config_path, namespace=None) -> bool:
     target_namespace = globals() if namespace is None else namespace
@@ -13112,6 +13142,10 @@ def run_main():
 
     START_TIME_SCRIPT = time.monotonic()
     stdout_bck = sys.stdout
+
+    # Screen clearing and colour happen before arguments are parsed, so the few config settings that decide
+    # them are read here too. Otherwise CLEAR_SCREEN = False in a config file would be ignored
+    apply_early_output_config()
 
     # Initialise colour handling based on CLI args (early check) and terminal capabilities
     if "--no-color" in sys.argv:
