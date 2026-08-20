@@ -336,6 +336,8 @@ For ntfy.sh or a self-hosted ntfy server:
 
 Instagram Monitor sends the alert subject as the ntfy title. The alert text and event details become the message. Existing query parameters in the topic URL are preserved, including the ntfy [`auth` query parameter](https://docs.ntfy.sh/publish/#authentication). Long ntfy messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments.
 
+The title and message are sent as request headers or as the request body, never as query parameters. Alert text can contain follower names, captions and biographies, and servers and proxies commonly record full URLs in their access logs. Webhook requests also do not follow redirects, so a moved destination cannot receive headers meant for the address you configured.
+
 For a protected topic, the setup wizard asks for the ntfy access token in a hidden prompt and stores it in `.env`. For manual setup, add:
 
 ```ini
