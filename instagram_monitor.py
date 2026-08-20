@@ -4518,7 +4518,10 @@ def signal_handler(sig, frame, message=None):
 
 
 # Checks internet connectivity
-def check_internet(url=CHECK_INTERNET_URL, timeout=CHECK_INTERNET_TIMEOUT):
+def check_internet(url=None, timeout=None):
+    # Resolve at call time so config file and dotenv overrides take effect (these globals change after import)
+    url = CHECK_INTERNET_URL if url is None else url
+    timeout = CHECK_INTERNET_TIMEOUT if timeout is None else timeout
     try:
         _ = req.get(url, headers={'User-Agent': USER_AGENT}, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
         return True
@@ -9021,7 +9024,7 @@ def notify_monitoring_error(user, error_msg, failure_count, check_interval):
     if ERROR_NOTIFICATION:
         alert_subject = f"instagram_monitor: error for {user} (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD})"
         alert_body = f"An error occurred for user {user} (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(check_interval)} ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-        alert_body_html = f"An error occurred for user <b>{user}</b> (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD}):<br><br><b>{error_msg}</b><br><br>Check interval: <b>{display_time(check_interval)}</b> ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+        alert_body_html = f"An error occurred for user <b>{user}</b> (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: <b>{display_time(check_interval)}</b> ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
         print(f"* Sending error notification to {RECEIVER_EMAIL} (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD})")
         send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
         notified = True
@@ -9051,7 +9054,7 @@ def notify_session_flagged(user, err_str, error_msg):
     if ERROR_NOTIFICATION:
         alert_subject = f"instagram_monitor: session account flagged (target: {user})"
         alert_body = f"{err_str}\n\nTriggering error: {error_msg}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-        alert_body_html = f"{err_str}<br><br>Triggering error: <b>{error_msg}</b>{get_cur_ts('<br><br>Timestamp: ')}"
+        alert_body_html = f"{escape(str(err_str))}<br><br>Triggering error: <b>{escape(str(error_msg))}</b>{get_cur_ts('<br><br>Timestamp: ')}"
         print(f"* Sending session flagged notification to {RECEIVER_EMAIL}")
         send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
 
@@ -11906,7 +11909,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 error_msg = format_error_message(e)
                 alert_subject = f"instagram_monitor: BeHuman mode error for {user} (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD})"
                 alert_body = f"A BeHuman simulation error occurred for user {user} (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                alert_body_html = f"A BeHuman simulation error occurred for user <b>{user}</b> (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):<br><br><b>{error_msg}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                alert_body_html = f"A BeHuman simulation error occurred for user <b>{user}</b> (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
                 print(f"* Sending BeHuman error notification to {RECEIVER_EMAIL} (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD})")
                 send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
