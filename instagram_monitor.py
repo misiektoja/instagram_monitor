@@ -843,10 +843,15 @@ def write_config_file(destination, content: str):
                 collision_suffix = "" if collision_index == 0 else f"-{collision_index:02d}"
                 candidate = destination_path.with_name(f"{destination_path.name}.{timestamp}{collision_suffix}.bak")
                 try:
-                    with destination_path.open("rb") as source_file, candidate.open("xb") as backup_file:
+                    # Created owner-only up front so a configuration kept private is never briefly world-readable
+                    backup_descriptor = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    with destination_path.open("rb") as source_file, os.fdopen(backup_descriptor, "wb") as backup_file:
                         shutil.copyfileobj(source_file, backup_file)
                         backup_file.flush()
                         os.fsync(backup_file.fileno())
+                    if os.name == "posix":
+                        source_owner_mode = destination_path.stat().st_mode & 0o600
+                        os.chmod(candidate, source_owner_mode)
                     backup_path = candidate
                     break
                 except FileExistsError:
