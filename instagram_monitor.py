@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.8.1
+v3.8.2
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -25,7 +25,7 @@ rich (optional - for terminal dashboard)
 # keeps the supported Python floor enforceable regardless of where an import sits in the file
 from __future__ import annotations
 
-VERSION = "3.8.1"
+VERSION = "3.8.2"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -1251,6 +1251,7 @@ from dateutil.parser import isoparse, parse
 import calendar
 import requests as req
 WEBHOOK_SESSION = req.Session()
+import atexit
 import errno
 import shutil
 import smtplib
@@ -4441,8 +4442,29 @@ class ColorStream(object):
         self.terminal.flush()
 
 
+# Terminal attributes saved before the dashboard input handler switched the terminal out of line mode
+DASHBOARD_INPUT_TERMINAL_STATE: dict = {'settings': None}
+
+
+# Restores the terminal modes the dashboard input handler changed, safe to call more than once
+def restore_dashboard_input_terminal() -> None:
+    saved = DASHBOARD_INPUT_TERMINAL_STATE.get('settings')
+    if saved is None:
+        return
+    DASHBOARD_INPUT_TERMINAL_STATE['settings'] = None
+    try:
+        import termios
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, saved)
+    except Exception:
+        pass
+
+
 # Signal handler when user presses Ctrl+C
 def signal_handler(sig, frame, message=None):
+    # Quitting from the input thread ends the process with os._exit below, which skips atexit and every
+    # finally block, so the terminal has to be handed back here before anything else
+    restore_dashboard_input_terminal()
+
     if getattr(_thread_local, 'pbar', None) is not None:
         close_pbar()
 
@@ -7392,6 +7414,9 @@ def dashboard_input_handler():
     if not is_windows and sys.stdin.isatty():
         try:
             old_settings = termios.tcgetattr(sys.stdin)  # type: ignore
+            # This thread is a daemon and exit can bypass its finally block, so remember the state globally
+            DASHBOARD_INPUT_TERMINAL_STATE['settings'] = old_settings
+            atexit.register(restore_dashboard_input_terminal)
             tty.setcbreak(sys.stdin.fileno())  # type: ignore
         except Exception:
             old_settings = None
@@ -7496,12 +7521,7 @@ def dashboard_input_handler():
                 pass
     finally:
         # Restore terminal settings (Unix only)
-        if old_settings:
-            try:
-                import termios
-                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)  # type: ignore
-            except Exception:
-                pass
+        restore_dashboard_input_terminal()
 
 
 # Start Dashboard input handler thread
