@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability
+    url: https://github.com/misiektoja/instagram_monitor/security/advisories/new
+    about: Report privately through GitHub. Never open a public issue for a suspected vulnerability.
+  - name: Documentation
+    url: https://misiektoja.github.io/instagram_monitor/
+    about: Installation, setup, configuration, view modes, anti-detection and troubleshooting.
+  - name: Question or idea
+    url: https://github.com/misiektoja/instagram_monitor/discussions
+    about: Ask about usage or discuss an approach before opening an issue.
