@@ -729,10 +729,14 @@ EXTRA_CONFIG_KEYS = frozenset(("FLAGGED_PROBE_USERNAME", "FLAGGED_PROBE_TTL"))
 RETIRED_CONFIG_SETTINGS = frozenset(("DISCORD_EMBED_DESCRIPTION_LIMIT", "DISCORD_EMBED_TITLE_LIMIT", "DISCORD_FIELD_NAME_LIMIT", "DISCORD_FIELD_VALUE_LIMIT", "DISCORD_MAX_FIELDS"))
 
 
-# Describes ignored retired settings in one sentence
-def describe_retired_settings(names) -> str:
+# Describes ignored retired settings in one sentence, optionally naming the file they can be deleted from
+def describe_retired_settings(names, path: Any = "") -> str:
     listed = ", ".join(sorted(names))
-    return f"{listed} {'was' if len(names) == 1 else 'were'} removed in a later version and {'is' if len(names) == 1 else 'are'} ignored."
+    single = len(names) == 1
+    sentence = f"{listed} {'was' if single else 'were'} removed in a later version and {'is' if single else 'are'} ignored."
+    if path:
+        sentence += f" You can delete {'it' if single else 'them'} from {path}."
+    return sentence
 
 
 # Returns every setting name a config file may assign, taken from the built-in template plus documented extras
@@ -1843,7 +1847,7 @@ _install_copy_session_proxy_patch()
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape
 from itertools import islice
-from typing import Optional, Tuple, Any, Callable, Dict, List, TypeVar, cast
+from typing import Optional, Sequence, Tuple, Any, Callable, Dict, List, TypeVar, cast
 from glob import glob
 import sqlite3
 from sqlite3 import OperationalError, connect
@@ -7182,43 +7186,55 @@ def apply_early_output_config() -> None:
 
 
 # Reads one UTF-8 config file into the given namespace, reporting why it was rejected
-def load_config_file(config_path, namespace=None) -> bool:
+# Doctor passes report_errors=False and collects the same findings so a broken config is diagnosed rather than fatal
+def load_config_file(config_path, namespace=None, error_out=None, report_errors=True, retired_out=None) -> bool:
     target_namespace = globals() if namespace is None else namespace
+
+    # Prints one rejection exactly as before while also recording it for a caller that renders its own report
+    def reject(summary: str, lines: Sequence[str], fix: str) -> bool:
+        if error_out is not None:
+            error_out.append({"summary": summary, "detail": " | ".join(line for line in lines if line), "fix": fix})
+        if report_errors:
+            print(summary)
+            for line in lines:
+                print(line)
+            print(colorize("info", fix))
+            print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
+        return False
+
     try:
         content = Path(config_path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        print(f"* Error loading config file '{config_path}': {format_error_message(exc)}")
-        print(colorize("info", "To fix: verify the file is readable and saved as UTF-8. You can regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'."))
-        print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
-        return False
+        return reject(f"* Error loading config file '{config_path}': {format_error_message(exc)}", (), "To fix: verify the file is readable and saved as UTF-8. You can regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'.")
 
     retired_settings = []
     try:
         target_namespace.update(parse_config_content(content, str(config_path), retired_settings))
-        if retired_settings:
-            print(f"* Note: {describe_retired_settings(retired_settings)} You can delete them from '{config_path}'.")
+        if retired_out is not None:
+            retired_out.extend(retired_settings)
+        if retired_settings and report_errors:
+            quoted_path = "'" + str(config_path) + "'"
+            print(f"* Note: {describe_retired_settings(retired_settings, quoted_path)}")
         return True
     except SyntaxError as exc:
         # A lone backslash in an unescaped Windows path is the usual cause, so retry with the backslashes doubled
         if "unicodeescape" in str(exc) or "escape" in str(exc.msg or ""):
             try:
-                target_namespace.update(parse_config_content(content.replace("\\", "\\\\"), str(config_path)))
-                print(f"* Warning: Backslashes in '{config_path}' were read literally. Use forward slashes (/) or doubled backslashes (\\\\) to silence this warning.")
+                target_namespace.update(parse_config_content(content.replace("\\", "\\\\"), str(config_path), retired_settings))
+                if retired_out is not None:
+                    retired_out.extend(retired_settings)
+                if report_errors:
+                    print(f"* Warning: Backslashes in '{config_path}' were read literally. Use forward slashes (/) or doubled backslashes (\\\\) to silence this warning.")
                 return True
             except (SyntaxError, ValueError):
                 pass
-        print(f"* Error loading config file '{config_path}':")
+        details = []
         if exc.lineno:
-            print(f"Line {exc.lineno}: {(exc.text or '').rstrip()}")
-        print(f"Parser: {exc.msg}")
-        print(colorize("info", "To fix: check that line. Text values need matching quotes and Windows paths need forward slashes (/) or doubled backslashes (\\\\). You can also regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'."))
-        print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
-        return False
+            details.append(f"Line {exc.lineno}: {(exc.text or '').rstrip()}")
+        details.append(f"Parser: {exc.msg}")
+        return reject(f"* Error loading config file '{config_path}':", details, "To fix: check that line. Text values need matching quotes and Windows paths need forward slashes (/) or doubled backslashes (\\\\). You can also regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'.")
     except ValueError as exc:
-        print(f"* Error loading config file '{config_path}': {exc}")
-        print(colorize("info", "To fix: a config file may only assign settings, such as INSTA_CHECK_INTERVAL = 5400. It cannot import modules, call functions or run other code. Regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'."))
-        print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
-        return False
+        return reject(f"* Error loading config file '{config_path}': {exc}", (), "To fix: a config file may only assign settings, such as INSTA_CHECK_INTERVAL = 5400. It cannot import modules, call functions or run other code. Regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'.")
 
 
 # Resolves an executable path by checking if it's a valid file or searching in $PATH
@@ -12962,7 +12978,7 @@ def _doctor_offer_notification_tests(smtp_ready: bool, webhook_ready: bool) -> i
 
 
 # Runs preflight checks plus approved delivery tests and returns the number of failures
-def run_doctor(targets) -> int:
+def run_doctor(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = ()) -> int:
     import importlib.util
 
     fails = 0
@@ -12992,10 +13008,17 @@ def run_doctor(targets) -> int:
     # Configuration and secrets
     print(colorize("section", "\nConfiguration"))
     cfg = find_config_file(CLI_CONFIG_PATH)
-    if cfg:
+    if config_errors:
+        for config_error in config_errors:
+            fails += 1
+            _doctor_line("fail", config_error["summary"].lstrip("* ").rstrip(":"), " | ".join(part for part in (config_error.get("detail"), config_error.get("fix")) if part))
+    elif cfg:
         _doctor_line("ok", "Config file", f"Path: {cfg}")
     else:
         _doctor_line("info", "Config file", "none found - using defaults and CLI flags (create one with --setup)")
+    if retired_settings:
+        warns += 1
+        _doctor_line("warn", "Config file contains removed settings", describe_retired_settings(retired_settings, cfg))
     placeholders = ("", "your_smtp_password")
     present_secrets = [k for k in SECRET_KEYS if globals().get(k) and globals().get(k) not in placeholders]
     _doctor_line("info", "Secrets from environment/.env", ", ".join(present_secrets) if present_secrets else "none set")
@@ -13740,13 +13763,24 @@ def run_main():
     if cfg_path:
         CLI_CONFIG_PATH = cfg_path  # Update global for dashboard display
 
-    if not cfg_path and CLI_CONFIG_PATH:
-        print(f"* Error: Config file '{CLI_CONFIG_PATH}' does not exist")
-        print(colorize("info", "To fix: check the path passed to --config-file or create a config with 'instagram_monitor --setup' or 'instagram_monitor --generate-config instagram_monitor.conf'."))
-        print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
-        sys.exit(1)
+    # Doctor exists to explain a broken setup, so a configuration problem becomes a reported check there
+    # instead of an early exit that would stop the tool before it could diagnose anything
+    doctor_mode = bool(getattr(args, "doctor", False))
+    doctor_config_errors: List[dict] = []
+    doctor_config_retired: List[str] = []
 
-    if cfg_path and not load_config_file(cfg_path):
+    if not cfg_path and CLI_CONFIG_PATH:
+        summary = f"* Error: Config file '{CLI_CONFIG_PATH}' does not exist"
+        fix = "To fix: check the path passed to --config-file or create a config with 'instagram_monitor --setup' or 'instagram_monitor --generate-config instagram_monitor.conf'."
+        if doctor_mode:
+            doctor_config_errors.append({"summary": summary, "detail": "", "fix": fix})
+        else:
+            print(summary)
+            print(colorize("info", fix))
+            print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
+            sys.exit(1)
+
+    if cfg_path and not load_config_file(cfg_path, error_out=doctor_config_errors, report_errors=not doctor_mode, retired_out=doctor_config_retired) and not doctor_mode:
         sys.exit(1)
 
     if args.output_dir:
@@ -14144,7 +14178,7 @@ def run_main():
 
     # Run preflight checks once the effective session mode and targets are resolved
     if getattr(args, "doctor", False):
-        doctor_failures = run_doctor(targets)
+        doctor_failures = run_doctor(targets, doctor_config_errors, doctor_config_retired)
         if not doctor_failures:
             explicit_targets = bool(getattr(args, "targets", None) or getattr(args, "usernames", None))
             command_targets = targets if explicit_targets else ()
