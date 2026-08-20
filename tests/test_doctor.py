@@ -139,11 +139,25 @@ class TestDoctorProgress:
         stream = _TTYBuffer()
         monkeypatch.setattr(im_module.sys, "stdout", stream)
         monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+        im_module._doctor_progress.width = 0
         im_module._doctor_progress("Checking authentication")
         line = "Checking authentication ..."
         assert stream.getvalue() == "\r" + line
         im_module._doctor_progress_clear()
         assert stream.getvalue() == "\r" + line + "\r" + (" " * len(line)) + "\r"
+
+    # Verifies a shorter progress message fully erases the longer one it replaces
+    def test_erases_previous_longer_message(self, im_module, monkeypatch):
+        stream = _TTYBuffer()
+        monkeypatch.setattr(im_module.sys, "stdout", stream)
+        monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+        im_module._doctor_progress.width = 0
+        im_module._doctor_progress("Contacting Instagram")
+        first = "Contacting Instagram ..."
+        im_module._doctor_progress("Looking up 'testuser'")
+        second = "Looking up 'testuser' ..."
+        expected = "\r" + first + "\r" + (" " * len(first)) + "\r" + "\r" + second
+        assert stream.getvalue() == expected
 
 
 class TestRunDoctor:
