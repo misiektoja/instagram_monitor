@@ -36,9 +36,11 @@ mkdocs build --strict
 
 The default suite is offline. It never contacts Instagram and network functions are replaced with local test doubles. See [Testing](https://misiektoja.github.io/instagram_monitor/testing/) for what it covers.
 
-Browser tests are excluded from the default run and need Chromium:
+Browser tests run as part of the default suite but skip when Chromium is absent, so a fresh clone still gets a green run. Install the browser to actually exercise them:
 
 ```sh
+pip install -e '.[test,e2e]'
+python -m playwright install chromium
 python -m pytest tests/test_browser_e2e.py
 ```
 
