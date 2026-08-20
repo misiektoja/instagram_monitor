@@ -176,7 +176,7 @@ class TestRunDoctor:
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
         monkeypatch.setattr(im_module, "check_internet", lambda: (_ for _ in ()).throw(AssertionError("global connectivity gate should be skipped")))
         monkeypatch.setattr(im_module, "clear_screen", clear_mock)
-        monkeypatch.setattr(im_module, "run_doctor", lambda targets: calls.append(list(targets)) or 0)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, *doctor_findings: calls.append(list(targets)) or 0)
 
         with pytest.raises(SystemExit) as exc:
             im_module.run_main()
@@ -192,7 +192,7 @@ class TestRunDoctor:
         monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
         monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
-        monkeypatch.setattr(im_module, "run_doctor", lambda targets: providers.append(im_module.WEBHOOK_PROVIDER) or 0)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, *doctor_findings: providers.append(im_module.WEBHOOK_PROVIDER) or 0)
 
         with pytest.raises(SystemExit) as exc:
             im_module.run_main()
@@ -204,7 +204,7 @@ class TestRunDoctor:
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--env-file", "none", "--no-color"])
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
         monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
-        monkeypatch.setattr(im_module, "run_doctor", lambda targets: 0)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, *doctor_findings: 0)
 
         with pytest.raises(SystemExit) as exc:
             im_module.run_main()
@@ -215,11 +215,43 @@ class TestRunDoctor:
         assert "target.user --env-file none" in output
         assert "--doctor" not in output.split("After Doctor passes, start monitoring:", 1)[1]
 
+    # Doctor exists to explain a broken setup, so a rejected config must reach it instead of exiting first
+    def test_cli_doctor_reports_a_rejected_config_instead_of_exiting(self, im_module, monkeypatch, tmp_path):
+        config_path = tmp_path / "instagram_monitor.conf"
+        config_path.write_text("INSTA_CHECK_INTERVAL = 5400\nNOT_A_REAL_SETTING = 1\n", encoding="utf-8")
+        received = {}
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--config-file", str(config_path), "--env-file", "none", "--no-color"])
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, errors=(), retired=(): received.update(errors=list(errors), retired=list(retired)) or len(errors))
+
+        with pytest.raises(SystemExit) as exc:
+            im_module.run_main()
+
+        assert exc.value.code == 1
+        assert len(received["errors"]) == 1
+        assert "NOT_A_REAL_SETTING" in received["errors"][0]["summary"]
+
+    # A setting a later release removed is a warning Doctor reports, not a reason to reject the file
+    def test_cli_doctor_reports_retired_settings_as_a_warning(self, im_module, monkeypatch, tmp_path):
+        config_path = tmp_path / "instagram_monitor.conf"
+        config_path.write_text("INSTA_CHECK_INTERVAL = 5400\nDISCORD_MAX_FIELDS = 25\n", encoding="utf-8")
+        received = {}
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--config-file", str(config_path), "--env-file", "none", "--no-color"])
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, errors=(), retired=(): received.update(errors=list(errors), retired=list(retired)) or 0)
+
+        with pytest.raises(SystemExit) as exc:
+            im_module.run_main()
+
+        assert exc.value.code == 0
+        assert received["errors"] == []
+        assert received["retired"] == ["DISCORD_MAX_FIELDS"]
+
     def test_cli_doctor_failure_does_not_print_monitoring_command(self, im_module, monkeypatch, capsys):
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--env-file", "none", "--no-color"])
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
         monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
-        monkeypatch.setattr(im_module, "run_doctor", lambda targets: 1)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, *doctor_findings: 1)
 
         with pytest.raises(SystemExit) as exc:
             im_module.run_main()
