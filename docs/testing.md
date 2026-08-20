@@ -14,6 +14,12 @@ GitHub Actions runs the same suite for pull requests and pushes to `main` or `de
 
 The suite intentionally excludes tests that sign in to Instagram because automated test logins could trigger security checks or suspension.
 
+## Supply chain checks
+
+A separate [supply chain workflow](https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/supply-chain.yml) runs on every change and again weekly, so a vulnerability published after a merge is still caught. It scans the full commit history for leaked credentials with gitleaks, audits the resolved dependency tree with `pip-audit`, builds a CycloneDX software bill of materials that lists every package a user actually installs and scans the container image for fixable high and critical vulnerabilities.
+
+The pytest suite covers the workflows themselves. It fails when a third-party action is not pinned to a commit SHA, when a pin lacks its version comment or when a workflow passes an event value straight into a shell.
+
 ## Browser E2E
 
 The browser test starts the dashboard on an ephemeral loopback port. Chromium
