@@ -37,6 +37,25 @@ class TestParseConfigContent:
         with pytest.raises(ValueError, match="not a recognized setting"):
             im_module.parse_config_content("TOTALLY_MADE_UP = 1\n", "<unknown>")
 
+    # A config written by an older version still loads when it carries settings a later release removed
+    def test_retired_settings_are_ignored(self, im_module):
+        parsed = im_module.parse_config_content("DISCORD_MAX_FIELDS = 25\nINSTA_CHECK_INTERVAL = 3600\n", "<legacy>")
+
+        assert parsed == {"INSTA_CHECK_INTERVAL": 3600}
+
+    # The caller can collect which retired settings were ignored so it can tell the user
+    def test_retired_settings_are_reported_to_the_caller(self, im_module):
+        retired = []
+        im_module.parse_config_content("DISCORD_MAX_FIELDS = 25\nDISCORD_EMBED_TITLE_LIMIT = 256\n", "<legacy>", retired)
+
+        assert retired == ["DISCORD_MAX_FIELDS", "DISCORD_EMBED_TITLE_LIMIT"]
+
+    # Allowing retired names must not weaken rejection of any other unknown setting
+    def test_retired_allowance_does_not_accept_other_unknown_names(self, im_module):
+        assert im_module.RETIRED_CONFIG_SETTINGS.isdisjoint(im_module.config_allowed_names())
+        with pytest.raises(ValueError, match="not a recognized setting"):
+            im_module.parse_config_content("DISCORD_TYPO_LIMIT = 1\n", "<unknown>")
+
     # Ordinary settings of every supported literal shape load correctly
     def test_supported_literals_are_parsed(self, im_module):
         parsed = im_module.parse_config_content(
