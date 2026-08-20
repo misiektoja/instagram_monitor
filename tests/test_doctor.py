@@ -102,6 +102,31 @@ class TestDoctorChecks:
         assert report.webhook_ready is True
         assert any(check.status == "ok" and "Webhook URL" in check.label for check in checks)
 
+    # The shipped WEBHOOK_URL placeholder means the webhook was never configured, not that it is broken
+    def test_webhook_placeholder_is_not_a_failure(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SMTP_HOST", "your_smtp_server_ssl", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "your_webhook_url", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", False, raising=False)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        assert report.webhook_ready is False
+        assert not any(check.status == "fail" for check in checks)
+        assert any(check.status == "info" and "Webhook notifications not configured" in check.label for check in checks)
+
+    # An enabled webhook still holding the placeholder is a warning about missing setup, not an invalid URL
+    def test_enabled_webhook_placeholder_warns_about_setup(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SMTP_HOST", "your_smtp_server_ssl", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "your_webhook_url", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True, raising=False)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        assert not any(check.status == "fail" for check in checks)
+        assert any(check.status == "warn" and "WEBHOOK_URL is not set" in check.label for check in checks)
+
     # Every failure a user sees must offer an action, which is what the renderer guarantees
     def test_renderer_prints_an_action_for_every_failure(self, im_module, capsys, monkeypatch):
         monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
