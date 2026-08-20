@@ -60,3 +60,68 @@ class TestErrorFixHint:
         output = capsys.readouterr().out
         assert "\nGuide:" in output
         assert not any(line.startswith((" ", "\t")) for line in output.splitlines())
+
+
+class TestCurlNoiseStripping:
+    RAW = ("JSON Query to api/v1/users/web_profile_info/: Failed to perform, curl: (6) "
+           "Could not resolve host: www.instagram.com. "
+           "See https://curl.se/libcurl/c/libcurl-errors.html first for more details.")
+
+    def test_libcurl_doc_link_is_removed(self, im_module):
+        assert "curl.se" not in im_module.strip_curl_noise(self.RAW)
+
+    def test_libcurl_perform_wrapper_is_removed(self, im_module):
+        cleaned = im_module.strip_curl_noise(self.RAW)
+        assert "Failed to perform" not in cleaned
+        assert "curl: (6)" not in cleaned
+
+    def test_underlying_cause_survives(self, im_module):
+        cleaned = im_module.strip_curl_noise(self.RAW)
+        assert "Could not resolve host: www.instagram.com" in cleaned
+        assert "api/v1/users/web_profile_info/" in cleaned
+
+    def test_no_double_spaces_left_behind(self, im_module):
+        assert "  " not in im_module.strip_curl_noise(self.RAW)
+
+    def test_non_curl_messages_are_untouched(self, im_module):
+        msg = "ProfileNotExistsException: Profile xyz does not exist"
+        assert im_module.strip_curl_noise(msg) == msg
+
+    def test_format_error_message_applies_stripping(self, im_module):
+        class ConnectionException(Exception):
+            pass
+
+        msg = im_module.format_error_message(ConnectionException(self.RAW))
+        assert msg.startswith("ConnectionException: ")
+        assert "curl.se" not in msg
+
+
+class TestDnsHint:
+    @pytest.mark.parametrize("msg", [
+        "ConnectionException: Could not resolve host: www.instagram.com",
+        "ConnectionException: Temporary failure in name resolution",
+        "ConnectionException: Name or service not known",
+        "ConnectionException: nodename nor servname provided",
+        "ConnectionException: Could not resolve proxy: myproxy.local",
+    ])
+    def test_dns_errors_get_the_dns_hint(self, im_module, msg):
+        hint = im_module.error_fix_hint(msg)
+        assert "DNS" in hint
+        assert "network problem" not in hint
+
+    def test_dns_hint_beats_the_generic_network_branch(self, im_module):
+        # "ConnectionException" alone matches the generic branch, so ordering must favour the DNS branch
+        hint = im_module.error_fix_hint("ConnectionException: Could not resolve host: www.instagram.com")
+        assert "cannot resolve" in hint
+
+    def test_plain_network_errors_keep_the_generic_hint(self, im_module):
+        hint = im_module.error_fix_hint("ConnectionException: HTTPSConnectionPool max retries exceeded")
+        assert "network problem" in hint
+        assert "DNS" not in hint
+
+    def test_dns_hint_mentions_recovery_is_automatic(self, im_module):
+        assert "resumes on its own" in im_module.error_fix_hint("ConnectionException: Could not resolve host: x")
+
+    def test_bad_request_maps_to_session_hint(self, im_module):
+        # The retry loop previously handled this inline, so the classifier must cover it now
+        assert "invalid or expired" in im_module.error_fix_hint("ConnectionException: 400 Bad Request")
