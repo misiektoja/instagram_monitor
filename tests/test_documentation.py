@@ -282,3 +282,23 @@ def test_third_party_notices_cover_every_declared_dependency():
     missing = sorted(name for name in declared if name.casefold() not in notices.casefold())
     assert missing == []
     assert_concepts(notices, "GPL-3.0-or-later", "python:3.14-slim-bookworm", "instaloader")
+
+
+# Verifies the code scanning and supply chain workflows stay present and keep analyzing this project's language
+def test_security_workflows_cover_code_and_supply_chain():
+    workflow_directory = PROJECT_ROOT / ".github" / "workflows"
+    for name in ("supply-chain.yml", "codeql.yml", "scorecard.yml"):
+        assert (workflow_directory / name).is_file(), name
+
+    codeql = read_yaml_asset(".github/workflows/codeql.yml")
+    initialize = next(step for step in codeql["jobs"]["analyze"]["steps"] if "codeql-action/init" in step.get("uses", ""))
+    assert initialize["with"]["languages"] == "python"
+    assert codeql["jobs"]["analyze"]["permissions"]["security-events"] == "write"
+
+    # Publishing the result is what keeps the README badge current, so it must not be silently switched off
+    scorecard = read_yaml_asset(".github/workflows/scorecard.yml")
+    analysis = next(step for step in scorecard["jobs"]["analysis"]["steps"] if "scorecard-action" in step.get("uses", ""))
+    assert analysis["with"]["publish_results"] is True
+
+    supply_chain = read_yaml_asset(".github/workflows/supply-chain.yml")
+    assert {"gitleaks", "pip-audit", "sbom", "image-scan"} <= set(supply_chain["jobs"])
