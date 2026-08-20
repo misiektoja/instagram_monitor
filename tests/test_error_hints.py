@@ -102,7 +102,6 @@ class TestDnsHint:
         "ConnectionException: Temporary failure in name resolution",
         "ConnectionException: Name or service not known",
         "ConnectionException: nodename nor servname provided",
-        "ConnectionException: Could not resolve proxy: myproxy.local",
     ])
     def test_dns_errors_get_the_dns_hint(self, im_module, msg):
         hint = im_module.error_fix_hint(msg)
@@ -125,3 +124,24 @@ class TestDnsHint:
     def test_bad_request_maps_to_session_hint(self, im_module):
         # The retry loop previously handled this inline, so the classifier must cover it now
         assert "invalid or expired" in im_module.error_fix_hint("ConnectionException: 400 Bad Request")
+
+
+class TestGuideLinkRelevance:
+    def test_dns_hint_does_not_link_the_proxy_guide(self, im_module):
+        # A machine with no proxy configured must not be sent to proxy setup docs
+        hint = im_module.error_fix_hint("ConnectionException: Could not resolve host: www.instagram.com")
+        assert im_module.PROXY_GUIDE_URL not in hint
+        assert im_module.CONNECTION_ERRORS_GUIDE_URL in hint
+
+    def test_unresolvable_proxy_still_links_the_proxy_guide(self, im_module):
+        hint = im_module.error_fix_hint("ConnectionException: Could not resolve proxy: myproxy.local")
+        assert im_module.PROXY_GUIDE_URL in hint
+        assert "PROXY_URL" in hint
+
+    def test_proxy_branch_wins_over_the_generic_dns_branch(self, im_module):
+        hint = im_module.error_fix_hint("ConnectionException: Could not resolve proxy: myproxy.local")
+        assert "cannot resolve Instagram's address" not in hint
+
+    def test_generic_network_hint_links_the_connection_guide(self, im_module):
+        hint = im_module.error_fix_hint("ConnectionException: HTTPSConnectionPool max retries exceeded")
+        assert im_module.CONNECTION_ERRORS_GUIDE_URL in hint
