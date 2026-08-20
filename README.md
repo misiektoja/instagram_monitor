@@ -175,6 +175,16 @@ Full documentation is available at **[misiektoja.github.io/instagram_monitor](ht
 
 See [RELEASE_NOTES.md](https://github.com/misiektoja/instagram_monitor/blob/main/RELEASE_NOTES.md) for details.
 
+<a id="contributing"></a>
+## Contributing
+
+Bug reports, documentation fixes and code contributions are welcome. See [CONTRIBUTING.md](https://github.com/misiektoja/instagram_monitor/blob/main/CONTRIBUTING.md) for the development setup, the checks CI enforces and what a change needs before it is merged. Participation is covered by the [Code of Conduct](https://github.com/misiektoja/instagram_monitor/blob/main/CODE_OF_CONDUCT.md).
+
+<a id="security"></a>
+## Security
+
+Report a suspected vulnerability privately through [GitHub security advisories](https://github.com/misiektoja/instagram_monitor/security/advisories/new), never as a public issue. [SECURITY.md](https://github.com/misiektoja/instagram_monitor/blob/main/SECURITY.md) covers the reporting process, the supported versions and the security posture of the Web Dashboard, stored secrets and monitored account data.
+
 <a id="maintainers"></a>
 ## Maintainers
 
@@ -184,4 +194,4 @@ See [RELEASE_NOTES.md](https://github.com/misiektoja/instagram_monitor/blob/main
 <a id="license"></a>
 ## License
 
-Licensed under GPLv3. See [LICENSE](https://github.com/misiektoja/instagram_monitor/blob/main/LICENSE).
+Licensed under GPLv3. See [LICENSE](https://github.com/misiektoja/instagram_monitor/blob/main/LICENSE). Dependency licenses are listed in [THIRD_PARTY_NOTICES.md](https://github.com/misiektoja/instagram_monitor/blob/main/THIRD_PARTY_NOTICES.md).
