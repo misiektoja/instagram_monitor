@@ -432,6 +432,8 @@ WEBHOOK_ERROR_NOTIFICATION = False
 
 `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` customize Discord-format messages. `WEBHOOK_TEMPLATE` supports `title`, `description`, `version`, `image_url`, `fields`, `fields_str`, `color`, `timestamp`, `username` and `avatar_url` placeholders. A dictionary or list is sent as JSON while a string is sent as the raw body for compatible advanced integrations.
 
+`WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` apply only to Discord and are ignored when `WEBHOOK_PROVIDER` is `"ntfy"`. The ntfy provider needs no template: it sends the alert body as a native ntfy message with the subject as its title. Customize ntfy delivery through `WEBHOOK_HEADERS` (for example `X-Priority` or `X-Tags`).
+
 `WEBHOOK_TRANSFORMS` applies configured string methods before the template and headers are rendered. Invalid templates, avatar URLs, transforms or expanded headers fail before any request is attempted. Dictionary payloads always replace `allowed_mentions` with `{"parse": []}` so notification text cannot trigger `@everyone`, `@here` or user mentions.
 
 Webhook delivery uses an isolated session with a 10-second timeout and at most two attempts. It accepts every HTTP 2xx response, retries HTTP 429 according to a server delay capped at 5 seconds and retries HTTP 5xx once. Other HTTP 4xx responses fail immediately.
