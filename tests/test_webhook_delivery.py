@@ -94,6 +94,21 @@ class TestSendWebhook:
         assert payload["embeds"][0]["fields"][0]["inline"] is True
         assert payload["allowed_mentions"] == {"parse": []}
 
+    # An unconfigured WEBHOOK_URL still holding the shipped placeholder must not be treated as a destination
+    def test_placeholder_url_sends_nothing(self, im_module, monkeypatch, capsys):
+        calls = []
+
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "your_webhook_url")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
+
+        rc = im_module.send_webhook("Title", "desc")
+
+        assert rc == 1
+        assert calls == []
+        assert "Webhook error" not in capsys.readouterr().out
+
     # A string webhook template is sent as raw data instead of JSON
     def test_string_template_uses_data_post(self, im_module, monkeypatch):
         calls = []
