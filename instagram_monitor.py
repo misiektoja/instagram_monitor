@@ -8889,6 +8889,19 @@ def sleep_message(sleeptime, user=None):
         print_cur_ts(newline=True)
 
 
+# Matches the libcurl documentation pointer curl_cffi appends to transport errors, which means nothing to end users
+CURL_DOC_URL_RE = re.compile(r"\s*See\s+https?://curl\.se/\S*\s*(?:first\s+)?for\s+more\s+details\.?", re.IGNORECASE)
+
+# Matches the libcurl failure wrapper so the underlying cause is reported without the C API prefix
+CURL_PERFORM_PREFIX_RE = re.compile(r"Failed to perform,\s*curl:\s*\(\d+\)\s*", re.IGNORECASE)
+
+
+# Strips libcurl implementation noise from a transport error so the message reads as a plain cause
+def strip_curl_noise(error_str: str) -> str:
+    cleaned = CURL_PERFORM_PREFIX_RE.sub("", CURL_DOC_URL_RE.sub("", error_str))
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
 # Formats error messages to be more informative, especially for Instagram detection/challenge errors
 def format_error_message(e: Exception) -> str:
     error_str = str(e)
@@ -8898,7 +8911,7 @@ def format_error_message(e: Exception) -> str:
     if error_type == "KeyError" and ("'data'" in error_str or '"data"' in error_str or error_str == "data"):
         return "Instagram may have detected automated checks and requires a challenge or re-login (if session is used) or has temporarily shadow banned the IP. The API response is missing expected data."
 
-    return f"{error_type}: {error_str}"
+    return f"{error_type}: {strip_curl_noise(error_str)}"
 
 
 # Returns the browser session import command matching the current installation
@@ -8923,7 +8936,7 @@ def error_fix_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[str, st
         return f"no saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_user>'. In the Web Dashboard you can import from the Session page.", SESSION_IMPORT_GUIDE_URL
 
     # Invalid or expired session
-    if any(t in m for t in ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required")):
+    if any(t in m for t in ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required", "bad request")):
         return f"your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_user>'. In the Web Dashboard you can re-import from the Session page.", SESSION_IMPORT_GUIDE_URL
 
     # Profile not found
@@ -8936,6 +8949,10 @@ def error_fix_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[str, st
     # An unsupported impersonation target surfaces as a connection error, so name the real cause before the network hint
     if "impersonat" in m:
         return "the configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto', or pick a supported target such as chrome, safari, edge or firefox.", ""
+
+    # DNS failures are resolver-side, so they need their own fix before the generic network branch swallows them
+    if any(t in m for t in ("could not resolve host", "could not resolve proxy", "temporary failure in name resolution", "name or service not known", "nodename nor servname", "curl: (6)")):
+        return "your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com'), and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again.", PROXY_GUIDE_URL
 
     # Network or connectivity problems
     if any(t in m for t in ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl")):
@@ -10871,6 +10888,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 session_flagged = is_session_flagged(error_msg, bot)
 
                 if not session_flagged:
+                    print_fix_hint(error_msg)
                     notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
 
                 # Handle session recovery for automated checks/challenge errors
@@ -11655,8 +11673,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     error_msg = format_error_message(e)
                     consecutive_main_errors += 1
                     print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
-                    if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
-                        print("* Session might not be valid anymore! Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page.")
+                    print_fix_hint(error_msg)
                     notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
 
                     print_cur_ts()
