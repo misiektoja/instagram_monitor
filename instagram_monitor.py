@@ -4726,6 +4726,15 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     return 0
 
 
+# Placeholder values shipped in the sample configuration, which stand in for a setting the user has not filled in yet
+CONFIG_PLACEHOLDER_VALUES = frozenset({"your_smtp_server_ssl", "your_smtp_user", "your_smtp_password", "your_sender_email", "your_receiver_email", "your_webhook_url"})
+
+
+# Returns whether a setting is empty or still holds the placeholder value shipped in the sample configuration
+def is_placeholder_setting(value) -> bool:
+    return not isinstance(value, str) or not value.strip() or value.strip() in CONFIG_PLACEHOLDER_VALUES
+
+
 # Returns whether a webhook URL is a complete private HTTPS link
 def validate_webhook_url(url):
     if not isinstance(url, str) or not url.strip():
@@ -5157,7 +5166,7 @@ def encode_ntfy_header_text(message: str) -> str:
 
 # Sends one webhook notification through the selected provider
 def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status"):
-    if not WEBHOOK_ENABLED or not WEBHOOK_URL:
+    if not WEBHOOK_ENABLED or is_placeholder_setting(WEBHOOK_URL):
         return 1
 
     title = apply_privacy_substitutions(title)
@@ -12553,7 +12562,7 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
     else:
         print(colorize("info", "  In ntfy: choose a hard-to-guess topic. Paste its name for ntfy.sh or use the complete URL for a self-hosted server."))
         webhook_prompt = "Paste the ntfy topic URL or ntfy.sh topic name (stored in .env)"
-    existing_webhook = _wizard_existing_secret("WEBHOOK_URL", state.env_path)
+    existing_webhook = _wizard_existing_secret("WEBHOOK_URL", state.env_path, ("your_webhook_url",))
     replace_webhook = True
     if existing_webhook:
         replace_webhook = _wizard_ask_choice("Which webhook URL should be used?", [("Keep the saved URL", "Keeps the private value without displaying or changing it."), ("Paste a new URL", "Uses a hidden prompt then saves the replacement in .env.")]) == 1
@@ -13166,9 +13175,9 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
         except Exception as exc:
             checks.append(make_doctor_check("Notifications", "fail", f"Email (SMTP) check failed: {exc}", "", "verify SMTP_HOST, SMTP_PORT and SMTP_SSL, and SMTP_USER/SMTP_PASSWORD. Gmail and similar need an app password.", SMTP_GUIDE_URL))
 
-    if not WEBHOOK_URL:
+    if is_placeholder_setting(WEBHOOK_URL):
         if WEBHOOK_ENABLED:
-            checks.append(make_doctor_check("Notifications", "warn", "Webhook enabled but WEBHOOK_URL is empty", "", "set WEBHOOK_URL (or via .env), or disable webhooks.", WEBHOOK_GUIDE_URL))
+            checks.append(make_doctor_check("Notifications", "warn", "Webhook enabled but WEBHOOK_URL is not set", "", "set WEBHOOK_URL (or via .env), or disable webhooks.", WEBHOOK_GUIDE_URL))
         else:
             checks.append(make_doctor_check("Notifications", "info", "Webhook notifications not configured"))
         return checks
@@ -13888,6 +13897,10 @@ def run_main():
             val = os.getenv(secret)
             if val is not None:
                 globals()[secret] = val
+
+    # The shipped WEBHOOK_URL placeholder means 'not configured', so it must not reach code that treats it as a destination
+    if is_placeholder_setting(WEBHOOK_URL):
+        WEBHOOK_URL = ""
 
     if _wizard_should_offer_first_run(sys.argv, TARGET_USERNAMES, WEB_DASHBOARD_ENABLED):
         _wizard_welcome(parser)
