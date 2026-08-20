@@ -722,6 +722,18 @@ def _format_config_value(value, prefer_double_quotes: bool) -> str:
 # Advanced settings documented for config files but deliberately kept out of the generated template
 EXTRA_CONFIG_KEYS = frozenset(("FLAGGED_PROBE_USERNAME", "FLAGGED_PROBE_TTL"))
 
+# Settings that an earlier version wrote into generated configuration files and that a later release
+# removed. Ignoring them with a note keeps an untouched older configuration working on upgrade, while
+# any other unknown name is still rejected so a typo cannot silently do nothing.
+# The DISCORD_* limits below shipped in the 3.0 template and were renamed to WEBHOOK_* in 3.1.
+RETIRED_CONFIG_SETTINGS = frozenset(("DISCORD_EMBED_DESCRIPTION_LIMIT", "DISCORD_EMBED_TITLE_LIMIT", "DISCORD_FIELD_NAME_LIMIT", "DISCORD_FIELD_VALUE_LIMIT", "DISCORD_MAX_FIELDS"))
+
+
+# Describes ignored retired settings in one sentence
+def describe_retired_settings(names) -> str:
+    listed = ", ".join(sorted(names))
+    return f"{listed} {'was' if len(names) == 1 else 'were'} removed in a later version and {'is' if len(names) == 1 else 'are'} ignored."
+
 
 # Returns every setting name a config file may assign, taken from the built-in template plus documented extras
 def config_allowed_names() -> frozenset:
@@ -731,7 +743,7 @@ def config_allowed_names() -> frozenset:
 
 
 # Reads allowlisted literal assignments from config content without executing any of it
-def parse_config_content(content: str, filename: str = "<config>") -> dict:
+def parse_config_content(content: str, filename: str = "<config>", retired_out=None) -> dict:
     import ast
     allowed_names = config_allowed_names()
     parsed_values = {}
@@ -739,6 +751,10 @@ def parse_config_content(content: str, filename: str = "<config>") -> dict:
         if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
             raise ValueError(f"line {getattr(statement, 'lineno', '?')}: only 'NAME = value' settings are allowed, this file contains other code")
         name = statement.targets[0].id
+        if name in RETIRED_CONFIG_SETTINGS and name not in allowed_names:
+            if retired_out is not None and name not in retired_out:
+                retired_out.append(name)
+            continue
         if name not in allowed_names:
             raise ValueError(f"line {statement.lineno}: '{name}' is not a recognized setting")
         try:
@@ -7176,8 +7192,11 @@ def load_config_file(config_path, namespace=None) -> bool:
         print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
         return False
 
+    retired_settings = []
     try:
-        target_namespace.update(parse_config_content(content, str(config_path)))
+        target_namespace.update(parse_config_content(content, str(config_path), retired_settings))
+        if retired_settings:
+            print(f"* Note: {describe_retired_settings(retired_settings)} You can delete them from '{config_path}'.")
         return True
     except SyntaxError as exc:
         # A lone backslash in an unescaped Windows path is the usual cause, so retry with the backslashes doubled
