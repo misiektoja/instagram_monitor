@@ -18,7 +18,15 @@ The suite intentionally excludes tests that sign in to Instagram because automat
 
 A separate [supply chain workflow](https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/supply-chain.yml) runs on every change and again weekly, so a vulnerability published after a merge is still caught. It scans the full commit history for leaked credentials with gitleaks, audits the resolved dependency tree with `pip-audit`, builds a CycloneDX software bill of materials that lists every package a user actually installs and scans the container image for fixable high and critical vulnerabilities.
 
+Two further workflows watch the code and the project setup. [CodeQL](https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/codeql.yml) runs GitHub's `security-extended` Python queries on every change and weekly, reporting findings as code scanning alerts. [OpenSSF Scorecard](https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/scorecard.yml) scores the repository's security practices, such as branch protection, action pinning and dependency update automation, and publishes the score shown as a badge on the project page.
+
 The pytest suite covers the workflows themselves. It fails when a third-party action is not pinned to a commit SHA, when a pin lacks its version comment or when a workflow passes an event value straight into a shell.
+
+Contributors can run the same workflow linting locally with [actionlint](https://github.com/rhysd/actionlint):
+
+```bash
+actionlint
+```
 
 ## Browser E2E
 
