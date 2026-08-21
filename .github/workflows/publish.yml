@@ -4,9 +4,14 @@ on:
   release:
     types: [published]
 
+permissions: {}
+
 jobs:
   test:
     name: Tests
+    # A called workflow cannot exceed what the calling job grants, so the checkout in tests.yml needs this.
+    permissions:
+      contents: read
     uses: ./.github/workflows/tests.yml
 
   build-n-publish:
