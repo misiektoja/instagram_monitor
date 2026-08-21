@@ -109,6 +109,11 @@ def test_installed_console_generates_valid_config(package_test_directory: Path, 
 
 
 class TestWorkflowSupplyChain:
+    # The runtime image drops its unused installer and build packages after application dependencies are installed
+    def test_runtime_image_removes_install_time_packages(self):
+        dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
+        assert "pip uninstall --yes msgpack setuptools pip" in dockerfile
+
     # Every third-party action is pinned to a commit, so a moved tag cannot change what runs with our secrets
     def test_actions_are_pinned_to_commit_shas(self):
         unpinned = []
