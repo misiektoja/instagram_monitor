@@ -7,6 +7,8 @@ on:
   workflow_dispatch:
   workflow_call:
 
+permissions: {}
+
 jobs:
   test:
     name: pytest (Python ${{ matrix.python-version }})
