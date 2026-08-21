@@ -1312,6 +1312,7 @@ from itertools import zip_longest
 import subprocess
 import threading
 import hashlib
+import heapq
 
 # Initialize the web dashboard data lock now that threading is imported
 # Important: this lock is acquired from multiple call-sites that can nest (e.g. helpers called inside other locked
@@ -1327,6 +1328,8 @@ FLAGGED_NOTIFY_LOCK = threading.Lock()  # Serializes flag-alert de-dup across co
 FLAGGED_NOTIFY_STATE = {'ts': 0.0}  # Timestamp of the last flag alert so one shared session flag alerts once per window
 PROXY_REFRESH_VERSION = 0
 PROXY_REFRESH_LOCK = threading.Lock()
+FOLLOW_ANALYSIS_LIST_LIMIT = 500
+FOLLOW_ANALYSIS_SNAPSHOT_SKEW_WARNING_SECONDS = 3600
 
 
 # Normalizes and validates an Instagram username before it enters paths or HTML
@@ -2436,6 +2439,25 @@ def create_web_dashboard_app():
             else:
                 data = apply_privacy_substitutions(data)
             return jsonify(data)  # type: ignore
+
+    # Returns bounded follow analysis for a configured dashboard target without exposing local paths
+    @app.route('/api/follow-analysis/<username>')
+    def api_follow_analysis(username):  # type: ignore
+        try:
+            user = normalize_instagram_username(username)
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400  # type: ignore
+        with WEB_DASHBOARD_DATA_LOCK:
+            configured_targets = set(WEB_DASHBOARD_DATA.get('targets', {}))
+        if user not in configured_targets:
+            return jsonify({'success': False, 'error': 'Target is not configured'}), 404  # type: ignore
+        try:
+            analysis = analyze_follows_for_user(user, is_multi=len(configured_targets) > 1)
+        except Exception as e:
+            return jsonify({'success': False, 'error': sanitize_dashboard_error_text(e)}), 500  # type: ignore
+        private_fields = {'followers_file', 'followings_file', 'searched_directory'}
+        public_analysis = {key: value for key, value in analysis.items() if key not in private_fields}
+        return jsonify({'success': True, 'analysis': apply_privacy_substitutions(public_analysis)})  # type: ignore
 
     # Catch TemplateNotFound specifically to show friendly error
     if jinja2 is not None:
@@ -13231,6 +13253,213 @@ def _doctor_offer_notification_tests(smtp_ready: bool, webhook_ready: bool) -> i
     return failures
 
 
+# Resolves the saved follower and following JSON list paths for a validated target
+def get_follow_list_paths(user: str, is_multi: bool = False) -> Tuple[str, str]:
+    user = normalize_instagram_username(user)
+    if OUTPUT_DIR:
+        json_dir = os.path.join(OUTPUT_DIR, user, "json") if is_multi else os.path.join(OUTPUT_DIR, "json")
+    else:
+        json_dir = ""
+    followers_file = os.path.join(json_dir, f"instagram_{user}_followers.json")
+    followings_file = os.path.join(json_dir, f"instagram_{user}_followings.json")
+    return followers_file, followings_file
+
+
+# Returns every unique saved-list layout that may contain a target's data
+def get_follow_list_path_candidates(user: str, is_multi: bool = False) -> List[Tuple[str, str]]:
+    primary = get_follow_list_paths(user, is_multi)
+    alternate = get_follow_list_paths(user, not is_multi)
+    return list(dict.fromkeys((primary, alternate)))
+
+
+# Ranks a saved-list pair by completeness and the age of its older snapshot
+def _follow_list_pair_rank(paths: Tuple[str, str]) -> Tuple[bool, int, float]:
+    existing_mtimes = [mtime for path in paths if (mtime := _follow_list_mtime(path)) is not None]
+    both_exist = len(existing_mtimes) == len(paths)
+    coherent_mtime = min(existing_mtimes) if both_exist else (max(existing_mtimes) if existing_mtimes else 0.0)
+    return both_exist, len(existing_mtimes), coherent_mtime
+
+
+# Loads and validates a saved count and username list with an explicit status
+def load_saved_follow_list(path: str) -> Tuple[int, set[str], str]:
+    if not os.path.isfile(path):
+        return 0, set(), "missing"
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return 0, set(), "corrupt"
+    if not isinstance(data, list) or len(data) != 2 or isinstance(data[0], bool) or not isinstance(data[0], int) or data[0] < 0 or not isinstance(data[1], list):
+        return 0, set(), "corrupt"
+    try:
+        usernames = {normalize_instagram_username(value) for value in data[1]}
+    except ValueError:
+        return 0, set(), "corrupt"
+    return data[0], usernames, "ok"
+
+
+# Returns a saved-list modification time without surfacing filesystem races
+def _follow_list_mtime(path: str) -> Optional[float]:
+    try:
+        return os.path.getmtime(path) if os.path.isfile(path) else None
+    except OSError:
+        return None
+
+
+# Returns an ISO timestamp for an existing saved-list file
+def _follow_list_saved_at(path: str) -> Optional[str]:
+    mtime = _follow_list_mtime(path)
+    return datetime.fromtimestamp(mtime, timezone.utc).isoformat(timespec="seconds") if mtime is not None else None
+
+
+# Returns a bounded alphabetical set difference and its complete size
+def _bounded_follow_difference(left: set[str], right: set[str], limit: int) -> Tuple[List[str], int]:
+    total = sum(1 for username in left if username not in right)
+    return heapq.nsmallest(limit, (username for username in left if username not in right)), total
+
+
+# Computes bounded follow relationships from the newest coherent saved-list layout without network requests
+def analyze_follows_for_user(user: str, is_multi: bool = False, list_limit: int = FOLLOW_ANALYSIS_LIST_LIMIT) -> Dict[str, Any]:
+    user = normalize_instagram_username(user)
+    limit = max(0, int(list_limit))
+    candidates = sorted(get_follow_list_path_candidates(user, is_multi), key=_follow_list_pair_rank, reverse=True)
+    selected_attempt: Optional[Tuple[Tuple[str, str], Tuple[int, set[str], str], Tuple[int, set[str], str]]] = None
+    used_fallback_layout = False
+    for followers_path, followings_path in candidates:
+        followers_loaded = load_saved_follow_list(followers_path)
+        followings_loaded = load_saved_follow_list(followings_path)
+        attempt = ((followers_path, followings_path), followers_loaded, followings_loaded)
+        if selected_attempt is None:
+            selected_attempt = attempt
+        if followers_loaded[2] == "ok" and followings_loaded[2] == "ok":
+            used_fallback_layout = selected_attempt is not attempt
+            selected_attempt = attempt
+            break
+    assert selected_attempt is not None
+    (followers_file, followings_file), (followers_reported, followers, followers_status), (followings_reported, followings, followings_status) = selected_attempt
+
+    result = {
+        "user": user,
+        "followers_file": followers_file,
+        "followings_file": followings_file,
+        "available": False,
+        "notes": [],
+        "followers_count": followers_reported,
+        "followings_count": followings_reported,
+        "followers_fetched": len(followers),
+        "followings_fetched": len(followings),
+        "followers_saved_at": _follow_list_saved_at(followers_file),
+        "followings_saved_at": _follow_list_saved_at(followings_file),
+        "snapshot_skew_seconds": None,
+        "mutual_count": 0,
+        "not_following_back": [],
+        "not_following_back_count": 0,
+        "not_following_back_truncated": False,
+        "fans": [],
+        "fans_count": 0,
+        "fans_truncated": False,
+    }
+    if used_fallback_layout:
+        result["notes"].append("A newer saved-list layout was incomplete or malformed, so an older complete pair was used.")
+
+    missing = [label for label, status in (("followers", followers_status), ("followings", followings_status)) if status == "missing"]
+    corrupt = [label for label, status in (("followers", followers_status), ("followings", followings_status)) if status == "corrupt"]
+    if missing:
+        searched = followers_file if "followers" in missing else followings_file
+        result["searched_directory"] = os.path.abspath(os.path.dirname(searched) or os.getcwd())
+        result["notes"].append(f"No saved {' and '.join(missing)} list found for '{user}'. Run the monitor once in Logged-in mode so the lists are downloaded first.")
+    if corrupt:
+        result["notes"].append(f"Saved {' and '.join(corrupt)} list for '{user}' is unreadable or malformed and was skipped.")
+
+    if followers_status != "ok" or followings_status != "ok":
+        return result
+
+    result["available"] = True
+    result["not_following_back"], result["not_following_back_count"] = _bounded_follow_difference(followings, followers, limit)
+    result["fans"], result["fans_count"] = _bounded_follow_difference(followers, followings, limit)
+    result["not_following_back_truncated"] = result["not_following_back_count"] > len(result["not_following_back"])
+    result["fans_truncated"] = result["fans_count"] > len(result["fans"])
+    result["mutual_count"] = sum(1 for username in followers if username in followings)
+
+    followers_mtime = _follow_list_mtime(followers_file)
+    followings_mtime = _follow_list_mtime(followings_file)
+    if followers_mtime is not None and followings_mtime is not None:
+        snapshot_skew = abs(followers_mtime - followings_mtime)
+        result["snapshot_skew_seconds"] = int(snapshot_skew)
+        if snapshot_skew >= FOLLOW_ANALYSIS_SNAPSHOT_SKEW_WARNING_SECONDS:
+            result["notes"].append(f"Saved follower and following snapshots are {display_time(int(snapshot_skew))} apart, so recent changes may be misclassified.")
+
+    # A private target or an interrupted download stores fewer handles than the reported total; the analysis then covers only what was saved
+    if followers_reported and len(followers) < followers_reported:
+        result["notes"].append(f"Follower list is partial ({len(followers)} of {followers_reported} saved). Analysis covers the saved handles only.")
+    if followings_reported and len(followings) < followings_reported:
+        result["notes"].append(f"Following list is partial ({len(followings)} of {followings_reported} saved). Analysis covers the saved handles only.")
+
+    return result
+
+
+# Prints the follow relationship analysis for each target from saved lists and returns a process exit code (0 when at least one target had usable saved lists)
+def run_follow_analysis(targets: Sequence[str]) -> int:
+    # Standalone actions run before stdout is wrapped by Logger/ColorStream, so identity masking is applied here at the point of display
+    def masked(text: str) -> str:
+        return apply_privacy_substitutions(text)
+
+    print(colorize("header", f"\nInstagram Monitor v{VERSION} - Follow Analysis\n"))
+    print("Reading the saved follower and following lists. No network requests are made.\n")
+
+    if not targets:
+        print(colorize("warning", "* No target specified. Pass a TARGET_USERNAME or set TARGET_USERNAMES in the config."))
+        return 1
+
+    is_multi = len(targets) > 1
+    analyzed = 0
+    for user in targets:
+        result = analyze_follows_for_user(user, is_multi)
+        display_user = masked(user)
+        print(colorize("section", f"Target: {display_user}"))
+
+        if not result["available"]:
+            for note in result["notes"]:
+                _doctor_line("warn", masked(note))
+            if result.get("searched_directory"):
+                _doctor_line("info", masked(f"Searched directory: {result['searched_directory']}"))
+            print("")
+            continue
+
+        analyzed += 1
+        _doctor_line("info", f"Followers: {result['followers_fetched']}")
+        _doctor_line("info", f"Followings: {result['followings_fetched']}")
+        _doctor_line("info", f"Mutual (follow each other): {result['mutual_count']}")
+        _doctor_line("info", f"Follower snapshot: {result['followers_saved_at']}")
+        _doctor_line("info", f"Following snapshot: {result['followings_saved_at']}")
+        for note in result["notes"]:
+            _doctor_line("warn", masked(note))
+
+        not_back = result["not_following_back"]
+        fans = result["fans"]
+
+        print(colorize("section", f"\nNot following back ({result['not_following_back_count']}) - {display_user} follows them, they do not follow back:"))
+        if not_back:
+            for u in not_back:
+                print(masked(f"- {u} [ https://www.instagram.com/{u}/ ]"))
+            if result["not_following_back_truncated"]:
+                print(f"- showing first {len(not_back)} alphabetically")
+        else:
+            print("- none")
+
+        print(colorize("section", f"\nFans ({result['fans_count']}) - they follow {display_user}, {display_user} does not follow back:"))
+        if fans:
+            for u in fans:
+                print(masked(f"- {u} [ https://www.instagram.com/{u}/ ]"))
+            if result["fans_truncated"]:
+                print(f"- showing first {len(fans)} alphabetically")
+        else:
+            print("- none")
+        print("")
+
+    return 0 if analyzed else 1
+
+
 # Runs preflight checks plus approved delivery tests and returns the number of failures
 def doctor_check_environment() -> List[DoctorCheck]:
     import importlib.util
@@ -13503,7 +13732,7 @@ def run_main():
     early_dashboard_enabled = "--dashboard" in sys.argv and "--no-dashboard" not in sys.argv
 
     # Clear screen BEFORE printing the header
-    keep_cli_history = any(flag in sys.argv for flag in ("--import-browser-session", "--import-firefox-session", "--set-webhook-url", "--doctor"))
+    keep_cli_history = any(flag in sys.argv for flag in ("--import-browser-session", "--import-firefox-session", "--set-webhook-url", "--doctor", "--analyze-follows"))
     clear_screen(CLEAR_SCREEN and not keep_cli_history)
 
     if not (early_dashboard_enabled and RICH_AVAILABLE):
@@ -13867,6 +14096,12 @@ def run_main():
         default=None,
         help="Number of consecutive errors required to trigger an alert (default: 2)"
     )
+    opts.add_argument(
+        "--analyze-follows",
+        dest="analyze_follows",
+        action="store_true",
+        help="Analyze follow relationships (mutual, not-following-back, fans) for the target(s) from the already-saved follower/following lists and exit; makes no network requests"
+    )
 
     # Terminal dashboard options
     term_opts = parser.add_argument_group("Terminal dashboard")
@@ -14009,7 +14244,7 @@ def run_main():
     args = parser.parse_args()
 
     import_requested = bool(args.import_firefox_session or args.import_browser_session)
-    requested_actions = [label for label, enabled in (("--setup", args.setup), ("--set-webhook-url", args.set_webhook_url), ("--doctor", args.doctor), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--generate-config", args.generate_config is not None)) if enabled]
+    requested_actions = [label for label, enabled in (("--setup", args.setup), ("--set-webhook-url", args.set_webhook_url), ("--doctor", args.doctor), ("--analyze-follows", args.analyze_follows), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--generate-config", args.generate_config is not None)) if enabled]
     if len(requested_actions) > 1:
         parser.error("standalone actions cannot be combined: " + ", ".join(requested_actions))
     if args.setup:
@@ -14227,7 +14462,7 @@ def run_main():
                 print(f"* Error: Proxy certificate file does not exist. '{PROXY_CERT_PATH}'")
                 sys.exit(1)
 
-    if not args.doctor and not check_internet():
+    if not args.doctor and not args.analyze_follows and not check_internet():
         sys.exit(1)
 
     # Advanced Follower/Followee Fetching Settings
@@ -14381,7 +14616,7 @@ def run_main():
         web_dashboard_host_forced_by_container = True
 
     # Allow empty targets with specific flags
-    if not targets and not WEB_DASHBOARD_ENABLED and not args.doctor:
+    if not targets and not WEB_DASHBOARD_ENABLED and not args.doctor and not args.analyze_follows:
         utility_flags = {
             "--no-color", "-h", "--help",
             "--web-dashboard", "--version"
@@ -14474,6 +14709,10 @@ def run_main():
                 print("Doctor passed, but no monitoring target or Web Dashboard is configured.")
                 print(colorize("section", f"    {_wizard_cmd_prefix(_wizard_install_method())} --setup\n"))
         sys.exit(1 if doctor_failures else 0)
+
+    # Offline follow relationship analysis: read the already-saved lists, print the result and exit (no network requests, no monitoring loop)
+    if getattr(args, "analyze_follows", False):
+        sys.exit(run_follow_analysis(targets))
 
     # Auto-disable Follower Churn Detection if session or lists are skipped
     if FOLLOWERS_CHURN_DETECTION:

@@ -792,11 +792,12 @@
                                 <th>Reels</th>
                                 <th>Story</th>
                                 <th>Status</th>
+                                <th>Analysis</th>
                             </tr>
                         </thead>
                         <tbody id="dashboard-targets-simple-body">
                             <tr>
-                                <td colspan="6">
+                                <td colspan="9">
                                     <div class="empty-state">
                                         <div class="empty-state-icon">👥</div>
                                         <p>Loading targets...</p>
@@ -1560,6 +1561,19 @@
         </div>
     </div>
 
+    <!-- Follow Analysis Modal -->
+    <div class="modal-overlay" id="modal-follow-analysis">
+        <div class="modal" style="max-width: 640px;">
+            <div class="modal-header">
+                <h2 class="modal-title">📊 Follow Analysis</h2>
+                <button class="modal-close" onclick="hideModal('follow-analysis')">&times;</button>
+            </div>
+            <div class="modal-body" id="follow-analysis-body" style="max-height: 70vh; overflow: auto;">
+                <div class="empty-state"><p>Loading...</p></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast -->
     <div class="toast" id="toast">
         <span id="toast-message"></span>
@@ -2112,6 +2126,7 @@
                             <td>
                                 <div class="target-actions">
                                     <button class="btn btn-secondary btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'recheck')" title="Recheck">🔄</button>
+                                    <button class="btn btn-secondary btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'analysis')" title="Follow analysis">📊</button>
                                     <button class="btn btn-success btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'start')" title="Start">▶️</button>
                                     <button class="btn btn-danger btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'stop')" title="Stop">⏹️</button>
                                     <button class="btn btn-danger btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'remove')" title="Remove">🗑️</button>
@@ -2143,11 +2158,17 @@
                         <td>
                             <div class="target-actions">
                                 <button class="btn btn-secondary btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'recheck')" title="Recheck">🔄</button>
+                                <button class="btn btn-secondary btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'analysis')" title="Follow analysis">📊</button>
                                 <button class="btn btn-success btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'start')" title="Start">▶️</button>
                                 <button class="btn btn-danger btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'stop')" title="Stop">⏹️</button>
                                 <button class="btn btn-danger btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'remove')" title="Remove">🗑️</button>
                             </div>
-                        </td>` : ''}
+                        </td>` : `
+                        <td>
+                            <div class="target-actions">
+                                <button class="btn btn-secondary btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'analysis')" title="Follow analysis">📊</button>
+                            </div>
+                        </td>`}
                     </tr>
                 `;
             };
@@ -2418,6 +2439,66 @@
             } catch (err) {
                 showToast('Failed to trigger check', 'error');
             }
+        }
+
+        // Fetches and renders the offline follow relationship analysis for a target
+        async function showFollowAnalysis(username) {
+            const body = document.getElementById('follow-analysis-body');
+            body.innerHTML = '<div class="empty-state"><p>Loading follow analysis...</p></div>';
+            showModal('follow-analysis');
+            try {
+                const response = await fetch(`/api/follow-analysis/${encodeURIComponent(username)}`);
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data.success) {
+                    body.innerHTML = `<div class="empty-state"><p>${escapeHtml(data.error || 'Could not analyze follows')}</p></div>`;
+                    return;
+                }
+                body.innerHTML = renderFollowAnalysis(data.analysis);
+            } catch (err) {
+                body.innerHTML = `<div class="empty-state"><p>Failed to load follow analysis</p></div>`;
+            }
+        }
+
+        // Builds safe HTML for a bounded follow analysis result
+        function renderFollowAnalysis(value) {
+            const a = value && typeof value === 'object' ? value : {};
+            const username = typeof a.user === 'string' ? a.user : 'unknown';
+            const noteValues = Array.isArray(a.notes) ? a.notes.filter(note => typeof note === 'string') : [];
+            const notes = noteValues.map(note => `<p style="color:#f0ad4e;margin:4px 0;">⚠️ ${escapeHtml(note)}</p>`).join('');
+            const safeList = (value) => Array.isArray(value) ? value.filter(username => typeof username === 'string') : [];
+            const safeCount = (value, fallback = 0) => Number.isSafeInteger(value) && value >= 0 ? value : fallback;
+            const savedAt = (value) => {
+                if (typeof value !== 'string') return 'unavailable';
+                const date = new Date(value);
+                return Number.isNaN(date.getTime()) ? 'unavailable' : date.toLocaleString();
+            };
+            if (!a.available) {
+                return `<h3 style="margin-bottom:8px;">@${escapeHtml(username)}</h3>${notes || '<div class="empty-state"><p>No saved lists to analyze yet.</p></div>'}`;
+            }
+            const userList = (list, truncated, total) => list.length
+                ? `<ul style="margin:8px 0 0;padding-left:18px;line-height:1.7;">${list.map(user =>
+                    `<li><a href="https://www.instagram.com/${encodeURIComponent(user)}/" target="_blank" rel="noopener noreferrer" style="color:inherit;">${escapeHtml(user)}</a></li>`).join('')}</ul>${truncated ? `<p style="opacity:0.7;margin:8px 0 0;">Showing the first ${list.length} of ${total} alphabetically.</p>` : ''}`
+                : '<p style="opacity:0.7;margin:8px 0 0;">None</p>';
+            const notFollowingBack = safeList(a.not_following_back);
+            const fans = safeList(a.fans);
+            const notFollowingBackCount = safeCount(a.not_following_back_count, notFollowingBack.length);
+            const fansCount = safeCount(a.fans_count, fans.length);
+            return `
+                <h3 style="margin-bottom:12px;">@${escapeHtml(username)}</h3>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+                    <span class="badge badge-success">Followers: ${safeCount(a.followers_fetched)}</span>
+                    <span class="badge badge-success">Following: ${safeCount(a.followings_fetched)}</span>
+                    <span class="badge badge-success">Mutual: ${safeCount(a.mutual_count)}</span>
+                </div>
+                <p style="opacity:0.7;font-size:12px;margin:0 0 12px;">Follower snapshot: ${escapeHtml(savedAt(a.followers_saved_at))}<br>Following snapshot: ${escapeHtml(savedAt(a.followings_saved_at))}</p>
+                ${notes}
+                <h4 style="margin:16px 0 0;">Not following back (${notFollowingBackCount})</h4>
+                <p style="opacity:0.7;font-size:12px;margin:2px 0 0;">@${escapeHtml(username)} follows them, they do not follow back.</p>
+                ${userList(notFollowingBack, Boolean(a.not_following_back_truncated), notFollowingBackCount)}
+                <h4 style="margin:16px 0 0;">Fans (${fansCount})</h4>
+                <p style="opacity:0.7;font-size:12px;margin:2px 0 0;">They follow @${escapeHtml(username)}, @${escapeHtml(username)} does not follow back.</p>
+                ${userList(fans, Boolean(a.fans_truncated), fansCount)}
+            `;
         }
 
         function getSettingsFromForm() {
@@ -2879,6 +2960,7 @@
         function handleTargetAction(button, action) {
             const username = button.dataset.target;
             if (action === 'recheck') triggerCheck(username);
+            else if (action === 'analysis') showFollowAnalysis(username);
             else if (action === 'start') startMonitoring(username);
             else if (action === 'stop') stopMonitoring(username);
             else if (action === 'remove') removeTarget(username);
