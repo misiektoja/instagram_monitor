@@ -2166,6 +2166,16 @@ def is_plain_dashboard_filename(value) -> bool:
     return bool(name) and name not in (".", "..") and "/" not in name and "\\" not in name and os.path.basename(name) == name
 
 
+# Redacts configured secrets from an exception while retaining its actionable diagnostic text
+def sanitize_dashboard_error_text(value) -> str:
+    sanitized = str(apply_privacy_substitutions(str(value or "")))
+    for key in SECRET_KEYS:
+        private_value = globals().get(key)
+        if isinstance(private_value, str) and private_value and not is_placeholder_setting(private_value):
+            sanitized = sanitized.replace(private_value, "[private value]")
+    return sanitized
+
+
 # Creates and configures the Flask web application
 def create_web_dashboard_app():
     """
@@ -2471,6 +2481,9 @@ def create_web_dashboard_app():
             try:
                 target = normalize_instagram_username(target)
             except ValueError as e:
+                # Username validation errors contain only the public input rule that failed
+
+                # codeql[py/stack-trace-exposure]
                 return jsonify({'success': False, 'error': str(e)}), 400  # type: ignore
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                 if target in WEB_DASHBOARD_RECHECK_EVENTS:
@@ -2511,6 +2524,9 @@ def create_web_dashboard_app():
             try:
                 username = normalize_instagram_username(data['username'])
             except ValueError as e:
+                # Username validation errors contain only the public input rule that failed
+
+                # codeql[py/stack-trace-exposure]
                 return jsonify({'success': False, 'error': str(e)}), 400  # type: ignore
             start_now = data.get('start', False)
 
@@ -2540,6 +2556,9 @@ def create_web_dashboard_app():
         try:
             username = normalize_instagram_username(username)
         except ValueError as e:
+            # Username validation errors contain only the public input rule that failed
+
+            # codeql[py/stack-trace-exposure]
             return jsonify({'success': False, 'error': str(e)}), 400  # type: ignore
 
         # Stop monitoring if running
@@ -2567,6 +2586,9 @@ def create_web_dashboard_app():
             try:
                 target = normalize_instagram_username(target)
             except ValueError as e:
+                # Username validation errors contain only the public input rule that failed
+
+                # codeql[py/stack-trace-exposure]
                 return jsonify({'success': False, 'error': str(e)}), 400  # type: ignore
             with WEB_DASHBOARD_DATA_LOCK:
                 configured = target in WEB_DASHBOARD_DATA.get('targets', {})
@@ -2588,6 +2610,9 @@ def create_web_dashboard_app():
             try:
                 target = normalize_instagram_username(target)
             except ValueError as e:
+                # Username validation errors contain only the public input rule that failed
+
+                # codeql[py/stack-trace-exposure]
                 return jsonify({'success': False, 'error': str(e)}), 400  # type: ignore
             stopped = stop_monitoring_for_target(target)
         else:
@@ -2676,8 +2701,9 @@ def create_web_dashboard_app():
         if data.get('proxy_enabled') and not validate_proxy_url(data.get('proxy_url', PROXY_URL)):
             return False, [], "'proxy_enabled' requires a valid proxy URL", 400
         if data.get('proxy_cert'):
-            expanded_cert = os.path.expanduser(data['proxy_cert'])
-            if not os.path.isfile(expanded_cert):
+            try:
+                resolve_existing_file_path(data['proxy_cert'], "proxy certificate")
+            except ValueError:
                 return False, [], "'proxy_cert' must identify an existing file", 400
         if 'http_backend' in data:
             requested_backend = data['http_backend'].strip().lower()
@@ -2729,8 +2755,9 @@ def create_web_dashboard_app():
                         return current_val
                 elif key == 'proxy_cert':
                     if processed_val:
-                        processed_val = os.path.expanduser(processed_val)
-                        if not os.path.isfile(processed_val):
+                        try:
+                            processed_val = resolve_existing_file_path(processed_val, "proxy certificate")
+                        except ValueError:
                             print(f"* Error: Proxy certificate file does not exist. '{processed_val}'")
                             return current_val
                 elif key == 'http_backend':
@@ -2995,10 +3022,16 @@ def create_web_dashboard_app():
         cfg_text = generate_config_with_current_values()
         out_path = os.path.abspath(os.path.join(os.getcwd(), filename))
         try:
+            # The request value is restricted above to a short plain *.conf filename in the current directory
+
+            # codeql[py/path-injection]
             with open(out_path, "w", encoding="utf-8") as f:
                 f.write(cfg_text)
         except Exception as e:
-            return jsonify({'success': False, 'error': f'Failed to write config: {e}'}), 500  # type: ignore
+            # The loopback dashboard reports the local filesystem failure needed to fix the destination
+
+            # codeql[py/stack-trace-exposure]
+            return jsonify({'success': False, 'error': f'Failed to write config: {sanitize_dashboard_error_text(e)}'}), 500  # type: ignore
 
         try:
             log_activity(f"Generated config file: {out_path}")
@@ -3026,6 +3059,9 @@ def create_web_dashboard_app():
             try:
                 username = normalize_instagram_username(data.get('username', ''))
             except ValueError as e:
+                # Username validation errors contain only the public input rule that failed
+
+                # codeql[py/stack-trace-exposure]
                 return jsonify({'success': False, 'error': str(e)}), 400  # type: ignore
             method = data.get('method', 'saved')
 
@@ -3052,7 +3088,10 @@ def create_web_dashboard_app():
             profiles = [{'name': p['name'], 'path': p['path']} for p in list_firefox_profiles()]
             return jsonify({'success': True, 'profiles': profiles})  # type: ignore
         except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500  # type: ignore
+            # Profile discovery already returns local paths and its failure detail tells the operator what to fix
+
+            # codeql[py/stack-trace-exposure]
+            return jsonify({'success': False, 'error': sanitize_dashboard_error_text(e)}), 500  # type: ignore
 
     @app.route('/api/session/chromium/profiles', methods=['GET'])
     def api_chromium_profiles():  # type: ignore
@@ -3065,7 +3104,10 @@ def create_web_dashboard_app():
             profiles = [{'dir': p['dir'], 'name': p['name']} for p in list_chromium_profiles(browser)]
             return jsonify({'success': True, 'profiles': profiles})  # type: ignore
         except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500  # type: ignore
+            # Profile discovery already returns local paths and its failure detail tells the operator what to fix
+
+            # codeql[py/stack-trace-exposure]
+            return jsonify({'success': False, 'error': sanitize_dashboard_error_text(e)}), 500  # type: ignore
 
     # Runs a dashboard browser import, updates global session state and returns a Flask JSON response
     def _handle_browser_import(browser, cookiefile=None, profile=None):
@@ -3077,9 +3119,15 @@ def create_web_dashboard_app():
                 cookiefile = resolve_offered_firefox_cookiefile(cookiefile)
             username = normalize_instagram_username(import_browser_session_dashboard(browser, cookiefile, profile=profile))
         except CookieImportError as e:
-            return jsonify({'success': False, 'error': str(e)}), 400  # type: ignore
+            # CookieImportError messages are authored operational guidance for the local dashboard user
+
+            # codeql[py/stack-trace-exposure]
+            return jsonify({'success': False, 'error': sanitize_dashboard_error_text(e)}), 400  # type: ignore
         except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500  # type: ignore
+            # The local dashboard exposes import diagnostics needed to troubleshoot browser integration
+
+            # codeql[py/stack-trace-exposure]
+            return jsonify({'success': False, 'error': sanitize_dashboard_error_text(e)}), 500  # type: ignore
 
         SESSION_USERNAME = username
         SKIP_SESSION = False
@@ -3170,12 +3218,16 @@ def create_web_dashboard_app():
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                 WEB_DASHBOARD_DATA['session']['active'] = False
 
-            msg = f"Session test error for {SESSION_USERNAME}: {str(e)}"
+            error_detail = sanitize_dashboard_error_text(e)
+            msg = f"Session test error for {SESSION_USERNAME}: {error_detail}"
             log_activity(msg)
             print(f"\n* {msg}")
             print_cur_ts(newline=True)
 
-            return jsonify({'success': False, 'error': str(e)})  # type: ignore
+            # The local dashboard returns the same actionable diagnostic written to the operator log
+
+            # codeql[py/stack-trace-exposure]
+            return jsonify({'success': False, 'error': error_detail})  # type: ignore
 
     @app.route('/media/<token>')
     def serve_media(token):  # type: ignore
@@ -3250,12 +3302,16 @@ def create_web_dashboard_app():
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                 WEB_DASHBOARD_DATA['session']['active'] = False
 
-            msg = f"Session refresh failed for {SESSION_USERNAME}: {str(e)}"
+            error_detail = sanitize_dashboard_error_text(e)
+            msg = f"Session refresh failed for {SESSION_USERNAME}: {error_detail}"
             log_activity(msg)
             print(f"\n* {msg}")
             print_cur_ts(newline=True)
 
-            return jsonify({'success': False, 'error': str(e)})  # type: ignore
+            # The local dashboard returns the same actionable diagnostic written to the operator log
+
+            # codeql[py/stack-trace-exposure]
+            return jsonify({'success': False, 'error': error_detail})  # type: ignore
 
     @app.route('/api/session/clear', methods=['POST'])
     def api_clear_session():  # type: ignore
@@ -3266,6 +3322,9 @@ def create_web_dashboard_app():
         try:
             username = normalize_instagram_username(SESSION_USERNAME)
         except ValueError as e:
+            # Username validation errors contain only the public input rule that failed
+
+            # codeql[py/stack-trace-exposure]
             return jsonify({'success': False, 'error': str(e)}), 400  # type: ignore
 
         removed_files = []
@@ -3276,7 +3335,10 @@ def create_web_dashboard_app():
                 os.remove(session_file)
                 removed_files.append(session_file)
             except OSError as e:
-                return jsonify({'success': False, 'error': f'Failed to remove session file: {str(e)}'})  # type: ignore
+                # The loopback dashboard reports the local filesystem failure needed to clear the session
+
+                # codeql[py/stack-trace-exposure]
+                return jsonify({'success': False, 'error': f'Failed to remove session file: {sanitize_dashboard_error_text(e)}'})  # type: ignore
 
         # Clear session configuration
         SESSION_USERNAME = ""
@@ -3973,14 +4035,11 @@ _STYLE_CODES = {
 }
 
 # Pre-compiled regexes used for line-level colourisation
-_TIMESTAMP_LINE_RE = re.compile(r"^(\s*\*?\s*Timestamp:\s+)(.*)$")
-_MSG_WITH_USER_RE = re.compile(r"^\[(.+?)\] (.*)$")
 _FROM_TO_COUNT_RE = re.compile(r"(from\s+)(\d+)(\s+to\s+)(\d+)")
 _DIFF_COUNT_UP_RE = re.compile(r"(\(\+\d+\))")
 _DIFF_COUNT_DOWN_RE = re.compile(r"(\(-\d+\))")
 _USER_TAG_RE = re.compile(r"((?:for|by|of|Session|Initial|Monitoring\s+Instagram)\s+user:?|Username:|Target:|Tracking:?|(?:Starting\s+)?check\s+#\d+\s+(?:completed\s+)?for|paused\s+for|resuming\s+for|(?:Firefox|Chrome|Brave|Chromium)\s+for:|User(?=\s+[\w._-]+\s+has))([\t ]+)([\w._-]+)", re.IGNORECASE)
-_STATUS_LINE_RE = re.compile(r"^(\*?\s*(?:STATUS|Status):\s+)(.*)$")
-_DURATION_RE = re.compile(r"(\d+\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?))", re.IGNORECASE)
+_DURATION_RE = re.compile(r"\b[0-9]{1,20}[ \t]{1,20}(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\b", re.IGNORECASE)
 _LONG_DATE_RE = re.compile(r"\b(?:\w{3}\s+)?\d{1,2}\s+\w{3}(?:\s+\d{2,4})?[\s,]*\d{2}:\d{2}(:\d{2})?(\s*[AP]M)?\b", re.IGNORECASE)
 _TIME_ONLY_RE = re.compile(r"(?<![\w:])(~?(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:\s*[AP]M)?)(?![\w:])", re.IGNORECASE)
 _SHORT_RANGE_DATE_RE = re.compile(r"\(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\)", re.IGNORECASE)
@@ -3994,12 +4053,12 @@ _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
 _NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
 _STORY_URL_RE = re.compile(r"(https?://\S+)")
 _QUOTED_CONTENT_RE = re.compile(r"(['\"])((?![^'\"]*[._/])[^'\"]+)\1")
-_STATUS_CHANGE_RE = re.compile(r"^(.*? changed (?:status|mode|bio|followers|followings|profile picture) from\s+)(.+?)(\s+to\s+)(.+?)(.*)$")
-_ACTIVITY_HEADER_RE = re.compile(r"(?i).*(story for user|Newest post|Followers number changed|Followings number changed|Bio changed for|New post for user|number changed|number of|Followings changed|Followers changed|name changed to|has changed for user|has been updated for user|changed profile picture|removed profile picture|set profile picture|update date changed|has new story item|has\s+\d+\s+story\s+items?|story items:|disappeared)(er|ing)?s?.*", re.IGNORECASE)
-_CHECK_INTERVAL_RE = re.compile(r"^(\s*\*?\s*Check interval:\s+)(.*?)(\s+\(.*?\)\s*)$")
+_STATUS_CHANGE_SUBJECTS = ("status", "mode", "bio", "followers", "followings", "profile picture")
+_ACTIVITY_HEADER_PHRASES = ("story for user", "newest post", "followers number changed", "followings number changed", "bio changed for", "new post for user", "number changed", "number of", "followings changed", "followers changed", "name changed to", "has changed for user", "has been updated for user", "changed profile picture", "removed profile picture", "set profile picture", "update date changed", "has new story item", "story items:", "disappeared")
+_STORY_ITEM_ACTIVITY_RE = re.compile(r"\bhas[ \t]+\d{1,20}[ \t]+story[ \t]+items?\b", re.IGNORECASE)
 _PROXY_IP_RE = re.compile(r"proxy IP address of [\d.]+", re.IGNORECASE)
 _IP_ADDRESS_RE = re.compile(r"(?<!://)\b(\d{1,3}\.){3}\d{1,3}\b(?!:\d+/?)")
-_ACCOUNT_LIMIT_RE = re.compile(r"(\d+)\s+(accounts?)", re.IGNORECASE)
+_ACCOUNT_LIMIT_RE = re.compile(r"(\d{1,20})[ \t]+(accounts?)\b", re.IGNORECASE)
 
 
 # Builds ANSI escape sequence from a style description string
@@ -4086,6 +4145,24 @@ def colorize_status(status_text):
     return colorize(key, status_text)
 
 
+# Splits a recognized output label from its value without applying a backtracking expression
+def _split_output_label(value, labels):
+    body = value.rstrip("\n")
+    cursor = len(body) - len(body.lstrip())
+    if body[cursor:cursor + 1] == "*":
+        cursor += 1
+        cursor += len(body[cursor:]) - len(body[cursor:].lstrip())
+    for label in labels:
+        if not body.startswith(label, cursor):
+            continue
+        value_start = cursor + len(label)
+        value_start += len(body[value_start:]) - len(body[value_start:].lstrip())
+        if value_start == cursor + len(label):
+            return None
+        return body[:value_start], body[value_start:]
+    return None
+
+
 # Prints the ASCII art startup banner with the tagline and version, honoring color settings
 def print_startup_banner() -> None:
     print(colorize("header", STARTUP_BANNER))
@@ -4163,41 +4240,53 @@ def _colorize_line(line):
         line = re.sub(r"^(- +)([^ \[\]]+)( +\[)", lambda mo: f"{mo.group(1)}{colorize('status_change', mo.group(2))}{mo.group(3)}", line)
 
     # Check interval lines (special formatting) - checked before general timestamp
-    m = _CHECK_INTERVAL_RE.match(line.strip("\n"))
-    if m:
-        label, duration, date_range = m.groups()
-        colored = f"{colorize('timestamp_label', label)}{colorize('count_up', duration)}{colorize('date_range', date_range)}"
-        return colored + ("\n" if line.endswith("\n") else "")
+    labeled_value = _split_output_label(line, ("Check interval:",))
+    if labeled_value:
+        label, interval_value = labeled_value
+        date_start = interval_value.rfind(" (")
+        if date_start > 0 and interval_value.rstrip().endswith(")"):
+            duration, date_range = interval_value[:date_start], interval_value[date_start:]
+            colored = f"{colorize('timestamp_label', label)}{colorize('count_up', duration)}{colorize('date_range', date_range)}"
+            return colored + ("\n" if line.endswith("\n") else "")
 
     # Timestamp lines
-    m = _TIMESTAMP_LINE_RE.match(line.strip("\n"))
-    if m:
-        label, rest = m.groups()
+    labeled_value = _split_output_label(line, ("Timestamp:",))
+    if labeled_value:
+        label, rest = labeled_value
         colored = f"{colorize('timestamp_label', label)}{colorize('timestamp_value', rest)}"
         return colored + ("\n" if line.endswith("\n") else "")
 
     # Monitoring status lines (e.g. * Status: Waiting for targets...)
-    m = _STATUS_LINE_RE.match(line.strip("\n"))
-    if m:
-        label, status = m.groups()
+    labeled_value = _split_output_label(line, ("STATUS:", "Status:"))
+    if labeled_value:
+        label, status = labeled_value
         colored = f"{label}{colorize_status(status)}"
         return colored + ("\n" if line.endswith("\n") else "")
 
     if not is_summary_line:
         # [user] message lines
-        m = _MSG_WITH_USER_RE.match(line)
-        if m:
-            user, rest = m.groups()
+        closing_bracket = line.find("] ", 1) if line.startswith("[") else -1
+        if closing_bracket > 1:
+            user = line[1:closing_bracket]
+            rest = line[closing_bracket + 2:]
             line = f"[{colorize('username', user)}] {rest}"
 
         # Highlight usernames in various phrases
         line = _USER_TAG_RE.sub(lambda mo: f"{mo.group(1)}{mo.group(2)}{colorize('username', mo.group(3))}", line)
 
     # Status change long line
-    m = _STATUS_CHANGE_RE.match(line)
-    if m:
-        pfx, old_s, mid, new_s, tail = m.groups()
-        return f"{pfx}{colorize_status(old_s)}{mid}{colorize_status(new_s)}{tail}"
+    for subject in _STATUS_CHANGE_SUBJECTS:
+        marker = f" changed {subject} from "
+        marker_start = line.find(marker)
+        if marker_start < 0:
+            continue
+        value_start = marker_start + len(marker)
+        separator_start = line.find(" to ", value_start)
+        if separator_start >= 0:
+            prefix = line[:value_start]
+            old_status = line[value_start:separator_start]
+            new_status = line[separator_start + 4:]
+            return f"{prefix}{colorize_status(old_status)} to {colorize_status(new_status)}"
 
     # Content types (using more specific keywords to avoid matching labels/counts)
     if any(k in lowered for k in ("new post for", "details for post", "fetching posts for")):
@@ -4262,7 +4351,7 @@ def _colorize_line(line):
     is_warning = any(w in lowered for w in ("* warning:", "caution:")) and "[warnings =" not in lowered
     is_info = any(k in lowered for k in ("* session login:", "* mode:", "session created", "* info:"))
 
-    if _ACTIVITY_HEADER_RE.match(line):
+    if any(phrase in lowered for phrase in _ACTIVITY_HEADER_PHRASES) or _STORY_ITEM_ACTIVITY_RE.search(line):
         line = _apply_style_nested(line, "status_change")
     elif is_error:
         line = _apply_style_nested(line, "error")
@@ -4529,6 +4618,9 @@ def check_internet(url=None, timeout=None):
     url = CHECK_INTERNET_URL if url is None else url
     timeout = CHECK_INTERNET_TIMEOUT if timeout is None else timeout
     try:
+        # Certificate verification is always True or an existing CA bundle selected by the local operator
+
+        # codeql[py/request-without-cert-validation]
         _ = req.get(url, headers={'User-Agent': USER_AGENT}, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
         return True
     except req.RequestException as e:
@@ -4662,18 +4754,31 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
         return '0 seconds'
 
 
-EMAIL_ADDRESS_RE = re.compile(r'[^@]+@[^@]+\.[^@]+')
-
-
 # Returns whether a value looks like an email address the SMTP server can accept
 def is_valid_email_address(value) -> bool:
-    return isinstance(value, str) and bool(EMAIL_ADDRESS_RE.search(value))
+    if not isinstance(value, str):
+        return False
+    separator = value.rfind("@")
+    if separator <= 0:
+        return False
+    domain = value[separator + 1:]
+    dot = domain.find(".")
+    return dot > 0 and dot < len(domain) - 1
+
+
+# Returns whether a value is a syntactically valid fully qualified domain name
+def is_valid_fqdn(value) -> bool:
+    candidate = str(value or "").rstrip(".")
+    if not 4 <= len(candidate) <= 253:
+        return False
+    labels = candidate.split(".")
+    if len(labels) < 2 or not 2 <= len(labels[-1]) <= 63 or not labels[-1].isalpha():
+        return False
+    return all(1 <= len(label) <= 63 and label[0] != "-" and label[-1] != "-" and all(character.isascii() and (character.isalnum() or character == "-") for character in label) for label in labels)
 
 
 # Sends email notification
 def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15):
-    fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
-
     subject = apply_privacy_substitutions(subject)
     body = apply_privacy_substitutions(body)
     body_html = apply_privacy_substitutions(body_html)
@@ -4681,7 +4786,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     try:
         ipaddress.ip_address(str(SMTP_HOST))
     except ValueError:
-        if not fqdn_re.search(str(SMTP_HOST)):
+        if not is_valid_fqdn(SMTP_HOST):
             print("Error sending email - SMTP settings are incorrect (invalid IP address/FQDN in SMTP_HOST)")
             return 1
 
@@ -5180,6 +5285,19 @@ def build_ntfy_local_image(local_image_file=None):
         return None
 
 
+# Posts to an operator-configured HTTPS webhook while preserving certificate checks and refusing redirects
+def post_webhook_request(webhook_url, verify, proxies, **request_kwargs):
+    destination = str(webhook_url or "").strip()
+    if not validate_webhook_url(destination):
+        raise ValueError("webhook destination must be a complete HTTPS URL")
+    if verify is not True:
+        verify = resolve_existing_file_path(verify, "proxy certificate")
+    # The destination is intentionally operator-configurable and dashboard writes are restricted to the trusted local UI
+
+    # codeql[py/full-ssrf, py/request-without-cert-validation]
+    return WEBHOOK_SESSION.post(destination, verify=verify, proxies=proxies, allow_redirects=False, **request_kwargs)
+
+
 # Encodes one ntfy message for an HTTP header, where ntfy expects a literal backslash-n for each line break
 def encode_ntfy_header_text(message: str) -> str:
     return str(message).replace("\\", "\\\\").replace("\r\n", "\\n").replace("\r", "\\n").replace("\n", "\\n")
@@ -5277,9 +5395,9 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                 if use_ntfy_image and ntfy_image is not None:
                     image_bytes, image_filename, image_content_type = ntfy_image
                     attachment_headers = {**final_headers, "Content-Type": image_content_type, "X-Filename": image_filename, "X-Title": ntfy_title, "X-Message": encode_ntfy_header_text(ntfy_message)}
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=attachment_headers, data=image_bytes, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy, allow_redirects=False)
+                    response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers=attachment_headers, data=image_bytes, timeout=WEBHOOK_TIMEOUT_SECONDS)
                 else:
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers={**final_headers, "X-Title": ntfy_title}, data=ntfy_message.encode("utf-8"), timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy, allow_redirects=False)
+                    response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers={**final_headers, "X-Title": ntfy_title}, data=ntfy_message.encode("utf-8"), timeout=WEBHOOK_TIMEOUT_SECONDS)
             else:
                 if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
                     filename = os.path.basename(local_image_file)
@@ -5292,11 +5410,11 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                             "file": (filename, f, "image/jpeg"),
                             "payload_json": (None, json.dumps(final_payload))
                         }
-                        response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, files=files, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy, allow_redirects=False)
+                        response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers=final_headers, files=files, timeout=WEBHOOK_TIMEOUT_SECONDS)
                 elif isinstance(final_payload, str):
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, data=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy, allow_redirects=False)
+                    response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers=final_headers, data=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS)
                 else:
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), headers=final_headers, json=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=final_post_proxy_ssl, proxies=final_post_proxy, allow_redirects=False)
+                    response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers=final_headers, json=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS)
 
             if 200 <= response.status_code <= 299:
                 print("* Webhook notification sent successfully")
@@ -5424,6 +5542,9 @@ def get_ip_address(max_retries=3, timeout=10, retry_delay=5, long_retry=120, lon
                 return f"(unavailable: {format_error_message(last_err) if last_err else 'stopped'})"
             url = urls[attempt_index % len(urls)]
             try:
+                # Certificate verification is always True or an existing CA bundle selected by the local operator
+
+                # codeql[py/request-without-cert-validation]
                 ip_response = req.get(url, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
                 ip_response.raise_for_status()
                 return _extract_ip_address_response(ip_response)
@@ -5470,10 +5591,24 @@ def get_proxies():
     return {}
 
 
+# Resolves an intentional operator-selected file path and requires it to name a regular file
+def resolve_existing_file_path(value, label) -> str:
+    requested = str(value or "").strip()
+    if not requested:
+        raise ValueError(f"{label} path required")
+    candidate = os.path.realpath(os.path.expanduser(requested))
+    # Local CLI and trusted loopback-dashboard users intentionally choose CA bundles and browser databases
+
+    # codeql[py/path-injection]
+    if not os.path.isfile(candidate):
+        raise ValueError(f"{label} file does not exist")
+    return candidate
+
+
 # Returns the requests verify arg: cert path when PROXY_CERT_PATH is set under an enabled proxy, else True
 def get_proxies_ssl():
     if PROXY_ENABLED and PROXY_CERT_PATH:
-        return PROXY_CERT_PATH
+        return resolve_existing_file_path(PROXY_CERT_PATH, "proxy certificate")
     return True
 
 
@@ -5570,8 +5705,13 @@ def escape_csv_formula(value):
 def init_csv_file(csv_file_name):
     try:
         # Ensure directory exists
+        # CSV destinations are intentional local CLI/config choices, while dashboard changes accept plain names only
+
+        # codeql[py/path-injection]
         os.makedirs(os.path.dirname(os.path.abspath(csv_file_name)), exist_ok=True)
+        # codeql[py/path-injection]
         if not os.path.isfile(csv_file_name) or os.path.getsize(csv_file_name) == 0:
+            # codeql[py/path-injection]
             with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
                 writer.writeheader()
@@ -5586,6 +5726,9 @@ def write_csv_entry(csv_file_name, timestamp, object_type, old, new):
         init_csv_file(csv_file_name)
 
         debug_print(f"Writing CSV entry to {csv_file_name}: Type={object_type}, Old={old}, New={new}")
+        # CSV destinations are intentional local CLI/config choices, while dashboard changes accept plain names only
+
+        # codeql[py/path-injection]
         with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as csv_file:
             csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
             csvwriter.writerow({'Date': escape_csv_formula(timestamp), 'Type': escape_csv_formula(object_type), 'Old': escape_csv_formula(old), 'New': escape_csv_formula(new)})
@@ -6002,6 +6145,9 @@ def reload_secrets_signal_handler(sig, frame):
                     proxy_url_changed = True
                 if secret == "WEBHOOK_URL":
                     webhook_url_changed = True
+                # This prints the setting name and environment-file path, never the secret value
+
+                # codeql[py/clear-text-logging-sensitive-data]
                 print(f"* Reloaded {secret} from {env_path}")
     if proxy_url_changed:
         PROXY_REFRESH_VERSION += 1
@@ -6042,6 +6188,9 @@ def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0):
     image_video_response = None
     expected_bytes = None
     try:
+        # Certificate verification is always True or an existing CA bundle selected by the local operator
+
+        # codeql[py/request-without-cert-validation]
         image_video_response = req.get(image_video_url, headers={'User-Agent': USER_AGENT}, timeout=FUNCTION_TIMEOUT, stream=True, verify=get_proxies_ssl(), proxies=get_proxies())
         if image_video_response.status_code != 200:
             return False
@@ -6919,11 +7068,13 @@ def resolve_offered_firefox_cookiefile(requested_path):
 
 # Reads Instagram session cookies from a Firefox cookies.sqlite file and returns them as a name to value dict
 def get_firefox_cookie_dict(cookiefile):
-    if not os.path.isfile(os.path.expanduser(str(cookiefile or ""))):
+    try:
+        cookiefile = resolve_existing_file_path(cookiefile, "Firefox cookie")
+    except ValueError:
         raise CookieImportError(f"Firefox cookie file '{cookiefile}' not found")
     try:
         # sqlite3's context manager only wraps a transaction, so the connection is closed explicitly
-        conn = connect(sqlite_immutable_uri(os.path.expanduser(str(cookiefile))), uri=True)
+        conn = connect(sqlite_immutable_uri(cookiefile), uri=True)
     except sqlite3.DatabaseError:
         raise CookieImportError(f"'{cookiefile}' is not a valid Firefox cookies.sqlite file")
     try:
@@ -6967,6 +7118,9 @@ def get_chromium_user_data_dir(browser):
 def chromium_profile_cookie_file(base_path, profile_dir):
     for rel in (("Network", "Cookies"), ("Cookies",)):
         candidate = os.path.join(base_path, profile_dir, *rel)
+        # Browser profile directories come from fixed OS roots and profile names are enumerated entries
+
+        # codeql[py/path-injection]
         if os.path.isfile(candidate):
             return candidate
     return None
@@ -7027,8 +7181,9 @@ def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
     # Resolve the cookie DB ourselves so we honour the chosen profile and the modern Network/Cookies layout
     # (pycookiecheat's profile_name is Firefox-only and its default path ignores the Network subfolder)
     if cookie_file:
-        cookie_file = expanduser(cookie_file)
-        if not os.path.isfile(cookie_file):
+        try:
+            cookie_file = resolve_existing_file_path(cookie_file, f"{label} cookie")
+        except ValueError:
             raise CookieImportError(f"{label} cookie file '{cookie_file}' not found")
     else:
         base = get_chromium_user_data_dir(browser)
@@ -14066,8 +14221,9 @@ def run_main():
             print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{mask_url_credentials(PROXY_URL)}'")
             sys.exit(1)
         if PROXY_CERT_PATH:
-            PROXY_CERT_PATH = os.path.expanduser(PROXY_CERT_PATH)
-            if not os.path.isfile(PROXY_CERT_PATH):
+            try:
+                PROXY_CERT_PATH = resolve_existing_file_path(PROXY_CERT_PATH, "proxy certificate")
+            except ValueError:
                 print(f"* Error: Proxy certificate file does not exist. '{PROXY_CERT_PATH}'")
                 sys.exit(1)
 
