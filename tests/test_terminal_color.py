@@ -19,6 +19,18 @@ def test_port_mapping_is_not_colored_as_a_time(im_module, monkeypatch):
     assert im_module._colorize_line("Next check at 21:07:39") == "Next check at \033[35m21:07:39\033[0m"
 
 
+# Verifies labeled output and status changes keep their text while using direct bounded parsing
+@pytest.mark.parametrize("line,styles", [("* Check interval:\t5 minutes (today)\n", ("timestamp_label", "count_up", "date_range")), ("Timestamp:\t21:07:39\n", ("timestamp_label", "timestamp_value")), ("STATUS: Online\n", ("status_online",)), ("alice changed status from Online to Offline\n", ("status_online", "status_offline"))])
+def test_colorize_line_parses_security_sensitive_patterns_without_text_changes(im_module, monkeypatch, line, styles):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {style: f"\033[{31 + index}m" for index, style in enumerate(styles)})
+
+    colored = im_module._colorize_line(line)
+
+    assert im_module.ANSI_ESCAPE_RE.sub("", colored) == line
+    assert all(im_module._COLOR_STYLES[style] in colored for style in styles)
+
+
 # Verifies hostile terminal control sequences in remote text cannot drive the operator's terminal
 @pytest.mark.parametrize("hostile,expected", [
     ("bio\x1b[2Jcleared", "bio[2Jcleared"),
