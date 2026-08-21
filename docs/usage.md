@@ -487,15 +487,15 @@ instagram_monitor <target_insta_user> --skip-follow-changes
 <a id="follow-relationship-analysis"></a>
 ## Follow Relationship Analysis
 
-Follow relationship analysis reports the mutual, not-following-back and fan relationships for a target. It works entirely offline: it reads the follower and following lists the monitor has already saved and makes no additional Instagram requests.
+Follow relationship analysis reports mutual, not-following-back and fan relationships for a target. It works entirely offline: it reads the follower and following lists the monitor has already saved and makes no additional Instagram requests.
 
 The categories are:
 
-- **Mutual**: accounts that follow the target and that the target follows back
+- **Mutual**: the number of accounts that follow the target and that the target follows back
 - **Not following back**: accounts the target follows that do not follow the target back
 - **Fans**: accounts that follow the target while the target does not follow them back
 
-Both saved lists are required. The analysis shows each snapshot's save time and warns when the two files are more than one hour apart, since changes between those downloads can be misclassified.
+Both saved lists are required. The analysis shows each snapshot's save time and warns when the two files are at least one hour apart, since changes between those downloads can be misclassified.
 
 Run it with the `--analyze-follows` flag. It prints the analysis and exits without starting the monitoring loop:
 
@@ -509,11 +509,13 @@ Multiple targets are supported (positional usernames or `TARGET_USERNAMES` from 
 instagram_monitor user1 user2 --analyze-follows
 ```
 
+Usable targets are still reported when another target has missing or malformed data. The command exits successfully when at least one target could be analyzed and returns a nonzero status when none could be analyzed.
+
 The analysis needs the saved lists `instagram_<user>_followers.json` and `instagram_<user>_followings.json`. These are produced when the monitor runs in [Logged-In Mode](configuration.md#logged-in-mode-with-session-login) with follower and following fetching enabled. They are read from the JSON directory described in [Output Directory](#output-directory), so they resolve under `OUTPUT_DIR/json/` for a single target, `OUTPUT_DIR/<username>/json/` for multiple targets, or the working directory when no output directory is set. If both output layouts contain a complete pair, the newest coherent pair is used. This keeps analysis correct after changing between single-target and multi-target monitoring or after adding a target through the Web Dashboard.
 
-If the lists have not been downloaded yet, the command names the directory it searched and explains that the monitor has to run once first. Older saved files may contain partial lists from a private account, an interrupted download or a configured fetch limit. In that case the analysis covers only the saved handles and prints a note. Current monitoring keeps the last complete baseline instead of replacing it with a partial fetch. A list with malformed data or invalid usernames is skipped with a warning instead of crashing the command.
+If the lists have not been downloaded yet, the command names the directory it searched and explains that the monitor has to run once first. Older saved files may contain partial lists from a private account, an interrupted download or a configured fetch limit. In that case the analysis covers only the saved handles and prints a note. Current monitoring keeps the last complete baseline instead of replacing it with a partial fetch. When the newest output layout is incomplete or malformed, an older complete pair is used when available and the result includes a warning. Otherwise malformed data or invalid usernames make that target unavailable instead of crashing the command.
 
-The command and Web Dashboard show complete category counts but list at most the first 500 usernames alphabetically in each category. This bounds terminal output, API responses and browser rendering for large accounts.
+The command and Web Dashboard show complete counts for all three categories. Mutual accounts are count-only. The not-following-back and fan categories list at most the first 500 usernames alphabetically. This bounds terminal output, API responses and browser rendering for large accounts.
 
 The same analysis is available in the **Web Dashboard**. Use the **Follow analysis** chart button next to a configured target. Privacy substitutions apply to the target and relationship usernames shown in the modal.
 
