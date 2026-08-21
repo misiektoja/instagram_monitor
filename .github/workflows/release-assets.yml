@@ -4,6 +4,8 @@ on:
   release:
     types: [published]
 
+permissions: {}
+
 jobs:
   build-and-upload-assets:
     name: Build zip and tar.gz and upload to release
