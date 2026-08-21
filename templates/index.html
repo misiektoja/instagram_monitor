@@ -2601,7 +2601,7 @@
                 });
                 const data = await response.json();
                 if (data.success) {
-                    showToast(`Config generated: ${data.filename}`);
+                    showToast(`Config generated: ${data.path || data.filename}`);
                     // Refresh values from backend to reflect any server-side adjustments (like limits)
                     fetchSettings();
                 } else {
