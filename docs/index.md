@@ -1,16 +1,14 @@
 # instagram_monitor
 
-<p align="left">
-  <img src="https://img.shields.io/github/v/release/misiektoja/instagram_monitor?style=flat-square&color=blue" alt="GitHub Release" />
-  <img src="https://img.shields.io/pypi/v/instagram_monitor?style=flat-square&color=teal" alt="PyPI Version" />
-  <img src="https://img.shields.io/github/stars/misiektoja/instagram_monitor?style=flat-square&color=magenta" alt="GitHub Stars" />
-  <img src="https://img.shields.io/badge/python-3.9+-blueviolet?style=flat-square" alt="Python Versions" />
-  <img src="https://img.shields.io/docker/pulls/misiektoja/instagram-monitor?style=flat-square&logo=docker" alt="Docker Pulls" />
-  <img src="https://img.shields.io/github/license/misiektoja/instagram_monitor?style=flat-square&color=blue" alt="License" />
-  <a href="https://scorecard.dev/viewer/?uri=github.com/misiektoja/instagram_monitor"><img src="https://img.shields.io/ossf-scorecard/github.com/misiektoja/instagram_monitor?style=flat-square&label=openssf%20scorecard" alt="OpenSSF Scorecard" /></a>
-  <img src="https://img.shields.io/github/last-commit/misiektoja/instagram_monitor?style=flat-square&color=green" alt="Last Commit" />
-  <img src="https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square" alt="Maintenance" />
-</p>
+[![GitHub Release](https://img.shields.io/github/v/release/misiektoja/instagram_monitor?style=flat-square&color=blue)](https://github.com/misiektoja/instagram_monitor/releases)
+[![PyPI Version](https://img.shields.io/pypi/v/instagram_monitor?style=flat-square&color=teal)](https://pypi.org/project/instagram-monitor/)
+[![GitHub Stars](https://img.shields.io/github/stars/misiektoja/instagram_monitor?style=flat-square&color=magenta)](https://github.com/misiektoja/instagram_monitor)
+[![Python Versions](https://img.shields.io/badge/python-3.9+-blueviolet?style=flat-square)](https://pypi.org/project/instagram-monitor/)
+[![Docker Pulls](https://img.shields.io/docker/pulls/misiektoja/instagram-monitor?style=flat-square&logo=docker)](https://hub.docker.com/r/misiektoja/instagram-monitor)
+[![License](https://img.shields.io/github/license/misiektoja/instagram_monitor?style=flat-square&color=blue)](https://github.com/misiektoja/instagram_monitor/blob/main/LICENSE)
+[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/misiektoja/instagram_monitor?style=flat-square&label=openssf%20scorecard)](https://scorecard.dev/viewer/?uri=github.com/misiektoja/instagram_monitor)
+[![Last Commit](https://img.shields.io/github/last-commit/misiektoja/instagram_monitor?style=flat-square&color=green)](https://github.com/misiektoja/instagram_monitor/commits/main)
+[![Maintenance](https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square)](https://github.com/misiektoja/instagram_monitor)
 
 Powerful, real-time OSINT suite for tracking every activity on Instagram - from story updates and bio changes to follower shifts, providing stunning dashboards and instant alerts to keep you in the loop.
 
