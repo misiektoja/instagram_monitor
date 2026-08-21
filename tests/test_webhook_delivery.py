@@ -41,7 +41,7 @@ def test_webhook_provider_detection(im_module, url, expected):
 
 
 # Verifies SIGHUP redetects ntfy and schedules active Instaloader sessions for proxy refresh
-def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, monkeypatch):
+def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, monkeypatch, capsys):
     if not hasattr(im_module.signal, "SIGHUP"):
         pytest.skip("SIGHUP is unavailable on Windows")
     replacements = {"WEBHOOK_URL": "https://ntfy.sh/new-private-topic", "PROXY_URL": "https://new-user:new-password@proxy.example.test"}
@@ -61,6 +61,11 @@ def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, mon
     assert im_module.WEBHOOK_PROVIDER == "ntfy"
     assert im_module.PROXY_REFRESH_VERSION == 5
     assert session.proxies == {"http": replacements["PROXY_URL"], "https": replacements["PROXY_URL"]}
+    output = capsys.readouterr().out
+    assert "Reloaded WEBHOOK_URL from test.env" in output
+    assert "Reloaded PROXY_URL from test.env" in output
+    assert "new-private-topic" not in output
+    assert "new-password" not in output
 
 
 class TestSendWebhook:
