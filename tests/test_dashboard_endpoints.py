@@ -193,6 +193,42 @@ class TestDashboardConfigAndSession:
         assert response.status_code == 400
         assert response.get_json()["error"] == "Invalid filename (paths are not allowed)"
 
+    # Targets added in the browser are saved into the generated config so a restart keeps monitoring them
+    def test_generate_config_saves_dashboard_targets(self, im_module, monkeypatch, tmp_path):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_DATA", {"targets": {}})
+        monkeypatch.setattr(im_module, "TARGET_USERNAMES", [])
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+        monkeypatch.chdir(tmp_path)
+
+        for username in ("bob.target", "alice.target"):
+            assert client.post("/api/targets", json={"username": username}).status_code == 200
+
+        assert im_module.TARGET_USERNAMES == ["alice.target", "bob.target"]
+
+        response = client.post("/api/generate-config", json={"filename": "instagram_monitor.conf", "settings": {}})
+
+        assert response.status_code == 200
+        generated = (tmp_path / "instagram_monitor.conf").read_text(encoding="utf-8")
+        assert im_module.parse_config_content(generated)["TARGET_USERNAMES"] == ["alice.target", "bob.target"]
+
+    # Removing a target in the browser drops it from the list a generated config would save
+    def test_target_delete_drops_saved_target(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_DATA", {"targets": {}})
+        monkeypatch.setattr(im_module, "TARGET_USERNAMES", [])
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "stop_monitoring_for_target", lambda username: True)
+
+        for username in ("bob.target", "alice.target"):
+            assert client.post("/api/targets", json={"username": username}).status_code == 200
+
+        response = client.delete("/api/targets/bob.target", headers={"Content-Type": "application/json"})
+
+        assert response.status_code == 200
+        assert im_module.TARGET_USERNAMES == ["alice.target"]
+
     # Session POST updates the configured username and switches out of anonymous mode
     def test_session_post_sets_username(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)
