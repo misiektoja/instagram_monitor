@@ -2564,6 +2564,8 @@ def create_web_dashboard_app():
                     'last_checked': None
                 }
 
+            sync_target_usernames_from_dashboard()
+
             log_activity(f"Added target", user=username, level='system')
 
             # Start monitoring if requested
@@ -2595,6 +2597,7 @@ def create_web_dashboard_app():
                 removed = False
 
         if removed:
+            sync_target_usernames_from_dashboard()
             log_activity(f"Removed target", user=username, level='warning')
             return jsonify({'success': True})  # type: ignore
         return jsonify({'success': False, 'error': 'Target not found'}), 404  # type: ignore
@@ -3421,6 +3424,13 @@ def create_web_dashboard_app():
         return jsonify({'success': False, 'error': 'Failed to send test webhook. Check console logs.'}), 500  # type: ignore
 
     return app
+
+
+# Mirrors the dashboard's configured targets into TARGET_USERNAMES so a generated config keeps them
+def sync_target_usernames_from_dashboard() -> None:
+    global TARGET_USERNAMES
+    with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+        TARGET_USERNAMES = sorted(WEB_DASHBOARD_DATA.get('targets') or {})
 
 
 # Starts monitoring for a specific target in standalone mode
@@ -15089,6 +15099,8 @@ def run_main():
             for u, data in target_initial_state.items():
                 if u not in WEB_DASHBOARD_DATA['targets']:
                     WEB_DASHBOARD_DATA['targets'][u] = data.copy()
+
+        sync_target_usernames_from_dashboard()
 
         start_web_dashboard_server()
 
