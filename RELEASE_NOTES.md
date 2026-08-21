@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.9 (21 Aug 2026)
+# Changes in 3.9 (22 Aug 2026)
 
 Version **3.9** improves safety and reliability. The **Web Dashboard** is harder for other websites to reach or control. Instagram text is made safe before it appears in your terminal, emails or CSV files. Follow alerts are more reliable when a list is incomplete. Errors explain how to fix the problem. This release also adds **offline follow relationship analysis**, a security policy and regular security checks.
 
