@@ -11,7 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /opt/instagram_monitor
 
 COPY requirements.txt ./
-RUN /usr/local/bin/python -m pip install --no-cache-dir -r requirements.txt
+RUN /usr/local/bin/python -m pip install --no-cache-dir -r requirements.txt && /usr/local/bin/python -m pip uninstall --yes msgpack setuptools pip
 
 RUN groupadd --system --gid 10001 instagram && \
     useradd --system --uid 10001 --gid instagram --create-home --home-dir /home/instagram --shell /usr/sbin/nologin instagram
