@@ -16,7 +16,6 @@ class _EchoHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Set-Cookie", "sessionid=abc123; Path=/")
-        self.send_header("X-Echo-Agent", self.headers.get("User-Agent", ""))
         self.end_headers()
         self.wfile.write(body)
 
