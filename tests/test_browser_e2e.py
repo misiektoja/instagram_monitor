@@ -13,6 +13,17 @@ playwright_sync = pytest.importorskip("playwright.sync_api")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+# Launches headless Chromium, skipping only when the Playwright package is present without its browser download
+def launch_chromium(playwright):
+    try:
+        return playwright.chromium.launch(headless=True)
+    except playwright_sync.Error as error:
+        # Any other launch failure is a real problem and must fail rather than silently skip
+        if "executable doesn't exist" not in str(error).casefold():
+            raise
+        pytest.skip("Chromium is not installed, run 'python -m playwright install chromium'")
+
+
 # Runs the real dashboard application on an ephemeral loopback port
 @pytest.fixture
 def dashboard_server(im_module, monkeypatch) -> Iterator[str]:
@@ -38,7 +49,7 @@ def test_dashboard_user_flow_in_chromium(dashboard_server):
     server_url = dashboard_server
     page_errors = []
     with playwright_sync.sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
+        browser = launch_chromium(playwright)
         page = browser.new_page()
         page.set_default_timeout(5000)
         page.on("pageerror", lambda error: page_errors.append(str(error)))
@@ -58,4 +69,51 @@ def test_dashboard_user_flow_in_chromium(dashboard_server):
         playwright_sync.expect(page.locator("#toast-message")).to_contain_text("Added target: added.user")
         playwright_sync.expect(page.locator("#targets-list")).to_contain_text("added.user")
         assert page_errors == []
+        browser.close()
+
+
+# Runs the dashboard seeded with a hostile Instagram-supplied media item
+@pytest.fixture
+def hostile_media_server(im_module, monkeypatch) -> Iterator[str]:
+    monkeypatch.setattr(im_module, "WEB_DASHBOARD_TEMPLATE_DIR", str(PROJECT_ROOT / "templates"))
+    monkeypatch.setattr(im_module, "SESSION_USERNAME", "")
+    monkeypatch.setattr(im_module, "SKIP_SESSION", True)
+    monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", 5400)
+    hostile_update = {
+        "type": "Post",
+        "caption": "holiday",
+        "timestamp": "01 Jan 26 10:00",
+        "user": "target.user",
+        "is_story": False,
+        "url": 'https://cdn.example/a.jpg" onerror="window.__xss_img=1',
+        "post_url": 'https://www.instagram.com/p/x/" onmouseover="window.__xss_href=1" data-x="',
+        "video_url": "javascript:window.__xss_scheme=1",
+    }
+    monkeypatch.setattr(im_module, "WEB_DASHBOARD_DATA", {"session": {"username": None, "active": False}, "targets": {"target.user": {"status": "Waiting", "fetched_updates": [hostile_update]}}, "activities": [], "check_count": 1, "last_check": "Never", "next_check": "Pending", "is_monitoring": False})
+    monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+    app = im_module.create_web_dashboard_app()
+    assert app is not None
+    server = make_server("127.0.0.1", 0, app)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield f"http://127.0.0.1:{server.server_port}/"
+    server.shutdown()
+    thread.join(timeout=5)
+
+
+# Verifies Instagram-supplied media URLs cannot break out of their attribute or smuggle a javascript scheme
+@pytest.mark.e2e
+def test_hostile_media_urls_do_not_execute_in_chromium(hostile_media_server):
+    with playwright_sync.sync_playwright() as playwright:
+        browser = launch_chromium(playwright)
+        page = browser.new_page()
+        page.set_default_timeout(5000)
+        page.goto(hostile_media_server, wait_until="domcontentloaded")
+        page.wait_for_selector(".fetched-history-item")
+
+        assert page.evaluate("() => [window.__xss_img, window.__xss_href, window.__xss_scheme]") == [None, None, None]
+        assert page.locator("[onerror]").count() == 0
+        assert page.locator("[onmouseover]").count() == 0
+        assert page.evaluate("() => Array.from(document.querySelectorAll('.fetched-history-item a')).every(a => a.protocol === 'http:' || a.protocol === 'https:')")
+
         browser.close()

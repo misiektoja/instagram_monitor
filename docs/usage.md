@@ -137,7 +137,11 @@ In Logged-In Mode, the tool also saves follower and following usernames in these
 
 These files provide a baseline for the next run. The tool compares the new lists with the saved lists to find added or removed usernames.
 
+Only a complete list download can replace this baseline. A configured maximum, stop request or interrupted download leaves the last complete file unchanged so a partial result cannot appear as a large follower or following removal.
+
 When the tool downloads follower or following lists, a terminal progress bar shows request counts, elapsed time and estimated time remaining. Intermediate progress is not written to the log. The final result is.
+
+With several targets, only one progress bar is drawn at a time because they share one terminal line. A target whose download starts while another bar is active fetches without a bar rather than waiting for it. The final result is logged either way.
 
 Profile pictures are saved as `instagram_<username>_profile_pic*.jpg`.
 
@@ -332,6 +336,8 @@ For ntfy.sh or a self-hosted ntfy server:
 
 Instagram Monitor sends the alert subject as the ntfy title. The alert text and event details become the message. Existing query parameters in the topic URL are preserved, including the ntfy [`auth` query parameter](https://docs.ntfy.sh/publish/#authentication). Long ntfy messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments.
 
+The title and message are sent as request headers or as the request body, never as query parameters. Alert text can contain follower names, captions and biographies, and servers and proxies commonly record full URLs in their access logs. Webhook requests also do not follow redirects, so a moved destination cannot receive headers meant for the address you configured.
+
 For a protected topic, the setup wizard asks for the ntfy access token in a hidden prompt and stores it in `.env`. For manual setup, add:
 
 ```ini
@@ -395,6 +401,8 @@ instagram_monitor --send-test-webhook
 instagram_monitor --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-private-topic" --send-test-webhook
 ```
 
+A test notification is always delivered when the URL and provider are valid. It does not require the event switches below, so you can confirm delivery before deciding which notifications to enable.
+
 <a id="4-advanced-configuration"></a>
 ### 4. Advanced Configuration
 
@@ -423,6 +431,8 @@ WEBHOOK_ERROR_NOTIFICATION = False
 ```
 
 `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` customize Discord-format messages. `WEBHOOK_TEMPLATE` supports `title`, `description`, `version`, `image_url`, `fields`, `fields_str`, `color`, `timestamp`, `username` and `avatar_url` placeholders. A dictionary or list is sent as JSON while a string is sent as the raw body for compatible advanced integrations.
+
+`WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` apply only to Discord and are ignored when `WEBHOOK_PROVIDER` is `"ntfy"`. The ntfy provider needs no template: it sends the alert body as a native ntfy message with the subject as its title. Customize ntfy delivery through `WEBHOOK_HEADERS` (for example `X-Priority` or `X-Tags`).
 
 `WEBHOOK_TRANSFORMS` applies configured string methods before the template and headers are rendered. Invalid templates, avatar URLs, transforms or expanded headers fail before any request is attempted. Dictionary payloads always replace `allowed_mentions` with `{"parse": []}` so notification text cannot trigger `@everyone`, `@here` or user mentions.
 
@@ -504,6 +514,8 @@ The values select one of these modes. The tool prints the selected mode at start
 
 This feature requires [Logged-In Mode](configuration.md#logged-in-mode-with-session-login).
 
+A maximum intentionally produces a partial list. Partial lists are not compared with or saved over the last complete baseline. Reported count changes remain available without claiming which usernames changed.
+
 <a id="routing-traffic-through-a-proxy"></a>
 ## Routing Traffic Through a Proxy
 
@@ -567,6 +579,8 @@ instagram_monitor <target_insta_user> --http-backend curl_cffi --impersonate fir
 
 See the [curl_cffi documentation](https://github.com/lexiforest/curl_cffi) for the full list of impersonation targets available in your installed version.
 
+The target is checked against that list at startup and when saved from the Web Dashboard. An unrecognized value stops the tool with a message naming supported targets, rather than letting every Instagram request fail later as a connection error.
+
 <a id="privacy-substitutions"></a>
 ## Privacy Substitutions
 
@@ -579,6 +593,11 @@ PRIVACY_SUBSTITUTIONS = [ ("a.username", "Sarah"), ("some.other.user", "XXX") ]
 ```
 
 The replacement happens before output is displayed, logged or sent. Internal keys and file paths do not change, so the tool still uses the original usernames to find data. Invalid entries are ignored with a warning.
+
+<a id="terminal-safe-output"></a>
+## Terminal-Safe Output
+
+Biographies, captions, story text, comments and usernames come from Instagram and can contain terminal control sequences. Printed unchanged, those could clear your screen, retitle the window or overwrite a line you already read. The tool removes control characters from everything it prints and logs, keeping only tabs, newlines and its own colour codes. Nothing is lost from readable text.
 
 <a id="shadowban-and-flagged-account-detection"></a>
 ## Shadowban and Flagged Account Detection
@@ -600,7 +619,7 @@ FLAGGED_PROBE_TTL = 300
 <a id="reducing-jitter-log-noise"></a>
 ## Reducing Jitter Log Noise
 
-When **Jitter Mode** (or debug/verbose output) is enabled, the HTTP back-off wrapper prints a `WRAP-REQ` / `WRAP-SEND` line for every request, which can be overwhelming. Set `SKIP_WRAP_MESSAGES` to `True` to suppress those per-request lines while keeping the rest of the jitter behavior:
+When **Jitter Mode** (or debug/verbose output) is enabled, the Instagram HTTP backoff wrapper prints a `WRAP-REQ` line for each delayed request. Set `SKIP_WRAP_MESSAGES` to `True` to suppress those lines while keeping the rest of the jitter behavior:
 
 ```ini
 SKIP_WRAP_MESSAGES = True
@@ -628,6 +647,8 @@ The output path depends on whether the path is absolute or relative and whether 
 3. **Relative path without `OUTPUT_DIR`**
     * With one target, the path is relative to the current directory.
     * With several targets, one file per target is created in the current directory as `<CSV_FILE_basename>_<username>.csv`.
+
+A biography, caption or other Instagram text that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is written with a leading apostrophe. Spreadsheet software treats those characters as the start of a formula, so the apostrophe keeps the exported text as text. Numbers such as follower counts are unaffected.
 
 <a id="output-directory"></a>
 ## Output Directory
@@ -659,6 +680,8 @@ The directory layout depends on the number of targets:
     - `OUTPUT_DIR/<username>/csvs/`
 
 Summary messages and errors that apply to the whole process are written to every active target log.
+
+Images and videos are streamed to a temporary file beside the destination with a 100 MiB limit. The monitor accepts only a complete HTTP 200 response with a recognized image or video signature then replaces the destination atomically. A truncated response, an HTML error page or another invalid response leaves an existing saved file untouched.
 
 <a id="detection-of-changed-profile-pictures"></a>
 ## Detection of Changed Profile Pictures

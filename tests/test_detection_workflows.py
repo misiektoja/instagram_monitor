@@ -108,3 +108,24 @@ class TestLeakedCollabWorkflow:
         assert update["caption"] == "(empty)"
         assert emails == []
         assert webhooks == []
+
+    # Collab email HTML escapes hostile API text in labels links and captions
+    def test_leaked_collab_email_escapes_instagram_text(self, im_module, monkeypatch):
+        emails = []
+        hostile_text = '<img src=x onerror="alert(1)">'
+        post = {"shortcode": 'ABC\" onclick=\"alert(2)', "owner": hostile_text, "is_video": False, "ts": 1710000000, "caption": hostile_text, "collaborators": [hostile_text]}
+        monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "UTC")
+        monkeypatch.setattr(im_module, "DOWNLOAD_THUMBNAILS", False)
+        monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "OUTPUT_DIR", "")
+        monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: emails.append((args, kwargs)) or 0)
+        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: 0)
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+
+        im_module.report_leaked_collab_post("private_user", "private_user", post, 300, "", "", None)
+
+        html_body = emails[0][0][2]
+        assert "<img src=x" not in html_body
+        assert 'onclick="alert(2)' not in html_body
+        assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in html_body
+        assert "onclick=&quot;alert(2)" in html_body

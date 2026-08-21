@@ -33,6 +33,21 @@ Without `--config-file`, Instagram Monitor uses the first configuration it finds
 
 An explicit `--config-file PATH` is always used and the command stops with an error if that file does not exist.
 
+<a id="what-a-configuration-file-may-contain"></a>
+### What a Configuration File May Contain
+
+A configuration file is a list of settings, not a program. Instagram Monitor reads it without running it, and accepts only lines of the form `SETTING = value` where the value is plain text, a number, `True`, `False`, `None`, a list, a tuple or a dictionary:
+
+```ini
+INSTA_CHECK_INTERVAL = 5400
+TARGET_USERNAMES = ["user1", "user2"]
+COLOR_THEME = { "header": "bright_cyan" }
+```
+
+Imports, function calls, conditions and any other code are rejected, and the setting name must be one Instagram Monitor recognizes. This matters because the first configuration searched is the one in your current directory: without this rule, starting the tool inside a downloaded archive or a shared directory that happened to contain an `instagram_monitor.conf` would run whatever that file contained.
+
+A rejected file changes nothing. The error names the line and the reason, and no setting from that file is applied.
+
 If the same setting appears in more than one place, the item later in this list wins:
 
 1. Built-in defaults
@@ -71,6 +86,8 @@ instagram_monitor --config-file instagram_monitor.conf
 ```
 
 You can also change most settings and generate a config file through the [Web Dashboard](view-modes.md#web-dashboard-mode).
+
+Target and session usernames may contain 1 to 30 letters, digits, periods or underscores. A leading `@` is accepted and removed. Other characters are rejected before monitoring starts so usernames cannot be interpreted as file paths.
 
 <a id="no-login-mode-without-session-login"></a>
 ## No-Login Mode (No Session Login)
@@ -197,7 +214,7 @@ Every supported browser can have several profiles with separate cookies. Use one
     ```
 
 - **Let it prompt you.** If you do not pass `--browser-profile` and several profiles exist, the tool lists them so you can choose.
-- **On the [Web Dashboard](view-modes.md#web-dashboard-mode)**, pick the browser, click **Import** and select a profile if prompted.
+- **On the [Web Dashboard](view-modes.md#web-dashboard-mode)**, pick the browser, click **Import** and select a profile if prompted. The dashboard imports only from the profiles it detected, so it cannot be pointed at another file on your computer. Use `--cookie-file PATH` on the command line when you deliberately want a database from somewhere else.
 - **Advanced:** point `--cookie-file` at a specific cookie database (Firefox `cookies.sqlite` or a Chromium `Cookies` file). This overrides `--browser-profile`.
 
 For Chromium-based browsers, the tool finds the cookie database inside the selected profile. It supports both `<profile>/Cookies` and `<profile>/Network/Cookies` layouts.

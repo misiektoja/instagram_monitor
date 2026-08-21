@@ -41,7 +41,7 @@ def test_webhook_provider_detection(im_module, url, expected):
 
 
 # Verifies SIGHUP redetects ntfy and schedules active Instaloader sessions for proxy refresh
-def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, monkeypatch):
+def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, monkeypatch, capsys):
     if not hasattr(im_module.signal, "SIGHUP"):
         pytest.skip("SIGHUP is unavailable on Windows")
     replacements = {"WEBHOOK_URL": "https://ntfy.sh/new-private-topic", "PROXY_URL": "https://new-user:new-password@proxy.example.test"}
@@ -61,6 +61,11 @@ def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, mon
     assert im_module.WEBHOOK_PROVIDER == "ntfy"
     assert im_module.PROXY_REFRESH_VERSION == 5
     assert session.proxies == {"http": replacements["PROXY_URL"], "https": replacements["PROXY_URL"]}
+    output = capsys.readouterr().out
+    assert "Reloaded WEBHOOK_URL from test.env" in output
+    assert "Reloaded PROXY_URL from test.env" in output
+    assert "new-private-topic" not in output
+    assert "new-password" not in output
 
 
 class TestSendWebhook:
@@ -93,6 +98,21 @@ class TestSendWebhook:
         assert payload["embeds"][0]["fields"][0]["value"] == "x" * im_module.WEBHOOK_FIELD_VALUE_LIMIT
         assert payload["embeds"][0]["fields"][0]["inline"] is True
         assert payload["allowed_mentions"] == {"parse": []}
+
+    # An unconfigured WEBHOOK_URL still holding the shipped placeholder must not be treated as a destination
+    def test_placeholder_url_sends_nothing(self, im_module, monkeypatch, capsys):
+        calls = []
+
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "your_webhook_url")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse())
+
+        rc = im_module.send_webhook("Title", "desc")
+
+        assert rc == 1
+        assert calls == []
+        assert "Webhook error" not in capsys.readouterr().out
 
     # A string webhook template is sent as raw data instead of JSON
     def test_string_template_uses_data_post(self, im_module, monkeypatch):
@@ -181,7 +201,10 @@ class TestSendWebhook:
         args, kwargs = calls[0]
         assert args == ("https://ntfy.sh/private-topic?auth=private-value",)
         assert kwargs["data"] == "Body: Bj\u00f6rk\n\nCount: 3\n\nImage: https://example.com/image.jpg".encode("utf-8")
-        assert kwargs["params"] == {"title": "Instagram title za\u017c\u00f3\u0142\u0107"}
+        assert kwargs["headers"]["X-Title"] == "Instagram title za\u017c\u00f3\u0142\u0107"
+        # Alert content must never travel in the query string, where servers and proxies log it
+        assert "params" not in kwargs
+        assert kwargs["allow_redirects"] is False
         assert kwargs["headers"]["Content-Type"] == "text/plain; charset=utf-8"
         assert "json" not in kwargs
 
@@ -314,10 +337,13 @@ class TestSendWebhook:
 
             assert im_module.send_webhook("Title", "Body", local_image_file=str(image_path)) == 0
             assert calls[0][1]["data"] == b"fake-image"
-            assert calls[0][1]["params"] == {"title": "Title", "message": "Body"}
+            assert calls[0][1]["headers"]["X-Title"] == "Title"
+            assert calls[0][1]["headers"]["X-Message"] == "Body"
+            assert "params" not in calls[0][1]
             assert calls[0][1]["headers"]["X-Filename"] == "profile.jpg"
             assert calls[1][1]["data"] == b"Body"
-            assert calls[1][1]["params"] == {"title": "Title"}
+            assert calls[1][1]["headers"]["X-Title"] == "Title"
+            assert "params" not in calls[1][1]
 
     # Long ntfy messages stay below the server attachment boundary with a visible truncation marker
     def test_ntfy_message_stays_below_attachment_boundary(self, im_module):
@@ -419,3 +445,36 @@ def test_setup_wizard_persists_ntfy_secrets_privately(im_module, monkeypatch, ca
         assert topic_name not in output
         assert topic_url not in output
         assert token not in output
+
+
+class TestWebhookDeliveryTests:
+    # An operator-requested delivery test sends even though every event switch is off by default
+    def test_delivery_test_bypasses_event_switches(self, im_module, monkeypatch):
+        posts = []
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_FOLLOWERS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", False)
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: posts.append(kwargs) or SimpleNamespace(status_code=204, text="", headers={}))
+
+        result = im_module.send_webhook("test", "body", notification_type=im_module.WEBHOOK_TEST_NOTIFICATION_TYPE)
+
+        assert result == 0
+        assert len(posts) == 1
+
+    # Real event categories still honour their configured switch so notifications stay opt-in
+    @pytest.mark.parametrize("notification_type", ["status", "followers", "error"])
+    def test_event_categories_still_honour_their_switch(self, im_module, monkeypatch, notification_type):
+        posts = []
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_FOLLOWERS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", False)
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: posts.append(kwargs) or SimpleNamespace(status_code=204, text="", headers={}))
+
+        assert im_module.send_webhook("t", "b", notification_type=notification_type) == 1
+        assert posts == []

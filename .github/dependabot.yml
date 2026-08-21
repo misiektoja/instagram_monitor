@@ -23,3 +23,30 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: "build"
+
+  # Python runtime and test dependencies declared in pyproject.toml
+  - package-ecosystem: "pip"
+    directory: "/"
+    target-branch: "dev"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "build"
+
+  # Documentation site build dependencies
+  - package-ecosystem: "pip"
+    directory: "/docs"
+    target-branch: "dev"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      docs:
+        patterns: ["*"]
+    commit-message:
+      prefix: "docs"

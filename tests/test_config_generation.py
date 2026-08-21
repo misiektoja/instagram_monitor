@@ -147,6 +147,22 @@ class TestConfigPersistence:
             assert backup_path.name.startswith("instagram_monitor.conf.")
             assert backup_path.name.endswith(".bak")
 
+    # A backup must not widen access to a configuration the user deliberately kept private
+    @pytest.mark.skipif(os.name != "posix", reason="file modes are POSIX-only")
+    def test_write_config_backup_keeps_owner_only_mode(self, im_module):
+        with make_test_directory() as directory_name:
+            destination = Path(directory_name) / "instagram_monitor.conf"
+            destination.write_text("OLD_VALUE = True\n", encoding="utf-8")
+            os.chmod(destination, 0o600)
+            content = im_module.generate_config_with_current_values(vars(im_module))
+
+            status = im_module.write_config_file(destination, content)
+
+            backup_path = Path(status["backup_path"])
+            assert backup_path.read_text(encoding="utf-8") == "OLD_VALUE = True\n"
+            assert backup_path.stat().st_mode & 0o077 == 0
+            assert destination.stat().st_mode & 0o077 == 0
+
     # Invalid config content is rejected before the destination changes
     def test_write_config_rejects_invalid_content(self, im_module):
         with make_test_directory() as directory_name:
