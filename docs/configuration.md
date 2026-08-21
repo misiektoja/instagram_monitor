@@ -85,7 +85,7 @@ Usernames written directly after the command and usernames passed through `--tar
 instagram_monitor --config-file instagram_monitor.conf
 ```
 
-You can also change most settings and generate a config file through the [Web Dashboard](view-modes.md#web-dashboard-mode).
+You can also change most settings and generate a config file through the [Web Dashboard](view-modes.md#web-dashboard-mode). Targets you add or remove in the browser are saved into `TARGET_USERNAMES` when you press **Generate Config**, so the next start monitors the same list.
 
 Target and session usernames may contain 1 to 30 letters, digits, periods or underscores. A leading `@` is accepted and removed. Other characters are rejected before monitoring starts so usernames cannot be interpreted as file paths.
 
