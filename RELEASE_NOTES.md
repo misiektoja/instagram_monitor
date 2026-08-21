@@ -4,14 +4,7 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.9 (21 Aug 2026)
 
-Version **3.9** is a hardening release, with one new feature. The highlights:
-
-- **Offline follow relationship analysis** - mutuals, accounts that do not follow you back and fans, from lists you already saved and without a single Instagram request
-- **Trustworthy follow alerts** - an incomplete follower or following list no longer produces an empty or misleading change alert
-- **A locked-down Web Dashboard** - it answers only you, so no other website open in your browser can reach it
-- **Errors you can act on** - a failed check names the cause and the fix instead of printing raw transport output
-- **Instagram text kept inert** - it can no longer drive your terminal, inject markup into an email or run a formula in an exported CSV
-- **A hardened project** - published security policy with private vulnerability reporting, guided issue and contribution templates plus continuous supply chain and code scanning
+Version **3.9** is a **hardening release**: it locks down the **Web Dashboard**, renders **Instagram text inert** in your terminal, emails and CSV exports, makes **follow alerts trustworthy** when a list comes back incomplete, replaces raw transport failures with **actionable errors** and adds a **published security policy** plus continuous **supply chain and code scanning**, alongside one new feature, **offline follow relationship analysis**.
 
 **Features and improvements**:
 
