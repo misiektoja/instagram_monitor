@@ -89,6 +89,7 @@ In a container the server must bind to `0.0.0.0` so Docker can forward traffic. 
 - **Remote Management**: Start or stop monitoring for specific or all targets with a single click.
 - **Synchronization**: Saved setting and session changes wake active monitors then rebuild their monitoring context before the next check.
 - **Dynamic Configuration**: Configure sessions and settings without touching the terminal or config files.
+- **Saved Targets**: Targets added or removed in the browser live in memory only until you press **Generate Config** on the Settings page. That writes the current settings and the current target list to `TARGET_USERNAMES` in a `.conf` file created in the working directory the tool was started from, and the toast reports the full path it wrote. Start the tool with `--config-file` pointing at that file to keep the targets across restarts.
 
 Enable it with `--web-dashboard` or `WEB_DASHBOARD_ENABLED = True`.
 
