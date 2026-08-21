@@ -278,6 +278,17 @@ class TestDashboardConfigAndSession:
         assert response.status_code == 400
         assert "not supported on Windows" in response.get_json()["error"]
 
+    # Dashboard profile failures retain the filesystem detail the local operator needs to troubleshoot them
+    def test_profile_listing_failure_returns_exception_details(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "smtp-secret")
+        monkeypatch.setattr(im_module, "list_firefox_profiles", lambda: (_ for _ in ()).throw(RuntimeError("permission denied for /profiles with smtp-secret")))
+
+        response = client.get("/api/session/firefox/profiles")
+
+        assert response.status_code == 500
+        assert response.get_json() == {"success": False, "error": "permission denied for /profiles with [private value]"}
+
 
 class TestDashboardTestNotifications:
     # Test email route delegates to send_email and returns success
