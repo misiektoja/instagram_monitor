@@ -60,6 +60,24 @@ instagram_monitor target1 target2 --dashboard
 
 The Web Dashboard runs a small web server on your computer. By default, open `http://127.0.0.1:8000/` in a browser on the same computer. The `127.0.0.1` address is local, so other devices cannot connect unless you change the server and Docker settings.
 
+The dashboard is intentionally designed for loopback use without a login screen. Keep the host port bound to `127.0.0.1` and do not expose it through a public reverse proxy. Dashboard media links can access only files registered by the running monitor. Post, story and media links that come from Instagram are limited to `http` and `https` and escaped before they are displayed, so page content cannot run scripts in the dashboard. Thumbnails are shown only when the monitor has already saved the image locally, so opening the dashboard never makes your browser fetch anything from Instagram's servers. An item whose download failed shows a placeholder instead. Saved webhook and proxy URLs are shown as configured without returning their private values to the browser. Enter a new URL only when you want to replace the saved value.
+
+<a id="dashboard-request-protection"></a>
+### Request Protection
+
+Because there is no login, the dashboard protects itself by checking who is asking rather than who is logged in. Two rules apply to every request:
+
+- **Accepted addresses.** The server answers only requests addressed to `127.0.0.1`, `localhost`, `::1` or the configured `WEB_DASHBOARD_HOST`. Anything else gets **HTTP 403**. This stops DNS rebinding, where a web page you visit points its own domain at `127.0.0.1` so the browser reaches your dashboard for it. Binding to the loopback interface alone does not stop that attack, because the request arrives from your own browser. Add a name to `WEB_DASHBOARD_ALLOWED_HOSTS` when you deliberately reach the dashboard under another address.
+- **Same-origin changes only.** Anything that changes state (adding targets, starting or stopping monitoring, saving settings, sending test notifications, clearing the activity log) must come from the dashboard page itself and carry `Content-Type: application/json`. A request that another website triggers in your browser is rejected with **HTTP 403**, and a request without a JSON body is rejected with **HTTP 415**. Without this, any page you happened to have open could stop your monitoring or force extra Instagram polling.
+
+Scripting the API yourself still works: send `Content-Type: application/json` and address the server as `127.0.0.1`.
+
+Settings updates are validated as one operation before live values change. Malformed booleans, non-integer numeric fields, reversed hour ranges, invalid ports and unsafe URLs return an error without applying the rest of the payload. Polling intervals accepted by the dashboard range from 300 to 86400 seconds. Two fields are deliberately narrow:
+
+- **CSV file name.** The dashboard names the CSV file but never chooses its location, so a value containing a path is rejected. An absolute path set through `CSV_FILE` or `-b` keeps working and still round-trips through the form unchanged.
+- **SMTP password.** A saved password belongs to the server it was entered for. Changing `SMTP_HOST` or `SMTP_PORT` without typing the password again clears it, so the tool never offers your credential to a different mail server. Re-enter the password in the same save to keep email working.
+- **ntfy access token.** `NTFY_ACCESS_TOKEN` is sent as a bearer credential to whatever `WEBHOOK_URL` points at, so pointing the webhook at a different server clears it. Changing only the topic on the same server keeps it. Set the token again in your dotenv file and reload it with `SIGHUP`, or restart the tool.
+
 In a container the server must bind to `0.0.0.0` so Docker can forward traffic. That value means every container network interface. It is not a browser destination. Use the published host address `http://127.0.0.1:8000/` instead.
 
 **Key Features:**
@@ -69,7 +87,7 @@ In a container the server must bind to `0.0.0.0` so Docker can forward traffic. 
 - **Live Activity Log**: A scrolling view of the last few events.
 - **Manual Trigger**: A "Recheck" button to force an immediate update for specific or all users.
 - **Remote Management**: Start or stop monitoring for specific or all targets with a single click.
-- **Synchronization**: Changes made in the web dashboard (like mode toggles) are reflected in the terminal instantly.
+- **Synchronization**: Saved setting and session changes wake active monitors then rebuild their monitoring context before the next check.
 - **Dynamic Configuration**: Configure sessions and settings without touching the terminal or config files.
 
 Enable it with `--web-dashboard` or `WEB_DASHBOARD_ENABLED = True`.

@@ -1083,21 +1083,21 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label class="form-label">Base Interval (sec)</label>
-                            <input type="number" class="form-input" id="check-interval" min="300">
+                            <input type="number" class="form-input" id="check-interval" min="300" max="86400">
                         </div>
                         <div class="form-group">
                             <label class="form-label">Liveness Check (sec)</label>
-                            <input type="number" class="form-input" id="liveness-check-interval" min="0">
+                            <input type="number" class="form-input" id="liveness-check-interval" min="0" max="2678400">
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label class="form-label">Random Variation Low (sec)</label>
-                            <input type="number" class="form-input" id="random-low" min="0">
+                            <input type="number" class="form-input" id="random-low" min="0" max="3600">
                         </div>
                         <div class="form-group">
                             <label class="form-label">Random Variation High (sec)</label>
-                            <input type="number" class="form-input" id="random-high" min="0">
+                            <input type="number" class="form-input" id="random-high" min="0" max="3600">
                         </div>
                     </div>
                     <p style="font-size: 11px; color: #666; margin-top: -10px;">
@@ -1305,7 +1305,7 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label">SMTP Port</label>
-                            <input type="number" class="form-input" id="smtp-port" placeholder="587">
+                            <input type="number" class="form-input" id="smtp-port" min="1" max="65535" placeholder="587">
                         </div>
                     </div>
                     <div class="form-row">
@@ -1924,12 +1924,16 @@
                 <div class="fetched-history">
                     ${topUpdates.map(u => {
                 const caption = u.caption ? escapeHtml(u.caption) : '';
-                const hasThumbnail = u.url && u.url.length > 0;
+                // These URLs arrive from the Instagram API, so restrict them to http/https and escape them
+                // before they enter an attribute, exactly as the activity feed does
+                const thumbnailUrl = sameOriginUrl(u.url);
+                const postUrl = safeUrl(u.post_url);
+                const videoUrl = safeUrl(u.video_url);
                 const userPrefix = u.user ? `<span style="color: #888; margin-right: 4px;">[${escapeHtml(u.user)}]</span>` : '';
 
                 return `
                         <div class="fetched-history-item">
-                            ${hasThumbnail ? `<img src="${u.url}" loading="lazy" alt="Thumbnail">` : `
+                            ${thumbnailUrl ? `<img src="${escapeHtml(thumbnailUrl)}" loading="lazy" alt="Thumbnail">` : `
                                 <div style="width: 80px; height: 80px; background: #222; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #444; font-size: 24px;">🖼️</div>
                             `}
                             <div style="flex: 1;">
@@ -1939,10 +1943,10 @@
                                 </div>
                                 <div style="font-size: 13px; margin-bottom: 8px; color: #e0e0e0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${caption}</div>
                                 <div style="display: flex; gap: 12px; align-items: center;">
-                                    ${u.post_url ? `<a href="${u.post_url}" target="_blank" ${u.is_story ? `onclick="confirmAnonymity(event, '${u.post_url}')"` : ''} style="font-size: 12px; color: #e94560; font-weight: 600; text-decoration: underline;">${u.is_story ? 'View Story' : 'View Post'}</a>` : ''}
-                                    ${u.video_url ? `
-                                        <a href="${u.video_url}" target="_blank" onclick="playVideo(event, '${u.video_url}')" style="font-size: 12px; color: #4ade80; text-decoration: underline; font-weight: 600;">Play Video</a>
-                                    ` : (u.url ? `<a href="${u.url}" target="_blank" style="font-size: 12px; color: #bbb; text-decoration: underline;">View Media</a>` : '')}
+                                    ${postUrl ? `<a href="${escapeHtml(postUrl)}" target="_blank" ${u.is_story ? 'onclick="confirmAnonymity(event, this.href)"' : ''} style="font-size: 12px; color: #e94560; font-weight: 600; text-decoration: underline;">${u.is_story ? 'View Story' : 'View Post'}</a>` : ''}
+                                    ${videoUrl ? `
+                                        <a href="${escapeHtml(videoUrl)}" target="_blank" onclick="playVideo(event, this.href)" style="font-size: 12px; color: #4ade80; text-decoration: underline; font-weight: 600;">Play Video</a>
+                                    ` : (thumbnailUrl ? `<a href="${escapeHtml(thumbnailUrl)}" target="_blank" style="font-size: 12px; color: #bbb; text-decoration: underline;">View Media</a>` : '')}
                                 </div>
                             </div>
                         </div>
@@ -2059,7 +2063,8 @@
                 let msgHtml = escapeHtml(a.message);
                 if (a.details && a.details.url) {
                     const isStory = a.details.is_story === true;
-                    msgHtml += ` <a href="${a.details.url}" target="_blank" ${isStory ? `onclick="confirmAnonymity(event, '${a.details.url}')"` : ''} class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
+                    const activityUrl = safeUrl(a.details.url);
+                    if (activityUrl) msgHtml += ` <a href="${escapeHtml(activityUrl)}" target="_blank" ${isStory ? 'onclick="confirmAnonymity(event, this.href)"' : ''} class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
                 }
                 return `
                 <div class="activity-item ${levelClass}">
@@ -2110,7 +2115,7 @@
                         <tr>
                             <td>
                                 <div class="target-name">
-                                    <div class="target-avatar">${displayName.charAt(0).toUpperCase()}</div>
+                                    <div class="target-avatar">${escapeHtml(displayName.charAt(0).toUpperCase())}</div>
                                     <span><a href="https://instagram.com/${encodeURIComponent(name)}" target="_blank" style="color: inherit; text-decoration: none;">${escapeHtml(displayName)}</a></span>
                                 </div>
                             </td>
@@ -2120,11 +2125,11 @@
                             <td><span class="badge badge-${statusClass}">${escapeHtml(statusVal)}</span></td>
                             <td>
                                 <div class="target-actions">
-                                    <button class="btn btn-secondary btn-sm" onclick="triggerCheck('${escapeHtml(name)}')" title="Recheck">🔄</button>
-                                    <button class="btn btn-secondary btn-sm" onclick="showFollowAnalysis('${escapeHtml(name)}')" title="Follow analysis">📊</button>
-                                    <button class="btn btn-success btn-sm" onclick="startMonitoring('${escapeHtml(name)}')" title="Start">▶️</button>
-                                    <button class="btn btn-danger btn-sm" onclick="stopMonitoring('${escapeHtml(name)}')" title="Stop">⏹️</button>
-                                    <button class="btn btn-danger btn-sm" onclick="removeTarget('${escapeHtml(name)}')" title="Remove">🗑️</button>
+                                    <button class="btn btn-secondary btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'recheck')" title="Recheck">🔄</button>
+                                    <button class="btn btn-secondary btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'analysis')" title="Follow analysis">📊</button>
+                                    <button class="btn btn-success btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'start')" title="Start">▶️</button>
+                                    <button class="btn btn-danger btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'stop')" title="Stop">⏹️</button>
+                                    <button class="btn btn-danger btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'remove')" title="Remove">🗑️</button>
                                 </div>
                             </td>
                         </tr>
@@ -2135,7 +2140,7 @@
                     <tr>
                         <td>
                             <div class="target-name">
-                                <div class="target-avatar">${displayName.charAt(0).toUpperCase()}</div>
+                                <div class="target-avatar">${escapeHtml(displayName.charAt(0).toUpperCase())}</div>
                                 <div>
                                     <div><a href="https://instagram.com/${encodeURIComponent(name)}" target="_blank" style="color: inherit; text-decoration: none;">${escapeHtml(displayName)}</a></div>
                                     <div style="font-size: 12px; color: #666;">@${escapeHtml(displayName)}</div>
@@ -2152,16 +2157,16 @@
                         ${!isSimple ? `
                         <td>
                             <div class="target-actions">
-                                <button class="btn btn-secondary btn-sm" onclick="triggerCheck('${escapeHtml(name)}')" title="Recheck">🔄</button>
-                                <button class="btn btn-secondary btn-sm" onclick="showFollowAnalysis('${escapeHtml(name)}')" title="Follow analysis">📊</button>
-                                <button class="btn btn-success btn-sm" onclick="startMonitoring('${escapeHtml(name)}')" title="Start">▶️</button>
-                                <button class="btn btn-danger btn-sm" onclick="stopMonitoring('${escapeHtml(name)}')" title="Stop">⏹️</button>
-                                <button class="btn btn-danger btn-sm" onclick="removeTarget('${escapeHtml(name)}')" title="Remove">🗑️</button>
+                                <button class="btn btn-secondary btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'recheck')" title="Recheck">🔄</button>
+                                <button class="btn btn-secondary btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'analysis')" title="Follow analysis">📊</button>
+                                <button class="btn btn-success btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'start')" title="Start">▶️</button>
+                                <button class="btn btn-danger btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'stop')" title="Stop">⏹️</button>
+                                <button class="btn btn-danger btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'remove')" title="Remove">🗑️</button>
                             </div>
                         </td>` : `
                         <td>
                             <div class="target-actions">
-                                <button class="btn btn-secondary btn-sm" onclick="showFollowAnalysis('${escapeHtml(name)}')" title="Follow analysis">📊</button>
+                                <button class="btn btn-secondary btn-sm" data-target="${escapeHtml(name)}" onclick="handleTargetAction(this, 'analysis')" title="Follow analysis">📊</button>
                             </div>
                         </td>`}
                     </tr>
@@ -2203,7 +2208,8 @@
                 let msgHtml = escapeHtml(a.message);
                 if (a.details && a.details.url) {
                     const isStory = a.details.is_story === true;
-                    msgHtml += ` <a href="${a.details.url}" target="_blank" ${isStory ? `onclick="confirmAnonymity(event, '${a.details.url}')"` : ''} class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
+                    const activityUrl = safeUrl(a.details.url);
+                    if (activityUrl) msgHtml += ` <a href="${escapeHtml(activityUrl)}" target="_blank" ${isStory ? 'onclick="confirmAnonymity(event, this.href)"' : ''} class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
                 }
                 return `
                 <div class="activity-item ${levelClass}">
@@ -2228,13 +2234,17 @@
 
             document.getElementById('webhook-enabled').checked = s.webhook_enabled || false;
             document.getElementById('webhook-provider').value = s.webhook_provider || 'discord';
-            document.getElementById('webhook-url').value = s.webhook_url || '';
+            const webhookUrl = document.getElementById('webhook-url');
+            webhookUrl.value = '';
+            webhookUrl.placeholder = s.webhook_url_set ? 'Configured - enter a new URL to replace it' : '';
             document.getElementById('webhook-status').checked = s.webhook_status || false;
             document.getElementById('webhook-followers').checked = s.webhook_followers || false;
             document.getElementById('webhook-errors').checked = s.webhook_errors || false;
 
             document.getElementById('proxy-enabled').checked = s.proxy_enabled || false;
-            document.getElementById('proxy-url').value = s.proxy_url || '';
+            const proxyUrl = document.getElementById('proxy-url');
+            proxyUrl.value = '';
+            proxyUrl.placeholder = s.proxy_url_set ? 'Configured - enter a new URL to replace it' : '';
             document.getElementById('proxy-cert').value = s.proxy_cert || '';
             document.getElementById('proxy-webhooks').checked = s.proxy_webhooks || false;
 
@@ -2324,7 +2334,7 @@
             if (!confirm(`Remove ${username} from monitoring?`)) return;
 
             try {
-                const response = await fetch(`/api/targets/${username}`, { method: 'DELETE' });
+                const response = await apiRequest(`/api/targets/${encodeURIComponent(username)}`, 'DELETE');
                 const data = await response.json();
                 if (data.success) {
                     showToast(`Removed target: ${username}`);
@@ -2477,7 +2487,7 @@
         }
 
         function getSettingsFromForm() {
-            return {
+            const formSettings = {
                 check_interval: parseInt(document.getElementById('check-interval').value),
                 liveness_check_interval: parseInt(document.getElementById('liveness-check-interval').value),
                 random_low: parseInt(document.getElementById('random-low').value),
@@ -2533,6 +2543,9 @@
                 sender_email: document.getElementById('sender-email').value,
                 receiver_email: document.getElementById('receiver-email').value
             };
+            if (!formSettings.webhook_url) delete formSettings.webhook_url;
+            if (!formSettings.proxy_url) delete formSettings.proxy_url;
+            return formSettings;
         }
 
         async function saveSettings() {
@@ -2546,17 +2559,8 @@
                 });
                 const data = await response.json();
                 if (data.success) {
-                    if (data.changes && data.changes.length > 0) {
-                        const hasLimit = data.changes.some(c => c.includes('(min 300s limit)'));
-                        if (hasLimit) {
-                            showToast('Settings saved (some values capped to limits)', 'warning');
-                        } else {
-                            showToast('Settings saved');
-                        }
-                    } else {
-                        showToast('Settings saved');
-                    }
-                    // Refresh values from backend to reflect any server-side adjustments (like limits)
+                    showToast('Settings saved');
+                    // Refresh values from the backend after the atomic settings update
                     fetchSettings();
                 } else {
                     showToast(data.error || 'Failed to save settings', 'error');
@@ -2596,7 +2600,7 @@
         async function testEmail() {
             try {
                 showToast('Sending test email...');
-                const response = await fetch('/api/test-email', { method: 'POST' });
+                const response = await apiRequest('/api/test-email');
                 const data = await response.json();
                 if (data.success) {
                     showToast('Test email sent successfully');
@@ -2611,7 +2615,7 @@
         async function testWebhook() {
             try {
                 showToast('Sending test webhook...');
-                const response = await fetch('/api/test-webhook', { method: 'POST' });
+                const response = await apiRequest('/api/test-webhook');
                 const data = await response.json();
                 if (data.success) {
                     showToast('Test webhook sent successfully');
@@ -2761,7 +2765,7 @@
         async function testSession() {
             try {
                 showToast('Testing session...');
-                const response = await fetch('/api/session/test', { method: 'POST' });
+                const response = await apiRequest('/api/session/test');
                 const data = await response.json();
                 if (data.success) {
                     showToast(`Session valid: ${escapeHtml(data.username)}`);
@@ -2782,7 +2786,7 @@
             }
             try {
                 showToast('Refreshing session...');
-                const response = await fetch('/api/session/refresh', { method: 'POST' });
+                const response = await apiRequest('/api/session/refresh');
                 const data = await response.json();
                 if (data.success) {
                     showToast(data.message || 'Session refreshed successfully');
@@ -2802,7 +2806,7 @@
             }
             try {
                 showToast('Clearing session...');
-                const response = await fetch('/api/session/clear', { method: 'POST' });
+                const response = await apiRequest('/api/session/clear');
                 const data = await response.json();
                 if (data.success) {
                     showToast(data.message || 'Session cleared');
@@ -2892,8 +2896,13 @@
             activities = [];
             renderActivities();
             renderDashboardActivities();
-            await fetch('/api/activity/clear', { method: 'POST' });
+            await apiRequest('/api/activity/clear');
             showToast('Activity log cleared');
+        }
+
+        // Sends one state-changing request with the JSON content type the server requires
+        function apiRequest(url, method = 'POST', payload = {}) {
+            return fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         }
 
         // HTML escaping function to prevent XSS
@@ -2907,6 +2916,39 @@
                 "'": '&#039;'
             };
             return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+
+        // Returns a URL only when it points back at this dashboard, so images cannot load from a third party.
+        // A remote thumbnail would otherwise reveal the viewer's address to Instagram's CDN on every refresh
+        function sameOriginUrl(value) {
+            const url = safeUrl(value);
+            if (!url) return '';
+            try {
+                return new URL(url).origin === window.location.origin ? url : '';
+            } catch (_) {
+                return '';
+            }
+        }
+
+        // Returns only browser-safe HTTP and HTTPS URLs
+        function safeUrl(value) {
+            try {
+                const url = new URL(String(value), window.location.origin);
+                if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+                return url.href;
+            } catch (_) {
+                return '';
+            }
+        }
+
+        // Dispatches a target action using the inert data attribute value
+        function handleTargetAction(button, action) {
+            const username = button.dataset.target;
+            if (action === 'recheck') triggerCheck(username);
+            else if (action === 'analysis') showFollowAnalysis(username);
+            else if (action === 'start') startMonitoring(username);
+            else if (action === 'stop') stopMonitoring(username);
+            else if (action === 'remove') removeTarget(username);
         }
 
         function confirmAnonymity(event, url) {

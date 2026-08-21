@@ -20,6 +20,10 @@ class _FakeBot:
         return "me"
 
 
+def _unreachable_smtp(*args, **kwargs):
+    raise AssertionError("Doctor must not open an SMTP connection when the configuration cannot deliver")
+
+
 def _setup_no_network(monkeypatch, im):
     monkeypatch.setattr(im.instaloader, "Instaloader", lambda *a, **k: _FakeBot())
     monkeypatch.setattr(im, "profile_from_username_resilient", lambda bot, user: object())
@@ -40,17 +44,167 @@ class TestDoctorLine:
         assert out.splitlines()[-1] == "  the-detail"
 
 
+class TestDoctorChecks:
+    # Checks are data, so a caller can assert on them without parsing rendered console output
+    def test_make_doctor_check_rejects_an_unknown_status(self, im_module):
+        with pytest.raises(ValueError, match="Unsupported doctor status"):
+            im_module.make_doctor_check("Environment", "broken", "label")
+
+    # A configuration rejected at startup becomes a failing check carrying its fix and guide
+    def test_configuration_rejection_becomes_a_failing_check(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
+        errors = [{"summary": "* Error loading config file 'x.conf':", "detail": "line 2: bad", "fix": "use documented settings."}]
+
+        checks = im_module.doctor_check_configuration([], errors, ())
+        failures = [check for check in checks if check.status == "fail"]
+
+        assert len(failures) == 1
+        assert failures[0].label == "Error loading config file 'x.conf'"
+        assert failures[0].fix == "use documented settings."
+        assert failures[0].guide == im_module.CONFIG_FILE_GUIDE_URL
+
+    # A retired setting is a warning that still names the file and links the guide
+    def test_retired_settings_become_a_warning_check(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: "im.conf")
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
+
+        checks = im_module.doctor_check_configuration([], (), ["DISCORD_MAX_FIELDS"])
+        warnings = [check for check in checks if check.status == "warn"]
+
+        assert len(warnings) == 1
+        assert "DISCORD_MAX_FIELDS" in warnings[0].detail
+        assert warnings[0].guide == im_module.CONFIG_FILE_GUIDE_URL
+
+    # Session advice is derived from the shared fix hints so Doctor and monitoring stay consistent
+    def test_session_failure_carries_the_shared_fix_hint(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "someacct", raising=False)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", False, raising=False)
+        report = im_module.DoctorReport()
+
+        class _NoSession:
+            def load_session_from_file(self, username):
+                raise FileNotFoundError()
+
+        report.bot = _NoSession()
+        checks = im_module.doctor_check_session(report)
+
+        assert checks[0].status == "fail"
+        assert "no saved session" in checks[0].fix
+        assert checks[0].guide == im_module.SESSION_IMPORT_GUIDE_URL
+
+    # A valid webhook configuration records readiness on the report for the later delivery offer
+    def test_valid_webhook_marks_the_report_ready(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SMTP_HOST", "your_smtp_server_ssl", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.sh/private-topic", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "ntfy", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_HEADERS", {}, raising=False)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        assert report.webhook_ready is True
+        assert any(check.status == "ok" and "Webhook URL" in check.label for check in checks)
+
+    # Configured SMTP credentials with placeholder addresses cannot deliver, so Doctor must not report a working setup
+    def test_placeholder_email_addresses_fail_before_login(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.com", raising=False)
+        monkeypatch.setattr(im_module, "SMTP_USER", "user", raising=False)
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "secret", raising=False)
+        monkeypatch.setattr(im_module, "SENDER_EMAIL", "your_sender_email", raising=False)
+        monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "your_receiver_email", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "", raising=False)
+        monkeypatch.setattr(im_module.smtplib, "SMTP", _unreachable_smtp)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        assert report.smtp_ready is False
+        failure = next(check for check in checks if check.status == "fail")
+        assert failure.label == "Email address is not set in SENDER_EMAIL and RECEIVER_EMAIL"
+        assert failure.guide == im_module.SMTP_GUIDE_URL
+
+    # The shipped WEBHOOK_URL placeholder means the webhook was never configured, not that it is broken
+    def test_webhook_placeholder_is_not_a_failure(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SMTP_HOST", "your_smtp_server_ssl", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "your_webhook_url", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", False, raising=False)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        assert report.webhook_ready is False
+        assert not any(check.status == "fail" for check in checks)
+        assert any(check.status == "info" and "Webhook notifications not configured" in check.label for check in checks)
+
+    # An enabled webhook still holding the placeholder is a warning about missing setup, not an invalid URL
+    def test_enabled_webhook_placeholder_warns_about_setup(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SMTP_HOST", "your_smtp_server_ssl", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "your_webhook_url", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True, raising=False)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        assert not any(check.status == "fail" for check in checks)
+        assert any(check.status == "warn" and "WEBHOOK_URL is not set" in check.label for check in checks)
+
+    # Every failure a user sees must offer an action, which is what the renderer guarantees
+    def test_renderer_prints_an_action_for_every_failure(self, im_module, capsys, monkeypatch):
+        monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+        report = im_module.DoctorReport()
+        report.checks = [
+            im_module.make_doctor_check("Session", "fail", "broken", "detail text", "do the thing.", "https://example.invalid/guide"),
+            im_module.make_doctor_check("Targets", "ok", "fine"),
+        ]
+
+        im_module.render_doctor_report(report)
+        out = capsys.readouterr().out
+
+        assert "[FAIL] broken\n  detail text\nTo fix: do the thing.\nGuide: https://example.invalid/guide" in out
+        assert "To fix:" not in out.split("[ OK ] fine", 1)[1]
+
+    # The renderer owns the 'To fix:' prefix, so a recorded action must not carry its own
+    def test_recorded_config_actions_do_not_repeat_the_prefix(self, im_module, tmp_path, monkeypatch):
+        monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
+        config_path = tmp_path / "im.conf"
+        config_path.write_text("NOT_A_REAL_SETTING = 1\n", encoding="utf-8")
+        errors = []
+
+        assert im_module.load_config_file(str(config_path), {}, error_out=errors, report_errors=False) is False
+        assert errors and not errors[0]["fix"].startswith("To fix:")
+
+        checks = im_module.doctor_check_configuration([], errors, ())
+        assert not any(check.fix.startswith("To fix:") for check in checks)
+
+
 class TestDoctorProgress:
     # Verifies doctor progress stops at the visible message and clears only that width
     def test_uses_visible_message_width(self, im_module, monkeypatch):
         stream = _TTYBuffer()
         monkeypatch.setattr(im_module.sys, "stdout", stream)
         monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+        im_module._doctor_progress.width = 0
         im_module._doctor_progress("Checking authentication")
         line = "Checking authentication ..."
         assert stream.getvalue() == "\r" + line
         im_module._doctor_progress_clear()
         assert stream.getvalue() == "\r" + line + "\r" + (" " * len(line)) + "\r"
+
+    # Verifies a shorter progress message fully erases the longer one it replaces
+    def test_erases_previous_longer_message(self, im_module, monkeypatch):
+        stream = _TTYBuffer()
+        monkeypatch.setattr(im_module.sys, "stdout", stream)
+        monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+        im_module._doctor_progress.width = 0
+        im_module._doctor_progress("Contacting Instagram")
+        first = "Contacting Instagram ..."
+        im_module._doctor_progress("Looking up 'testuser'")
+        second = "Looking up 'testuser' ..."
+        expected = "\r" + first + "\r" + (" " * len(first)) + "\r" + "\r" + second
+        assert stream.getvalue() == expected
 
 
 class TestRunDoctor:
@@ -176,7 +330,7 @@ class TestRunDoctor:
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
         monkeypatch.setattr(im_module, "check_internet", lambda: (_ for _ in ()).throw(AssertionError("global connectivity gate should be skipped")))
         monkeypatch.setattr(im_module, "clear_screen", clear_mock)
-        monkeypatch.setattr(im_module, "run_doctor", lambda targets: calls.append(list(targets)) or 0)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, *doctor_findings: calls.append(list(targets)) or 0)
 
         with pytest.raises(SystemExit) as exc:
             im_module.run_main()
@@ -192,7 +346,7 @@ class TestRunDoctor:
         monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
         monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
-        monkeypatch.setattr(im_module, "run_doctor", lambda targets: providers.append(im_module.WEBHOOK_PROVIDER) or 0)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, *doctor_findings: providers.append(im_module.WEBHOOK_PROVIDER) or 0)
 
         with pytest.raises(SystemExit) as exc:
             im_module.run_main()
@@ -204,7 +358,7 @@ class TestRunDoctor:
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--env-file", "none", "--no-color"])
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
         monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
-        monkeypatch.setattr(im_module, "run_doctor", lambda targets: 0)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, *doctor_findings: 0)
 
         with pytest.raises(SystemExit) as exc:
             im_module.run_main()
@@ -215,11 +369,43 @@ class TestRunDoctor:
         assert "target.user --env-file none" in output
         assert "--doctor" not in output.split("After Doctor passes, start monitoring:", 1)[1]
 
+    # Doctor exists to explain a broken setup, so a rejected config must reach it instead of exiting first
+    def test_cli_doctor_reports_a_rejected_config_instead_of_exiting(self, im_module, monkeypatch, tmp_path):
+        config_path = tmp_path / "instagram_monitor.conf"
+        config_path.write_text("INSTA_CHECK_INTERVAL = 5400\nNOT_A_REAL_SETTING = 1\n", encoding="utf-8")
+        received = {}
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--config-file", str(config_path), "--env-file", "none", "--no-color"])
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, errors=(), retired=(): received.update(errors=list(errors), retired=list(retired)) or len(errors))
+
+        with pytest.raises(SystemExit) as exc:
+            im_module.run_main()
+
+        assert exc.value.code == 1
+        assert len(received["errors"]) == 1
+        assert "NOT_A_REAL_SETTING" in received["errors"][0]["summary"]
+
+    # A setting a later release removed is a warning Doctor reports, not a reason to reject the file
+    def test_cli_doctor_reports_retired_settings_as_a_warning(self, im_module, monkeypatch, tmp_path):
+        config_path = tmp_path / "instagram_monitor.conf"
+        config_path.write_text("INSTA_CHECK_INTERVAL = 5400\nDISCORD_MAX_FIELDS = 25\n", encoding="utf-8")
+        received = {}
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--config-file", str(config_path), "--env-file", "none", "--no-color"])
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, errors=(), retired=(): received.update(errors=list(errors), retired=list(retired)) or 0)
+
+        with pytest.raises(SystemExit) as exc:
+            im_module.run_main()
+
+        assert exc.value.code == 0
+        assert received["errors"] == []
+        assert received["retired"] == ["DISCORD_MAX_FIELDS"]
+
     def test_cli_doctor_failure_does_not_print_monitoring_command(self, im_module, monkeypatch, capsys):
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--env-file", "none", "--no-color"])
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
         monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
-        monkeypatch.setattr(im_module, "run_doctor", lambda targets: 1)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, *doctor_findings: 1)
 
         with pytest.raises(SystemExit) as exc:
             im_module.run_main()
@@ -297,4 +483,4 @@ class TestDoctorDeliveryTests:
         monkeypatch.setattr(im_module, "send_webhook", delivery)
         assert im_module._doctor_send_test_webhook() == 0
         assert im_module.WEBHOOK_ENABLED is False
-        delivery.assert_called_once_with("Instagram Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type="doctor")
+        delivery.assert_called_once_with("Instagram Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type=im_module.WEBHOOK_TEST_NOTIFICATION_TYPE)

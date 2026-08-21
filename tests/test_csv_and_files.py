@@ -116,3 +116,36 @@ class TestCompareImages:
         if not os.path.isfile(template):
             pytest.skip("empty profile pic template not present")
         assert im_module.compare_images(template, template) is True
+
+
+class TestCsvFormulaEscaping:
+    # Instagram-supplied text that a spreadsheet would evaluate is neutralized before it is written
+    @pytest.mark.parametrize("payload", ["=cmd|'/C calc'!A1", "+1+1", "-2+3", "@SUM(A1)", "\tlead", "\rlead"])
+    def test_formula_prefixes_are_neutralized(self, im_module, tmp_path, payload):
+        csv_path = str(tmp_path / "out.csv")
+
+        im_module.write_csv_entry(csv_path, "2026-01-01 00:00:00", "Bio Changed", "old", payload)
+
+        with open(csv_path, newline="", encoding="utf-8") as handle:
+            row = list(csv.reader(handle))[1]
+        assert row[3] == f"'{payload}"
+
+    # Ordinary captions and counts are written unchanged so stored data stays faithful
+    @pytest.mark.parametrize("old,new", [("plain bio", "new bio"), (10, 12), ("", "a caption")])
+    def test_ordinary_values_are_written_unchanged(self, im_module, tmp_path, old, new):
+        csv_path = str(tmp_path / "out.csv")
+
+        im_module.write_csv_entry(csv_path, "2026-01-01 00:00:00", "Followers Count", old, new)
+
+        with open(csv_path, newline="", encoding="utf-8") as handle:
+            row = list(csv.reader(handle))[1]
+        assert row[2] == str(old) and row[3] == str(new)
+
+    # A negative count stays numeric because only text values can carry a formula
+    def test_negative_counts_are_not_quoted_as_text(self, im_module, tmp_path):
+        csv_path = str(tmp_path / "out.csv")
+
+        im_module.write_csv_entry(csv_path, "2026-01-01 00:00:00", "Followers Count", 5, -3)
+
+        with open(csv_path, newline="", encoding="utf-8") as handle:
+            assert list(csv.reader(handle))[1][3] == "-3"

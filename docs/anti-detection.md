@@ -30,6 +30,10 @@ After a check cycle, the tool may perform one or more of these requests:
 - fetch one post from a tag listed in `MY_HASHTAGS`
 - open the profile of an account followed by the session account
 
+Leaving `MY_HASHTAGS` empty simply skips the hashtag request. The other actions still run.
+
+The followee visit reads only the first page of accounts your session follows before picking one, so the simulation stays a few requests rather than paginating a large following list.
+
 By default, it performs about five of these actions over 24 hours. Change the limit with `DAILY_HUMAN_HITS`.
 
 Set `BE_HUMAN_VERBOSE = True` to log each action.
@@ -37,7 +41,7 @@ Set `BE_HUMAN_VERBOSE = True` to log each action.
 <a id="use-the-jitter-mode"></a>
 ## Use the Jitter Mode
 
-Jitter mode adds a random delay of 0.8 to 3 seconds before each Instaloader request. It also retries HTTP 429 responses and checkpoint challenges after increasingly long waits of about 60, 120 and 240 seconds.
+Jitter mode adds a random delay of about 0.8 to 6 seconds before Instagram requests made by Instaloader. It also retries Instagram HTTP 429 responses and checkpoint challenges after increasingly long waits of about 60, 120 and 240 seconds. Media downloads, webhooks, proxy IP checks and other non-Instagram requests do not inherit these delays or backoff rules.
 
 The extra waits make monitoring slower. They may help with temporary rate limits but they do not guarantee that Instagram will accept the requests.
 

@@ -29,11 +29,11 @@ class TestStartupNotificationSummary:
 
 
 class TestValidateWebhookUrl:
-    @pytest.mark.parametrize("url", ["https://discord.com/api/webhooks/123/abc", "https://example.com/hook", "https://ntfy.example.test/private-topic?auth=value"])
+    @pytest.mark.parametrize("url", ["https://discord.com/api/webhooks/123/abc", "https://example.com/hook", "https://example.com/", "https://example.com", "https://example.com/?token=value", "https://ntfy.example.test/private-topic?auth=value"])
     def test_valid_urls(self, im_module, url):
         assert im_module.validate_webhook_url(url) is True
 
-    @pytest.mark.parametrize("url", ["", None, "http://example.com/hook", "https://user:password@example.com/hook", "https://example.com", "ftp://example.com/hook", "discord.com/webhook", "https://"])
+    @pytest.mark.parametrize("url", ["", None, "http://example.com/hook", "https://user:password@example.com/hook", "ftp://example.com/hook", "discord.com/webhook", "https://"])
     def test_invalid_urls(self, im_module, url):
         assert im_module.validate_webhook_url(url) is False
 
@@ -46,6 +46,30 @@ class TestValidateProxyUrl:
     @pytest.mark.parametrize("url", ["", None, "ftp://example.com", "https://"])
     def test_invalid_urls(self, im_module, url):
         assert im_module.validate_proxy_url(url) is False
+
+
+class TestValidateFqdn:
+    # Accepts ordinary SMTP hostnames including a final DNS root dot
+    @pytest.mark.parametrize("hostname", ["smtp.example.com", "mail-2.eu.example.org", "smtp.example.com."])
+    def test_valid_hostnames(self, im_module, hostname):
+        assert im_module.is_valid_fqdn(hostname) is True
+
+    # Rejects malformed and unbounded hostnames without running a backtracking expression
+    @pytest.mark.parametrize("hostname", ["", "localhost", "-smtp.example.com", "smtp-.example.com", "smtp.example.123", f"{'a' * 64}.example.com", f"{'a.' * 130}com"])
+    def test_invalid_hostnames(self, im_module, hostname):
+        assert im_module.is_valid_fqdn(hostname) is False
+
+
+class TestValidateEmailAddress:
+    # Accepts the same mailbox forms as the prior expression through direct linear parsing
+    @pytest.mark.parametrize("address", ["alerts@example.com", "monitor+daily@mail-2.example.org", "alerts@example.c", " display name <alerts@example.com> "])
+    def test_valid_addresses(self, im_module, address):
+        assert im_module.is_valid_email_address(address) is True
+
+    # Rejects values that lack a mailbox, domain label or suffix without applying a backtracking expression
+    @pytest.mark.parametrize("address", ["", "alerts", "alerts@example", "@example.com", "alerts@.com", "alerts@example."])
+    def test_invalid_addresses(self, im_module, address):
+        assert im_module.is_valid_email_address(address) is False
 
 
 class TestNormalizeNtfyTopicUrl:

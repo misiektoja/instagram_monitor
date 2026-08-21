@@ -4,6 +4,8 @@ import re
 import textwrap
 from pathlib import Path
 
+import yaml
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -182,3 +184,121 @@ def test_release_notes_use_current_documentation_links():
     for fragment in ("view-modes/#terminal-dashboard-mode", "view-modes/#web-dashboard-mode", "usage/#webhook-notifications", "usage/#follower-churn-detection", "usage/#output-directory", "usage/#skipping-follow-changes", "anti-detection/#use-the-human-mode", "anti-detection/#use-the-jitter-mode", "configuration/#user-agent"):
         assert f"https://misiektoja.github.io/instagram_monitor/{fragment}" in release_notes
     assert "https://github.com/misiektoja/instagram_monitor#" not in release_notes
+
+
+# Parses one repository YAML asset
+def read_yaml_asset(relative_path: str):
+    return yaml.safe_load(read_asset(relative_path))
+
+
+# Returns the distribution names declared in one pyproject dependency list
+def declared_dependency_names(block: str) -> set:
+    return {re.split(r"[<>=!;\[ ]", entry.strip(), maxsplit=1)[0] for entry in re.findall(r'"([^"]+)"', block)}
+
+
+# Verifies the repository keeps the community and licensing documents contributors are pointed to
+def test_repository_governance_documents_exist():
+    for relative_path in ("SECURITY.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "THIRD_PARTY_NOTICES.md", "LICENSE", ".github/pull_request_template.md"):
+        asset = PROJECT_ROOT / relative_path
+        assert asset.is_file(), relative_path
+        assert asset.stat().st_size > 200, relative_path
+
+    owners = read_asset(".github/CODEOWNERS")
+    assert re.search(r"^\*\s+@\S+", owners, re.M)
+
+
+# Verifies each issue template is a well-formed GitHub issue form, since a malformed one silently stops rendering
+def test_issue_templates_are_valid_issue_forms():
+    templates = sorted((PROJECT_ROOT / ".github" / "ISSUE_TEMPLATE").glob("*.yml"))
+    assert {template.name for template in templates} == {"bug_report.yml", "config.yml", "feature_request.yml"}
+
+    for template in templates:
+        if template.name == "config.yml":
+            continue
+        form = yaml.safe_load(template.read_text(encoding="utf-8"))
+        assert form["name"] and form["description"] and form["labels"], template.name
+        for element in form["body"]:
+            assert element["type"] in {"markdown", "input", "textarea", "dropdown", "checkboxes"}, template.name
+            if element["type"] == "markdown":
+                assert element["attributes"]["value"], template.name
+                continue
+            assert element["id"] and element["attributes"]["label"], template.name
+            if element["type"] == "dropdown":
+                assert len(element["attributes"]["options"]) >= 2, template.name
+
+
+# Verifies the issue chooser routes vulnerabilities to private reporting instead of a public issue
+def test_issue_chooser_routes_vulnerabilities_privately():
+    config = read_yaml_asset(".github/ISSUE_TEMPLATE/config.yml")
+    assert config["blank_issues_enabled"] is False
+    urls = {link["url"] for link in config["contact_links"]}
+    assert "https://github.com/misiektoja/instagram_monitor/security/advisories/new" in urls
+    assert "https://misiektoja.github.io/instagram_monitor/" in urls
+
+    bug_report = read_asset(".github/ISSUE_TEMPLATE/bug_report.yml")
+    assert "SECURITY.md" in bug_report
+
+
+# Verifies the security policy names the private channel and the secrets a report must never carry
+def test_security_policy_documents_private_reporting():
+    policy = read_asset("SECURITY.md")
+    assert "https://github.com/misiektoja/instagram_monitor/security/advisories/new" in policy
+    assert_concepts(policy, "Do not open a public issue", "session cookies", "webhook URLs", "Supported versions")
+
+
+# Verifies contributing guidance states the checks CI actually enforces
+def test_contributing_documents_the_enforced_checks():
+    contributing = read_asset("CONTRIBUTING.md")
+    commands = fenced_code_lines(contributing)
+    assert "python -m pytest" in commands
+    assert "mkdocs build --strict" in commands
+    assert_concepts(contributing, "RELEASE_NOTES.md", "SECURITY.md", "GPL-3.0-or-later", "dev")
+
+
+# Verifies every dependency source in the repository is watched for updates, not only actions and the base image
+def test_dependabot_watches_every_dependency_source():
+    updates = read_yaml_asset(".github/dependabot.yml")["updates"]
+    watched = {(entry["package-ecosystem"], entry["directory"]) for entry in updates}
+    assert ("github-actions", "/") in watched
+    assert ("docker", "/") in watched
+    assert ("pip", "/") in watched
+    assert ("pip", "/docs") in watched
+    assert all(entry["target-branch"] == "dev" for entry in updates)
+
+
+# Verifies third-party notices stay in step with the dependencies the package actually declares
+def test_third_party_notices_cover_every_declared_dependency():
+    pyproject = read_asset("pyproject.toml")
+    notices = read_asset("THIRD_PARTY_NOTICES.md")
+
+    runtime_block = re.search(r"^dependencies = \[(.*?)^\]", pyproject, re.M | re.S)
+    optional_block = re.search(r"^\[project\.optional-dependencies\](.*?)^\[", pyproject, re.M | re.S)
+    assert runtime_block is not None and optional_block is not None
+
+    declared = declared_dependency_names(runtime_block.group(1)) | declared_dependency_names(optional_block.group(1))
+    # Build backends are covered as a group rather than named one by one
+    declared -= {"build", "setuptools", "wheel"}
+
+    missing = sorted(name for name in declared if name.casefold() not in notices.casefold())
+    assert missing == []
+    assert_concepts(notices, "GPL-3.0-or-later", "python:3.14-slim-bookworm", "instaloader")
+
+
+# Verifies the code scanning and supply chain workflows stay present and keep analyzing this project's language
+def test_security_workflows_cover_code_and_supply_chain():
+    workflow_directory = PROJECT_ROOT / ".github" / "workflows"
+    for name in ("supply-chain.yml", "codeql.yml", "scorecard.yml"):
+        assert (workflow_directory / name).is_file(), name
+
+    codeql = read_yaml_asset(".github/workflows/codeql.yml")
+    initialize = next(step for step in codeql["jobs"]["analyze"]["steps"] if "codeql-action/init" in step.get("uses", ""))
+    assert initialize["with"]["languages"] == "python"
+    assert codeql["jobs"]["analyze"]["permissions"]["security-events"] == "write"
+
+    # Publishing the result is what keeps the README badge current, so it must not be silently switched off
+    scorecard = read_yaml_asset(".github/workflows/scorecard.yml")
+    analysis = next(step for step in scorecard["jobs"]["analysis"]["steps"] if "scorecard-action" in step.get("uses", ""))
+    assert analysis["with"]["publish_results"] is True
+
+    supply_chain = read_yaml_asset(".github/workflows/supply-chain.yml")
+    assert {"gitleaks", "pip-audit", "sbom", "image-scan"} <= set(supply_chain["jobs"])

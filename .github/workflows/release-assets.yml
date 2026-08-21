@@ -13,15 +13,24 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Build archives from release tag
         shell: bash
+        # The tag reaches the script through the environment so it cannot be interpreted as shell syntax
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          TAG="${{ github.event.release.tag_name }}"
+          TAG="$RELEASE_TAG"
+
+          if [[ ! "$TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Refusing unsafe release tag: $TAG" >&2
+            exit 1
+          fi
+
           PREFIX="instagram_monitor_${TAG}"
 
           git archive --format=zip --output "${PREFIX}.zip" "${TAG}"
@@ -30,7 +39,7 @@ jobs:
           ls -lh "${PREFIX}.zip" "${PREFIX}.tar.gz"
 
       - name: Upload archives to GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           files: |
             instagram_monitor_${{ github.event.release.tag_name }}.zip
