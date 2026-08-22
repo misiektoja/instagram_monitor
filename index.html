@@ -944,17 +944,15 @@
 
 
 <h1 id="instagram_monitor">instagram_monitor<a class="headerlink" href="#instagram_monitor" title="Permanent link">&para;</a></h1>
-<p align="left">
-  <img src="https://img.shields.io/github/v/release/misiektoja/instagram_monitor?style=flat-square&color=blue" alt="GitHub Release" />
-  <img src="https://img.shields.io/pypi/v/instagram_monitor?style=flat-square&color=teal" alt="PyPI Version" />
-  <img src="https://img.shields.io/github/stars/misiektoja/instagram_monitor?style=flat-square&color=magenta" alt="GitHub Stars" />
-  <img src="https://img.shields.io/badge/python-3.9+-blueviolet?style=flat-square" alt="Python Versions" />
-  <img src="https://img.shields.io/docker/pulls/misiektoja/instagram-monitor?style=flat-square&logo=docker" alt="Docker Pulls" />
-  <img src="https://img.shields.io/github/license/misiektoja/instagram_monitor?style=flat-square&color=blue" alt="License" />
-  <img src="https://img.shields.io/github/last-commit/misiektoja/instagram_monitor?style=flat-square&color=green" alt="Last Commit" />
-  <img src="https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square" alt="Maintenance" />
-</p>
-
+<p><a href="https://github.com/misiektoja/instagram_monitor/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/misiektoja/instagram_monitor?style=flat-square&amp;color=blue" /></a>
+<a href="https://pypi.org/project/instagram-monitor/"><img alt="PyPI Version" src="https://img.shields.io/pypi/v/instagram_monitor?style=flat-square&amp;color=teal" /></a>
+<a href="https://github.com/misiektoja/instagram_monitor"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/misiektoja/instagram_monitor?style=flat-square&amp;color=magenta" /></a>
+<a href="https://pypi.org/project/instagram-monitor/"><img alt="Python Versions" src="https://img.shields.io/badge/python-3.9+-blueviolet?style=flat-square" /></a>
+<a href="https://hub.docker.com/r/misiektoja/instagram-monitor"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/misiektoja/instagram-monitor?style=flat-square&amp;logo=docker" /></a>
+<a href="https://github.com/misiektoja/instagram_monitor/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/misiektoja/instagram_monitor?style=flat-square&amp;color=blue" /></a>
+<a href="https://scorecard.dev/viewer/?uri=github.com/misiektoja/instagram_monitor"><img alt="OpenSSF Scorecard" src="https://img.shields.io/ossf-scorecard/github.com/misiektoja/instagram_monitor?style=flat-square&amp;label=openssf%20scorecard" /></a>
+<a href="https://github.com/misiektoja/instagram_monitor/commits/main"><img alt="Last Commit" src="https://img.shields.io/github/last-commit/misiektoja/instagram_monitor?style=flat-square&amp;color=green" /></a>
+<a href="https://github.com/misiektoja/instagram_monitor"><img alt="Maintenance" src="https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square" /></a></p>
 <p>Powerful, real-time OSINT suite for tracking every activity on Instagram - from story updates and bio changes to follower shifts, providing stunning dashboards and instant alerts to keep you in the loop.</p>
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="100%"/>
@@ -972,20 +970,20 @@
 <h4 id="docker-image-fastest-container-setup">Docker image - fastest container setup<a class="headerlink" href="#docker-image-fastest-container-setup" title="Permanent link">&para;</a></h4>
 <h5 id="macos-or-windows">macOS or Windows<a class="headerlink" href="#macos-or-windows" title="Permanent link">&para;</a></h5>
 <p>Use a macOS shell or Windows PowerShell with a Docker-compatible runtime that provides the <code>docker</code> CLI.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--pull<span class="o">=</span>always<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--pull<span class="o">=</span>always<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z"</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
 </code></pre></div>
 <p>In Windows Command Prompt replace <code>${PWD}</code> with <code>%cd%</code> above.</p>
 <h5 id="linux">Linux<a class="headerlink" href="#linux" title="Permanent link">&para;</a></h5>
 <p>Run the container with your numeric user and group IDs (<code>--user "$(id -u):$(id -g)"</code> below). This lets the container write files that your host account can edit.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--pull<span class="o">=</span>always<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--pull<span class="o">=</span>always<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">"</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">"</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$PWD</span><span class="s2">:/data:z"</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
 </code></pre></div>
 <h4 id="docker-compose-shorter-recurring-commands">Docker Compose - shorter recurring commands<a class="headerlink" href="#docker-compose-shorter-recurring-commands" title="Permanent link">&para;</a></h4>
 <p>Download the Compose file:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/docker-compose.yml
 </code></pre></div>
 <p>Linux container engine requires to export your numeric user ID and group ID so files created in the current directory belong to you instead of <code>root</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_UID</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">&quot;</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_GID</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_UID</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">"</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_GID</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">"</span>
 </code></pre></div>
 <p>Docker-compatible runtimes on macOS and Windows normally do not need these values.</p>
 <p>Run setup wizard:</p>
@@ -1042,6 +1040,7 @@
 <li><strong>CSV Logging</strong>: Log all activities and profile changes with timestamps.</li>
 <li><strong>Flexible Config</strong>: Support for files, dotenv and environment variables.</li>
 <li><strong>Follower Churn</strong>: Detailed tracking of exactly who followed or unfollowed.</li>
+<li><strong>Follow Analysis</strong>: Inspect mutual, not-following-back and fan relationships offline from saved lists with <code>--analyze-follows</code> or the Web Dashboard.</li>
 <li><strong>Batched Fetching</strong>: Throttle follower/following downloads into delayed batches.</li>
 <li><strong>Remote Control</strong>: Manage tracking features via signals or the web UI.</li>
 <li><strong>Docker Ready</strong>: Run via Docker Hub, Docker Compose or local image build with persisted config, dotenv and sessions.</li>

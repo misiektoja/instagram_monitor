@@ -1340,7 +1340,7 @@ pipx install instagram_monitor
 </code></pre></div>
 <p>Each command below that uses square brackets installs the base <code>instagram_monitor</code> package plus the named optional dependency. Run only the command that matches your needs. You do not need to run the plain install command first.</p>
 <p>Firefox session import needs no extra dependency. To import sessions from Chrome, Brave or Chromium on macOS or Linux install the browser extra:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;instagram_monitor[browser]&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"instagram_monitor[browser]"</span>
 </code></pre></div>
 <p>This installs Instagram Monitor and the optional <code>pycookiecheat</code> dependency.</p>
 <p><a id="manual-python-based-installation"></a></p>
@@ -1357,7 +1357,7 @@ pipx install instagram_monitor
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>pip<span class="w"> </span>install<span class="w"> </span>instaloader<span class="w"> </span>requests<span class="w"> </span>curl_cffi<span class="w"> </span>python-dateutil<span class="w"> </span>pytz<span class="w"> </span>tzlocal<span class="w"> </span>python-dotenv<span class="w"> </span>tqdm<span class="w"> </span>rich<span class="w"> </span>flask<span class="w"> </span>jinja2
 </code></pre></div>
 <p>To import from Chrome, Brave or Chromium on macOS or Linux, also install <code>pycookiecheat</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;pycookiecheat&gt;=0.8&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"pycookiecheat&gt;=0.8"</span>
 </code></pre></div>
 <p>Verify the script:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>python3<span class="w"> </span>instagram_monitor.py<span class="w"> </span>--version
@@ -1367,7 +1367,7 @@ pipx install instagram_monitor
 <h3 id="install-from-docker-hub">Install from Docker Hub<a class="headerlink" href="#install-from-docker-hub" title="Permanent link">&para;</a></h3>
 <p>The published <a href="https://hub.docker.com/r/misiektoja/instagram-monitor"><code>misiektoja/instagram-monitor</code></a> image supports <code>linux/amd64</code> and <code>linux/arm64</code>.</p>
 <p>No separate image download is required. Its first-run command uses <code>docker run --pull=always</code> to pull the current image and start the setup wizard in one step, so for Docker installing and setting up are a single command:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--pull<span class="o">=</span>always<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--pull<span class="o">=</span>always<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z"</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--setup
 </code></pre></div>
 <p>On a native Linux container engine, add <code>--user "$(id -u):$(id -g)"</code> immediately after <code>--init</code>. <a href="../setup-and-first-run/#new-here-run-the-setup-wizard">Setup &amp; First Run</a> shows the exact command for macOS shells, Windows PowerShell and native Linux engines then explains what the wizard asks.</p>
 <p>Normal monitoring commands reuse the installed image and do not check for a newer release. The <a href="#upgrade-a-direct-docker-installation">upgrade instructions</a> pull explicitly when you choose to upgrade.</p>
@@ -1383,8 +1383,8 @@ pipx install instagram_monitor
 </code></pre></div>
 <p>You can also download <a href="https://github.com/misiektoja/instagram_monitor/blob/main/docker-compose.yml">docker-compose.yml</a> in a browser or use the file from a cloned repository.</p>
 <p>On a native Linux container engine, the container does not automatically know which host user should own new files. Export your numeric user ID and group ID so configuration, logs and downloads created by the container belong to your account instead of <code>root</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_UID</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">&quot;</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_GID</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_UID</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">"</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_GID</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">"</span>
 </code></pre></div>
 <p>Run these commands in the same terminal that you will use for setup and later Compose commands. A new terminal will not keep the exported values. To make them permanent for this project, put the numeric results from <code>id -u</code> and <code>id -g</code> in the Compose <code>.env</code> file:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="na">INSTAGRAM_MONITOR_UID</span><span class="o">=</span><span class="s">1000</span>
@@ -1413,7 +1413,7 @@ pipx install instagram_monitor
 <a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>instagram_monitor<span class="w"> </span>--version
 </code></pre></div>
 <p>Retain the optional browser extra if you use Chrome, Brave or Chromium import:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span><span class="s2">&quot;instagram_monitor[browser]&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span><span class="s2">"instagram_monitor[browser]"</span>
 </code></pre></div>
 <h3 id="upgrade-a-manual-installation">Upgrade a Manual Installation<a class="headerlink" href="#upgrade-a-manual-installation" title="Permanent link">&para;</a></h3>
 <p>Replace <a href="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py">instagram_monitor.py</a> and <a href="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt">requirements.txt</a> with the newest copies. You can download them in a browser, use the files from an updated clone or run:</p>

@@ -538,6 +538,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#supply-chain-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supply chain checks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#browser-e2e" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -610,6 +621,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#supply-chain-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supply chain checks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#browser-e2e" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -649,21 +671,28 @@
 <p>The <a href="https://github.com/misiektoja/instagram_monitor/tree/main/tests/">tests directory</a> contains a <a href="https://docs.pytest.org/">pytest</a> suite for contributors. It checks configuration parsing, time formatting, scheduling, privacy substitutions, notifications, follower comparisons, CSV output, session error handling and user agent generation. It also builds the wheel, installs its console command and verifies documentation contracts. The tests do not contact Instagram. Network functions are replaced with local test doubles.</p>
 <p>Install the test dependencies and run the suite:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># from the repository root</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;.[test]&#39;</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">'.[test]'</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest
 </code></pre></div>
 <p>GitHub Actions runs the same suite for pull requests and pushes to <code>main</code> or <code>dev</code>. It tests every supported Python version plus the installed command on Windows. See the <a href="https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/tests.yml">test workflow</a>. The workflow also performs a strict MkDocs build, container smoke checks and a real Chromium dashboard flow. The suite must pass before a release is published to PyPI or Docker Hub.</p>
 <p>The suite intentionally excludes tests that sign in to Instagram because automated test logins could trigger security checks or suspension.</p>
+<h2 id="supply-chain-checks">Supply chain checks<a class="headerlink" href="#supply-chain-checks" title="Permanent link">&para;</a></h2>
+<p>A separate <a href="https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/supply-chain.yml">supply chain workflow</a> runs on every change and again weekly, so a vulnerability published after a merge is still caught. It scans the full commit history for leaked credentials with gitleaks, audits the resolved dependency tree with <code>pip-audit</code>, builds a CycloneDX software bill of materials that lists every package a user actually installs and scans the container image for fixable high and critical vulnerabilities.</p>
+<p>Two further workflows watch the code and the project setup. <a href="https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/codeql.yml">CodeQL</a> runs GitHub's <code>security-extended</code> Python queries on every change and weekly, reporting findings as code scanning alerts. <a href="https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/scorecard.yml">OpenSSF Scorecard</a> scores the repository's security practices, such as branch protection, action pinning and dependency update automation, and publishes the score shown as a badge on the project page.</p>
+<p>The pytest suite covers the workflows themselves. It fails when a third-party action is not pinned to a commit SHA, when a pin lacks its version comment or when a workflow passes an event value straight into a shell.</p>
+<p>Contributors can run the same workflow linting locally with <a href="https://github.com/rhysd/actionlint">actionlint</a>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>actionlint
+</code></pre></div>
 <h2 id="browser-e2e">Browser E2E<a class="headerlink" href="#browser-e2e" title="Permanent link">&para;</a></h2>
 <p>The browser test starts the dashboard on an ephemeral loopback port. Chromium
 loads the rendered page, verifies target status, opens target management and
 adds a target without starting Instagram monitoring.</p>
 <p>Install the optional browser dependencies:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;.[test,e2e]&#39;</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>python<span class="w"> </span>-m<span class="w"> </span>playwright<span class="w"> </span>install<span class="w"> </span>chromium
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">'.[test,e2e]'</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>python<span class="w"> </span>-m<span class="w"> </span>playwright<span class="w"> </span>install<span class="w"> </span>chromium
 </code></pre></div>
 <p>Run the browser test:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/test_browser_e2e.py
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/test_browser_e2e.py
 </code></pre></div>
 <p>The default test dependency set does not install Chromium. In that environment
 pytest reports the browser module as skipped.</p>

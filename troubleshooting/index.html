@@ -522,10 +522,32 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#connection-errors-during-monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connection Errors During Monitoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#container-dashboard-does-not-open" class="md-nav__link">
     <span class="md-ellipsis">
       
         Container Dashboard Does Not Open
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dashboard-returns-403-or-415" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dashboard Returns 403 or 415
       
     </span>
   </a>
@@ -643,10 +665,32 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#connection-errors-during-monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connection Errors During Monitoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#container-dashboard-does-not-open" class="md-nav__link">
     <span class="md-ellipsis">
       
         Container Dashboard Does Not Open
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dashboard-returns-403-or-415" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dashboard Returns 403 or 415
       
     </span>
   </a>
@@ -697,8 +741,9 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>instagram_monitor<span class="w"> </span>--doctor
 </code></pre></div>
 <p>Doctor does not change files. It reports <code>PASS</code>, <code>WARN</code> or <code>FAIL</code> for optional packages, configuration, private values, login session, Instagram connection, target usernames and notification settings. Login session checks apply only to Logged-In Mode.</p>
+<p>A configuration file Instagram Monitor cannot accept is reported by Doctor as a <code>FAIL</code> naming the line and the reason, instead of stopping the command before the checks run. This means you can point Doctor at a configuration you are still fixing. Settings that a later release removed are reported as a <code>WARN</code> and ignored, so an older configuration file still runs.</p>
 <p>In an interactive terminal, Doctor can offer one real delivery test for each configured notification channel that passes its checks. Each prompt defaults to No. Answering Yes to the email prompt sends one test email. Answering Yes to the webhook prompt sends one Discord or ntfy message. Doctor never offers delivery tests when it runs without an interactive terminal.</p>
-<p>Each failure includes a <code>To fix:</code> action. The command returns a nonzero exit status if a check or approved delivery test fails, so scripts can detect the failure. Doctor accepts normal login, target and file options. Use them to check the saved setup or one exact combination:</p>
+<p>Each failure and warning includes a <code>To fix:</code> action, and a <code>Guide:</code> link to the relevant documentation page where one applies. The command returns a nonzero exit status if a check or approved delivery test fails, so scripts can detect the failure. Doctor accepts normal login, target and file options. Use them to check the saved setup or one exact combination:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>instagram_monitor<span class="w"> </span>--doctor
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>instagram_monitor<span class="w"> </span>-u<span class="w"> </span>&lt;your_user&gt;<span class="w"> </span>&lt;target&gt;<span class="w"> </span>--doctor
 </code></pre></div>
@@ -707,19 +752,38 @@
 </code></pre></div>
 <p>Doctor exits after the report and does not start monitoring or the Web Dashboard. The Compose command therefore does not need <code>--service-ports</code>. The setup wizard also offers to run Doctor after saving.</p>
 <p>For more detail, add <code>--debug</code> to Doctor or a normal run. Debug output includes HTTP details and internal decisions. It may also contain private data. Remove cookies, passwords, tokens and webhook URLs before sharing it.</p>
+<p><a id="connection-errors-during-monitoring"></a></p>
+<h2 id="connection-errors-during-monitoring">Connection Errors During Monitoring<a class="headerlink" href="#connection-errors-during-monitoring" title="Permanent link">&para;</a></h2>
+<p>When a check fails, Instagram Monitor prints the error, a <code>To fix:</code> action and a <code>Guide:</code> link where one applies, then retries automatically at the next interval. You do not need to restart the tool.</p>
+<p>A message naming <code>Could not resolve host</code> means the machine could not look up Instagram's address. This is a DNS problem on your side rather than an Instagram block, and it is common on devices that start monitoring before the network is fully up, such as a Raspberry Pi booting from cold. Check that name lookups work:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>ping<span class="w"> </span>www.instagram.com
+</code></pre></div>
+<p>If that fails too, fix DNS first. When you use a VPN or a proxy, confirm it is running and allowed to resolve names. Monitoring recovers on its own once lookups succeed, so no action is needed inside Instagram Monitor.</p>
+<p>Other connection errors point elsewhere. <code>Max retries exceeded</code> or a timeout usually means the connection dropped or a proxy is unreachable, see <a href="../usage/#routing-traffic-through-a-proxy">routing traffic through a proxy</a>. <code>429</code> or <code>Too Many Requests</code> means Instagram is rate-limiting you, see <a href="../anti-detection/">check intervals</a>. A message about a redirect, a login or wrong credentials means the saved session expired, see <a href="../configuration/">session import</a>.</p>
+<p>For the underlying transport detail behind any of these, add <code>--debug</code>. Normal output omits it because it names internal HTTP library errors rather than anything you can act on.</p>
 <p><a id="container-dashboard-does-not-open"></a></p>
 <h2 id="container-dashboard-does-not-open">Container Dashboard Does Not Open<a class="headerlink" href="#container-dashboard-does-not-open" title="Permanent link">&para;</a></h2>
 <p>Open the default dashboard at <a href="http://127.0.0.1:8000/">http://127.0.0.1:8000/</a>. Do not enter <code>http://0.0.0.0:8000/</code> in the browser. <code>0.0.0.0</code> is the server bind address inside the container.</p>
 <p>For a one-off Compose run, the command must contain <code>--service-ports</code> before the service name:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--service-ports<span class="w"> </span>instagram_monitor<span class="w"> </span>&lt;target&gt;<span class="w"> </span>--web-dashboard
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--service-ports<span class="w"> </span>instagram_monitor<span class="w"> </span>&lt;target&gt;<span class="w"> </span>--web-dashboard
 </code></pre></div>
 <p>For direct Docker, the command must contain <code>-p 127.0.0.1:8000:8000</code> before the image name:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-p<span class="w"> </span><span class="m">127</span>.0.0.1:8000:8000<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>&lt;target&gt;<span class="w"> </span>--web-dashboard
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$PWD</span><span class="s2">:/data:z"</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-p<span class="w"> </span><span class="m">127</span>.0.0.1:8000:8000<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>&lt;target&gt;<span class="w"> </span>--web-dashboard
 </code></pre></div>
 <p>Check the <code>PORTS</code> column while the container is running:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>docker<span class="w"> </span>ps
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>docker<span class="w"> </span>ps
 </code></pre></div>
 <p><code>127.0.0.1:8000-&gt;8000/tcp</code> means the port is published correctly. A value containing only <code>8000/tcp</code> means the server can listen inside the container but the host browser cannot reach it. Dockerfile <code>EXPOSE 8000</code> does not publish the port.</p>
+<p><a id="dashboard-returns-403-or-415"></a></p>
+<h2 id="dashboard-returns-403-or-415">Dashboard Returns 403 or 415<a class="headerlink" href="#dashboard-returns-403-or-415" title="Permanent link">&para;</a></h2>
+<p>The dashboard has no login, so it verifies how a request reached it. See <a href="../view-modes/#dashboard-request-protection">Request Protection</a> for what the two rules cover.</p>
+<p><strong>HTTP 403 with "unrecognized Host header"</strong> means the browser addressed the server under a name it does not answer to. Open it at <a href="http://127.0.0.1:8000/">http://127.0.0.1:8000/</a>. If you deliberately reach it under another name, such as a machine name on your own network or a reverse proxy, list that name:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="na">WEB_DASHBOARD_ALLOWED_HOSTS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">["monitor.lan"]</span>
+</code></pre></div>
+<p><strong>HTTP 403 with "cross-site" or "cross-origin"</strong> means the request did not come from the dashboard page. Reload the dashboard in a normal browser tab rather than driving it from another page.</p>
+<p><strong>HTTP 415</strong> means a request meant to change something arrived without a JSON body. When you call the API yourself, send <code>Content-Type: application/json</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span>-d<span class="w"> </span><span class="s1">'{}'</span><span class="w"> </span>http://127.0.0.1:8000/api/monitoring/stop
+</code></pre></div>
 <p><a id="choosing-the-right-logging-level"></a></p>
 <h2 id="choosing-the-right-logging-level">Choosing the Right Logging Level<a class="headerlink" href="#choosing-the-right-logging-level" title="Permanent link">&para;</a></h2>
 <ul>

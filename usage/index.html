@@ -651,6 +651,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#follow-relationship-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Follow Relationship Analysis
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#advanced-followerfollowing-fetching" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -688,6 +699,17 @@
     <span class="md-ellipsis">
       
         Privacy Substitutions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#terminal-safe-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terminal-Safe Output
       
     </span>
   </a>
@@ -1186,6 +1208,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#follow-relationship-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Follow Relationship Analysis
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#advanced-followerfollowing-fetching" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1223,6 +1256,17 @@
     <span class="md-ellipsis">
       
         Privacy Substitutions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#terminal-safe-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terminal-Safe Output
       
     </span>
   </a>
@@ -1479,10 +1523,10 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>python3<span class="w"> </span>instagram_monitor.py<span class="w"> </span>&lt;target_insta_user&gt;
 </code></pre></div>
 <p>For a direct <code>docker run</code> command on macOS or Windows PowerShell:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>&lt;target_insta_user&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z"</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>&lt;target_insta_user&gt;
 </code></pre></div>
 <p>For a direct image on Linux:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>&lt;target_insta_user&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">"</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">"</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$PWD</span><span class="s2">:/data:z"</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>&lt;target_insta_user&gt;
 </code></pre></div>
 <p>Launch the <a href="../view-modes/#web-dashboard-mode">Web Dashboard</a> with targets or by itself as a browser control panel:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--web-dashboard
@@ -1492,10 +1536,10 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--service-ports<span class="w"> </span>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--web-dashboard
 </code></pre></div>
 <p>For direct Docker on macOS or Windows PowerShell, publish the dashboard port before the image name:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-p<span class="w"> </span><span class="m">127</span>.0.0.1:8000:8000<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--web-dashboard
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z"</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-p<span class="w"> </span><span class="m">127</span>.0.0.1:8000:8000<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--web-dashboard
 </code></pre></div>
 <p>On native Linux, use the same port mapping with the host identity:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-p<span class="w"> </span><span class="m">127</span>.0.0.1:8000:8000<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--web-dashboard
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">"</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">"</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$PWD</span><span class="s2">:/data:z"</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-p<span class="w"> </span><span class="m">127</span>.0.0.1:8000:8000<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--web-dashboard
 </code></pre></div>
 <p>Then open <a href="http://127.0.0.1:8000/">http://127.0.0.1:8000/</a> on the same computer. Inside the container the server listens on <code>0.0.0.0:8000</code> so Docker can forward traffic. <code>0.0.0.0</code> is a server bind address, not an address to enter in a browser. Dockerfile <code>EXPOSE 8000</code> metadata also does not publish the port by itself.</p>
 <p>The configuration file search order and setting precedence are documented under <a href="../configuration/#configuration-file">Configuration File</a>. To select another file explicitly, use <code>--config-file</code>:</p>
@@ -1518,7 +1562,9 @@
 <li><code>instagram_&lt;username&gt;_followers.json</code></li>
 </ul>
 <p>These files provide a baseline for the next run. The tool compares the new lists with the saved lists to find added or removed usernames.</p>
+<p>Only a complete list download can replace this baseline. A configured maximum, stop request or interrupted download leaves the last complete file unchanged so a partial result cannot appear as a large follower or following removal.</p>
 <p>When the tool downloads follower or following lists, a terminal progress bar shows request counts, elapsed time and estimated time remaining. Intermediate progress is not written to the log. The final result is.</p>
+<p>With several targets, only one progress bar is drawn at a time because they share one terminal line. A target whose download starts while another bar is active fetches without a bar rather than waiting for it. The final result is logged either way.</p>
 <p>Profile pictures are saved as <code>instagram_&lt;username&gt;_profile_pic*.jpg</code>.</p>
 <p>Downloaded post and reel media use these names:</p>
 <ul>
@@ -1553,7 +1599,7 @@
 <p><a id="common-run-scenarios"></a></p>
 <h3 id="direct-docker">Direct Docker<a class="headerlink" href="#direct-docker" title="Permanent link">&para;</a></h3>
 <p>In direct Docker commands, refer to files from the current host directory through <code>/data</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--config-file<span class="w"> </span>/data/instagram_monitor.conf<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">"</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">"</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$PWD</span><span class="s2">:/data:z"</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--config-file<span class="w"> </span>/data/instagram_monitor.conf<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
 </code></pre></div>
 <p>If the saved configuration enables the Web Dashboard, add <code>-p 127.0.0.1:8000:8000</code> before the image name. The exact monitoring command printed by setup includes this mapping.</p>
 <p>Use the same <code>instagram_monitor_session</code> volume during browser import and every later logged-in run. Otherwise the later container cannot find the imported session.</p>
@@ -1562,41 +1608,41 @@
 <p>On Windows, use Docker Desktop or another Docker-compatible runtime in Linux container mode. PowerShell reads the Firefox profile root from <code>$env:APPDATA\Mozilla\Firefox</code>. Command Prompt uses <code>%APPDATA%\Mozilla\Firefox</code>.</p>
 <p>Use the direct Docker command that matches the Firefox profile layout on the host:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="c1"># macOS</span>
-<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">HOME</span><span class="si">}</span><span class="s2">/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro&quot;</span><span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z"</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="si">${</span><span class="nv">HOME</span><span class="si">}</span><span class="s2">/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"</span><span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
 <a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
 <a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="c1"># Windows PowerShell</span>
-<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$env</span><span class="s2">:APPDATA\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro&quot;</span><span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">:/data:z"</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$env</span><span class="s2">:APPDATA\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro"</span><span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
 <a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>
 <a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="c1"># Windows Command Prompt</span>
-<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;%cd%:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;%APPDATA%\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro&quot;</span><span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>-v<span class="w"> </span><span class="s2">"%cd%:/data:z"</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-v<span class="w"> </span><span class="s2">"%APPDATA%\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro"</span><span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
 <a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>
 <a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a><span class="c1"># Linux with a standard Firefox package</span>
-<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro&quot;</span><span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
+<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">"</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">"</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$PWD</span><span class="s2">:/data:z"</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$HOME</span><span class="s2">/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"</span><span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
 <a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a>
 <a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a><span class="c1"># Linux with Firefox from Snap</span>
-<a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro&quot;</span><span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
+<a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">"</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">"</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$PWD</span><span class="s2">:/data:z"</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$HOME</span><span class="s2">/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"</span><span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
 <a id="__codelineno-19-15" name="__codelineno-19-15" href="#__codelineno-19-15"></a>
 <a id="__codelineno-19-16" name="__codelineno-19-16" href="#__codelineno-19-16"></a><span class="c1"># Linux with Firefox from Flatpak</span>
-<a id="__codelineno-19-17" name="__codelineno-19-17" href="#__codelineno-19-17"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/data:z&quot;</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro&quot;</span><span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
+<a id="__codelineno-19-17" name="__codelineno-19-17" href="#__codelineno-19-17"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--init<span class="w"> </span>--user<span class="w"> </span><span class="s2">"</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">:</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">"</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$PWD</span><span class="s2">:/data:z"</span><span class="w"> </span>-v<span class="w"> </span>instagram_monitor_session:/home/instagram/.config/instaloader<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$HOME</span><span class="s2">/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"</span><span class="w"> </span>misiektoja/instagram-monitor:latest<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
 </code></pre></div>
 <p>The equivalent Docker Compose commands are:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="c1"># macOS</span>
-<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">HOME</span><span class="si">}</span><span class="s2">/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro&quot;</span><span class="w"> </span>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="si">${</span><span class="nv">HOME</span><span class="si">}</span><span class="s2">/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"</span><span class="w"> </span>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
 <a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>
 <a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="c1"># Windows PowerShell</span>
-<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$env</span><span class="s2">:APPDATA\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro&quot;</span><span class="w"> </span>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$env</span><span class="s2">:APPDATA\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro"</span><span class="w"> </span>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
 <a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>
 <a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="c1"># Windows Command Prompt</span>
-<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;%APPDATA%\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro&quot;</span><span class="w"> </span>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
+<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span><span class="s2">"%APPDATA%\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro"</span><span class="w"> </span>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
 <a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a>
 <a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="c1"># Linux with a standard Firefox package</span>
-<a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro&quot;</span><span class="w"> </span>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
+<a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$HOME</span><span class="s2">/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"</span><span class="w"> </span>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
 <a id="__codelineno-20-12" name="__codelineno-20-12" href="#__codelineno-20-12"></a>
 <a id="__codelineno-20-13" name="__codelineno-20-13" href="#__codelineno-20-13"></a><span class="c1"># Linux with Firefox from Snap</span>
-<a id="__codelineno-20-14" name="__codelineno-20-14" href="#__codelineno-20-14"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro&quot;</span><span class="w"> </span>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
+<a id="__codelineno-20-14" name="__codelineno-20-14" href="#__codelineno-20-14"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$HOME</span><span class="s2">/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"</span><span class="w"> </span>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
 <a id="__codelineno-20-15" name="__codelineno-20-15" href="#__codelineno-20-15"></a>
 <a id="__codelineno-20-16" name="__codelineno-20-16" href="#__codelineno-20-16"></a><span class="c1"># Linux with Firefox from Flatpak</span>
-<a id="__codelineno-20-17" name="__codelineno-20-17" href="#__codelineno-20-17"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro&quot;</span><span class="w"> </span>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
+<a id="__codelineno-20-17" name="__codelineno-20-17" href="#__codelineno-20-17"></a>docker<span class="w"> </span>compose<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$HOME</span><span class="s2">/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"</span><span class="w"> </span>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox<span class="w"> </span>--env-file<span class="w"> </span>/data/.env
 </code></pre></div>
 <p>Firefox works inside Docker because its cookie database can be mounted as a read-only file. Chrome, Brave and Chromium need the host password service to decrypt their cookies. A container cannot use that service. Import from those browsers through a local PyPI or manual installation instead.</p>
 <p>Do not add <code>:z</code> or <code>:Z</code> to the whole Firefox profile mount. Those suffixes can change SELinux labels on the host files. If SELinux blocks the read-only mount, close Firefox and copy <code>cookies.sqlite</code> to a dedicated directory before mounting that copy.</p>
@@ -1660,13 +1706,14 @@
 <li>Public <code>ntfy.sh</code> URLs are recognized automatically. Set <code>WEBHOOK_PROVIDER = "ntfy"</code> in <code>instagram_monitor.conf</code> for a self-hosted ntfy server.</li>
 </ol>
 <p>Instagram Monitor sends the alert subject as the ntfy title. The alert text and event details become the message. Existing query parameters in the topic URL are preserved, including the ntfy <a href="https://docs.ntfy.sh/publish/#authentication"><code>auth</code> query parameter</a>. Long ntfy messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments.</p>
+<p>The title and message are sent as request headers or as the request body, never as query parameters. Alert text can contain follower names, captions and biographies, and servers and proxies commonly record full URLs in their access logs. Webhook requests also do not follow redirects, so a moved destination cannot receive headers meant for the address you configured.</p>
 <p>For a protected topic, the setup wizard asks for the ntfy access token in a hidden prompt and stores it in <code>.env</code>. For manual setup, add:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">&quot;tk_your_ntfy_access_token&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">"tk_your_ntfy_access_token"</span>
 </code></pre></div>
 <p>The tool sends the token as <code>Authorization: Bearer &lt;token&gt;</code>. It replaces any <code>Authorization</code> value in <code>WEBHOOK_HEADERS</code>.</p>
 <p>Advanced integrations can set fixed HTTP headers:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="n">WEBHOOK_HEADERS</span> <span class="o">=</span> <span class="p">{</span>
-<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>    <span class="s2">&quot;Authorization&quot;</span><span class="p">:</span> <span class="s2">&quot;Basic your_base64_credentials&quot;</span><span class="p">,</span>
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>    <span class="s2">"Authorization"</span><span class="p">:</span> <span class="s2">"Basic your_base64_credentials"</span><span class="p">,</span>
 <a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a><span class="p">}</span>
 </code></pre></div>
 <p>Header values support the same placeholders as <code>WEBHOOK_TEMPLATE</code>. Instagram Monitor validates headers before and after placeholder expansion so formatted values cannot introduce invalid names, non-string values or line breaks. For ntfy, Instagram Monitor sets the required plain-text <code>Content-Type</code>. Store Bearer tokens in <code>NTFY_ACCESS_TOKEN</code> inside <code>.env</code>. A token in the regular config is easier to expose or commit accidentally.</p>
@@ -1686,16 +1733,16 @@
 <a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a>instagram_monitor<span class="w"> </span>--set-webhook-url
 <a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a>
 <a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a><span class="c1"># Enable Discord with URL</span>
-<a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--webhook-provider<span class="w"> </span>discord<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">&quot;https://discord.com/api/webhooks/...&quot;</span>
+<a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--webhook-provider<span class="w"> </span>discord<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">"https://discord.com/api/webhooks/..."</span>
 <a id="__codelineno-26-6" name="__codelineno-26-6" href="#__codelineno-26-6"></a>
 <a id="__codelineno-26-7" name="__codelineno-26-7" href="#__codelineno-26-7"></a><span class="c1"># Enable ntfy with a topic URL</span>
-<a id="__codelineno-26-8" name="__codelineno-26-8" href="#__codelineno-26-8"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--webhook-provider<span class="w"> </span>ntfy<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">&quot;https://ntfy.sh/your-private-topic&quot;</span>
+<a id="__codelineno-26-8" name="__codelineno-26-8" href="#__codelineno-26-8"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--webhook-provider<span class="w"> </span>ntfy<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">"https://ntfy.sh/your-private-topic"</span>
 <a id="__codelineno-26-9" name="__codelineno-26-9" href="#__codelineno-26-9"></a>
 <a id="__codelineno-26-10" name="__codelineno-26-10" href="#__codelineno-26-10"></a><span class="c1"># Enable or disable a URL that is already saved</span>
 <a id="__codelineno-26-11" name="__codelineno-26-11" href="#__codelineno-26-11"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--webhook
 <a id="__codelineno-26-12" name="__codelineno-26-12" href="#__codelineno-26-12"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--no-webhook
 </code></pre></div>
-<p>Webhook and avatar URLs must be complete HTTPS links with a path and no embedded credentials. Known Discord and <code>ntfy.sh</code> destinations correct a stale configured provider at runtime. A URL passed through <code>--webhook-url</code> may remain visible in shell history or process listings, so prefer <code>--set-webhook-url</code> for normal setup.</p>
+<p>Webhook and avatar URLs must be complete HTTPS links with a hostname and no embedded credentials. Root endpoints work with or without a trailing slash. Known Discord and <code>ntfy.sh</code> destinations correct a stale configured provider at runtime. A URL passed through <code>--webhook-url</code> may remain visible in shell history or process listings, so prefer <code>--set-webhook-url</code> for normal setup.</p>
 <p><a id="3-test-your-settings"></a></p>
 <h3 id="3-test-your-settings">3. Test Your Settings<a class="headerlink" href="#3-test-your-settings" title="Permanent link">&para;</a></h3>
 <p>Send a test notification before starting monitoring:</p>
@@ -1703,8 +1750,9 @@
 <a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>instagram_monitor<span class="w"> </span>--send-test-webhook
 <a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a>
 <a id="__codelineno-27-4" name="__codelineno-27-4" href="#__codelineno-27-4"></a><span class="c1"># Verify a specific provider and URL from command line</span>
-<a id="__codelineno-27-5" name="__codelineno-27-5" href="#__codelineno-27-5"></a>instagram_monitor<span class="w"> </span>--webhook-provider<span class="w"> </span>ntfy<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">&quot;https://ntfy.sh/your-private-topic&quot;</span><span class="w"> </span>--send-test-webhook
+<a id="__codelineno-27-5" name="__codelineno-27-5" href="#__codelineno-27-5"></a>instagram_monitor<span class="w"> </span>--webhook-provider<span class="w"> </span>ntfy<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">"https://ntfy.sh/your-private-topic"</span><span class="w"> </span>--send-test-webhook
 </code></pre></div>
+<p>A test notification is always delivered when the URL and provider are valid. It does not require the event switches below, so you can confirm delivery before deciding which notifications to enable.</p>
 <p><a id="4-advanced-configuration"></a></p>
 <h3 id="4-advanced-configuration">4. Advanced Configuration<a class="headerlink" href="#4-advanced-configuration" title="Permanent link">&para;</a></h3>
 <p>By default, all webhook notification types (status, followers, errors) are <strong>disabled</strong>. You must explicitly enable what you want the tool to send. Enabling an event flag also enables the webhook master switch:</p>
@@ -1715,19 +1763,20 @@
 </ul>
 <p>Example:
 <div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="c1"># Enable all three event groups</span>
-<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="w"> </span>--webhook-status<span class="w"> </span>--webhook-followers<span class="w"> </span>--webhook-errors
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">"..."</span><span class="w"> </span>--webhook-status<span class="w"> </span>--webhook-followers<span class="w"> </span>--webhook-errors
 </code></pre></div></p>
 <p>Equivalent configuration options:
 <div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="na">WEBHOOK_ENABLED</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">False</span>
-<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;discord&quot;</span><span class="w">  </span><span class="c1"># Use &quot;ntfy&quot; for an ntfy topic URL</span>
-<a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a><span class="na">WEBHOOK_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;https://discord.com/api/webhooks/...&quot;</span>
-<a id="__codelineno-29-4" name="__codelineno-29-4" href="#__codelineno-29-4"></a><span class="na">WEBHOOK_USERNAME</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Instagram Monitor&quot;</span>
-<a id="__codelineno-29-5" name="__codelineno-29-5" href="#__codelineno-29-5"></a><span class="na">WEBHOOK_AVATAR_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"discord"</span><span class="w">  </span><span class="c1"># Use "ntfy" for an ntfy topic URL</span>
+<a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a><span class="na">WEBHOOK_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"https://discord.com/api/webhooks/..."</span>
+<a id="__codelineno-29-4" name="__codelineno-29-4" href="#__codelineno-29-4"></a><span class="na">WEBHOOK_USERNAME</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"Instagram Monitor"</span>
+<a id="__codelineno-29-5" name="__codelineno-29-5" href="#__codelineno-29-5"></a><span class="na">WEBHOOK_AVATAR_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">""</span>
 <a id="__codelineno-29-6" name="__codelineno-29-6" href="#__codelineno-29-6"></a><span class="na">WEBHOOK_STATUS_NOTIFICATION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">False</span>
 <a id="__codelineno-29-7" name="__codelineno-29-7" href="#__codelineno-29-7"></a><span class="na">WEBHOOK_FOLLOWERS_NOTIFICATION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">False</span>
 <a id="__codelineno-29-8" name="__codelineno-29-8" href="#__codelineno-29-8"></a><span class="na">WEBHOOK_ERROR_NOTIFICATION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">False</span>
 </code></pre></div></p>
 <p><code>WEBHOOK_USERNAME</code> and <code>WEBHOOK_AVATAR_URL</code> customize Discord-format messages. <code>WEBHOOK_TEMPLATE</code> supports <code>title</code>, <code>description</code>, <code>version</code>, <code>image_url</code>, <code>fields</code>, <code>fields_str</code>, <code>color</code>, <code>timestamp</code>, <code>username</code> and <code>avatar_url</code> placeholders. A dictionary or list is sent as JSON while a string is sent as the raw body for compatible advanced integrations.</p>
+<p><code>WEBHOOK_TEMPLATE</code>, <code>WEBHOOK_USERNAME</code> and <code>WEBHOOK_AVATAR_URL</code> apply only to Discord and are ignored when <code>WEBHOOK_PROVIDER</code> is <code>"ntfy"</code>. The ntfy provider needs no template: it sends the alert body as a native ntfy message with the subject as its title. Customize ntfy delivery through <code>WEBHOOK_HEADERS</code> (for example <code>X-Priority</code> or <code>X-Tags</code>).</p>
 <p><code>WEBHOOK_TRANSFORMS</code> applies configured string methods before the template and headers are rendered. Invalid templates, avatar URLs, transforms or expanded headers fail before any request is attempted. Dictionary payloads always replace <code>allowed_mentions</code> with <code>{"parse": []}</code> so notification text cannot trigger <code>@everyone</code>, <code>@here</code> or user mentions.</p>
 <p>Webhook delivery uses an isolated session with a 10-second timeout and at most two attempts. It accepts every HTTP 2xx response, retries HTTP 429 according to a server delay capped at 5 seconds and retries HTTP 5xx once. Other HTTP 4xx responses fail immediately.</p>
 <p><a id="follower-churn-detection"></a></p>
@@ -1744,6 +1793,7 @@
 <li>or toggle it via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong></li>
 </ul>
 <p>This feature requires <a href="../configuration/#logged-in-mode-with-session-login">Logged-In Mode</a>. It is disabled when <code>SKIP_FOLLOW_CHANGES</code> is active.</p>
+<p>After a complete list comparison, email and webhook alerts require at least one added or removed username. Reported count fluctuations with an unchanged complete list are ignored. When a complete comparison is unavailable because list fetching is disabled, fails or uses a configured maximum, alerts fall back to reported count changes without claiming which usernames changed.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--followers-churn
 </code></pre></div>
 <p>This feature sends many more Instagram requests because it downloads both complete lists at every interval. Large accounts increase the request count further. Review the <a href="../anti-detection/">risk reduction guide</a> before enabling it.</p>
@@ -1765,21 +1815,42 @@
 </ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--skip-follow-changes
 </code></pre></div>
+<p><a id="follow-relationship-analysis"></a></p>
+<h2 id="follow-relationship-analysis">Follow Relationship Analysis<a class="headerlink" href="#follow-relationship-analysis" title="Permanent link">&para;</a></h2>
+<p>Follow relationship analysis reports mutual, not-following-back and fan relationships for a target. It works entirely offline: it reads the follower and following lists the monitor has already saved and makes no additional Instagram requests.</p>
+<p>The categories are:</p>
+<ul>
+<li><strong>Mutual</strong>: the number of accounts that follow the target and that the target follows back</li>
+<li><strong>Not following back</strong>: accounts the target follows that do not follow the target back</li>
+<li><strong>Fans</strong>: accounts that follow the target while the target does not follow them back</li>
+</ul>
+<p>Both saved lists are required. The analysis shows each snapshot's save time and warns when the two files are at least one hour apart, since changes between those downloads can be misclassified.</p>
+<p>Run it with the <code>--analyze-follows</code> flag. It prints the analysis and exits without starting the monitoring loop:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--analyze-follows
+</code></pre></div>
+<p>Multiple targets are supported (positional usernames or <code>TARGET_USERNAMES</code> from the config):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>instagram_monitor<span class="w"> </span>user1<span class="w"> </span>user2<span class="w"> </span>--analyze-follows
+</code></pre></div>
+<p>Usable targets are still reported when another target has missing or malformed data. The command exits successfully when at least one target could be analyzed and returns a nonzero status when none could be analyzed.</p>
+<p>The analysis needs the saved lists <code>instagram_&lt;user&gt;_followers.json</code> and <code>instagram_&lt;user&gt;_followings.json</code>. These are produced when the monitor runs in <a href="../configuration/#logged-in-mode-with-session-login">Logged-In Mode</a> with follower and following fetching enabled. They are read from the JSON directory described in <a href="#output-directory">Output Directory</a>, so they resolve under <code>OUTPUT_DIR/json/</code> for a single target, <code>OUTPUT_DIR/&lt;username&gt;/json/</code> for multiple targets, or the working directory when no output directory is set. If both output layouts contain a complete pair, the newest coherent pair is used. This keeps analysis correct after changing between single-target and multi-target monitoring or after adding a target through the Web Dashboard.</p>
+<p>If the lists have not been downloaded yet, the command names the directory it searched and explains that the monitor has to run once first. Older saved files may contain partial lists from a private account, an interrupted download or a configured fetch limit. In that case the analysis covers only the saved handles and prints a note. Current monitoring keeps the last complete baseline instead of replacing it with a partial fetch. When the newest output layout is incomplete or malformed, an older complete pair is used when available and the result includes a warning. Otherwise malformed data or invalid usernames make that target unavailable instead of crashing the command.</p>
+<p>The command and Web Dashboard show complete counts for all three categories. Mutual accounts are count-only. The not-following-back and fan categories list at most the first 500 usernames alphabetically. This bounds terminal output, API responses and browser rendering for large accounts.</p>
+<p>The same analysis is available in the <strong>Web Dashboard</strong>. Use the <strong>Follow analysis</strong> chart button next to a configured target. Privacy substitutions apply to the target and relationship usernames shown in the modal.</p>
 <p><a id="advanced-followerfollowing-fetching"></a></p>
 <h2 id="advanced-followerfollowing-fetching">Advanced Follower/Following Fetching<a class="headerlink" href="#advanced-followerfollowing-fetching" title="Permanent link">&para;</a></h2>
 <p>By default, the tool downloads each complete follower or following list without an intentional pause. For large accounts, split the download into batches to add pauses or set a maximum number of usernames to fetch.</p>
 <p>Configure it with these options in <code>instagram_monitor.conf</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="c1"># Number of accounts to fetch before pausing (0 = no batching)</span>
-<a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a><span class="na">FOLLOWERS_PER_BATCH</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">0</span>
-<a id="__codelineno-32-3" name="__codelineno-32-3" href="#__codelineno-32-3"></a><span class="na">FOLLOWEES_PER_BATCH</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">0</span>
-<a id="__codelineno-32-4" name="__codelineno-32-4" href="#__codelineno-32-4"></a>
-<a id="__codelineno-32-5" name="__codelineno-32-5" href="#__codelineno-32-5"></a><span class="c1"># Delay in seconds between batches (0 = no delay)</span>
-<a id="__codelineno-32-6" name="__codelineno-32-6" href="#__codelineno-32-6"></a><span class="na">FOLLOWER_DELAY_PER_BATCH</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">0</span>
-<a id="__codelineno-32-7" name="__codelineno-32-7" href="#__codelineno-32-7"></a><span class="na">FOLLOWEE_DELAY_PER_BATCH</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">0</span>
-<a id="__codelineno-32-8" name="__codelineno-32-8" href="#__codelineno-32-8"></a>
-<a id="__codelineno-32-9" name="__codelineno-32-9" href="#__codelineno-32-9"></a><span class="c1"># Total number of accounts to fetch across all batches (0 = no limit)</span>
-<a id="__codelineno-32-10" name="__codelineno-32-10" href="#__codelineno-32-10"></a><span class="na">FOLLOWER_LIMIT_TO_FETCH</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">0</span>
-<a id="__codelineno-32-11" name="__codelineno-32-11" href="#__codelineno-32-11"></a><span class="na">FOLLOWEE_LIMIT_TO_FETCH</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">0</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="c1"># Number of accounts to fetch before pausing (0 = no batching)</span>
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a><span class="na">FOLLOWERS_PER_BATCH</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">0</span>
+<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a><span class="na">FOLLOWEES_PER_BATCH</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">0</span>
+<a id="__codelineno-34-4" name="__codelineno-34-4" href="#__codelineno-34-4"></a>
+<a id="__codelineno-34-5" name="__codelineno-34-5" href="#__codelineno-34-5"></a><span class="c1"># Delay in seconds between batches (0 = no delay)</span>
+<a id="__codelineno-34-6" name="__codelineno-34-6" href="#__codelineno-34-6"></a><span class="na">FOLLOWER_DELAY_PER_BATCH</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">0</span>
+<a id="__codelineno-34-7" name="__codelineno-34-7" href="#__codelineno-34-7"></a><span class="na">FOLLOWEE_DELAY_PER_BATCH</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">0</span>
+<a id="__codelineno-34-8" name="__codelineno-34-8" href="#__codelineno-34-8"></a>
+<a id="__codelineno-34-9" name="__codelineno-34-9" href="#__codelineno-34-9"></a><span class="c1"># Total number of accounts to fetch across all batches (0 = no limit)</span>
+<a id="__codelineno-34-10" name="__codelineno-34-10" href="#__codelineno-34-10"></a><span class="na">FOLLOWER_LIMIT_TO_FETCH</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">0</span>
+<a id="__codelineno-34-11" name="__codelineno-34-11" href="#__codelineno-34-11"></a><span class="na">FOLLOWEE_LIMIT_TO_FETCH</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">0</span>
 </code></pre></div>
 <p>The values select one of these modes. The tool prints the selected mode at startup and warns about invalid combinations.</p>
 <ul>
@@ -1789,6 +1860,7 @@
 <li><strong>Maximum of N accounts in batches of Y with a Z-second delay</strong>: set all three values</li>
 </ul>
 <p>This feature requires <a href="../configuration/#logged-in-mode-with-session-login">Logged-In Mode</a>.</p>
+<p>A maximum intentionally produces a partial list. Partial lists are not compared with or saved over the last complete baseline. Reported count changes remain available without claiming which usernames changed.</p>
 <p><a id="routing-traffic-through-a-proxy"></a></p>
 <h2 id="routing-traffic-through-a-proxy">Routing Traffic Through a Proxy<a class="headerlink" href="#routing-traffic-through-a-proxy" title="Permanent link">&para;</a></h2>
 <p>A proxy is another server that forwards network requests. Instagram sees the proxy's public IP address instead of the monitor's address. Instagram Monitor can send Instagram traffic and optional webhook traffic through an HTTP or HTTPS proxy.</p>
@@ -1797,7 +1869,7 @@
 <li>set <code>PROXY_ENABLED</code> to <code>True</code> and <code>PROXY_URL</code> to your proxy URL</li>
 <li>or use the <code>--enable-proxy</code> and <code>--proxy-url</code> flags</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--enable-proxy<span class="w"> </span>--proxy-url<span class="w"> </span><span class="s2">&quot;http://user:pass@host:port&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--enable-proxy<span class="w"> </span>--proxy-url<span class="w"> </span><span class="s2">"http://user:pass@host:port"</span>
 </code></pre></div>
 <p>Additional options:</p>
 <ul>
@@ -1806,15 +1878,15 @@
 <li><code>IP_ADDRESS_URL</code> selects one trusted IP lookup URL or an ordered non-empty list of fallback URLs</li>
 </ul>
 <p><code>PROXY_URL</code> may contain a username and password. The tool masks it in output. Store it through an <a href="../configuration/#storing-secrets">environment variable or <code>.env</code> file</a>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="na">PROXY_ENABLED</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
-<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a><span class="na">PROXY_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;http://user:pass@host:port&quot;</span>
-<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a><span class="na">PROXY_CERT_PATH</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;</span>
-<a id="__codelineno-34-4" name="__codelineno-34-4" href="#__codelineno-34-4"></a><span class="na">PROXY_WEBHOOKS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">False</span>
-<a id="__codelineno-34-5" name="__codelineno-34-5" href="#__codelineno-34-5"></a><span class="na">IP_ADDRESS_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[</span>
-<a id="__codelineno-34-6" name="__codelineno-34-6" href="#__codelineno-34-6"></a><span class="w">    </span><span class="na">&quot;https</span><span class="o">:</span><span class="s">//checkip.amazonaws.com&quot;,</span>
-<a id="__codelineno-34-7" name="__codelineno-34-7" href="#__codelineno-34-7"></a><span class="w">    </span><span class="na">&quot;https</span><span class="o">:</span><span class="s">//api.ipify.org?format=json&quot;,</span>
-<a id="__codelineno-34-8" name="__codelineno-34-8" href="#__codelineno-34-8"></a><span class="w">    </span><span class="na">&quot;https</span><span class="o">:</span><span class="s">//api.my-ip.io/v2/ip.json&quot;,</span>
-<a id="__codelineno-34-9" name="__codelineno-34-9" href="#__codelineno-34-9"></a><span class="na">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a><span class="na">PROXY_ENABLED</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
+<a id="__codelineno-36-2" name="__codelineno-36-2" href="#__codelineno-36-2"></a><span class="na">PROXY_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"http://user:pass@host:port"</span>
+<a id="__codelineno-36-3" name="__codelineno-36-3" href="#__codelineno-36-3"></a><span class="na">PROXY_CERT_PATH</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">""</span>
+<a id="__codelineno-36-4" name="__codelineno-36-4" href="#__codelineno-36-4"></a><span class="na">PROXY_WEBHOOKS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">False</span>
+<a id="__codelineno-36-5" name="__codelineno-36-5" href="#__codelineno-36-5"></a><span class="na">IP_ADDRESS_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[</span>
+<a id="__codelineno-36-6" name="__codelineno-36-6" href="#__codelineno-36-6"></a><span class="w">    </span><span class="na">"https</span><span class="o">:</span><span class="s">//checkip.amazonaws.com",</span>
+<a id="__codelineno-36-7" name="__codelineno-36-7" href="#__codelineno-36-7"></a><span class="w">    </span><span class="na">"https</span><span class="o">:</span><span class="s">//api.ipify.org?format=json",</span>
+<a id="__codelineno-36-8" name="__codelineno-36-8" href="#__codelineno-36-8"></a><span class="w">    </span><span class="na">"https</span><span class="o">:</span><span class="s">//api.my-ip.io/v2/ip.json",</span>
+<a id="__codelineno-36-9" name="__codelineno-36-9" href="#__codelineno-36-9"></a><span class="na">]</span>
 </code></pre></div>
 <p>The proxy IP check tries each endpoint in order without pausing between different providers. It waits for the long retry delay only after the complete list fails. Only valid IPv4 or IPv6 responses are displayed. See <a href="../configuration/#proxy-ip-lookup-endpoints">Proxy IP Lookup Endpoints</a> for validation and privacy details.</p>
 <p>The Python <code>requests</code> library reads <code>HTTP_PROXY</code>, <code>HTTPS_PROXY</code> and <code>NO_PROXY</code> from the process environment even when <code>PROXY_ENABLED</code> is <code>False</code>. Check and unset those variables if you need a direct connection.</p>
@@ -1827,40 +1899,44 @@
 </ul>
 <p>Both login modes use the selected backend. If <code>curl_cffi</code> is selected but not installed, the tool warns you and uses <code>requests</code> instead.</p>
 <p>Select the backend with <code>HTTP_BACKEND</code> (or <code>--http-backend</code>) and choose which browser curl_cffi impersonates with <code>CURL_CFFI_IMPERSONATE</code> (or <code>--impersonate</code>):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a><span class="na">HTTP_BACKEND</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;curl_cffi&quot;</span>
-<a id="__codelineno-35-2" name="__codelineno-35-2" href="#__codelineno-35-2"></a><span class="na">CURL_CFFI_IMPERSONATE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;auto&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a><span class="na">HTTP_BACKEND</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"curl_cffi"</span>
+<a id="__codelineno-37-2" name="__codelineno-37-2" href="#__codelineno-37-2"></a><span class="na">CURL_CFFI_IMPERSONATE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"auto"</span>
 </code></pre></div>
 <p><code>CURL_CFFI_IMPERSONATE</code> defaults to <code>auto</code>, which picks the impersonation target that matches your <code>USER_AGENT</code> so the TLS, HTTP/2 and client-hint headers stay consistent with the browser identity. This matters when you import a Firefox session and set a matching Firefox <code>USER_AGENT</code>: <code>auto</code> then presents a Firefox TLS fingerprint instead of pairing a Firefox user agent with Chrome client-hint headers. You can also pin a specific target such as <code>chrome</code>, <code>safari</code>, <code>safari_ios</code>, <code>edge</code> or <code>firefox</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--http-backend<span class="w"> </span>curl_cffi<span class="w"> </span>--impersonate<span class="w"> </span>firefox
+<div class="highlight"><pre><span></span><code><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--http-backend<span class="w"> </span>curl_cffi<span class="w"> </span>--impersonate<span class="w"> </span>firefox
 </code></pre></div>
 <p>See the <a href="https://github.com/lexiforest/curl_cffi">curl_cffi documentation</a> for the full list of impersonation targets available in your installed version.</p>
+<p>The target is checked against that list at startup and when saved from the Web Dashboard. An unrecognized value stops the tool with a message naming supported targets, rather than letting every Instagram request fail later as a connection error.</p>
 <p><a id="privacy-substitutions"></a></p>
 <h2 id="privacy-substitutions">Privacy Substitutions<a class="headerlink" href="#privacy-substitutions" title="Permanent link">&para;</a></h2>
 <p>Privacy substitutions replace selected text in console output, logs, CSV files, notifications and dashboards. Use them to display a label instead of a real Instagram username or to mask other text.</p>
 <p>Provide a list of <code>(search, replace)</code> tuples via the <code>PRIVACY_SUBSTITUTIONS</code> config option:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a><span class="na">PRIVACY_SUBSTITUTIONS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[ (&quot;a.username&quot;, &quot;Sarah&quot;), (&quot;some.other.user&quot;, &quot;XXX&quot;) ]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a><span class="na">PRIVACY_SUBSTITUTIONS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[ ("a.username", "Sarah"), ("some.other.user", "XXX") ]</span>
 </code></pre></div>
 <p>The replacement happens before output is displayed, logged or sent. Internal keys and file paths do not change, so the tool still uses the original usernames to find data. Invalid entries are ignored with a warning.</p>
+<p><a id="terminal-safe-output"></a></p>
+<h2 id="terminal-safe-output">Terminal-Safe Output<a class="headerlink" href="#terminal-safe-output" title="Permanent link">&para;</a></h2>
+<p>Biographies, captions, story text, comments and usernames come from Instagram and can contain terminal control sequences. Printed unchanged, those could clear your screen, retitle the window or overwrite a line you already read. The tool removes control characters from everything it prints and logs, keeping only tabs, newlines and its own colour codes. Nothing is lost from readable text.</p>
 <p><a id="shadowban-and-flagged-account-detection"></a></p>
 <h2 id="shadowban-and-flagged-account-detection">Shadowban and Flagged Account Detection<a class="headerlink" href="#shadowban-and-flagged-account-detection" title="Permanent link">&para;</a></h2>
 <p>Instagram may block a session or IP address in a way that makes every profile lookup fail. A single failed lookup cannot show whether the target disappeared or whether the session was blocked.</p>
 <p>When a target lookup fails for an unclear reason, the tool also checks a known public account. The default is <code>instagram</code>. If both lookups fail, it treats the session or IP address as the likely cause and does not report that the target disappeared. It waits when recovery is possible. Otherwise it exits.</p>
 <p>This check runs automatically. Advanced users can change these settings:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a><span class="c1"># Canonical public account used to probe whether the session/IP is flagged</span>
-<a id="__codelineno-38-2" name="__codelineno-38-2" href="#__codelineno-38-2"></a><span class="na">FLAGGED_PROBE_USERNAME</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;instagram&quot;</span>
-<a id="__codelineno-38-3" name="__codelineno-38-3" href="#__codelineno-38-3"></a>
-<a id="__codelineno-38-4" name="__codelineno-38-4" href="#__codelineno-38-4"></a><span class="c1"># Seconds to reuse a flag-probe result so simultaneous target failures do not each hit the network</span>
-<a id="__codelineno-38-5" name="__codelineno-38-5" href="#__codelineno-38-5"></a><span class="na">FLAGGED_PROBE_TTL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">300</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a><span class="c1"># Canonical public account used to probe whether the session/IP is flagged</span>
+<a id="__codelineno-40-2" name="__codelineno-40-2" href="#__codelineno-40-2"></a><span class="na">FLAGGED_PROBE_USERNAME</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"instagram"</span>
+<a id="__codelineno-40-3" name="__codelineno-40-3" href="#__codelineno-40-3"></a>
+<a id="__codelineno-40-4" name="__codelineno-40-4" href="#__codelineno-40-4"></a><span class="c1"># Seconds to reuse a flag-probe result so simultaneous target failures do not each hit the network</span>
+<a id="__codelineno-40-5" name="__codelineno-40-5" href="#__codelineno-40-5"></a><span class="na">FLAGGED_PROBE_TTL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">300</span>
 </code></pre></div>
 <p><a id="reducing-jitter-log-noise"></a></p>
 <h2 id="reducing-jitter-log-noise">Reducing Jitter Log Noise<a class="headerlink" href="#reducing-jitter-log-noise" title="Permanent link">&para;</a></h2>
-<p>When <strong>Jitter Mode</strong> (or debug/verbose output) is enabled, the HTTP back-off wrapper prints a <code>WRAP-REQ</code> / <code>WRAP-SEND</code> line for every request, which can be overwhelming. Set <code>SKIP_WRAP_MESSAGES</code> to <code>True</code> to suppress those per-request lines while keeping the rest of the jitter behavior:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a><span class="na">SKIP_WRAP_MESSAGES</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
+<p>When <strong>Jitter Mode</strong> (or debug/verbose output) is enabled, the Instagram HTTP backoff wrapper prints a <code>WRAP-REQ</code> line for each delayed request. Set <code>SKIP_WRAP_MESSAGES</code> to <code>True</code> to suppress those lines while keeping the rest of the jitter behavior:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a><span class="na">SKIP_WRAP_MESSAGES</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
 </code></pre></div>
 <p><a id="csv-export"></a></p>
 <h2 id="csv-export">CSV Export<a class="headerlink" href="#csv-export" title="Permanent link">&para;</a></h2>
 <p>To save activity and profile changes in a CSV file, set <code>CSV_FILE</code> or pass <code>-b</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>-b<span class="w"> </span>instagram_username.csv
+<div class="highlight"><pre><span></span><code><a id="__codelineno-42-1" name="__codelineno-42-1" href="#__codelineno-42-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>-b<span class="w"> </span>instagram_username.csv
 </code></pre></div>
 <p>The tool creates the file if it does not exist.</p>
 <p>The output path depends on whether the path is absolute or relative and whether <code>OUTPUT_DIR</code> is set:</p>
@@ -1881,11 +1957,12 @@
 </ul>
 </li>
 </ol>
+<p>A biography, caption or other Instagram text that starts with <code>=</code>, <code>+</code>, <code>-</code>, <code>@</code>, a tab or a carriage return is written with a leading apostrophe. Spreadsheet software treats those characters as the start of a formula, so the apostrophe keeps the exported text as text. Numbers such as follower counts are unaffected.</p>
 <p><a id="output-directory"></a></p>
 <h2 id="output-directory">Output Directory<a class="headerlink" href="#output-directory" title="Permanent link">&para;</a></h2>
 <p>By default, the tool saves JSON files, images, videos, logs and CSV files in the directory where you start it.</p>
 <p>You can specify a custom root directory for all output files using the <code>-o</code> / <code>--output-dir</code> flag or <code>OUTPUT_DIR</code> configuration option:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>-o<span class="w"> </span>/path/to/downloads
+<div class="highlight"><pre><span></span><code><a id="__codelineno-43-1" name="__codelineno-43-1" href="#__codelineno-43-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>-o<span class="w"> </span>/path/to/downloads
 </code></pre></div>
 <p>Inside Docker, use a path under <code>/data</code>, such as <code>-o /data/downloads</code>. The files then appear in the host directory named <code>downloads</code>.</p>
 <p>The directory layout depends on the number of targets:</p>
@@ -1912,6 +1989,7 @@
 </li>
 </ul>
 <p>Summary messages and errors that apply to the whole process are written to every active target log.</p>
+<p>Images and videos are streamed to a temporary file beside the destination with a 100 MiB limit. The monitor accepts only a complete HTTP 200 response with a recognized image or video signature then replaces the destination atomically. A truncated response, an HTML error page or another invalid response leaves an existing saved file untouched.</p>
 <p><a id="detection-of-changed-profile-pictures"></a></p>
 <h2 id="detection-of-changed-profile-pictures">Detection of Changed Profile Pictures<a class="headerlink" href="#detection-of-changed-profile-pictures" title="Permanent link">&para;</a></h2>
 <p>Profile picture changes appear in console output. They can also be sent by email, Discord or ntfy when the matching status notification settings are enabled.</p>
@@ -1963,14 +2041,14 @@
 <p><a id="check-intervals"></a></p>
 <h2 id="check-intervals">Check Intervals<a class="headerlink" href="#check-intervals" title="Permanent link">&para;</a></h2>
 <p>The polling interval is the number of seconds between scheduled checks. Set it through <code>INSTA_CHECK_INTERVAL</code> or <code>-c</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-42-1" name="__codelineno-42-1" href="#__codelineno-42-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>-c<span class="w"> </span><span class="m">3600</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-44-1" name="__codelineno-44-1" href="#__codelineno-44-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>-c<span class="w"> </span><span class="m">3600</span>
 </code></pre></div>
 <p><strong>Note</strong>: You can also adjust check intervals and randomization timers live via the <strong>Settings</strong> menu in the <strong>Web Dashboard</strong>.</p>
 <p>Use at least 3600 seconds unless you have a specific reason to send more frequent requests. Shorter intervals create more Instagram traffic and may increase the chance of limits.</p>
 <p>By default, the actual wait changes on each cycle. The range is:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-43-1" name="__codelineno-43-1" href="#__codelineno-43-1"></a>[ INSTA_CHECK_INTERVAL (-c) - RANDOM_SLEEP_DIFF_LOW (-i) ]
-<a id="__codelineno-43-2" name="__codelineno-43-2" href="#__codelineno-43-2"></a>                            to
-<a id="__codelineno-43-3" name="__codelineno-43-3" href="#__codelineno-43-3"></a>[ INSTA_CHECK_INTERVAL (-c) + RANDOM_SLEEP_DIFF_HIGH (-j) ]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a>[ INSTA_CHECK_INTERVAL (-c) - RANDOM_SLEEP_DIFF_LOW (-i) ]
+<a id="__codelineno-45-2" name="__codelineno-45-2" href="#__codelineno-45-2"></a>                            to
+<a id="__codelineno-45-3" name="__codelineno-45-3" href="#__codelineno-45-3"></a>[ INSTA_CHECK_INTERVAL (-c) + RANDOM_SLEEP_DIFF_HIGH (-j) ]
 </code></pre></div>
 <p>This means each check will happen after a random delay centered around <code>INSTA_CHECK_INTERVAL</code> with some variation defined by <code>RANDOM_SLEEP_DIFF_LOW</code> and <code>RANDOM_SLEEP_DIFF_HIGH</code>.</p>
 <p>So having the check interval set to 1 hour (-c 3600), <code>RANDOM_SLEEP_DIFF_LOW</code> set to default 15 mins (-i 900) and <code>RANDOM_SLEEP_DIFF_HIGH</code> set to default 3 mins (-j 180) means that the check interval will be with every iteration picked from the range of 45 mins to 1 hour and 3 mins.</p>
@@ -2011,10 +2089,10 @@
 </tbody>
 </table>
 <p>Send a signal with <code>kill</code> or <code>pkill</code>. For example:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-44-1" name="__codelineno-44-1" href="#__codelineno-44-1"></a>pkill<span class="w"> </span>-USR1<span class="w"> </span>-f<span class="w"> </span><span class="s2">&quot;instagram_monitor &lt;target_insta_user&gt;&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-46-1" name="__codelineno-46-1" href="#__codelineno-46-1"></a>pkill<span class="w"> </span>-USR1<span class="w"> </span>-f<span class="w"> </span><span class="s2">"instagram_monitor &lt;target_insta_user&gt;"</span>
 </code></pre></div>
 <p>For a Docker Compose service, send the signal through Docker:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a>docker<span class="w"> </span>compose<span class="w"> </span><span class="nb">kill</span><span class="w"> </span>--signal<span class="w"> </span>SIGUSR1<span class="w"> </span>instagram_monitor
+<div class="highlight"><pre><span></span><code><a id="__codelineno-47-1" name="__codelineno-47-1" href="#__codelineno-47-1"></a>docker<span class="w"> </span>compose<span class="w"> </span><span class="nb">kill</span><span class="w"> </span>--signal<span class="w"> </span>SIGUSR1<span class="w"> </span>instagram_monitor
 </code></pre></div>
 <p>For direct Docker, assign a stable container name with <code>--name instagram-monitor</code> when starting it then use <code>docker kill --signal SIGUSR1 instagram-monitor</code>.</p>
 <p>A local Windows process supports only a limited signal set. Linux containers can receive the Docker signals above when a Docker-compatible runtime runs them on Windows.</p>
@@ -2022,12 +2100,12 @@
 <h2 id="coloring-log-output-with-grc">Coloring Log Output with GRC<a class="headerlink" href="#coloring-log-output-with-grc" title="Permanent link">&para;</a></h2>
 <p>Instagram Monitor can color live terminal output through <code>COLORED_OUTPUT</code> and <code>COLOR_THEME</code>. To color saved log files when viewing them later, you can use <a href="https://github.com/garabik/grc">GRC</a>.</p>
 <p>Add to your GRC config (<code>~/.grc/grc.conf</code>):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-46-1" name="__codelineno-46-1" href="#__codelineno-46-1"></a># monitoring log file
-<a id="__codelineno-46-2" name="__codelineno-46-2" href="#__codelineno-46-2"></a>.*_monitor.*\.log
-<a id="__codelineno-46-3" name="__codelineno-46-3" href="#__codelineno-46-3"></a>conf.monitor_logs
+<div class="highlight"><pre><span></span><code><a id="__codelineno-48-1" name="__codelineno-48-1" href="#__codelineno-48-1"></a># monitoring log file
+<a id="__codelineno-48-2" name="__codelineno-48-2" href="#__codelineno-48-2"></a>.*_monitor.*\.log
+<a id="__codelineno-48-3" name="__codelineno-48-3" href="#__codelineno-48-3"></a>conf.monitor_logs
 </code></pre></div>
 <p>Copy <a href="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/grc/conf.monitor_logs">conf.monitor_logs</a> to <code>~/.grc/</code>. Then view a log through <code>grc</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-47-1" name="__codelineno-47-1" href="#__codelineno-47-1"></a>grc<span class="w"> </span>tail<span class="w"> </span>-F<span class="w"> </span>-n<span class="w"> </span><span class="m">100</span><span class="w"> </span>instagram_monitor_&lt;username&gt;.log
+<div class="highlight"><pre><span></span><code><a id="__codelineno-49-1" name="__codelineno-49-1" href="#__codelineno-49-1"></a>grc<span class="w"> </span>tail<span class="w"> </span>-F<span class="w"> </span>-n<span class="w"> </span><span class="m">100</span><span class="w"> </span>instagram_monitor_&lt;username&gt;.log
 </code></pre></div>
 
 
