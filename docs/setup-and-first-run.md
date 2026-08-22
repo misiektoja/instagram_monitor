@@ -5,7 +5,7 @@
 
 This page assumes Instagram Monitor is already installed (see [Installation](installation.md)). It walks through the interactive setup wizard then your first monitoring run. If you opened this page first, choose [PyPI](installation.md#install-from-pypi), the [manual Python script](installation.md#manual-python-based-installation), the [Docker image](installation.md#install-from-docker-hub) or [Docker Compose](installation.md#docker-compose), finish that method's steps then return here.
 
-Then use the interactive setup wizard. It asks which Instagram accounts to monitor, whether to use a saved login, how often to poll, which interface to start and which alerts to enable. The polling interval accepts seconds directly, decimal units such as `1.5h` or compound durations such as `1h 30m`. Supported units are `s`, `m`, `h` and `d`. You can review and change your answers before saving. Regular settings go in `instagram_monitor.conf`. Private values such as passwords and webhook URLs go in `.env`.
+Then use the interactive setup wizard. It asks which Instagram accounts to monitor, whether to use a saved login, how often to poll, which interface to start and which alerts to enable. Leave the targets question empty if you want to start with only the Web Dashboard then add accounts in your browser. Terminal Dashboard and plain-text setups ask for at least one target before saving. The polling interval accepts seconds directly, decimal units such as `1.5h` or compound durations such as `1h 30m`. Supported units are `s`, `m`, `h` and `d`. You can review and change your answers before saving. Regular settings go in `instagram_monitor.conf`. Private values such as passwords and webhook URLs go in `.env`.
 
 For a local install, the wizard can check the setup and start monitoring immediately. In a container, it prints the next Docker or Docker Compose commands to run.
 
@@ -74,7 +74,7 @@ For Docker or Docker Compose, choose **Import from Firefox after setup**. The wi
 
 Firefox import works in every local installation without an extra package. Chrome, Brave and Chromium import works on macOS and Linux with the optional browser dependency. Container setup uses Firefox because Chromium cookie decryption needs a password service from the host that is not available inside the container. See [Session Login Using Browser Cookies](configuration.md#option-3-session-login-using-browser-cookies-recommended).
 
-If no targets or Web Dashboard setting have been saved, running the tool with no arguments opens the wizard in an interactive terminal. If `TARGET_USERNAMES` contains saved targets, the same command starts monitoring them. If only the Web Dashboard is enabled, it starts an empty browser control panel where you can add targets.
+If no targets or Web Dashboard setting have been saved, running the tool with no arguments opens the wizard in an interactive terminal. Leave its targets question empty then select **Web dashboard** to save an empty browser control panel. If `TARGET_USERNAMES` contains saved targets, the same command starts monitoring them. If only the Web Dashboard is enabled, it starts an empty browser control panel where you can add targets.
 
 <a id="not-sure-which-mode-you-want"></a>
 ## Not sure which command you need?
