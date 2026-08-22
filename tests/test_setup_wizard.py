@@ -56,6 +56,56 @@ def test_polling_section_uses_duration_input(im_module, monkeypatch):
         duration_mock.assert_called_once_with("Instagram polling interval (seconds or use s/m/h/d)", im_module.INSTA_CHECK_INTERVAL)
 
 
+class TestTargetCollection:
+    # Verifies Web Dashboard setup accepts no initial targets and skips the persistence question
+    def test_web_dashboard_setup_accepts_an_empty_target_list(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            state.targets = []
+            ask_text = Mock(side_effect=[""])
+            ask_yes_no = Mock(side_effect=AssertionError("persistence prompt should be skipped for no targets"))
+            monkeypatch.setattr(im_module, "_wizard_ask_text", ask_text)
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", ask_yes_no)
+
+            im_module._wizard_collect_target_section(state, allow_empty=True)
+
+            assert state.targets == []
+            assert state.persist_targets is False
+            assert state.config_values["TARGET_USERNAMES"] == []
+            ask_text.assert_called_once_with("Which Instagram account(s) or target(s) do you want to monitor? (leave empty to add them in the Web Dashboard)", default="", required=False)
+            ask_yes_no.assert_not_called()
+            assert "No initial targets selected. Add them later in the Web Dashboard." in capsys.readouterr().out
+
+    # Verifies non-Web interfaces collect a required target after an initially empty answer
+    @pytest.mark.parametrize("interface", [1, 2])
+    def test_non_web_interface_requires_a_target(self, im_module, monkeypatch, interface):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            state.targets = []
+            collect_targets = Mock(side_effect=lambda current_state, allow_empty: current_state.targets.append("target.user"))
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: interface)
+            monkeypatch.setattr(im_module, "_wizard_collect_target_section", collect_targets)
+
+            im_module._wizard_collect_interface_section(state, "manual")
+
+            collect_targets.assert_called_once_with(state, allow_empty=False)
+            assert state.targets == ["target.user"]
+
+    # Verifies target editing preserves the selected interface's empty-target rule
+    @pytest.mark.parametrize("want_web,allow_empty", [(True, True), (False, False)])
+    def test_target_editor_uses_the_interface_empty_target_rule(self, im_module, monkeypatch, want_web, allow_empty):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            state.want_web = want_web
+            collect_targets = Mock()
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: 0)
+            monkeypatch.setattr(im_module, "_wizard_collect_target_section", collect_targets)
+
+            im_module._wizard_edit_setup_section(state, "manual")
+
+            collect_targets.assert_called_once_with(state, allow_empty=allow_empty)
+
+
 class TestEditableReview:
     def test_discard_leaves_destination_files_unchanged(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
@@ -227,7 +277,7 @@ class TestSectionOrder:
             protect_setup_globals(im_module, monkeypatch)
             monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
             monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
-            monkeypatch.setattr(im_module, "_wizard_collect_target_section", lambda state: calls.append("target"))
+            monkeypatch.setattr(im_module, "_wizard_collect_target_section", lambda state, allow_empty=False: calls.append(f"target:{allow_empty}"))
             monkeypatch.setattr(im_module, "_wizard_collect_login_section", lambda state, method: (calls.append("login"), print("\nHow do you want to access Instagram?")))
             monkeypatch.setattr(im_module, "_wizard_collect_polling_section", lambda state: (calls.append("polling"), print("Instagram polling interval [5400s - 1h 30m]:")))
             monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: calls.append("interface"))
@@ -240,7 +290,7 @@ class TestSectionOrder:
 
             output = capsys.readouterr().out
             assert error.value.code == 1
-            assert calls == ["target", "polling", "login", "interface", "email", "webhook", "review"]
+            assert calls == ["target:True", "polling", "login", "interface", "email", "webhook", "review"]
             assert "Instagram polling interval [5400s - 1h 30m]:\n\nHow do you want to access Instagram?" in output
             assert "Instagram polling interval [5400s - 1h 30m]:\n\n\nHow do you want to access Instagram?" not in output
 
@@ -284,7 +334,7 @@ class TestWizardSafetyGates:
             protect_setup_globals(im_module, monkeypatch)
             monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
             monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "pip")
-            monkeypatch.setattr(im_module, "_wizard_collect_target_section", lambda state: state.targets.append("target.user"))
+            monkeypatch.setattr(im_module, "_wizard_collect_target_section", lambda state, allow_empty=False: state.targets.append("target.user"))
             monkeypatch.setattr(im_module, "_wizard_collect_login_section", lambda state, method: (setattr(state, "logged_in", True), setattr(state, "login_method", "firefox"), setattr(state, "session_username", "login.user"), setattr(state, "import_browser", "firefox")))
             monkeypatch.setattr(im_module, "_wizard_collect_polling_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: None)
@@ -314,7 +364,7 @@ class TestWizardSafetyGates:
             monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
             monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "docker")
             monkeypatch.setattr(im_module, "_wizard_validate_destination", lambda method, path, label: Path(path).expanduser().resolve())
-            monkeypatch.setattr(im_module, "_wizard_collect_target_section", lambda state: state.targets.append("target.user"))
+            monkeypatch.setattr(im_module, "_wizard_collect_target_section", lambda state, allow_empty=False: state.targets.append("target.user"))
             monkeypatch.setattr(im_module, "_wizard_collect_login_section", lambda state, method: (setattr(state, "logged_in", True), setattr(state, "login_method", "firefox"), setattr(state, "session_username", "login.user"), setattr(state, "import_browser", "firefox"), setattr(state, "container_host", "macos")))
             monkeypatch.setattr(im_module, "_wizard_collect_polling_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: None)
