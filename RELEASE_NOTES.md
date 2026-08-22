@@ -4,7 +4,7 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.9 (22 Aug 2026)
 
-Version **3.9** improves safety and reliability. The **Web Dashboard** is harder for other websites to reach or control. Instagram text is made safe before it appears in your terminal, emails or CSV files. Follow alerts are more reliable when a list is incomplete. Errors explain how to fix the problem. This release also adds **offline follow relationship analysis**, a security policy and regular security checks.
+Version **3.9** improves safety and reliability. The **Web Dashboard** is harder for other websites to reach or control. Its setup can now start with no accounts so you can add them later in your browser. Instagram text is made safe before it appears in your terminal, emails or CSV files. Follow alerts are more reliable when a list is incomplete. Errors explain how to fix the problem. This release also adds **offline follow relationship analysis**, a security policy and regular security checks.
 
 **Features and improvements**:
 
@@ -32,6 +32,7 @@ Version **3.9** improves safety and reliability. The **Web Dashboard** is harder
 - **BUGFIX:** **Terminal restored after quitting the dashboard** - Pressing **q** or Ctrl+C now restores normal terminal typing before the tool exits
 - **BUGFIX:** **Accurate dashboard startup errors** - The tool reports a port conflict only when the address is actually in use or refused. Other startup errors show their real cause
 - **BUGFIX:** **Dashboard targets survive a restart** - Targets added or removed in the browser are now saved to **`TARGET_USERNAMES`** when you press **Generate Config**. A restarted service therefore monitors the same list. The confirmation shows the full file path so you can see when a service started in `/` is not updating the file passed to **`--config-file`** (closes [#122](https://github.com/misiektoja/instagram_monitor/issues/122))
+- **BUGFIX:** **Target-free dashboard setup** - Leave the setup wizard's target question empty to start with only the **Web Dashboard** then add accounts in your browser. Terminal Dashboard and plain-text setups still require at least one target
 
 **Security and privacy**:
 
