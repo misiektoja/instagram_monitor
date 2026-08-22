@@ -12685,14 +12685,23 @@ def _wizard_choose_config_destination(config_path: Path) -> Path:
     return selected
 
 
-# Collects monitored targets and whether they should be persisted
-def _wizard_collect_target_section(state: WizardSetupState) -> None:
+# Collects monitored targets and allows an empty list only for Web Dashboard setup
+def _wizard_collect_target_section(state: WizardSetupState, allow_empty: bool = False) -> None:
     default_targets = ", ".join(state.targets)
-    targets = []
-    while not targets:
-        targets_raw = _wizard_ask_text("Which Instagram account(s) or target(s) do you want to monitor?", default=default_targets, required=True)
+    question = "Which Instagram account(s) or target(s) do you want to monitor?"
+    if allow_empty:
+        question += " (leave empty to add them in the Web Dashboard)"
+    while True:
+        targets_raw = _wizard_ask_text(question, default=default_targets, required=not allow_empty)
         targets = [target.strip().lstrip("@") for target in targets_raw.split(",") if target.strip()]
+        if targets or allow_empty:
+            break
     state.targets = targets
+    if not targets:
+        state.persist_targets = False
+        state.config_values["TARGET_USERNAMES"] = []
+        print(colorize("info", "  No initial targets selected. Add them later in the Web Dashboard."))
+        return
     print()
     state.persist_targets = _wizard_ask_yes_no("Save the target(s) in the config file too?", default=state.persist_targets)
     state.config_values["TARGET_USERNAMES"] = list(targets) if state.persist_targets else []
@@ -12768,6 +12777,9 @@ def _wizard_collect_interface_section(state: WizardSetupState, method: str) -> N
     state.want_web = interface == 0
     state.want_terminal = interface == 1
     state.config_values.update({"WEB_DASHBOARD_ENABLED": state.want_web, "DASHBOARD_ENABLED": state.want_terminal})
+    if not state.want_web and not state.targets:
+        print(colorize("warning", "  Terminal and plain-text monitoring need at least one target."))
+        _wizard_collect_target_section(state, allow_empty=False)
     if state.want_web and not FLASK_AVAILABLE:
         print(colorize("warning", "  Note: flask is not installed, so the web dashboard will remain unavailable until it is installed."))
     if state.want_terminal and not RICH_AVAILABLE:
@@ -12870,8 +12882,9 @@ def _wizard_collect_destination_section(state: WizardSetupState, method: str) ->
 def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
     interface = "web dashboard" if state.want_web else "terminal dashboard" if state.want_terminal else "plain text logs"
     session_summary = state.session_username if state.logged_in and state.session_username else "detect during browser import" if state.logged_in else "none"
+    target_summary = ", ".join(state.targets) if state.targets else "none - add them in the Web Dashboard"
     print(colorize("header", "\nSetup summary\n"))
-    print(f"  Targets: {', '.join(state.targets)}")
+    print(f"  Targets: {target_summary}")
     print(f"  Persist targets: {'yes' if state.persist_targets else 'no'}")
     print(f"  Polling interval: {_wizard_format_duration(int(state.config_values['INSTA_CHECK_INTERVAL']))}")
     print(f"  Login: {state.login_method}")
@@ -12893,7 +12906,7 @@ def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
     section = _wizard_ask_choice("Which setup section should be changed?", [("Targets and persistence", "Change monitored accounts and whether they are saved."), ("Polling interval", "Change how often Instagram is checked."), ("Login and session", "Change no-login, browser or credential settings."), ("Interface", "Change the dashboard or plain text mode."), ("Email alerts", "Change SMTP settings."), ("Webhook alerts", "Change Discord or ntfy settings."), ("File destinations", "Change the config or dotenv path."), ("Return to summary", "Keep every current answer.")])
     if section == 0:
         print()
-        _wizard_collect_target_section(state)
+        _wizard_collect_target_section(state, allow_empty=state.want_web)
     elif section == 1:
         print()
         _wizard_collect_polling_section(state)
@@ -13024,7 +13037,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     state = WizardSetupState(config_path, env_path, baseline_values, config_values, {}, [], True, False, "no-login", "", None, None, True, False, False, False)
 
     print()
-    _wizard_collect_target_section(state)
+    _wizard_collect_target_section(state, allow_empty=True)
     _wizard_collect_polling_section(state)
     _wizard_collect_login_section(state, method)
     _wizard_collect_interface_section(state, method)
