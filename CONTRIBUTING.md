@@ -4,7 +4,7 @@ instagram_monitor is a real-time OSINT tool for tracking Instagram activity. Bug
 
 ## Before contributing
 
-Open an issue or a [discussion](https://github.com/misiektoja/instagram_monitor/discussions) before starting substantial work, so an approach is agreed before you write it. Suspected vulnerabilities go through [SECURITY.md](SECURITY.md), never a public issue.
+Open an issue or a [discussion](https://github.com/misiektoja/instagram_monitor/discussions) before starting substantial work, so an approach is agreed before you write it. [SUPPORT.md](SUPPORT.md) lists where usage questions and bug reports belong. Suspected vulnerabilities go through [SECURITY.md](SECURITY.md), never a public issue.
 
 Contribute only code you have the right to license under GPL-3.0-or-later.
 
@@ -60,3 +60,5 @@ Pull requests target `dev`. The pull request template lists the checks to report
 ## Code style
 
 The codebase favors complete implementations over minimal patches, explicit validation of anything Instagram supplies and one concise summary comment directly above each shared function. Follow the surrounding code rather than introducing a new style.
+
+[.editorconfig](.editorconfig) records the whitespace rules the repository already follows: UTF-8, LF line endings, a final newline, no trailing whitespace, four-space indentation for Python and the dashboard template and two spaces for YAML, TOML and JSON. Most editors apply it automatically, a few need a plugin. The test suite checks tracked files against the same rules, so a change made in an editor that ignores them will fail CI.
