@@ -1,0 +1,24 @@
+# Citation metadata for this repository: https://citation-file-format.github.io
+# GitHub reads this file to build the "Cite this repository" widget.
+cff-version: 1.2.0
+message: "If you use instagram_monitor in your work, please cite it as below."
+title: instagram_monitor
+abstract: "Real-time OSINT tool for monitoring Instagram activity, profile and content changes, with terminal and web dashboards plus instant notifications."
+type: software
+authors:
+  - family-names: Szymanski
+    given-names: Michal
+    alias: misiektoja
+    email: misiektoja-github@rm-rf.ninja
+version: "3.9"
+date-released: 2026-08-22
+license: GPL-3.0-or-later
+repository-code: "https://github.com/misiektoja/instagram_monitor"
+url: "https://misiektoja.github.io/instagram_monitor/"
+keywords:
+  - instagram
+  - monitoring
+  - tracking
+  - real-time
+  - osint
+  - instaloader
