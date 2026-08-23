@@ -29,6 +29,7 @@ These are not installed with the package and are not redistributed with it.
 | Component | License | Use |
 | --- | --- | --- |
 | [pytest](https://github.com/pytest-dev/pytest) | MIT | Test suite |
+| [Ruff](https://github.com/astral-sh/ruff) | MIT | Linting the module and the test suite |
 | [PyYAML](https://github.com/yaml/pyyaml) | MIT | Validating workflows and issue templates in the test suite |
 | [Playwright](https://github.com/microsoft/playwright-python) | Apache-2.0 | Browser end-to-end tests for the Web Dashboard |
 | [build](https://github.com/pypa/build), [setuptools](https://github.com/pypa/setuptools), [wheel](https://github.com/pypa/wheel) | MIT | Package build |
