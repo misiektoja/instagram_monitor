@@ -4,7 +4,6 @@ The flag probe normally resolves a canonical public account over the network.
 Here profile_from_username_resilient is stubbed so the logic runs fully offline.
 """
 
-import pytest
 
 
 class _FakeBot:
