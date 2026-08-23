@@ -1,9 +1,12 @@
 """Semantic regression tests for installation-aware documentation."""
 
+import configparser
 import re
+import subprocess
 import textwrap
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -198,7 +201,7 @@ def declared_dependency_names(block: str) -> set:
 
 # Verifies the repository keeps the community and licensing documents contributors are pointed to
 def test_repository_governance_documents_exist():
-    for relative_path in ("SECURITY.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "THIRD_PARTY_NOTICES.md", "LICENSE", ".github/pull_request_template.md"):
+    for relative_path in ("SECURITY.md", "SUPPORT.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "THIRD_PARTY_NOTICES.md", "LICENSE", ".github/pull_request_template.md"):
         asset = PROJECT_ROOT / relative_path
         assert asset.is_file(), relative_path
         assert asset.stat().st_size > 200, relative_path
@@ -302,3 +305,83 @@ def test_security_workflows_cover_code_and_supply_chain():
 
     supply_chain = read_yaml_asset(".github/workflows/supply-chain.yml")
     assert {"gitleaks", "pip-audit", "sbom", "image-scan"} <= set(supply_chain["jobs"])
+
+
+# Verifies the citation metadata GitHub renders stays parseable and describes this project
+def test_citation_metadata_describes_this_project():
+    citation = read_yaml_asset("CITATION.cff")
+    assert citation["cff-version"] == "1.2.0"
+    assert citation["type"] == "software"
+    assert citation["title"] == "instagram_monitor"
+    assert citation["message"]
+    assert citation["license"] == "GPL-3.0-or-later"
+    assert citation["repository-code"] == "https://github.com/misiektoja/instagram_monitor"
+    assert citation["date-released"].isoformat() == str(citation["date-released"])
+
+    author = citation["authors"][0]
+    assert author["given-names"] and author["family-names"] and author["alias"] == "misiektoja"
+
+
+# Verifies the sponsor button keeps a target, since an empty file hides it without failing any check
+def test_funding_configuration_declares_a_sponsor_target():
+    funding = read_yaml_asset(".github/FUNDING.yml")
+    assert funding["github"] == "misiektoja"
+    assert funding["buy_me_a_coffee"] == "misiektoja"
+
+
+# Verifies the shared editor settings still declare the style the repository is written in
+def test_editor_configuration_declares_the_repository_style():
+    settings = configparser.ConfigParser()
+    settings.read_string("[editorconfig]\n" + read_asset(".editorconfig"))
+
+    assert settings["editorconfig"]["root"] == "true"
+    assert settings["*"]["charset"] == "utf-8"
+    assert settings["*"]["end_of_line"] == "lf"
+    assert settings["*"]["indent_style"] == "space"
+    assert settings["*"]["indent_size"] == "4"
+    assert settings["*"]["insert_final_newline"] == "true"
+    assert settings["*"]["trim_trailing_whitespace"] == "true"
+    assert settings["*.py"]["indent_size"] == "4"
+    assert settings["*.html"]["indent_size"] == "4"
+    assert settings["*.{yml,yaml}"]["indent_size"] == "2"
+    # Two trailing spaces are a Markdown line break, so they must stay exempt from trimming
+    assert settings["*.md"]["trim_trailing_whitespace"] == "false"
+
+
+# Verifies tracked text files obey those whitespace rules, since an editor setting only warns on the machine that has it
+def test_tracked_text_files_obey_the_declared_whitespace_rules():
+    listing = subprocess.run(["git", "ls-files"], cwd=PROJECT_ROOT, check=False, capture_output=True, text=True)
+    if listing.returncode != 0:
+        pytest.skip("not a git checkout")
+
+    offenders = []
+    for name in listing.stdout.split():
+        asset = PROJECT_ROOT / name
+        if not asset.is_file() or asset.suffix.casefold() in {".png", ".jpg", ".gif"}:
+            continue
+        content = asset.read_bytes()
+        if b"\r\n" in content:
+            offenders.append(f"{name}: CRLF line ending")
+        if content and not content.endswith(b"\n"):
+            offenders.append(f"{name}: missing final newline")
+        # LICENSE is verbatim upstream text and Markdown keeps meaningful trailing spaces
+        if name != "LICENSE" and asset.suffix.casefold() != ".md" and re.search(rb"[ \t]+\n", content):
+            offenders.append(f"{name}: trailing whitespace")
+    assert offenders == []
+
+
+# Verifies the support document routes each request to a channel that exists
+def test_support_document_routes_every_request_type():
+    support = read_asset("SUPPORT.md")
+    for destination in ("https://github.com/misiektoja/instagram_monitor/discussions", "https://github.com/misiektoja/instagram_monitor/security/advisories/new", "https://github.com/misiektoja/instagram_monitor/issues/new?template=bug_report.yml", "https://github.com/misiektoja/instagram_monitor/issues/new?template=feature_request.yml"):
+        assert destination in support
+    assert "instagram_monitor --doctor" in fenced_code_lines(support)
+    assert_concepts(support, "session cookies", "webhook URLs", "--debug")
+
+
+# Verifies Git normalizes line endings, since one CRLF commit from a Windows contributor rewrites whole files
+def test_line_ending_policy_is_declared():
+    attributes = read_asset(".gitattributes")
+    assert "* text=auto eol=lf" in attributes
+    for pattern in ("*.png binary", "*.jpg binary", "*.gif binary"):
+        assert pattern in attributes
