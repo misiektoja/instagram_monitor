@@ -30,9 +30,18 @@ python -m playwright install --with-deps chromium
 Run these before submitting a change:
 
 ```sh
+python -m ruff check instagram_monitor.py tests
 python -m pytest
 mkdocs build --strict
 ```
+
+The linter comes from a pinned extra so a new ruff release cannot fail your build on a rule that did not exist yet:
+
+```sh
+pip install -e '.[lint]'
+```
+
+It selects defect rules only (pyflakes and bugbear). Formatting and import order are deliberately not enforced, so keep following the surrounding code.
 
 The default suite is offline. It never contacts Instagram and network functions are replaced with local test doubles. See [Testing](https://misiektoja.github.io/instagram_monitor/testing/) for what it covers.
 
@@ -60,5 +69,12 @@ Pull requests target `dev`. The pull request template lists the checks to report
 ## Code style
 
 The codebase favors complete implementations over minimal patches, explicit validation of anything Instagram supplies and one concise summary comment directly above each shared function. Follow the surrounding code rather than introducing a new style.
+
+Optional local hooks run the same linter, the whitespace rules and a private-key check before a commit is written:
+
+```sh
+pip install pre-commit
+pre-commit install
+```
 
 [.editorconfig](.editorconfig) records the whitespace rules the repository already follows: UTF-8, LF line endings, a final newline, no trailing whitespace, four-space indentation for Python and the dashboard template and two spaces for YAML, TOML and JSON. Most editors apply it automatically, a few need a plugin. The test suite checks tracked files against the same rules, so a change made in an editor that ignores them will fail CI.
