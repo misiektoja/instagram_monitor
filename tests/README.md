@@ -44,7 +44,7 @@ installed copy of the package.
 | `test_parsing_and_useragents.py` | JSON username extraction, follow-string formatting, desktop/mobile user-agent shape |
 | `test_csv_and_files.py` | CSV init/append and byte-wise image comparison |
 | `test_followers.py` | Follower/following diffing, webhook escaping, CSV side effects |
-| `test_documentation.py` | Semantic documentation contracts for commands, concepts and platform variants plus repository metadata: governance files, citation, funding, line endings and the declared editor style |
+| `test_documentation.py` | Semantic documentation contracts for commands, concepts and platform variants plus repository metadata: governance files, citation, funding, line endings, the declared editor style, the pinned linter and release integrity |
 | `test_packaging.py` | Wheel contents, installed console help/version and config generation |
 | `test_browser_e2e.py` | Real Chromium rendering, navigation and target creation against the local dashboard |
 
