@@ -10,7 +10,14 @@ pip install -e '.[test]'
 python -m pytest
 ```
 
-GitHub Actions runs the same suite for pull requests and pushes to `main` or `dev`. It tests every supported Python version plus the installed command on Windows. See the [test workflow](https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/tests.yml). The workflow also performs a strict MkDocs build, container smoke checks and a real Chromium dashboard flow. The suite must pass before a release is published to PyPI or Docker Hub.
+A pinned [Ruff](https://docs.astral.sh/ruff/) lint pass runs alongside the suite. It selects defect rules only, pyflakes and bugbear, so it reports unused names, undefined names and common bug patterns without enforcing formatting or import order:
+
+```bash
+pip install -e '.[lint]'
+python -m ruff check instagram_monitor.py tests
+```
+
+GitHub Actions runs the same suite for pull requests and pushes to `main` or `dev`. It runs the linter, then tests every supported Python version plus the installed command on Windows. See the [test workflow](https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/tests.yml). The workflow also performs a strict MkDocs build, container smoke checks and a real Chromium dashboard flow. The suite must pass before a release is published to PyPI or Docker Hub.
 
 The suite intentionally excludes tests that sign in to Instagram because automated test logins could trigger security checks or suspension.
 
