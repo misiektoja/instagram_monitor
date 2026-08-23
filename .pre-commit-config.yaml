@@ -1,0 +1,35 @@
+# Optional local hooks that catch what CI would reject, before a commit is written.
+# Enable them once with:
+#     pip install pre-commit
+#     pre-commit install
+# Check the whole repository at any time with:
+#     pre-commit run --all-files
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      # The whitespace rules .editorconfig declares and the test suite enforces
+      - id: trailing-whitespace
+        # Two trailing spaces are a Markdown line break and LICENSE is verbatim upstream text
+        exclude: '\.md$|^LICENSE$'
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-yaml
+        # MkDocs configuration uses Python object tags that a strict YAML parser rejects
+        exclude: '^mkdocs\.yml$'
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+      # A private key must never reach a commit. The full gitleaks history scan stays in CI,
+      # where it needs no Go toolchain on a contributor's machine
+      - id: detect-private-key
+
+  # The same linter and version CI runs
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.4
+    hooks:
+      - id: ruff-check
+        args: [--no-fix]
+        files: '^(instagram_monitor\.py|tests/.*\.py)$'
