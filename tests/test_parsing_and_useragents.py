@@ -3,7 +3,6 @@
 import random
 import re
 
-import pytest
 
 
 def _followers_payload(usernames):
