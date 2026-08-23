@@ -2,6 +2,16 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.9.1 (TBD)
+
+Version **3.9.1** makes every published download verifiable, lets you cite the project from the repository page and puts an automated defect check on every change.
+
+**Features and improvements**:
+
+- **IMPROVE:** **Verifiable release downloads** - Each published release now attaches a **`SHA256SUMS.txt`** file next to the `zip` and `tar.gz` archives, and both archives carry a signed build provenance attestation. You can confirm a download really came from this repository before you unpack it with `gh attestation verify instagram_monitor_<tag>.zip --repo misiektoja/instagram_monitor`
+- **IMPROVE:** **Automated defect checks on every change** - A pinned [Ruff](https://docs.astral.sh/ruff/) lint pass now runs in CI before the test suite, reporting unused and undefined names and common bug patterns. Added optional pre-commit hooks and a shared [.editorconfig](https://github.com/misiektoja/instagram_monitor/blob/main/.editorconfig) that records the project's existing style
+- **IMPROVE:** **Cite the project** - The repository page now offers **Cite this repository**, which exports a ready-made BibTeX or APA entry from the new [CITATION.cff](https://github.com/misiektoja/instagram_monitor/blob/main/CITATION.cff). The new [SUPPORT.md](https://github.com/misiektoja/instagram_monitor/blob/main/SUPPORT.md) shows where a question, a bug report and a vulnerability each belong and what to include, starting with **`--doctor`** output
+
 # Changes in 3.9 (22 Aug 2026)
 
 Version **3.9** improves safety and reliability. The **Web Dashboard** is harder for other websites to reach or control. Its setup can now start with no accounts so you can add them later in your browser. Instagram text is made safe before it appears in your terminal, emails or CSV files. Follow alerts are more reliable when a list is incomplete. Errors explain how to fix the problem. This release also adds **offline follow relationship analysis**, a security policy and regular security checks.
