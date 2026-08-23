@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Signing the provenance attestation for the published archives
+      id-token: write
+      attestations: write
 
     steps:
       - name: Check out source
@@ -38,7 +41,19 @@ jobs:
           git archive --format=zip --output "${PREFIX}.zip" "${TAG}"
           git archive --format=tar.gz --output "${PREFIX}.tar.gz" "${TAG}"
 
+          sha256sum "${PREFIX}.zip" "${PREFIX}.tar.gz" > "${PREFIX}_SHA256SUMS.txt"
+
           ls -lh "${PREFIX}.zip" "${PREFIX}.tar.gz"
+          cat "${PREFIX}_SHA256SUMS.txt"
+
+      # Lets anyone confirm the archives were built by this workflow from this tag:
+      #     gh attestation verify instagram_monitor_<tag>.zip --repo misiektoja/instagram_monitor
+      - name: Attest the archives' build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            instagram_monitor_${{ github.event.release.tag_name }}.zip
+            instagram_monitor_${{ github.event.release.tag_name }}.tar.gz
 
       - name: Upload archives to GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
@@ -46,5 +61,6 @@ jobs:
           files: |
             instagram_monitor_${{ github.event.release.tag_name }}.zip
             instagram_monitor_${{ github.event.release.tag_name }}.tar.gz
+            instagram_monitor_${{ github.event.release.tag_name }}_SHA256SUMS.txt
           fail_on_unmatched_files: true
           overwrite_files: true
