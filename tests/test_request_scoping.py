@@ -67,7 +67,7 @@ class TestInstagramRequestWrapping:
         other.request("GET", "https://example.com/media")
 
         assert target.request is wrapped_method
-        assert getattr(target, "_instagram_monitor_wrapped") is True
+        assert target._instagram_monitor_wrapped is True
         assert not hasattr(other, "_instagram_monitor_wrapped")
         assert im_module.req.Session.request is requests_method
         assert target_calls == []
@@ -80,5 +80,5 @@ class TestInstagramRequestWrapping:
         source = im_module.req.Session()
         copied = instaloadercontext.copy_session(source)
 
-        assert getattr(copied, "_instagram_monitor_wrapped") is True
+        assert copied._instagram_monitor_wrapped is True
         assert not hasattr(source, "_instagram_monitor_wrapped")
