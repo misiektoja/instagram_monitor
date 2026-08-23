@@ -1,6 +1,5 @@
 """Tests for PRIVACY_SUBSTITUTIONS handling in apply_privacy_substitutions."""
 
-import pytest
 
 
 class TestApplyPrivacySubstitutions:
