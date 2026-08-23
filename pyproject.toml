@@ -43,6 +43,8 @@ keywords = ["instagram", "monitoring", "tracking", "real-time", "osint", "instal
 [project.optional-dependencies]
 test = ["build>=1.2", "pytest>=7.0", "pyyaml>=6.0", "setuptools>=61.0", "wheel"]
 e2e = ["playwright>=1.49", "pytest>=7.0"]
+# Pinned so a new ruff release cannot fail CI on a rule that did not exist when the change was written
+lint = ["ruff==0.16.4"]
 # Needed only to import Chrome/Brave/Chromium sessions (--browser chrome|brave|chromium); macOS and Linux only
 browser = ["pycookiecheat>=0.8"]
 
@@ -62,6 +64,16 @@ include-package-data = true
 [tool.setuptools.data-files]
 "instagram_monitor_data/templates" = ["templates/*.html"]
 "instagram_monitor_data" = ["instagram_profile_pic_empty.jpg"]
+
+[tool.ruff]
+target-version = "py39"
+
+[tool.ruff.lint]
+# Defect rules only: syntax errors, pyflakes and bugbear. Formatting and import order are left
+# to the surrounding code, which keeps each function definition on one physical line
+select = ["E9", "F", "B"]
+# Both are style preferences that would rewrite hundreds of existing lines without fixing a defect
+ignore = ["F541", "B904"]
 
 [tool.pytest.ini_options]
 # Run the in-repo source, never an installed copy, by putting the project root first on sys.path
