@@ -1,0 +1,4 @@
+# Renders the Sponsor button on the repository page.
+# Only the copy on the default branch is used: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+github: misiektoja
+buy_me_a_coffee: misiektoja
