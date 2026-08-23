@@ -385,3 +385,32 @@ def test_line_ending_policy_is_declared():
     assert "* text=auto eol=lf" in attributes
     for pattern in ("*.png binary", "*.jpg binary", "*.gif binary"):
         assert pattern in attributes
+
+
+# Verifies the optional local hooks run the same linter version CI installs, or a clean commit still fails CI
+def test_local_hooks_match_the_pinned_linter():
+    pyproject = read_asset("pyproject.toml")
+    pinned = re.search(r'lint = \["ruff==([^"]+)"\]', pyproject)
+    assert pinned is not None
+
+    hooks = read_yaml_asset(".pre-commit-config.yaml")["repos"]
+    ruff_hook = next(entry for entry in hooks if "ruff-pre-commit" in entry["repo"])
+    assert ruff_hook["rev"] == f"v{pinned.group(1)}"
+
+    workflow = read_yaml_asset(".github/workflows/tests.yml")
+    lint_steps = workflow["jobs"]["lint"]["steps"]
+    assert any("ruff check" in step.get("run", "") for step in lint_steps)
+
+
+# Verifies published archives stay verifiable, since an unsigned download cannot be told apart from a tampered one
+def test_release_archives_ship_checksums_and_provenance():
+    workflow = read_yaml_asset(".github/workflows/release-assets.yml")
+    job = workflow["jobs"]["build-and-upload-assets"]
+    assert job["permissions"]["attestations"] == "write"
+    assert job["permissions"]["id-token"] == "write"
+
+    assert any("sha256sum" in step.get("run", "") for step in job["steps"])
+    assert any("attest-build-provenance" in step.get("uses", "") for step in job["steps"])
+
+    upload = next(step for step in job["steps"] if "action-gh-release" in step.get("uses", ""))
+    assert "_SHA256SUMS.txt" in upload["with"]["files"]
