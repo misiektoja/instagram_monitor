@@ -1269,7 +1269,6 @@ if sys.version_info < (3, 9):
     sys.exit(1)
 
 import time
-import string
 import json
 import os
 import tempfile
@@ -1416,7 +1415,7 @@ except ImportError:
 
 try:
     import instaloader
-    from instaloader import ConnectionException, Instaloader
+    from instaloader import Instaloader
 except ModuleNotFoundError:
     raise SystemExit("Error: Couldn't find the instaloader library !\n\nTo install it, run:\n    pip3 install instaloader\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://instaloader.github.io/")
 
@@ -1823,7 +1822,7 @@ def _install_http_backend() -> None:
     if real_requests is None or isinstance(real_requests, _RequestsBackendShim):
         _CURL_CFFI_BACKEND_INSTALLED = True
         return
-    setattr(_ilc, "requests", _RequestsBackendShim(real_requests))
+    _ilc.requests = _RequestsBackendShim(real_requests)
     _CURL_CFFI_BACKEND_INSTALLED = True
 
 
@@ -3663,7 +3662,7 @@ def recheck_all_targets():
     def _staggered_rechecker_thread():
         # Small pause to let user see the plans in console before rechecks start
         time.sleep(1.5)
-        for idx, (u, delay, planned) in enumerate(planned_actions):
+        for u, delay, planned in planned_actions:
             # Activity log
             msg_time = planned.strftime('%I:%M:%S %p' if TIME_FORMAT_12H else '%H:%M:%S')
             msg = f"Recheck planned @ ~{msg_time} (in {display_time(delay)})"
@@ -4238,7 +4237,6 @@ def _apply_style_nested(line, style_name):
 
 # Applies colour rules to a single output line
 def _colorize_line(line):
-    original = line
     lowered = line.lower()
 
     # Skip block coloring (yellow/info/warning), but allow internal highlights (booleans etc.) except for "Sending email"
@@ -5365,11 +5363,11 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
 
     sanitized_fields = []
     if fields:
-        for field in fields[:WEBHOOK_MAX_FIELDS]:  # type: ignore
+        for field in fields[:WEBHOOK_MAX_FIELDS]:  # type: ignore  # noqa: F821
             sanitized_name = apply_privacy_substitutions(str(field.get("name", "")))  # type: ignore
             sanitized_value = apply_privacy_substitutions(str(field.get("value", "")))  # type: ignore
             sanitized_fields.append({
-                "name": sanitized_name[:WEBHOOK_FIELD_NAME_LIMIT],  # type: ignore
+                "name": sanitized_name[:WEBHOOK_FIELD_NAME_LIMIT],  # type: ignore  # noqa: F821
                 "value": sanitized_value[:WEBHOOK_FIELD_VALUE_LIMIT],  # type: ignore
                 "inline": field.get("inline", False)
             })
@@ -5377,7 +5375,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     webhook_image_url = str(image_url) if image_url else ""
     payload = {
         "title": title[:WEBHOOK_EMBED_TITLE_LIMIT] if title else "Instagram Monitor",  # type: ignore
-        "description": description[:WEBHOOK_EMBED_DESCRIPTION_LIMIT] if description else "",  # type: ignore
+        "description": description[:WEBHOOK_EMBED_DESCRIPTION_LIMIT] if description else "",  # type: ignore  # noqa: F821
         "version": VERSION,
         "image_url": webhook_image_url,
         "fields": sanitized_fields,
@@ -8826,13 +8824,11 @@ def instagram_wrap_request(orig_request):
             if fetch_type == 'followee':
                 per_batch = FOLLOWEES_PER_BATCH if ADVANCED_FOLLOWEE_FETCH else 0
                 batch_delay = FOLLOWEE_DELAY_PER_BATCH if ADVANCED_FOLLOWEE_FETCH else 0
-                advanced_fetch = ADVANCED_FOLLOWEE_FETCH
             elif fetch_type == 'follower':
                 per_batch = FOLLOWERS_PER_BATCH if ADVANCED_FOLLOWER_FETCH else 0
                 batch_delay = FOLLOWER_DELAY_PER_BATCH if ADVANCED_FOLLOWER_FETCH else 0
-                advanced_fetch = ADVANCED_FOLLOWER_FETCH
             else:
-                per_batch, batch_delay, advanced_fetch = 0, 0, False
+                per_batch, batch_delay = 0, 0
             # Only process and count requests that are likely follower/following related
             # Check if response is successful and JSON before processing
             user_list = []
@@ -8845,7 +8841,7 @@ def instagram_wrap_request(orig_request):
                     if user_list:
                         _thread_local.WRAPPER_COUNT = thread_wrapper_count + 1  # type: ignore[misc]
                         thread_wrapper_count = _thread_local.WRAPPER_COUNT  # type: ignore[misc]
-                except (ValueError, KeyError) as e:
+                except (ValueError, KeyError):
                     # JSON decode error or missing keys - not a follower/following request
                     # Silently skip, this is expected for non-follower/following requests
                     pass
@@ -9405,7 +9401,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
     if ctx.is_logged_in and random.random() < prob:
         try:
             posts = bot.get_explore_posts()
-            post = next(posts)
+            next(posts)
             if DEBUG_MODE:
                 debug_print("BeHuman #1: explore feed peek OK")
             elif BE_HUMAN_VERBOSE:
@@ -9442,7 +9438,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
         tag = random.choice(browsable_hashtags)
         try:
             posts = bot.get_hashtag_posts(tag)
-            post = next(posts)
+            next(posts)
             if DEBUG_MODE:
                 debug_print(f"BeHuman #3: browsed one post from #{tag} OK")
             elif BE_HUMAN_VERBOSE:
@@ -11222,7 +11218,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         _thread_local.FETCH_TYPE = 'followee'
                         followings = fetch_usernames_paginated(
                             bot,
-                            get_generator_fn=lambda: profile.get_followees(),
+                            get_generator_fn=lambda bound_profile=profile: bound_profile.get_followees(),
                             max_per_batch=FOLLOWEES_PER_BATCH,
                             total_limit=FOLLOWEE_LIMIT_TO_FETCH,
                             fetch_delay=FOLLOWEE_DELAY_PER_BATCH,
@@ -11370,7 +11366,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         _thread_local.FETCH_TYPE = 'follower'
                         followers = fetch_usernames_paginated(
                             bot,
-                            get_generator_fn=lambda: profile.get_followers(),
+                            get_generator_fn=lambda bound_profile=profile: bound_profile.get_followers(),
                             max_per_batch=FOLLOWERS_PER_BATCH,
                             total_limit=FOLLOWER_LIMIT_TO_FETCH,
                             fetch_delay=FOLLOWER_DELAY_PER_BATCH,
