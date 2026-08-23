@@ -9,6 +9,7 @@ import tempfile
 import venv
 import zipfile
 from collections.abc import Iterator
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -156,6 +157,19 @@ class TestVersionConsistency:
 
         assert packaged is not None and docstring is not None
         assert im_module.VERSION == packaged.group(1) == docstring.group(1)
+
+    # The citation must name a version somebody can actually cite, so it tracks the newest dated release
+    # notes section rather than the version under development
+    def test_citation_tracks_the_newest_released_version(self):
+        notes = (PROJECT_ROOT / "RELEASE_NOTES.md").read_text(encoding="utf-8")
+        citation = (PROJECT_ROOT / "CITATION.cff").read_text(encoding="utf-8")
+        released = re.search(r"^# Changes in ([\d.]+) \((\d{1,2} \w{3} \d{4})\)", notes, re.M)
+        cited_version = re.search(r'^version: "([^"]+)"', citation, re.M)
+        cited_date = re.search(r"^date-released: (\d{4}-\d{2}-\d{2})", citation, re.M)
+
+        assert released is not None and cited_version is not None and cited_date is not None
+        assert cited_version.group(1) == released.group(1)
+        assert cited_date.group(1) == datetime.strptime(released.group(2), "%d %b %Y").strftime("%Y-%m-%d")
 
     # Release notes must describe the version the code actually declares, or the notes ship ahead of the code
     def test_release_notes_lead_with_the_declared_version(self, im_module):
