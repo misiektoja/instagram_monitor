@@ -28,11 +28,6 @@ Report a suspected vulnerability privately through [GitHub security advisories](
 
 Licensed under GPLv3. See [LICENSE](https://github.com/misiektoja/instagram_monitor/blob/main/LICENSE). Dependency licenses are listed in [THIRD_PARTY_NOTICES.md](https://github.com/misiektoja/instagram_monitor/blob/main/THIRD_PARTY_NOTICES.md).
 
-<a id="citation"></a>
-## Citation
-
-If you use instagram_monitor in research or writing, cite it with the metadata in [CITATION.cff](https://github.com/misiektoja/instagram_monitor/blob/main/CITATION.cff). GitHub renders it as **Cite this repository** on the repository page and exports it as BibTeX or APA.
-
 <a id="support"></a>
 ## Support
 
