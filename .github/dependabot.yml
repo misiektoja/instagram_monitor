@@ -21,6 +21,10 @@ updates:
     groups:
       docker:
         patterns: ["*"]
+    ignore:
+      # Digest and patch refreshes only, so a Python major or minor move stays a deliberate upgrade
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     commit-message:
       prefix: "build"
 
