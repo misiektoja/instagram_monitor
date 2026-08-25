@@ -5324,6 +5324,8 @@ def post_webhook_request(webhook_url, verify, proxies, **request_kwargs):
         verify = resolve_existing_file_path(verify, "proxy certificate")
     # The destination is intentionally operator-configurable and dashboard writes are restricted to the trusted local UI
 
+    # A caller that forgets the deadline would hang the delivery, so the configured one is the floor
+    request_kwargs.setdefault("timeout", WEBHOOK_TIMEOUT_SECONDS)
     # codeql[py/full-ssrf, py/request-without-cert-validation]
     return WEBHOOK_SESSION.post(destination, verify=verify, proxies=proxies, allow_redirects=False, **request_kwargs)
 
