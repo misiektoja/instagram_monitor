@@ -99,6 +99,16 @@ class TestSendWebhook:
         assert payload["embeds"][0]["fields"][0]["inline"] is True
         assert payload["allowed_mentions"] == {"parse": []}
 
+    # Delivery must stay bounded even if a future call site forgets to pass the configured deadline
+    def test_delivery_falls_back_to_the_configured_deadline(self, im_module, monkeypatch):
+        post = Mock(return_value=_FakeResponse())
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", post)
+
+        im_module.post_webhook_request("https://example.com/hook", True, None, json={"content": "body"})
+
+        assert post.call_args.kwargs["timeout"] == im_module.WEBHOOK_TIMEOUT_SECONDS
+        assert post.call_args.kwargs["allow_redirects"] is False
+
     # An unconfigured WEBHOOK_URL still holding the shipped placeholder must not be treated as a destination
     def test_placeholder_url_sends_nothing(self, im_module, monkeypatch, capsys):
         calls = []
