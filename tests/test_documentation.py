@@ -412,5 +412,11 @@ def test_release_archives_ship_checksums_and_provenance():
     assert any("sha256sum" in step.get("run", "") for step in job["steps"])
     assert any("attest-build-provenance" in step.get("uses", "") for step in job["steps"])
 
+    attest = next(step for step in job["steps"] if "attest-build-provenance" in step.get("uses", ""))
+    stage = next(step for step in job["steps"] if ".intoto.jsonl" in step.get("run", ""))
+    assert f"steps.{attest['id']}.outputs.bundle-path" in stage["env"]["BUNDLE_PATH"]
+
     upload = next(step for step in job["steps"] if "action-gh-release" in step.get("uses", ""))
     assert "_SHA256SUMS.txt" in upload["with"]["files"]
+    # Offline verifiers need the bundle as an asset, since the attestations API may be unreachable
+    assert ".intoto.jsonl" in upload["with"]["files"]
