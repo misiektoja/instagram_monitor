@@ -13683,10 +13683,14 @@ def build_doctor_report(targets, config_errors: Sequence[dict] = (), retired_set
     return report
 
 
+# Prints what Doctor will and will not do, before the checks start
+def render_doctor_notice() -> None:
+    print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.\n")
+
+
 # Prints one sectioned doctor report, keeping the marker and indent format scripts and users already read
 def render_doctor_report(report: DoctorReport) -> None:
     print(colorize("header", "Doctor\n"))
-    print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.\n")
     for index, section in enumerate(("Environment", "Configuration", "Session", "Connectivity", "Targets", "Notifications")):
         section_checks = [check for check in report.checks if check.section == section]
         if not section_checks:
@@ -13715,6 +13719,7 @@ def render_doctor_summary(fails: int, warns: int) -> None:
 # Runs doctor preflight plus approved delivery tests and returns the number of failed checks
 def run_doctor(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = ()) -> int:
     progress = _doctor_progress if sys.stdout.isatty() else None
+    render_doctor_notice()
     try:
         report = build_doctor_report(targets, config_errors, retired_settings, progress)
     finally:
