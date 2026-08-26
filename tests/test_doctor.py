@@ -162,7 +162,7 @@ class TestDoctorChecks:
         out = capsys.readouterr().out
 
         assert "[FAIL] broken\n  detail text\nTo fix: do the thing.\nGuide: https://example.invalid/guide" in out
-        assert "To fix:" not in out.split("[ OK ] fine", 1)[1]
+        assert "To fix:" not in out.split("[PASS] fine", 1)[1]
 
     # The renderer owns the 'To fix:' prefix, so a recorded action must not carry its own
     def test_recorded_config_actions_do_not_repeat_the_prefix(self, im_module, tmp_path, monkeypatch):
