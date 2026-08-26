@@ -3,6 +3,23 @@ from io import StringIO
 import pytest
 
 
+# Verifies the shipped config template and the built-in theme describe exactly the same colours, so
+# generating a config file cannot silently change how any part of the output looks
+def test_config_template_theme_matches_the_built_in_theme(im_module):
+    assert im_module.COLOR_THEME == im_module.DEFAULT_COLOR_THEME
+
+
+# Verifies the Timestamp label is left uncoloured, matching the sibling monitors
+def test_timestamp_label_is_uncolored(im_module):
+    assert im_module.DEFAULT_COLOR_THEME["timestamp_label"] == ""
+
+
+# Verifies every style word used by the shipped theme resolves, allowing a deliberately uncoloured part
+def test_default_theme_styles_all_resolve(im_module):
+    for name, value in im_module.DEFAULT_COLOR_THEME.items():
+        assert im_module._build_ansi_sequence(value) or value == "", name
+
+
 # Verifies time highlighting accepts valid clock values without matching numeric port mappings
 @pytest.mark.parametrize("value", ["00:00", "23:59", "21:07:39", "~21:07:39", "09:15 PM"])
 def test_time_color_regex_accepts_only_complete_clock_values(im_module, value):
