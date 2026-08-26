@@ -647,7 +647,11 @@ COLOR_THEME = {
     "header": "bright_cyan",
     "section": "bright_white",
     # Identity
-    "username": "blue bold",
+    "username": "blue underline",
+    # Status values
+    "status_online": "green",
+    "status_offline": "red",
+    "status_other": "white",
     # Content types
     "post": "bright_green",
     "reel": "bright_magenta",
@@ -662,6 +666,8 @@ COLOR_THEME = {
     "warning": "yellow",
     "error": "red",
     "signal": "yellow",
+    "email": "bright_cyan",
+    "webhook": "bright_blue",
     # Dates
     "date": "magenta",
     "date_range": "magenta",
@@ -4040,7 +4046,7 @@ DEFAULT_COLOR_THEME = {
     "status_change": "yellow",
     "duration": "green",
     # Misc
-    "timestamp_label": "dim",
+    "timestamp_label": "",
     "timestamp_value": "cyan",
     "info": "cyan",
     "warning": "yellow",
