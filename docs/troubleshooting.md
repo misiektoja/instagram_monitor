@@ -11,7 +11,7 @@ Before a long monitoring run, check the current configuration:
 instagram_monitor --doctor
 ```
 
-Doctor does not change files. It uses `[PASS]`, `[WARN]` and `[FAIL]` markers for the Python version, required and optional packages, configuration, private values, login session, Instagram connection, target usernames and notification settings, and `[ -- ]` for informational lines. A missing optional package is a `WARN` naming the feature it powers, so you can ignore the ones you do not use. Login session checks apply only to Logged-In Mode. The report closes with a `Summary` line and a link back to this page.
+Doctor does not change files. It uses `[PASS]`, `[WARN]` and `[FAIL]` markers for the Python version, required and optional packages, configuration, private values, login session, Instagram connection, target usernames and notification settings. A missing optional package is a `WARN` naming the feature it powers, so you can ignore the ones you do not use. Running with no target is a `PASS` when the Web Dashboard is enabled, since targets can be added there, and a `WARN` otherwise, since nothing would be monitored. Login session checks apply only to Logged-In Mode. The report closes with a `Summary` line and a link back to this page.
 
 A configuration file Instagram Monitor cannot accept is reported by Doctor as a `FAIL` naming the line and the reason, instead of stopping the command before the checks run. This means you can point Doctor at a configuration you are still fixing. Settings that a later release removed are reported as a `WARN` and ignored, so an older configuration file still runs.
 
