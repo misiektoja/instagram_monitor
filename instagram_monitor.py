@@ -13571,16 +13571,16 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
     elif cfg:
         checks.append(make_doctor_check("Configuration", "ok", "Config file", f"Path: {cfg}"))
     else:
-        checks.append(make_doctor_check("Configuration", "info", "Config file", "none found - using defaults and CLI flags (create one with --setup)"))
+        checks.append(make_doctor_check("Configuration", "ok", "No configuration file selected", "Using built-in defaults and command-line overrides. Create one with --setup"))
     if retired_settings:
         checks.append(make_doctor_check("Configuration", "warn", "Config file contains removed settings", describe_retired_settings(retired_settings, cfg), "delete the reported settings, or regenerate the file with --generate-config.", CONFIG_FILE_GUIDE_URL))
 
     placeholders = ("", "your_smtp_password")
     present_secrets = [key for key in SECRET_KEYS if globals().get(key) and globals().get(key) not in placeholders]
-    checks.append(make_doctor_check("Configuration", "info", "Secrets from environment/.env", ", ".join(present_secrets) if present_secrets else "none set"))
+    checks.append(make_doctor_check("Configuration", "ok", "Secrets from environment/.env", ", ".join(present_secrets) if present_secrets else "none set"))
 
     if DISABLE_LOGGING:
-        checks.append(make_doctor_check("Configuration", "info", "Output logging is disabled"))
+        checks.append(make_doctor_check("Configuration", "ok", "Output logging is disabled", "No log file will be written"))
     elif targets:
         for target in targets:
             _, target_log = get_target_paths(target)
@@ -13589,7 +13589,7 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
             else:
                 checks.append(make_doctor_check("Configuration", "fail", f"Log destination for '{target}' is not writable", f"Path: {target_log}", "choose a writable path with --output-dir or INSTA_LOGFILE, or disable logging with -d."))
     else:
-        checks.append(make_doctor_check("Configuration", "info", "Log destination will be finalized after a target is selected", f"Base path: {INSTA_LOGFILE}"))
+        checks.append(make_doctor_check("Configuration", "ok", "Log destination will be finalized after a target is selected", f"Base path: {INSTA_LOGFILE}"))
     return checks
 
 
@@ -13608,7 +13608,7 @@ def doctor_prepare_bot(report: DoctorReport) -> List[DoctorCheck]:
 def doctor_check_session(report: DoctorReport, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
     if not logged_in:
-        return [make_doctor_check("Session", "info", "No-login mode", "No session needed. Stories, reels and follower churn require Logged-in mode.")]
+        return [make_doctor_check("Session", "ok", "No-login mode", "No session needed. Stories, reels and follower churn require Logged-in mode.")]
     if report.bot is None:
         return [make_doctor_check("Session", "warn", "Skipped session check", "Instaloader could not be initialised")]
     if progress is not None:
@@ -13644,7 +13644,9 @@ def doctor_check_connectivity(report: DoctorReport, progress: Optional[Callable[
 # Confirms each configured target profile can be fetched
 def doctor_check_targets(report: DoctorReport, targets, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     if not targets:
-        return [make_doctor_check("Targets", "info", "No targets configured", "Add them on the CLI, in the config, or via the Web Dashboard.")]
+        if WEB_DASHBOARD_ENABLED:
+            return [make_doctor_check("Targets", "ok", "No targets configured yet", "The Web Dashboard is enabled, so targets can be added there")]
+        return [make_doctor_check("Targets", "warn", "No targets configured", "Nothing will be monitored", "pass a target on the command line, set TARGET_USERNAMES in the config, or enable the Web Dashboard.", QUICK_START_GUIDE_URL)]
     if report.bot is None:
         return [make_doctor_check("Targets", "warn", "Skipped target checks", "Instaloader could not be initialised")]
     checks: List[DoctorCheck] = []
@@ -13666,7 +13668,7 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
     smtp_configured = not is_placeholder_setting(SMTP_HOST) and not is_placeholder_setting(SMTP_USER) and not is_placeholder_setting(SMTP_PASSWORD)
     invalid_addresses = [name for name, value in (("SENDER_EMAIL", SENDER_EMAIL), ("RECEIVER_EMAIL", RECEIVER_EMAIL)) if not is_valid_email_address(value)]
     if not smtp_configured:
-        checks.append(make_doctor_check("Notifications", "info", "Email notifications not configured"))
+        checks.append(make_doctor_check("Notifications", "ok", "Email notifications are disabled", "No SMTP connection was attempted and no email was sent"))
     elif invalid_addresses:
         checks.append(make_doctor_check("Notifications", "fail", f"Email address is not set in {' and '.join(invalid_addresses)}", "", f"set {' and '.join(invalid_addresses)} to a real email address.", SMTP_GUIDE_URL))
     else:
@@ -13688,7 +13690,7 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
         if WEBHOOK_ENABLED:
             checks.append(make_doctor_check("Notifications", "warn", "Webhook enabled but WEBHOOK_URL is not set", "", "set WEBHOOK_URL (or via .env), or disable webhooks.", WEBHOOK_GUIDE_URL))
         else:
-            checks.append(make_doctor_check("Notifications", "info", "Webhook notifications not configured"))
+            checks.append(make_doctor_check("Notifications", "ok", "Webhook alerts are disabled", "No webhook was sent"))
         return checks
     if not normalized_webhook_provider():
         checks.append(make_doctor_check("Notifications", "fail", "Webhook provider is invalid", "", "set WEBHOOK_PROVIDER to 'discord' or 'ntfy'.", WEBHOOK_GUIDE_URL))
