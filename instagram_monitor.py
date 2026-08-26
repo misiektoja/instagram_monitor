@@ -12794,7 +12794,7 @@ def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
     else:
         state.session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
     if action == "password":
-        state.secret_updates["SESSION_PASSWORD"] = _wizard_ask_secret("Instagram password (stored in .env)")
+        state.secret_updates["SESSION_PASSWORD"] = _wizard_ask_secret("Instagram password")
     state.config_values.update({"SKIP_SESSION": False, "SESSION_USERNAME": state.session_username})
 
 
@@ -12827,15 +12827,15 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
     provider = "discord" if provider_choice == 0 else "ntfy"
     state.config_values["WEBHOOK_PROVIDER"] = provider
     if provider == "discord":
-        print(colorize("info", "  In Discord: Server Settings > Integrations > Webhooks > New Webhook > Copy Webhook URL."))
-        webhook_prompt = "Paste the Discord webhook URL (stored in .env)"
+        print(colorize("info", "  In Discord: Edit Channel > Integrations > Webhooks > New Webhook > Copy Webhook URL."))
+        webhook_prompt = "Paste the Discord webhook URL"
     else:
-        print(colorize("info", "  In ntfy: choose a hard-to-guess topic. Paste its name for ntfy.sh or use the complete URL for a self-hosted server."))
-        webhook_prompt = "Paste the ntfy topic URL or ntfy.sh topic name (stored in .env)"
+        print(colorize("info", "  In ntfy: choose a hard-to-guess topic. Paste its name for ntfy.sh or use the complete HTTPS URL for a self-hosted server."))
+        webhook_prompt = "Paste the ntfy topic URL or ntfy.sh topic name"
     existing_webhook = _wizard_existing_secret("WEBHOOK_URL", state.env_path, ("your_webhook_url",))
     replace_webhook = True
     if existing_webhook:
-        replace_webhook = _wizard_ask_choice("Which webhook URL should be used?", [("Keep the saved URL", "Keeps the private value without displaying or changing it."), ("Paste a new URL", "Uses a hidden prompt then saves the replacement in .env.")]) == 1
+        replace_webhook = _wizard_ask_choice("Which webhook URL should be used?", [("Keep the saved URL", "Keeps the private value without displaying or changing it."), ("Paste a new URL", "Uses a hidden prompt then saves the new private value in .env.")]) == 1
     if replace_webhook:
         while True:
             webhook_input = _wizard_ask_secret(webhook_prompt)
@@ -12845,7 +12845,7 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
             if provider == "ntfy":
                 print(colorize("warning", "  Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores."))
             else:
-                print(colorize("warning", "  That does not look like a complete HTTPS webhook URL. Copy it from the service and try again."))
+                print(colorize("warning", "  That does not look like a complete HTTPS webhook URL. Copy it from the webhook service and try again."))
         state.secret_updates["WEBHOOK_URL"] = webhook_url
     if provider == "ntfy":
         _wizard_collect_ntfy_access_token(state.secret_updates, state.env_path)
@@ -12869,7 +12869,7 @@ def _wizard_collect_email_section(state: WizardSetupState) -> None:
         port = 587
     use_ssl = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(state.config_values.get("SMTP_SSL", True)))
     user = _wizard_ask_text("SMTP username", required=True)
-    state.secret_updates["SMTP_PASSWORD"] = _wizard_ask_secret("SMTP password (stored in .env)")
+    state.secret_updates["SMTP_PASSWORD"] = _wizard_ask_secret("SMTP password")
     sender = _wizard_ask_text("Sender email (From)", required=True)
     receiver = _wizard_ask_text("Recipient email (To)", required=True)
     state.config_values.update({"SMTP_HOST": host, "SMTP_PORT": port, "SMTP_SSL": use_ssl, "SMTP_USER": user, "SENDER_EMAIL": sender, "RECEIVER_EMAIL": receiver, "STATUS_NOTIFICATION": True})
