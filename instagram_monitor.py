@@ -4963,6 +4963,12 @@ def normalized_webhook_provider(provider=None) -> str:
     return normalized if normalized in ("discord", "ntfy") else ""
 
 
+# Returns the webhook provider name spelled the way its service brands it, for user-facing text
+def webhook_provider_display_name(provider=None) -> str:
+    normalized = normalized_webhook_provider(provider)
+    return {"discord": "Discord", "ntfy": "ntfy"}.get(normalized, normalized)
+
+
 # Detects Discord and public ntfy webhook providers from distinctive URL shapes
 def detect_webhook_provider(url) -> str:
     if not validate_webhook_url(url):
@@ -4989,7 +4995,7 @@ def apply_webhook_provider_autodetection(explicit_provider=False, announce=True)
     if detected_provider and detected_provider != configured_provider:
         WEBHOOK_PROVIDER = detected_provider
         if announce:
-            print(f"* Warning: Configured webhook provider did not match the URL. Using {detected_provider}.")
+            print(f"* Warning: Configured webhook provider did not match the URL. Using {webhook_provider_display_name(detected_provider)}.")
     return normalized_webhook_provider()
 
 
@@ -13282,7 +13288,7 @@ def _doctor_offer_notification_tests(smtp_ready: bool, webhook_ready: bool) -> i
         else:
             _doctor_line("skip", "Test email skipped", "No email was sent")
     if webhook_ready:
-        provider = normalized_webhook_provider()
+        provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
             if _doctor_send_test_webhook() == 0:
                 _doctor_line("ok", "Doctor test webhook delivered", "One real test webhook was sent after confirmation")
@@ -13666,7 +13672,7 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
         checks.append(make_doctor_check("Notifications", "fail", "Webhook headers are invalid", header_error, "correct the reported WEBHOOK_HEADERS entry.", WEBHOOK_GUIDE_URL))
     else:
         report.webhook_ready = True
-        checks.append(make_doctor_check("Notifications", "ok", f"Webhook URL and headers look valid for {normalized_webhook_provider()}", "No webhook was sent during this passive check"))
+        checks.append(make_doctor_check("Notifications", "ok", f"Webhook URL and headers look valid for {webhook_provider_display_name()}", "No webhook was sent during this passive check"))
     return checks
 
 
