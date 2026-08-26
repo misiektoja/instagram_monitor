@@ -40,6 +40,12 @@ def test_webhook_provider_detection(im_module, url, expected):
     assert im_module.detect_webhook_provider(url) == expected
 
 
+@pytest.mark.parametrize("provider,expected", [("discord", "Discord"), ("DISCORD", "Discord"), (" Discord ", "Discord"), ("ntfy", "ntfy"), ("NTFY", "ntfy"), ("slack", ""), ("", "")])
+# Verifies user-facing text spells each provider the way its service brands it
+def test_webhook_provider_display_name(im_module, provider, expected):
+    assert im_module.webhook_provider_display_name(provider) == expected
+
+
 # Verifies SIGHUP redetects ntfy and schedules active Instaloader sessions for proxy refresh
 def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, monkeypatch, capsys):
     if not hasattr(im_module.signal, "SIGHUP"):
