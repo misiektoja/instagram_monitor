@@ -4236,6 +4236,12 @@ def _startup_webhook_notification_categories() -> List[str]:
     return [label for enabled, label in settings if WEBHOOK_ENABLED and enabled]
 
 
+# Returns whether an email alert can fire, ignoring the error alert that ships on until SMTP is configured
+def email_notifications_enabled() -> bool:
+    event_notifications = any((STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION))
+    return bool(event_notifications or (ERROR_NOTIFICATION and not is_placeholder_setting(SMTP_HOST)))
+
+
 # Returns whether webhook alerts are on and at least one webhook alert type is selected
 def webhook_notifications_enabled() -> bool:
     return bool(WEBHOOK_ENABLED and _startup_webhook_notification_categories())
@@ -13713,8 +13719,10 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
     checks: List[DoctorCheck] = []
     smtp_configured = not is_placeholder_setting(SMTP_HOST) and not is_placeholder_setting(SMTP_USER) and not is_placeholder_setting(SMTP_PASSWORD)
     invalid_addresses = [name for name, value in (("SENDER_EMAIL", SENDER_EMAIL), ("RECEIVER_EMAIL", RECEIVER_EMAIL)) if not is_valid_email_address(value)]
-    if not smtp_configured:
+    if not email_notifications_enabled():
         checks.append(make_doctor_check("Notifications", "ok", "Email notifications are disabled", "No SMTP connection was attempted and no email was sent"))
+    elif not smtp_configured:
+        checks.append(make_doctor_check("Notifications", "warn", "Email alerts are on but SMTP is not configured", "No SMTP connection was attempted and no email was sent", "set SMTP_HOST, SMTP_USER and SMTP_PASSWORD, or turn the email alerts off.", SMTP_GUIDE_URL))
     elif invalid_addresses:
         checks.append(make_doctor_check("Notifications", "fail", f"Email address is not set in {' and '.join(invalid_addresses)}", "", f"set {' and '.join(invalid_addresses)} to a real email address.", SMTP_GUIDE_URL))
     else:
@@ -13732,11 +13740,11 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
         except Exception as exc:
             checks.append(make_doctor_check("Notifications", "fail", f"Email (SMTP) check failed: {exc}", "", "verify SMTP_HOST, SMTP_PORT and SMTP_SSL, and SMTP_USER/SMTP_PASSWORD. Gmail and similar need an app password.", SMTP_GUIDE_URL))
 
+    if not WEBHOOK_ENABLED:
+        checks.append(make_doctor_check("Notifications", "ok", "Webhook alerts are disabled", "No webhook was sent"))
+        return checks
     if is_placeholder_setting(WEBHOOK_URL):
-        if WEBHOOK_ENABLED:
-            checks.append(make_doctor_check("Notifications", "warn", "Webhook enabled but WEBHOOK_URL is not set", "", "set WEBHOOK_URL (or via .env), or disable webhooks.", WEBHOOK_GUIDE_URL))
-        else:
-            checks.append(make_doctor_check("Notifications", "ok", "Webhook alerts are disabled", "No webhook was sent"))
+        checks.append(make_doctor_check("Notifications", "warn", "Webhook enabled but WEBHOOK_URL is not set", "No webhook was sent", "set WEBHOOK_URL (or via .env), or disable webhooks.", WEBHOOK_GUIDE_URL))
         return checks
     if not normalized_webhook_provider():
         checks.append(make_doctor_check("Notifications", "fail", "Webhook provider is invalid", "", "set WEBHOOK_PROVIDER to 'discord' or 'ntfy'.", WEBHOOK_GUIDE_URL))
@@ -13751,12 +13759,11 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
         checks.append(make_doctor_check("Notifications", "fail", "Webhook customization is invalid", customization_error, "correct the reported webhook customization setting.", WEBHOOK_GUIDE_URL))
     elif header_error is not None:
         checks.append(make_doctor_check("Notifications", "fail", "Webhook headers are invalid", header_error, "correct the reported WEBHOOK_HEADERS entry.", WEBHOOK_GUIDE_URL))
-    elif WEBHOOK_ENABLED and not webhook_notifications_enabled():
+    elif not webhook_notifications_enabled():
         checks.append(make_doctor_check("Notifications", "warn", "Webhook alerts are on but no alert types are selected", "No webhook was sent during this passive check", "turn on at least one webhook alert, or set WEBHOOK_ENABLED to False.", WEBHOOK_GUIDE_URL))
     else:
         report.webhook_ready = True
-        passive_detail = "The private link was not displayed. No webhook was sent during this passive check" if WEBHOOK_ENABLED else "Webhook alerts are disabled. The private link was not displayed. No webhook was sent during this passive check"
-        checks.append(make_doctor_check("Notifications", "ok", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", passive_detail))
+        checks.append(make_doctor_check("Notifications", "ok", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", "The private link was not displayed. No webhook was sent during this passive check"))
     return checks
 
 
