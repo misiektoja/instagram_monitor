@@ -27,6 +27,8 @@ A separate [supply chain workflow](https://github.com/misiektoja/instagram_monit
 
 Two further workflows watch the code and the project setup. [CodeQL](https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/codeql.yml) runs GitHub's `security-extended` Python queries on every change and weekly, reporting findings as code scanning alerts. [OpenSSF Scorecard](https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/scorecard.yml) scores the repository's security practices, such as branch protection, action pinning and dependency update automation, and publishes the score shown as a badge on the project page.
 
+Published archives stay verifiable: the [release assets workflow](https://github.com/misiektoja/instagram_monitor/blob/main/.github/workflows/release-assets.yml) records SHA-256 checksums and signs a build provenance attestation, so an unsigned download can be told apart from a tampered one. The attestation bundle is attached to the release as an `.intoto.jsonl` asset, so provenance can be checked from the downloaded files alone when the attestations API is unreachable.
+
 The pytest suite covers the workflows themselves. It fails when a third-party action is not pinned to a commit SHA, when a pin lacks its version comment or when a workflow passes an event value straight into a shell.
 
 Contributors can run the same workflow linting locally with [actionlint](https://github.com/rhysd/actionlint):
