@@ -1172,6 +1172,7 @@ nl_ch = "\n"
 
 DOCUMENTATION_URL = "https://misiektoja.github.io/instagram_monitor"
 QUICK_START_GUIDE_URL = DOCUMENTATION_URL + "/setup-and-first-run/"
+INSTALLATION_GUIDE_URL = DOCUMENTATION_URL + "/installation/#requirements"
 CONFIG_FILE_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#configuration-file"
 SESSION_IMPORT_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#option-3-session-login-using-browser-cookies-recommended"
 SMTP_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#smtp-settings"
@@ -1268,8 +1269,11 @@ def _startup_sigint_handler(signum, frame):
 
 signal.signal(signal.SIGINT, _startup_sigint_handler)
 
-if sys.version_info < (3, 9):
-    print("* Error: Python version 3.9 or higher required !")
+# Oldest interpreter this tool supports, shared by the startup gate and the Doctor environment check
+MINIMUM_PYTHON_VERSION = (3, 9)
+
+if sys.version_info[:2] < MINIMUM_PYTHON_VERSION:
+    print(f"* Error: Python version {'.'.join(str(part) for part in MINIMUM_PYTHON_VERSION)} or higher required !")
     sys.exit(1)
 
 import time
@@ -13516,23 +13520,44 @@ def run_follow_analysis(targets: Sequence[str]) -> int:
 
 
 # Runs preflight checks plus approved delivery tests and returns the number of failures
-def doctor_check_environment() -> List[DoctorCheck]:
-    import importlib.util
+def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[str], Any]] = None) -> List[DoctorCheck]:
+    checks: List[DoctorCheck] = []
+    selected_version = sys.version_info if version_info is None else version_info
+    version_text = ".".join(str(part) for part in tuple(selected_version)[:3])
+    if tuple(selected_version)[:2] >= MINIMUM_PYTHON_VERSION:
+        checks.append(make_doctor_check("Environment", "ok", f"Python {version_text} is supported"))
+    else:
+        minimum_text = ".".join(str(part) for part in MINIMUM_PYTHON_VERSION)
+        checks.append(make_doctor_check("Environment", "fail", f"Python {version_text} is unsupported", "", f"install Python {minimum_text} or newer then retry.", INSTALLATION_GUIDE_URL))
 
-    checks = [make_doctor_check("Environment", "info", f"Python {platform.python_version()}")]
-    dependencies = (
-        ("curl_cffi", _CURL_CFFI_AVAILABLE, "browser TLS impersonation that avoids first-request 429 blocks"),
-        ("rich", RICH_AVAILABLE, "the Terminal Dashboard"),
-        ("flask", FLASK_AVAILABLE, "the Web Dashboard"),
-        ("pycookiecheat", importlib.util.find_spec("pycookiecheat") is not None, "session import from Chromium-based browsers"),
-    )
-    for name, present, what in dependencies:
-        if present:
-            detail = "Used only for importing sessions from Chromium-based browsers. Firefox session import does not need it" if name == "pycookiecheat" else f"Used for {what}"
-            checks.append(make_doctor_check("Environment", "ok", f"{name} installed", detail))
+    find_spec = importlib.util.find_spec if spec_finder is None else spec_finder
+
+    # Returns whether one module can be located, treating a broken parent package as absent
+    def module_present(module_name: str) -> bool:
+        try:
+            return find_spec(module_name) is not None
+        except (ImportError, ValueError):
+            return False
+
+    required = (("instaloader", "instaloader"), ("requests", "requests"), ("dateutil", "python-dateutil"), ("pytz", "pytz"), ("tqdm", "tqdm"))
+    for module_name, package_name in required:
+        if module_present(module_name):
+            checks.append(make_doctor_check("Environment", "ok", f"Required dependency {package_name} is installed"))
         else:
-            detail = f"Required only for importing sessions from Chromium-based browsers. Firefox session import is unaffected. Install with: pip install {name}" if name == "pycookiecheat" else f"Optional: used for {what}. Install with: pip install {name}"
-            checks.append(make_doctor_check("Environment", "warn", f"{name} not installed", detail))
+            checks.append(make_doctor_check("Environment", "fail", f"Required dependency {package_name} is missing", "", f"install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
+
+    optional = (
+        ("curl_cffi", "curl_cffi", _CURL_CFFI_AVAILABLE, "Used for browser TLS impersonation that avoids first-request 429 blocks", "Normal monitoring works without it, but Instagram is more likely to answer the first request with 429"),
+        ("rich", "rich", RICH_AVAILABLE, "Used only for the Terminal Dashboard", "Normal monitoring is unaffected when the Terminal Dashboard is unused"),
+        ("flask", "flask", FLASK_AVAILABLE, "Used only for the Web Dashboard", "Normal monitoring is unaffected when the Web Dashboard is unused"),
+        ("dotenv", "python-dotenv", module_present("dotenv"), "Used only for loading secrets from a dotenv file", "Secrets in a dotenv file are ignored. Export them as environment variables instead"),
+        ("pycookiecheat", "pycookiecheat", module_present("pycookiecheat"), "Used only for importing sessions from Chromium-based browsers. Firefox session import does not need it", "Required only for importing sessions from Chromium-based browsers. Firefox session import is unaffected"),
+    )
+    for _, package_name, present, purpose, missing_purpose in optional:
+        if present:
+            checks.append(make_doctor_check("Environment", "ok", f"Optional dependency {package_name} is installed", purpose))
+        else:
+            checks.append(make_doctor_check("Environment", "warn", f"Optional dependency {package_name} is not installed", missing_purpose, f"install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
     return checks
 
 
