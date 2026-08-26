@@ -49,11 +49,24 @@ jobs:
       # Lets anyone confirm the archives were built by this workflow from this tag:
       #     gh attestation verify instagram_monitor_<tag>.zip --repo misiektoja/instagram_monitor
       - name: Attest the archives' build provenance
+        id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             instagram_monitor_${{ github.event.release.tag_name }}.zip
             instagram_monitor_${{ github.event.release.tag_name }}.tar.gz
+
+      # Publishing the bundle alongside the archives lets offline verifiers check provenance
+      # without calling the attestations API, and it is the form automated scanners look for
+      - name: Stage the provenance bundle as a release asset
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          cp "$BUNDLE_PATH" "instagram_monitor_${RELEASE_TAG}.intoto.jsonl"
+          ls -lh "instagram_monitor_${RELEASE_TAG}.intoto.jsonl"
 
       - name: Upload archives to GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
@@ -62,5 +75,6 @@ jobs:
             instagram_monitor_${{ github.event.release.tag_name }}.zip
             instagram_monitor_${{ github.event.release.tag_name }}.tar.gz
             instagram_monitor_${{ github.event.release.tag_name }}_SHA256SUMS.txt
+            instagram_monitor_${{ github.event.release.tag_name }}.intoto.jsonl
           fail_on_unmatched_files: true
           overwrite_files: true
