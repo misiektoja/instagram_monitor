@@ -208,6 +208,18 @@ class TestDoctorProgress:
 
 
 class TestRunDoctor:
+    # Verifies the preflight notice reaches the user before any check runs
+    def test_preflight_notice_precedes_the_report(self, im_module, monkeypatch, capsys):
+        _setup_no_network(monkeypatch, im_module)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", True, raising=False)
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "", raising=False)
+
+        im_module.run_doctor([])
+
+        out = capsys.readouterr().out
+        assert "Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval." in out
+        assert out.index("Running preflight checks.") < out.index("Doctor")
+
     # Verifies Chromium dependency guidance explicitly preserves Firefox import support
     def test_browser_dependency_scope_is_explicit(self, im_module, monkeypatch, capsys):
         _setup_no_network(monkeypatch, im_module)
