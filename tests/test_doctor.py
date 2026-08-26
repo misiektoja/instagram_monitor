@@ -208,6 +208,35 @@ class TestDoctorProgress:
 
 
 class TestRunDoctor:
+    # Exported secrets are a documented alternative to a dotenv file, so they must apply when no file is loaded
+    def test_environment_secrets_apply_without_a_dotenv_file(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--doctor", "--env-file", "none", "--no-color"])
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "run_doctor", lambda *args, **kwargs: 0)
+        monkeypatch.setattr(im_module, "NTFY_ACCESS_TOKEN", "", raising=False)
+        monkeypatch.setenv("NTFY_ACCESS_TOKEN", "tk_from_environment")
+
+        with pytest.raises(SystemExit):
+            im_module.run_main()
+
+        assert im_module.NTFY_ACCESS_TOKEN == "tk_from_environment"
+
+    # Each secret is attributed to the source it actually came from, so the report can name the dotenv path
+    def test_secret_sources_split_by_origin(self, im_module, monkeypatch, tmp_path):
+        env_file = tmp_path / ".env"
+        env_file.write_text("SMTP_PASSWORD=from-file\n", encoding="utf-8")
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "from-file", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.sh/topic", raising=False)
+        monkeypatch.setattr(im_module, "PROXY_URL", "your_proxy_url", raising=False)
+        monkeypatch.setenv("WEBHOOK_URL", "https://ntfy.sh/topic")
+
+        from_file, from_environment, from_settings = im_module.doctor_secret_sources(str(env_file))
+
+        assert from_file == ["SMTP_PASSWORD"]
+        assert from_environment == ["WEBHOOK_URL"]
+        assert "PROXY_URL" not in from_file + from_environment + from_settings
+
     # Verifies the preflight notice reaches the user before any check runs
     def test_preflight_notice_precedes_the_report(self, im_module, monkeypatch, capsys):
         _setup_no_network(monkeypatch, im_module)
@@ -419,7 +448,7 @@ class TestRunDoctor:
         received = {}
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--config-file", str(config_path), "--env-file", "none", "--no-color"])
         monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
-        monkeypatch.setattr(im_module, "run_doctor", lambda targets, errors=(), retired=(): received.update(errors=list(errors), retired=list(retired)) or len(errors))
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, errors=(), retired=(), env_path=None: received.update(errors=list(errors), retired=list(retired)) or len(errors))
 
         with pytest.raises(SystemExit) as exc:
             im_module.run_main()
@@ -435,7 +464,7 @@ class TestRunDoctor:
         received = {}
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--config-file", str(config_path), "--env-file", "none", "--no-color"])
         monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
-        monkeypatch.setattr(im_module, "run_doctor", lambda targets, errors=(), retired=(): received.update(errors=list(errors), retired=list(retired)) or 0)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, errors=(), retired=(), env_path=None: received.update(errors=list(errors), retired=list(retired)) or 0)
 
         with pytest.raises(SystemExit) as exc:
             im_module.run_main()
