@@ -27,6 +27,8 @@ def launch_chromium(playwright):
 # Runs the real dashboard application on an ephemeral loopback port
 @pytest.fixture
 def dashboard_server(im_module, monkeypatch) -> Iterator[str]:
+    # Targets added through the running app sync into the module-global list, so isolate it from later tests
+    monkeypatch.setattr(im_module, "TARGET_USERNAMES", [])
     monkeypatch.setattr(im_module, "WEB_DASHBOARD_TEMPLATE_DIR", str(PROJECT_ROOT / "templates"))
     monkeypatch.setattr(im_module, "SESSION_USERNAME", "")
     monkeypatch.setattr(im_module, "SKIP_SESSION", True)
@@ -75,6 +77,8 @@ def test_dashboard_user_flow_in_chromium(dashboard_server):
 # Runs the dashboard seeded with a hostile Instagram-supplied media item
 @pytest.fixture
 def hostile_media_server(im_module, monkeypatch) -> Iterator[str]:
+    # Targets added through the running app sync into the module-global list, so isolate it from later tests
+    monkeypatch.setattr(im_module, "TARGET_USERNAMES", [])
     monkeypatch.setattr(im_module, "WEB_DASHBOARD_TEMPLATE_DIR", str(PROJECT_ROOT / "templates"))
     monkeypatch.setattr(im_module, "SESSION_USERNAME", "")
     monkeypatch.setattr(im_module, "SKIP_SESSION", True)
