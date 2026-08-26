@@ -3993,6 +3993,22 @@ def sanitize_terminal_text(message):
     parts.append(TERMINAL_CONTROL_RE.sub("", message[position:]))
     return "".join(parts)
 
+
+TSanitizedTerminalData = TypeVar("TSanitizedTerminalData")
+
+
+# Recursively sanitizes strings in data before Rich renders them to the terminal
+def sanitize_terminal_data(value: TSanitizedTerminalData) -> TSanitizedTerminalData:
+    if isinstance(value, str):
+        return cast(TSanitizedTerminalData, sanitize_terminal_text(value))
+    if isinstance(value, dict):
+        return cast(TSanitizedTerminalData, {key: sanitize_terminal_data(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return cast(TSanitizedTerminalData, [sanitize_terminal_data(item) for item in value])
+    if isinstance(value, tuple):
+        return cast(TSanitizedTerminalData, tuple(sanitize_terminal_data(item) for item in value))
+    return value
+
 # Internal flag & style map for colour handling
 COLOR_ENABLED = False
 _COLOR_STYLES = {}
@@ -8039,7 +8055,7 @@ def generate_user_dashboard(target_data):
     if not RICH_AVAILABLE:
         return None
 
-    display_target_data = apply_privacy_substitutions(target_data)
+    display_target_data = sanitize_terminal_data(apply_privacy_substitutions(target_data))
 
     # Type guard: Rich is available at this point
     assert Table is not None
@@ -8064,7 +8080,7 @@ def generate_user_dashboard(target_data):
     table = generate_dashboard_targets_table(display_target_data)
 
     # Activity Log Panel (Latest at bottom)
-    activities = DASHBOARD_DATA.get('activities', [])
+    activities = sanitize_terminal_data(DASHBOARD_DATA.get('activities', []))
     log_text = Text()
     if not activities:
         log_text.append("Waiting for activity...", style="dim italic")
@@ -8138,7 +8154,7 @@ def generate_user_dashboard(target_data):
             last_fetched_text.append(f"URL: {url_value}", style="blue underline")
 
     updates = []
-    for user, t_data in target_data.items():
+    for user, t_data in display_target_data.items():
         fetched_updates = t_data.get('fetched_updates') or []
         if fetched_updates:
             for update in fetched_updates[:2]:
@@ -8198,8 +8214,8 @@ def generate_config_dashboard(target_data, config_data):
     if not RICH_AVAILABLE:
         return None
 
-    display_target_data = apply_privacy_substitutions(target_data)
-    config_data = apply_privacy_substitutions(config_data)
+    display_target_data = sanitize_terminal_data(apply_privacy_substitutions(target_data))
+    config_data = sanitize_terminal_data(apply_privacy_substitutions(config_data))
 
     # Type guard: Rich is available at this point
     assert Table is not None
@@ -8297,7 +8313,7 @@ def generate_config_dashboard(target_data, config_data):
     ua_panel = Panel(ua_text, title="Environment Details", box=box.ROUNDED, border_style="magenta", expand=True)
 
     # Activity Log Panel (Latest at bottom)
-    activities = DASHBOARD_DATA.get('activities', [])
+    activities = sanitize_terminal_data(DASHBOARD_DATA.get('activities', []))
     log_text = Text()
     if not activities:
         log_text.append("Waiting for activity...", style="dim italic")
