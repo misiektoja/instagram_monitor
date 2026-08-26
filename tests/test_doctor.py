@@ -99,6 +99,8 @@ class TestDoctorChecks:
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.sh/private-topic", raising=False)
         monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "ntfy", raising=False)
         monkeypatch.setattr(im_module, "WEBHOOK_HEADERS", {}, raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True, raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True, raising=False)
         report = im_module.DoctorReport()
 
         checks = im_module.doctor_check_notifications(report)
@@ -123,6 +125,48 @@ class TestDoctorChecks:
         failure = next(check for check in checks if check.status == "fail")
         assert failure.label == "Email address is not set in SENDER_EMAIL and RECEIVER_EMAIL"
         assert failure.guide == im_module.SMTP_GUIDE_URL
+
+    # A switched-off webhook is reported as disabled, not validated, so the report matches the sibling monitors
+    def test_disabled_webhook_is_not_validated(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SMTP_HOST", "your_smtp_server_ssl", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.sh/private-topic", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "ntfy", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", False, raising=False)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        assert report.webhook_ready is False
+        assert any(check.status == "ok" and check.label == "Webhook alerts are disabled" for check in checks)
+        assert not any("look valid" in check.label for check in checks)
+
+    # The error alert ships on, so it must not report email as enabled until an SMTP host exists
+    def test_default_error_alert_alone_does_not_enable_email(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", False, raising=False)
+        monkeypatch.setattr(im_module, "FOLLOWERS_NOTIFICATION", False, raising=False)
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True, raising=False)
+        monkeypatch.setattr(im_module, "SMTP_HOST", "your_smtp_server_ssl", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "", raising=False)
+        monkeypatch.setattr(im_module.smtplib, "SMTP", _unreachable_smtp)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        assert im_module.email_notifications_enabled() is False
+        assert any(check.status == "ok" and check.label == "Email notifications are disabled" for check in checks)
+
+    # Email alerts that can fire without a usable SMTP host are a warning, not a silent pass
+    def test_enabled_email_without_smtp_warns(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", True, raising=False)
+        monkeypatch.setattr(im_module, "SMTP_HOST", "your_smtp_server_ssl", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "", raising=False)
+        monkeypatch.setattr(im_module.smtplib, "SMTP", _unreachable_smtp)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        assert report.smtp_ready is False
+        assert any(check.status == "warn" and check.label == "Email alerts are on but SMTP is not configured" for check in checks)
 
     # The shipped WEBHOOK_URL placeholder means the webhook was never configured, not that it is broken
     def test_webhook_placeholder_is_not_a_failure(self, im_module, monkeypatch):
