@@ -230,7 +230,7 @@ class TestRunDoctor:
         im_module.run_doctor([])
 
         out = capsys.readouterr().out
-        assert "pycookiecheat installed\n  Used only for importing sessions from Chromium-based browsers. Firefox session import does not need it" in out
+        assert "Optional dependency pycookiecheat is installed\n  Used only for importing sessions from Chromium-based browsers. Firefox session import does not need it" in out
 
     # Verifies Doctor checks and displays the final target-specific log filename
     def test_log_destination_uses_final_target_path(self, im_module, monkeypatch, capsys):
