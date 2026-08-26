@@ -306,6 +306,37 @@ class TestRunDoctor:
         assert rc >= 1
         assert "not reachable or blocked" in out
 
+    # Doctor warns when webhook alerts are on but no alert type can ever fire, and offers no delivery test
+    def test_webhook_without_alert_types_warns(self, im_module, monkeypatch, capsys):
+        _setup_no_network(monkeypatch, im_module)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", True, raising=False)
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True, raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/123/token", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord", raising=False)
+        for setting in ("WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_FOLLOWERS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"):
+            monkeypatch.setattr(im_module, setting, False, raising=False)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        assert any(check.status == "warn" and check.label == "Webhook alerts are on but no alert types are selected" for check in checks)
+        assert report.webhook_ready is False
+
+    # Doctor reports one fully validated webhook under the label shared with the sibling monitors
+    def test_valid_webhook_reports_the_shared_ready_label(self, im_module, monkeypatch, capsys):
+        _setup_no_network(monkeypatch, im_module)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True, raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/123/token", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True, raising=False)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        assert any(check.status == "ok" and check.label == f"{im_module.WEBHOOK_READY_CHECK_LABEL} for Discord" for check in checks)
+        assert report.webhook_ready is True
+
     # Doctor rejects an unsupported webhook provider without sending a message
     def test_invalid_webhook_provider_fails(self, im_module, monkeypatch, capsys):
         _setup_no_network(monkeypatch, im_module)
