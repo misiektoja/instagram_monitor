@@ -1180,6 +1180,7 @@ PROXY_GUIDE_URL = DOCUMENTATION_URL + "/usage/#routing-traffic-through-a-proxy"
 ANTI_DETECTION_INTERVAL_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#keep-the-polling-interval-reasonable"
 ANTI_DETECTION_SESSION_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#sign-in-using-session-mode-with-browser-cookies"
 CONNECTION_ERRORS_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#connection-errors-during-monitoring"
+DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
 
 # Placeholder values shipped in the sample configuration, which stand in for a setting the user has not filled in yet
 CONFIG_PLACEHOLDER_VALUES = frozenset({"your_smtp_server_ssl", "your_smtp_user", "your_smtp_password", "your_sender_email", "your_receiver_email", "your_webhook_url"})
@@ -13029,7 +13030,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         print(colorize("error", f"Setup cannot start: {exc}."))
         raise SystemExit(1) from None
 
-    print(colorize("header", "\nSetup Wizard\n"))
+    print(colorize("header", "Setup Wizard\n"))
     print("This asks a few questions and writes a ready-to-run configuration.")
     print("Press Enter to accept the shown default. Ctrl+C cancels.\n")
     print("Secrets go to the dotenv file. Non-secret settings go to the config file.")
@@ -13038,7 +13039,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     print(f"Session login guide: {SESSION_IMPORT_GUIDE_URL}\n")
     print(f"Detected install method: {colorize('username', method)}")
     print(f"Configuration:          {config_path}")
-    print(f"Dotenv:                 {env_path}\n")
+    print(f"Dotenv:                 {env_path}")
 
     config_path = _wizard_choose_config_destination(config_path)
     for secret_key in SECRET_KEYS:
@@ -13101,8 +13102,10 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     local_browser_import_pending = method not in ("docker", "compose") and bool(state.import_browser) and not browser_import_complete
     doctor_failures = 0
     doctor_ran = False
-    print()
-    if not container_browser_import_pending and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
+    doctor_offered = not container_browser_import_pending
+    if doctor_offered:
+        print()
+    if doctor_offered and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
         doctor_ran = True
         doctor_failures = run_doctor(state.targets)
 
@@ -13158,6 +13161,7 @@ def _wizard_welcome(parser) -> None:
     print(f"Full options: {colorize('section', prefix + ' --help')}")
     print(f"\nGuide:        {colorize('link', QUICK_START_GUIDE_URL)}\n")
     if interactive and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
+        print()
         run_setup_wizard()
 
 
@@ -13205,7 +13209,7 @@ def doctor_check_from_error(section: str, status: str, label: str, error_message
 
 # Prints one doctor check line with a status marker and an optional detail or hint
 def _doctor_line(status: str, label: str, detail: str = "") -> None:
-    marks = {"ok": ("[ OK ]", "boolean_true"), "warn": ("[WARN]", "warning"), "fail": ("[FAIL]", "error"), "info": ("[ -- ]", "info")}
+    marks = {"ok": ("[PASS]", "boolean_true"), "warn": ("[WARN]", "warning"), "fail": ("[FAIL]", "error"), "skip": ("[SKIP]", "info"), "info": ("[ -- ]", "info")}
     mark, theme = marks.get(status, ("[ -- ]", "info"))
     print(f"{colorize(theme, mark)} {label}")
     if detail:
@@ -13264,8 +13268,8 @@ def _doctor_send_test_webhook() -> int:
 def _doctor_offer_notification_tests(smtp_ready: bool, webhook_ready: bool) -> int:
     if not sys.stdin.isatty() or not sys.stdout.isatty() or not (smtp_ready or webhook_ready):
         return 0
-    print(colorize("section", "\nOptional delivery tests"))
-    print("Doctor will not write files. Each approved test sends one real message.")
+    print(colorize("section", "\nOptional delivery tests\n"))
+    print("Doctor will not write files. Each approved test sends one real message.\n")
     failures = 0
     if smtp_ready:
         if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
@@ -13276,7 +13280,7 @@ def _doctor_offer_notification_tests(smtp_ready: bool, webhook_ready: bool) -> i
                 failures += 1
                 _doctor_line("fail", "Doctor test email delivery failed", "The approved test email could not be delivered")
         else:
-            _doctor_line("info", "Test email skipped", "No email was sent")
+            _doctor_line("skip", "Test email skipped", "No email was sent")
     if webhook_ready:
         provider = normalized_webhook_provider()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
@@ -13286,7 +13290,7 @@ def _doctor_offer_notification_tests(smtp_ready: bool, webhook_ready: bool) -> i
                 failures += 1
                 _doctor_line("fail", "Doctor test webhook delivery failed", "The approved test webhook could not be delivered")
         else:
-            _doctor_line("info", "Test webhook skipped", "No webhook was sent")
+            _doctor_line("skip", "Test webhook skipped", "No webhook was sent")
     return failures
 
 
@@ -13681,7 +13685,7 @@ def build_doctor_report(targets, config_errors: Sequence[dict] = (), retired_set
 
 # Prints one sectioned doctor report, keeping the marker and indent format scripts and users already read
 def render_doctor_report(report: DoctorReport) -> None:
-    print(colorize("header", f"\nInstagram Monitor v{VERSION} - Doctor\n"))
+    print(colorize("header", "Doctor\n"))
     print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.\n")
     for index, section in enumerate(("Environment", "Configuration", "Session", "Connectivity", "Targets", "Notifications")):
         section_checks = [check for check in report.checks if check.section == section]
@@ -13705,7 +13709,7 @@ def render_doctor_summary(fails: int, warns: int) -> None:
         print(colorize("warning", f"  All critical checks passed with {warns} warning(s). Review the warnings above."))
     else:
         print(colorize("boolean_true", "  All checks passed. You are good to go!"))
-    print()
+    print(f"\nGuide: {DOCTOR_GUIDE_URL}")
 
 
 # Runs doctor preflight plus approved delivery tests and returns the number of failed checks
