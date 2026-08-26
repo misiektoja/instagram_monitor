@@ -2,19 +2,19 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.9.1 (TBD)
+# Changes in 3.9.1 (26 Aug 2026)
 
-Version **3.9.1** makes every published download verifiable, lets you cite the project from the repository page, puts an automated defect check on every change and keeps Instagram text safe in the Terminal Dashboard.
+Version **3.9.1** makes every published download verifiable, adds automated defect checks on every change and keeps Instagram text safe in the Terminal Dashboard.
 
 **Features and improvements**:
 
-- **IMPROVE:** **Verifiable release downloads** - Each published release now attaches a **`SHA256SUMS.txt`** file next to the `zip` and `tar.gz` archives, and both archives carry a signed build provenance attestation. The attestation bundle is attached too, as an **`.intoto.jsonl`** asset, so provenance can be checked from the downloaded files alone. You can confirm a download really came from this repository before you unpack it with `gh attestation verify instagram_monitor_<tag>.zip --repo misiektoja/instagram_monitor`
-- **IMPROVE:** **Automated defect checks on every change** - A pinned [Ruff](https://docs.astral.sh/ruff/) lint pass now runs in CI before the test suite, reporting unused and undefined names and common bug patterns. Added optional pre-commit hooks and a shared [.editorconfig](https://github.com/misiektoja/instagram_monitor/blob/main/.editorconfig) that records the project's existing style
-- **IMPROVE:** **Cite the project** - The repository page now offers **Cite this repository**, which exports a ready-made BibTeX or APA entry from the new [CITATION.cff](https://github.com/misiektoja/instagram_monitor/blob/main/CITATION.cff). The new [SUPPORT.md](https://github.com/misiektoja/instagram_monitor/blob/main/SUPPORT.md) shows where a question, a bug report and a vulnerability each belong and what to include, starting with **`--doctor`** output
+- **IMPROVE:** **Verifiable release downloads** - Releases now ship a `SHA256SUMS.txt` and a signed build attestation, including the `.intoto.jsonl` bundle, checkable with `gh attestation verify`
+- **IMPROVE:** **Automated defect checks on every change** - A pinned Ruff lint pass now runs in CI before the test suite, plus optional pre-commit hooks and a shared `.editorconfig`
+- **IMPROVE:** Corrected and improved wording in setup wizard and doctor preflight
 
 **Security and privacy**:
 
-- **SECURITY:** **Instagram text stays safe in the Terminal Dashboard** - Captions, status details and activity messages now have terminal control sequences removed before Rich renders them. A malicious profile cannot clear the screen, rename the terminal window or overwrite dashboard text
+- **SECURITY:** **Instagram text stays safe in the Terminal Dashboard** - Captions, status details and activity messages now have terminal control sequences removed before Rich renders them, so a malicious profile can no longer clear the screen, rename the window or overwrite dashboard text
 
 # Changes in 3.9 (22 Aug 2026)
 
