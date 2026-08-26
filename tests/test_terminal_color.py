@@ -1,3 +1,5 @@
+from io import StringIO
+
 import pytest
 
 
@@ -72,6 +74,37 @@ def test_logger_write_sanitizes_terminal_output(im_module, monkeypatch):
     logger.write("Bio:\x1b[2J\x1b]0;pwned\x07 done")
 
     assert written == ["Bio:[2J]0;pwned done"]
+
+
+# Verifies Rich dashboard values are sanitized before the console renders them
+@pytest.mark.parametrize("dashboard_mode", ["user", "config"])
+def test_terminal_dashboard_sanitizes_remote_text(im_module, monkeypatch, dashboard_mode):
+    hostile = "visible\x1b[2J\x1b]0;pwned\x07hidden"
+    target_data = {
+        "safeuser": {
+            "status": hostile,
+            "followers": 1,
+            "following": 2,
+            "posts": 3,
+            "reels": 0,
+            "fetched_updates": [{"user": "safeuser", "type": "Post", "timestamp": "Now", "caption": hostile, "timestamp_ts": 1}],
+        }
+    }
+    monkeypatch.setattr(im_module, "DASHBOARD_DATA", {"start_time": im_module.datetime.now(), "activities": [{"time": "Now", "message": hostile}], "targets": target_data})
+
+    if dashboard_mode == "config":
+        rendered = im_module.generate_config_dashboard(target_data, {"session_user": hostile})
+    else:
+        rendered = im_module.generate_user_dashboard(target_data)
+    output = StringIO()
+    console = im_module.Console(file=output, force_terminal=True, color_system="standard", width=180, height=45)
+    console.print(rendered)
+
+    assert rendered is not None
+    plain = output.getvalue()
+    assert "\x1b[2J" not in plain
+    assert "\x1b]0;pwned\x07" not in plain
+    assert "visible[2J]0;pwnedhidden" in plain
 
 
 # Verifies the terminal is handed back even when the process exits without unwinding the input thread
