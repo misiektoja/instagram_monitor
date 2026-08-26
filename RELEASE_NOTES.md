@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.9.1 (26 Aug 2026)
+# Changes in 3.9.1 (27 Aug 2026)
 
 Version **3.9.1** makes every published download verifiable, adds automated defect checks on every change, keeps Instagram text safe in the Terminal Dashboard and fixes environment-variable secrets being ignored when no dotenv file is present.
 
