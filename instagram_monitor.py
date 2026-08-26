@@ -13125,7 +13125,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         print()
     if doctor_offered and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
         doctor_ran = True
-        doctor_failures = run_doctor(state.targets)
+        doctor_failures = run_doctor(state.targets, env_path=state.env_path)
 
     command_targets = [] if state.persist_targets else state.targets
     run_command = _wizard_action_command(method, "", state.config_path, state.env_path, command_targets, web_dashboard=state.want_web, host_os=state.container_host)
@@ -13561,23 +13561,69 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
     return checks
 
 
+# Returns whether one secret holds a usable value, treating the shipped 'your_...' defaults as unset
+def doctor_secret_is_set(value) -> bool:
+    return isinstance(value, str) and bool(value.strip()) and not value.strip().startswith("your_")
+
+
+# Groups configured secret names by the source each value actually came from
+def doctor_secret_sources(env_path=None) -> Tuple[List[str], List[str], List[str]]:
+    file_keys = set()
+    if env_path:
+        try:
+            from dotenv import dotenv_values
+            file_keys = {key for key, value in dotenv_values(env_path, interpolate=False).items() if value}
+        except Exception:
+            file_keys = set()
+    from_file: List[str] = []
+    from_environment: List[str] = []
+    from_settings: List[str] = []
+    for key in SECRET_KEYS:
+        if not doctor_secret_is_set(globals().get(key)):
+            continue
+        if key in file_keys:
+            from_file.append(key)
+        elif os.environ.get(key):
+            from_environment.append(key)
+        else:
+            from_settings.append(key)
+    return from_file, from_environment, from_settings
+
+
+# Reports which secrets are in effect and where each one was read from
+def doctor_secret_checks(env_path=None) -> List[DoctorCheck]:
+    from_file, from_environment, from_settings = doctor_secret_sources(env_path)
+    checks: List[DoctorCheck] = []
+    if from_file:
+        checks.append(make_doctor_check("Configuration", "ok", "Secrets loaded from the dotenv file", ", ".join(from_file)))
+    if from_environment:
+        checks.append(make_doctor_check("Configuration", "ok", "Secrets loaded from the environment", ", ".join(from_environment)))
+    if from_settings:
+        checks.append(make_doctor_check("Configuration", "ok", "Secrets loaded from the configuration file or command line", ", ".join(from_settings)))
+    if not checks:
+        checks.append(make_doctor_check("Configuration", "ok", "No secrets loaded", "Nothing was read from a dotenv file, the environment or the command line"))
+    return checks
+
+
 # Reports the selected configuration, any startup rejection, known secrets and the final log destinations
-def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = ()) -> List[DoctorCheck]:
+def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None) -> List[DoctorCheck]:
     checks: List[DoctorCheck] = []
     cfg = find_config_file(CLI_CONFIG_PATH)
     if config_errors:
         for config_error in config_errors:
             checks.append(make_doctor_check("Configuration", "fail", config_error["summary"].lstrip("* ").rstrip(":"), config_error.get("detail", ""), config_error.get("fix", ""), CONFIG_FILE_GUIDE_URL))
     elif cfg:
-        checks.append(make_doctor_check("Configuration", "ok", "Config file", f"Path: {cfg}"))
+        checks.append(make_doctor_check("Configuration", "ok", "Configuration file loaded", f"Path: {cfg}"))
     else:
         checks.append(make_doctor_check("Configuration", "ok", "No configuration file selected", "Using built-in defaults and command-line overrides. Create one with --setup"))
     if retired_settings:
         checks.append(make_doctor_check("Configuration", "warn", "Config file contains removed settings", describe_retired_settings(retired_settings, cfg), "delete the reported settings, or regenerate the file with --generate-config.", CONFIG_FILE_GUIDE_URL))
 
-    placeholders = ("", "your_smtp_password")
-    present_secrets = [key for key in SECRET_KEYS if globals().get(key) and globals().get(key) not in placeholders]
-    checks.append(make_doctor_check("Configuration", "ok", "Secrets from environment/.env", ", ".join(present_secrets) if present_secrets else "none set"))
+    if env_path:
+        checks.append(make_doctor_check("Configuration", "ok", "Dotenv file loaded", f"Path: {env_path}"))
+    else:
+        checks.append(make_doctor_check("Configuration", "ok", "No dotenv file selected", "Using environment variables and other configured sources"))
+    checks.extend(doctor_secret_checks(env_path))
 
     if DISABLE_LOGGING:
         checks.append(make_doctor_check("Configuration", "ok", "Output logging is disabled", "No log file will be written"))
@@ -13715,10 +13761,10 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
 
 
 # Runs every preflight check in order and returns them with the shared state they produced
-def build_doctor_report(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), progress: Optional[Callable[[str], None]] = None) -> DoctorReport:
+def build_doctor_report(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), progress: Optional[Callable[[str], None]] = None, env_path=None) -> DoctorReport:
     report = DoctorReport()
     report.checks.extend(doctor_check_environment())
-    report.checks.extend(doctor_check_configuration(targets, config_errors, retired_settings))
+    report.checks.extend(doctor_check_configuration(targets, config_errors, retired_settings, env_path))
     report.checks.extend(doctor_prepare_bot(report))
     report.checks.extend(doctor_check_session(report, progress))
     report.checks.extend(doctor_check_connectivity(report, progress))
@@ -13761,11 +13807,11 @@ def render_doctor_summary(fails: int, warns: int) -> None:
 
 
 # Runs doctor preflight plus approved delivery tests and returns the number of failed checks
-def run_doctor(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = ()) -> int:
+def run_doctor(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None) -> int:
     progress = _doctor_progress if sys.stdout.isatty() else None
     render_doctor_notice()
     try:
-        report = build_doctor_report(targets, config_errors, retired_settings, progress)
+        report = build_doctor_report(targets, config_errors, retired_settings, progress, env_path)
     finally:
         _doctor_progress_clear()
 
@@ -14417,11 +14463,11 @@ def run_main():
             if env_path:
                 print(f"* Warning: Cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n\nTo install it, run:\n    pip3 install python-dotenv\n\nOnce installed, re-run this tool\n")
 
-    if env_path:
-        for secret in SECRET_KEYS:
-            val = os.getenv(secret)
-            if val is not None:
-                globals()[secret] = val
+    # Environment variables are a documented alternative to a dotenv file, so they apply even when no file was loaded
+    for secret in SECRET_KEYS:
+        val = os.getenv(secret)
+        if val is not None:
+            globals()[secret] = val
 
     # The shipped WEBHOOK_URL placeholder means 'not configured', so it must not reach code that treats it as a destination
     if is_placeholder_setting(WEBHOOK_URL):
@@ -14787,7 +14833,7 @@ def run_main():
 
     # Run preflight checks once the effective session mode and targets are resolved
     if getattr(args, "doctor", False):
-        doctor_failures = run_doctor(targets, doctor_config_errors, doctor_config_retired)
+        doctor_failures = run_doctor(targets, doctor_config_errors, doctor_config_retired, env_path)
         if not doctor_failures:
             explicit_targets = bool(getattr(args, "targets", None) or getattr(args, "usernames", None))
             command_targets = targets if explicit_targets else ()
