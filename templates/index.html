@@ -1998,7 +1998,7 @@
                 // settings-grid pairs each webhook row with its proxy counterpart
                 { l: 'Webhook', v: config.webhook_enabled },
                 { l: 'Proxy for Instagram', v: config.proxy_enabled ? 'Enabled' : 'Disabled' },
-                { l: 'Webhook Provider', v: config.webhook_provider },
+                { l: 'Webhook Provider', v: config.webhook_provider === 'discord' ? 'Discord' : config.webhook_provider },
                 { l: 'Proxy for Webhooks', v: config.proxy_webhooks ? 'Enabled' : 'Disabled' },
                 { l: 'Webhook Status', v: config.webhook_status ? 'Enabled' : 'Disabled' },
                 { l: 'Proxy URL', v: config.proxy_url ? config.proxy_url.substring(0, 50) + (config.proxy_url.length > 50 ? '...' : '') : '' },
