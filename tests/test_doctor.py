@@ -135,7 +135,7 @@ class TestDoctorChecks:
 
         assert report.webhook_ready is False
         assert not any(check.status == "fail" for check in checks)
-        assert any(check.status == "info" and "Webhook notifications not configured" in check.label for check in checks)
+        assert any(check.status == "ok" and "Webhook alerts are disabled" in check.label for check in checks)
 
     # An enabled webhook still holding the placeholder is a warning about missing setup, not an invalid URL
     def test_enabled_webhook_placeholder_warns_about_setup(self, im_module, monkeypatch):
