@@ -14,7 +14,8 @@ Version **3.9.1** makes every published download verifiable, adds automated defe
 
 **Bug fixes**:
 
-- **BUGFIX:** **Environment variables work without a dotenv file** - Secrets exported as environment variables, such as `SESSION_PASSWORD`, `SMTP_PASSWORD`, `WEBHOOK_URL` or `NTFY_ACCESS_TOKEN`, were applied only when a dotenv file also existed, so an export-only setup silently fell back to the shipped defaults. They are now honored on their own, including with `--env-file none`. **`--doctor`** now also names the dotenv file it loaded and lists which secrets are in effect and whether each one came from that file, an environment variable or the configuration file, so a secret that never arrived is visible at a glance
+- **BUGFIX:** **Disabled alert channels are reported as disabled** - **`--doctor`** validated a webhook URL and reported the alert choices as valid even when `WEBHOOK_ENABLED` was `False`, and offered to send a real test through a channel the user had switched off. It now reports `Webhook alerts are disabled` and stops there. Email is gated the same way
+- **BUGFIX:** **Environment variables work without a dotenv file** - Secrets exported as environment variables, such as `SESSION_PASSWORD`, `SMTP_PASSWORD`, `WEBHOOK_URL` or `NTFY_ACCESS_TOKEN`, were applied only when a dotenv file also existed, so an export-only setup silently fell back to the shipped defaults. They are now honored on their own, including with `--env-file none`.
 
 **Security and privacy**:
 
