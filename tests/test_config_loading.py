@@ -183,6 +183,21 @@ class TestLoadConfigFile:
         assert im_module.DASHBOARD_ENABLED is True
         retainer.assert_called_once_with(["DISCORD_MAX_FIELDS"], str(config))
 
+    # The debug flag is active before startup connectivity runs, so failures retain request diagnostics
+    def test_debug_flag_applies_before_connectivity_check(self, im_module, monkeypatch):
+        observed_debug_modes = []
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--debug", "--env-file", "none", "--no-color"])
+        monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+        monkeypatch.setattr(im_module, "find_config_file", lambda path=None: None)
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "check_internet", lambda: observed_debug_modes.append(im_module.DEBUG_MODE) or False)
+
+        with pytest.raises(SystemExit) as exc:
+            im_module.run_main()
+
+        assert exc.value.code == 1
+        assert observed_debug_modes == [True]
+
 
 class TestEarlyOutputConfig:
     # Screen clearing happens before arguments are parsed, so the config value must still win
