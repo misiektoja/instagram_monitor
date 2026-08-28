@@ -2,6 +2,14 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.9.2 (TBD)
+
+Version **3.9.2** keeps **configuration upgrade notes visible** when monitoring moves into the full-screen Terminal Dashboard.
+
+**Bug fixes**:
+
+- **BUGFIX:** **Visible configuration upgrade notes in the Terminal Dashboard** - Settings retired from older official config templates are still ignored so upgraded files continue to work. Their cleanup note now remains in the dashboard's **Live Activity Log** instead of disappearing when the full-screen view replaces normal terminal output
+
 # Changes in 3.9.1 (27 Aug 2026)
 
 Version **3.9.1** makes every published download verifiable, adds automated defect checks on every change, keeps Instagram text safe in the Terminal Dashboard and fixes environment-variable secrets being ignored when no dotenv file is present.
