@@ -1843,7 +1843,7 @@ def _install_http_backend() -> None:
     if real_requests is None or isinstance(real_requests, _RequestsBackendShim):
         _CURL_CFFI_BACKEND_INSTALLED = True
         return
-    _ilc.requests = _RequestsBackendShim(real_requests)
+    _ilc.__dict__.update({"requests": _RequestsBackendShim(real_requests)})
     _CURL_CFFI_BACKEND_INSTALLED = True
 
 
