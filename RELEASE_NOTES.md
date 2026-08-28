@@ -8,6 +8,7 @@ Version **3.9.2** keeps **configuration upgrade notes visible** when monitoring 
 
 **Bug fixes**:
 
+- **BUGFIX:** **Diagnostic flags cover all startup checks** - Explicit **`--debug`** and **`--verbose`** flags now take effect before configuration and connectivity failures are reported, then remain enabled after the selected config loads
 - **BUGFIX:** **Visible configuration upgrade notes in the Terminal Dashboard** - Settings retired from older official config templates are still ignored so upgraded files continue to work. Their cleanup note now remains in the dashboard's **Live Activity Log** instead of disappearing when the full-screen view replaces normal terminal output
 
 # Changes in 3.9.1 (27 Aug 2026)
