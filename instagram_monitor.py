@@ -13841,6 +13841,15 @@ def run_doctor(targets, config_errors: Sequence[dict] = (), retired_settings: Se
     return fails
 
 
+# Applies diagnostic flags both before config error reporting and after config precedence resolution
+def apply_diagnostic_cli_overrides(args: argparse.Namespace) -> None:
+    global DEBUG_MODE, VERBOSE_MODE
+    if args.debug_mode is not None:
+        DEBUG_MODE = args.debug_mode
+    if args.verbose_mode is not None:
+        VERBOSE_MODE = args.verbose_mode
+
+
 # Parses configuration and command-line options then starts the selected operation
 def run_main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
@@ -14399,6 +14408,8 @@ def run_main():
 
     args = parser.parse_args()
 
+    apply_diagnostic_cli_overrides(args)
+
     import_requested = bool(args.import_firefox_session or args.import_browser_session)
     requested_actions = [label for label, enabled in (("--setup", args.setup), ("--set-webhook-url", args.set_webhook_url), ("--doctor", args.doctor), ("--analyze-follows", args.analyze_follows), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--generate-config", args.generate_config is not None)) if enabled]
     if len(requested_actions) > 1:
@@ -14452,6 +14463,9 @@ def run_main():
 
     if cfg_path and not load_config_file(cfg_path, error_out=doctor_config_errors, report_errors=not doctor_mode, retired_out=doctor_config_retired) and not doctor_mode:
         sys.exit(1)
+
+    # Config loading can replace these globals, so reapply explicit flags to preserve CLI precedence
+    apply_diagnostic_cli_overrides(args)
 
     if args.output_dir:
         OUTPUT_DIR = os.path.expanduser(args.output_dir)
@@ -14634,13 +14648,7 @@ def run_main():
             print(f"* Error: Invalid configuration for advanced followee fetching: FOLLOWEE_LIMIT_TO_FETCH: {FOLLOWEE_LIMIT_TO_FETCH}, FOLLOWEES_PER_BATCH: {FOLLOWEES_PER_BATCH}, FOLLOWEE_DELAY_PER_BATCH: {FOLLOWEE_DELAY_PER_BATCH}")
             sys.exit(1)
 
-    # Handle new debug, dashboard, and webhook arguments
-    if args.debug_mode is True:
-        DEBUG_MODE = True
-
-    if args.verbose_mode is True:
-        VERBOSE_MODE = True
-
+    # Handle dashboard and webhook arguments
     if args.followers_churn is True:
         FOLLOWERS_CHURN_DETECTION = True
 
