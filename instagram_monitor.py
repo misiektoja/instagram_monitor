@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.9.1
+v3.9.2
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -25,7 +25,7 @@ rich (optional - for terminal dashboard)
 # keeps the supported Python floor enforceable regardless of where an import sits in the file
 from __future__ import annotations
 
-VERSION = "3.9.1"
+VERSION = "3.9.2"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -743,6 +743,13 @@ def describe_retired_settings(names, path: Any = "") -> str:
     if path:
         sentence += f" You can delete {'it' if single else 'them'} from {path}."
     return sentence
+
+
+# Keeps retired-setting upgrade guidance visible inside the full-screen terminal dashboard
+def retain_retired_settings_in_dashboard(names, path: Any = "") -> None:
+    if not names or not DASHBOARD_ENABLED or not RICH_AVAILABLE:
+        return
+    log_activity(f"Configuration upgrade note: {describe_retired_settings(names, path)}", level="warning")
 
 
 # Returns every setting name a config file may assign, taken from the built-in template plus documented extras
@@ -14743,6 +14750,9 @@ def run_main():
 
     if args.disable_dashboard is True:
         DASHBOARD_ENABLED = False
+
+    if not doctor_mode:
+        retain_retired_settings_in_dashboard(doctor_config_retired, cfg_path)
 
     # Web Dashboard handling
     if args.web_dashboard is True:
