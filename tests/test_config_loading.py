@@ -1,5 +1,7 @@
 """Offline tests for restricted configuration file loading."""
 
+from unittest.mock import Mock
+
 import pytest
 
 
@@ -141,6 +143,45 @@ class TestLoadConfigFile:
         assert im_module.load_config_file(str(config), namespace) is True
         assert namespace["OUTPUT_DIR"] == "C:\\Users\\monitor"
         assert "read literally" in capsys.readouterr().out
+
+    # A full-screen dashboard retains config upgrade guidance after replacing the normal terminal view
+    def test_retired_setting_note_is_retained_in_terminal_dashboard(self, im_module, monkeypatch):
+        activities = []
+        monkeypatch.setattr(im_module, "DASHBOARD_ENABLED", True)
+        monkeypatch.setattr(im_module, "RICH_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "log_activity", lambda message, **kwargs: activities.append((message, kwargs)))
+
+        im_module.retain_retired_settings_in_dashboard(["DISCORD_MAX_FIELDS"], "/data/instagram_monitor.conf")
+
+        assert activities == [("Configuration upgrade note: DISCORD_MAX_FIELDS was removed in a later version and is ignored. You can delete it from /data/instagram_monitor.conf.", {"level": "warning"})]
+
+    # Text mode keeps using its existing terminal note without adding a dashboard activity
+    def test_retired_setting_note_is_not_duplicated_without_terminal_dashboard(self, im_module, monkeypatch):
+        activities = []
+        monkeypatch.setattr(im_module, "DASHBOARD_ENABLED", False)
+        monkeypatch.setattr(im_module, "RICH_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: activities.append((args, kwargs)))
+
+        im_module.retain_retired_settings_in_dashboard(["DISCORD_MAX_FIELDS"], "/data/instagram_monitor.conf")
+
+        assert activities == []
+
+    # The normal CLI passes captured retired settings into the dashboard retention path after resolving --dashboard
+    def test_cli_retains_retired_setting_after_resolving_dashboard(self, im_module, monkeypatch, tmp_path):
+        config = tmp_path / "instagram_monitor.conf"
+        config.write_text("DISCORD_MAX_FIELDS = 25\nLOCAL_TIMEZONE = 'UTC'\n", encoding="utf-8")
+        retainer = Mock(side_effect=SystemExit(99))
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--dashboard", "--config-file", str(config), "--env-file", "none", "--no-color"])
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "check_internet", lambda: True)
+        monkeypatch.setattr(im_module, "retain_retired_settings_in_dashboard", retainer)
+
+        with pytest.raises(SystemExit) as exc:
+            im_module.run_main()
+
+        assert exc.value.code == 99
+        assert im_module.DASHBOARD_ENABLED is True
+        retainer.assert_called_once_with(["DISCORD_MAX_FIELDS"], str(config))
 
 
 class TestEarlyOutputConfig:
