@@ -1,5 +1,7 @@
 """Tests for the --doctor preflight checks (no real network)."""
 
+import ast
+import inspect
 import io
 from unittest.mock import Mock
 
@@ -112,7 +114,7 @@ class TestDoctorChecks:
 
         assert check.status == "fail"
         assert check.detail == "Europe/Nowhere"
-        assert check.fix == "set LOCAL_TIMEZONE to a valid pytz timezone."
+        assert check.fix == "Set LOCAL_TIMEZONE to a valid pytz timezone"
 
     # Session advice is derived from the shared fix hints so Doctor and monitoring stay consistent
     def test_session_failure_carries_the_shared_fix_hint(self, im_module, monkeypatch):
@@ -128,7 +130,7 @@ class TestDoctorChecks:
         checks = im_module.doctor_check_session(report)
 
         assert checks[0].status == "fail"
-        assert "no saved session" in checks[0].fix
+        assert "No saved session" in checks[0].fix
         assert checks[0].guide == im_module.SESSION_IMPORT_GUIDE_URL
 
     # A valid webhook configuration records readiness on the report for the later delivery offer
@@ -260,6 +262,38 @@ class TestDoctorChecks:
 
         checks = im_module.doctor_check_configuration([], errors, ())
         assert not any(check.fix.startswith("To fix:") for check in checks)
+
+
+    # The renderer owns the 'To fix:' prefix, so a missing config file must record the bare action
+    def test_missing_config_file_action_does_not_repeat_the_prefix(self, im_module, monkeypatch, tmp_path):
+        recorded = {}
+
+        def _capture(targets, config_errors=(), retired_settings=(), env_path=None):
+            recorded["errors"] = list(config_errors)
+            return 0
+
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--doctor", "--config-file", str(tmp_path / "missing.conf"), "--env-file", "none", "--no-color"])
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "run_doctor", _capture)
+
+        with pytest.raises(SystemExit):
+            im_module.run_main()
+
+        assert recorded["errors"] and not recorded["errors"][0]["fix"].startswith("To fix:")
+
+    # Every action reads as one capitalised instruction with no trailing period, matching the sibling monitors
+    def test_doctor_actions_use_the_shared_sentence_style(self, im_module):
+        actions = [node.args[4] for node in ast.walk(ast.parse(inspect.getsource(im_module))) if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "make_doctor_check" and len(node.args) >= 5]
+        checked = 0
+        for action in actions:
+            parts = action.values if isinstance(action, ast.JoinedStr) else [action]
+            head, tail = parts[0], parts[-1]
+            if isinstance(head, ast.Constant) and isinstance(head.value, str) and head.value:
+                checked += 1
+                assert head.value[0].isupper(), f"line {action.lineno}: {head.value}"
+            if isinstance(tail, ast.Constant) and isinstance(tail.value, str) and tail.value:
+                assert not tail.value.endswith("."), f"line {action.lineno}: {tail.value}"
+        assert checked > 10
 
 
 class TestDoctorProgress:

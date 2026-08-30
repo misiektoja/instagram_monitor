@@ -4932,7 +4932,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         smtpObj.quit()
     except Exception as e:
         print(f"Error sending email: {e}")
-        print(colorize("info", "To fix: verify SMTP_HOST, SMTP_PORT and SMTP_SSL plus SMTP_USER / SMTP_PASSWORD. For Gmail and similar providers use an app password, not your normal login password. Test with --send-test-email."))
+        print(colorize("info", "To fix: Verify SMTP_HOST, SMTP_PORT and SMTP_SSL plus SMTP_USER / SMTP_PASSWORD. For Gmail and similar providers use an app password, not your normal login password. Test with --send-test-email"))
         print(f"Guide: {SMTP_GUIDE_URL}")
         return 1
     return 0
@@ -5525,7 +5525,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                 response_text = sanitize_webhook_error_text(getattr(response, "text", ""))[:200]
                 suffix = f" - {response_text}" if response_text else ""
                 print(f"* Webhook error: HTTP {response.status_code}{suffix}")
-                print(colorize("info", "To fix: check that WEBHOOK_PROVIDER matches the saved Discord or ntfy URL then test it with --send-test-webhook."))
+                print(colorize("info", "To fix: Check that WEBHOOK_PROVIDER matches the saved Discord or ntfy URL then test it with --send-test-webhook"))
                 print(f"Guide: {WEBHOOK_GUIDE_URL}")
                 return 1
             delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS
@@ -7484,7 +7484,7 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
     try:
         content = Path(config_path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        return reject(f"* Error loading config file '{config_path}': {format_error_message(exc)}", (), "verify the file is readable and saved as UTF-8. You can regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'.")
+        return reject(f"* Error loading config file '{config_path}': {format_error_message(exc)}", (), "Verify the file is readable and saved as UTF-8. You can regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'")
 
     retired_settings = []
     try:
@@ -7511,9 +7511,9 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
         if exc.lineno:
             details.append(f"Line {exc.lineno}: {(exc.text or '').rstrip()}")
         details.append(f"Parser: {exc.msg}")
-        return reject(f"* Error loading config file '{config_path}':", details, "check that line. Text values need matching quotes and Windows paths need forward slashes (/) or doubled backslashes (\\\\). You can also regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'.")
+        return reject(f"* Error loading config file '{config_path}':", details, "Check that line. Text values need matching quotes and Windows paths need forward slashes (/) or doubled backslashes (\\\\). You can also regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'")
     except ValueError as exc:
-        return reject(f"* Error loading config file '{config_path}': {exc}", (), "a config file may only assign settings, such as INSTA_CHECK_INTERVAL = 5400. It cannot import modules, call functions or run other code. Regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'.")
+        return reject(f"* Error loading config file '{config_path}': {exc}", (), "A config file may only assign settings, such as INSTA_CHECK_INTERVAL = 5400. It cannot import modules, call functions or run other code. Regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'")
 
 
 # Resolves an executable path by checking if it's a valid file or searching in $PATH
@@ -9173,46 +9173,46 @@ def classify_error_message(error_msg: str, is_logged_in: bool = False) -> Tuple[
 
     # Rate limiting or TLS-fingerprint blocks
     if any(t in m for t in ("429", "too many requests", "wait a few minutes", "rate limit", "please wait")):
-        return "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users.", ANTI_DETECTION_INTERVAL_GUIDE_URL
+        return "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users", ANTI_DETECTION_INTERVAL_GUIDE_URL
 
     # Challenge, checkpoint or shadowban
     if any(t in m for t in ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data")):
-        return "Instagram is asking this session or IP to pass a challenge", f"Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'. Also raise the check interval.", ANTI_DETECTION_SESSION_GUIDE_URL
+        return "Instagram is asking this session or IP to pass a challenge", f"Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'. Also raise the check interval", ANTI_DETECTION_SESSION_GUIDE_URL
 
     # Missing session file
     if "session file" in m:
-        return "No saved Instagram session was found", f"no saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_user>'. In the Web Dashboard you can import from the Session page.", SESSION_IMPORT_GUIDE_URL
+        return "No saved Instagram session was found", f"No saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_user>'. In the Web Dashboard you can import from the Session page", SESSION_IMPORT_GUIDE_URL
 
     # Invalid or expired session
     if any(t in m for t in ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required", "bad request")):
-        return "The saved Instagram session is invalid or expired", f"your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_user>'. In the Web Dashboard you can re-import from the Session page.", SESSION_IMPORT_GUIDE_URL
+        return "The saved Instagram session is invalid or expired", f"Your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_user>'. In the Web Dashboard you can re-import from the Session page", SESSION_IMPORT_GUIDE_URL
 
     # Profile not found
     if any(t in m for t in ("profilenotexists", "does not exist", "not found", "404")):
-        fix = "check the target username is spelled correctly and the account still exists and is reachable."
+        fix = "Check the target username is spelled correctly and the account still exists and is reachable"
         if is_logged_in:
-            fix += " If the username is correct, your session or IP may be temporarily flagged."
+            fix += ". If the username is correct, your session or IP may be temporarily flagged"
         return "Instagram could not find the requested profile", fix, ""
 
     # An unsupported impersonation target surfaces as a connection error, so name the real cause before the network hint
     if "impersonat" in m:
-        return "The configured browser profile cannot be impersonated", "the configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto', or pick a supported target such as chrome, safari, edge or firefox.", ""
+        return "The configured browser profile cannot be impersonated", "The configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto' or pick a supported target such as chrome, safari, edge or firefox", ""
 
     # An unresolvable proxy hostname is a proxy configuration problem, so it is the one resolution failure the proxy guide fits
     if "could not resolve proxy" in m:
-        return "The configured proxy hostname could not be resolved", "the proxy hostname you configured cannot be resolved. Check PROXY_URL for a typo and confirm the proxy host is reachable from this machine.", PROXY_GUIDE_URL
+        return "The configured proxy hostname could not be resolved", "The proxy hostname you configured cannot be resolved. Check PROXY_URL for a typo and confirm the proxy host is reachable from this machine", PROXY_GUIDE_URL
 
     # DNS failures are resolver-side, so they need their own fix before the generic network branch swallows them
     if any(t in m for t in ("could not resolve host", "temporary failure in name resolution", "name or service not known", "nodename nor servname", "curl: (6)")):
-        return "Instagram's address could not be resolved", "your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com'), and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again.", CONNECTION_ERRORS_GUIDE_URL
+        return "Instagram's address could not be resolved", "Your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com') and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again", CONNECTION_ERRORS_GUIDE_URL
 
     # Network or connectivity problems
     if any(t in m for t in ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl")):
-        return "Instagram could not be reached", "this looks like a network problem. Check your internet connection, then your proxy settings if --enable-proxy is set, then try again.", CONNECTION_ERRORS_GUIDE_URL
+        return "Instagram could not be reached", "This looks like a network problem. Check your internet connection, then your proxy settings if --enable-proxy is set, then try again", CONNECTION_ERRORS_GUIDE_URL
 
     # Deprecated GraphQL doc_id returning null data, or a temporary block
     if any(t in m for t in ("empty data for posts", "fetching post metadata failed", "not subscriptable")):
-        return "Instagram returned empty data for this query", "Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version; if you are already current, report it at https://github.com/misiektoja/instagram_monitor/issues).", ""
+        return "Instagram returned empty data for this query", "Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version and report it at https://github.com/misiektoja/instagram_monitor/issues if you are already current)", ""
 
     return "An unexpected error stopped the requested action", "", ""
 
@@ -13631,7 +13631,7 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         checks.append(make_doctor_check("Environment", "ok", f"Python {version_text} is supported"))
     else:
         minimum_text = ".".join(str(part) for part in MINIMUM_PYTHON_VERSION)
-        checks.append(make_doctor_check("Environment", "fail", f"Python {version_text} is unsupported", "", f"install Python {minimum_text} or newer then retry.", INSTALLATION_GUIDE_URL))
+        checks.append(make_doctor_check("Environment", "fail", f"Python {version_text} is unsupported", "", f"Install Python {minimum_text} or newer then retry", INSTALLATION_GUIDE_URL))
 
     find_spec = importlib.util.find_spec if spec_finder is None else spec_finder
 
@@ -13647,7 +13647,7 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         if module_present(module_name):
             checks.append(make_doctor_check("Environment", "ok", f"Required dependency {package_name} is installed"))
         else:
-            checks.append(make_doctor_check("Environment", "fail", f"Required dependency {package_name} is missing", "", f"install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
+            checks.append(make_doctor_check("Environment", "fail", f"Required dependency {package_name} is missing", "", f"Install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
 
     optional = (
         ("curl_cffi", "curl_cffi", _CURL_CFFI_AVAILABLE, "Used for browser TLS impersonation that avoids first-request 429 blocks", "Normal monitoring works without it, but Instagram is more likely to answer the first request with 429"),
@@ -13660,7 +13660,7 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         if present:
             checks.append(make_doctor_check("Environment", "ok", f"Optional dependency {package_name} is installed", purpose))
         else:
-            checks.append(make_doctor_check("Environment", "warn", f"Optional dependency {package_name} is not installed", missing_purpose, f"install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
+            checks.append(make_doctor_check("Environment", "warn", f"Optional dependency {package_name} is not installed", missing_purpose, f"Install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
     return checks
 
 
@@ -13714,7 +13714,7 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
     else:
         checks.append(make_doctor_check("Configuration", "ok", "No configuration file selected", "Using built-in defaults and command-line overrides. Create one with --setup"))
     if retired_settings:
-        checks.append(make_doctor_check("Configuration", "warn", "Config file contains removed settings", describe_retired_settings(retired_settings, cfg), "delete the reported settings, or regenerate the file with --generate-config.", CONFIG_FILE_GUIDE_URL))
+        checks.append(make_doctor_check("Configuration", "warn", "Config file contains removed settings", describe_retired_settings(retired_settings, cfg), "Delete the reported settings or regenerate the file with --generate-config", CONFIG_FILE_GUIDE_URL))
 
     if env_path:
         checks.append(make_doctor_check("Configuration", "ok", "Dotenv file loaded", f"Path: {env_path}"))
@@ -13732,13 +13732,13 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
         if detected_timezone and is_valid_timezone(detected_timezone):
             checks.append(make_doctor_check("Configuration", "ok", "Local timezone can be detected", detected_timezone))
         elif get_localzone is None:
-            checks.append(make_doctor_check("Configuration", "fail", "Automatic timezone detection is unavailable", "LOCAL_TIMEZONE is Auto but tzlocal is unavailable", "install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone.", CONFIG_FILE_GUIDE_URL))
+            checks.append(make_doctor_check("Configuration", "fail", "Automatic timezone detection is unavailable", "LOCAL_TIMEZONE is Auto but tzlocal is unavailable", "Install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
         else:
-            checks.append(make_doctor_check("Configuration", "fail", "Automatic timezone detection failed", f"tzlocal did not return a supported timezone{f': {timezone_error}' if timezone_error else ''}", "set LOCAL_TIMEZONE to a valid pytz timezone.", CONFIG_FILE_GUIDE_URL))
+            checks.append(make_doctor_check("Configuration", "fail", "Automatic timezone detection failed", f"tzlocal did not return a supported timezone{f': {timezone_error}' if timezone_error else ''}", "Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
     elif is_valid_timezone(LOCAL_TIMEZONE):
         checks.append(make_doctor_check("Configuration", "ok", "Local timezone is valid", str(LOCAL_TIMEZONE)))
     else:
-        checks.append(make_doctor_check("Configuration", "fail", "Local timezone is invalid", str(LOCAL_TIMEZONE), "set LOCAL_TIMEZONE to a valid pytz timezone.", CONFIG_FILE_GUIDE_URL))
+        checks.append(make_doctor_check("Configuration", "fail", "Local timezone is invalid", str(LOCAL_TIMEZONE), "Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
 
     if not CSV_FILE:
         checks.append(make_doctor_check("Configuration", "ok", "CSV logging is disabled", "No CSV file will be written"))
@@ -13749,7 +13749,7 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
             if output_destination_is_writable(target_csv):
                 checks.append(make_doctor_check("Configuration", "ok", f"{label} appears writable", f"Path: {target_csv}"))
             else:
-                checks.append(make_doctor_check("Configuration", "fail", f"{label} is not writable", f"Path: {target_csv}", "choose a writable path with --csv-file or CSV_FILE."))
+                checks.append(make_doctor_check("Configuration", "fail", f"{label} is not writable", f"Path: {target_csv}", "Choose a writable path with --csv-file or CSV_FILE"))
 
     if DISABLE_LOGGING:
         checks.append(make_doctor_check("Configuration", "ok", "Output logging is disabled", "No log file will be written"))
@@ -13759,7 +13759,7 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
             if output_destination_is_writable(target_log):
                 checks.append(make_doctor_check("Configuration", "ok", f"Log destination for '{target}' appears writable", f"Path: {target_log}"))
             else:
-                checks.append(make_doctor_check("Configuration", "fail", f"Log destination for '{target}' is not writable", f"Path: {target_log}", "choose a writable path with --output-dir or INSTA_LOGFILE, or disable logging with -d."))
+                checks.append(make_doctor_check("Configuration", "fail", f"Log destination for '{target}' is not writable", f"Path: {target_log}", "Choose a writable path with --output-dir or INSTA_LOGFILE. Disable logging with -d when no log file is wanted"))
     else:
         checks.append(make_doctor_check("Configuration", "ok", "Log destination will be finalized after a target is selected", f"Base path: {INSTA_LOGFILE}"))
     return checks
@@ -13818,7 +13818,7 @@ def doctor_check_targets(report: DoctorReport, targets, progress: Optional[Calla
     if not targets:
         if WEB_DASHBOARD_ENABLED:
             return [make_doctor_check("Targets", "ok", "No targets configured yet", "The Web Dashboard is enabled, so targets can be added there")]
-        return [make_doctor_check("Targets", "warn", "No targets configured", "Nothing will be monitored", "pass a target on the command line, set TARGET_USERNAMES in the config, or enable the Web Dashboard.", QUICK_START_GUIDE_URL)]
+        return [make_doctor_check("Targets", "warn", "No targets configured", "Nothing will be monitored", "Pass a target on the command line, set TARGET_USERNAMES in the config or enable the Web Dashboard", QUICK_START_GUIDE_URL)]
     if report.bot is None:
         return [make_doctor_check("Targets", "warn", "Skipped target checks", "Instaloader could not be initialised")]
     checks: List[DoctorCheck] = []
@@ -13842,9 +13842,9 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
     if not email_notifications_enabled():
         checks.append(make_doctor_check("Notifications", "ok", "Email notifications are disabled", "No SMTP connection was attempted and no email was sent"))
     elif not smtp_configured:
-        checks.append(make_doctor_check("Notifications", "warn", "Email alerts are on but SMTP is not configured", "No SMTP connection was attempted and no email was sent", "set SMTP_HOST, SMTP_USER and SMTP_PASSWORD, or turn the email alerts off.", SMTP_GUIDE_URL))
+        checks.append(make_doctor_check("Notifications", "warn", "Email alerts are on but SMTP is not configured", "No SMTP connection was attempted and no email was sent", "Set SMTP_HOST, SMTP_USER and SMTP_PASSWORD or turn the email alerts off", SMTP_GUIDE_URL))
     elif invalid_addresses:
-        checks.append(make_doctor_check("Notifications", "fail", f"Email address is not set in {' and '.join(invalid_addresses)}", "", f"set {' and '.join(invalid_addresses)} to a real email address.", SMTP_GUIDE_URL))
+        checks.append(make_doctor_check("Notifications", "fail", f"Email address is not set in {' and '.join(invalid_addresses)}", "", f"Set {' and '.join(invalid_addresses)} to a real email address", SMTP_GUIDE_URL))
     else:
         if progress is not None:
             progress(f"Connecting to SMTP server {SMTP_HOST}")
@@ -13865,23 +13865,23 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
         checks.append(make_doctor_check("Notifications", "ok", "Webhook alerts are disabled", "No webhook was sent"))
         return checks
     if is_placeholder_setting(WEBHOOK_URL):
-        checks.append(make_doctor_check("Notifications", "warn", "Webhook enabled but WEBHOOK_URL is not set", "No webhook was sent", "set WEBHOOK_URL (or via .env), or disable webhooks.", WEBHOOK_GUIDE_URL))
+        checks.append(make_doctor_check("Notifications", "warn", "Webhook enabled but WEBHOOK_URL is not set", "No webhook was sent", "Set WEBHOOK_URL (or via .env) or disable webhooks", WEBHOOK_GUIDE_URL))
         return checks
     if not normalized_webhook_provider():
-        checks.append(make_doctor_check("Notifications", "fail", "Webhook provider is invalid", "", "set WEBHOOK_PROVIDER to 'discord' or 'ntfy'.", WEBHOOK_GUIDE_URL))
+        checks.append(make_doctor_check("Notifications", "fail", "Webhook provider is invalid", "", "Set WEBHOOK_PROVIDER to 'discord' or 'ntfy'", WEBHOOK_GUIDE_URL))
         return checks
     if not validate_webhook_url(WEBHOOK_URL):
-        checks.append(make_doctor_check("Notifications", "fail", "Webhook URL is not a complete HTTPS URL", "", "use a complete HTTPS destination with a path and no embedded credentials.", WEBHOOK_GUIDE_URL))
+        checks.append(make_doctor_check("Notifications", "fail", "Webhook URL is not a complete HTTPS URL", "", "Use a complete HTTPS destination with a path and no embedded credentials", WEBHOOK_GUIDE_URL))
         return checks
 
     customization_error = validate_webhook_customization(normalized_webhook_provider())
     header_error = validate_webhook_headers(normalized_webhook_provider())
     if customization_error is not None:
-        checks.append(make_doctor_check("Notifications", "fail", "Webhook customization is invalid", customization_error, "correct the reported webhook customization setting.", WEBHOOK_GUIDE_URL))
+        checks.append(make_doctor_check("Notifications", "fail", "Webhook customization is invalid", customization_error, "Correct the reported webhook customization setting", WEBHOOK_GUIDE_URL))
     elif header_error is not None:
-        checks.append(make_doctor_check("Notifications", "fail", "Webhook headers are invalid", header_error, "correct the reported WEBHOOK_HEADERS entry.", WEBHOOK_GUIDE_URL))
+        checks.append(make_doctor_check("Notifications", "fail", "Webhook headers are invalid", header_error, "Correct the reported WEBHOOK_HEADERS entry", WEBHOOK_GUIDE_URL))
     elif not webhook_notifications_enabled():
-        checks.append(make_doctor_check("Notifications", "warn", "Webhook alerts are on but no alert types are selected", "No webhook was sent during this passive check", "turn on at least one webhook alert, or set WEBHOOK_ENABLED to False.", WEBHOOK_GUIDE_URL))
+        checks.append(make_doctor_check("Notifications", "warn", "Webhook alerts are on but no alert types are selected", "No webhook was sent during this passive check", "Turn on at least one webhook alert or set WEBHOOK_ENABLED to False", WEBHOOK_GUIDE_URL))
     else:
         report.webhook_ready = True
         checks.append(make_doctor_check("Notifications", "ok", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", f"Alerts: {', '.join(_startup_webhook_notification_categories())}. The private link was not displayed. No webhook was sent during this passive check"))
@@ -14572,12 +14572,12 @@ def run_main():
 
     if not cfg_path and CLI_CONFIG_PATH:
         summary = f"* Error: Config file '{CLI_CONFIG_PATH}' does not exist"
-        fix = "To fix: check the path passed to --config-file or create a config with 'instagram_monitor --setup' or 'instagram_monitor --generate-config instagram_monitor.conf'."
+        fix = "Check the path passed to --config-file or create a config with 'instagram_monitor --setup' or 'instagram_monitor --generate-config instagram_monitor.conf'"
         if doctor_mode:
             doctor_config_errors.append({"summary": summary, "detail": "", "fix": fix})
         else:
             print(summary)
-            print(colorize("info", fix))
+            print(colorize("info", f"To fix: {fix}"))
             print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
             sys.exit(1)
 

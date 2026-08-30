@@ -5,19 +5,30 @@ import smtplib
 import pytest
 
 
+KNOWN_ERRORS = [
+    ("ConnectionException: 429 Too Many Requests", "rate-limiting"),
+    ("JSONDecodeError: challenge_required", "challenge"),
+    ("Instagram ... requires a challenge ... missing expected data", "challenge"),
+    ("ConnectionException: Login required, redirected", "invalid or expired"),
+    ("BadCredentialsException: Wrong password", "invalid or expired"),
+    ("FileNotFoundError: Instagram session file for me not found", "No saved session"),
+    ("ProfileNotExistsException: Profile xyz does not exist", "spelled correctly"),
+    ("ConnectionException: HTTPSConnectionPool max retries exceeded", "network problem"),
+]
+
+
 class TestErrorFixHint:
-    @pytest.mark.parametrize("msg, needle", [
-        ("ConnectionException: 429 Too Many Requests", "rate-limiting"),
-        ("JSONDecodeError: challenge_required", "challenge"),
-        ("Instagram ... requires a challenge ... missing expected data", "challenge"),
-        ("ConnectionException: Login required, redirected", "invalid or expired"),
-        ("BadCredentialsException: Wrong password", "invalid or expired"),
-        ("FileNotFoundError: Instagram session file for me not found", "no saved session"),
-        ("ProfileNotExistsException: Profile xyz does not exist", "spelled correctly"),
-        ("ConnectionException: HTTPSConnectionPool max retries exceeded", "network problem"),
-    ])
+    @pytest.mark.parametrize("msg, needle", KNOWN_ERRORS)
     def test_known_errors_return_hint(self, im_module, msg, needle):
         assert needle in im_module.error_fix_hint(msg)
+
+    # Every fix reads as one capitalised instruction with no trailing period, matching the sibling monitors
+    @pytest.mark.parametrize("msg", [message for message, _ in KNOWN_ERRORS])
+    def test_fix_text_uses_the_shared_sentence_style(self, im_module, msg):
+        _summary, fix, _guide = im_module.classify_error_message(msg)
+
+        assert fix[:1].isupper()
+        assert not fix.endswith(".")
 
     @pytest.mark.parametrize("msg", ["", None, "SomethingElse: totally unknown error"])
     def test_unknown_errors_return_empty(self, im_module, msg):
@@ -26,7 +37,7 @@ class TestErrorFixHint:
     def test_session_file_takes_priority_over_not_found(self, im_module):
         # A missing session file should give the session hint, not the profile-not-found hint
         hint = im_module.error_fix_hint("Instagram session file for me not found")
-        assert "no saved session" in hint
+        assert "No saved session" in hint
         assert "spelled correctly" not in hint
 
     def test_profile_not_found_adds_flag_note_when_logged_in(self, im_module):
