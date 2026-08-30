@@ -315,10 +315,13 @@ FOLLOW_LIST_SOURCE = "auto"
 #
 # Instagram scores automated collection by how much user-identifiable information a response returns,
 # not by how many requests were sent, so this budget counts names rather than requests. It is shared
-# by every monitored target and every worker in this process
+# by every monitored target and every worker in this process. Identity scans run one at a time so
+# concurrent targets cannot spend the same remaining allowance
 #
 # Once the budget is spent, name fetching is skipped until the next local day. Counts, posts, reels,
 # stories and profile changes keep being monitored normally
+# If the local safety ledger cannot be read or saved, authenticated collection stops rather than
+# continuing with an unknown budget or breaker state
 #
 # 0 disables the budget (default). Around 500 to 1000 is a reasonable starting point if you have been
 # challenged before. Today's total is always counted and shown, whether or not a budget is set
@@ -9134,6 +9137,9 @@ def instagram_wrap_request(orig_request):
         url = kwargs.get("url") or (args[1] if len(args) > 1 else None)
         if not is_instagram_request_url(url):
             return orig_request(*args, **kwargs)
+        breaker_state = _account_breaker_memory_state() if CIRCUIT_BREAKER else None
+        if breaker_state:
+            raise instaloader.exceptions.AbortDownloadException(f"Account circuit breaker is open ({breaker_state.get('failure_class', 'unknown')})")
         if not SKIP_WRAP_MESSAGES:
             if DEBUG_MODE:
                 debug_print("HTTP request", method=method, url=url)
@@ -9491,7 +9497,7 @@ FAILURE_TERMS = {
     'rate_limit': ("429", "too many requests", "wait a few minutes", "rate limit", "please wait"),
     'challenge': ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data"),
     'session_missing': ("session file",),
-    'auth_expired': ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required", "bad request"),
+    'auth_expired': ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required"),
     'target_unavailable': ("profilenotexists", "does not exist", "not found", "404"),
     'impersonate_unsupported': ("impersonat",),
     'proxy_unresolved': ("could not resolve proxy",),
@@ -9749,8 +9755,16 @@ def notify_session_flagged(user, err_str, error_msg):
 # ---------------------------------------------------------------------------
 
 EXPOSURE_LOCK = threading.Lock()
+IDENTITY_SCAN_LOCK = threading.Lock()
+ACCOUNT_BREAKER_MEMORY_LOCK = threading.Lock()
+ACCOUNT_BREAKER_MEMORY: Dict[str, Dict[str, Any]] = {}
 EXPOSURE_STATE_FILENAME = "instagram_monitor_exposure.json"
 EXPOSURE_STATE_VERSION = 1
+
+
+# Raised when the account safety ledger cannot be read or persisted
+class ExposureLedgerError(RuntimeError):
+    pass
 
 
 # Returns the absolute path of the local exposure ledger, honoring OUTPUT_DIR when one is configured
@@ -9772,18 +9786,20 @@ def _exposure_today() -> str:
         return datetime.now().strftime("%Y-%m-%d")
 
 
-# Reads the ledger from disk, returning an empty structure when it is missing or unreadable
+# Reads the ledger from disk and rejects state that cannot be trusted
 def _load_exposure_file() -> Dict[str, Any]:
     try:
         with open(exposure_state_path(), 'r', encoding="utf-8") as handle:
             data = json.load(handle)
         if isinstance(data, dict) and isinstance(data.get('accounts'), dict):
             return data
+        raise ExposureLedgerError("The account safety ledger has an invalid structure")
     except FileNotFoundError:
-        pass
+        return {'version': EXPOSURE_STATE_VERSION, 'accounts': {}}
+    except ExposureLedgerError:
+        raise
     except Exception as e:
-        debug_print("Exposure ledger unreadable, starting a new one", error=f"{type(e).__name__}: {e}")
-    return {'version': EXPOSURE_STATE_VERSION, 'accounts': {}}
+        raise ExposureLedgerError(f"The account safety ledger cannot be read: {type(e).__name__}") from e
 
 
 # Atomically replaces the ledger on disk so a crash mid-write cannot corrupt it
@@ -9800,7 +9816,7 @@ def _write_exposure_file(data: Dict[str, Any]) -> None:
             os.fsync(handle.fileno())
         os.replace(temporary_path, destination)
     except Exception as e:
-        debug_print("Exposure ledger could not be saved", error=f"{type(e).__name__}: {e}")
+        raise ExposureLedgerError(f"The account safety ledger cannot be saved: {type(e).__name__}") from e
     finally:
         if temporary_path and os.path.exists(temporary_path):
             try:
@@ -9840,6 +9856,50 @@ def exposure_snapshot() -> Dict[str, Any]:
         return dict(_exposure_record(data, exposure_account_name()))
 
 
+# Verifies that the current account safety state can be read and durably written
+def verify_exposure_ledger_writable() -> None:
+    _update_exposure(lambda _record: None)
+
+
+# Returns the in-memory stop state for the current session account
+def _account_breaker_memory_state() -> Optional[Dict[str, Any]]:
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        state = ACCOUNT_BREAKER_MEMORY.get(exposure_account_name())
+        return dict(state) if isinstance(state, dict) else None
+
+
+# Stops every target event after the shared session account becomes unsafe
+def _stop_account_target_events() -> None:
+    with WEB_DASHBOARD_MONITOR_LOCK:
+        stop_events = list(WEB_DASHBOARD_STOP_EVENTS.values())
+    for event in stop_events:
+        event.set()
+
+
+# Stores an account stop in memory before any fallible disk write
+def _remember_account_breaker(state: Dict[str, Any]) -> bool:
+    account = exposure_account_name()
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        was_absent = account not in ACCOUNT_BREAKER_MEMORY
+        ACCOUNT_BREAKER_MEMORY[account] = dict(state)
+    _stop_account_target_events()
+    return was_absent
+
+
+# Fails closed when the durable account safety state becomes unavailable
+def _mark_account_safety_unavailable(error: BaseException) -> Dict[str, Any]:
+    state = {'tripped_ts': int(time.time()), 'failure_class': 'ledger_unavailable', 'error': type(error).__name__}
+    account = exposure_account_name()
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        existing = ACCOUNT_BREAKER_MEMORY.get(account)
+        if isinstance(existing, dict) and existing.get('failure_class') != 'ledger_unavailable':
+            state = dict(existing)
+        else:
+            ACCOUNT_BREAKER_MEMORY[account] = dict(state)
+    _stop_account_target_events()
+    return state
+
+
 # Adds identities returned by a completed fetch batch to today's total and returns the new total
 def record_identities_returned(count: int) -> int:
     if count <= 0:
@@ -9869,8 +9929,17 @@ def identity_budget_exhausted() -> bool:
 def circuit_breaker_state() -> Optional[Dict[str, Any]]:
     if not CIRCUIT_BREAKER:
         return None
-    breaker = exposure_snapshot().get('breaker')
-    return breaker if isinstance(breaker, dict) and breaker.get('tripped_ts') else None
+    memory_state = _account_breaker_memory_state()
+    if memory_state:
+        return memory_state
+    try:
+        breaker = exposure_snapshot().get('breaker')
+    except ExposureLedgerError as error:
+        return _mark_account_safety_unavailable(error)
+    if isinstance(breaker, dict) and breaker.get('tripped_ts'):
+        _remember_account_breaker(breaker)
+        return dict(breaker)
+    return None
 
 
 # Returns True when the session account is stopped by the circuit breaker
@@ -9883,13 +9952,20 @@ def trip_circuit_breaker(failure_class: str, user: str = "", error_msg: str = ""
     if not CIRCUIT_BREAKER:
         return False
 
+    breaker_state = {'tripped_ts': int(time.time()), 'failure_class': failure_class, 'target': user, 'error': (error_msg or "")[:500]}
+    activated = _remember_account_breaker(breaker_state)
+
     def mutate(record):
         if isinstance(record.get('breaker'), dict) and record['breaker'].get('tripped_ts'):
             return False
-        record['breaker'] = {'tripped_ts': int(time.time()), 'failure_class': failure_class, 'target': user, 'error': (error_msg or "")[:500]}
+        record['breaker'] = breaker_state
         return True
 
-    tripped = _update_exposure(mutate)
+    try:
+        tripped = _update_exposure(mutate)
+    except ExposureLedgerError as error:
+        _mark_account_safety_unavailable(error)
+        tripped = activated
     if tripped:
         account = exposure_account_name()
         print(f"\n* Circuit breaker: Instagram acted against session account {account} ({failure_class}). Stopping all Instagram requests for this account")
@@ -9905,7 +9981,18 @@ def clear_circuit_breaker() -> Optional[Dict[str, Any]]:
         record['breaker'] = None
         return previous if isinstance(previous, dict) and previous.get('tripped_ts') else None
 
-    return _update_exposure(mutate)
+    account = exposure_account_name()
+    try:
+        previous = _update_exposure(mutate)
+    except ExposureLedgerError:
+        data = {'version': EXPOSURE_STATE_VERSION, 'accounts': {}}
+        record = _exposure_record(data, account)
+        record['breaker'] = None
+        _write_exposure_file(data)
+        previous = _account_breaker_memory_state()
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        ACCOUNT_BREAKER_MEMORY.pop(account, None)
+    return previous
 
 
 # Records one classified failure against the session account and trips the circuit breaker on account-level actions
@@ -9913,16 +10000,22 @@ def record_failure_event(failure_class: str, user: str = "", error_msg: str = ""
     if not failure_class:
         return
 
+    account_failure = is_account_level_failure(failure_class)
+    if account_failure:
+        trip_circuit_breaker(failure_class, user, error_msg)
+
     def mutate(record):
         failures = record.setdefault('failures', {})
         failures[failure_class] = int(failures.get(failure_class, 0)) + 1
-        if is_account_level_failure(failure_class):
+        if account_failure:
             record['last_account_failure'] = {'ts': int(time.time()), 'failure_class': failure_class, 'target': user}
         return None
 
-    _update_exposure(mutate)
-    if is_account_level_failure(failure_class):
-        trip_circuit_breaker(failure_class, user, error_msg)
+    try:
+        _update_exposure(mutate)
+    except ExposureLedgerError as error:
+        _mark_account_safety_unavailable(error)
+        return
 
 
 # Classifies one error message, records it against the session account and returns its failure class
@@ -9932,13 +10025,19 @@ def note_instagram_failure(error_msg: str, user: str = "") -> str:
     return failure_class
 
 
-# Returns the console lines describing today's local exposure for the session account
+# Returns a redacted support report describing today's local account exposure
 def exposure_summary_lines() -> List[str]:
-    record = exposure_snapshot()
-    account = exposure_account_name()
+    session_mode = "authenticated (account redacted)" if exposure_account_name() != "<anonymous>" else "anonymous"
+    backend = f"curl_cffi (impersonate: {_curl_cffi_impersonate_display()})" if _curl_cffi_backend_active() else "requests"
+    lines = [f"Version:\t\t\t\t{VERSION}", f"Generated:\t\t\t\t{get_date_from_ts(int(time.time()))}", f"Platform:\t\t\t\t{platform.system()} / Python {sys.version_info.major}.{sys.version_info.minor}", f"Session mode:\t\t\t{session_mode}", f"HTTP backend:\t\t\t{backend}", f"Follow list source:\t\t\t{follow_list_source_display()}"]
+    try:
+        record = exposure_snapshot()
+    except ExposureLedgerError:
+        lines.append("Account safety ledger:\t\t\tunavailable (authenticated identity scans blocked)")
+        return lines
     identities = int(record.get('identities', 0))
     budget = f"{identities} of {IDENTITY_BUDGET_PER_DAY}" if IDENTITY_BUDGET_PER_DAY else f"{identities} (no budget set)"
-    lines = [f"Account:\t\t\t\t{account}", f"Date:\t\t\t\t\t{record.get('date', _exposure_today())}", f"Identities returned today:\t\t{budget}"]
+    lines.extend([f"Date:\t\t\t\t\t{record.get('date', _exposure_today())}", f"Identities returned today:\t\t{budget}"])
 
     failures = record.get('failures') or {}
     if failures:
@@ -9949,12 +10048,15 @@ def exposure_summary_lines() -> List[str]:
     else:
         lines.append("Failures today:\t\t\t\tnone")
 
-    breaker = record.get('breaker')
+    breaker = _account_breaker_memory_state() or record.get('breaker')
     if isinstance(breaker, dict) and breaker.get('tripped_ts'):
         lines.append(f"Circuit breaker:\t\t\tTRIPPED at {get_date_from_ts(int(breaker['tripped_ts']))} ({breaker.get('failure_class', 'unknown')})")
         lines.append("Resume with:\t\t\t\t--clear-breaker")
     else:
         lines.append("Circuit breaker:\t\t\tarmed" if CIRCUIT_BREAKER else "Circuit breaker:\t\t\tdisabled")
+    last_failure = record.get('last_account_failure')
+    if isinstance(last_failure, dict) and last_failure.get('ts'):
+        lines.append(f"Last account failure:\t\t\t{get_date_from_ts(int(last_failure['ts']))} ({last_failure.get('failure_class', 'unknown')})")
     return lines
 
 
@@ -10196,9 +10298,8 @@ def build_follow_string(enabled, limit, batch, delay, alt_format=False):
 # run over the same logged-in web session, so this is a second endpoint surface for the operation that
 # breaks most often, not a second transport and not a second runtime.
 #
-# The paths, headers and response shape below were written from observed web traffic. Other open source
-# projects call the same endpoints, but none of their code is reused here: the closest reference,
-# gallery-dl, is GPL-2.0-only and cannot be combined with this GPL-3.0-or-later project.
+# The paths, headers and response shape below were written from observed web traffic. Instagrapi also
+# documents this friendships endpoint family on its mobile API surface. No third-party code is reused.
 
 # Sources FOLLOW_LIST_SOURCE accepts
 FOLLOW_LIST_SOURCES = ('auto', 'rest', 'graphql')
@@ -10210,9 +10311,9 @@ FOLLOW_LIST_REST_PAGE_SIZE = 25
 INSTAGRAM_WEB_APP_ID = "936619743392459"
 INSTAGRAM_WEB_ASBD_ID = "129477"
 
-# Claim token Instagram issues per web session and expects echoed back, starting at the placeholder a fresh browser sends
+# Claim token attribute stored on each source session so accounts never share a token
 _WEB_CLAIM_LOCK = threading.Lock()
-_WEB_CLAIM_TOKEN = "0"
+_WEB_CLAIM_ATTRIBUTE = "_instagram_monitor_web_claim_token"
 
 
 # Raised when a follower or following REST reply does not carry the fields this code reads
@@ -10220,16 +10321,15 @@ class InstagramRestSchemaError(RuntimeError):
     pass
 
 
-# Returns the claim token to send on web requests for the current session
-def web_claim_token() -> str:
+# Returns the claim token to send for one Instaloader session
+def web_claim_token(source_session) -> str:
     with _WEB_CLAIM_LOCK:
-        return _WEB_CLAIM_TOKEN
+        token = getattr(source_session, _WEB_CLAIM_ATTRIBUTE, "0")
+        return token if isinstance(token, str) and token else "0"
 
 
-# Stores the claim token from a web reply so later requests echo the value Instagram last issued
-def remember_web_claim_token(response_headers) -> None:
-    global _WEB_CLAIM_TOKEN
-
+# Stores a web reply claim token on the Instaloader session that received it
+def remember_web_claim_token(source_session, response_headers) -> None:
     if not response_headers:
         return
 
@@ -10246,15 +10346,15 @@ def remember_web_claim_token(response_headers) -> None:
         return
 
     with _WEB_CLAIM_LOCK:
-        if issued == _WEB_CLAIM_TOKEN:
+        if issued == getattr(source_session, _WEB_CLAIM_ATTRIBUTE, "0"):
             return
-        _WEB_CLAIM_TOKEN = issued
+        setattr(source_session, _WEB_CLAIM_ATTRIBUTE, issued)
 
     debug_print("Instagram web claim token updated")
 
 
 # Returns the headers the web app adds to a follower or following list request
-def rest_follow_list_headers(target_username: str) -> Dict[str, str]:
+def rest_follow_list_headers(target_username: str, source_session) -> Dict[str, str]:
     return {
         'Accept': '*/*',
         'Referer': f"https://www.instagram.com/{target_username}/",
@@ -10263,7 +10363,7 @@ def rest_follow_list_headers(target_username: str) -> Dict[str, str]:
         'Sec-Fetch-Site': 'same-origin',
         'X-ASBD-ID': INSTAGRAM_WEB_ASBD_ID,
         'X-IG-App-ID': INSTAGRAM_WEB_APP_ID,
-        'X-IG-WWW-Claim': web_claim_token(),
+        'X-IG-WWW-Claim': web_claim_token(source_session),
         'X-Requested-With': 'XMLHttpRequest',
     }
 
@@ -10294,8 +10394,8 @@ def profile_from_rest_node(context, node) -> Optional[instaloader.Profile]:
     return instaloader.Profile(context, normalized)
 
 
-# Yields follower or following profiles for one target from the REST endpoints the Instagram web app calls
-def iter_rest_follow_list(bot, profile, kind: str):
+# Yields profiles from REST while exposing each complete response page to the governor
+def iter_rest_follow_list(bot, profile, kind: str, record_exposure: bool = False, page_observer=None):
     if kind not in ('followers', 'following'):
         raise ValueError(f"unsupported follow list kind '{kind}'")
 
@@ -10304,27 +10404,39 @@ def iter_rest_follow_list(bot, profile, kind: str):
         raise instaloader.exceptions.LoginRequiredException(f"Login required to get a profile's {kind}.")
 
     path = f"api/v1/friendships/{profile.userid}/{kind}/"
-    session = instaloader_copy_session(context._session, context.request_timeout)
+    source_session = context._session
+    session = instaloader_copy_session(source_session, context.request_timeout)
     cursor = ""
 
     try:
-        session.headers.update(rest_follow_list_headers(profile.username))
+        session.headers.update(rest_follow_list_headers(profile.username, source_session))
         while True:
-            params: Dict[str, Any] = {'count': FOLLOW_LIST_REST_PAGE_SIZE}
+            page_size = FOLLOW_LIST_REST_PAGE_SIZE
+            if record_exposure:
+                budget_left = identity_budget_remaining()
+                if budget_left is not None and budget_left <= 0:
+                    return
+                if budget_left is not None:
+                    page_size = min(page_size, budget_left)
+            params: Dict[str, Any] = {'count': page_size}
             if cursor:
                 params['max_id'] = cursor
 
             # Instagram rotates the claim token, so send the newest one and record whatever this reply carries
-            session.headers['X-IG-WWW-Claim'] = web_claim_token()
+            session.headers['X-IG-WWW-Claim'] = web_claim_token(source_session)
             response_headers: Dict[str, Any] = {}
             data = context.get_json(path, params, session=session, response_headers=response_headers)
-            remember_web_claim_token(response_headers)
+            remember_web_claim_token(source_session, response_headers)
 
             if not isinstance(data, dict) or not isinstance(data.get('users'), list):
                 # No user list in a 200 reply means the endpoint changed shape, never that the account is in trouble
                 raise InstagramRestSchemaError(f"Unexpected follower list reply while reading {kind} (no user list)")
 
             entries = data['users']
+            if page_observer is not None:
+                page_observer(len(entries))
+            if record_exposure:
+                record_identities_returned(len(entries))
             debug_print("Instagram REST follow list page", kind=kind, accounts=len(entries))
 
             for node in entries:
@@ -10347,9 +10459,17 @@ def iter_rest_follow_list(bot, profile, kind: str):
             pass
 
 
+# Records each identity yielded by a source that cannot expose its raw response pages
+def _iter_accounted_follow_list(candidates):
+    for candidate in candidates:
+        record_identities_returned(1)
+        yield candidate
+
+
 # Returns instaloader's own GraphQL follower or following iterator for one target
-def iter_graphql_follow_list(profile, kind: str):
-    return profile.get_followers() if kind == 'followers' else profile.get_followees()
+def iter_graphql_follow_list(profile, kind: str, record_exposure: bool = False):
+    candidates = profile.get_followers() if kind == 'followers' else profile.get_followees()
+    return _iter_accounted_follow_list(candidates) if record_exposure else candidates
 
 
 # Returns True when a REST failure describes the endpoint rather than the account, the only case worth a second attempt
@@ -10360,25 +10480,26 @@ def rest_failure_is_recoverable(error: BaseException) -> bool:
     return isinstance(error, (InstagramRestSchemaError, instaloader.exceptions.QueryReturnedNotFoundException))
 
 
-# Yields REST results, falling back to GraphQL only when the REST endpoint fails before returning anybody
-def iter_auto_follow_list(bot, profile, kind: str):
+# Yields REST results and falls back before exposure only when the endpoint itself changed
+def iter_auto_follow_list(bot, profile, kind: str, record_exposure: bool = False):
     returned_any = False
+    returned_identity_pages: List[int] = []
 
     try:
-        for candidate in iter_rest_follow_list(bot, profile, kind):
+        for candidate in iter_rest_follow_list(bot, profile, kind, record_exposure=record_exposure, page_observer=returned_identity_pages.append):
             returned_any = True
             yield candidate
         return
     except Exception as rest_error:
         # Names already returned cost the account whatever happens next, so a partial scan is never repeated
         # on the other surface. Only an endpoint that is gone or answers in an unknown shape is retried
-        if returned_any or not rest_failure_is_recoverable(rest_error):
+        if returned_any or any(returned_identity_pages) or not rest_failure_is_recoverable(rest_error):
             raise
         reason = format_error_message(rest_error)
         print(f"* Instagram's REST {kind} endpoint is unavailable ({reason}), reading the list over GraphQL instead")
         log_activity(f"REST {kind} endpoint unavailable ({reason}), falling back to GraphQL", user=profile.username, level='system')
 
-    yield from iter_graphql_follow_list(profile, kind)
+    yield from iter_graphql_follow_list(profile, kind, record_exposure=record_exposure)
 
 
 # Returns the configured follow list source, falling back to auto when the setting names something unknown
@@ -10395,19 +10516,19 @@ def follow_list_source_display() -> str:
     return "REST" if source == 'rest' else "GraphQL"
 
 
-# Returns the follower or following iterator for one target from the surface FOLLOW_LIST_SOURCE selects
-def follow_list_generator(bot, profile, kind: str):
+# Returns the follower or following iterator selected for one target
+def follow_list_generator(bot, profile, kind: str, record_exposure: bool = False):
     source = active_follow_list_source()
 
     # The REST endpoints answer only for a logged-in session, and anonymous mode already fails with
     # instaloader's own message, so leave that path exactly as it was
     if source == 'graphql' or not bot.context.is_logged_in:
-        return iter_graphql_follow_list(profile, kind)
+        return iter_graphql_follow_list(profile, kind, record_exposure=record_exposure)
 
     if source == 'rest':
-        return iter_rest_follow_list(bot, profile, kind)
+        return iter_rest_follow_list(bot, profile, kind, record_exposure=record_exposure)
 
-    return iter_auto_follow_list(bot, profile, kind)
+    return iter_auto_follow_list(bot, profile, kind, record_exposure=record_exposure)
 
 
 # Carries fetched usernames plus whether the source generator was fully exhausted
@@ -10438,8 +10559,22 @@ def save_username_baseline(filename, reported_count, usernames):
             os.remove(temporary_path)
 
 
-# Fetches usernames in batches and marks whether the returned baseline is complete
-def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user, stop_event=None):
+# Serializes account-wide identity scans so budget checks and accounting cannot race
+def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user, stop_event=None, identities_counted_at_source=False):
+    while not IDENTITY_SCAN_LOCK.acquire(timeout=0.2):
+        if stop_event is not None and stop_event.is_set():
+            return PaginatedUsernameResult()
+        memory_state = _account_breaker_memory_state()
+        if memory_state:
+            return PaginatedUsernameResult()
+    try:
+        return _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user, stop_event, identities_counted_at_source)
+    finally:
+        IDENTITY_SCAN_LOCK.release()
+
+
+# Fetches one serialized username scan and marks whether its baseline is complete
+def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user, stop_event=None, identities_counted_at_source=False):
     """Fetch usernames in batches using a fresh generator per call.
 
     Args:
@@ -10467,6 +10602,22 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
     breaker = circuit_breaker_state()
     if breaker:
         msg = f"Skipping name fetch: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')}). Resume with --clear-breaker"
+        print(f"* {msg}")
+        log_activity(msg, user=user, level='system')
+        return results
+
+    memory_state = _account_breaker_memory_state()
+    if memory_state and memory_state.get('failure_class') == 'ledger_unavailable':
+        msg = "Skipping name fetch: account safety ledger is unavailable. Restore write access or run --clear-breaker to reset it"
+        print(f"* {msg}")
+        log_activity(msg, user=user, level='system')
+        return results
+
+    try:
+        verify_exposure_ledger_writable()
+    except ExposureLedgerError as error:
+        _mark_account_safety_unavailable(error)
+        msg = "Skipping name fetch: account safety ledger cannot be read and saved, so identity collection is blocked"
         print(f"* {msg}")
         log_activity(msg, user=user, level='system')
         return results
@@ -10513,11 +10664,19 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
                     break
             else:
                 generator_exhausted = True
+        except ExposureLedgerError as safety_error:
+            _mark_account_safety_unavailable(safety_error)
+            results.extend(batch)
+            msg = "Stopping name fetch: account safety ledger became unavailable"
+            print(f"* {msg}")
+            log_activity(msg, user=user, level='system')
+            return results
         except Exception as fetch_error:
             # Names already returned still cost the account, so bank them before the error propagates,
             # and classify it here where we know the request was an identity fetch
             results.extend(batch)
-            record_identities_returned(len(batch))
+            if not identities_counted_at_source:
+                record_identities_returned(len(batch))
             note_instagram_failure(format_error_message(fetch_error), user)
             raise
 
@@ -10526,7 +10685,8 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
             break  # generator fully exhausted
 
         results.extend(batch)
-        record_identities_returned(len(batch))
+        if not identities_counted_at_source:
+            record_identities_returned(len(batch))
 
         if generator_exhausted:
             results.complete = True
@@ -10648,6 +10808,17 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
     _thread_local.user = user  # Store user in thread-local storage for debug_print
     _thread_local.in_partial_line = False  # Track partial line prints
     update_ui_data(targets={user: {'status': 'Starting'}})
+
+    # A persisted account stop must be checked before a client, session or target request is created
+    if not skip_session and SESSION_USERNAME:
+        breaker = circuit_breaker_state()
+        if breaker:
+            update_ui_data(targets={user: {'status': 'Stopped (breaker)'}})
+            print(f"* Monitoring paused for {user}: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')})")
+            print("* Clear the challenge or repair the account safety ledger, then resume with '--clear-breaker'")
+            if signal_loading_complete is not None:
+                signal_loading_complete.set()
+            return
 
     # When True, bypass CHECK_POSTS_IN_HOURS_RANGE for exactly one cycle (Web Dashboard recheck override)
     manual_recheck_active = bool(manual_recheck)
@@ -11128,7 +11299,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             _thread_local.FETCH_TYPE = 'follower'
             followers = fetch_usernames_paginated(
                 bot,
-                get_generator_fn=lambda: follow_list_generator(bot, profile, 'followers'),
+                get_generator_fn=lambda: follow_list_generator(bot, profile, 'followers', record_exposure=True),
                 max_per_batch=FOLLOWERS_PER_BATCH,
                 total_limit=FOLLOWER_LIMIT_TO_FETCH,
                 fetch_delay=FOLLOWER_DELAY_PER_BATCH,
@@ -11136,6 +11307,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 estimated_limit=follower_limit,
                 user=user,
                 stop_event=stop_event,
+                identities_counted_at_source=True,
             )
             _thread_local.FETCH_TYPE = None
             end_time_dl = time.time()
@@ -11276,7 +11448,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             _thread_local.FETCH_TYPE = 'followee'
             followings = fetch_usernames_paginated(
                 bot,
-                get_generator_fn=lambda: follow_list_generator(bot, profile, 'following'),
+                get_generator_fn=lambda: follow_list_generator(bot, profile, 'following', record_exposure=True),
                 max_per_batch=FOLLOWEES_PER_BATCH,
                 total_limit=FOLLOWEE_LIMIT_TO_FETCH,
                 fetch_delay=FOLLOWEE_DELAY_PER_BATCH,
@@ -11284,6 +11456,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 estimated_limit=followee_limit,
                 user=user,
                 stop_event=stop_event,
+                identities_counted_at_source=True,
             )
             _thread_local.FETCH_TYPE = None
             end_time_dl = time.time()
@@ -12165,7 +12338,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         _thread_local.FETCH_TYPE = 'followee'
                         followings = fetch_usernames_paginated(
                             bot,
-                            get_generator_fn=lambda bound_profile=profile: follow_list_generator(bot, bound_profile, 'following'),
+                            get_generator_fn=lambda bound_profile=profile: follow_list_generator(bot, bound_profile, 'following', record_exposure=True),
                             max_per_batch=FOLLOWEES_PER_BATCH,
                             total_limit=FOLLOWEE_LIMIT_TO_FETCH,
                             fetch_delay=FOLLOWEE_DELAY_PER_BATCH,
@@ -12173,6 +12346,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             estimated_limit=followee_limit,
                             user=user,
                             stop_event=stop_event,
+                            identities_counted_at_source=True,
                         )
                         _thread_local.FETCH_TYPE = None
                         end_time_dl = time.time()
@@ -12313,7 +12487,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         _thread_local.FETCH_TYPE = 'follower'
                         followers = fetch_usernames_paginated(
                             bot,
-                            get_generator_fn=lambda bound_profile=profile: follow_list_generator(bot, bound_profile, 'followers'),
+                            get_generator_fn=lambda bound_profile=profile: follow_list_generator(bot, bound_profile, 'followers', record_exposure=True),
                             max_per_batch=FOLLOWERS_PER_BATCH,
                             total_limit=FOLLOWER_LIMIT_TO_FETCH,
                             fetch_delay=FOLLOWER_DELAY_PER_BATCH,
@@ -12321,6 +12495,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             estimated_limit=follower_limit,
                             user=user,
                             stop_event=stop_event,
+                            identities_counted_at_source=True,
                         )
                         _thread_local.FETCH_TYPE = None
                         end_time_dl = time.time()
@@ -15473,7 +15648,7 @@ def run_main():
         "--exposure",
         dest="show_exposure",
         action='store_true',
-        help="Show today's local identity exposure and failure counts for the logged-in account, then exit"
+        help="Show a redacted support report with today's identity exposure and failure counts, then exit"
     )
     session_opts.add_argument(
         "--be-human",
@@ -15966,12 +16141,10 @@ def run_main():
         sys.exit(0)
 
     if args.show_exposure:
-        print("\nIdentity exposure (local only, never sent anywhere)")
+        print("\nExposure report (account names and local paths omitted)")
         print("─" * HORIZONTAL_LINE)
         for line in exposure_summary_lines():
             print(line)
-        print(f"\nLedger file:\t\t\t\t{exposure_state_path()}")
-        print_cur_ts("Timestamp:\t\t\t\t")
         sys.exit(0)
 
     if args.set_smtp_password:
@@ -16602,9 +16775,9 @@ def run_main():
         if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                 WEB_DASHBOARD_RECHECK_EVENTS[user] = threading.Event()
-            with WEB_DASHBOARD_MONITOR_LOCK:
-                WEB_DASHBOARD_STOP_EVENTS[user] = stop_event
-                WEB_DASHBOARD_MONITOR_THREADS[user] = threading.current_thread()
+        with WEB_DASHBOARD_MONITOR_LOCK:
+            WEB_DASHBOARD_STOP_EVENTS[user] = stop_event
+            WEB_DASHBOARD_MONITOR_THREADS[user] = threading.current_thread()
 
         try:
             instagram_monitor_user(user, csv_files_by_user.get(user, CSV_FILE), SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, user_root_path=OUTPUT_DIR, stop_event=stop_event, skip_follow_changes=SKIP_FOLLOW_CHANGES)
@@ -16612,11 +16785,11 @@ def run_main():
             if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
                 with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                     WEB_DASHBOARD_RECHECK_EVENTS.pop(user, None)
-                with WEB_DASHBOARD_MONITOR_LOCK:
-                    if WEB_DASHBOARD_STOP_EVENTS.get(user) is stop_event:
-                        WEB_DASHBOARD_STOP_EVENTS.pop(user, None)
-                    if WEB_DASHBOARD_MONITOR_THREADS.get(user) is threading.current_thread():
-                        WEB_DASHBOARD_MONITOR_THREADS.pop(user, None)
+            with WEB_DASHBOARD_MONITOR_LOCK:
+                if WEB_DASHBOARD_STOP_EVENTS.get(user) is stop_event:
+                    WEB_DASHBOARD_STOP_EVENTS.pop(user, None)
+                if WEB_DASHBOARD_MONITOR_THREADS.get(user) is threading.current_thread():
+                    WEB_DASHBOARD_MONITOR_THREADS.pop(user, None)
     else:
         stagger = args.targets_stagger if args.targets_stagger is not None else MULTI_TARGET_STAGGER
         jitter = args.targets_stagger_jitter if args.targets_stagger_jitter is not None else MULTI_TARGET_STAGGER_JITTER
@@ -16754,10 +16927,9 @@ def run_main():
         for idx, (u, delay, _planned) in enumerate(planned_actions):
             stop_event = threading.Event()
             t = threading.Thread(target=_runner, args=(u, delay, idx, stop_event), name=f"instagram_monitor:{u}", daemon=True)
-            if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
-                with WEB_DASHBOARD_MONITOR_LOCK:
-                    WEB_DASHBOARD_STOP_EVENTS[u] = stop_event
-                    WEB_DASHBOARD_MONITOR_THREADS[u] = t
+            with WEB_DASHBOARD_MONITOR_LOCK:
+                WEB_DASHBOARD_STOP_EVENTS[u] = stop_event
+                WEB_DASHBOARD_MONITOR_THREADS[u] = t
             t.start()
             threads.append(t)
 

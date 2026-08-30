@@ -89,4 +89,7 @@ def deterministic_globals(monkeypatch):
     # Drop the flag-alert de-dup timestamp so each test starts able to alert
     with im.FLAGGED_NOTIFY_LOCK:
         im.FLAGGED_NOTIFY_STATE["ts"] = 0.0
+    # Drop in-memory account stops so one safety test cannot block another test's request path
+    with im.ACCOUNT_BREAKER_MEMORY_LOCK:
+        im.ACCOUNT_BREAKER_MEMORY.clear()
     yield

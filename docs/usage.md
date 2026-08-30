@@ -587,19 +587,19 @@ IDENTITY_BUDGET_PER_DAY = 0
 CIRCUIT_BREAKER = True
 ```
 
-The budget is shared by every target and resets at local midnight. When it is spent, name fetching stops for the day while counts, posts, reels, stories and profile changes carry on. Names are counted even with no budget set, so you can measure first and choose a number afterwards.
+The budget is shared by every target and resets at local midnight. Identity scans run one at a time so workers cannot spend the same remaining allowance. REST responses are counted as soon as a page arrives, including names the caller does not consume. When the budget is spent, name fetching stops for the day while counts, posts, reels, stories and profile changes carry on. Names are counted even with no budget set, so you can measure first and choose a number afterwards.
 
-The circuit breaker stops every target at once when Instagram returns a challenge, a checkpoint or an expired session, and stays stopped across restarts. Rate limits, network errors and Instagram API changes do not trip it.
+The circuit breaker stops every target at once when Instagram returns a challenge, a checkpoint or an expired session and stays stopped across restarts. A stored breaker is checked before an Instagram client or session is created. If the safety ledger cannot be read or saved, authenticated monitoring also stops instead of continuing with unknown state. Rate limits, network errors and Instagram API changes do not trip it.
 
 Three commands:
 
 ```
-instagram_monitor --exposure                   # today's names, failures and breaker state
+instagram_monitor --exposure                   # redacted support report with names, failures and runtime context
 instagram_monitor --identity-budget 750        # set the budget for this run
 instagram_monitor --clear-breaker              # resume after clearing the challenge in a browser
 ```
 
-Everything is stored locally in `instagram_monitor_exposure.json` next to your output directory. Nothing is transmitted anywhere.
+Everything is stored locally in `instagram_monitor_exposure.json` next to your output directory. Nothing is transmitted anywhere. The `--exposure` report omits account names, target names, stored error text and local paths so it can be pasted into a support issue.
 
 See [Set an Identity Budget](anti-detection.md#set-an-identity-budget) for how to choose a value and why names rather than requests are the unit that matters.
 

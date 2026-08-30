@@ -45,13 +45,15 @@ Instagram scores automated collection by how much user-identifiable information 
 
 That means fetching follower and following names is far more expensive than checking counts, posts or stories, even though each is one request. It also means batch sizes and delays matter less than the total number of names you pull per day.
 
-`IDENTITY_BUDGET_PER_DAY` caps that total for the logged-in account. It is shared by every monitored target and every worker in the process, and it resets at local midnight.
+`IDENTITY_BUDGET_PER_DAY` caps that total for the logged-in account. It is shared by every monitored target and every worker in the process and it resets at local midnight. Identity scans run one at a time so two targets cannot spend the same remaining allowance.
 
 ```
 IDENTITY_BUDGET_PER_DAY = 750
 ```
 
 Once the budget is spent, name fetching stops until the next day. Counts, posts, reels, stories and profile changes keep being monitored normally, so you still see that the follower number moved, just not who moved.
+
+REST pages are counted when Instagram returns them, before the tool consumes individual names. The last response can therefore put the recorded total above the configured limit if Instagram returns more accounts than requested. This records the actual exposure and stops another request.
 
 The budget is disabled by default. Names are always counted whether or not you set one, so you can watch your own usage first with `--exposure` and pick a number from that. If you have been challenged before, somewhere around 500 to 1000 is a reasonable starting point.
 
@@ -78,16 +80,18 @@ instagram_monitor --clear-breaker
 
 Rate limits, network errors and Instagram API changes do not trip the breaker. Only responses that act against the account do.
 
+The safety ledger also fails closed. If `instagram_monitor_exposure.json` cannot be read or saved, authenticated monitoring stops before another identity scan. Fix its contents or permissions then run `--clear-breaker` to reset unusable state.
+
 <a id="check-your-exposure"></a>
 ## Check Your Exposure
 
-`--exposure` prints today's totals for the logged-in account:
+`--exposure` prints a report that can be pasted into a support issue or [discussion #128](https://github.com/misiektoja/instagram_monitor/discussions/128):
 
 ```
 instagram_monitor --exposure
 ```
 
-It shows how many names were returned today, how many failures of each kind occurred, and whether the circuit breaker is armed or tripped. Failures are grouped so you can tell the three problems apart:
+It shows the Instagram Monitor version, operating system, Python version, HTTP backend, follower-list source, session mode, identity total, sanitized failure counts and circuit-breaker state. It omits the account name, target names, stored error text and local file paths. Failures are grouped so you can tell the three problems apart:
 
 | Group | Meaning | What helps |
 |---|---|---|
@@ -95,7 +99,7 @@ It shows how many names were returned today, how many failures of each kind occu
 | B | Instagram changed an API, so a query stopped returning data | Update to the latest version |
 | C | Instagram acted against the account | Lower the identity budget, raise the interval, monitor fewer targets |
 
-This is local only. The ledger is a file on your machine, it is never transmitted anywhere and nothing reads it but the tool. It lives next to your output directory as `instagram_monitor_exposure.json`.
+The ledger remains local. It is never transmitted anywhere and nothing reads it but the tool. It lives next to your output directory as `instagram_monitor_exposure.json`, but the pasteable report does not print that path.
 
 <a id="use-the-jitter-mode"></a>
 ## Use the Jitter Mode

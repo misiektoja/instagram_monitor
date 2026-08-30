@@ -27,7 +27,7 @@ class FakeContext:
         self.pages = list(pages)
         self.is_logged_in = logged_in
         self.request_timeout = 7
-        self._session = "session"
+        self._session = SimpleNamespace()
         self.calls = []
 
     # Records the request then returns or raises the next scripted page
@@ -64,12 +64,6 @@ def rest_session(im_module, monkeypatch):
     return session
 
 
-@pytest.fixture(autouse=True)
-# Resets the process-wide claim token so one test's captured token cannot leak into the next
-def fresh_claim_token(im_module, monkeypatch):
-    monkeypatch.setattr(im_module, "_WEB_CLAIM_TOKEN", "0")
-
-
 class TestRestPagination:
     # The reader follows next_max_id until Instagram stops sending one
     def test_pages_until_the_cursor_runs_out(self, im_module, rest_session):
@@ -101,7 +95,7 @@ class TestRestPagination:
 
         assert context.calls[0]["path"] == f"api/v1/friendships/42/{kind}/"
 
-    # Every page asks for the configured size, so the daily identity budget stays predictable
+    # A direct REST read without governor accounting asks for the configured page size
     def test_page_size_is_the_configured_one(self, im_module, rest_session, monkeypatch):
         monkeypatch.setattr(im_module, "FOLLOW_LIST_REST_PAGE_SIZE", 12)
         context = FakeContext([rest_page(["a"], "cursor-2"), rest_page(["b"])])
@@ -161,16 +155,28 @@ class TestRestRequestShape:
 
     # Header names arrive in whatever case the server used, so the lookup cannot be case sensitive
     def test_claim_header_is_read_case_insensitively(self, im_module):
-        im_module.remember_web_claim_token({"X-IG-Set-WWW-Claim": "hmac.AR2"})
+        source_session = SimpleNamespace()
+        im_module.remember_web_claim_token(source_session, {"X-IG-Set-WWW-Claim": "hmac.AR2"})
 
-        assert im_module.web_claim_token() == "hmac.AR2"
+        assert im_module.web_claim_token(source_session) == "hmac.AR2"
 
     # A reply without a claim header leaves the stored token alone
     def test_missing_claim_header_keeps_the_current_token(self, im_module):
-        im_module.remember_web_claim_token({"x-ig-set-www-claim": "hmac.AR3"})
-        im_module.remember_web_claim_token({"content-type": "application/json"})
+        source_session = SimpleNamespace()
+        im_module.remember_web_claim_token(source_session, {"x-ig-set-www-claim": "hmac.AR3"})
+        im_module.remember_web_claim_token(source_session, {"content-type": "application/json"})
 
-        assert im_module.web_claim_token() == "hmac.AR3"
+        assert im_module.web_claim_token(source_session) == "hmac.AR3"
+
+    # Separate logged-in sessions never echo each other's claim tokens
+    def test_claim_token_is_scoped_to_its_source_session(self, im_module):
+        first_session = SimpleNamespace()
+        second_session = SimpleNamespace()
+
+        im_module.remember_web_claim_token(first_session, {"x-ig-set-www-claim": "hmac.FIRST"})
+
+        assert im_module.web_claim_token(first_session) == "hmac.FIRST"
+        assert im_module.web_claim_token(second_session) == "0"
 
 
 class TestRestNodes:
@@ -349,6 +355,18 @@ class TestAutoFallback:
             next(generator)
         assert profile.get_followers.call_count == 0
 
+    # A page with unusable profiles still exposed identities, so a later failure cannot trigger a second scan
+    def test_exposed_invalid_entries_are_never_retried(self, im_module, monkeypatch, rest_session):
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        invalid_page = {"users": [{"pk": "1"}], "next_max_id": "cursor-2", "status": "ok"}
+        context = FakeContext([invalid_page, instaloader.exceptions.QueryReturnedNotFoundException("404 Not Found")])
+        profile = fake_profile()
+
+        with pytest.raises(instaloader.exceptions.QueryReturnedNotFoundException):
+            list(im_module.iter_auto_follow_list(SimpleNamespace(context=context), profile, "followers"))
+
+        assert profile.get_followers.call_count == 0
+
     # Anything Instagram aimed at the account or the transport is reported, never answered with more requests
     @pytest.mark.parametrize("failure", [
         instaloader.exceptions.AbortDownloadException("challenge_required"),
@@ -418,11 +436,13 @@ class TestGovernorStillApplies:
         bot = SimpleNamespace(context=context)
         profile = fake_profile()
 
-        result = im_module.fetch_usernames_paginated(bot, lambda: im_module.follow_list_generator(bot, profile, "followers"), max_per_batch=0, total_limit=0, fetch_delay=0, advanced_fetch=False, estimated_limit=0, user="target.user")
+        result = im_module.fetch_usernames_paginated(bot, lambda: im_module.follow_list_generator(bot, profile, "followers", record_exposure=True), max_per_batch=0, total_limit=0, fetch_delay=0, advanced_fetch=False, estimated_limit=0, user="target.user", identities_counted_at_source=True)
 
         assert result == ["a", "b", "c"]
         assert result.complete is False
         assert im_module.is_complete_username_baseline(result, 5) is False
+        assert context.calls[1]["params"]["count"] == 1
+        assert im_module.exposure_snapshot()["identities"] == 4
 
     # Names returned before a REST failure are still counted against the account
     def test_names_before_a_failure_are_counted(self, im_module, monkeypatch, rest_session):
@@ -434,6 +454,6 @@ class TestGovernorStillApplies:
         profile = fake_profile()
 
         with pytest.raises(instaloader.exceptions.ConnectionException):
-            im_module.fetch_usernames_paginated(bot, lambda: im_module.follow_list_generator(bot, profile, "followers"), max_per_batch=0, total_limit=0, fetch_delay=0, advanced_fetch=False, estimated_limit=0, user="target.user")
+            im_module.fetch_usernames_paginated(bot, lambda: im_module.follow_list_generator(bot, profile, "followers", record_exposure=True), max_per_batch=0, total_limit=0, fetch_delay=0, advanced_fetch=False, estimated_limit=0, user="target.user", identities_counted_at_source=True)
 
         assert im_module.exposure_snapshot()["identities"] == 2

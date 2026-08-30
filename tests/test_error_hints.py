@@ -134,9 +134,12 @@ class TestDnsHint:
     def test_dns_hint_mentions_recovery_is_automatic(self, im_module):
         assert "resumes on its own" in im_module.error_fix_hint("ConnectionException: Could not resolve host: x")
 
-    def test_bad_request_maps_to_session_hint(self, im_module):
-        # The retry loop previously handled this inline, so the classifier must cover it now
-        assert "invalid or expired" in im_module.error_fix_hint("ConnectionException: 400 Bad Request")
+    def test_bad_request_does_not_map_to_session_hint(self, im_module):
+        # A generic HTTP 400 does not prove that Instagram invalidated the account session
+        hint = im_module.error_fix_hint("ConnectionException: 400 Bad Request")
+
+        assert "invalid or expired" not in hint
+        assert "network problem" in hint
 
 
 class TestGuideLinkRelevance:
