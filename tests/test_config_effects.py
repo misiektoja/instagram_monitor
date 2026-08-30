@@ -146,3 +146,24 @@ class TestConfigLoadReporting:
         monkeypatch.setattr(im_module, "DEBUG_MODE", True)
         im_module.load_config_file(config, namespace=namespace)
         assert "Configuration applied" in capsys.readouterr().out
+
+
+class TestStartupScreenClearing:
+    # Verifies only debug keeps the screen, since a cleared terminal loses the run being compared against
+    @pytest.mark.parametrize(("flag", "expected"), (("--debug", False), ("--verbose", True)))
+    def test_only_debug_mode_keeps_the_screen(self, im_module, monkeypatch, tmp_path, restored_globals, flag, expected):
+        config = tmp_path / "instagram_monitor.conf"
+        config.write_text('LOCAL_TIMEZONE = "UTC"\nDISABLE_LOGGING = True\nCLEAR_SCREEN = True\n', encoding="utf-8")
+        cleared = []
+        monkeypatch.setattr(im_module, "clear_screen", lambda enabled=True: cleared.append(bool(enabled)))
+        monkeypatch.setattr(im_module, "CLEAR_SCREEN", True)
+        monkeypatch.setattr(im_module, "DEBUG_MODE", False)
+        monkeypatch.setattr(im_module, "VERBOSE_MODE", False)
+        monkeypatch.setattr(im_module, "check_internet", lambda *args, **kwargs: True)
+        monkeypatch.setattr(im_module, "instagram_monitor_user", Mock(side_effect=SystemExit(99)))
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--config-file", str(config), "--env-file", "none", "--no-color", flag])
+
+        with pytest.raises(SystemExit):
+            im_module.run_main()
+
+        assert cleared == [expected]

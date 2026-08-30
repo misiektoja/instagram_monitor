@@ -15623,7 +15623,12 @@ def run_main():
 
     # Clear screen BEFORE printing the header
     keep_cli_history = any(flag in sys.argv for flag in ("--import-browser-session", "--import-firefox-session", *SECRET_ACTION_FLAGS, "--doctor", "--analyze-follows"))
-    clear_screen(CLEAR_SCREEN and not keep_cli_history)
+    # Read straight from sys.argv because argparse has not run yet, and the screen is cleared before it does
+    if "--debug" in sys.argv:
+        DEBUG_MODE = True
+    if CLEAR_SCREEN and DEBUG_MODE:
+        debug_print("Terminal screen clear skipped because debug mode is active")
+    clear_screen(CLEAR_SCREEN and not keep_cli_history and not DEBUG_MODE)
 
     if not (early_dashboard_enabled and RICH_AVAILABLE):
         print_startup_banner()
