@@ -54,6 +54,9 @@ installed copy of the package.
   the autouse `deterministic_globals` fixture in `conftest.py`. Override them per
   test with `monkeypatch.setattr(im_module, "NAME", value)`.
 * Use the `im_module` fixture to access the imported module.
+* Exported secrets are cleared before every test, because loading a dotenv writes
+  them into `os.environ` and nothing removes them again. Set the one a test needs
+  with `monkeypatch.setenv` inside that test.
 * Keep everything offline. If a code path needs network access, stub it with
   `monkeypatch` rather than skipping the test.
 

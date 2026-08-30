@@ -9,8 +9,11 @@ from pathlib import Path
 import pytest
 import yaml
 
+import instagram_monitor as monitor
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DOCS_DIRECTORY = PROJECT_ROOT / "docs"
 PROJECT_URL = "https://github.com/misiektoja/instagram_monitor"
 REPOSITORY_MARKDOWN = ("README.md", "SUPPORT.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "THIRD_PARTY_NOTICES.md", ".github/pull_request_template.md")
 ISSUE_TEMPLATES = (".github/ISSUE_TEMPLATE/config.yml", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE/feature_request.yml")
@@ -205,6 +208,22 @@ def test_release_notes_use_current_documentation_links():
     for fragment in ("view-modes/#terminal-dashboard-mode", "view-modes/#web-dashboard-mode", "usage/#webhook-notifications", "usage/#follower-churn-detection", "usage/#output-directory", "usage/#skipping-follow-changes", "anti-detection/#use-the-human-mode", "anti-detection/#use-the-jitter-mode", "configuration/#user-agent"):
         assert f"https://misiektoja.github.io/instagram_monitor/{fragment}" in release_notes
     assert "https://github.com/misiektoja/instagram_monitor#" not in release_notes
+
+
+# The Guide: lines are the only documentation a stuck user is handed, and a renamed section breaks them in silence
+def test_runtime_guide_urls_resolve_to_a_real_page_and_anchor():
+    guide_names = sorted(name for name in vars(monitor) if name.endswith("_GUIDE_URL"))
+    assert guide_names, "no runtime guide constants were found"
+
+    for name in guide_names:
+        url = getattr(monitor, name)
+        assert url.startswith(monitor.DOCUMENTATION_URL + "/"), f"{name} does not point at the documentation site: {url}"
+        relative_path, _separator, anchor = url.removeprefix(monitor.DOCUMENTATION_URL).lstrip("/").partition("#")
+        slug = relative_path.strip("/")
+        page = DOCS_DIRECTORY / "index.md" if not slug else DOCS_DIRECTORY / f"{slug}.md"
+        assert page.is_file(), f"{name} points at a missing page: {page.name}"
+        if anchor:
+            assert anchor in page_anchors(page), f"{name} points at a missing anchor on {page.name}: #{anchor}"
 
 
 # Parses one repository YAML asset

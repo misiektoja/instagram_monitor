@@ -95,4 +95,8 @@ def deterministic_globals(monkeypatch):
     # Drop in-memory account stops so one safety test cannot block another test's request path
     with im.ACCOUNT_BREAKER_MEMORY_LOCK:
         im.ACCOUNT_BREAKER_MEMORY.clear()
+    # load_dotenv writes into os.environ and nothing removes it again, so a test that loads a dotenv would
+    # otherwise leak its secrets into every later test through the exported-environment lookup at startup
+    for secret in im.SECRET_KEYS:
+        monkeypatch.delenv(secret, raising=False)
     yield
