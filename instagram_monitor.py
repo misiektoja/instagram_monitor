@@ -1082,7 +1082,7 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
             raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
-        webhook_url = read_interactively(hidden_prompt, "Paste the Discord or ntfy webhook URL (input hidden): ").strip()
+        webhook_url = read_secret_privately(hidden_prompt, "Paste the Discord or ntfy webhook URL (input hidden): ").strip()
     except (EOFError, KeyboardInterrupt):
         raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.") from None
     if not validate_webhook_url(webhook_url):
@@ -1158,7 +1158,7 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     print(f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent")
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
-        smtp_password = str(read_interactively(hidden_prompt, "Enter the SMTP password (input hidden): ")).strip()
+        smtp_password = str(read_secret_privately(hidden_prompt, "Enter the SMTP password (input hidden): ")).strip()
     except (EOFError, KeyboardInterrupt):
         raise SmtpConfigurationError("SMTP password setup was cancelled. The private settings file was not changed.") from None
     check = smtp_sign_in if sign_in is None else sign_in
@@ -1485,6 +1485,17 @@ def read_interactively(reader, *args, **kwargs):
             signal.signal(signal.SIGINT, previous_handler)
         except (ValueError, OSError):
             pass
+
+
+# Reads one hidden value with debug output forced off, so the secret cannot reach the debug stream while it is handled
+def read_secret_privately(hidden_prompt, prompt_text):
+    global DEBUG_MODE
+    previous_debug_mode = DEBUG_MODE
+    DEBUG_MODE = False
+    try:
+        return read_interactively(hidden_prompt, prompt_text)
+    finally:
+        DEBUG_MODE = previous_debug_mode
 
 
 signal.signal(signal.SIGINT, _startup_sigint_handler)
@@ -14139,10 +14150,10 @@ def _wizard_ask_duration(question: str, default: int) -> int:
         print(colorize("warning", "  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d."))
 
 
-# Reads one secret through getpass without echoing the entered value
+# Reads one secret through getpass without echoing it, coloured like the visible prompts and with debug output off
 def _wizard_ask_secret(question: str) -> str:
     try:
-        return str(read_interactively(getpass.getpass, f"{question}: "))
+        return str(read_secret_privately(getpass.getpass, colorize("info", f"{question}: ")))
     except (EOFError, KeyboardInterrupt):
         print()
         raise
@@ -15325,11 +15336,12 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
     checks: List[DoctorCheck] = []
     selected_version = sys.version_info if version_info is None else version_info
     version_text = ".".join(str(part) for part in tuple(selected_version)[:3])
+    minimum_text = ".".join(str(part) for part in MINIMUM_PYTHON_VERSION)
+    minimum_detail = f"Minimum supported version: {minimum_text}"
     if tuple(selected_version)[:2] >= MINIMUM_PYTHON_VERSION:
-        checks.append(make_doctor_check("Environment", "ok", f"Python {version_text} is supported"))
+        checks.append(make_doctor_check("Environment", "ok", f"Python {version_text} is supported", minimum_detail))
     else:
-        minimum_text = ".".join(str(part) for part in MINIMUM_PYTHON_VERSION)
-        checks.append(make_doctor_check("Environment", "fail", f"Python {version_text} is unsupported", "", f"Install Python {minimum_text} or newer then retry", INSTALLATION_GUIDE_URL))
+        checks.append(make_doctor_check("Environment", "fail", f"Python {version_text} is unsupported", minimum_detail, f"Install Python {minimum_text} or newer then retry", INSTALLATION_GUIDE_URL))
 
     find_spec = importlib.util.find_spec if spec_finder is None else spec_finder
 

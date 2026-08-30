@@ -744,3 +744,19 @@ def test_a_command_line_secret_is_reported_as_such(im_module, monkeypatch):
 
     assert "Secrets loaded from the command line" in labels
     assert "Secrets loaded from the configuration file or command line" not in labels
+
+
+
+class TestPythonRow:
+    # The row states the minimum it was judged against, whichever way the judgement went
+    def test_the_python_row_names_the_minimum_supported_version(self, im_module):
+        below = (im_module.MINIMUM_PYTHON_VERSION[0], im_module.MINIMUM_PYTHON_VERSION[1] - 1, 0)
+        minimum = ".".join(str(part) for part in im_module.MINIMUM_PYTHON_VERSION)
+
+        supported = im_module.doctor_check_environment((3, 12, 1), lambda _name: object())[0]
+        unsupported = im_module.doctor_check_environment(below, lambda _name: object())[0]
+
+        assert supported.status == "ok"
+        assert supported.detail == f"Minimum supported version: {minimum}"
+        assert unsupported.status == "fail"
+        assert unsupported.detail == supported.detail

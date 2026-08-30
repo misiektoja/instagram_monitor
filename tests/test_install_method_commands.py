@@ -341,3 +341,28 @@ class TestHelpEpilog:
         epilog = im_module._build_help_epilog()
         assert "docker compose run --rm instagram_monitor --setup" in epilog
         assert self._web_dashboard_line(epilog).strip() == "docker compose run --rm --service-ports instagram_monitor --web-dashboard"
+
+
+
+class TestHiddenPromptPresentation:
+    # Hidden prompts are colorized like the visible ones, so one question does not look different
+    def test_hidden_prompts_are_colorized_like_the_visible_ones(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+        monkeypatch.setattr(im_module, "_COLOR_STYLES", {name: im_module._build_ansi_sequence(value) for name, value in im_module.DEFAULT_COLOR_THEME.items() if im_module._build_ansi_sequence(value)})
+        prompts = []
+        monkeypatch.setattr(im_module.getpass, "getpass", lambda prompt: prompts.append(prompt) or "secret")
+
+        assert im_module._wizard_ask_secret("Instagram password") == "secret"
+        assert prompts == [im_module.colorize("info", "Instagram password: ")]
+        assert prompts[0].endswith(im_module.ANSI_RESET)
+
+    # Debug output is off while a hidden value is read and restored afterwards
+    def test_a_hidden_value_is_read_with_debug_output_off(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "DEBUG_MODE", True)
+        seen = []
+        monkeypatch.setattr(im_module.getpass, "getpass", lambda prompt: seen.append(im_module.DEBUG_MODE) or "secret")
+
+        assert im_module._wizard_ask_secret("Instagram password") == "secret"
+        assert im_module.read_secret_privately(lambda prompt: seen.append(im_module.DEBUG_MODE) or "value", "Enter it: ") == "value"
+        assert seen == [False, False]
+        assert im_module.DEBUG_MODE is True
