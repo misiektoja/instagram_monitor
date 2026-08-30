@@ -1,8 +1,20 @@
 """Verifies config-file settings actually reach the code that consumes them (no network)."""
 
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
+
+
+@pytest.fixture
+# Restores every module-level setting a real startup run mutates, so one test cannot leak into the next
+def restored_globals(im_module):
+    snapshot = {name: value for name, value in vars(im_module).items() if name.isupper()}
+    yield
+    for name, value in snapshot.items():
+        setattr(im_module, name, value)
+    for name in [name for name in vars(im_module) if name.isupper() and name not in snapshot]:
+        delattr(im_module, name)
 
 
 class TestConnectivityCheckResolution:
@@ -78,3 +90,41 @@ class TestPerCheckReporting:
         assert 'verbose_print(f"Check #' not in source
         assert 'debug_print("Starting check"' in source
         assert 'debug_print("Completed check"' in source
+
+
+class TestWebhookDestination:
+    # Drives the real command line up to the monitoring call and returns the webhook state startup settled on
+    def webhook_state_after_startup(self, im_module, monkeypatch, tmp_path, webhook_url):
+        config = tmp_path / "instagram_monitor.conf"
+        config.write_text('LOCAL_TIMEZONE = "UTC"\nDISABLE_LOGGING = True\nWEBHOOK_ENABLED = True\nWEBHOOK_PROVIDER = "ntfy"\n' + f'WEBHOOK_URL = "{webhook_url}"\n', encoding="utf-8")
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--config-file", str(config), "--env-file", "none", "--no-color"])
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "check_internet", lambda *args, **kwargs: True)
+        monkeypatch.setattr(im_module, "instagram_monitor_user", Mock(side_effect=SystemExit(99)))
+
+        with pytest.raises(SystemExit) as exc:
+            im_module.run_main()
+
+        assert exc.value.code == 99
+        return im_module.WEBHOOK_ENABLED
+
+    # Verifies an unedited webhook destination switches the channel off instead of being treated as configured
+    def test_a_placeholder_webhook_url_switches_the_channel_off(self, im_module, monkeypatch, tmp_path, restored_globals):
+        assert self.webhook_state_after_startup(im_module, monkeypatch, tmp_path, "your_webhook_url") is False
+
+    # Verifies a real destination still leaves the webhook channel on
+    def test_a_configured_webhook_url_keeps_the_channel_on(self, im_module, monkeypatch, tmp_path, restored_globals):
+        assert self.webhook_state_after_startup(im_module, monkeypatch, tmp_path, "https://ntfy.sh/some-topic") is True
+
+
+class TestSecretReporting:
+    # Confirms an unedited placeholder is never reported as a loaded secret, whichever layer recorded it
+    def test_placeholder_secrets_are_not_reported_as_loaded(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SECRET_SOURCES", {"WEBHOOK_URL": "dotenv file", "SMTP_PASSWORD": "configuration file or command line"})
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "your_webhook_url")
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "your_smtp_password")
+
+        from_file, from_environment, from_settings = im_module.doctor_secret_sources(None)
+
+        assert "WEBHOOK_URL" not in from_file + from_environment + from_settings
+        assert "SMTP_PASSWORD" not in from_file + from_environment + from_settings

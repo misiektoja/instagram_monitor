@@ -16850,6 +16850,9 @@ def run_main():
         STATUS_NOTIFICATION = False
         FOLLOWERS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
+    if WEBHOOK_ENABLED and not validate_webhook_url(WEBHOOK_URL):
+        verbose_print("Webhook notifications are off because WEBHOOK_URL is not a complete HTTPS link")
+        WEBHOOK_ENABLED = False
 
     # Build the run summary as StartupSummaryRow entries, in the order every sibling monitor prints
     # The concise terminal view leads with the targets and hides off/default rows; the full view (every row) is written to the log and also shown on the terminal under --verbose/--debug
