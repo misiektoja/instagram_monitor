@@ -733,7 +733,8 @@ COLOR_THEME = {
     "header": "bright_cyan",
     "section": "bright_white",
     # Identity
-    "username": "blue underline",
+    "username": "bright_cyan underline",
+    "id": "bright_magenta",
     # Status values
     "status_online": "green",
     "status_offline": "red",
@@ -4260,7 +4261,8 @@ DEFAULT_COLOR_THEME = {
     "header": "bright_cyan",
     "section": "bright_white",
     # Identity
-    "username": "blue underline",
+    "username": "bright_cyan underline",
+    "id": "bright_magenta",
     # Status values
     "status_online": "green",
     "status_offline": "red",
@@ -4328,6 +4330,8 @@ _DIFF_COUNT_UP_RE = re.compile(r"(\(\+\d+\))")
 _DIFF_COUNT_DOWN_RE = re.compile(r"(\(-\d+\))")
 # The separator is a space in prose and an equals sign in the key=value diagnostic fields
 _USER_TAG_RE = re.compile(r"((?:for|by|of|Session|Initial|Monitoring\s+Instagram)\s+user:?|Username:|Target:|Tracking:?|(?:Starting\s+)?check\s+#\d+\s+(?:completed\s+)?for|paused\s+for|resuming\s+for|(?:Firefox|Chrome|Brave|Chromium)\s+for:|\buser|User(?=\s+[\w._-]+\s+has))([\t ]+|=)([\w._-]+)", re.IGNORECASE)
+# The startup summary lists every monitored account on one row
+_TARGETS_ROW_RE = re.compile(r"^(\*\s+Targets?:\s+)(\S.*)$")
 _DURATION_RE = re.compile(r"\b[0-9]{1,20}[ \t]{1,20}(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\b", re.IGNORECASE)
 _LONG_DATE_RE = re.compile(r"\b(?:\w{3}\s+)?\d{1,2}\s+\w{3}(?:\s+\d{2,4})?[\s,]*\d{2}:\d{2}(:\d{2})?(\s*[AP]M)?\b", re.IGNORECASE)
 _TIME_ONLY_RE = re.compile(r"(?<![\w:])(~?(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:\s*[AP]M)?)(?![\w:])", re.IGNORECASE)
@@ -4587,6 +4591,19 @@ def _colorize_line(line):
     # Session mode value is free-form text (e.g. "No login ...") - keep it plain so words like "No" are not mistaken for an offline/boolean keyword
     if line.startswith("* Session mode:"):
         return line
+
+    # The numeric account ID is an identifier, not a name, so it keeps the identifier colour
+    labeled_value = _split_output_label(line, ("User ID:",))
+    if labeled_value:
+        label, user_id = labeled_value
+        return f"{label}{colorize('id', user_id)}" + ("\n" if line.endswith("\n") else "")
+
+    # Every account on the summary target row is coloured, not only the first one
+    targets_match = _TARGETS_ROW_RE.match(line.rstrip("\n"))
+    if targets_match:
+        label, targets = targets_match.groups()
+        colored = label + ", ".join(colorize("username", target) for target in targets.split(", "))
+        return colored + ("\n" if line.endswith("\n") else "")
 
     # Case for list items (e.g. - username [ link ]) - color username yellow
     if line.strip().startswith("- ") and " [ http" in line:

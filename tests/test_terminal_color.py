@@ -38,6 +38,22 @@ def test_port_mapping_is_not_colored_as_a_time(im_module, monkeypatch):
     assert im_module._colorize_line("Next check at 21:07:39") == "Next check at \033[35m21:07:39\033[0m"
 
 
+# Verifies every identity value is coloured for what it is: a name, an id or a link
+@pytest.mark.parametrize("line,expected", [
+    ("* Targets:                      misiektoja", "* Targets:                      <username>misiektoja<reset>"),
+    ("* Targets:                      misiektoja, someone_else", "* Targets:                      <username>misiektoja<reset>, <username>someone_else<reset>"),
+    ("Username:\t\t\t\tmisiektoja", "Username:\t\t\t\t<username>misiektoja<reset>"),
+    ("User ID:\t\t\t\t1234567890", "User ID:\t\t\t\t<id>1234567890<reset>"),
+    ("Profile URL:\t\t\t\thttps://www.instagram.com/misiektoja/", "Profile URL:\t\t\t\t<link>https://www.instagram.com/misiektoja/<reset>"),
+])
+def test_identity_values_are_coloured_by_their_kind(im_module, monkeypatch, line, expected):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {name: f"<{name}>" for name in ("username", "id", "link")})
+    monkeypatch.setattr(im_module, "ANSI_RESET", "<reset>")
+
+    assert im_module._colorize_line(line) == expected
+
+
 # Verifies labeled output and status changes keep their text while using direct bounded parsing
 @pytest.mark.parametrize("line,styles", [("* Check interval:\t5 minutes (today)\n", ("timestamp_label", "count_up", "date_range")), ("Timestamp:\t21:07:39\n", ("timestamp_label", "timestamp_value")), ("STATUS: Online\n", ("status_online",)), ("alice changed status from Online to Offline\n", ("status_online", "status_offline"))])
 def test_colorize_line_parses_security_sensitive_patterns_without_text_changes(im_module, monkeypatch, line, styles):
