@@ -1,5 +1,6 @@
 """Tests for the staged setup wizard and its safety gates."""
 
+import builtins
 import os
 import tempfile
 from contextlib import contextmanager
@@ -957,3 +958,19 @@ def test_smtp_sign_in_reports_incomplete_settings(im_module, monkeypatch):
 def test_blank_smtp_password_is_refused(im_module):
     with pytest.raises(im_module.SmtpConfigurationError, match="No SMTP password"):
         im_module.smtp_sign_in("")
+
+
+# Verifies Ctrl+C at the welcome offer reports one line instead of a traceback
+def test_interrupting_the_welcome_offer_reports_a_cancellation(im_module, monkeypatch, capsys):
+    def interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+    monkeypatch.setattr(builtins, "input", interrupt)
+    monkeypatch.setattr(im_module, "run_setup_wizard", lambda *args, **kwargs: pytest.fail("the wizard ran after being interrupted"))
+
+    with pytest.raises(SystemExit) as exit_error:
+        im_module._wizard_welcome(None)
+
+    assert exit_error.value.code == 1
+    assert "Setup cancelled." in capsys.readouterr().out
