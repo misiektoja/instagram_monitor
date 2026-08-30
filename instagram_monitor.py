@@ -1041,7 +1041,11 @@ def update_dotenv_file(destination, updates):
 
 # Raised when private webhook URL entry cannot be completed safely
 class WebhookConfigurationError(Exception):
-    pass
+    # Carries an optional action and guide link, so a cancelled entry prints the same block as any other error
+    def __init__(self, message, fix="", guide=""):
+        self.fix = fix
+        self.guide = guide
+        super().__init__(message)
 
 
 # Resolves the writable dotenv destination used by private webhook entry
@@ -1077,14 +1081,16 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
         try:
             confirmed = read_interactively(prompt, f"Replace the saved webhook URL in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
-            confirmed = False
+            print()
+            raise WebhookConfigurationError("Webhook URL setup was cancelled and the dotenv file was not changed", "Run --set-webhook-url again when you have the value ready", WEBHOOK_GUIDE_URL) from None
         if not confirmed:
-            raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
+            raise WebhookConfigurationError("The saved webhook URL was left as it is and the dotenv file was not changed", "Run --set-webhook-url again and answer y to replace the saved value", WEBHOOK_GUIDE_URL)
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
         webhook_url = read_secret_privately(hidden_prompt, "Paste the Discord or ntfy webhook URL (input hidden): ").strip()
     except (EOFError, KeyboardInterrupt):
-        raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.") from None
+        print()
+        raise WebhookConfigurationError("Webhook URL setup was cancelled and the dotenv file was not changed", "Run --set-webhook-url again when you have the value ready", WEBHOOK_GUIDE_URL) from None
     if not validate_webhook_url(webhook_url):
         raise WebhookConfigurationError("That does not look like a complete HTTPS webhook URL. The private settings file was not changed.")
     try:
@@ -1105,7 +1111,22 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
 
 # Raised when private mail server password entry cannot be completed safely
 class SmtpConfigurationError(Exception):
-    pass
+    # Carries an optional action and guide link, so a cancelled entry prints the same block as any other error
+    def __init__(self, message, fix="", guide=""):
+        self.fix = fix
+        self.guide = guide
+        super().__init__(message)
+
+
+# Prints one one-shot secret command failure with its action and guide link when the error carries them
+def print_secret_command_error(error):
+    print(f"* Error: {error}")
+    fix = getattr(error, "fix", "")
+    if fix:
+        print(colorize("info", f"To fix: {fix}"))
+    guide = getattr(error, "guide", "")
+    if guide:
+        print(f"Guide: {guide}")
 
 
 # Signs in to the configured mail server with one entered password, so nothing is saved that cannot deliver
@@ -1152,15 +1173,17 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
         try:
             confirmed = read_interactively(prompt, f"Replace the saved SMTP password in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
-            confirmed = False
+            print()
+            raise SmtpConfigurationError("SMTP password setup was cancelled and the dotenv file was not changed", "Run --set-smtp-password again when you have the value ready", SMTP_GUIDE_URL) from None
         if not confirmed:
-            raise SmtpConfigurationError("SMTP password setup was cancelled. The private settings file was not changed.")
+            raise SmtpConfigurationError("The saved SMTP password was left as it is and the dotenv file was not changed", "Run --set-smtp-password again and answer y to replace the saved value", SMTP_GUIDE_URL)
     print(f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent")
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
         smtp_password = str(read_secret_privately(hidden_prompt, "Enter the SMTP password (input hidden): ")).strip()
     except (EOFError, KeyboardInterrupt):
-        raise SmtpConfigurationError("SMTP password setup was cancelled. The private settings file was not changed.") from None
+        print()
+        raise SmtpConfigurationError("SMTP password setup was cancelled and the dotenv file was not changed", "Run --set-smtp-password again when you have the value ready", SMTP_GUIDE_URL) from None
     check = smtp_sign_in if sign_in is None else sign_in
     try:
         signed_in_user = check(smtp_password, timeout=5)
@@ -16329,7 +16352,7 @@ def run_main():
         try:
             run_set_webhook_url(env_file=args.env_file, config_path=args.config_file)
         except WebhookConfigurationError as exc:
-            print(f"* Error: {exc}")
+            print_secret_command_error(exc)
             sys.exit(1)
         sys.exit(0)
 
@@ -16639,7 +16662,7 @@ def run_main():
         try:
             run_set_smtp_password(env_file=args.env_file, config_path=args.config_file)
         except SmtpConfigurationError as exc:
-            print(f"* Error: {exc}")
+            print_secret_command_error(exc)
             sys.exit(1)
         sys.exit(0)
 

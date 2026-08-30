@@ -415,7 +415,7 @@ def test_set_webhook_url_declined_replacement_is_non_destructive(im_module):
     with make_test_directory() as directory_name:
         env_path = Path(directory_name) / ".env"
         env_path.write_text('WEBHOOK_URL="https://example.test/original"\n', encoding="utf-8")
-        with pytest.raises(im_module.WebhookConfigurationError, match="cancelled"):
+        with pytest.raises(im_module.WebhookConfigurationError, match="left as it is"):
             im_module.run_set_webhook_url(env_file=env_path, interactive=True, input_func=lambda prompt: "no", getpass_func=lambda prompt: "https://example.test/replacement")
         assert dotenv_values(env_path, interpolate=False)["WEBHOOK_URL"] == "https://example.test/original"
 

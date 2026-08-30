@@ -924,7 +924,7 @@ def test_set_smtp_password_declined_replacement_is_non_destructive(im_module):
         env_path = Path(directory_name) / ".env"
         env_path.write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
 
-        with pytest.raises(im_module.SmtpConfigurationError, match="cancelled"):
+        with pytest.raises(im_module.SmtpConfigurationError, match="left as it is"):
             im_module.run_set_smtp_password(env_file=env_path, interactive=True, input_func=lambda prompt: "no", getpass_func=lambda prompt: "replacement", sign_in=Mock())
 
         assert env_path.read_text(encoding="utf-8") == 'SMTP_PASSWORD="original"\n'
@@ -1113,3 +1113,32 @@ class TestSecretReplacePrompt:
         assert 'state.secret_updates["SMTP_PASSWORD"] =' not in source
         assert source.count('_wizard_queue_secret(state.secret_updates, state.env_path, "SESSION_PASSWORD"') == 1
         assert source.count('_wizard_queue_secret(state.secret_updates, state.env_path, "SMTP_PASSWORD"') == 1
+
+
+# Verifies an interrupted entry carries the action and guide the console block prints
+def test_an_interrupted_secret_entry_carries_a_fix_and_a_guide(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        destination = Path(directory_name) / ".env"
+        monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.test")
+        monkeypatch.setattr(im_module, "SMTP_USER", "monitor@example.test")
+
+        def interrupt(prompt=""):
+            raise KeyboardInterrupt
+
+        with pytest.raises(im_module.SmtpConfigurationError) as raised:
+            im_module.run_set_smtp_password(env_file=destination, interactive=True, getpass_func=interrupt, sign_in=Mock(side_effect=AssertionError("signed in")))
+
+        assert str(raised.value) == "SMTP password setup was cancelled and the dotenv file was not changed"
+        assert raised.value.fix == "Run --set-smtp-password again when you have the value ready"
+        assert raised.value.guide == im_module.SMTP_GUIDE_URL
+        assert not destination.exists()
+
+
+# Verifies the console block prints the action and guide a cancelled entry carries
+def test_a_cancelled_secret_command_prints_its_fix_and_guide(im_module, capsys):
+    im_module.print_secret_command_error(im_module.SmtpConfigurationError("SMTP password setup was cancelled and the dotenv file was not changed", "Run --set-smtp-password again when you have the value ready", im_module.SMTP_GUIDE_URL))
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0] == "* Error: SMTP password setup was cancelled and the dotenv file was not changed"
+    assert lines[1].endswith("To fix: Run --set-smtp-password again when you have the value ready")
+    assert lines[2] == f"Guide: {im_module.SMTP_GUIDE_URL}"
