@@ -243,7 +243,7 @@ With the default `auto` setting under [HTTP Transport Backend](usage.md#http-tra
 
 ## TLS Verification
 
-Instagram Monitor verifies the TLS certificate of every server it contacts: Instagram, the connectivity check endpoint, the proxy IP lookup, downloaded media and, when enabled, the webhook service.
+Instagram Monitor verifies the TLS certificate of every server it contacts: Instagram, the connectivity check endpoint, the proxy IP lookup, downloaded media, the mail server that delivers email alerts and, when enabled, the webhook service.
 
 Set `VERIFY_SSL` to `False` only on a network that intercepts TLS with its own certificate authority, such as a corporate proxy. With verification off, an intercepted connection cannot be told apart from the real service, and `PROXY_CERT_PATH` is ignored because there is nothing left to check the certificate against.
 

@@ -362,7 +362,7 @@ PROXY_URL = ""
 # Optional local TLS certificate used by the proxy
 PROXY_CERT_PATH = ""
 
-# Whether to verify TLS certificates on every outbound request
+# Whether to verify TLS certificates on every outbound connection, email delivery included
 # Only set this to False on a network that intercepts TLS with its own certificate authority
 # Switching it off removes the protection against an intercepted connection
 VERIFY_SSL = True
@@ -5076,7 +5076,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
 
     try:
         if use_ssl:
-            ssl_context = ssl.create_default_context()
+            ssl_context = smtp_ssl_context()
             smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
             smtpObj.starttls(context=ssl_context)
         else:
@@ -5877,6 +5877,15 @@ def resolve_existing_file_path(value, label) -> str:
 def apply_tls_verification_setting():
     if not VERIFY_SSL:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+# Returns the TLS context SMTP uses, unverified while VERIFY_SSL is off so email follows the same switch as every other connection
+def smtp_ssl_context():
+    context = ssl.create_default_context()
+    if not VERIFY_SSL:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    return context
 
 
 # Returns the requests verify arg every outbound request shares: False while VERIFY_SSL is off, the proxy cert path when one is configured, else True
@@ -13856,7 +13865,7 @@ def _wizard_verify_smtp(values: dict, password: str) -> Optional[Tuple[str, str,
         globals()["SMTP_PASSWORD"] = password or previous["SMTP_PASSWORD"]
         smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=WIZARD_SMTP_TIMEOUT)
         if SMTP_SSL:
-            smtp.starttls(context=ssl.create_default_context())
+            smtp.starttls(context=smtp_ssl_context())
         smtp.login(SMTP_USER, SMTP_PASSWORD)
         return None
     except Exception as exc:
@@ -14836,7 +14845,7 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
         if progress is not None:
             progress(f"Connecting to SMTP server {SMTP_HOST}")
         try:
-            context = ssl.create_default_context()
+            context = smtp_ssl_context()
             smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=5)
             if SMTP_SSL:
                 smtp.starttls(context=context)
