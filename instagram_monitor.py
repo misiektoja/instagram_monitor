@@ -12313,6 +12313,12 @@ def _wizard_install_method() -> str:
     return "pip"
 
 
+# Returns a readable name for the detected install method
+def install_method_display_name(method: Optional[str] = None) -> str:
+    selected = _wizard_install_method() if method is None else method
+    return {"pip": "PyPI install", "manual": "downloaded script", "docker": "Docker container", "compose": "Docker Compose container"}.get(selected, selected)
+
+
 # Returns local command arguments using friendly names or exact runtime paths
 def _wizard_local_command_args(method: str, exact: bool = False) -> List[str]:
     if exact:
@@ -15157,6 +15163,12 @@ def run_main():
 
     summary_rows.append((f"* Configuration file:\t\t\t{cfg_path}", True, True))
     summary_rows.append((f"* Dotenv file:\t\t\t\t{env_path or 'None'}", True, True))
+
+    # Names only, never values, so the complete summary stays safe to paste into a bug report
+    secrets_from_file, secrets_from_environment, _ = doctor_secret_sources(env_path)
+    summary_rows.append((f"* Install method:\t\t\t{install_method_display_name()}", False, True))
+    summary_rows.append((f"* Secrets from dotenv:\t\t\t{', '.join(sorted(secrets_from_file)) if secrets_from_file else 'None'}", False, True))
+    summary_rows.append((f"* Secrets from environment:\t\t{', '.join(sorted(secrets_from_environment)) if secrets_from_environment else 'None'}", False, True))
 
     if WEB_DASHBOARD_ENABLED:
         if WEB_DASHBOARD_TEMPLATE_DIR:

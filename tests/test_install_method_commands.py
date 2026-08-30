@@ -39,6 +39,46 @@ class TestInstallMethodDetection:
         assert im_module._wizard_install_method() == "compose"
 
 
+class TestInstallMethodDisplayNames:
+    # Every detected method reaches the startup summary as a readable name
+    def test_every_method_has_a_readable_name(self, im_module):
+        assert im_module.install_method_display_name("manual") == "downloaded script"
+        assert im_module.install_method_display_name("pip") == "PyPI install"
+        assert im_module.install_method_display_name("docker") == "Docker container"
+        assert im_module.install_method_display_name("compose") == "Docker Compose container"
+
+    # Without an explicit method the name follows the detected launch environment
+    def test_detected_method_is_used_by_default(self, im_module, monkeypatch):
+        _force_env(monkeypatch, im_module, dockerenv=False, docker_env=False, compose_env=False, argv0="instagram_monitor.py")
+        assert im_module.install_method_display_name() == "downloaded script"
+
+
+class TestStartupSummaryDiagnostics:
+    # The install method and secret origins belong to the complete view, named and never valued
+    def test_full_summary_reports_install_method_and_secret_origins(self, im_module, monkeypatch, tmp_path, capsys):
+        env_file = tmp_path / ".env"
+        env_file.write_text("SMTP_PASSWORD=from-file\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("WEBHOOK_URL", "https://ntfy.sh/topic")
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--verbose", "--env-file", str(env_file), "--no-color", "--disable-logging"])
+        monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+        monkeypatch.setattr(im_module, "DASHBOARD_ENABLED", False)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", False)
+        monkeypatch.setattr(im_module, "find_config_file", lambda path=None: None)
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "check_internet", lambda: True)
+        monkeypatch.setattr(im_module, "start_dashboard_input_handler", Mock(side_effect=SystemExit(0)))
+
+        with pytest.raises(SystemExit):
+            im_module.run_main()
+
+        output = capsys.readouterr().out
+        assert "* Install method:" in output and "downloaded script" in output
+        assert "* Secrets from dotenv:" in output and "SMTP_PASSWORD" in output
+        assert "* Secrets from environment:" in output and "WEBHOOK_URL" in output
+        assert "from-file" not in output and "ntfy.sh/topic" not in output
+
+
 class TestCmdPrefix:
     def test_manual_matches_active_python_name(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "system", lambda: "Linux")
