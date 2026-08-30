@@ -252,6 +252,12 @@ class TestDoctorProgress:
 
 
 class TestRunDoctor:
+    # The raw install method is stable support vocabulary across sibling monitors
+    def test_environment_reports_the_raw_install_method(self, im_module):
+        checks = im_module.doctor_check_environment((3, 12, 1), lambda _name: object())
+
+        assert any(check.status == "ok" and check.label.startswith("Install method: ") for check in checks)
+
     # Exported secrets are a documented alternative to a dotenv file, so they must apply when no file is loaded
     def test_environment_secrets_apply_without_a_dotenv_file(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--doctor", "--env-file", "none", "--no-color"])

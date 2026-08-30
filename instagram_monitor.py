@@ -13589,6 +13589,7 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
             checks.append(make_doctor_check("Environment", "ok", f"Optional dependency {package_name} is installed", purpose))
         else:
             checks.append(make_doctor_check("Environment", "warn", f"Optional dependency {package_name} is not installed", missing_purpose, f"install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
+    checks.append(make_doctor_check("Environment", "ok", f"Install method: {_wizard_install_method()}"))
     return checks
 
 
