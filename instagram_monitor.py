@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.9.2
+v4.0
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -25,7 +25,7 @@ rich (optional - for terminal dashboard)
 # keeps the supported Python floor enforceable regardless of where an import sits in the file
 from __future__ import annotations
 
-VERSION = "3.9.2"
+VERSION = "4.0"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -291,6 +291,21 @@ FOLLOWER_LIMIT_TO_FETCH  = 0
 FOLLOWER_DELAY_PER_BATCH = 0
 FOLLOWEE_LIMIT_TO_FETCH  = 0
 FOLLOWEE_DELAY_PER_BATCH = 0
+
+# Which Instagram surface follower and following lists are read from
+#
+# Instagram serves the same lists twice: through the REST endpoints its own web app calls, and through
+# the older GraphQL queries. Both use the same logged-in session and return the same number of names
+#
+# - "auto" (default): read the lists over REST, and retry over GraphQL only if the REST endpoint is
+#   gone or answers in an unknown shape before it returned anybody. A fetch that already returned
+#   names is never repeated on the other surface
+# - "rest": always read over REST and report the error instead of retrying
+# - "graphql": always read over GraphQL, which is what versions before 4.0 did
+#
+# Anonymous mode is unaffected, since neither surface lists followers without a session
+# Can also be set using the --follow-list-source flag
+FOLLOW_LIST_SOURCE = "auto"
 
 # ----------------------------
 # Account Safety
@@ -1103,6 +1118,7 @@ FOLLOWER_LIMIT_TO_FETCH = 0
 FOLLOWEE_LIMIT_TO_FETCH = 0
 FOLLOWER_DELAY_PER_BATCH = 0
 FOLLOWEE_DELAY_PER_BATCH = 0
+FOLLOW_LIST_SOURCE = "auto"
 IDENTITY_BUDGET_PER_DAY = 0
 CIRCUIT_BREAKER = True
 ADVANCED_FOLLOWER_FETCH = False
@@ -2746,7 +2762,7 @@ def create_web_dashboard_app():
         global WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
         global DISABLE_LOGGING, CHECK_POSTS_IN_HOURS_RANGE, HOURS_VERBOSE, MIN_H1, MAX_H1, MIN_H2, MAX_H2
         global DASHBOARD_SHOW_CHECK_SECONDS, TIME_FORMAT_12H
-        global HTTP_BACKEND, CURL_CFFI_IMPERSONATE
+        global HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE
 
         if data is None:
             return False, [], 'No data provided', 400
@@ -2770,7 +2786,7 @@ def create_web_dashboard_app():
             'min_h2': (0, 23),
             'max_h2': (0, 23),
         }
-        string_keys = {'webhook_url', 'webhook_provider', 'proxy_url', 'proxy_cert', 'http_backend', 'impersonate', 'smtp_host', 'smtp_user', 'smtp_password', 'sender_email', 'receiver_email', 'csv_filename'}
+        string_keys = {'webhook_url', 'webhook_provider', 'proxy_url', 'proxy_cert', 'http_backend', 'follow_list_source', 'impersonate', 'smtp_host', 'smtp_user', 'smtp_password', 'sender_email', 'receiver_email', 'csv_filename'}
 
         for key in boolean_keys:
             if key in data and type(data[key]) is not bool:
@@ -2812,6 +2828,8 @@ def create_web_dashboard_app():
                 return False, [], "'http_backend' must be 'curl_cffi' or 'requests'", 400
             if requested_backend == 'curl_cffi' and not _CURL_CFFI_AVAILABLE:
                 return False, [], "'http_backend' cannot use curl_cffi because it is not installed", 400
+        if 'follow_list_source' in data and str(data['follow_list_source']).strip().lower() not in FOLLOW_LIST_SOURCES:
+            return False, [], "'follow_list_source' must be 'auto', 'rest' or 'graphql'", 400
         if 'impersonate' in data:
             impersonate_error = validate_impersonate_target(data['impersonate'])
             if impersonate_error is not None:
@@ -2861,6 +2879,11 @@ def create_web_dashboard_app():
                         except ValueError:
                             print(f"* Error: Proxy certificate file does not exist. '{processed_val}'")
                             return current_val
+                elif key == 'follow_list_source':
+                    processed_val = str(processed_val).strip().lower()
+                    if processed_val not in FOLLOW_LIST_SOURCES:
+                        print(f"* Error: Invalid follow list source '{processed_val}'. Must be 'auto', 'rest' or 'graphql'.")
+                        return current_val
                 elif key == 'http_backend':
                     processed_val = str(processed_val).strip().lower()
                     if processed_val not in ('curl_cffi', 'requests'):
@@ -2956,6 +2979,7 @@ def create_web_dashboard_app():
         # HTTP transport backend
         HTTP_BACKEND = str(update_setting('http_backend', HTTP_BACKEND, str))
         CURL_CFFI_IMPERSONATE = str(update_setting('impersonate', CURL_CFFI_IMPERSONATE, str))
+        FOLLOW_LIST_SOURCE = str(update_setting('follow_list_source', FOLLOW_LIST_SOURCE, str))
 
         # SMTP
         previous_smtp_host = SMTP_HOST
@@ -3020,7 +3044,7 @@ def create_web_dashboard_app():
         global WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
         global DISABLE_LOGGING, CHECK_POSTS_IN_HOURS_RANGE, HOURS_VERBOSE, MIN_H1, MAX_H1, MIN_H2, MAX_H2
         global DASHBOARD_SHOW_CHECK_SECONDS, TIME_FORMAT_12H
-        global HTTP_BACKEND, CURL_CFFI_IMPERSONATE
+        global HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE
 
         if flask_request.method == 'GET':  # type: ignore
             data = {  # type: ignore
@@ -3060,6 +3084,7 @@ def create_web_dashboard_app():
                 'profile_pic_changes': DETECT_CHANGED_PROFILE_PIC,
                 'skip_session_login': SKIP_SESSION,
                 'http_backend': HTTP_BACKEND,
+                'follow_list_source': FOLLOW_LIST_SOURCE,
                 'impersonate': CURL_CFFI_IMPERSONATE,
                 'config_file': CLI_CONFIG_PATH or "None",
                 'dotenv_file': DOTENV_FILE or "None",
@@ -7851,6 +7876,17 @@ def extract_usernames_safely(data_dict):
     if not isinstance(data_dict, dict):
         return []
 
+    # The web REST follower and following endpoints answer with a flat user list instead of GraphQL edges
+    rest_users = data_dict.get('users')
+    if isinstance(rest_users, list):
+        for entry in rest_users:
+            if not isinstance(entry, dict):
+                continue
+            rest_username = entry.get('username')
+            if isinstance(rest_username, str):
+                usernames.append(rest_username)
+        return usernames
+
     data = data_dict.get('data')
     if not isinstance(data, dict):
         return []
@@ -9262,6 +9298,7 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'profile_pic_changes': DETECT_CHANGED_PROFILE_PIC,
         'skip_session_login': SKIP_SESSION,
         'http_backend': HTTP_BACKEND,
+        'follow_list_source': FOLLOW_LIST_SOURCE,
         'impersonate': CURL_CFFI_IMPERSONATE,
         'skip_followers': SKIP_FOLLOWERS,
         'skip_followings': SKIP_FOLLOWINGS,
@@ -9367,7 +9404,7 @@ FAILURE_TERMS = {
     'proxy_unresolved': ("could not resolve proxy",),
     'dns_failure': ("could not resolve host", "temporary failure in name resolution", "name or service not known", "nodename nor servname", "curl: (6)"),
     'network': ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl"),
-    'schema_change': ("empty data for posts", "fetching post metadata failed", "not subscriptable"),
+    'schema_change': ("empty data for posts", "fetching post metadata failed", "not subscriptable", "unexpected follower list reply"),
 }
 
 # Evaluation order of FAILURE_TERMS, matching the branch order in classify_error_message
@@ -10055,6 +10092,229 @@ def build_follow_string(enabled, limit, batch, delay, alt_format=False):
     else:
         follow_str = "False"
     return follow_str
+
+
+# ----------------------------
+# Follower and following enumeration
+# ----------------------------
+#
+# Instagram serves the same follower and following lists on two surfaces: the legacy web GraphQL query
+# hashes instaloader uses, and the /api/v1/friendships/ REST endpoints the current web app calls. Both
+# run over the same logged-in web session, so this is a second endpoint surface for the operation that
+# breaks most often, not a second transport and not a second runtime.
+#
+# The paths, headers and response shape below were written from observed web traffic. Other open source
+# projects call the same endpoints, but none of their code is reused here: the closest reference,
+# gallery-dl, is GPL-2.0-only and cannot be combined with this GPL-3.0-or-later project.
+
+# Sources FOLLOW_LIST_SOURCE accepts
+FOLLOW_LIST_SOURCES = ('auto', 'rest', 'graphql')
+
+# Accounts asked for per REST page, matching what the web app requests while a follower list is scrolled
+FOLLOW_LIST_REST_PAGE_SIZE = 25
+
+# Web app identifiers Instagram expects on requests its own front end makes
+INSTAGRAM_WEB_APP_ID = "936619743392459"
+INSTAGRAM_WEB_ASBD_ID = "129477"
+
+# Claim token Instagram issues per web session and expects echoed back, starting at the placeholder a fresh browser sends
+_WEB_CLAIM_LOCK = threading.Lock()
+_WEB_CLAIM_TOKEN = "0"
+
+
+# Raised when a follower or following REST reply does not carry the fields this code reads
+class InstagramRestSchemaError(RuntimeError):
+    pass
+
+
+# Returns the claim token to send on web requests for the current session
+def web_claim_token() -> str:
+    with _WEB_CLAIM_LOCK:
+        return _WEB_CLAIM_TOKEN
+
+
+# Stores the claim token from a web reply so later requests echo the value Instagram last issued
+def remember_web_claim_token(response_headers) -> None:
+    global _WEB_CLAIM_TOKEN
+
+    if not response_headers:
+        return
+
+    issued = ""
+    try:
+        for key, value in dict(response_headers).items():
+            if isinstance(key, str) and key.lower() == 'x-ig-set-www-claim' and isinstance(value, str):
+                issued = value.strip()
+                break
+    except Exception:
+        return
+
+    if not issued:
+        return
+
+    with _WEB_CLAIM_LOCK:
+        if issued == _WEB_CLAIM_TOKEN:
+            return
+        _WEB_CLAIM_TOKEN = issued
+
+    debug_print("Instagram web claim token updated")
+
+
+# Returns the headers the web app adds to a follower or following list request
+def rest_follow_list_headers(target_username: str) -> Dict[str, str]:
+    return {
+        'Accept': '*/*',
+        'Referer': f"https://www.instagram.com/{target_username}/",
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+        'X-ASBD-ID': INSTAGRAM_WEB_ASBD_ID,
+        'X-IG-App-ID': INSTAGRAM_WEB_APP_ID,
+        'X-IG-WWW-Claim': web_claim_token(),
+        'X-Requested-With': 'XMLHttpRequest',
+    }
+
+
+# Duplicates instaloader's session through the module attribute, so the proxy and TLS patch installed at import applies
+def instaloader_copy_session(session, request_timeout=None):
+    from instaloader import instaloadercontext as _ilc
+    return _ilc.copy_session(session, request_timeout)
+
+
+# Builds a Profile from one REST list entry, returning None when the entry carries no usable identity
+def profile_from_rest_node(context, node) -> Optional[instaloader.Profile]:
+    if not isinstance(node, dict):
+        return None
+
+    username = node.get('username')
+    if not isinstance(username, str) or not username:
+        return None
+
+    identifier = node.get('pk') or node.get('id')
+    if identifier is None:
+        return None
+
+    normalized = dict(node)
+    normalized['id'] = str(identifier)
+    normalized['pk'] = str(identifier)
+
+    return instaloader.Profile(context, normalized)
+
+
+# Yields follower or following profiles for one target from the REST endpoints the Instagram web app calls
+def iter_rest_follow_list(bot, profile, kind: str):
+    if kind not in ('followers', 'following'):
+        raise ValueError(f"unsupported follow list kind '{kind}'")
+
+    context = bot.context
+    if not context.is_logged_in:
+        raise instaloader.exceptions.LoginRequiredException(f"Login required to get a profile's {kind}.")
+
+    path = f"api/v1/friendships/{profile.userid}/{kind}/"
+    session = instaloader_copy_session(context._session, context.request_timeout)
+    cursor = ""
+
+    try:
+        session.headers.update(rest_follow_list_headers(profile.username))
+        while True:
+            params: Dict[str, Any] = {'count': FOLLOW_LIST_REST_PAGE_SIZE}
+            if cursor:
+                params['max_id'] = cursor
+
+            # Instagram rotates the claim token, so send the newest one and record whatever this reply carries
+            session.headers['X-IG-WWW-Claim'] = web_claim_token()
+            response_headers: Dict[str, Any] = {}
+            data = context.get_json(path, params, session=session, response_headers=response_headers)
+            remember_web_claim_token(response_headers)
+
+            if not isinstance(data, dict) or not isinstance(data.get('users'), list):
+                # No user list in a 200 reply means the endpoint changed shape, never that the account is in trouble
+                raise InstagramRestSchemaError(f"Unexpected follower list reply while reading {kind} (no user list)")
+
+            entries = data['users']
+            debug_print("Instagram REST follow list page", kind=kind, accounts=len(entries))
+
+            for node in entries:
+                candidate = profile_from_rest_node(context, node)
+                if candidate is not None:
+                    yield candidate
+
+            previous_cursor = cursor
+            cursor = str(data.get('next_max_id') or "")
+            if cursor and cursor == previous_cursor:
+                # A cursor that does not advance would page for ever, so stop with an error rather
+                # than loop or hand back a partial list that looks complete
+                raise InstagramRestSchemaError(f"Unexpected follower list reply while reading {kind} (the page cursor stopped advancing)")
+            if not entries or not cursor:
+                return
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
+
+
+# Returns instaloader's own GraphQL follower or following iterator for one target
+def iter_graphql_follow_list(profile, kind: str):
+    return profile.get_followers() if kind == 'followers' else profile.get_followees()
+
+
+# Returns True when a REST failure describes the endpoint rather than the account, the only case worth a second attempt
+def rest_failure_is_recoverable(error: BaseException) -> bool:
+    # A 404 means the path is gone and a schema error means the reply changed, both Instagram API changes.
+    # Everything else, including a challenge, a rate limit, an expired session or a network fault, is either
+    # about the account or would fail the same way on the other surface, so it is reported rather than retried
+    return isinstance(error, (InstagramRestSchemaError, instaloader.exceptions.QueryReturnedNotFoundException))
+
+
+# Yields REST results, falling back to GraphQL only when the REST endpoint fails before returning anybody
+def iter_auto_follow_list(bot, profile, kind: str):
+    returned_any = False
+
+    try:
+        for candidate in iter_rest_follow_list(bot, profile, kind):
+            returned_any = True
+            yield candidate
+        return
+    except Exception as rest_error:
+        # Names already returned cost the account whatever happens next, so a partial scan is never repeated
+        # on the other surface. Only an endpoint that is gone or answers in an unknown shape is retried
+        if returned_any or not rest_failure_is_recoverable(rest_error):
+            raise
+        reason = format_error_message(rest_error)
+        print(f"* Instagram's REST {kind} endpoint is unavailable ({reason}), reading the list over GraphQL instead")
+        log_activity(f"REST {kind} endpoint unavailable ({reason}), falling back to GraphQL", user=profile.username, level='system')
+
+    yield from iter_graphql_follow_list(profile, kind)
+
+
+# Returns the configured follow list source, falling back to auto when the setting names something unknown
+def active_follow_list_source() -> str:
+    source = str(FOLLOW_LIST_SOURCE).strip().lower()
+    return source if source in FOLLOW_LIST_SOURCES else 'auto'
+
+
+# Describes the follow list source for the startup summary
+def follow_list_source_display() -> str:
+    source = active_follow_list_source()
+    if source == 'auto':
+        return "auto (REST, GraphQL on failure)"
+    return "REST" if source == 'rest' else "GraphQL"
+
+
+# Returns the follower or following iterator for one target from the surface FOLLOW_LIST_SOURCE selects
+def follow_list_generator(bot, profile, kind: str):
+    source = active_follow_list_source()
+
+    # The REST endpoints answer only for a logged-in session, and anonymous mode already fails with
+    # instaloader's own message, so leave that path exactly as it was
+    if source == 'graphql' or not bot.context.is_logged_in:
+        return iter_graphql_follow_list(profile, kind)
+
+    if source == 'rest':
+        return iter_rest_follow_list(bot, profile, kind)
+
+    return iter_auto_follow_list(bot, profile, kind)
 
 
 # Carries fetched usernames plus whether the source generator was fully exhausted
@@ -10775,7 +11035,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             _thread_local.FETCH_TYPE = 'follower'
             followers = fetch_usernames_paginated(
                 bot,
-                get_generator_fn=lambda: profile.get_followers(),
+                get_generator_fn=lambda: follow_list_generator(bot, profile, 'followers'),
                 max_per_batch=FOLLOWERS_PER_BATCH,
                 total_limit=FOLLOWER_LIMIT_TO_FETCH,
                 fetch_delay=FOLLOWER_DELAY_PER_BATCH,
@@ -10923,7 +11183,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             _thread_local.FETCH_TYPE = 'followee'
             followings = fetch_usernames_paginated(
                 bot,
-                get_generator_fn=lambda: profile.get_followees(),
+                get_generator_fn=lambda: follow_list_generator(bot, profile, 'following'),
                 max_per_batch=FOLLOWEES_PER_BATCH,
                 total_limit=FOLLOWEE_LIMIT_TO_FETCH,
                 fetch_delay=FOLLOWEE_DELAY_PER_BATCH,
@@ -11812,7 +12072,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         _thread_local.FETCH_TYPE = 'followee'
                         followings = fetch_usernames_paginated(
                             bot,
-                            get_generator_fn=lambda bound_profile=profile: bound_profile.get_followees(),
+                            get_generator_fn=lambda bound_profile=profile: follow_list_generator(bot, bound_profile, 'following'),
                             max_per_batch=FOLLOWEES_PER_BATCH,
                             total_limit=FOLLOWEE_LIMIT_TO_FETCH,
                             fetch_delay=FOLLOWEE_DELAY_PER_BATCH,
@@ -11960,7 +12220,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         _thread_local.FETCH_TYPE = 'follower'
                         followers = fetch_usernames_paginated(
                             bot,
-                            get_generator_fn=lambda bound_profile=profile: bound_profile.get_followers(),
+                            get_generator_fn=lambda bound_profile=profile: follow_list_generator(bot, bound_profile, 'followers'),
                             max_per_batch=FOLLOWERS_PER_BATCH,
                             total_limit=FOLLOWER_LIMIT_TO_FETCH,
                             fetch_delay=FOLLOWER_DELAY_PER_BATCH,
@@ -14690,7 +14950,7 @@ def apply_diagnostic_cli_overrides(args: argparse.Namespace) -> None:
 
 # Parses configuration and command-line options then starts the selected operation
 def run_main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, IDENTITY_BUDGET_PER_DAY, CIRCUIT_BREAKER, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE, IDENTITY_BUDGET_PER_DAY, CIRCUIT_BREAKER, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H, TRUNCATE_CHARS
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
@@ -15090,6 +15350,14 @@ def run_main():
         help="Browser profile curl_cffi impersonates when --http-backend is curl_cffi: 'auto' (match the user agent, default) or a pinned target like chrome, safari, safari_ios, edge, firefox"
     )
     session_opts.add_argument(
+        "--follow-list-source",
+        dest="follow_list_source",
+        metavar="SOURCE",
+        type=str,
+        choices=["auto", "rest", "graphql"],
+        help="Instagram surface follower and following lists are read from: 'auto' (REST with a GraphQL retry, default), 'rest' or 'graphql'"
+    )
+    session_opts.add_argument(
         "--identity-budget",
         dest="identity_budget",
         metavar="NAMES_PER_DAY",
@@ -15482,6 +15750,9 @@ def run_main():
 
     if args.impersonate:
         CURL_CFFI_IMPERSONATE = args.impersonate
+
+    if args.follow_list_source:
+        FOLLOW_LIST_SOURCE = args.follow_list_source
 
     if args.identity_budget is not None:
         if args.identity_budget < 0:
@@ -16002,6 +16273,8 @@ def run_main():
     followee_str = build_follow_string(ADVANCED_FOLLOWEE_FETCH, FOLLOWEE_LIMIT_TO_FETCH, FOLLOWEES_PER_BATCH, FOLLOWEE_DELAY_PER_BATCH)
     summary_rows.append(StartupSummaryRow("Advanced follower fetching", follower_str, concise=bool(ADVANCED_FOLLOWER_FETCH)))
     summary_rows.append(StartupSummaryRow("Advanced followee fetching", followee_str, concise=bool(ADVANCED_FOLLOWEE_FETCH)))
+
+    summary_rows.append(StartupSummaryRow("Follow list source", follow_list_source_display(), concise=True))
 
     identity_budget_str = f"{IDENTITY_BUDGET_PER_DAY} names/day" if IDENTITY_BUDGET_PER_DAY else "Disabled (counted but not capped)"
     summary_rows.append(StartupSummaryRow("Identity budget", identity_budget_str, concise=bool(IDENTITY_BUDGET_PER_DAY)))

@@ -519,6 +519,29 @@ The command and Web Dashboard show complete counts for all three categories. Mut
 
 The same analysis is available in the **Web Dashboard**. Use the **Follow analysis** chart button next to a configured target. Privacy substitutions apply to the target and relationship usernames shown in the modal.
 
+<a id="follower-list-source"></a>
+## Follower List Source
+
+Instagram serves follower and following lists on two surfaces: the REST endpoints its own web app calls, and an older set of GraphQL queries. Both use the same logged-in session, return the same accounts and cost the same number of names. When one of them is retired or starts answering differently, the other usually keeps working, so the source is selectable.
+
+```ini
+FOLLOW_LIST_SOURCE = "auto"
+```
+
+- `auto` (default): read the lists over REST. If the REST endpoint is gone or answers in a shape the tool does not recognise **before it returned anybody**, read them over GraphQL instead and say so in the log.
+- `rest`: always read over REST and report the error instead of retrying.
+- `graphql`: always read over GraphQL. This is what versions before 4.0 did.
+
+A fetch that already returned names is never repeated on the other surface. Those names have already been counted against the account, and a second pass over the same list would count them twice for nothing. For the same reason a rate limit, a challenge, an expired session or a network fault is reported rather than retried elsewhere: only a missing endpoint or an unreadable reply is worth a second attempt.
+
+Pin the source for one run without editing the configuration file:
+
+```sh
+instagram_monitor <target_insta_user> --follow-list-source graphql
+```
+
+The startup summary names the source in use. Anonymous mode is unaffected, since neither surface lists followers without a session.
+
 <a id="advanced-followerfollowing-fetching"></a>
 ## Advanced Follower/Following Fetching
 

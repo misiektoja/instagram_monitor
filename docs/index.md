@@ -110,6 +110,8 @@ For the manual single-file method, optional browser support and upgrade commands
 - **Error Reporting**: Be notified if the monitoring process hits a snag.
 
 ### 🛡️ Privacy & Detection Avoidance
+- **Identity Budget**: Caps how many follower and following names are fetched per day.
+- **Circuit Breaker**: Stops every target after Instagram challenges your account, until you clear it.
 - **Be Human Mode**: Simulates random user actions to blend in.
 - **Jitter Mode**: Adds human-like delays to HTTP requests.
 - **Hour-Range Checking**: Limits activity to specific hours of the day.
@@ -125,6 +127,7 @@ For the manual single-file method, optional browser support and upgrade commands
 - **Flexible Config**: Support for files, dotenv and environment variables.
 - **Follower Churn**: Detailed tracking of exactly who followed or unfollowed.
 - **Follow Analysis**: Inspect mutual, not-following-back and fan relationships offline from saved lists with `--analyze-follows` or the Web Dashboard.
+- **Two Follower List Sources**: Reads follower and following lists from the web REST endpoints Instagram's own app calls, falling back to the older GraphQL queries.
 - **Batched Fetching**: Throttle follower/following downloads into delayed batches.
 - **Remote Control**: Manage tracking features via signals or the web UI.
 - **Docker Ready**: Run via Docker Hub, Docker Compose or local image build with persisted config, dotenv and sessions.

@@ -99,6 +99,19 @@ WEB_DASHBOARD_ALLOWED_HOSTS = ["monitor.lan"]
 curl -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8000/api/monitoring/stop
 ```
 
+<a id="follower-and-following-lists-stop-working"></a>
+## Follower and Following Lists Stop Working
+
+If counts, posts and stories still update but follower or following lists fail, Instagram has most likely changed the endpoint that serves them rather than acted against your account. `--exposure` tells the two apart: failures counted under **Instagram API changed** are this case, failures under **account challenged** are not.
+
+The tool reads those lists from Instagram's own web REST endpoints and falls back to the older GraphQL queries on its own when the REST endpoint is missing or unreadable. If both fail, pin the other surface and try once:
+
+```sh
+instagram_monitor <target_insta_user> --follow-list-source graphql
+```
+
+Report which source works at [Discussions](https://github.com/misiektoja/instagram_monitor/discussions). Do not leave a failing source running: every retry adds requests to an account that is already getting errors.
+
 <a id="choosing-the-right-logging-level"></a>
 ## Choosing the Right Logging Level
 
