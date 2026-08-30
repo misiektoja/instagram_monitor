@@ -4514,7 +4514,7 @@ def _startup_tls_summary_row() -> "StartupSummaryRow":
 
 # Reports the install method, which secrets came from where by name and never by value, and the shared output settings
 def _startup_environment_rows(env_path) -> List["StartupSummaryRow"]:
-    from_file, from_environment, from_settings = doctor_secret_sources(env_path)
+    from_file, from_environment, from_settings, from_command_line = doctor_secret_sources(env_path)
     return [
         StartupSummaryRow("Local timezone", str(LOCAL_TIMEZONE)),
         StartupSummaryRow("12h time format", str(TIME_FORMAT_12H)),
@@ -4522,6 +4522,7 @@ def _startup_environment_rows(env_path) -> List["StartupSummaryRow"]:
         StartupSummaryRow("Secrets from dotenv", ", ".join(sorted(from_file)) if from_file else "None"),
         StartupSummaryRow("Secrets from environment", ", ".join(sorted(from_environment)) if from_environment else "None"),
         StartupSummaryRow("Secrets from config file", ", ".join(sorted(from_settings)) if from_settings else "None"),
+        StartupSummaryRow("Secrets from command line", ", ".join(sorted(from_command_line)) if from_command_line else "None"),
         _startup_tls_summary_row(),
         StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})"),
         # The resolved state, not the setting: colour also switches itself off when the output is not a terminal
@@ -15321,10 +15322,11 @@ def doctor_secret_is_set(value) -> bool:
 
 
 # Groups configured secret names by the source each value actually came from
-def doctor_secret_sources(env_path=None) -> Tuple[List[str], List[str], List[str]]:
+def doctor_secret_sources(env_path=None) -> Tuple[List[str], List[str], List[str], List[str]]:
     from_file: List[str] = []
     from_environment: List[str] = []
     from_settings: List[str] = []
+    from_command_line: List[str] = []
     for key in SECRET_KEYS:
         if not doctor_secret_is_set(globals().get(key)):
             continue
@@ -15333,14 +15335,17 @@ def doctor_secret_sources(env_path=None) -> Tuple[List[str], List[str], List[str
             from_file.append(key)
         elif source == "environment":
             from_environment.append(key)
+        # A secret passed as an argument is known exactly, unlike one that only defaulted to the settings bucket
+        elif source == "command line":
+            from_command_line.append(key)
         else:
             from_settings.append(key)
-    return from_file, from_environment, from_settings
+    return from_file, from_environment, from_settings, from_command_line
 
 
 # Reports which secrets are in effect and where each one was read from
 def doctor_secret_checks(env_path=None) -> List[DoctorCheck]:
-    from_file, from_environment, from_settings = doctor_secret_sources(env_path)
+    from_file, from_environment, from_settings, from_command_line = doctor_secret_sources(env_path)
     checks: List[DoctorCheck] = []
     if from_file:
         checks.append(make_doctor_check("Configuration", "ok", "Secrets loaded from the dotenv file", ", ".join(from_file)))
@@ -15348,6 +15353,8 @@ def doctor_secret_checks(env_path=None) -> List[DoctorCheck]:
         checks.append(make_doctor_check("Configuration", "ok", "Secrets loaded from the environment", ", ".join(from_environment)))
     if from_settings:
         checks.append(make_doctor_check("Configuration", "ok", "Secrets loaded from the configuration file or command line", ", ".join(from_settings)))
+    if from_command_line:
+        checks.append(make_doctor_check("Configuration", "ok", "Secrets loaded from the command line", ", ".join(from_command_line)))
     if not checks:
         checks.append(make_doctor_check("Configuration", "ok", "No secrets loaded", "Nothing was read from a dotenv file, the environment or the command line"))
     return checks

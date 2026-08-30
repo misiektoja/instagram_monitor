@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import pytest
 
 # The rows shared with the sibling monitors, in the order every one of them prints
-SHARED_ROW_ORDER = ("Targets", "Polling interval", "Notifications (email)", "Notifications (webhook)", "Output logging", "Config", "Dotenv", "Liveness output", "CSV output", "Local timezone", "Install method", "Secrets from dotenv", "Secrets from environment", "Secrets from config file", "TLS verification", "ASCII log separators", "Coloured output", "Verbose mode", "Debug mode")
+SHARED_ROW_ORDER = ("Targets", "Polling interval", "Notifications (email)", "Notifications (webhook)", "Output logging", "Config", "Dotenv", "Liveness output", "CSV output", "Local timezone", "Install method", "Secrets from dotenv", "Secrets from environment", "Secrets from config file", "Secrets from command line", "TLS verification", "ASCII log separators", "Coloured output", "Verbose mode", "Debug mode")
 
 SUMMARY_LINE_RE = re.compile(r"^\* (?P<label>[^:]+): +\S")
 

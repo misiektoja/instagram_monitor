@@ -385,11 +385,11 @@ class TestRunDoctor:
         monkeypatch.setattr(im_module, "PROXY_URL", "your_proxy_url", raising=False)
         monkeypatch.setattr(im_module, "SECRET_SOURCES", {"SMTP_PASSWORD": "dotenv file", "WEBHOOK_URL": "environment"}, raising=False)
 
-        from_file, from_environment, from_settings = im_module.doctor_secret_sources(str(env_file))
+        from_file, from_environment, from_settings, from_command_line = im_module.doctor_secret_sources(str(env_file))
 
         assert from_file == ["SMTP_PASSWORD"]
         assert from_environment == ["WEBHOOK_URL"]
-        assert "PROXY_URL" not in from_file + from_environment + from_settings
+        assert "PROXY_URL" not in from_file + from_environment + from_settings + from_command_line
 
     # Verifies the preflight notice reaches the user before any check runs
     def test_preflight_notice_precedes_the_report(self, im_module, monkeypatch, capsys):
@@ -710,3 +710,16 @@ class TestDoctorDeliveryTests:
         assert im_module._doctor_send_test_webhook() == 0
         assert im_module.WEBHOOK_ENABLED is False
         delivery.assert_called_once_with("Instagram Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type=im_module.WEBHOOK_TEST_NOTIFICATION_TYPE)
+
+
+# Verifies a secret passed as an argument is reported under the command line rather than the configuration file
+def test_a_command_line_secret_is_reported_as_such(im_module, monkeypatch):
+    for name in im_module.SECRET_KEYS:
+        monkeypatch.setattr(im_module, name, "your_placeholder", raising=False)
+    monkeypatch.setattr(im_module, "SECRET_SOURCES", {"SMTP_PASSWORD": "command line"}, raising=False)
+    monkeypatch.setattr(im_module, "SMTP_PASSWORD", "a-real-secret-value", raising=False)
+
+    labels = [check.label for check in im_module.doctor_secret_checks(None)]
+
+    assert "Secrets loaded from the command line" in labels
+    assert "Secrets loaded from the configuration file or command line" not in labels

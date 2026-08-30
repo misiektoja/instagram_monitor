@@ -124,10 +124,10 @@ class TestSecretReporting:
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "your_webhook_url")
         monkeypatch.setattr(im_module, "SMTP_PASSWORD", "your_smtp_password")
 
-        from_file, from_environment, from_settings = im_module.doctor_secret_sources(None)
+        from_file, from_environment, from_settings, from_command_line = im_module.doctor_secret_sources(None)
 
-        assert "WEBHOOK_URL" not in from_file + from_environment + from_settings
-        assert "SMTP_PASSWORD" not in from_file + from_environment + from_settings
+        assert "WEBHOOK_URL" not in from_file + from_environment + from_settings + from_command_line
+        assert "SMTP_PASSWORD" not in from_file + from_environment + from_settings + from_command_line
 
 
 class TestConfigLoadReporting:
@@ -167,3 +167,17 @@ class TestStartupScreenClearing:
             im_module.run_main()
 
         assert cleared == [expected]
+
+
+@pytest.mark.parametrize("source, position", [("dotenv file", 0), ("environment", 1), ("configuration file or command line", 2), ("command line", 3)])
+# Verifies each source that can supply a secret lands in its own bucket, so none of them is filed under another
+def test_each_secret_source_lands_in_its_own_bucket(im_module, monkeypatch, source, position):
+    for name in im_module.SECRET_KEYS:
+        monkeypatch.setattr(im_module, name, "your_placeholder", raising=False)
+    monkeypatch.setattr(im_module, "SECRET_SOURCES", {"SMTP_PASSWORD": source}, raising=False)
+    monkeypatch.setattr(im_module, "SMTP_PASSWORD", "a-real-secret-value", raising=False)
+
+    buckets = im_module.doctor_secret_sources(None)
+
+    assert buckets[position] == ["SMTP_PASSWORD"]
+    assert [names for index, names in enumerate(buckets) if index != position] == [[], [], []]
