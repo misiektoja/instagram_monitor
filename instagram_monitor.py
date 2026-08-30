@@ -1412,6 +1412,9 @@ DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
 SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
 WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
 
+# The label every sibling monitor uses when email alerts are on but the settings they would use cannot deliver
+EMAIL_UNUSABLE_CHECK_LABEL = "Email alerts are enabled but unusable"
+
 # Placeholder values shipped in the sample configuration, which stand in for a setting the user has not filled in yet
 CONFIG_PLACEHOLDER_VALUES = frozenset({"your_smtp_server_ssl", "your_smtp_user", "your_smtp_password", "your_sender_email", "your_receiver_email", "your_webhook_url"})
 
@@ -15589,17 +15592,34 @@ def doctor_check_targets(report: DoctorReport, targets, progress: Optional[Calla
     return checks
 
 
+# Joins setting names the way every doctor detail and action in this family lists them
+def join_setting_names(names: Sequence[str], conjunction: str) -> str:
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} {conjunction} {names[-1]}"
+
+
+# Reports the first unusable email setting as a doctor detail and an action that names the same settings
+def email_settings_problem() -> Optional[Tuple[str, str]]:
+    unset = [name for name, value in (("SMTP_HOST", SMTP_HOST), ("SMTP_USER", SMTP_USER), ("SMTP_PASSWORD", SMTP_PASSWORD)) if is_placeholder_setting(value)]
+    if unset:
+        return (f"{join_setting_names(unset, 'or')} is empty or still set to its placeholder", f"Set {join_setting_names(unset, 'and')} or turn the email alerts off")
+    if not is_valid_email_address(SENDER_EMAIL) or not is_valid_email_address(RECEIVER_EMAIL):
+        return ("SENDER_EMAIL or RECEIVER_EMAIL is not an email address", "Correct SENDER_EMAIL and RECEIVER_EMAIL or turn the email alerts off")
+    return None
+
+
+# Returns the doctor row for email alerts whose settings cannot deliver, worded the same way by every sibling monitor
+def doctor_email_unusable_check(detail: str, fix: str) -> DoctorCheck:
+    return make_doctor_check("Notifications", "warn", EMAIL_UNUSABLE_CHECK_LABEL, detail, fix, SMTP_GUIDE_URL)
+
+
 # Checks SMTP login and webhook configuration without sending anything
 def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     checks: List[DoctorCheck] = []
-    smtp_configured = not is_placeholder_setting(SMTP_HOST) and not is_placeholder_setting(SMTP_USER) and not is_placeholder_setting(SMTP_PASSWORD)
-    invalid_addresses = [name for name, value in (("SENDER_EMAIL", SENDER_EMAIL), ("RECEIVER_EMAIL", RECEIVER_EMAIL)) if not is_valid_email_address(value)]
+    problem = email_settings_problem()
     if not email_notifications_enabled():
         checks.append(make_doctor_check("Notifications", "ok", "Email notifications are disabled", "No SMTP connection was attempted and no email was sent"))
-    elif not smtp_configured:
-        checks.append(make_doctor_check("Notifications", "warn", "Email alerts are on but SMTP is not configured", "No SMTP connection was attempted and no email was sent", "Set SMTP_HOST, SMTP_USER and SMTP_PASSWORD or turn the email alerts off", SMTP_GUIDE_URL))
-    elif invalid_addresses:
-        checks.append(make_doctor_check("Notifications", "fail", f"Email address is not set in {' and '.join(invalid_addresses)}", "", f"Set {' and '.join(invalid_addresses)} to a real email address", SMTP_GUIDE_URL))
+    elif problem is not None:
+        checks.append(doctor_email_unusable_check(*problem))
     else:
         if progress is not None:
             progress(f"Connecting to SMTP server {SMTP_HOST}")

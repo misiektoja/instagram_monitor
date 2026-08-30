@@ -162,9 +162,11 @@ class TestDoctorChecks:
         checks = im_module.doctor_check_notifications(report)
 
         assert report.smtp_ready is False
-        failure = next(check for check in checks if check.status == "fail")
-        assert failure.label == "Email address is not set in SENDER_EMAIL and RECEIVER_EMAIL"
-        assert failure.guide == im_module.SMTP_GUIDE_URL
+        warning = next(check for check in checks if check.status == "warn")
+        assert warning.label == im_module.EMAIL_UNUSABLE_CHECK_LABEL
+        assert warning.detail == "SENDER_EMAIL or RECEIVER_EMAIL is not an email address"
+        assert warning.fix == "Correct SENDER_EMAIL and RECEIVER_EMAIL or turn the email alerts off"
+        assert warning.guide == im_module.SMTP_GUIDE_URL
 
     # A switched-off webhook is reported as disabled, not validated, so the report matches the sibling monitors
     def test_disabled_webhook_is_not_validated(self, im_module, monkeypatch):
@@ -206,7 +208,29 @@ class TestDoctorChecks:
         checks = im_module.doctor_check_notifications(report)
 
         assert report.smtp_ready is False
-        assert any(check.status == "warn" and check.label == "Email alerts are on but SMTP is not configured" for check in checks)
+        warning = next(check for check in checks if check.status == "warn")
+        assert warning.label == im_module.EMAIL_UNUSABLE_CHECK_LABEL
+        assert warning.detail == "SMTP_HOST, SMTP_USER or SMTP_PASSWORD is empty or still set to its placeholder"
+        assert warning.fix == "Set SMTP_HOST, SMTP_USER and SMTP_PASSWORD or turn the email alerts off"
+        assert warning.guide == im_module.SMTP_GUIDE_URL
+
+    # The row names only the settings that are actually unset, not every setting it checked
+    def test_the_unusable_email_row_names_only_the_unset_settings(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", True, raising=False)
+        monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.test", raising=False)
+        monkeypatch.setattr(im_module, "SMTP_USER", "monitor@example.invalid", raising=False)
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "your_smtp_password", raising=False)
+        monkeypatch.setattr(im_module, "SENDER_EMAIL", "monitor@example.invalid", raising=False)
+        monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "owner@example.invalid", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "", raising=False)
+        monkeypatch.setattr(im_module.smtplib, "SMTP", _unreachable_smtp)
+
+        checks = im_module.doctor_check_notifications(im_module.DoctorReport())
+
+        warning = next(check for check in checks if check.status == "warn")
+        assert warning.label == im_module.EMAIL_UNUSABLE_CHECK_LABEL
+        assert warning.detail == "SMTP_PASSWORD is empty or still set to its placeholder"
+        assert warning.fix == "Set SMTP_PASSWORD or turn the email alerts off"
 
     # The shipped WEBHOOK_URL placeholder means the webhook was never configured, not that it is broken
     def test_webhook_placeholder_is_not_a_failure(self, im_module, monkeypatch):
