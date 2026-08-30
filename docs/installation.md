@@ -18,6 +18,7 @@ Choose either the Python path or the container path.
 - [pycookiecheat](https://github.com/n8henrie/pycookiecheat) is optional and is needed only to import cookies from Chrome, Brave or Chromium
 - [wcwidth](https://pypi.org/project/wcwidth/) is optional and is needed only to measure display width for `TRUNCATE_CHARS`
 - [Playwright](https://github.com/microsoft/playwright-python) is optional and is needed only for the experimental browser follower list source
+- [colorama](https://github.com/tartley/colorama) is optional and is needed only for coloured output in the classic Windows Command Prompt. `--doctor` reports it as missing only on Windows, where it makes a difference
 
 **Container path** (Python is included in the image):
 

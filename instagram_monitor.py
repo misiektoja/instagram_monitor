@@ -15354,6 +15354,9 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         ("dotenv", "python-dotenv", module_present("dotenv"), "Used only for loading secrets from a dotenv file", "Secrets in a dotenv file are ignored. Export them as environment variables instead"),
         ("pycookiecheat", "pycookiecheat", module_present("pycookiecheat"), "Used only for importing sessions from Chromium-based browsers. Firefox session import does not need it", "Required only for importing sessions from Chromium-based browsers. Firefox session import is unaffected"),
     )
+    # The classic Command Prompt is the only place this library changes anything, so a machine it cannot affect is not warned about a package it does not need
+    if platform.system() == "Windows":
+        optional += (("colorama", "colorama", module_present("colorama"), "Used only for coloured output in the classic Windows Command Prompt", "Coloured output may not render in the classic Windows Command Prompt. Normal monitoring is unaffected. Windows Terminal needs nothing extra"),)
     for _, package_name, present, purpose, missing_purpose in optional:
         if present:
             checks.append(make_doctor_check("Environment", "ok", f"Optional dependency {package_name} is installed", purpose))

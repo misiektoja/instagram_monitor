@@ -415,6 +415,27 @@ class TestRunDoctor:
         out = capsys.readouterr().out
         assert "Optional dependency pycookiecheat is installed\n  Used only for importing sessions from Chromium-based browsers. Firefox session import does not need it" in out
 
+    # Verifies a warning about a library that cannot affect this machine is not shown at all
+    @pytest.mark.parametrize("system, reported", [("Windows", True), ("Linux", False), ("Darwin", False)])
+    def test_a_platform_specific_dependency_is_only_reported_where_it_applies(self, im_module, monkeypatch, system, reported):
+        monkeypatch.setattr(im_module.platform, "system", lambda: system)
+
+        checks = im_module.doctor_check_environment((3, 12, 1), lambda _name: None)
+
+        assert any("colorama" in check.label for check in checks) is reported
+
+    # Verifies the Windows colour library is reported there, so broken colours on that platform have a diagnostic
+    def test_missing_colorama_is_reported_on_windows(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module.platform, "system", lambda: "Windows")
+
+        checks = im_module.doctor_check_environment((3, 12, 1), lambda name: None if name == "colorama" else object())
+
+        missing = next(check for check in checks if "colorama" in check.label)
+        assert missing.status == "warn"
+        assert "Coloured output may not render in the classic Windows Command Prompt" in missing.detail
+        assert "Windows Terminal needs nothing extra" in missing.detail
+        assert "pip install colorama" in missing.fix
+
     # Verifies Doctor checks and displays the final target-specific log filename
     def test_log_destination_uses_final_target_path(self, im_module, monkeypatch, capsys):
         _setup_no_network(monkeypatch, im_module)
