@@ -492,12 +492,14 @@ INSTA_CHECK_SIGNAL_VALUE = 300  # 5 minutes
 
 # Whether to enable verbose operational output
 # Shows calculated sleep durations, next check timestamps and liveness confirmations
-# Can also be enabled via the --verbose flag
+# Independent of DEBUG_MODE, so enable both to see everything
+# Can also be enabled via the --verbose flag, which turns it on regardless of this setting
 VERBOSE_MODE = False
 
 # Whether to enable debug output
 # Shows every API request and internal state changes
-# Can also be enabled via the --debug flag
+# Independent of VERBOSE_MODE, so enable both to see everything
+# Can also be enabled via the --debug flag, which turns it on regardless of this setting
 DEBUG_MODE = False
 
 # ----------------------------
