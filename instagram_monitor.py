@@ -5638,7 +5638,7 @@ def get_ip_address(max_retries=3, timeout=10, retry_delay=5, long_retry=120, lon
         if not isinstance(long_retry_attempts, int) or long_retry_attempts < 1:
             raise ValueError("long_retry_attempts must be at least 1")
     except ValueError as exc:
-        debug_print("get_ip_address configuration error", outcome="failed", error=f"{type(exc).__name__}: {exc}")
+        debug_print("get_ip_address configuration", outcome="failed", error=f"{type(exc).__name__}: {exc}")
         return f"(unavailable: {format_error_message(exc)})"
 
     last_err = None
@@ -10042,7 +10042,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         insta_userid = profile.userid
 
         debug_print("Profile loaded", user_id=insta_userid)
-        debug_print("Metadata:", followers=profile.followers, followees=profile.followees, posts=profile.mediacount, private=profile.is_private)
+        debug_print("Metadata", followers=profile.followers, followees=profile.followees, posts=profile.mediacount, private=profile.is_private)
 
         print(f"     OK: {insta_username}")
         _thread_local.in_partial_line = False
@@ -11122,8 +11122,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 can_view = (not is_private) or followed_by_viewer
                 posts_count = profile.mediacount
 
-                debug_print("Profile loaded:", followers=followers_count, following=followings_count, posts=posts_count)
-                debug_print("Previous load :", followers=followers_old_count, following=followings_old_count, posts=posts_count_old)
+                debug_print("Profile loaded", followers=followers_count, following=followings_count, posts=posts_count)
+                debug_print("Previous load", followers=followers_old_count, following=followings_old_count, posts=posts_count_old)
                 if not skip_session and can_view:
                     reels_count = get_total_reels_count(user, bot, skip_session)
                     debug_print("Reels count", value=reels_count)
@@ -12209,7 +12209,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             print_cur_ts("Liveness check, timestamp:\t")
             alive_counter = 0
 
-        debug_print("After check:", manual_recheck_active=manual_recheck_active)
+        debug_print("After check", manual_recheck_active=manual_recheck_active)
 
         if manual_recheck_active:
             print(f"* Check #{CHECK_COUNT} completed for {user} ...\n")
