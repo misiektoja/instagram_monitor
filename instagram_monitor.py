@@ -10025,38 +10025,49 @@ def note_instagram_failure(error_msg: str, user: str = "") -> str:
     return failure_class
 
 
+# Formats one report row so its value starts in the shared column whatever the label length
+def _exposure_row(label: str, value: str, column: int = 40) -> str:
+    prefix = f"{label}:"
+    return prefix + ("\t" * max(1, column // 8 - len(prefix) // 8)) + str(value)
+
+
 # Returns a redacted support report describing today's local account exposure
 def exposure_summary_lines() -> List[str]:
     session_mode = "authenticated (account redacted)" if exposure_account_name() != "<anonymous>" else "anonymous"
     backend = f"curl_cffi (impersonate: {_curl_cffi_impersonate_display()})" if _curl_cffi_backend_active() else "requests"
-    lines = [f"Version:\t\t\t\t{VERSION}", f"Generated:\t\t\t\t{get_date_from_ts(int(time.time()))}", f"Platform:\t\t\t\t{platform.system()} / Python {sys.version_info.major}.{sys.version_info.minor}", f"Session mode:\t\t\t{session_mode}", f"HTTP backend:\t\t\t{backend}", f"Follow list source:\t\t\t{follow_list_source_display()}"]
+    lines = [_exposure_row("Version", VERSION), _exposure_row("Generated", get_date_from_ts(int(time.time()))), _exposure_row("Platform", f"{platform.system()} / Python {sys.version_info.major}.{sys.version_info.minor}"), _exposure_row("Session mode", session_mode), _exposure_row("HTTP backend", backend), _exposure_row("Follow list source", follow_list_source_display())]
+
+    # An unreadable ledger still reports the breaker, since that is the state the reader most needs
+    breaker = _account_breaker_memory_state()
     try:
         record = exposure_snapshot()
     except ExposureLedgerError:
-        lines.append("Account safety ledger:\t\t\tunavailable (authenticated identity scans blocked)")
+        lines.append(_exposure_row("Account safety ledger", "unavailable (authenticated identity scans blocked)"))
+        lines.append(_exposure_row("Circuit breaker", f"TRIPPED ({breaker.get('failure_class', 'unknown')})" if breaker else "armed"))
         return lines
+
     identities = int(record.get('identities', 0))
     budget = f"{identities} of {IDENTITY_BUDGET_PER_DAY}" if IDENTITY_BUDGET_PER_DAY else f"{identities} (no budget set)"
-    lines.extend([f"Date:\t\t\t\t\t{record.get('date', _exposure_today())}", f"Identities returned today:\t\t{budget}"])
+    lines.extend([_exposure_row("Date", record.get('date', _exposure_today())), _exposure_row("Identities returned today", budget)])
 
     failures = record.get('failures') or {}
     if failures:
         for name in sorted(failures):
             group = failure_class_group(name)
             group_str = f" [{group}: {FAILURE_GROUP_LABELS[group]}]" if group else ""
-            lines.append(f"  {name}:\t\t\t\t{failures[name]}{group_str}")
+            lines.append(_exposure_row(f"  {name}", f"{failures[name]}{group_str}"))
     else:
-        lines.append("Failures today:\t\t\t\tnone")
+        lines.append(_exposure_row("Failures today", "none"))
 
-    breaker = _account_breaker_memory_state() or record.get('breaker')
+    breaker = breaker or record.get('breaker')
     if isinstance(breaker, dict) and breaker.get('tripped_ts'):
-        lines.append(f"Circuit breaker:\t\t\tTRIPPED at {get_date_from_ts(int(breaker['tripped_ts']))} ({breaker.get('failure_class', 'unknown')})")
-        lines.append("Resume with:\t\t\t\t--clear-breaker")
+        lines.append(_exposure_row("Circuit breaker", f"TRIPPED at {get_date_from_ts(int(breaker['tripped_ts']))} ({breaker.get('failure_class', 'unknown')})"))
+        lines.append(_exposure_row("Resume with", "--clear-breaker"))
     else:
-        lines.append("Circuit breaker:\t\t\tarmed" if CIRCUIT_BREAKER else "Circuit breaker:\t\t\tdisabled")
+        lines.append(_exposure_row("Circuit breaker", "armed" if CIRCUIT_BREAKER else "disabled"))
     last_failure = record.get('last_account_failure')
     if isinstance(last_failure, dict) and last_failure.get('ts'):
-        lines.append(f"Last account failure:\t\t\t{get_date_from_ts(int(last_failure['ts']))} ({last_failure.get('failure_class', 'unknown')})")
+        lines.append(_exposure_row("Last account failure", f"{get_date_from_ts(int(last_failure['ts']))} ({last_failure.get('failure_class', 'unknown')})"))
     return lines
 
 
@@ -10298,8 +10309,11 @@ def build_follow_string(enabled, limit, batch, delay, alt_format=False):
 # run over the same logged-in web session, so this is a second endpoint surface for the operation that
 # breaks most often, not a second transport and not a second runtime.
 #
-# The paths, headers and response shape below were written from observed web traffic. Instagrapi also
-# documents this friendships endpoint family on its mobile API surface. No third-party code is reused.
+# The paths, headers and response shape below were written from observed web traffic. No third-party
+# code is reused. Two projects document the same endpoint family and are useful when Instagram changes
+# it: instagrapi (MIT) calls friendships/<id>/followers/ on the mobile API host, and gallery-dl calls
+# the identical www.instagram.com/api/v1 paths this code uses. gallery-dl is GPL-2.0-only, which cannot
+# be combined with this GPL-3.0-or-later project, so read it for behaviour but never copy from it.
 
 # Sources FOLLOW_LIST_SOURCE accepts
 FOLLOW_LIST_SOURCES = ('auto', 'rest', 'graphql')
@@ -10559,6 +10573,15 @@ def save_username_baseline(filename, reported_count, usernames):
             os.remove(temporary_path)
 
 
+# Latches the account safety stop and ends the scan with whatever it had already fetched
+def _stop_fetch_for_unavailable_ledger(error: BaseException, results, user: str):
+    _mark_account_safety_unavailable(error)
+    msg = "Stopping name fetch: account safety ledger became unavailable"
+    print(f"* {msg}")
+    log_activity(msg, user=user, level='system')
+    return results
+
+
 # Serializes account-wide identity scans so budget checks and accounting cannot race
 def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user, stop_event=None, identities_counted_at_source=False):
     while not IDENTITY_SCAN_LOCK.acquire(timeout=0.2):
@@ -10615,6 +10638,7 @@ def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, tota
 
     try:
         verify_exposure_ledger_writable()
+        budget_spent = identity_budget_exhausted()
     except ExposureLedgerError as error:
         _mark_account_safety_unavailable(error)
         msg = "Skipping name fetch: account safety ledger cannot be read and saved, so identity collection is blocked"
@@ -10622,7 +10646,7 @@ def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, tota
         log_activity(msg, user=user, level='system')
         return results
 
-    if identity_budget_exhausted():
+    if budget_spent:
         msg = f"Skipping name fetch: daily identity budget of {IDENTITY_BUDGET_PER_DAY} is spent for {exposure_account_name()}. Counts and posts keep being monitored"
         print(f"* {msg}")
         log_activity(msg, user=user, level='system')
@@ -10642,7 +10666,11 @@ def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, tota
         if stop_event is not None and stop_event.is_set():
             return results
 
-        budget_left = identity_budget_remaining()
+        try:
+            budget_left = identity_budget_remaining()
+        except ExposureLedgerError as safety_error:
+            return _stop_fetch_for_unavailable_ledger(safety_error, results, user)
+
         if budget_left is not None and budget_left <= 0:
             print(f"* Daily identity budget of {IDENTITY_BUDGET_PER_DAY} reached, stopping the name fetch here")
             log_activity(f"Daily identity budget reached after {len(results)} names", user=user, level='system')
@@ -10665,18 +10693,18 @@ def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, tota
             else:
                 generator_exhausted = True
         except ExposureLedgerError as safety_error:
-            _mark_account_safety_unavailable(safety_error)
             results.extend(batch)
-            msg = "Stopping name fetch: account safety ledger became unavailable"
-            print(f"* {msg}")
-            log_activity(msg, user=user, level='system')
-            return results
+            return _stop_fetch_for_unavailable_ledger(safety_error, results, user)
         except Exception as fetch_error:
             # Names already returned still cost the account, so bank them before the error propagates,
             # and classify it here where we know the request was an identity fetch
             results.extend(batch)
             if not identities_counted_at_source:
-                record_identities_returned(len(batch))
+                # A ledger that dies here must not replace the Instagram error the caller needs to see
+                try:
+                    record_identities_returned(len(batch))
+                except ExposureLedgerError as safety_error:
+                    _mark_account_safety_unavailable(safety_error)
             note_instagram_failure(format_error_message(fetch_error), user)
             raise
 
@@ -10686,7 +10714,10 @@ def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, tota
 
         results.extend(batch)
         if not identities_counted_at_source:
-            record_identities_returned(len(batch))
+            try:
+                record_identities_returned(len(batch))
+            except ExposureLedgerError as safety_error:
+                return _stop_fetch_for_unavailable_ledger(safety_error, results, user)
 
         if generator_exhausted:
             results.complete = True
@@ -16131,7 +16162,13 @@ def run_main():
         WEBHOOK_ENABLED = True
 
     if args.clear_breaker:
-        cleared = clear_circuit_breaker()
+        try:
+            cleared = clear_circuit_breaker()
+        except ExposureLedgerError as ledger_error:
+            print(f"* Error: {ledger_error}")
+            print(f"* The account stop stays in place until the ledger can be saved: {exposure_state_path()}")
+            print("* To fix: Restore write access to that file and the directory holding it, or delete the file to start a new ledger")
+            sys.exit(1)
         if cleared:
             print(f"* Circuit breaker cleared for {exposure_account_name()}")
             print(f"* It was tripped at {get_date_from_ts(int(cleared.get('tripped_ts', 0)))} by: {cleared.get('failure_class', 'unknown')}")

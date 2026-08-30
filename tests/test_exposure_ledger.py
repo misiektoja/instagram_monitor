@@ -320,6 +320,75 @@ def test_an_unwritable_ledger_blocks_identity_fetching(ledger, monkeypatch):
     assert memory_state is not None and memory_state["failure_class"] == "ledger_unavailable"
 
 
+def test_a_ledger_that_dies_mid_scan_stops_the_account(ledger, monkeypatch):
+    reads = {'count': 0}
+
+    # Answers the first two budget reads then fails, standing in for a ledger that dies during a scan
+    def failing_remaining():
+        reads['count'] += 1
+        if reads['count'] > 2:
+            raise im.ExposureLedgerError("read rejected")
+        return 100
+
+    monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 100, raising=False)
+    monkeypatch.setattr(im, "identity_budget_remaining", failing_remaining, raising=False)
+
+    result = im.fetch_usernames_paginated(None, lambda: _names(6), 2, 0, 0, True, 6, "target")
+    memory_state = im._account_breaker_memory_state()
+
+    assert list(result) == ["user0", "user1"]
+    assert result.complete is False
+    assert memory_state is not None and memory_state["failure_class"] == "ledger_unavailable"
+
+
+def test_an_unreadable_ledger_still_reports_the_breaker(ledger, monkeypatch):
+    im.note_instagram_failure("checkpoint_required", "target")
+
+    # Simulates the ledger becoming unreadable after the account was already stopped
+    def reject_read():
+        raise im.ExposureLedgerError("read rejected")
+
+    monkeypatch.setattr(im, "_load_exposure_file", reject_read, raising=False)
+    text = "\n".join(im.exposure_summary_lines())
+
+    assert "Account safety ledger:" in text and "unavailable" in text
+    assert "Circuit breaker:" in text and "TRIPPED" in text
+
+
+def test_every_report_row_shares_one_value_column(ledger):
+    for message in ("429 Too Many Requests", "could not resolve proxy", "unexpected follower list reply", "checkpoint_required"):
+        im.note_instagram_failure(message, "target")
+
+    columns = set()
+    for line in im.exposure_summary_lines():
+        label, _, value = line.partition(':')
+        columns.add((len(label + ':') // 8 + len(value) - len(value.lstrip('\t'))) * 8)
+
+    assert columns == {40}
+
+
+def test_clear_breaker_reports_an_unwritable_ledger(ledger, monkeypatch, capsys, tmp_path):
+    # Simulates a ledger that cannot be saved, which is exactly when the tool tells the user to clear the stop
+    def reject_clear():
+        raise im.ExposureLedgerError("The account safety ledger cannot be saved: PermissionError")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(im.sys, "argv", ["instagram_monitor.py", "--clear-breaker"])
+    monkeypatch.setattr(im, "CLI_CONFIG_PATH", None, raising=False)
+    monkeypatch.setattr(im, "find_config_file", lambda path=None: None, raising=False)
+    monkeypatch.setattr(im, "clear_screen", lambda *args, **kwargs: None, raising=False)
+    monkeypatch.setattr(im, "clear_circuit_breaker", reject_clear, raising=False)
+
+    with pytest.raises(SystemExit) as raised:
+        im.run_main()
+    output = capsys.readouterr().out
+
+    assert raised.value.code == 1
+    assert "cannot be saved" in output
+    assert "To fix: Restore write access" in output
+    assert "Traceback" not in output
+
+
 def test_clear_breaker_recovers_a_corrupt_ledger(ledger, tmp_path):
     (tmp_path / "instagram_monitor_exposure.json").write_text("{ not json", encoding="utf-8")
     breaker_state = im.circuit_breaker_state()
