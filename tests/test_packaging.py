@@ -178,3 +178,14 @@ class TestVersionConsistency:
 
         assert newest is not None
         assert newest.group(1) == im_module.VERSION
+
+
+# Verifies the minimum supported Python version is declared once and matches the packaging metadata
+def test_the_minimum_python_version_is_declared_once(im_module):
+    pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert im_module.MINIMUM_PYTHON_VERSION_TEXT == ".".join(str(part) for part in im_module.MINIMUM_PYTHON_VERSION)
+    assert f'requires-python = ">={im_module.MINIMUM_PYTHON_VERSION_TEXT}"' in pyproject
+    assert f"Programming Language :: Python :: {im_module.MINIMUM_PYTHON_VERSION_TEXT}" in pyproject
+    classifiers = re.findall(r"Programming Language :: Python :: (\d+\.\d+)", pyproject)
+    assert min(tuple(int(part) for part in version.split(".")) for version in classifiers) == im_module.MINIMUM_PYTHON_VERSION

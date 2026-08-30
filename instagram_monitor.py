@@ -1531,9 +1531,10 @@ signal.signal(signal.SIGINT, _startup_sigint_handler)
 
 # Oldest interpreter this tool supports, shared by the startup gate and the Doctor environment check
 MINIMUM_PYTHON_VERSION = (3, 9)
+MINIMUM_PYTHON_VERSION_TEXT = ".".join(str(part) for part in MINIMUM_PYTHON_VERSION)
 
 if sys.version_info[:2] < MINIMUM_PYTHON_VERSION:
-    print(f"* Error: Python version {'.'.join(str(part) for part in MINIMUM_PYTHON_VERSION)} or higher required !")
+    print(f"* Error: Python version {MINIMUM_PYTHON_VERSION_TEXT} or higher required !")
     sys.exit(1)
 
 import time
@@ -15377,12 +15378,11 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
     checks: List[DoctorCheck] = []
     selected_version = sys.version_info if version_info is None else version_info
     version_text = ".".join(str(part) for part in tuple(selected_version)[:3])
-    minimum_text = ".".join(str(part) for part in MINIMUM_PYTHON_VERSION)
-    minimum_detail = f"Minimum supported version: {minimum_text}"
+    minimum_detail = f"Minimum supported version: {MINIMUM_PYTHON_VERSION_TEXT}"
     if tuple(selected_version)[:2] >= MINIMUM_PYTHON_VERSION:
         checks.append(make_doctor_check("Environment", "ok", f"Python {version_text} is supported", minimum_detail))
     else:
-        checks.append(make_doctor_check("Environment", "fail", f"Python {version_text} is unsupported", minimum_detail, f"Install Python {minimum_text} or newer then retry", INSTALLATION_GUIDE_URL))
+        checks.append(make_doctor_check("Environment", "fail", f"Python {version_text} is unsupported", minimum_detail, f"Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer then retry", INSTALLATION_GUIDE_URL))
 
     find_spec = importlib.util.find_spec if spec_finder is None else spec_finder
 
