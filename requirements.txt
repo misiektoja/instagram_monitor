@@ -10,5 +10,8 @@ rich
 flask
 jinja2
 
+# Optional: uncomment only for display-width-aware terminal truncation (TRUNCATE_CHARS, --truncate)
+# wcwidth
+
 # Optional: uncomment only to import Chrome/Brave/Chromium sessions (--browser chrome|brave|chromium); macOS and Linux only
 # pycookiecheat

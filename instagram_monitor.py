@@ -486,6 +486,13 @@ ASCII_LOG_SEPARATORS = "Auto"
 # Terminal Output
 # ----------------------------
 
+# Max characters per line when printing to screen to avoid line wrapping
+# Does not affect log file output
+# Set to 999 to auto-detect terminal width
+# Applies only when DISABLE_LOGGING is False
+# Can also be set via the --truncate flag
+TRUNCATE_CHARS = 0
+
 # Width of horizontal line
 HORIZONTAL_LINE = 113
 
@@ -1101,6 +1108,7 @@ INSTA_LOGFILE = ""
 OUTPUT_DIR = ""
 DISABLE_LOGGING = False
 ASCII_LOG_SEPARATORS = "Auto"
+TRUNCATE_CHARS = 0
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 INSTA_CHECK_SIGNAL_VALUE = 0
@@ -4553,6 +4561,50 @@ def normalize_log_separators(message):
     return re.sub(r"(?m)^─+$", lambda match: match.group(0).replace("─", "-"), message)
 
 
+# Truncates each line to a display width, expanding tabs and counting double-width characters correctly
+def truncate_string_per_line(message, truncate_width, tabsize=8):
+    try:
+        from wcwidth import wcwidth
+    except ImportError:
+        return message
+    truncated_lines = []
+    for line in message.split("\n"):
+        expanded_line = line.expandtabs(tabsize)
+        current_width = 0
+        truncated = []
+        position = 0
+        while position < len(expanded_line):
+            # A colour sequence is copied through free of charge, so styling never eats into the visible width
+            escape = SGR_SEQUENCE_RE.match(expanded_line, position)
+            if escape:
+                truncated.append(escape.group(0))
+                position = escape.end()
+                continue
+            char = expanded_line[position]
+            char_width = wcwidth(char)
+            if char_width is None or char_width < 0:
+                char_width = 0
+            if current_width + char_width > truncate_width:
+                break
+            truncated.append(char)
+            current_width += char_width
+            position += 1
+        truncated_lines.append("".join(truncated))
+    return "\n".join(truncated_lines)
+
+
+# Resolves CLI and configured truncation settings while expanding the terminal-width sentinel
+def resolve_truncate_chars(cli_value, configured_value, logging_disabled):
+    truncate_chars = configured_value if cli_value is None else cli_value
+    if logging_disabled:
+        return 0
+    if truncate_chars == 999:
+        terminal_size = shutil.get_terminal_size()
+        print(f"The detected terminal screen width is: {terminal_size.columns} characters\n")
+        return terminal_size.columns
+    return truncate_chars
+
+
 # Logger class to output messages to stdout and log files
 class Logger(object):
     def __init__(self, main_filename=None):
@@ -4612,7 +4664,7 @@ class Logger(object):
         with STDOUT_LOCK:
             # Apply color for terminal
             message = sanitize_terminal_text(apply_privacy_substitutions(message))
-            colorized_message = apply_color_to_text(message)
+            colorized_message = apply_color_to_text(truncate_string_per_line(message, TRUNCATE_CHARS) if TRUNCATE_CHARS else message)
 
             if message != '\n':
                 last_output.append(message)
@@ -4654,7 +4706,7 @@ class Logger(object):
     def terminal_only(self, message):
         with STDOUT_LOCK:
             message = sanitize_terminal_text(apply_privacy_substitutions(message))
-            colorized_message = apply_color_to_text(message)
+            colorized_message = apply_color_to_text(truncate_string_per_line(message, TRUNCATE_CHARS) if TRUNCATE_CHARS else message)
             self.terminal.write(colorized_message)
             self.terminal.flush()
 
@@ -4702,7 +4754,8 @@ class ColorStream(object):
         self.terminal = stream
 
     def write(self, message):
-        coloured = apply_color_to_text(sanitize_terminal_text(apply_privacy_substitutions(message)))
+        message = sanitize_terminal_text(apply_privacy_substitutions(message))
+        coloured = apply_color_to_text(truncate_string_per_line(message, TRUNCATE_CHARS) if TRUNCATE_CHARS else message)
         self.terminal.write(coloured)
         self.terminal.flush()
 
@@ -12651,34 +12704,52 @@ def _wizard_install_chromium_dependency(method: str) -> bool:
     return False
 
 
-# Builds the --help examples epilog using commands that match the detected install method (manual, pip, docker, compose)
+# Renders the --help examples: one heading per task, then a comment and the command it describes
+def _render_help_examples(groups, guide_url: str) -> str:
+    blocks = []
+    for title, entries in groups:
+        block = [f"{title}:"]
+        for comment, command in entries:
+            if len(block) > 1:
+                block.append("")
+            block.extend(f"  # {line}" for line in comment.split("\n"))
+            if command:
+                block.append(f"  {command}")
+        blocks.append("\n".join(block))
+    return "Examples:\n\n" + "\n\n".join(blocks) + f"\n\nGuide: {guide_url}\n"
+
+
+# Returns the --help epilog, with commands that match the detected install method (manual, pip, docker, compose)
 def _build_help_epilog() -> str:
     method = _wizard_install_method()
     prefix = _wizard_cmd_prefix(method)
     web_prefix = _wizard_cmd_prefix(method, web_dashboard=True)
     # Inside a container the host OS is not knowable (the container is always Linux), so the Firefox mount example assumes a Linux host and is labelled as such
     if method in ("docker", "compose"):
-        ff_comment = "  # Logged in via Firefox - full detail (Linux host shown; mount your Firefox profile)\n"
+        import_comment = "Import an Instagram session from Firefox (Linux host shown; mount your Firefox profile)"
     else:
-        ff_comment = "  # Logged in via Firefox - full detail (stories, reels, follower churn)\n"
-    return (
-        "Examples:\n"
-        "  # Guided setup (recommended for the first run)\n"
-        f"  {prefix} --setup\n"
-        "\n"
-        "  # No login (new posts, bio and follower counts)\n"
-        f"  {prefix} <username>\n"
-        "\n"
-        f"{ff_comment}"
-        f"  {_firefox_import_cmd(method)}\n"
-        f"  {prefix} -u <your_user> <username>\n"
-        "\n"
-        "  # Point-and-click web dashboard (add targets in the browser)\n"
-        f"  {web_prefix} --web-dashboard\n"
-        "\n"
-        "  # Save a Discord or ntfy webhook URL through a hidden prompt\n"
-        f"  {prefix} --set-webhook-url\n"
+        import_comment = "Import an Instagram session from Firefox"
+    groups = (
+        ("Getting started", (
+            ("Guided setup (recommended for the first run)", f"{prefix} --setup"),
+            ("Check the setup before relying on it", f"{prefix} --doctor <username>"),
+            ("Start monitoring without login (new posts, bio and follower counts)", f"{prefix} <username>"),
+        )),
+        ("Full detail (stories, reels, follower churn)", (
+            (import_comment, _firefox_import_cmd(method)),
+            ("Then monitor with that session", f"{prefix} -u <your_user> <username>"),
+        )),
+        ("Notifications", (
+            ("Save a Discord or ntfy webhook URL through a hidden prompt", f"{prefix} --set-webhook-url"),
+            ("Send one test email", f"{prefix} --send-test-email"),
+            ("Send one test webhook", f"{prefix} --send-test-webhook"),
+        )),
+        ("Information and diagnostics", (
+            ("Point-and-click web dashboard (add targets in the browser)", f"{web_prefix} --web-dashboard"),
+            ("Trace what the tool is doing", f"{prefix} <username> --debug"),
+        )),
     )
+    return _render_help_examples(groups, QUICK_START_GUIDE_URL)
 
 
 # Reads a single line of input, exiting cleanly if the user aborts with Ctrl+C or Ctrl+D
@@ -14147,7 +14218,7 @@ def apply_diagnostic_cli_overrides(args: argparse.Namespace) -> None:
 def run_main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
-    global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H
+    global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H, TRUNCATE_CHARS
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
     global SECRET_SOURCES
 
@@ -14289,7 +14360,44 @@ def run_main():
     )
 
     # Notifications
-    notify = parser.add_argument_group("Email Notifications")
+    import_grp = parser.add_argument_group("Browser session import")
+    import_grp.add_argument(
+        "--import-browser-session",
+        action="store_true",
+        help="Import browser session cookies into Instaloader (use --browser to pick the source)"
+    )
+    import_grp.add_argument(
+        "--browser",
+        dest="browser",
+        choices=list(IMPORT_BROWSERS),
+        default="firefox",
+        help="Browser to import the session from: firefox (default, all platforms), chrome (Google Chrome), brave or chromium (the standalone open-source Chromium browser, not Chrome). chrome, brave and chromium require the 'pycookiecheat' package and work only on macOS and Linux; Edge, Opera, Vivaldi and Arc are not supported"
+    )
+    import_grp.add_argument(
+        "--browser-profile",
+        dest="browser_profile",
+        metavar="PROFILE",
+        help="Profile to import from, for any browser: a Firefox profile name (e.g. 'default-release') or a Chromium profile directory (e.g. 'Default' or 'Profile 1'); if omitted and several exist, it will list them to choose from"
+    )
+    import_grp.add_argument(
+        "--import-firefox-session",
+        action="store_true",
+        help="Deprecated alias for --import-browser-session --browser firefox"
+    )
+    import_grp.add_argument(
+        "--cookie-file",
+        dest="cookie_file",
+        metavar="COOKIEFILE",
+        help="Advanced: explicit path to the cookie database (Firefox cookies.sqlite or a Chromium Cookies DB); overrides --browser-profile"
+    )
+    import_grp.add_argument(
+        "--session-file",
+        dest="session_file",
+        metavar="SESSIONFILE",
+        help="Path to save Instaloader session; if omitted, it will save to the default one"
+    )
+
+    notify = parser.add_argument_group("Email notifications")
     notify.add_argument(
         "-s", "--notify-status",
         dest="status_notification",
@@ -14319,6 +14427,58 @@ def run_main():
     )
 
     # Intervals & timers
+    webhook_grp = parser.add_argument_group("Webhook notifications")
+    webhook_grp.add_argument(
+        "--webhook",
+        dest="webhook_enabled",
+        action="store_true",
+        default=None,
+        help="Enable webhook notification system (individual types like --webhook-status must still be enabled)"
+    )
+    webhook_grp.add_argument(
+        "--no-webhook",
+        dest="no_webhook",
+        action="store_true",
+        default=None,
+        help="Disable webhook notifications"
+    )
+    webhook_grp.add_argument(
+        "--webhook-url",
+        dest="webhook_url",
+        metavar="URL",
+        type=str,
+        help="Discord webhook or ntfy topic URL for notifications"
+    )
+    webhook_grp.add_argument("--webhook-provider", choices=("discord", "ntfy"), help="Webhook request format (default: discord)")
+    webhook_grp.add_argument(
+        "--webhook-status",
+        dest="webhook_status",
+        action="store_true",
+        default=None,
+        help="Send webhook on status changes (posts/reels/stories/bio/profile pic)"
+    )
+    webhook_grp.add_argument(
+        "--webhook-followers",
+        dest="webhook_followers",
+        action="store_true",
+        default=None,
+        help="Send webhook on follower changes"
+    )
+    webhook_grp.add_argument(
+        "--webhook-errors",
+        dest="webhook_errors",
+        action="store_true",
+        default=None,
+        help="Send webhook on errors"
+    )
+    webhook_grp.add_argument(
+        "--send-test-webhook",
+        dest="send_test_webhook",
+        action="store_true",
+        help="Send test webhook notification to verify settings"
+    )
+
+    # Browser session import options
     times = parser.add_argument_group("Intervals & timers")
     times.add_argument(
         "-c", "--check-interval",
@@ -14499,78 +14659,6 @@ def run_main():
     )
 
     # Features & output
-    opts = parser.add_argument_group("Features & output")
-    opts.add_argument(
-        "-k", "--no-profile-pic-detect",
-        dest="do_not_detect_changed_profile_pic",
-        action="store_false",
-        default=None,
-        help="Disable detection of changed profile picture"
-    )
-    opts.add_argument(
-        "--no-detect-collab-posts",
-        dest="detect_collab_posts",
-        action="store_false",
-        default=None,
-        help="Disable detection of collab posts leaking from private accounts via the public web_profile_info endpoint"
-    )
-    opts.add_argument(
-        "-b", "--csv-file",
-        dest="csv_file",
-        metavar="CSV_FILENAME",
-        type=str,
-        help="Write all activities and profile changes to CSV file"
-    )
-    opts.add_argument(
-        "-o", "--output-dir",
-        dest="output_dir",
-        metavar="PATH",
-        help="Root directory for saving all generated files (logs, images, videos, json)",
-    )
-    opts.add_argument(
-        "-d", "--disable-logging",
-        dest="disable_logging",
-        action="store_true",
-        default=None,
-        help="Disable logging to instagram_monitor_<username>.log"
-    )
-    opts.add_argument(
-        "--no-color",
-        dest="no_color",
-        action="store_true",
-        default=None,
-        help="Disable coloured output in the terminal"
-    )
-    opts.add_argument(
-        "--verbose",
-        dest="verbose_mode",
-        action="store_true",
-        default=None,
-        help="Enable verbose mode (shows timing details, next check schedule and interval info)"
-    )
-    opts.add_argument(
-        "--debug",
-        dest="debug_mode",
-        action="store_true",
-        default=None,
-        help="Enable debug mode (full API traces, internal logic logs)"
-    )
-    opts.add_argument(
-        "--error-threshold",
-        dest="error_threshold",
-        metavar="NUM",
-        type=int,
-        default=None,
-        help="Number of consecutive errors required to trigger an alert (default: 2)"
-    )
-    opts.add_argument(
-        "--analyze-follows",
-        dest="analyze_follows",
-        action="store_true",
-        help="Analyze follow relationships (mutual, not-following-back, fans) for the target(s) from the already-saved follower/following lists and exit; makes no network requests"
-    )
-
-    # Terminal dashboard options
     term_opts = parser.add_argument_group("Terminal dashboard")
     term_opts.add_argument(
         "--dashboard",
@@ -14619,95 +14707,85 @@ def run_main():
     )
 
     # Webhook options
-    webhook_grp = parser.add_argument_group("Webhook notifications")
-    webhook_grp.add_argument(
-        "--webhook",
-        dest="webhook_enabled",
-        action="store_true",
+    opts = parser.add_argument_group("Features & output")
+    opts.add_argument(
+        "-k", "--no-profile-pic-detect",
+        dest="do_not_detect_changed_profile_pic",
+        action="store_false",
         default=None,
-        help="Enable webhook notification system (individual types like --webhook-status must still be enabled)"
+        help="Disable detection of changed profile picture"
     )
-    webhook_grp.add_argument(
-        "--no-webhook",
-        dest="no_webhook",
-        action="store_true",
+    opts.add_argument(
+        "--no-detect-collab-posts",
+        dest="detect_collab_posts",
+        action="store_false",
         default=None,
-        help="Disable webhook notifications"
+        help="Disable detection of collab posts leaking from private accounts via the public web_profile_info endpoint"
     )
-    webhook_grp.add_argument(
-        "--webhook-url",
-        dest="webhook_url",
-        metavar="URL",
+    opts.add_argument(
+        "-b", "--csv-file",
+        dest="csv_file",
+        metavar="CSV_FILENAME",
         type=str,
-        help="Discord webhook or ntfy topic URL for notifications"
+        help="Write all activities and profile changes to CSV file"
     )
-    webhook_grp.add_argument("--webhook-provider", choices=("discord", "ntfy"), help="Webhook request format (default: discord)")
-    webhook_grp.add_argument(
-        "--webhook-status",
-        dest="webhook_status",
+    opts.add_argument(
+        "-o", "--output-dir",
+        dest="output_dir",
+        metavar="PATH",
+        help="Root directory for saving all generated files (logs, images, videos, json)",
+    )
+    opts.add_argument(
+        "-d", "--disable-logging",
+        dest="disable_logging",
         action="store_true",
         default=None,
-        help="Send webhook on status changes (posts/reels/stories/bio/profile pic)"
+        help="Disable logging to instagram_monitor_<username>.log"
     )
-    webhook_grp.add_argument(
-        "--webhook-followers",
-        dest="webhook_followers",
+    opts.add_argument(
+        "--no-color",
+        dest="no_color",
         action="store_true",
         default=None,
-        help="Send webhook on follower changes"
+        help="Disable coloured output in the terminal"
     )
-    webhook_grp.add_argument(
-        "--webhook-errors",
-        dest="webhook_errors",
+    opts.add_argument(
+        "--truncate",
+        dest="truncate",
+        metavar="N",
+        type=int,
+        help="Max characters per screen line (not log), use 999 to auto-detect terminal width, ignored if -d is set"
+    )
+    opts.add_argument(
+        "--verbose",
+        dest="verbose_mode",
         action="store_true",
         default=None,
-        help="Send webhook on errors"
+        help="Enable verbose mode (shows timing details, next check schedule and interval info)"
     )
-    webhook_grp.add_argument(
-        "--send-test-webhook",
-        dest="send_test_webhook",
+    opts.add_argument(
+        "--debug",
+        dest="debug_mode",
         action="store_true",
-        help="Send test webhook notification to verify settings"
+        default=None,
+        help="Enable debug mode (full API traces, internal logic logs)"
+    )
+    opts.add_argument(
+        "--error-threshold",
+        dest="error_threshold",
+        metavar="NUM",
+        type=int,
+        default=None,
+        help="Number of consecutive errors required to trigger an alert (default: 2)"
+    )
+    opts.add_argument(
+        "--analyze-follows",
+        dest="analyze_follows",
+        action="store_true",
+        help="Analyze follow relationships (mutual, not-following-back, fans) for the target(s) from the already-saved follower/following lists and exit; makes no network requests"
     )
 
-    # Browser session import options
-    import_grp = parser.add_argument_group("Browser session import")
-    import_grp.add_argument(
-        "--import-browser-session",
-        action="store_true",
-        help="Import browser session cookies into Instaloader (use --browser to pick the source)"
-    )
-    import_grp.add_argument(
-        "--browser",
-        dest="browser",
-        choices=list(IMPORT_BROWSERS),
-        default="firefox",
-        help="Browser to import the session from: firefox (default, all platforms), chrome (Google Chrome), brave or chromium (the standalone open-source Chromium browser, not Chrome). chrome, brave and chromium require the 'pycookiecheat' package and work only on macOS and Linux; Edge, Opera, Vivaldi and Arc are not supported"
-    )
-    import_grp.add_argument(
-        "--browser-profile",
-        dest="browser_profile",
-        metavar="PROFILE",
-        help="Profile to import from, for any browser: a Firefox profile name (e.g. 'default-release') or a Chromium profile directory (e.g. 'Default' or 'Profile 1'); if omitted and several exist, it will list them to choose from"
-    )
-    import_grp.add_argument(
-        "--import-firefox-session",
-        action="store_true",
-        help="Deprecated alias for --import-browser-session --browser firefox"
-    )
-    import_grp.add_argument(
-        "--cookie-file",
-        dest="cookie_file",
-        metavar="COOKIEFILE",
-        help="Advanced: explicit path to the cookie database (Firefox cookies.sqlite or a Chromium Cookies DB); overrides --browser-profile"
-    )
-    import_grp.add_argument(
-        "--session-file",
-        dest="session_file",
-        metavar="SESSIONFILE",
-        help="Path to save Instaloader session; if omitted, it will save to the default one"
-    )
-
+    # Terminal dashboard options
     args = parser.parse_args()
 
     apply_diagnostic_cli_overrides(args)
@@ -15297,6 +15375,8 @@ def run_main():
     if args.disable_logging is True:
         DISABLE_LOGGING = True
 
+    TRUNCATE_CHARS = resolve_truncate_chars(args.truncate, TRUNCATE_CHARS, DISABLE_LOGGING)
+
     # Re-initialize colour output to pick up any theme changes from config/dotenv
     init_color_output(stdout_bck)
 
@@ -15446,6 +15526,8 @@ def run_main():
         summary_rows.append(StartupSummaryRow("CSV output", CSV_FILE or "Disabled", concise=bool(CSV_FILE)))
     else:
         summary_rows.append(StartupSummaryRow("CSV output", f"Per-target files, base: {CSV_FILE}" if CSV_FILE else "Disabled", concise=bool(CSV_FILE)))
+
+    summary_rows.append(StartupSummaryRow("Terminal truncation", f"{TRUNCATE_CHARS} chars" if TRUNCATE_CHARS else "Disabled", concise=bool(TRUNCATE_CHARS)))
 
     summary_rows.append(StartupSummaryRow("HTTP backend", f"curl_cffi (impersonate: {_curl_cffi_impersonate_display()})" if _curl_cffi_backend_active() else "requests", concise=True))
     summary_rows.append(StartupSummaryRow("HTTP jitter/back-off", str(ENABLE_JITTER), concise=bool(ENABLE_JITTER)))

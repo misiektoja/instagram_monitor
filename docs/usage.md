@@ -634,6 +634,11 @@ The replacement happens before output is displayed, logged or sent. Internal key
 
 Biographies, captions, story text, comments and usernames come from Instagram and can contain terminal control sequences. Printed unchanged, those could clear your screen, retitle the window or overwrite a line you already read. The tool removes control characters from everything it prints and logs, keeping only tabs, newlines and its own colour codes. Nothing is lost from readable text.
 
+<a id="terminal-line-width"></a>
+## Terminal Line Width
+
+Captions, biographies and long file paths can wrap across several terminal lines. Set `TRUNCATE_CHARS` or use the `--truncate N` flag to cut each screen line to a maximum width. Use `999` to auto-detect the terminal width. The log file always keeps the full line, so the setting is ignored when logging is disabled with `-d`. It is off by default and needs the optional `wcwidth` library to measure display width, otherwise lines are left untouched.
+
 <a id="shadowban-and-flagged-account-detection"></a>
 ## Shadowban and Flagged Account Detection
 
