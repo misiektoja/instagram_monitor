@@ -302,10 +302,39 @@ FOLLOWEE_DELAY_PER_BATCH = 0
 #   names is never repeated on the other surface
 # - "rest": always read over REST and report the error instead of retrying
 # - "graphql": always read over GraphQL, which is what versions before 4.0 did
+# - "browser": experimental. Read the lists by driving a real browser through Instagram's web pages
+#   instead of calling its API. Needs the optional 'playwright' package and a downloaded browser, uses
+#   far more CPU and memory, and is much slower. It is never chosen automatically. See the settings
+#   below and the documentation before turning it on
 #
-# Anonymous mode is unaffected, since neither surface lists followers without a session
+# Anonymous mode is unaffected, since no surface lists followers without a session
 # Can also be set using the --follow-list-source flag
 FOLLOW_LIST_SOURCE = "auto"
+
+# Settings below apply only when FOLLOW_LIST_SOURCE is "browser"
+#
+# Install support with: pip install playwright   then:   playwright install chromium
+
+# Browser Playwright starts
+# "chromium" (default) uses the browser Playwright downloads, "chrome" or "msedge" use a copy already
+# installed on this machine, which looks more like an ordinary visitor but has to be installed first
+FOLLOW_LIST_BROWSER_CHANNEL = "chromium"
+
+# Whether the browser runs without a visible window
+# It is a real browser either way, not the stripped-down headless shell. Set this to False when you
+# want to watch what it does, which needs a desktop session
+FOLLOW_LIST_BROWSER_HEADLESS = True
+
+# Where the browser profile is kept between runs, one directory per session account
+# Reusing a profile keeps cookies, local storage and browser state stable instead of arriving as a
+# brand new machine on every check. Leave empty to keep it next to the output directory
+FOLLOW_LIST_BROWSER_PROFILE_DIR = ""
+
+# Seconds to wait after each scroll of the follower list
+FOLLOW_LIST_BROWSER_SCROLL_DELAY = 1.5
+
+# Seconds the browser waits for a page or an element before giving up
+FOLLOW_LIST_BROWSER_TIMEOUT = 30
 
 # ----------------------------
 # Account Safety
@@ -1203,6 +1232,11 @@ FOLLOWEE_LIMIT_TO_FETCH = 0
 FOLLOWER_DELAY_PER_BATCH = 0
 FOLLOWEE_DELAY_PER_BATCH = 0
 FOLLOW_LIST_SOURCE = "auto"
+FOLLOW_LIST_BROWSER_CHANNEL = "chromium"
+FOLLOW_LIST_BROWSER_HEADLESS = True
+FOLLOW_LIST_BROWSER_PROFILE_DIR = ""
+FOLLOW_LIST_BROWSER_SCROLL_DELAY = 1.5
+FOLLOW_LIST_BROWSER_TIMEOUT = 30
 IDENTITY_BUDGET_PER_DAY = 0
 CIRCUIT_BREAKER = True
 ADVANCED_FOLLOWER_FETCH = False
@@ -1342,6 +1376,7 @@ SMTP_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#smtp-settings"
 WEBHOOK_GUIDE_URL = DOCUMENTATION_URL + "/usage/#webhook-notifications"
 PROXY_GUIDE_URL = DOCUMENTATION_URL + "/usage/#routing-traffic-through-a-proxy"
 TLS_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#tls-verification"
+FOLLOW_LIST_SOURCE_GUIDE_URL = DOCUMENTATION_URL + "/usage/#follower-list-source"
 ANTI_DETECTION_INTERVAL_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#keep-the-polling-interval-reasonable"
 ANTI_DETECTION_SESSION_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#sign-in-using-session-mode-with-browser-cookies"
 CONNECTION_ERRORS_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#connection-errors-during-monitoring"
@@ -2916,7 +2951,7 @@ def create_web_dashboard_app():
             if requested_backend == 'curl_cffi' and not _CURL_CFFI_AVAILABLE:
                 return False, [], "'http_backend' cannot use curl_cffi because it is not installed", 400
         if 'follow_list_source' in data and str(data['follow_list_source']).strip().lower() not in FOLLOW_LIST_SOURCES:
-            return False, [], "'follow_list_source' must be 'auto', 'rest' or 'graphql'", 400
+            return False, [], "'follow_list_source' must be 'auto', 'rest', 'graphql' or 'browser'", 400
         if 'impersonate' in data:
             impersonate_error = validate_impersonate_target(data['impersonate'])
             if impersonate_error is not None:
@@ -2969,7 +3004,7 @@ def create_web_dashboard_app():
                 elif key == 'follow_list_source':
                     processed_val = str(processed_val).strip().lower()
                     if processed_val not in FOLLOW_LIST_SOURCES:
-                        print(f"* Error: Invalid follow list source '{processed_val}'. Must be 'auto', 'rest' or 'graphql'.")
+                        print(f"* Error: Invalid follow list source '{processed_val}'. Must be 'auto', 'rest', 'graphql' or 'browser'.")
                         return current_val
                 elif key == 'http_backend':
                     processed_val = str(processed_val).strip().lower()
@@ -9503,7 +9538,7 @@ FAILURE_TERMS = {
     'proxy_unresolved': ("could not resolve proxy",),
     'dns_failure': ("could not resolve host", "temporary failure in name resolution", "name or service not known", "nodename nor servname", "curl: (6)"),
     'network': ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl"),
-    'schema_change': ("empty data for posts", "fetching post metadata failed", "not subscriptable", "unexpected follower list reply"),
+    'schema_change': ("empty data for posts", "fetching post metadata failed", "not subscriptable", "unexpected follower list reply", "follower list dialog"),
 }
 
 # Evaluation order of FAILURE_TERMS, matching the branch order in classify_error_message
@@ -10316,7 +10351,7 @@ def build_follow_string(enabled, limit, batch, delay, alt_format=False):
 # be combined with this GPL-3.0-or-later project, so read it for behaviour but never copy from it.
 
 # Sources FOLLOW_LIST_SOURCE accepts
-FOLLOW_LIST_SOURCES = ('auto', 'rest', 'graphql')
+FOLLOW_LIST_SOURCES = ('auto', 'rest', 'graphql', 'browser')
 
 # Accounts asked for per REST page, matching what the web app requests while a follower list is scrolled
 FOLLOW_LIST_REST_PAGE_SIZE = 25
@@ -10486,6 +10521,278 @@ def iter_graphql_follow_list(profile, kind: str, record_exposure: bool = False):
     return _iter_accounted_follow_list(candidates) if record_exposure else candidates
 
 
+# ----------------------------
+# Browser follow list provider (experimental)
+# ----------------------------
+#
+# Reads follower and following lists by driving a real Chromium build through Instagram's own web app:
+# open the profile, click the followers link, scroll the dialog and read the names the page renders.
+# It exists to test the one open question behind the reliability reports, whether Instagram scores the
+# client as well as the volume, so it navigates the interface rather than calling the API from a page.
+#
+# This is not a way around a challenge and makes no promise of avoiding one. When Instagram answers
+# with a challenge or the login page the scan stops and asks you to clear it in your own browser. No
+# password is ever typed into this browser and no verification step is ever answered by it.
+#
+# The identity budget and the circuit breaker apply exactly as they do to the HTTP sources, so a
+# browser scan can never return more names in a day than the account is allowed to spend.
+
+# Root directory name for the per-account browser profile kept between runs
+BROWSER_PROFILE_DIRNAME = "instagram_monitor_browser_profile"
+
+# Consecutive scrolls that may add no new name before the list is treated as fully rendered
+BROWSER_STALL_LIMIT = 3
+
+# Shortfall against the reported count that is tolerated before a scan is rejected as truncated
+BROWSER_SHORTFALL_TOLERANCE = 10
+
+# URL fragments meaning Instagram answered with something other than the requested profile
+BROWSER_INTERRUPTION_PAGES = (
+    ("/challenge", "a challenge page"),
+    ("/accounts/suspended", "a suspended account page"),
+    ("/accounts/disabled", "a disabled account page"),
+    ("/accounts/login", "the login page, so this session is not logged in"),
+)
+
+# Collects the usernames currently rendered in the open follow list dialog
+BROWSER_DIALOG_NAMES_JS = """() => {
+  const dialog = document.querySelector('div[role="dialog"]');
+  if (!dialog) return null;
+  const names = [];
+  const seen = new Set();
+  for (const anchor of dialog.querySelectorAll('a[href^="/"]')) {
+    const match = (anchor.getAttribute('href') || '').match(/^\\/([A-Za-z0-9._]+)\\/$/);
+    if (match && !seen.has(match[1])) { seen.add(match[1]); names.push(match[1]); }
+  }
+  return names;
+}"""
+
+# Scrolls the tallest scrollable box inside the dialog, which is the list itself whatever it is called today
+BROWSER_DIALOG_SCROLL_JS = """() => {
+  const dialog = document.querySelector('div[role="dialog"]');
+  if (!dialog) return false;
+  let target = null, best = 0;
+  for (const element of dialog.querySelectorAll('*')) {
+    const delta = element.scrollHeight - element.clientHeight;
+    if (delta > best && element.clientHeight > 100) { best = delta; target = element; }
+  }
+  if (!target) return false;
+  target.scrollTop = target.scrollHeight;
+  return true;
+}"""
+
+
+# Raised when the browser provider cannot run or Instagram interrupted the scan
+class BrowserFollowListError(RuntimeError):
+    pass
+
+
+# Carries one username harvested from the rendered page, which is all the dialog exposes
+class BrowserFollowListEntry:
+    __slots__ = ('username',)
+
+    # Stores the harvested username
+    def __init__(self, username: str):
+        self.username = username
+
+
+# Returns whether the optional Playwright package can be imported
+def playwright_available() -> bool:
+    try:
+        return importlib.util.find_spec("playwright") is not None
+    except (AttributeError, ImportError, ValueError):
+        return False
+
+
+# Returns the persistent browser profile directory for the session account, kept apart per account
+def browser_profile_dir() -> str:
+    if FOLLOW_LIST_BROWSER_PROFILE_DIR:
+        base = os.path.abspath(os.path.expanduser(str(FOLLOW_LIST_BROWSER_PROFILE_DIR)))
+    else:
+        base = os.path.abspath(os.path.join(OUTPUT_DIR if OUTPUT_DIR else ".", BROWSER_PROFILE_DIRNAME))
+    return os.path.join(base, re.sub(r'[^A-Za-z0-9._-]', '_', exposure_account_name()))
+
+
+# Returns the logged-in Instagram cookies in the shape Playwright's add_cookies expects
+# The element type is Playwright's own SetCookieParam, which cannot be named here without making an
+# optional dependency a required import
+def browser_session_cookies(bot) -> List[Any]:
+    jar = req.utils.dict_from_cookiejar(bot.context._session.cookies)
+    return [{'name': name, 'value': str(value), 'domain': ".instagram.com", 'path': "/", 'secure': True, 'sameSite': "Lax"} for name, value in jar.items() if name and value]
+
+
+# Returns the proxy settings for the browser, keeping any credentials out of the server URL
+def browser_proxy_settings() -> Optional[Dict[str, str]]:
+    if not PROXY_ENABLED or not PROXY_URL:
+        return None
+    parts = urlsplit(str(PROXY_URL))
+    host = parts.hostname or ""
+    if not host:
+        return None
+    server = f"{parts.scheme or 'http'}://{host}" + (f":{parts.port}" if parts.port else "")
+    settings = {'server': server}
+    if parts.username:
+        settings['username'] = parts.username
+        settings['password'] = parts.password or ""
+    return settings
+
+
+# Returns the launch options for the persistent browser context
+def browser_launch_options() -> Dict[str, Any]:
+    options: Dict[str, Any] = {
+        'headless': bool(FOLLOW_LIST_BROWSER_HEADLESS),
+        'channel': str(FOLLOW_LIST_BROWSER_CHANNEL or "chromium"),
+        'locale': "en-US",
+        # The question this provider tests is whether the client matters, so it does not announce
+        # itself as automation. It is still an ordinary Chromium, not an anti-detect build
+        'args': ["--disable-blink-features=AutomationControlled"],
+    }
+    if USER_AGENT:
+        options['user_agent'] = USER_AGENT
+    proxy = browser_proxy_settings()
+    if proxy:
+        options['proxy'] = proxy
+    if not VERIFY_SSL:
+        options['ignore_https_errors'] = True
+    return options
+
+
+# Stops the scan when Instagram answered with a challenge, a login page or an account notice
+def guard_browser_page_state(page) -> None:
+    url = str(getattr(page, 'url', "") or "")
+    lowered = url.lower()
+    for marker, description in BROWSER_INTERRUPTION_PAGES:
+        if marker in lowered:
+            raise BrowserFollowListError(f"Instagram answered with {description}. Open Instagram in your own browser, clear it there, then resume with --clear-breaker")
+
+
+# Yields each new batch of names the open dialog renders, scrolling until it stops growing
+def harvest_follow_list_dialog(page, scroll_delay: float, stall_limit: int = BROWSER_STALL_LIMIT, stop_event=None):
+    seen: set = set()
+    stalls = 0
+
+    while True:
+        if stop_event is not None and stop_event.is_set():
+            return
+
+        rendered = page.evaluate(BROWSER_DIALOG_NAMES_JS)
+        if rendered is None:
+            raise BrowserFollowListError("Instagram's follower list dialog closed before the list was read")
+
+        fresh = []
+        for name in rendered:
+            if isinstance(name, str) and name and name not in seen:
+                seen.add(name)
+                fresh.append(name)
+
+        if fresh:
+            stalls = 0
+            yield fresh
+        else:
+            stalls += 1
+            if stalls >= stall_limit:
+                return
+
+        if not page.evaluate(BROWSER_DIALOG_SCROLL_JS):
+            return
+        page.wait_for_timeout(max(0, int(float(scroll_delay) * 1000)))
+
+
+# Returns whether the browser provider can run here, plus a detail line and the action that fixes it
+def browser_follow_list_readiness() -> Tuple[bool, str, str]:
+    if not playwright_available():
+        return False, "The 'playwright' package is not installed", "Install it with: pip install playwright, then run: playwright install chromium"
+
+    channel = str(FOLLOW_LIST_BROWSER_CHANNEL or "chromium")
+    detail = f"Channel: {channel}, {'headless' if FOLLOW_LIST_BROWSER_HEADLESS else 'windowed'}, profile: {browser_profile_dir()}"
+    if channel != "chromium":
+        return True, f"{detail}. A '{channel}' installation on this machine is used, which is only checked when a scan runs", ""
+
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as driver:
+            executable = driver.chromium.executable_path
+    except Exception as probe_error:
+        return False, f"Playwright could not be started: {format_error_message(probe_error)}", "Reinstall it with: pip install --upgrade playwright"
+
+    if not executable or not os.path.isfile(executable):
+        return False, "Playwright is installed but its Chromium build is missing", "Download it with: playwright install chromium"
+    return True, detail, ""
+
+
+# Drives a real browser through Instagram's web app and yields each new batch of rendered names
+def browser_follow_list_batches(bot, profile, kind: str, stop_event=None):
+    if kind not in ('followers', 'following'):
+        raise ValueError(f"unsupported follow list kind '{kind}'")
+    if not playwright_available():
+        raise BrowserFollowListError("The browser follow list source needs the optional 'playwright' package. Install it with: pip install playwright, then run: playwright install chromium")
+
+    from playwright.sync_api import sync_playwright
+
+    target = profile.username
+    user_data_dir = browser_profile_dir()
+    os.makedirs(user_data_dir, exist_ok=True)
+
+    with sync_playwright() as driver:
+        try:
+            browser_context = driver.chromium.launch_persistent_context(user_data_dir, **browser_launch_options())
+        except Exception as launch_error:
+            raise BrowserFollowListError(f"The browser could not start: {format_error_message(launch_error)}. Run 'playwright install chromium' or set FOLLOW_LIST_BROWSER_CHANNEL to a browser installed here") from launch_error
+
+        try:
+            browser_context.set_default_timeout(max(1, int(FOLLOW_LIST_BROWSER_TIMEOUT)) * 1000)
+            browser_context.add_cookies(browser_session_cookies(bot))
+            page = browser_context.pages[0] if browser_context.pages else browser_context.new_page()
+
+            page.goto(f"https://www.instagram.com/{target}/", wait_until="domcontentloaded")
+            guard_browser_page_state(page)
+
+            try:
+                page.click(f'a[href="/{target}/{kind}/"]')
+                page.wait_for_selector('div[role="dialog"] a[href^="/"]')
+            except Exception as dialog_error:
+                # A challenge is the more useful explanation when both could apply, so it is reported first
+                guard_browser_page_state(page)
+                raise BrowserFollowListError(f"Instagram's follower list dialog did not open for {target}, so the page layout may have changed") from dialog_error
+
+            guard_browser_page_state(page)
+            yield from harvest_follow_list_dialog(page, FOLLOW_LIST_BROWSER_SCROLL_DELAY, stop_event=stop_event)
+        finally:
+            try:
+                browser_context.close()
+            except Exception:
+                pass
+
+
+# Yields rendered follow list entries, counting each batch against the account before it is handed on
+def iter_browser_follow_list(bot, profile, kind: str, record_exposure: bool = False, stop_event=None):
+    if not bot.context.is_logged_in:
+        raise instaloader.exceptions.LoginRequiredException(f"Login required to get a profile's {kind}.")
+
+    expected = int(getattr(profile, 'followers' if kind == 'followers' else 'followees', 0) or 0)
+    harvested = 0
+
+    for batch in browser_follow_list_batches(bot, profile, kind, stop_event=stop_event):
+        if record_exposure:
+            budget_left = identity_budget_remaining()
+            if budget_left is not None:
+                if budget_left <= 0:
+                    return
+                batch = batch[:budget_left]
+            record_identities_returned(len(batch))
+
+        harvested += len(batch)
+        debug_print("Instagram browser follow list batch", kind=kind, accounts=len(batch), total=harvested)
+
+        for name in batch:
+            yield BrowserFollowListEntry(name)
+
+    # A dialog that stops rendering early looks the same as a finished list, so a large shortfall is
+    # reported instead of returned. Saving it would drop the missing accounts from the next comparison
+    if expected > 0 and (expected - harvested) > max(BROWSER_SHORTFALL_TOLERANCE, expected // 10):
+        raise BrowserFollowListError(f"The browser rendered only {harvested} of about {expected} {kind} before the dialog stopped growing, so the list is incomplete")
+
+
 # Returns True when a REST failure describes the endpoint rather than the account, the only case worth a second attempt
 def rest_failure_is_recoverable(error: BaseException) -> bool:
     # A 404 means the path is gone and a schema error means the reply changed, both Instagram API changes.
@@ -10527,11 +10834,13 @@ def follow_list_source_display() -> str:
     source = active_follow_list_source()
     if source == 'auto':
         return "auto (REST, GraphQL on failure)"
+    if source == 'browser':
+        return f"browser (experimental, {'headless' if FOLLOW_LIST_BROWSER_HEADLESS else 'windowed'} {FOLLOW_LIST_BROWSER_CHANNEL})"
     return "REST" if source == 'rest' else "GraphQL"
 
 
 # Returns the follower or following iterator selected for one target
-def follow_list_generator(bot, profile, kind: str, record_exposure: bool = False):
+def follow_list_generator(bot, profile, kind: str, record_exposure: bool = False, stop_event=None):
     source = active_follow_list_source()
 
     # The REST endpoints answer only for a logged-in session, and anonymous mode already fails with
@@ -10541,6 +10850,11 @@ def follow_list_generator(bot, profile, kind: str, record_exposure: bool = False
 
     if source == 'rest':
         return iter_rest_follow_list(bot, profile, kind, record_exposure=record_exposure)
+
+    # The browser source is never chosen by auto. It is slower, heavier and experimental, so it runs
+    # only when it was asked for by name
+    if source == 'browser':
+        return iter_browser_follow_list(bot, profile, kind, record_exposure=record_exposure, stop_event=stop_event)
 
     return iter_auto_follow_list(bot, profile, kind, record_exposure=record_exposure)
 
@@ -11330,7 +11644,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             _thread_local.FETCH_TYPE = 'follower'
             followers = fetch_usernames_paginated(
                 bot,
-                get_generator_fn=lambda: follow_list_generator(bot, profile, 'followers', record_exposure=True),
+                get_generator_fn=lambda: follow_list_generator(bot, profile, 'followers', record_exposure=True, stop_event=stop_event),
                 max_per_batch=FOLLOWERS_PER_BATCH,
                 total_limit=FOLLOWER_LIMIT_TO_FETCH,
                 fetch_delay=FOLLOWER_DELAY_PER_BATCH,
@@ -11479,7 +11793,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             _thread_local.FETCH_TYPE = 'followee'
             followings = fetch_usernames_paginated(
                 bot,
-                get_generator_fn=lambda: follow_list_generator(bot, profile, 'following', record_exposure=True),
+                get_generator_fn=lambda: follow_list_generator(bot, profile, 'following', record_exposure=True, stop_event=stop_event),
                 max_per_batch=FOLLOWEES_PER_BATCH,
                 total_limit=FOLLOWEE_LIMIT_TO_FETCH,
                 fetch_delay=FOLLOWEE_DELAY_PER_BATCH,
@@ -12366,7 +12680,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         _thread_local.FETCH_TYPE = 'followee'
                         followings = fetch_usernames_paginated(
                             bot,
-                            get_generator_fn=lambda bound_profile=profile: follow_list_generator(bot, bound_profile, 'following', record_exposure=True),
+                            get_generator_fn=lambda bound_profile=profile: follow_list_generator(bot, bound_profile, 'following', record_exposure=True, stop_event=stop_event),
                             max_per_batch=FOLLOWEES_PER_BATCH,
                             total_limit=FOLLOWEE_LIMIT_TO_FETCH,
                             fetch_delay=FOLLOWEE_DELAY_PER_BATCH,
@@ -12515,7 +12829,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         _thread_local.FETCH_TYPE = 'follower'
                         followers = fetch_usernames_paginated(
                             bot,
-                            get_generator_fn=lambda bound_profile=profile: follow_list_generator(bot, bound_profile, 'followers', record_exposure=True),
+                            get_generator_fn=lambda bound_profile=profile: follow_list_generator(bot, bound_profile, 'followers', record_exposure=True, stop_event=stop_event),
                             max_per_batch=FOLLOWERS_PER_BATCH,
                             total_limit=FOLLOWER_LIMIT_TO_FETCH,
                             fetch_delay=FOLLOWER_DELAY_PER_BATCH,
@@ -15023,6 +15337,16 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
     else:
         checks.append(make_doctor_check("Configuration", "warn", "TLS certificate verification is off", "VERIFY_SSL is False, so an intercepted connection cannot be told apart from the real service", "Set VERIFY_SSL back to True unless this network intercepts TLS with its own certificate authority", TLS_GUIDE_URL))
 
+    follow_source = active_follow_list_source()
+    if follow_source != 'browser':
+        checks.append(make_doctor_check("Configuration", "ok", f"Follower lists are read over {follow_list_source_display()}"))
+    else:
+        browser_ready, browser_detail, browser_fix = browser_follow_list_readiness()
+        if browser_ready:
+            checks.append(make_doctor_check("Configuration", "warn", "Follower lists are read by a real browser", f"{browser_detail}. This source is experimental and uses far more CPU and memory than the HTTP sources", "Set FOLLOW_LIST_SOURCE back to auto if a check takes too long or the machine is small", FOLLOW_LIST_SOURCE_GUIDE_URL))
+        else:
+            checks.append(make_doctor_check("Configuration", "fail", "The browser follower list source cannot run", browser_detail, browser_fix, FOLLOW_LIST_SOURCE_GUIDE_URL))
+
     if not CSV_FILE:
         checks.append(make_doctor_check("Configuration", "ok", "CSV logging is disabled", "No CSV file will be written"))
     else:
@@ -15654,8 +15978,8 @@ def run_main():
         dest="follow_list_source",
         metavar="SOURCE",
         type=str,
-        choices=["auto", "rest", "graphql"],
-        help="Instagram surface follower and following lists are read from: 'auto' (REST with a GraphQL retry, default), 'rest' or 'graphql'"
+        choices=["auto", "rest", "graphql", "browser"],
+        help="Instagram surface follower and following lists are read from: 'auto' (REST with a GraphQL retry, default), 'rest', 'graphql' or 'browser' (experimental, needs playwright)"
     )
     session_opts.add_argument(
         "--identity-budget",

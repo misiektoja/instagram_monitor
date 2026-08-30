@@ -299,7 +299,7 @@ class TestSourceSelection:
         assert profile.get_followers.call_count == 0
 
     # An unrecognised setting falls back to auto rather than stopping monitoring
-    @pytest.mark.parametrize("configured,expected", [("auto", "auto"), ("REST", "rest"), (" graphql ", "graphql"), ("browser", "auto"), ("", "auto")])
+    @pytest.mark.parametrize("configured,expected", [("auto", "auto"), ("REST", "rest"), (" graphql ", "graphql"), (" Browser ", "browser"), ("selenium", "auto"), ("", "auto")])
     def test_unknown_setting_falls_back_to_auto(self, im_module, monkeypatch, configured, expected):
         monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", configured)
 

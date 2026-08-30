@@ -21,6 +21,7 @@ The distributed package contains no vendored third-party source. It declares the
 | [Rich](https://github.com/Textualize/rich) | >=12.0 | MIT | Terminal dashboard rendering |
 | [colorama](https://github.com/tartley/colorama) | >=0.4.6, Windows only | BSD-3-Clause | ANSI color support on Windows terminals |
 | [pycookiecheat](https://github.com/n8henrie/pycookiecheat) | >=0.8, `browser` extra | MIT | Importing Chrome, Brave and Chromium sessions on macOS and Linux |
+| [Playwright](https://github.com/microsoft/playwright-python) | >=1.49, `playwright` extra | Apache-2.0 | Driving a real browser for the experimental follower list source, and browser end-to-end tests |
 
 ## Build, test and documentation dependencies
 
@@ -31,7 +32,6 @@ These are not installed with the package and are not redistributed with it.
 | [pytest](https://github.com/pytest-dev/pytest) | MIT | Test suite |
 | [Ruff](https://github.com/astral-sh/ruff) | MIT | Linting the module and the test suite |
 | [PyYAML](https://github.com/yaml/pyyaml) | MIT | Validating workflows and issue templates in the test suite |
-| [Playwright](https://github.com/microsoft/playwright-python) | Apache-2.0 | Browser end-to-end tests for the Web Dashboard |
 | [build](https://github.com/pypa/build), [setuptools](https://github.com/pypa/setuptools), [wheel](https://github.com/pypa/wheel) | MIT | Package build |
 | [MkDocs Material](https://github.com/squidfunk/mkdocs-material) | MIT | Documentation site |
 

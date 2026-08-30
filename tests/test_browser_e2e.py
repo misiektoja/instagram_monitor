@@ -121,3 +121,72 @@ def test_hostile_media_urls_do_not_execute_in_chromium(hostile_media_server):
         assert page.evaluate("() => Array.from(document.querySelectorAll('.fetched-history-item a')).every(a => a.protocol === 'http:' || a.protocol === 'https:')")
 
         browser.close()
+
+
+# Mimics the structure of Instagram's follower dialog: a scrollable box that appends more entries as it scrolls
+FOLLOW_DIALOG_PAGE = """
+<html><body>
+<div role="dialog">
+  <div id="scroller" style="height:300px;overflow-y:auto">
+    <div id="items"></div>
+  </div>
+</div>
+<script>
+  const items = document.getElementById('items');
+  let next = 0;
+  function add(count) {
+    for (let i = 0; i < count; i++) {
+      const link = document.createElement('a');
+      link.setAttribute('href', '/user' + next + '/');
+      link.textContent = 'user' + next;
+      link.style.display = 'block';
+      link.style.height = '60px';
+      items.appendChild(link);
+      next++;
+    }
+  }
+  add(10);
+  document.getElementById('scroller').addEventListener('scroll', () => { if (next < 30) add(10); });
+  const dialog = document.querySelector('div[role="dialog"]');
+  for (const href of ['/p/ABC123/', '/explore/tags/travel/', '/user0/followers/', '/', '/reels/audio/1/']) {
+    const decoy = document.createElement('a');
+    decoy.setAttribute('href', href);
+    dialog.appendChild(decoy);
+  }
+</script>
+</body></html>
+"""
+
+
+# Verifies the follower dialog scripts read real rendered markup, since those selectors are the fragile part
+@pytest.mark.e2e
+def test_follow_list_dialog_is_harvested_in_chromium(im_module):
+    with playwright_sync.sync_playwright() as playwright:
+        browser = launch_chromium(playwright)
+        page = browser.new_page()
+        page.set_default_timeout(5000)
+        page.set_content(FOLLOW_DIALOG_PAGE)
+
+        batches = list(im_module.harvest_follow_list_dialog(page, 0.05))
+        harvested = [name for batch in batches for name in batch]
+
+        browser.close()
+
+    # Every rendered profile link is read, scrolling loads the rest, and post, tag and sub-page links are ignored
+    assert harvested == [f"user{index}" for index in range(30)]
+    assert len(batches) > 1
+
+
+# Verifies the dialog scripts report a page with no follower dialog instead of harvesting the rest of it
+@pytest.mark.e2e
+def test_a_page_without_a_dialog_is_reported_in_chromium(im_module):
+    with playwright_sync.sync_playwright() as playwright:
+        browser = launch_chromium(playwright)
+        page = browser.new_page()
+        page.set_default_timeout(5000)
+        page.set_content('<html><body><a href="/someone/">someone</a></body></html>')
+
+        with pytest.raises(im_module.BrowserFollowListError):
+            list(im_module.harvest_follow_list_dialog(page, 0))
+
+        browser.close()

@@ -17,6 +17,7 @@ Choose either the Python path or the container path.
 - Core libraries: [instaloader](https://github.com/instaloader/instaloader), `requests`, [curl_cffi](https://github.com/lexiforest/curl_cffi), `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich`, `flask`, `jinja2`
 - [pycookiecheat](https://github.com/n8henrie/pycookiecheat) is optional and is needed only to import cookies from Chrome, Brave or Chromium
 - [wcwidth](https://pypi.org/project/wcwidth/) is optional and is needed only to measure display width for `TRUNCATE_CHARS`
+- [Playwright](https://github.com/microsoft/playwright-python) is optional and is needed only for the experimental browser follower list source
 
 **Container path** (Python is included in the image):
 
@@ -189,6 +190,18 @@ pip install "instagram_monitor[browser]"
 ```
 
 This installs Instagram Monitor and the optional `pycookiecheat` dependency.
+
+The experimental browser follower list source needs Playwright and a downloaded browser:
+
+```sh
+pip install "instagram_monitor[playwright]"
+```
+
+```sh
+playwright install chromium
+```
+
+Read [Browser Source](usage.md#browser-source-experimental) before turning it on. It can cost you the logged-in account.
 
 <a id="manual-python-based-installation"></a>
 ### Install the Manual Script

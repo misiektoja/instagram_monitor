@@ -531,6 +531,7 @@ FOLLOW_LIST_SOURCE = "auto"
 - `auto` (default): read the lists over REST. If the REST endpoint is gone or answers in a shape the tool does not recognise **before it returned anybody**, read them over GraphQL instead and say so in the log.
 - `rest`: always read over REST and report the error instead of retrying.
 - `graphql`: always read over GraphQL. This is what versions before 4.0 did.
+- `browser`: experimental. Do not call the API at all, drive a real browser through Instagram's web pages instead. Never chosen by `auto`. Read [Browser Source](#browser-source-experimental) before turning it on.
 
 A fetch that already returned names is never repeated on the other surface. Those names have already been counted against the account, and a second pass over the same list would count them twice for nothing. For the same reason a rate limit, a challenge, an expired session or a network fault is reported rather than retried elsewhere: only a missing endpoint or an unreadable reply is worth a second attempt.
 
@@ -541,6 +542,65 @@ instagram_monitor <target_insta_user> --follow-list-source graphql
 ```
 
 The startup summary names the source in use. Anonymous mode is unaffected, since neither surface lists followers without a session.
+
+### Browser Source (experimental)
+
+`browser` is a third source that does not call Instagram's API at all. It drives a real browser through the ordinary web pages, opens the follower or following dialog and reads the names off the rendered list, the same way a person scrolling that dialog would.
+
+**This is experimental and it can cost you the account.** Instagram's terms forbid automated collection however it is done, and a browser session that scrolls follower dialogs for hours does not look like a person. It is never selected by `auto`. Turn it on only if you accept losing the logged-in account.
+
+It needs the optional `playwright` package and a downloaded browser:
+
+```sh
+pip install "instagram_monitor[playwright]"
+```
+
+```sh
+playwright install chromium
+```
+
+Then select it:
+
+```ini
+FOLLOW_LIST_SOURCE = "browser"
+```
+
+```ini
+# Browser Playwright starts: "chromium", or "chrome" / "msedge" to use a copy already installed here
+FOLLOW_LIST_BROWSER_CHANNEL = "chromium"
+
+# Run without a visible window
+FOLLOW_LIST_BROWSER_HEADLESS = True
+
+# Where the browser profile is kept between runs (empty = next to the output directory)
+FOLLOW_LIST_BROWSER_PROFILE_DIR = ""
+
+# Seconds to wait after each scroll of the list
+FOLLOW_LIST_BROWSER_SCROLL_DELAY = 1.5
+
+# Seconds to wait for a page or an element
+FOLLOW_LIST_BROWSER_TIMEOUT = 30
+```
+
+What to expect:
+
+- It is much slower than REST or GraphQL and uses far more CPU and memory. A list of a few thousand names takes minutes, not seconds.
+- Headless still means a real browser, not the stripped-down headless shell. Set `FOLLOW_LIST_BROWSER_HEADLESS = False` to watch it work, which needs a desktop session.
+- The browser reuses one profile per session account, so cookies and browser state stay stable between runs instead of arriving as a brand new machine every time. Each account gets its own directory.
+- The logged-in session cookies are handed to the browser. It never signs in, and it never asks for your password.
+- Your configured proxy is used if you have one.
+- A challenge, a suspended or disabled account, or a page that is not signed in stops the fetch and is reported. It is not clicked through.
+- If the dialog stops growing well short of the follower count Instagram reports, the fetch fails rather than saving a short list over a complete baseline.
+
+There is no fallback to or from this source. `browser` reads over the browser or reports the error.
+
+Check the setup before a real run:
+
+```sh
+instagram_monitor --doctor
+```
+
+The Configuration check reports the selected source and, for `browser`, whether Playwright and the browser are actually installed.
 
 <a id="advanced-followerfollowing-fetching"></a>
 ## Advanced Follower/Following Fetching

@@ -82,6 +82,9 @@ def deterministic_globals(monkeypatch):
     monkeypatch.setattr(im, "WEBHOOK_HEADERS", {}, raising=False)
     monkeypatch.setattr(im, "NTFY_ACCESS_TOKEN", "", raising=False)
     monkeypatch.setattr(im, "DAILY_HUMAN_HITS", 5, raising=False)
+    # The real CLI path leaves these set, and every account-scoped helper keys off them
+    monkeypatch.setattr(im, "SESSION_USERNAME", "", raising=False)
+    monkeypatch.setattr(im, "SKIP_SESSION", False, raising=False)
     # Drop any cached flag-probe verdict between tests
     with im.FLAGGED_PROBE_LOCK:
         im.FLAGGED_PROBE_CACHE["ts"] = 0.0

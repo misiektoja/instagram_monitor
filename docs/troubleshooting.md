@@ -112,6 +112,17 @@ instagram_monitor <target_insta_user> --follow-list-source graphql
 
 Report which source works at [Discussions](https://github.com/misiektoja/instagram_monitor/discussions). Do not leave a failing source running: every retry adds requests to an account that is already getting errors.
 
+There is a third, experimental source that reads the lists out of a real browser instead of calling the API. It is slow, needs Playwright and carries a real risk to the logged-in account, so try it only if you accept that. See [Browser Source](usage.md#browser-source-experimental).
+
+Common browser source errors:
+
+- **The browser could not start**: Playwright is installed but the browser is not. Run `playwright install chromium`, or set `FOLLOW_LIST_BROWSER_CHANNEL` to a browser already installed here, such as `chrome`.
+- **The login page, so this session is not logged in**: the cookies handed to the browser are no longer valid. Refresh the session and try again.
+- **A challenge page**: clear the challenge in an ordinary browser first. This also trips the circuit breaker.
+- **Rendered only N of about M**: the dialog stopped growing early, usually from a slow connection. Raise `FOLLOW_LIST_BROWSER_SCROLL_DELAY` and `FOLLOW_LIST_BROWSER_TIMEOUT`. The short list is discarded, not saved over your baseline.
+
+Run `instagram_monitor --doctor` to confirm Playwright and the browser are installed before a real run.
+
 <a id="choosing-the-right-logging-level"></a>
 ## Choosing the Right Logging Level
 
