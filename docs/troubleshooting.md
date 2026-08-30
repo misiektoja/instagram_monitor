@@ -104,7 +104,7 @@ curl -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8000/a
 
 - **Default mode** logs detected changes and important errors.
 - **Verbose mode (`--verbose`)** also logs the previous check time, next check time and interval. Use it to confirm that a background process is still checking targets.
-- **Debug mode (`--debug`)** adds HTTP details and internal decisions for troubleshooting.
+- **Debug mode (`--debug`)** adds HTTP details and internal decisions for troubleshooting. Each line names the operation, then lists its details as comma-separated `key=value` fields, and every outbound call reports `outcome=OK` or `outcome=failed`.
 
 Either mode also expands the startup summary with the detected install method and the names of the secrets that came from the dotenv file or the environment. Secret values never appear.
 

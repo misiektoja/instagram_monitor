@@ -1605,7 +1605,7 @@ def _apply_instaloader_post_metadata_patch() -> None:
             pic_json["edge_media_to_tagged_user"] = {"edges": [{"node": {"user": {"username": t["user"]["username"].lower()}}} for t in tagged if (t.get("user") or {}).get("username")]}
         self._full_metadata_dict = pic_json
         if DEBUG_MODE:
-            debug_print(f"instaloader post metadata doc_id patch fired (shortcode {self.shortcode})")
+            debug_print("Instaloader doc_id patch fired", shortcode=self.shortcode)
         if self.shortcode != self._full_metadata_dict["shortcode"]:
             self._node.update(self._full_metadata_dict)
             raise PostChangedException
@@ -3715,7 +3715,7 @@ def recheck_all_targets():
                         else:
                             debug_print("Recheck event not found (might have finished or pending start)")
                 except Exception as e:
-                    debug_print(f"Error in rechecker thread: {e}")
+                    debug_print("Error in rechecker thread", outcome="failed", error=f"{type(e).__name__}: {e}")
 
             threading.Thread(target=_single_rechecker, args=(u, delay), daemon=True, name=f"rechecker:{u}").start()
 
@@ -3870,7 +3870,7 @@ def update_ui_data(targets=None, config=None, check_count=None, last_check=None,
                             tgt_parts.append(f"session={s}")
                 parts.append(f"[{', '.join(tgt_parts)}]")
         if parts:
-            debug_print(f"UI Data Update: {', '.join(parts)}")
+            debug_print("UI data update", changed=", ".join(parts))
     if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
         if DASHBOARD_ENABLED:
             update_terminal_dashboard_data(targets=targets, config=config, is_monitoring=is_monitoring)
@@ -5095,9 +5095,9 @@ def escape_discord_markdown(text: str) -> str:
 # Helper function to compare follower/following lists and log changes
 def show_follow_info(followers_reported: int, followers_actual: int, followings_reported: int, followings_actual: int) -> None:
     if VERBOSE_MODE:
-        print(f"* Followers: reported ({followers_reported}) actual ({followers_actual}). Followings: reported ({followings_reported}) actual ({followings_actual})")
+        verbose_print(f"Followers: reported ({followers_reported}) actual ({followers_actual}). Followings: reported ({followings_reported}) actual ({followings_actual})")
     elif DEBUG_MODE:
-        debug_print(f"* Followers: reported ({followers_reported}) actual ({followers_actual}). Followings: reported ({followings_reported}) actual ({followings_actual})")
+        debug_print("Follow counts", followers_reported=followers_reported, followers_actual=followers_actual, followings_reported=followings_reported, followings_actual=followings_actual)
 
 
 # Compares follower or following lists, logs changes and returns formatted notification fragments
@@ -5385,7 +5385,7 @@ def build_ntfy_local_image(local_image_file=None):
         content_types = {".gif": "image/gif", ".png": "image/png", ".webp": "image/webp"}
         return image_bytes, filename, content_types.get(image_path.suffix.casefold(), "image/jpeg")
     except Exception as exc:
-        debug_print(f"NTFY image preparation failed, sending text only: {sanitize_webhook_error_text(exc)}")
+        debug_print("NTFY image preparation", outcome="failed", fallback="text only", error=sanitize_webhook_error_text(exc))
         return None
 
 
@@ -5434,7 +5434,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     # otherwise --send-test-webhook would report a failure without explaining that a switch suppressed it
     event_switches = {"status": WEBHOOK_STATUS_NOTIFICATION, "followers": WEBHOOK_FOLLOWERS_NOTIFICATION, "error": WEBHOOK_ERROR_NOTIFICATION}
     if notification_type in event_switches and not event_switches[notification_type]:
-        debug_print(f"Webhook for '{notification_type}' suppressed because its notification switch is disabled")
+        debug_print("Webhook delivery", event=notification_type, outcome="skipped", reason="its notification switch is disabled")
         return 1
 
     sanitized_fields = []
@@ -5529,7 +5529,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
             if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
                 use_ntfy_image = False
                 delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS if response.status_code >= 500 else 0.0
-                debug_print(f"NTFY attachment returned HTTP {response.status_code}. Falling back to a text-only alert")
+                debug_print("NTFY attachment", status=response.status_code, outcome="failed", fallback="text-only alert")
                 if delay:
                     time.sleep(delay)
                 continue
@@ -5542,19 +5542,19 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                 print(f"Guide: {WEBHOOK_GUIDE_URL}")
                 return 1
             delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS
-            debug_print(f"Webhook delivery returned HTTP {response.status_code}. Retrying once in {delay:g} seconds")
+            debug_print("Webhook delivery", status=response.status_code, retry_in=f"{delay:g}s")
             time.sleep(delay)
         except req.exceptions.RequestException as exc:
             last_error = exc
             if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
                 use_ntfy_image = False
-                debug_print(f"NTFY attachment delivery failed. Falling back to a text-only alert: {sanitize_webhook_error_text(exc)}")
+                debug_print("NTFY attachment", outcome="failed", fallback="text-only alert", error=sanitize_webhook_error_text(exc))
                 time.sleep(WEBHOOK_FALLBACK_RETRY_SECONDS)
                 continue
             if attempt == WEBHOOK_MAX_ATTEMPTS - 1:
                 print(f"* Error sending webhook: {sanitize_webhook_error_text(exc)}")
                 return 1
-            debug_print(f"Webhook delivery failed. Retrying once in {WEBHOOK_FALLBACK_RETRY_SECONDS:g} seconds: {sanitize_webhook_error_text(exc)}")
+            debug_print("Webhook delivery", outcome="failed", retry_in=f"{WEBHOOK_FALLBACK_RETRY_SECONDS:g}s", error=sanitize_webhook_error_text(exc))
             time.sleep(WEBHOOK_FALLBACK_RETRY_SECONDS)
         except Exception as exc:
             print(f"* Unexpected error sending webhook: {sanitize_webhook_error_text(exc)}")
@@ -5637,7 +5637,7 @@ def get_ip_address(max_retries=3, timeout=10, retry_delay=5, long_retry=120, lon
         if not isinstance(long_retry_attempts, int) or long_retry_attempts < 1:
             raise ValueError("long_retry_attempts must be at least 1")
     except ValueError as exc:
-        debug_print(f"get_ip_address configuration error: {exc}")
+        debug_print("get_ip_address configuration error", outcome="failed", error=f"{type(exc).__name__}: {exc}")
         return f"(unavailable: {format_error_message(exc)})"
 
     last_err = None
@@ -5656,7 +5656,7 @@ def get_ip_address(max_retries=3, timeout=10, retry_delay=5, long_retry=120, lon
                 return _extract_ip_address_response(ip_response)
             except Exception as exc:
                 last_err = exc
-                debug_print(f"get_ip_address endpoint failed at {mask_url_credentials(url)}: {format_error_message(exc)}")
+                debug_print("IP address lookup", url=mask_url_credentials(url), outcome="failed", error=format_error_message(exc))
 
             next_attempt = attempt_index + 1
             completed_endpoint_pass = next_attempt % len(urls) == 0
@@ -5664,11 +5664,11 @@ def get_ip_address(max_retries=3, timeout=10, retry_delay=5, long_retry=120, lon
                 return f"(unavailable: {format_error_message(last_err)})"
 
         if long_attempt < long_retry_attempts:
-            debug_print(f"get_ip_address: all {attempts_per_cycle} endpoint attempts failed in cycle {long_attempt}/{long_retry_attempts}, retrying in {long_retry} seconds: {last_err}")
+            debug_print("IP address lookup", attempts=attempts_per_cycle, cycle=f"{long_attempt}/{long_retry_attempts}", outcome="failed", retry_in=f"{long_retry}s", error=last_err)
             if interruptible_sleep(long_retry, stop_event):
                 return f"(unavailable: {format_error_message(last_err) if last_err else 'stopped'})"
         else:
-            debug_print(f"get_ip_address failed after {long_retry_attempts} cycles of {attempts_per_cycle} endpoint attempts: {last_err}")
+            debug_print("IP address lookup", cycles=long_retry_attempts, attempts=attempts_per_cycle, outcome="failed", error=last_err)
     return f"(unavailable: {format_error_message(last_err) if last_err else 'unknown error'})"
 
 
@@ -5735,7 +5735,7 @@ def set_instaloader_proxies(instabot):
         session.proxies.update(get_proxies())
         session.verify = get_proxies_ssl()
     except AttributeError as exc:
-        debug_print(f"TLS verification could not be applied to the instaloader session: {exc}")
+        debug_print("TLS verification could not be applied to the instaloader session", outcome="failed", error=f"{type(exc).__name__}: {exc}")
 
 
 # Returns an Instaloader whose session honours the configured proxy and TLS verification settings before its first request
@@ -5809,8 +5809,15 @@ def apply_privacy_substitutions(content: TPrivacyContent) -> TPrivacyContent:
 
 
 # Debug print helper - only prints if DEBUG_MODE is enabled
-def debug_print(message):
+def format_diagnostic_line(operation, fields):
+    rendered = ", ".join(f"{key}={value}" for key, value in fields.items() if value is not None)
+    return f"{operation}: {rendered}" if rendered else str(operation)
+
+
+# Prints one timestamped diagnostic line only when debug mode is enabled
+def debug_print(_operation, **fields):
     if DEBUG_MODE:
+        message = format_diagnostic_line(_operation, fields)
         timestamp = get_hour_min_from_ts(now_local(), show_seconds=True)
         user = getattr(_thread_local, 'user', None)
         user_prefix = f" [{user}]" if user else ""
@@ -5821,6 +5828,12 @@ def debug_print(message):
             _thread_local.in_partial_line = False
 
         print(f"[DEBUG {timestamp}]{user_prefix} {message}")  # substitution applied in LOGGER.write
+
+
+# Prints one operational event only when verbose mode is enabled
+def verbose_print(message):
+    if VERBOSE_MODE:
+        print(f"* {message}")  # substitution applied in LOGGER.write
 
 
 # Prefixes one CSV value so spreadsheet software cannot evaluate Instagram-supplied text as a formula
@@ -5852,7 +5865,7 @@ def write_csv_entry(csv_file_name, timestamp, object_type, old, new):
         # Lazily initialize CSV file if it doesn't exist or is empty
         init_csv_file(csv_file_name)
 
-        debug_print(f"Writing CSV entry to {csv_file_name}: Type={object_type}, Old={old}, New={new}")
+        debug_print("CSV write", path=csv_file_name, record_type=object_type, old=old, new=new)
         # CSV destinations are intentional local CLI/config choices, while dashboard changes accept plain names only
 
         # codeql[py/path-injection]
@@ -6729,9 +6742,9 @@ def latest_post_mobile(user: str, bot: instaloader.Instaloader):
         return None
 
     if DEBUG_MODE:
-        debug_print(f"[{user}] latest_post_mobile raw data keys: {list(data.keys())}")
+        debug_print("Latest post (mobile)", user=user, raw_keys=list(data.keys()))
         if "data" in data and isinstance(data["data"], dict) and "user" in data["data"]:
-            debug_print(f"[{user}] latest_post_mobile user keys: {list(data['data']['user'].keys())}")
+            debug_print("Latest post (mobile)", user=user, user_keys=list(data["data"]["user"].keys()))
 
     p = P()
     p.mediaid = best_node.get("id", "")
@@ -7072,16 +7085,16 @@ def get_real_reel_code(bot: instaloader.Instaloader, username: str) -> Optional[
         data = ctx.get_iphone_json(f"api/v1/users/web_profile_info/?username={username}", {})
 
         if isinstance(data, dict) and data.get("status") == "fail":
-            debug_print(f"[{username}] get_real_reel_code failed: Instagram API error - {data.get('message', 'unknown')}")
+            debug_print("Reel code lookup", user=username, outcome="failed", error=f"Instagram API error: {data.get('message', 'unknown')}")
             return None
 
         if not isinstance(data, dict) or "data" not in data:
-            debug_print(f"[{username}] get_real_reel_code failed: malformed response")
+            debug_print("Reel code lookup", user=username, outcome="failed", reason="malformed response")
             return None
 
         user = data["data"].get("user")
         if not user:
-            debug_print(f"[{username}] get_real_reel_code failed: empty user data")
+            debug_print("Reel code lookup", user=username, outcome="failed", reason="empty user data")
             return None
 
         edges = user.get("edge_reels_media", {}).get("edges", [])
@@ -7089,7 +7102,7 @@ def get_real_reel_code(bot: instaloader.Instaloader, username: str) -> Optional[
             return None
         return edges[0]["node"].get("shortcode")
     except Exception as e:
-        debug_print(f"[{username}] get_real_reel_code exception: {e}")
+        debug_print("Reel code lookup", user=username, outcome="failed", error=f"{type(e).__name__}: {e}")
         return None
 
 
@@ -7865,7 +7878,7 @@ def dashboard_input_handler():
             except (EOFError, OSError):
                 break
             except Exception as e:
-                debug_print(f"Error in dashboard input handler: {e}")
+                debug_print("Error in dashboard input handler", outcome="failed", error=f"{type(e).__name__}: {e}")
                 pass
     finally:
         # Restore terminal settings (Unix only)
@@ -8715,7 +8728,7 @@ def close_pbar():
     global pbar
     # Use thread-local storage for multi-target safety
     thread_pbar = getattr(_thread_local, 'pbar', None)
-    debug_print(f"[close_pbar] ENTRY - thread_pbar is None: {thread_pbar is None}")
+    debug_print("Progress bar close", stage="entry", thread_pbar_missing=thread_pbar is None)
     try:
         if thread_pbar is not None:
             final_str = None
@@ -8770,13 +8783,13 @@ def close_pbar():
                     final_str = f"{percentage}|{bar}| {n_fmt}/{total_fmt} [{unit}]"
             except Exception as e:
                 # Never crash on formatting issues; just skip writing final_str to logs
-                debug_print(f"[close_pbar] error while formatting final progress bar string: {e}")
+                debug_print("[close_pbar] error while formatting final progress bar string", outcome="failed", error=f"{type(e).__name__}: {e}")
 
             # Close the progress bar (writes to terminal)
             try:
                 thread_pbar.close()
             except Exception as e:
-                debug_print(f"[close_pbar] error while closing tqdm progress bar: {e}")
+                debug_print("[close_pbar] error while closing tqdm progress bar", outcome="failed", error=f"{type(e).__name__}: {e}")
 
             # Best-effort: write final state to log files if logging is enabled
             if final_str is not None:
@@ -8789,7 +8802,7 @@ def close_pbar():
                         # FilteredWriter wraps the Logger in .original
                         logger_instance = sys.stdout.original  # type: ignore[union-attr]
 
-                    debug_print(f"[close_pbar] logger_instance found: {logger_instance is not None}, type: {type(sys.stdout).__name__}")
+                    debug_print("Progress bar close", logger_found=logger_instance is not None, stdout_type=type(sys.stdout).__name__)
                     if logger_instance is not None:
                         # We want to write to logs but NOT the terminal again (pbar.close already did that), so we strip colors and
                         # write to main/target logs manually
@@ -8798,39 +8811,39 @@ def close_pbar():
 
                         with STDOUT_LOCK:
                             if logger_instance.main_log:
-                                debug_print(f"[close_pbar] Writing to main_log")
+                                debug_print("Progress bar close", target="main log")
                                 logger_instance.main_log.write(clean_final)
                                 logger_instance.main_log.flush()
                             else:
-                                debug_print(f"[close_pbar] main_log is None")
+                                debug_print("Progress bar close", target="main log", outcome="skipped", reason="main log is not open")
 
                             target = logger_instance._get_current_target()
-                            debug_print(f"[close_pbar] target: {target}, target_paths: {list(logger_instance.target_paths.keys())}")
+                            debug_print("Progress bar close", target=target, target_paths=list(logger_instance.target_paths.keys()))
                             if target:
                                 handle = logger_instance._ensure_log_open(target)
                                 if handle:
-                                    debug_print(f"[close_pbar] Writing to target log for {target}")
+                                    debug_print("Progress bar close", target=target, action="writing to target log")
                                     handle.write(clean_final)
                                     handle.flush()
                                 else:
-                                    debug_print(f"[close_pbar] Failed to open handle for {target}")
+                                    debug_print("Progress bar close", target=target, outcome="failed", reason="cannot open the log handle")
                             else:
                                 # Common message (e.g. from MainThread): log to ALL target logs, matching Logger.write behavior
-                                debug_print(f"[close_pbar] No target, writing to all logs")
+                                debug_print("Progress bar close", target="none", action="writing to all logs")
                                 for t in list(logger_instance.target_paths.keys()):
                                     handle = logger_instance._ensure_log_open(t)
                                     if handle:
                                         handle.write(clean_final)
                                         handle.flush()
                 except Exception as e:
-                    debug_print(f"[close_pbar] error while writing final progress state to logs: {e}")
+                    debug_print("[close_pbar] error while writing final progress state to logs", outcome="failed", error=f"{type(e).__name__}: {e}")
 
             # Always clear pbar references (best effort)
             _thread_local.pbar = None  # type: ignore[misc]
             pbar = None
     except Exception as e:
         # Ultimate safety net: close_pbar must never raise
-        debug_print(f"[close_pbar] unexpected error suppressed: {e}")
+        debug_print("[close_pbar] unexpected error suppressed", outcome="failed", error=f"{type(e).__name__}: {e}")
     finally:
         if getattr(_thread_local, 'pbar_lock_acquired', False):
             _thread_local.pbar_lock_acquired = False  # type: ignore[misc]
@@ -8854,7 +8867,7 @@ def instagram_wrap_request(orig_request):
             return orig_request(*args, **kwargs)
         if not SKIP_WRAP_MESSAGES:
             if DEBUG_MODE:
-                debug_print(f"[WRAP-REQ] {method} {url}")
+                debug_print("HTTP request", method=method, url=url)
             elif JITTER_VERBOSE:
                 print(f"* [WRAP-REQ] {method} {url}")
 
@@ -8897,7 +8910,7 @@ def instagram_wrap_request(orig_request):
                         if thread_pbar:
                             tqdm.write(f"* Back-off {wait:.0f}s after {resp.status_code}")
                         if DEBUG_MODE:
-                            debug_print(f"* Back-off {wait:.0f}s after {resp.status_code}")
+                            debug_print("HTTP back-off", wait=f"{wait:.0f}s", status=resp.status_code)
                         elif JITTER_VERBOSE and not thread_pbar:
                             print(f"* Back-off {wait:.0f}s after {resp.status_code}")
                     time.sleep(wait)
@@ -9326,7 +9339,7 @@ def probe_session_flagged(bot):
             FLAGGED_PROBE_LOCK.notify_all()
 
     verdict = "also unresolved, treating session as flagged" if flagged else "resolved, treating target as genuinely gone"
-    debug_print(f"Flag probe: canonical account '{FLAGGED_PROBE_USERNAME}' {verdict}")
+    debug_print("Flag probe", account=FLAGGED_PROBE_USERNAME, verdict=verdict)
     return flagged
 
 
@@ -9497,7 +9510,7 @@ def probability_for_cycle(sleep_seconds: int) -> float:
     else:
         day_seconds = 86400  # 1 day
     calculation = DAILY_HUMAN_HITS * sleep_seconds / day_seconds
-    debug_print(f"Probability Calculation: {calculation:.7f}")
+    debug_print("Probability calculation", value=f"{calculation:.7f}")
     return min(1.0, DAILY_HUMAN_HITS * sleep_seconds / day_seconds)
 
 
@@ -9507,7 +9520,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
     prob = probability_for_cycle(sleep_seconds)
 
     if DEBUG_MODE:
-        debug_print(f"BeHuman: simulation start with probability {prob:.7f} for sleep_seconds of {sleep_seconds}")
+        debug_print("BeHuman simulation", stage="start", probability=f"{prob:.7f}", sleep_seconds=sleep_seconds)
     elif BE_HUMAN_VERBOSE:
         print("* BeHuman: simulation start")
 
@@ -9525,7 +9538,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
             if "429" in str(e) or "checkpoint" in str(e) or "challenge" in str(e):
                 raise e
             if DEBUG_MODE:
-                debug_print(f"BeHuman #1 error: explore peek failed ({e})")
+                debug_print("BeHuman action #1", action="explore peek", outcome="failed", error=f"{type(e).__name__}: {e}")
             elif BE_HUMAN_VERBOSE:
                 print(f"* BeHuman #1 error: explore peek failed ({e})")
 
@@ -9542,7 +9555,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
             if "429" in str(e) or "checkpoint" in str(e) or "challenge" in str(e):
                 raise e
             if DEBUG_MODE:
-                debug_print(f"BeHuman #2 error: cannot view own profile: {e}")
+                debug_print("BeHuman #2 error: cannot view own profile", outcome="failed", error=f"{type(e).__name__}: {e}")
             elif BE_HUMAN_VERBOSE:
                 print(f"* BeHuman #2 error: cannot view own profile: {e})")
 
@@ -9554,20 +9567,20 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
             posts = bot.get_hashtag_posts(tag)
             next(posts)
             if DEBUG_MODE:
-                debug_print(f"BeHuman #3: browsed one post from #{tag} OK")
+                debug_print("BeHuman action #3", action="browse one post", tag=tag, outcome="OK")
             elif BE_HUMAN_VERBOSE:
                 print(f"* BeHuman #3: browsed one post from #{tag} OK")
             time.sleep(random.uniform(2, 5))
         except StopIteration:
             if DEBUG_MODE:
-                debug_print(f"BeHuman #3 warning: no posts for #{tag}")
+                debug_print("BeHuman action #3", action="browse one post", tag=tag, outcome="skipped", reason="no posts for the tag")
             elif BE_HUMAN_VERBOSE:
                 print(f"* BeHuman #3 warning: no posts for #{tag}")
         except Exception as e:
             if "429" in str(e) or "checkpoint" in str(e) or "challenge" in str(e):
                 raise e
             if DEBUG_MODE:
-                debug_print(f"BeHuman #3 error: cannot browse #{tag}: {e}")
+                debug_print("BeHuman action #3", action="browse one post", tag=tag, outcome="failed", error=f"{type(e).__name__}: {e}")
             elif BE_HUMAN_VERBOSE:
                 print(f"* BeHuman #3 error: cannot browse #{tag}: {e}")
 
@@ -9587,7 +9600,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
                 someone = random.choice(followees)
                 _ = profile_from_username_resilient(bot, someone.username)
                 if DEBUG_MODE:
-                    debug_print(f"BeHuman #4: visited followee {someone.username} OK")
+                    debug_print("BeHuman action #4", action="visit followee", user=someone.username, outcome="OK")
                 elif BE_HUMAN_VERBOSE:
                     print(f"* BeHuman #4: visited followee {someone.username} OK")
                 time.sleep(random.uniform(2, 5))
@@ -9595,7 +9608,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
             if "429" in str(e) or "checkpoint" in str(e) or "challenge" in str(e):
                 raise e
             if DEBUG_MODE:
-                debug_print(f"BeHuman #4 error: cannot visit followee: {e}")
+                debug_print("BeHuman #4 error: cannot visit followee", outcome="failed", error=f"{type(e).__name__}: {e}")
             elif BE_HUMAN_VERBOSE:
                 print(f"* BeHuman #4 error: cannot visit followee: {e}")
 
@@ -9878,25 +9891,25 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 with SESSION_FILE_LOCK:
                     if SESSION_PASSWORD:
                         try:
-                            debug_print(f"Loading session for {SESSION_USERNAME} from file...")
+                            debug_print("Instagram session", user=SESSION_USERNAME, action="loading from file")
                             bot.load_session_from_file(SESSION_USERNAME)
                             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                 WEB_DASHBOARD_DATA['session']['active'] = True
                         except FileNotFoundError:
-                            debug_print(f"Session file for {SESSION_USERNAME} not found, logging in...")
+                            debug_print("Instagram session", user=SESSION_USERNAME, action="logging in", reason="session file not found")
                             bot.login(SESSION_USERNAME, SESSION_PASSWORD)
                             bot.save_session_to_file()
                             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                 WEB_DASHBOARD_DATA['session']['active'] = True
                         except instaloader.exceptions.BadCredentialsException:
-                            debug_print(f"Bad credentials for {SESSION_USERNAME}, logging in again...")
+                            debug_print("Instagram session", user=SESSION_USERNAME, action="logging in again", reason="bad credentials")
                             bot.login(SESSION_USERNAME, SESSION_PASSWORD)
                             bot.save_session_to_file()
                             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                 WEB_DASHBOARD_DATA['session']['active'] = True
                     else:
                         try:
-                            debug_print(f"Loading session for {SESSION_USERNAME} from file (no password provided)...")
+                            debug_print("Instagram session", user=SESSION_USERNAME, action="loading from file", reason="no password provided")
                             bot.load_session_from_file(SESSION_USERNAME)
                             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                 WEB_DASHBOARD_DATA['session']['active'] = True
@@ -10024,8 +10037,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         insta_username = profile.username
         insta_userid = profile.userid
 
-        debug_print(f"Profile loaded: ID {insta_userid}")
-        debug_print(f"Metadata: followers={profile.followers}, followees={profile.followees}, posts={profile.mediacount}, private={profile.is_private}")
+        debug_print("Profile loaded", user_id=insta_userid)
+        debug_print("Metadata:", followers=profile.followers, followees=profile.followees, posts=profile.mediacount, private=profile.is_private)
 
         print(f"     OK: {insta_username}")
         _thread_local.in_partial_line = False
@@ -10887,7 +10900,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             leaked_baseline = fetch_leaked_collab_posts(user, bot)
         except Exception as e:
             leaked_baseline = []
-            debug_print(f"[{user}] initial collab probe failed: {format_error_message(e)}")
+            debug_print("Collab probe", user=user, stage="initial", outcome="failed", error=format_error_message(e))
         if leaked_baseline:
             highest_collab_ts_old = max(p.get("ts", 0) for p in leaked_baseline)
             latest_collab = max(leaked_baseline, key=lambda item: item.get("ts", 0))
@@ -10976,7 +10989,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
     if HOURS_VERBOSE or DEBUG_MODE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE):
         sleep_message(r_sleep_time, user)
-        debug_print(f"Next check scheduled for: {get_date_from_ts(NEXT_CHECK_TIME)}")
+        debug_print("Next check scheduled", next=get_date_from_ts(NEXT_CHECK_TIME))
 
     # Use interruptible sleep if stop_event is provided (allows immediate stop)
     if stop_event or DEBUG_MODE or WEB_DASHBOARD_ENABLED:
@@ -11070,10 +11083,10 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             ipaddr = get_ip_address(stop_event=stop_event)
             ip_str = f" with proxy IP address of {ipaddr}"
         if VERBOSE_MODE:
-            print(f"* Starting check #{CHECK_COUNT} for {user} ...{ip_str}")
+            verbose_print(f"Starting check #{CHECK_COUNT} for {user} ...{ip_str}")
             print_cur_ts(newline=True)
         elif DEBUG_MODE:
-            debug_print(f"Starting check #{CHECK_COUNT}{ip_str}")
+            debug_print("Starting check", check=f"#{CHECK_COUNT}", user=user, proxy_ip=ipaddr if ip_str else None)
 
         cur_h = now_local_naive().strftime("%H")
 
@@ -11091,7 +11104,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 print_cur_ts(newline=True)
                 log_activity(f"Fetching updates (hour: {int(cur_h)})", user=user)
 
-            debug_print(f"Fetching profile data from Instagram API...")
+            debug_print("Fetching profile data", source="Instagram API")
 
             try:
                 profile = profile_from_username_resilient(bot, user)
@@ -11105,11 +11118,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 can_view = (not is_private) or followed_by_viewer
                 posts_count = profile.mediacount
 
-                debug_print(f"Profile loaded: followers={followers_count}, following={followings_count}, posts={posts_count}")
-                debug_print(f"Previous load : followers={followers_old_count}, following={followings_old_count}, posts={posts_count_old}")
+                debug_print("Profile loaded:", followers=followers_count, following=followings_count, posts=posts_count)
+                debug_print("Previous load :", followers=followers_old_count, following=followings_old_count, posts=posts_count_old)
                 if not skip_session and can_view:
                     reels_count = get_total_reels_count(user, bot, skip_session)
-                    debug_print(f"Reels count: {reels_count}")
+                    debug_print("Reels count", value=reels_count)
 
                 if not is_private:
                     if bot.context.is_logged_in:
@@ -11122,7 +11135,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 else:
                     has_story = False
 
-                debug_print(f"Story available: {has_story}")
+                debug_print("Story availability", value=has_story)
 
                 profile_image_url = profile.profile_pic_url_no_iphone
                 # Prepare target data for both Dashboard and Web Dashboard
@@ -11179,7 +11192,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 error_msg = format_error_message(e)
                 print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
                 log_activity(f"Error: {error_msg}", user=user)
-                debug_print(f"Full exception: {type(e).__name__}: {e}")
+                debug_print("Full exception", outcome="failed", error=f"{type(e).__name__}: {e}")
 
                 consecutive_main_errors += 1
 
@@ -12165,7 +12178,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         leaked = fetch_leaked_collab_posts(user, bot)
                     except Exception as e:
                         leaked = []
-                        debug_print(f"[{user}] collab probe failed: {format_error_message(e)}")
+                        debug_print("Collab probe", user=user, outcome="failed", error=format_error_message(e))
                     new_leaked = sorted([p for p in leaked if p.get("ts", 0) > highest_collab_ts_old], key=lambda item: item.get("ts", 0))
                     for p in new_leaked:
                         leaked_update = report_leaked_collab_post(user, insta_username, p, r_sleep_time, images_dir, videos_dir, user_root_path, csv_file_name=csv_file_name)
@@ -12191,7 +12204,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             print_cur_ts("Liveness check, timestamp:\t")
             alive_counter = 0
 
-        debug_print(f"After check: manual_recheck_active={manual_recheck_active}")
+        debug_print("After check:", manual_recheck_active=manual_recheck_active)
 
         if manual_recheck_active:
             print(f"* Check #{CHECK_COUNT} completed for {user} ...\n")
@@ -12199,8 +12212,10 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             log_activity("Check completed", user=user)
             manual_recheck_active = False
             manual_override_active = False
-        elif VERBOSE_MODE or DEBUG_MODE:
-            print(f"* Check #{CHECK_COUNT} completed for {user} ...\n")
+        elif VERBOSE_MODE:
+            verbose_print(f"Check #{CHECK_COUNT} completed for {user} ...\n")
+            print_cur_ts()
+        elif DEBUG_MODE:
             print_cur_ts()
 
         if WEB_DASHBOARD_ENABLED:
@@ -12215,7 +12230,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
         # Print timing information (includes last check and next check in debug mode)
         print_check_timing(r_sleep_time, user=user)
-        debug_print(f"Check #{CHECK_COUNT} completed")
+        debug_print("Completed check", check=f"#{CHECK_COUNT}")
 
         # Be human please
         try:
@@ -12246,7 +12261,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
         if HOURS_VERBOSE or DEBUG_MODE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE):
             sleep_message(r_sleep_time, user)
-            debug_print(f"Next check scheduled for: {get_date_from_ts(NEXT_CHECK_TIME)}")
+            debug_print("Next check scheduled", next=get_date_from_ts(NEXT_CHECK_TIME))
 
         # Sleep with manual check support in debug mode (or stop event support in Web Dashboard mode)
         if DEBUG_MODE or stop_event or WEB_DASHBOARD_ENABLED:
@@ -15617,7 +15632,7 @@ def run_main():
             planned_actions.append((u, delay, planned))
             msg_time = planned.strftime('%I:%M:%S %p' if TIME_FORMAT_12H else '%H:%M:%S')
             print(f"  - {u} @ ~{msg_time} (in {display_time(delay)})")
-            debug_print(f"Target {u} scheduled with delay_s={delay}")
+            debug_print("Target scheduled", user=u, delay_s=delay)
 
             # Populate initial dashboard check times
             if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
@@ -15667,7 +15682,7 @@ def run_main():
                 # Wait for previous user's loading to complete
                 wait_event = loading_events[idx]
                 if not wait_event.is_set():
-                    debug_print(f"Target {u} waiting for previous user's initial load...")
+                    debug_print("Target waiting", user=u, reason="previous user's initial load")
 
                 # Signal when this user's loading is complete
                 signal_event = loading_events[idx + 1]
