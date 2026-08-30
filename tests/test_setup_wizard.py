@@ -121,6 +121,7 @@ class TestEditableReview:
             monkeypatch.setattr(im_module, "_wizard_ask_duration", lambda question, default: default)
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
             monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
+            monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
 
             with pytest.raises(SystemExit) as error:
                 im_module.run_setup_wizard(config_file=config_path, env_file=env_path)
@@ -145,6 +146,7 @@ class TestEditableReview:
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
             monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
             monkeypatch.setattr(im_module, "run_doctor", Mock(side_effect=AssertionError("doctor called")))
+            monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
 
             with pytest.raises(SystemExit) as error:
                 im_module.run_setup_wizard(config_file=config_path, env_file=env_path)
@@ -283,6 +285,7 @@ class TestSectionOrder:
             monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: calls.append("interface"))
             monkeypatch.setattr(im_module, "_wizard_collect_email_section", lambda state: calls.append("email"))
             monkeypatch.setattr(im_module, "_wizard_collect_webhook_section", lambda state: calls.append("webhook"))
+            monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: calls.append("output"))
             monkeypatch.setattr(im_module, "_wizard_review_setup", lambda state, method: calls.append("review") or False)
 
             with pytest.raises(SystemExit) as error:
@@ -290,7 +293,7 @@ class TestSectionOrder:
 
             output = capsys.readouterr().out
             assert error.value.code == 1
-            assert calls == ["target:True", "polling", "login", "interface", "email", "webhook", "review"]
+            assert calls == ["target:True", "polling", "login", "interface", "email", "webhook", "output", "review"]
             assert "Instagram polling interval [5400s - 1h 30m]:\n\nHow do you want to access Instagram?" in output
             assert "Instagram polling interval [5400s - 1h 30m]:\n\n\nHow do you want to access Instagram?" not in output
 
@@ -315,14 +318,14 @@ class TestSectionOrder:
         with make_test_directory() as directory_name:
             state = make_setup_state(im_module, Path(directory_name))
             labels = []
-            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: labels.extend(label for label, _ in options) or 7)
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: labels.extend(label for label, _ in options) or 8)
 
             im_module._wizard_print_setup_summary(state, "manual")
             summary = capsys.readouterr().out
             im_module._wizard_edit_setup_section(state, "manual")
 
             assert summary.index("Polling interval:") < summary.index("Login:")
-            assert labels == ["Targets and persistence", "Polling interval", "Login and session", "Interface", "Email alerts", "Webhook alerts", "File destinations", "Return to summary"]
+            assert labels == ["Targets and persistence", "Polling interval", "Login and session", "Interface", "Email alerts", "Webhook alerts", "Output files", "File destinations", "Return to summary"]
 
 
 class TestWizardSafetyGates:
@@ -340,6 +343,7 @@ class TestWizardSafetyGates:
             monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: None)
             monkeypatch.setattr(im_module, "_wizard_collect_email_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_webhook_section", lambda state: None)
+            monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_review_setup", lambda state, method: True)
             monkeypatch.setattr(im_module, "run_doctor", Mock(side_effect=AssertionError("doctor ran")))
             monkeypatch.setattr(im_module, "_wizard_launch_monitor", Mock(side_effect=AssertionError("monitor started")))
@@ -370,6 +374,7 @@ class TestWizardSafetyGates:
             monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: None)
             monkeypatch.setattr(im_module, "_wizard_collect_email_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_webhook_section", lambda state: None)
+            monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_review_setup", lambda state, method: True)
             ask_mock = Mock(side_effect=AssertionError("Doctor prompt was offered before Firefox import"))
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", ask_mock)
@@ -482,6 +487,7 @@ class TestWizardSafetyGates:
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
             monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
             monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda *args, **kwargs: "https://discord.example.test/hook")
+            monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
             monkeypatch.setattr(im_module, "update_dotenv_file", Mock(side_effect=OSError("write failed")))
             monkeypatch.setattr(im_module, "run_doctor", Mock(side_effect=AssertionError("doctor called")))
             monkeypatch.setattr(im_module, "_wizard_launch_monitor", Mock(side_effect=AssertionError("monitor started")))
@@ -510,6 +516,7 @@ class TestWizardSafetyGates:
                 return next(answers)
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", ask_yes_no)
             monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
+            monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
             monkeypatch.setattr(im_module, "run_doctor", Mock(return_value=2))
             monkeypatch.setattr(im_module, "_wizard_launch_monitor", Mock(side_effect=AssertionError("monitor started")))
 
@@ -542,3 +549,30 @@ class TestWizardSafetyGates:
 
         assert error.value.code == 2
         assert "--set-webhook-url cannot be combined with --webhook-url" in capsys.readouterr().err
+
+
+# Verifies the output section records the log choice and the CSV destination it was given
+def test_the_output_section_records_the_log_and_csv_choices(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        directory = Path(directory_name)
+        state = make_setup_state(im_module, directory)
+        monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: False)
+        monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: str(directory / "posts.csv"))
+
+        im_module._wizard_collect_output_section(state)
+
+        assert state.config_values["DISABLE_LOGGING"] is True
+        assert state.config_values["CSV_FILE"] == str(directory / "posts.csv")
+
+
+# Verifies a blank CSV answer disables CSV output rather than storing an empty path as a file name
+def test_a_blank_csv_answer_disables_csv_output(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
+        monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: "")
+
+        im_module._wizard_collect_output_section(state)
+
+        assert state.config_values["DISABLE_LOGGING"] is False
+        assert state.config_values["CSV_FILE"] == ""

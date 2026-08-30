@@ -1,5 +1,7 @@
 """Tests for the action-oriented error hint classifier (no network)."""
 
+import smtplib
+
 import pytest
 
 
@@ -145,3 +147,39 @@ class TestGuideLinkRelevance:
     def test_generic_network_hint_links_the_connection_guide(self, im_module):
         hint = im_module.error_fix_hint("ConnectionException: HTTPSConnectionPool max retries exceeded")
         assert im_module.CONNECTION_ERRORS_GUIDE_URL in hint
+
+
+class TestErrorSummary:
+    @pytest.mark.parametrize("msg, summary", [
+        ("ConnectionException: 429 Too Many Requests", "Instagram is rate-limiting this account or IP"),
+        ("JSONDecodeError: challenge_required", "Instagram is asking this session or IP to pass a challenge"),
+        ("FileNotFoundError: Instagram session file for me not found", "No saved Instagram session was found"),
+        ("ConnectionException: Login required, redirected", "The saved Instagram session is invalid or expired"),
+        ("ProfileNotExistsException: Profile xyz does not exist", "Instagram could not find the requested profile"),
+        ("ConnectionException: HTTPSConnectionPool max retries exceeded", "Instagram could not be reached"),
+    ])
+    def test_known_errors_get_a_stable_summary(self, im_module, msg, summary):
+        assert im_module.classify_error_message(msg)[0] == summary
+
+    def test_an_unknown_error_still_gets_a_summary_without_a_fix(self, im_module):
+        summary, fix, guide = im_module.classify_error_message("SomethingElse: totally unknown error")
+        assert summary == "An unexpected error stopped the requested action"
+        assert (fix, guide) == ("", "")
+
+    # Verifies the doctor row label comes from the classifier so no raw exception text reaches it
+    def test_a_doctor_row_without_a_label_uses_the_summary(self, im_module):
+        check = im_module.doctor_check_from_error("Session", "fail", "", "ConnectionException: Login required, redirected", True, "raw technical text")
+
+        assert check.label == "The saved Instagram session is invalid or expired"
+        assert check.detail == "raw technical text"
+        assert "re-import" in check.fix.casefold()
+
+
+class TestSmtpErrorSummary:
+    @pytest.mark.parametrize("error, summary", [
+        (smtplib.SMTPAuthenticationError(535, b"auth failed"), "The SMTP server rejected the sign-in"),
+        (ValueError("SMTP settings are incorrect"), "The SMTP settings are incomplete or invalid"),
+        (OSError("connection refused"), "The SMTP server could not be reached"),
+    ])
+    def test_smtp_failures_get_a_stable_summary(self, im_module, error, summary):
+        assert im_module.classify_smtp_error(error)[0] == summary

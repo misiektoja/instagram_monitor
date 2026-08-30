@@ -9167,54 +9167,70 @@ def session_recovery_command() -> str:
     return _firefox_import_cmd(_wizard_install_method())
 
 
-# Returns a short actionable next-step hint for a known error message or an empty string when none applies
-def error_fix_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[str, str]:
+# Maps one error message to a stable summary plus the matching fix and guide, so every surface explains it the same way
+def classify_error_message(error_msg: str, is_logged_in: bool = False) -> Tuple[str, str, str]:
     m = (error_msg or "").lower()
 
     # Rate limiting or TLS-fingerprint blocks
     if any(t in m for t in ("429", "too many requests", "wait a few minutes", "rate limit", "please wait")):
-        return "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users.", ANTI_DETECTION_INTERVAL_GUIDE_URL
+        return "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users.", ANTI_DETECTION_INTERVAL_GUIDE_URL
 
     # Challenge, checkpoint or shadowban
     if any(t in m for t in ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data")):
-        return f"Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'. Also raise the check interval.", ANTI_DETECTION_SESSION_GUIDE_URL
+        return "Instagram is asking this session or IP to pass a challenge", f"Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'. Also raise the check interval.", ANTI_DETECTION_SESSION_GUIDE_URL
 
     # Missing session file
     if "session file" in m:
-        return f"no saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_user>'. In the Web Dashboard you can import from the Session page.", SESSION_IMPORT_GUIDE_URL
+        return "No saved Instagram session was found", f"no saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_user>'. In the Web Dashboard you can import from the Session page.", SESSION_IMPORT_GUIDE_URL
 
     # Invalid or expired session
     if any(t in m for t in ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required", "bad request")):
-        return f"your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_user>'. In the Web Dashboard you can re-import from the Session page.", SESSION_IMPORT_GUIDE_URL
+        return "The saved Instagram session is invalid or expired", f"your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_user>'. In the Web Dashboard you can re-import from the Session page.", SESSION_IMPORT_GUIDE_URL
 
     # Profile not found
     if any(t in m for t in ("profilenotexists", "does not exist", "not found", "404")):
         fix = "check the target username is spelled correctly and the account still exists and is reachable."
         if is_logged_in:
             fix += " If the username is correct, your session or IP may be temporarily flagged."
-        return fix, ""
+        return "Instagram could not find the requested profile", fix, ""
 
     # An unsupported impersonation target surfaces as a connection error, so name the real cause before the network hint
     if "impersonat" in m:
-        return "the configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto', or pick a supported target such as chrome, safari, edge or firefox.", ""
+        return "The configured browser profile cannot be impersonated", "the configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto', or pick a supported target such as chrome, safari, edge or firefox.", ""
 
     # An unresolvable proxy hostname is a proxy configuration problem, so it is the one resolution failure the proxy guide fits
     if "could not resolve proxy" in m:
-        return "the proxy hostname you configured cannot be resolved. Check PROXY_URL for a typo and confirm the proxy host is reachable from this machine.", PROXY_GUIDE_URL
+        return "The configured proxy hostname could not be resolved", "the proxy hostname you configured cannot be resolved. Check PROXY_URL for a typo and confirm the proxy host is reachable from this machine.", PROXY_GUIDE_URL
 
     # DNS failures are resolver-side, so they need their own fix before the generic network branch swallows them
     if any(t in m for t in ("could not resolve host", "temporary failure in name resolution", "name or service not known", "nodename nor servname", "curl: (6)")):
-        return "your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com'), and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again.", CONNECTION_ERRORS_GUIDE_URL
+        return "Instagram's address could not be resolved", "your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com'), and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again.", CONNECTION_ERRORS_GUIDE_URL
 
     # Network or connectivity problems
     if any(t in m for t in ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl")):
-        return "this looks like a network problem. Check your internet connection, then your proxy settings if --enable-proxy is set, then try again.", CONNECTION_ERRORS_GUIDE_URL
+        return "Instagram could not be reached", "this looks like a network problem. Check your internet connection, then your proxy settings if --enable-proxy is set, then try again.", CONNECTION_ERRORS_GUIDE_URL
 
     # Deprecated GraphQL doc_id returning null data, or a temporary block
     if any(t in m for t in ("empty data for posts", "fetching post metadata failed", "not subscriptable")):
-        return "Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version; if you are already current, report it at https://github.com/misiektoja/instagram_monitor/issues).", ""
+        return "Instagram returned empty data for this query", "Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version; if you are already current, report it at https://github.com/misiektoja/instagram_monitor/issues).", ""
 
-    return "", ""
+    return "An unexpected error stopped the requested action", "", ""
+
+
+# Maps one SMTP failure to a stable summary plus the matching fix, keeping the technical text for the detail line
+def classify_smtp_error(error: Exception) -> Tuple[str, str]:
+    message = str(error).casefold()
+    if isinstance(error, smtplib.SMTPAuthenticationError) or any(term in message for term in ("authentication", "auth", "username and password", "535")):
+        return "The SMTP server rejected the sign-in", "Check SMTP_USER and SMTP_PASSWORD, and use an app password if the provider requires one"
+    if any(term in message for term in ("settings are incorrect", "invalid")):
+        return "The SMTP settings are incomplete or invalid", "Check SMTP_HOST, SMTP_PORT, SENDER_EMAIL and RECEIVER_EMAIL in the configuration file"
+    return "The SMTP server could not be reached", "Check SMTP_HOST, SMTP_PORT and SMTP_SSL, then confirm the host is reachable from this machine"
+
+
+# Returns a short actionable next-step hint for a known error message or an empty string when none applies
+def error_fix_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[str, str]:
+    _summary, fix, guide = classify_error_message(error_msg, is_logged_in)
+    return fix, guide
 
 
 # Formats the actionable fix for one error as the console block callers already print
@@ -12401,11 +12417,28 @@ def _wizard_container_path(path) -> str:
     return str(PurePosixPath("/data") / PurePosixPath(relative.as_posix()))
 
 
+# The theme part each setup summary row draws its value in, for rows whose value has a known kind
+WIZARD_SUMMARY_VALUE_STYLES = {"Targets": "username", "Polling interval": "duration"}
+
+
+# Colours one setup summary value from its row label
+def _wizard_summary_value(label, value):
+    text = str(value)
+    part = WIZARD_SUMMARY_VALUE_STYLES.get(label)
+    if part:
+        return colorize(part, text)
+    if text.startswith("enabled") or text == "complete":
+        return colorize("boolean_true", text)
+    if text in ("disabled", "incomplete"):
+        return colorize("boolean_false", text)
+    return text
+
+
 # Prints one aligned label and value block, so every summary row lines up
 def _wizard_print_summary_rows(rows) -> None:
     width = max(len(label) for label, _ in rows) + 1
     for label, value in rows:
-        print(f"  {(label + ':'):<{width}} {value}")
+        print(f"  {(label + ':'):<{width}} {_wizard_summary_value(label, value)}")
 
 
 # Returns the alert categories one answer set enables, falling back to the loaded configuration for untouched settings
@@ -12703,6 +12736,7 @@ WIZARD_LOGIN_CONFIG_KEYS = ("SESSION_USERNAME", "SKIP_SESSION")
 WIZARD_INTERFACE_CONFIG_KEYS = ("WEB_DASHBOARD_ENABLED", "DASHBOARD_ENABLED", "WEB_DASHBOARD_HOST")
 WIZARD_WEBHOOK_CONFIG_KEYS = ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_STATUS_NOTIFICATION")
 WIZARD_EMAIL_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL", "STATUS_NOTIFICATION")
+WIZARD_OUTPUT_CONFIG_KEYS = ("DISABLE_LOGGING", "CSV_FILE")
 
 
 # Holds editable setup answers until the user explicitly saves them
@@ -12931,7 +12965,15 @@ def _wizard_collect_email_section(state: WizardSetupState) -> None:
     state.want_email = True
 
 
-# Lets the user change output files and recollects secret-dependent sections when needed
+# Collects the log and CSV output destinations monitoring would write
+def _wizard_collect_output_section(state: WizardSetupState) -> None:
+    _wizard_reset_section(state, WIZARD_OUTPUT_CONFIG_KEYS, ())
+    print()
+    state.config_values["DISABLE_LOGGING"] = not _wizard_ask_yes_no("Write the normal per-target log file?", default=not bool(state.config_values.get("DISABLE_LOGGING")))
+    state.config_values["CSV_FILE"] = _wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or ""))
+
+
+# Lets the user change file destinations and recollects secret-dependent sections when needed
 def _wizard_collect_destination_section(state: WizardSetupState, method: str) -> None:
     while True:
         config_text = _wizard_ask_text("Configuration file destination", default=str(state.config_path), required=True)
@@ -12987,6 +13029,8 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
         ("Email notifications", ", ".join(email_categories) if email_categories else "none"),
         ("Webhook", webhook_state),
         ("Webhook alerts", ", ".join(webhook_categories) if webhook_categories else "none"),
+        ("Output log", "disabled" if state.config_values.get("DISABLE_LOGGING") else "enabled"),
+        ("CSV output", state.config_values.get("CSV_FILE") or "disabled"),
         ("Config destination", str(state.config_path)),
         ("Dotenv destination", str(state.env_path)),
         ("Install method", method),
@@ -12997,7 +13041,7 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
 
 # Opens one selected setup section then returns to the summary
 def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
-    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets and persistence", "Change monitored accounts and whether they are saved."), ("Polling interval", "Change how often Instagram is checked."), ("Login and session", "Change no-login, browser or credential settings."), ("Interface", "Change the dashboard or plain text mode."), ("Email alerts", "Change SMTP settings."), ("Webhook alerts", "Change Discord or ntfy settings."), ("File destinations", "Change the config or dotenv path."), ("Return to summary", "Keep every current answer.")])
+    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets and persistence", "Change monitored accounts and whether they are saved."), ("Polling interval", "Change how often Instagram is checked."), ("Login and session", "Change no-login, browser or credential settings."), ("Interface", "Change the dashboard or plain text mode."), ("Email alerts", "Change SMTP settings."), ("Webhook alerts", "Change Discord or ntfy settings."), ("Output files", "Change log and CSV output settings."), ("File destinations", "Change the config or dotenv path."), ("Return to summary", "Keep every current answer.")])
     if section == 0:
         print()
         _wizard_collect_target_section(state, allow_empty=state.want_web)
@@ -13013,6 +13057,8 @@ def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
     elif section == 5:
         _wizard_collect_webhook_section(state)
     elif section == 6:
+        _wizard_collect_output_section(state)
+    elif section == 7:
         print()
         _wizard_collect_destination_section(state, method)
 
@@ -13137,6 +13183,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     _wizard_collect_interface_section(state, method)
     _wizard_collect_email_section(state)
     _wizard_collect_webhook_section(state)
+    _wizard_collect_output_section(state)
     if not _wizard_review_setup(state, method):
         print(colorize("warning", "Setup cancelled. Destination files were not changed."))
         raise SystemExit(1)
@@ -13277,8 +13324,8 @@ def make_doctor_check(section: str, status: str, label: str, detail: str = "", f
 
 # Builds one doctor check from an error, reusing the shared fix hints so advice stays consistent
 def doctor_check_from_error(section: str, status: str, label: str, error_message: str, is_logged_in: bool = False, detail: str = "") -> DoctorCheck:
-    fix, guide = error_fix_parts(error_message, is_logged_in)
-    return make_doctor_check(section, status, label, detail, fix, guide)
+    summary, fix, guide = classify_error_message(error_message, is_logged_in)
+    return make_doctor_check(section, status, label or summary, detail, fix, guide)
 
 
 # Prints one doctor check line with a status marker and an optional detail or hint
@@ -13730,7 +13777,7 @@ def doctor_check_session(report: DoctorReport, progress: Optional[Callable[[str]
         return [doctor_check_from_error("Session", "fail", f"No saved session for {SESSION_USERNAME}", "session file not found", True)]
     except Exception as exc:
         message = format_error_message(exc)
-        return [doctor_check_from_error("Session", "fail", f"Session check failed: {message}", message, True)]
+        return [doctor_check_from_error("Session", "fail", "", message, True, message)]
 
 
 # Confirms Instagram answers a public profile request through the configured transport
@@ -13793,7 +13840,8 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
             report.smtp_ready = True
             checks.append(make_doctor_check("Notifications", "ok", SMTP_READY_CHECK_LABEL, f"Alerts: {', '.join(_startup_email_notification_categories())}. No email was sent during this passive check"))
         except Exception as exc:
-            checks.append(make_doctor_check("Notifications", "fail", f"Email (SMTP) check failed: {exc}", "", "verify SMTP_HOST, SMTP_PORT and SMTP_SSL, and SMTP_USER/SMTP_PASSWORD. Gmail and similar need an app password.", SMTP_GUIDE_URL))
+            summary, fix = classify_smtp_error(exc)
+            checks.append(make_doctor_check("Notifications", "fail", summary, format_error_message(exc), fix, SMTP_GUIDE_URL))
 
     if not WEBHOOK_ENABLED:
         checks.append(make_doctor_check("Notifications", "ok", "Webhook alerts are disabled", "No webhook was sent"))
