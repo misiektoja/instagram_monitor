@@ -128,3 +128,21 @@ class TestSecretReporting:
 
         assert "WEBHOOK_URL" not in from_file + from_environment + from_settings
         assert "SMTP_PASSWORD" not in from_file + from_environment + from_settings
+
+
+class TestConfigLoadReporting:
+    # Verifies the settings count is a debug trace rather than a verbose line, since it says nothing a user acts on
+    def test_the_config_settings_count_is_a_debug_only_trace(self, im_module, tmp_path, monkeypatch, capsys):
+        config = tmp_path / "instagram_monitor.conf"
+        config.write_text("CLEAR_SCREEN = False\nDISABLE_LOGGING = True\n", encoding="utf-8")
+        namespace = {}
+
+        monkeypatch.setattr(im_module, "VERBOSE_MODE", True)
+        monkeypatch.setattr(im_module, "DEBUG_MODE", False)
+        im_module.load_config_file(config, namespace=namespace)
+        assert "settings from the configuration file" not in capsys.readouterr().out
+
+        monkeypatch.setattr(im_module, "VERBOSE_MODE", False)
+        monkeypatch.setattr(im_module, "DEBUG_MODE", True)
+        im_module.load_config_file(config, namespace=namespace)
+        assert "Configuration applied" in capsys.readouterr().out
