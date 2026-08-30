@@ -423,7 +423,7 @@ class TestWizardSafetyGates:
             clear_mock.assert_called_once_with(False)
             import_mock.assert_called_once()
             output = capsys.readouterr().out
-            assert "Check the imported session and setup:" in output
+            assert "Check setup again:" in output
             assert "After Doctor passes, start monitoring:" in output
             doctor_output, monitor_output = output.split("After Doctor passes, start monitoring:", 1)
             assert "--doctor" in doctor_output

@@ -1010,8 +1010,9 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
     doctor_command = _wizard_action_command(method, "--doctor", selected_config, destination)
     print("* Webhook URL looks valid")
     print(f"* Updated private settings file: {destination}")
-    print(f"Send a test webhook:\n    {test_command}\n")
-    print(f"Check the complete setup:\n    {doctor_command}\n")
+    print()
+    _wizard_print_command("Send a test webhook:", test_command)
+    _wizard_print_command("Check setup again:", doctor_command)
     return str(destination)
 
 
@@ -1202,6 +1203,7 @@ CONNECTION_ERRORS_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#connection-
 DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
 
 # Label of the Doctor check that reports a fully validated webhook, shared with the sibling monitors
+SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
 WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
 
 # Placeholder values shipped in the sample configuration, which stand in for a setting the user has not filled in yet
@@ -12399,6 +12401,25 @@ def _wizard_container_path(path) -> str:
     return str(PurePosixPath("/data") / PurePosixPath(relative.as_posix()))
 
 
+# Prints one aligned label and value block, so every summary row lines up
+def _wizard_print_summary_rows(rows) -> None:
+    width = max(len(label) for label, _ in rows) + 1
+    for label, value in rows:
+        print(f"  {(label + ':'):<{width}} {value}")
+
+
+# Returns the alert categories one answer set enables, falling back to the loaded configuration for untouched settings
+def _wizard_notification_categories(config_values, prefix: str = "") -> List[str]:
+    labels = (("STATUS_NOTIFICATION", "status/profile changes"), ("FOLLOWERS_NOTIFICATION", "followers"), ("ERROR_NOTIFICATION", "errors"))
+    return [label for name, label in labels if config_values.get(prefix + name, globals().get(prefix + name))]
+
+
+# Prints one labelled next-step command indented under its label
+def _wizard_print_command(label: str, command: str, suffix: str = "") -> None:
+    print(label)
+    print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
+
+
 # Builds one install-aware action command with safe paths and optional targets
 def _wizard_action_command(method: str, action: str, config_path, env_path, targets=(), web_dashboard: bool = False, host_os: Optional[str] = None) -> str:
     parts = [_wizard_cmd_prefix(method, web_dashboard=web_dashboard, exact=True, host_os=host_os)]
@@ -12419,8 +12440,7 @@ def _wizard_print_monitor_after_doctor(config_path, env_path, targets=(), web_da
     method = _wizard_install_method()
     command = _wizard_action_command(method, "", config_path, env_path, targets, web_dashboard=web_dashboard)
     print(colorize("header", "\nNext steps\n"))
-    print("After Doctor passes, start monitoring:")
-    print(colorize("section", f"    {command}\n"))
+    _wizard_print_command("After Doctor passes, start monitoring:", command)
     if web_dashboard:
         print(f"Then open {colorize('link', _web_dashboard_browser_url())} in your browser.\n")
 
@@ -12947,22 +12967,32 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
     interface = "web dashboard" if state.want_web else "terminal dashboard" if state.want_terminal else "plain text logs"
     session_summary = state.session_username if state.logged_in and state.session_username else "detect during browser import" if state.logged_in else "none"
     target_summary = ", ".join(state.targets) if state.targets else "none - add them in the Web Dashboard"
-    print(colorize("header", "\nSetup summary\n"))
-    print(f"  Targets: {target_summary}")
-    print(f"  Persist targets: {'yes' if state.persist_targets else 'no'}")
-    print(f"  Polling interval: {_wizard_format_duration(int(state.config_values['INSTA_CHECK_INTERVAL']))}")
-    print(f"  Login: {state.login_method}")
-    print(f"  Session username: {session_summary}")
+    email_categories = _wizard_notification_categories(state.config_values) if state.want_email else []
+    webhook_categories = _wizard_notification_categories(state.config_values, "WEBHOOK_") if state.want_webhook else []
+    webhook_state = f"enabled ({webhook_provider_display_name(state.config_values.get('WEBHOOK_PROVIDER'))})" if state.want_webhook else "disabled"
+    rows = [
+        ("Targets", target_summary),
+        ("Persist targets", "yes" if state.persist_targets else "no"),
+        ("Polling interval", _wizard_format_duration(int(state.config_values["INSTA_CHECK_INTERVAL"]))),
+        ("Login", state.login_method),
+        ("Session username", session_summary),
+    ]
     if state.import_browser:
-        print(f"  Browser: {browser_label(state.import_browser)}")
+        rows.append(("Browser", browser_label(state.import_browser)))
     if state.container_host:
-        print(f"  Docker host: {CONTAINER_FIREFOX_HOSTS[state.container_host][0]}")
-    print(f"  Interface: {interface}")
-    print(f"  Email: {'enabled' if state.want_email else 'disabled'}")
-    print(f"  Webhook: {'enabled' if state.want_webhook else 'disabled'}")
-    print(f"  Config destination: {state.config_path}")
-    print(f"  Dotenv destination: {state.env_path}")
-    print(f"  Install method: {method}")
+        rows.append(("Docker host", CONTAINER_FIREFOX_HOSTS[state.container_host][0]))
+    rows.extend([
+        ("Interface", interface),
+        ("Email", "enabled" if state.want_email else "disabled"),
+        ("Email notifications", ", ".join(email_categories) if email_categories else "none"),
+        ("Webhook", webhook_state),
+        ("Webhook alerts", ", ".join(webhook_categories) if webhook_categories else "none"),
+        ("Config destination", str(state.config_path)),
+        ("Dotenv destination", str(state.env_path)),
+        ("Install method", method),
+    ])
+    print(colorize("header", "\nSetup summary\n"))
+    _wizard_print_summary_rows(rows)
 
 
 # Opens one selected setup section then returns to the summary
@@ -13166,20 +13196,16 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         selected_host = cast(str, state.container_host)
         host_label = CONTAINER_FIREFOX_HOSTS[selected_host][0]
         print("Before import, open https://www.instagram.com/ in Firefox on the host and sign in to the Instagram account used for monitoring.\n")
-        print(f"Import Instagram login from Firefox on {host_label}:")
-        print(colorize("section", f"    {_firefox_import_cmd(method, state.env_path, exact=True, host_os=selected_host, config_path=state.config_path, targets=command_targets)}\n"))
-        print("After the import succeeds, check setup:")
-    else:
-        print("Check setup again:")
-    print(colorize("section", f"    {doctor_command}\n"))
-    print("After Doctor passes, start monitoring:" if container_browser_import_pending or local_browser_import_pending else "Start monitoring:")
-    print(colorize("section", f"    {run_command}\n"))
+        _wizard_print_command(f"Import Instagram login from Firefox on {host_label}:", _firefox_import_cmd(method, state.env_path, exact=True, host_os=selected_host, config_path=state.config_path, targets=command_targets))
+    _wizard_print_command("After the import succeeds, check setup:" if container_browser_import_pending else "Check setup again:", doctor_command)
+    _wizard_print_command("After Doctor passes, start monitoring:" if container_browser_import_pending or local_browser_import_pending else "Start monitoring:", run_command)
     if state.want_web:
         print(f"Then open {colorize('link', 'http://127.0.0.1:8000/')} in your browser.\n")
     if state.want_email:
-        print(f"Test email anytime with: {colorize('section', _wizard_action_command(method, '--send-test-email', state.config_path, state.env_path, host_os=state.container_host))}")
+        _wizard_print_command("Send a test email:", _wizard_action_command(method, "--send-test-email", state.config_path, state.env_path, host_os=state.container_host))
     if state.want_webhook:
-        print(f"Test webhook anytime with: {colorize('section', _wizard_action_command(method, '--send-test-webhook', state.config_path, state.env_path, host_os=state.container_host))}")
+        _wizard_print_command("Send a test webhook:", _wizard_action_command(method, "--send-test-webhook", state.config_path, state.env_path, host_os=state.container_host))
+    print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}\n")
 
     if doctor_failures:
         print(colorize("warning", "Setup was saved but doctor found failures. Fix them before starting monitoring."))
@@ -13200,13 +13226,12 @@ def _wizard_welcome(parser) -> None:
     prefix = _wizard_cmd_prefix(method)
     web_prefix = _wizard_cmd_prefix(method, web_dashboard=True)
     interactive = sys.stdin.isatty()
-    print("Quickest start (no setup, no login):")
-    print(colorize("section", f"    {prefix} <username>\n"))
-    print("Easiest start (guided setup wizard):")
-    setup_hint = colorize("info", "   (or just answer Y below)") if interactive else ""
-    print(colorize("section", f"    {prefix} --setup") + setup_hint + "\n")
-    print("Point-and-click (no command line):")
-    print(colorize("section", f"    {web_prefix} --web-dashboard      then open http://127.0.0.1:8000\n"))
+    print("For <instagram_target>, use an Instagram username or complete profile URL.\n")
+    _wizard_print_command("Quickest start (no setup, no login):", f"{prefix} <instagram_target>")
+    setup_suffix = "   (or just answer Y below)" if interactive else ""
+    _wizard_print_command("Easiest start (guided setup wizard):", f"{prefix} --setup", setup_suffix)
+    _wizard_print_command("Point-and-click (no command line):", f"{web_prefix} --web-dashboard", "      then open http://127.0.0.1:8000")
+    _wizard_print_command("Check setup before monitoring:", f"{prefix} --doctor <instagram_target>")
     print(f"Full options: {colorize('section', prefix + ' --help')}")
     print(f"\nGuide:        {colorize('link', QUICK_START_GUIDE_URL)}\n")
     if interactive and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
@@ -13766,7 +13791,7 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
             smtp.login(SMTP_USER, SMTP_PASSWORD)
             smtp.quit()
             report.smtp_ready = True
-            checks.append(make_doctor_check("Notifications", "ok", "Email (SMTP) login works", "No email was sent during this passive check"))
+            checks.append(make_doctor_check("Notifications", "ok", SMTP_READY_CHECK_LABEL, f"Alerts: {', '.join(_startup_email_notification_categories())}. No email was sent during this passive check"))
         except Exception as exc:
             checks.append(make_doctor_check("Notifications", "fail", f"Email (SMTP) check failed: {exc}", "", "verify SMTP_HOST, SMTP_PORT and SMTP_SSL, and SMTP_USER/SMTP_PASSWORD. Gmail and similar need an app password.", SMTP_GUIDE_URL))
 
@@ -13793,7 +13818,7 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
         checks.append(make_doctor_check("Notifications", "warn", "Webhook alerts are on but no alert types are selected", "No webhook was sent during this passive check", "turn on at least one webhook alert, or set WEBHOOK_ENABLED to False.", WEBHOOK_GUIDE_URL))
     else:
         report.webhook_ready = True
-        checks.append(make_doctor_check("Notifications", "ok", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", "The private link was not displayed. No webhook was sent during this passive check"))
+        checks.append(make_doctor_check("Notifications", "ok", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", f"Alerts: {', '.join(_startup_webhook_notification_categories())}. The private link was not displayed. No webhook was sent during this passive check"))
     return checks
 
 
@@ -14593,10 +14618,8 @@ def run_main():
             doctor_command = _wizard_action_command(method, "--doctor", cfg_path, selected_env, args.usernames)
             monitor_command = _wizard_action_command(method, "", cfg_path, selected_env, args.usernames, web_dashboard=WEB_DASHBOARD_ENABLED)
             print(colorize("header", "\nNext steps\n"))
-            print("Check the imported session and setup:")
-            print(colorize("section", f"    {doctor_command}\n"))
-            print("After Doctor passes, start monitoring:")
-            print(colorize("section", f"    {monitor_command}\n"))
+            _wizard_print_command("Check setup again:", doctor_command)
+            _wizard_print_command("After Doctor passes, start monitoring:", monitor_command)
         sys.exit(0)
 
     local_tz = None
@@ -14915,8 +14938,7 @@ def run_main():
                 _wizard_print_monitor_after_doctor(cfg_path, selected_env, command_targets, web_dashboard=WEB_DASHBOARD_ENABLED)
             else:
                 print(colorize("header", "\nNext steps\n"))
-                print("Doctor passed, but no monitoring target or Web Dashboard is configured.")
-                print(colorize("section", f"    {_wizard_cmd_prefix(_wizard_install_method())} --setup\n"))
+                _wizard_print_command("Doctor passed, but no monitoring target or Web Dashboard is configured.", f"{_wizard_cmd_prefix(_wizard_install_method())} --setup")
         sys.exit(1 if doctor_failures else 0)
 
     # Offline follow relationship analysis: read the already-saved lists, print the result and exit (no network requests, no monitoring loop)
