@@ -70,6 +70,77 @@ def test_identity_values_are_coloured_by_their_kind(im_module, monkeypatch, line
     assert im_module._colorize_line(line) == expected
 
 
+# Verifies quoted text is coloured whole, which an apostrophe or a dot used to cut short
+@pytest.mark.parametrize("content", ["Don't miss this one", "S.T.A.L.K.E.R. 2 announcement", "back_to_work energy", "summer 2026 / part two"])
+def test_quoted_content_is_coloured_whole(im_module, monkeypatch, content):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {"username": "<username>"})
+    monkeypatch.setattr(im_module, "ANSI_RESET", "<reset>")
+
+    assert f"<username>{content}<reset>" in im_module._colorize_line(f"Caption: '{content}'")
+
+
+# Verifies two quoted values on one line stay two values, since the closing quote rule could have joined them
+def test_two_quoted_values_on_one_line_stay_separate(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {"username": "<username>"})
+    monkeypatch.setattr(im_module, "ANSI_RESET", "<reset>")
+
+    result = im_module._colorize_line("Renamed from 'first name' to 'second name' today")
+
+    assert "<username>first name<reset>" in result
+    assert "<username>second name<reset>" in result
+
+
+# Verifies a quoted path, placeholder, option or URL fragment stays plain, since none of them is content
+@pytest.mark.parametrize("value", ["/var/log/instagram.log", "~/logs/output.txt", "state.json", "<username>", "--env-file none", "?code=", "&state="])
+def test_quoted_values_that_are_not_content_stay_plain(im_module, monkeypatch, value):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {"username": "\x1b[36m"})
+
+    assert "\x1b[36m" not in im_module._colorize_line(f"Value is '{value}' now")
+
+
+# Verifies a received signal is coloured as the event it is, so the shipped theme key is not a setting that does nothing
+def test_a_received_signal_line_uses_the_signal_colour(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {"signal": "<signal>"})
+    monkeypatch.setattr(im_module, "ANSI_RESET", "<reset>")
+
+    assert im_module._colorize_line("* Signal SIGUSR1 received") == "<signal>* Signal SIGUSR1 received<reset>"
+
+
+# Verifies every part the shipped theme offers is actually looked up somewhere, so a documented setting cannot do nothing
+def test_every_theme_part_is_used(im_module):
+    import re
+    from pathlib import Path
+
+    source = Path(im_module.__file__).read_text(encoding="utf-8")
+    looked_up = set(re.findall(r"""colorize\(\s*["']([a-z_]+)["']""", source))
+    looked_up |= set(re.findall(r"""_COLOR_STYLES\.get\(["']([a-z_]+)["']""", source))
+    looked_up |= set(re.findall(r"""(?:style_name|state_style|key|style) = ["']([a-z_]+)["']""", source))
+    looked_up |= set(re.findall(r""",\s*["']([a-z_]+)["']\),?\s*$""", source, re.M))
+    looked_up |= set(re.findall(r"""["'][A-Za-z ]+["']:\s*["']([a-z_]+)["']""", source))
+
+    assert not set(im_module.DEFAULT_COLOR_THEME) - looked_up
+
+
+# Verifies argparse never adds a palette of its own, which from Python 3.14 would survive --no-color
+def test_argparse_adds_no_palette_of_its_own(im_module):
+    import sys
+
+    assert im_module.argparse_color_kwargs() == ({"color": False} if sys.version_info >= (3, 14) else {})
+
+
+# Verifies the switch is actually passed to the parser, since the helper alone colours nothing
+def test_the_parser_is_built_with_the_argparse_colour_switch(im_module):
+    from pathlib import Path
+
+    source = Path(im_module.__file__).read_text(encoding="utf-8")
+
+    assert "**argparse_color_kwargs()" in source.split("argparse.ArgumentParser(", 1)[1].split("\n\n", 1)[0]
+
+
 # Verifies labeled output and status changes keep their text while using direct bounded parsing
 @pytest.mark.parametrize("line,styles", [("* Check interval:\t5 minutes (today)\n", ("timestamp_label", "count_up", "date_range")), ("Timestamp:\t21:07:39\n", ("timestamp_label", "timestamp_value")), ("STATUS: Online\n", ("status_online",)), ("alice changed status from Online to Offline\n", ("status_online", "status_offline"))])
 def test_colorize_line_parses_security_sensitive_patterns_without_text_changes(im_module, monkeypatch, line, styles):

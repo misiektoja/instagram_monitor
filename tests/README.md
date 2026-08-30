@@ -44,6 +44,28 @@ installed copy of the package.
 | `test_parsing_and_useragents.py` | JSON username extraction, follow-string formatting, desktop/mobile user-agent shape |
 | `test_csv_and_files.py` | CSV init/append and byte-wise image comparison |
 | `test_followers.py` | Follower/following diffing, webhook escaping, CSV side effects |
+| `conftest.py` | Shared fixtures and import setup: module globals, exported secrets and stubbed dependencies are reset between tests |
+| `test_config_loading.py` | Config files read as data, rejected content and the settings each released template still carries |
+| `test_config_effects.py` | Config-file settings reaching the code that consumes them |
+| `test_startup_summary.py` | The startup summary block driven through the real command-line path |
+| `test_help_screen.py` | The `--help` screen: the shared argument group names, the task-grouped examples and the startup banner |
+| `test_setup_wizard.py` | The staged setup wizard, its destination checks and its safety gates |
+| `test_install_method_commands.py` | Install-method detection and the command examples it drives |
+| `test_doctor.py` | `--doctor` preflight checks: every section, the delivery tests and the exit code |
+| `test_error_hints.py` | The action-oriented error hint classifier |
+| `test_terminal_color.py` | The colour engine: theme resolution, line rules, quoted content and the shipped theme keys |
+| `test_tls_verification.py` | Every request honouring `VERIFY_SSL`, what is reported while it is off and its shipped default |
+| `test_exposure_ledger.py` | The identity exposure ledger, the daily budget and the account circuit breaker |
+| `test_human_simulation.py` | The BeHuman activity simulation guards |
+| `test_impersonate_validation.py` | curl_cffi impersonation target validation |
+| `test_http_backend.py` | The curl_cffi transport adapter driven against a loopback server |
+| `test_concurrency_and_caches.py` | Shared cache eviction and probe deduplication |
+| `test_monitor_restart.py` | The monitoring restart loop used when live settings change |
+| `test_follow_list_source.py` | The follower and following list sources: the web REST endpoints and the GraphQL fallback |
+| `test_follow_list_browser.py` | The experimental browser follower list source, with no browser started |
+| `test_follow_analysis.py` | The offline follow relationship analysis behind `--analyze-follows` |
+| `test_imgcat_display.py` | Terminal image display argument handling |
+| `test_notification_escaping.py` | Source-level sweep proving every value reaching an HTML notification body is escaped |
 | `test_documentation.py` | Semantic documentation contracts for commands, concepts and platform variants plus repository metadata: governance files, citation, funding, line endings, the declared editor style, the pinned linter and release integrity |
 | `test_packaging.py` | Wheel contents, installed console help/version and config generation |
 | `test_browser_e2e.py` | Real Chromium rendering, navigation and target creation against the local dashboard |

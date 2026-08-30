@@ -4347,7 +4347,26 @@ _BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
 _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
 _NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
 _STORY_URL_RE = re.compile(r"(https?://\S+)")
-_QUOTED_CONTENT_RE = re.compile(r"(['\"])((?![^'\"]*[._/])[^'\"]+)\1")
+# A received signal is an event rather than a problem, so it gets its own whole-line colour
+_SIGNAL_LINE_RE = re.compile(r"^\s*\*\s*signal\b.*\breceived\b", re.IGNORECASE)
+# Quoted content such as a caption or a name. At least one word character is required so a run of punctuation
+# between two quotes is not read as content. The closing quote has to be followed by whitespace, punctuation or
+# the end of the line, so the text's own apostrophe does not end it early
+_QUOTED_CONTENT_RE = re.compile(r"(['\"])([^\n]*?\w[^\n]*?)\1(?=[\s.,;:!?)\]]|$)")
+
+# Quoted values shaped like a file name or a filesystem path stay plain, since an output destination is not
+# content. Captions routinely contain slashes and dots, so only these two shapes are excluded
+_QUOTED_FILE_LIKE_RE = re.compile(r"^[~.]?[\\/]|^[A-Za-z]:[\\/]|\.[A-Za-z0-9]{1,8}$")
+
+# A quoted '<name>' inside a printed command is the placeholder the reader has to replace, not content
+_QUOTED_PLACEHOLDER_RE = re.compile(r"^<[^<>]*>$")
+
+# A quoted command-line option is an instruction to retype, not content
+_QUOTED_OPTION_RE = re.compile(r"^-")
+
+# A quoted piece of a URL, such as the '?code=' or '&state=' a prompt points at. Only a leading '?' or '&' counts,
+# so quoted text may end in a question mark and text containing an ampersand is still content
+_QUOTED_URL_PART_RE = re.compile(r"^[?&]|://")
 _STATUS_CHANGE_SUBJECTS = ("status", "mode", "bio", "followers", "followings", "profile picture")
 _ACTIVITY_HEADER_PHRASES = ("story for user", "newest post", "followers number changed", "followings number changed", "bio changed for", "new post for user", "number changed", "number of", "followings changed", "followers changed", "name changed to", "has changed for user", "has been updated for user", "changed profile picture", "removed profile picture", "set profile picture", "update date changed", "has new story item", "story items:", "disappeared")
 _STORY_ITEM_ACTIVITY_RE = re.compile(r"\bhas[ \t]+\d{1,20}[ \t]+story[ \t]+items?\b", re.IGNORECASE)
@@ -4567,6 +4586,14 @@ def _apply_style_nested(line, style_name):
     return line
 
 
+# Colours one quoted value unless it is a path, a placeholder, an option or a piece of a URL
+def _colorize_quoted_content(match):
+    content = match.group(2)
+    if _QUOTED_FILE_LIKE_RE.search(content) or _QUOTED_PLACEHOLDER_RE.match(content) or _QUOTED_OPTION_RE.match(content) or _QUOTED_URL_PART_RE.search(content):
+        return match.group(0)
+    return f"{match.group(1)}{colorize('username', content)}{match.group(1)}"
+
+
 # Applies colour rules to a single output line
 def _colorize_line(line):
     lowered = line.lower()
@@ -4696,7 +4723,7 @@ def _colorize_line(line):
     line = _URL_RE.sub(lambda mo: colorize("link", mo.group(0)), line)
 
     # Highlight quoted content (captions etc.)
-    line = _QUOTED_CONTENT_RE.sub(lambda mo: f"{mo.group(1)}{colorize('username', mo.group(2))}{mo.group(1)}", line)
+    line = _QUOTED_CONTENT_RE.sub(_colorize_quoted_content, line)
 
     # Highlight boolean values
     line = _BOOLEAN_TRUE_RE.sub(lambda mo: colorize("boolean_true", mo.group(0)), line)
@@ -4733,6 +4760,8 @@ def _colorize_line(line):
         line = _apply_style_nested(line, "warning")
     elif is_info:
         line = _apply_style_nested(line, "info")
+    elif _SIGNAL_LINE_RE.match(line):
+        line = _apply_style_nested(line, "signal")
 
     return line
 
@@ -7782,6 +7811,12 @@ def import_session(browser, cookiefile, sessionfile, profile=None):
         print(f"{RED}{line.ljust(len(border))}{RESET}")
     print(f"{RED}{border}{RESET}")
     return username
+
+
+# Keeps argparse from colouring its own help, so the help screen is coloured by this tool alone and --no-color is
+# not left with a second palette to silence. From Python 3.14 argparse colours the help by default on a terminal
+def argparse_color_kwargs() -> dict[str, Any]:
+    return {"color": False} if sys.version_info >= (3, 14) else {}
 
 
 # Finds an optional config file
@@ -14167,6 +14202,17 @@ def _wizard_secret_value(key: str, env_path: Path) -> Optional[str]:
     return value if isinstance(value, str) else None
 
 
+# Queues one secret for the save step, asking first when the dotenv file already assigns it
+def _wizard_queue_secret(secret_updates: dict, env_path: Path, key: str, value: str) -> bool:
+    if not value:
+        return False
+    if _dotenv_contains_key(env_path, key) and not _wizard_ask_yes_no(f"The dotenv file already contains {key}. Replace that value?", default=False):
+        print(f"  Existing {key} will be retained without being displayed or rewritten.")
+        return False
+    secret_updates[key] = value
+    return True
+
+
 # Returns whether a non-placeholder secret exists in the selected dotenv file or environment
 def _wizard_existing_secret(key: str, env_path: Path, placeholders=()) -> bool:
     value = _wizard_secret_value(key, env_path)
@@ -14380,7 +14426,7 @@ def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
                 return
             password = _wizard_ask_secret("Instagram password")
         if password:
-            state.secret_updates["SESSION_PASSWORD"] = password
+            _wizard_queue_secret(state.secret_updates, state.env_path, "SESSION_PASSWORD", password)
         else:
             _wizard_fall_back_to_no_login(state, "Sign-in stays off until the password is given.")
             return
@@ -14564,7 +14610,7 @@ def _wizard_collect_email_section(state: WizardSetupState) -> None:
             return
         password = _wizard_ask_secret("SMTP password")
         if password:
-            state.secret_updates["SMTP_PASSWORD"] = password
+            _wizard_queue_secret(state.secret_updates, state.env_path, "SMTP_PASSWORD", password)
         outcome = _wizard_smtp_sign_in_accepted({name: state.config_values[name] for name in WIZARD_SMTP_CONFIG_KEYS}, password or saved_password)
         if outcome is None:
             _wizard_disable_email(state)
@@ -15705,7 +15751,7 @@ def run_main():
     parser = argparse.ArgumentParser(
         prog="instagram_monitor",
         description=("Monitor Instagram activity and send customizable email or webhook alerts [ https://github.com/misiektoja/instagram_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter,
-        epilog=_build_help_epilog()
+        epilog=_build_help_epilog(), **argparse_color_kwargs()
     )
 
     # Positional targets (one or more)

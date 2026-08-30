@@ -1062,3 +1062,54 @@ def test_prompts_restore_the_default_interrupt_handler(im_module, monkeypatch):
         assert signal.getsignal(signal.SIGINT) is im_module.signal_handler
     finally:
         signal.signal(signal.SIGINT, previous_handler)
+
+
+class TestSecretReplacePrompt:
+    # Verifies a secret already in the dotenv file is kept when the replacement is declined
+    def test_an_existing_dotenv_secret_is_kept_unless_the_replacement_is_confirmed(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            (directory / ".env").write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
+            state = make_setup_state(im_module, directory)
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: False)
+
+            queued = im_module._wizard_queue_secret(state.secret_updates, state.env_path, "SMTP_PASSWORD", "typed-password")
+
+            assert queued is False
+            assert "SMTP_PASSWORD" not in state.secret_updates
+            assert "Existing SMTP_PASSWORD will be retained" in capsys.readouterr().out
+
+    # Verifies a confirmed replacement is queued for the save step
+    def test_a_confirmed_replacement_is_queued(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            (directory / ".env").write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
+            state = make_setup_state(im_module, directory)
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
+
+            assert im_module._wizard_queue_secret(state.secret_updates, state.env_path, "SMTP_PASSWORD", "typed-password") is True
+            assert state.secret_updates["SMTP_PASSWORD"] == "typed-password"
+
+    # Verifies a dotenv file that does not hold the secret yet is written without asking anything
+    def test_a_new_secret_is_queued_without_a_question(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+
+            def refuse_every_question(question, default=True):
+                raise AssertionError(f"Setup asked about a secret the dotenv file does not hold: {question!r}")
+
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", refuse_every_question)
+
+            assert im_module._wizard_queue_secret(state.secret_updates, state.env_path, "SESSION_PASSWORD", "typed-password") is True
+            assert state.secret_updates["SESSION_PASSWORD"] == "typed-password"
+
+    # Verifies both password prompts route through the replace guard rather than overwriting the stored value
+    def test_both_password_sections_route_through_the_replace_guard(self, im_module):
+        from pathlib import Path as _Path
+
+        source = _Path(im_module.__file__).read_text(encoding="utf-8")
+
+        assert 'state.secret_updates["SESSION_PASSWORD"] =' not in source
+        assert 'state.secret_updates["SMTP_PASSWORD"] =' not in source
+        assert source.count('_wizard_queue_secret(state.secret_updates, state.env_path, "SESSION_PASSWORD"') == 1
+        assert source.count('_wizard_queue_secret(state.secret_updates, state.env_path, "SMTP_PASSWORD"') == 1
