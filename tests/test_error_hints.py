@@ -182,7 +182,7 @@ class TestErrorSummary:
 
     # Verifies the doctor row label comes from the classifier so no raw exception text reaches it
     def test_a_doctor_row_without_a_label_uses_the_summary(self, im_module):
-        check = im_module.doctor_check_from_error("Session", "fail", "", "ConnectionException: Login required, redirected", True, "raw technical text")
+        check = im_module.doctor_check_from_error("Session", "FAIL", "", "ConnectionException: Login required, redirected", True, "raw technical text")
 
         assert check.label == "The saved Instagram session is invalid or expired"
         assert check.detail == "raw technical text"

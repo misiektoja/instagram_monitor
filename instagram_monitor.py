@@ -15042,6 +15042,13 @@ def _wizard_should_offer_first_run(arguments, configured_targets, web_dashboard_
     return len(arguments) == 1 and not configured_targets and not web_dashboard_enabled
 
 
+# The four shared status markers. A fifth neutral marker is the single biggest source of drift between these
+# tools, because every state it would cover is a state the others already call PASS
+DOCTOR_STATUSES = ("PASS", "WARN", "FAIL", "SKIP")
+
+DOCTOR_MARK_STYLES = {"PASS": "boolean_true", "WARN": "warning", "FAIL": "error", "SKIP": "info"}
+
+
 # Stores one doctor result before the report is rendered, keeping the check separate from its presentation
 @dataclass(frozen=True)
 class DoctorCheck:
@@ -15068,9 +15075,10 @@ class DoctorReport:
 
 # Creates one validated doctor check
 def make_doctor_check(section: str, status: str, label: str, detail: str = "", fix: str = "", guide: str = "") -> DoctorCheck:
-    if status not in ("ok", "warn", "fail", "info"):
+    if status not in DOCTOR_STATUSES:
         raise ValueError(f"Unsupported doctor status: {status}")
-    return DoctorCheck(section, status, label, detail, fix, guide)
+    # Several rows carry the same text as their label and printing it twice reads as two problems
+    return DoctorCheck(section, status, label, "" if detail.strip() == label.strip() else detail, fix, guide)
 
 
 # Builds one doctor check from an error, reusing the shared fix hints so advice stays consistent
@@ -15079,13 +15087,16 @@ def doctor_check_from_error(section: str, status: str, label: str, error_message
     return make_doctor_check(section, status, label or summary, detail, fix, guide)
 
 
-# Prints one doctor check line with a status marker and an optional detail or hint
+# Prints one doctor check line with a status marker and an optional detail
 def _doctor_line(status: str, label: str, detail: str = "") -> None:
-    marks = {"ok": ("[PASS]", "boolean_true"), "warn": ("[WARN]", "warning"), "fail": ("[FAIL]", "error"), "skip": ("[SKIP]", "info"), "info": ("[ -- ]", "info")}
-    mark, theme = marks.get(status, ("[ -- ]", "info"))
-    print(f"{colorize(theme, mark)} {label}")
+    print(f"{colorize(DOCTOR_MARK_STYLES[status], f'[{status}]')} {label}")
     if detail:
         print(f"  {detail}")
+
+
+# Prints one plain value row for a report that states findings rather than check results
+def _report_value_line(text: str) -> None:
+    print(f"* {text}")
 
 
 # Prints an inline 'doing X...' status that the upcoming result line overwrites, on interactive terminals only
@@ -15147,22 +15158,22 @@ def _doctor_offer_notification_tests(smtp_ready: bool, webhook_ready: bool) -> i
         if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
             result = send_email("instagram_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "This test email was sent after approval in <b>--doctor</b>. Your SMTP delivery settings work.", SMTP_SSL, smtp_timeout=5)
             if result == 0:
-                _doctor_line("ok", "Doctor test email delivered", "One real test email was sent after confirmation")
+                _doctor_line("PASS", "Doctor test email delivered", "One real test email was sent after confirmation")
             else:
                 failures += 1
-                _doctor_line("fail", "Doctor test email delivery failed", "The approved test email could not be delivered")
+                _doctor_line("FAIL", "Doctor test email delivery failed", "The approved test email could not be delivered")
         else:
-            _doctor_line("skip", "Test email skipped", "No email was sent")
+            _doctor_line("SKIP", "Test email skipped", "No email was sent")
     if webhook_ready:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
             if _doctor_send_test_webhook() == 0:
-                _doctor_line("ok", "Doctor test webhook delivered", "One real test webhook was sent after confirmation")
+                _doctor_line("PASS", "Doctor test webhook delivered", "One real test webhook was sent after confirmation")
             else:
                 failures += 1
-                _doctor_line("fail", "Doctor test webhook delivery failed", "The approved test webhook could not be delivered")
+                _doctor_line("FAIL", "Doctor test webhook delivery failed", "The approved test webhook could not be delivered")
         else:
-            _doctor_line("skip", "Test webhook skipped", "No webhook was sent")
+            _doctor_line("SKIP", "Test webhook skipped", "No webhook was sent")
     return failures
 
 
@@ -15333,20 +15344,20 @@ def run_follow_analysis(targets: Sequence[str]) -> int:
 
         if not result["available"]:
             for note in result["notes"]:
-                _doctor_line("warn", masked(note))
+                _doctor_line("WARN", masked(note))
             if result.get("searched_directory"):
-                _doctor_line("info", masked(f"Searched directory: {result['searched_directory']}"))
+                _report_value_line(masked(f"Searched directory: {result['searched_directory']}"))
             print("")
             continue
 
         analyzed += 1
-        _doctor_line("info", f"Followers: {result['followers_fetched']}")
-        _doctor_line("info", f"Followings: {result['followings_fetched']}")
-        _doctor_line("info", f"Mutual (follow each other): {result['mutual_count']}")
-        _doctor_line("info", f"Follower snapshot: {result['followers_saved_at']}")
-        _doctor_line("info", f"Following snapshot: {result['followings_saved_at']}")
+        _report_value_line(f"Followers: {result['followers_fetched']}")
+        _report_value_line(f"Followings: {result['followings_fetched']}")
+        _report_value_line(f"Mutual (follow each other): {result['mutual_count']}")
+        _report_value_line(f"Follower snapshot: {result['followers_saved_at']}")
+        _report_value_line(f"Following snapshot: {result['followings_saved_at']}")
         for note in result["notes"]:
-            _doctor_line("warn", masked(note))
+            _doctor_line("WARN", masked(note))
 
         not_back = result["not_following_back"]
         fans = result["fans"]
@@ -15380,9 +15391,9 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
     version_text = ".".join(str(part) for part in tuple(selected_version)[:3])
     minimum_detail = f"Minimum supported version: {MINIMUM_PYTHON_VERSION_TEXT}"
     if tuple(selected_version)[:2] >= MINIMUM_PYTHON_VERSION:
-        checks.append(make_doctor_check("Environment", "ok", f"Python {version_text} is supported", minimum_detail))
+        checks.append(make_doctor_check("Environment", "PASS", f"Python {version_text} is supported", minimum_detail))
     else:
-        checks.append(make_doctor_check("Environment", "fail", f"Python {version_text} is unsupported", minimum_detail, f"Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer then retry", INSTALLATION_GUIDE_URL))
+        checks.append(make_doctor_check("Environment", "FAIL", f"Python {version_text} is unsupported", minimum_detail, f"Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer then retry", INSTALLATION_GUIDE_URL))
 
     find_spec = importlib.util.find_spec if spec_finder is None else spec_finder
 
@@ -15396,9 +15407,9 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
     required = (("instaloader", "instaloader"), ("requests", "requests"), ("dateutil", "python-dateutil"), ("pytz", "pytz"), ("tqdm", "tqdm"))
     for module_name, package_name in required:
         if module_present(module_name):
-            checks.append(make_doctor_check("Environment", "ok", f"Required dependency {package_name} is installed"))
+            checks.append(make_doctor_check("Environment", "PASS", f"Required dependency {package_name} is installed"))
         else:
-            checks.append(make_doctor_check("Environment", "fail", f"Required dependency {package_name} is missing", "", f"Install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
+            checks.append(make_doctor_check("Environment", "FAIL", f"Required dependency {package_name} is missing", "", f"Install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
 
     optional = (
         ("curl_cffi", "curl_cffi", _CURL_CFFI_AVAILABLE, "Used for browser TLS impersonation that avoids first-request 429 blocks", "Normal monitoring works without it, but Instagram is more likely to answer the first request with 429"),
@@ -15412,9 +15423,9 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         optional += (("colorama", "colorama", module_present("colorama"), "Used only for coloured output in the classic Windows Command Prompt", "Coloured output may not render in the classic Windows Command Prompt. Normal monitoring is unaffected. Windows Terminal needs nothing extra"),)
     for _, package_name, present, purpose, missing_purpose in optional:
         if present:
-            checks.append(make_doctor_check("Environment", "ok", f"Optional dependency {package_name} is installed", purpose))
+            checks.append(make_doctor_check("Environment", "PASS", f"Optional dependency {package_name} is installed", purpose))
         else:
-            checks.append(make_doctor_check("Environment", "warn", f"Optional dependency {package_name} is not installed", missing_purpose, f"Install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
+            checks.append(make_doctor_check("Environment", "WARN", f"Optional dependency {package_name} is not installed", missing_purpose, f"Install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
     return checks
 
 
@@ -15450,15 +15461,15 @@ def doctor_secret_checks(env_path=None) -> List[DoctorCheck]:
     from_file, from_environment, from_settings, from_command_line = doctor_secret_sources(env_path)
     checks: List[DoctorCheck] = []
     if from_file:
-        checks.append(make_doctor_check("Configuration", "ok", "Secrets loaded from the dotenv file", ", ".join(from_file)))
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the dotenv file", ", ".join(from_file)))
     if from_environment:
-        checks.append(make_doctor_check("Configuration", "ok", "Secrets loaded from the environment", ", ".join(from_environment)))
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the environment", ", ".join(from_environment)))
     if from_settings:
-        checks.append(make_doctor_check("Configuration", "ok", "Secrets loaded from the configuration file or command line", ", ".join(from_settings)))
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the configuration file or command line", ", ".join(from_settings)))
     if from_command_line:
-        checks.append(make_doctor_check("Configuration", "ok", "Secrets loaded from the command line", ", ".join(from_command_line)))
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the command line", ", ".join(from_command_line)))
     if not checks:
-        checks.append(make_doctor_check("Configuration", "ok", "No secrets loaded", "Nothing was read from a dotenv file, the environment or the command line"))
+        checks.append(make_doctor_check("Configuration", "PASS", "No secrets loaded", "Nothing was read from a dotenv file, the environment or the command line"))
     return checks
 
 
@@ -15474,18 +15485,18 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
     cfg = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
     if config_errors:
         for config_error in config_errors:
-            checks.append(make_doctor_check("Configuration", "fail", doctor_label_from_error(config_error["summary"]), config_error.get("detail", ""), config_error.get("fix", ""), CONFIG_FILE_GUIDE_URL))
+            checks.append(make_doctor_check("Configuration", "FAIL", doctor_label_from_error(config_error["summary"]), config_error.get("detail", ""), config_error.get("fix", ""), CONFIG_FILE_GUIDE_URL))
     elif cfg:
-        checks.append(make_doctor_check("Configuration", "ok", "Configuration file loaded", f"Path: {cfg}"))
+        checks.append(make_doctor_check("Configuration", "PASS", "Configuration file loaded", f"Path: {cfg}"))
     else:
-        checks.append(make_doctor_check("Configuration", "ok", "No configuration file selected", "Using built-in defaults and command-line overrides"))
+        checks.append(make_doctor_check("Configuration", "PASS", "No configuration file selected", "Using built-in defaults and command-line overrides"))
     if retired_settings:
-        checks.append(make_doctor_check("Configuration", "warn", "Config file contains removed settings", describe_retired_settings(retired_settings, cfg), "Delete the reported settings or regenerate the file with --generate-config", CONFIG_FILE_GUIDE_URL))
+        checks.append(make_doctor_check("Configuration", "WARN", "Config file contains removed settings", describe_retired_settings(retired_settings, cfg), "Delete the reported settings or regenerate the file with --generate-config", CONFIG_FILE_GUIDE_URL))
 
     if env_path:
-        checks.append(make_doctor_check("Configuration", "ok", "Dotenv file loaded", f"Path: {env_path}"))
+        checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
     else:
-        checks.append(make_doctor_check("Configuration", "ok", "No dotenv file selected", "Using environment variables and other configured sources"))
+        checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file selected", "Using environment variables and other configured sources"))
     checks.extend(doctor_secret_checks(env_path))
 
     if LOCAL_TIMEZONE == "Auto":
@@ -15496,53 +15507,53 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
             detected_timezone = ""
             timezone_error = exc
         if detected_timezone and is_valid_timezone(detected_timezone):
-            checks.append(make_doctor_check("Configuration", "ok", "Local timezone can be detected", f"Time zone: {detected_timezone}"))
+            checks.append(make_doctor_check("Configuration", "PASS", "Local timezone can be detected", f"Time zone: {detected_timezone}"))
         elif get_localzone is None:
-            checks.append(make_doctor_check("Configuration", "fail", "Automatic timezone detection is unavailable", "LOCAL_TIMEZONE is Auto but tzlocal is unavailable", "Install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
+            checks.append(make_doctor_check("Configuration", "FAIL", "Automatic timezone detection is unavailable", "LOCAL_TIMEZONE is Auto but tzlocal is unavailable", "Install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
         else:
-            checks.append(make_doctor_check("Configuration", "fail", "Automatic timezone detection failed", f"tzlocal did not return a supported timezone{f': {timezone_error}' if timezone_error else ''}", "Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
+            checks.append(make_doctor_check("Configuration", "FAIL", "Automatic timezone detection failed", f"tzlocal did not return a supported timezone{f': {timezone_error}' if timezone_error else ''}", "Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
     elif is_valid_timezone(LOCAL_TIMEZONE):
-        checks.append(make_doctor_check("Configuration", "ok", "Local timezone is valid", f"Time zone: {LOCAL_TIMEZONE}"))
+        checks.append(make_doctor_check("Configuration", "PASS", "Local timezone is valid", f"Time zone: {LOCAL_TIMEZONE}"))
     else:
-        checks.append(make_doctor_check("Configuration", "fail", "Local timezone is invalid", f"Time zone: {LOCAL_TIMEZONE}", "Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
+        checks.append(make_doctor_check("Configuration", "FAIL", "Local timezone is invalid", f"Time zone: {LOCAL_TIMEZONE}", "Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
 
     if VERIFY_SSL:
-        checks.append(make_doctor_check("Configuration", "ok", "TLS certificate verification is on", "Every outbound request checks the server certificate"))
+        checks.append(make_doctor_check("Configuration", "PASS", "TLS certificate verification is on", "Every outbound request checks the server certificate"))
     else:
-        checks.append(make_doctor_check("Configuration", "warn", "TLS certificate verification is off", "VERIFY_SSL is False, so an intercepted connection cannot be told apart from the real service", "Set VERIFY_SSL back to True unless this network intercepts TLS with its own certificate authority", TLS_GUIDE_URL))
+        checks.append(make_doctor_check("Configuration", "WARN", "TLS certificate verification is off", "VERIFY_SSL is False, so an intercepted connection cannot be told apart from the real service", "Set VERIFY_SSL back to True unless this network intercepts TLS with its own certificate authority", TLS_GUIDE_URL))
 
     follow_source = active_follow_list_source()
     if follow_source != 'browser':
-        checks.append(make_doctor_check("Configuration", "ok", f"Follower lists are read over {follow_list_source_display()}"))
+        checks.append(make_doctor_check("Configuration", "PASS", f"Follower lists are read over {follow_list_source_display()}"))
     else:
         browser_ready, browser_detail, browser_fix = browser_follow_list_readiness()
         if browser_ready:
-            checks.append(make_doctor_check("Configuration", "warn", "Follower lists are read by a real browser", f"{browser_detail}. This source is experimental and uses far more CPU and memory than the HTTP sources", "Set FOLLOW_LIST_SOURCE back to auto if a check takes too long or the machine is small", FOLLOW_LIST_SOURCE_GUIDE_URL))
+            checks.append(make_doctor_check("Configuration", "WARN", "Follower lists are read by a real browser", f"{browser_detail}. This source is experimental and uses far more CPU and memory than the HTTP sources", "Set FOLLOW_LIST_SOURCE back to auto if a check takes too long or the machine is small", FOLLOW_LIST_SOURCE_GUIDE_URL))
         else:
-            checks.append(make_doctor_check("Configuration", "fail", "The browser follower list source cannot run", browser_detail, browser_fix, FOLLOW_LIST_SOURCE_GUIDE_URL))
+            checks.append(make_doctor_check("Configuration", "FAIL", "The browser follower list source cannot run", browser_detail, browser_fix, FOLLOW_LIST_SOURCE_GUIDE_URL))
 
     if not CSV_FILE:
-        checks.append(make_doctor_check("Configuration", "ok", "CSV logging is disabled"))
+        checks.append(make_doctor_check("Configuration", "PASS", "CSV logging is disabled"))
     else:
         for target in targets or [""]:
             target_csv = get_target_paths(target)[0] if target else CSV_FILE
             label = f"CSV destination for '{target}'" if target else "CSV destination"
             if output_destination_is_writable(target_csv):
-                checks.append(make_doctor_check("Configuration", "ok", f"{label} appears writable", f"Path: {target_csv}"))
+                checks.append(make_doctor_check("Configuration", "PASS", f"{label} appears writable", f"Path: {target_csv}"))
             else:
-                checks.append(make_doctor_check("Configuration", "fail", f"{label} is not writable", f"Path: {target_csv}", "Choose a writable path with --csv-file or CSV_FILE"))
+                checks.append(make_doctor_check("Configuration", "FAIL", f"{label} is not writable", f"Path: {target_csv}", "Choose a writable path with --csv-file or CSV_FILE"))
 
     if DISABLE_LOGGING:
-        checks.append(make_doctor_check("Configuration", "ok", "Output logging is disabled"))
+        checks.append(make_doctor_check("Configuration", "PASS", "Output logging is disabled"))
     elif targets:
         for target in targets:
             _, target_log = get_target_paths(target)
             if output_destination_is_writable(target_log):
-                checks.append(make_doctor_check("Configuration", "ok", f"Log destination for '{target}' appears writable", f"Path: {target_log}"))
+                checks.append(make_doctor_check("Configuration", "PASS", f"Log destination for '{target}' appears writable", f"Path: {target_log}"))
             else:
-                checks.append(make_doctor_check("Configuration", "fail", f"Log destination for '{target}' is not writable", f"Path: {target_log}", "Choose a writable path with --output-dir or INSTA_LOGFILE. Disable logging with -d when no log file is wanted"))
+                checks.append(make_doctor_check("Configuration", "FAIL", f"Log destination for '{target}' is not writable", f"Path: {target_log}", "Choose a writable path with --output-dir or INSTA_LOGFILE. Disable logging with -d when no log file is wanted"))
     else:
-        checks.append(make_doctor_check("Configuration", "ok", "Log destination will be finalized after a target is selected", f"Base path: {INSTA_LOGFILE}"))
+        checks.append(make_doctor_check("Configuration", "PASS", "Log destination will be finalized after a target is selected", f"Base path: {INSTA_LOGFILE}"))
     return checks
 
 
@@ -15551,7 +15562,7 @@ def doctor_prepare_bot(report: DoctorReport) -> List[DoctorCheck]:
     try:
         report.bot = instaloader_client(user_agent=USER_AGENT, iphone_support=True, quiet=True)
     except Exception as exc:
-        return [make_doctor_check("Configuration", "fail", "Could not initialise Instaloader", format_error_message(exc))]
+        return [make_doctor_check("Configuration", "FAIL", "Could not initialise Instaloader", format_error_message(exc))]
     return []
 
 
@@ -15559,57 +15570,57 @@ def doctor_prepare_bot(report: DoctorReport) -> List[DoctorCheck]:
 def doctor_check_session(report: DoctorReport, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
     if not logged_in:
-        return [make_doctor_check("Session", "ok", "No-login mode", "Stories, reels and follower churn require Logged-in mode")]
+        return [make_doctor_check("Session", "PASS", "No-login mode", "Stories, reels and follower churn require Logged-in mode")]
     if report.bot is None:
-        return [make_doctor_check("Session", "warn", "Skipped session check", "Instaloader could not be initialised")]
+        return [make_doctor_check("Session", "WARN", "Skipped session check", "Instaloader could not be initialised")]
     if progress is not None:
         progress(f"Validating session for {SESSION_USERNAME}")
     try:
         report.bot.load_session_from_file(SESSION_USERNAME)
         who = report.bot.test_login()
         if who:
-            return [make_doctor_check("Session", "ok", f"Session valid for {who}")]
-        return [doctor_check_from_error("Session", "warn", f"Session for {SESSION_USERNAME} is not logged in", "login_required", True)]
+            return [make_doctor_check("Session", "PASS", f"Session valid for {who}")]
+        return [doctor_check_from_error("Session", "WARN", f"Session for {SESSION_USERNAME} is not logged in", "login_required", True)]
     except FileNotFoundError:
-        return [doctor_check_from_error("Session", "fail", f"No saved session for {SESSION_USERNAME}", "session file not found", True)]
+        return [doctor_check_from_error("Session", "FAIL", f"No saved session for {SESSION_USERNAME}", "session file not found", True)]
     except Exception as exc:
         message = format_error_message(exc)
-        return [doctor_check_from_error("Session", "fail", "", message, True, message)]
+        return [doctor_check_from_error("Session", "FAIL", "", message, True, message)]
 
 
 # Confirms Instagram answers a public profile request through the configured transport
 def doctor_check_connectivity(report: DoctorReport, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     if report.bot is None:
-        return [make_doctor_check("Connectivity", "warn", "Skipped connectivity check", "Instaloader could not be initialised")]
+        return [make_doctor_check("Connectivity", "WARN", "Skipped connectivity check", "Instaloader could not be initialised")]
     if progress is not None:
         progress("Contacting Instagram")
     try:
         profile_from_username_resilient(report.bot, FLAGGED_PROBE_USERNAME)
-        return [make_doctor_check("Connectivity", "ok", "Instagram reachable", f"Fetched public account '{FLAGGED_PROBE_USERNAME}'")]
+        return [make_doctor_check("Connectivity", "PASS", "Instagram reachable", f"Fetched public account '{FLAGGED_PROBE_USERNAME}'")]
     except Exception as exc:
         message = format_error_message(exc)
         logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
-        return [doctor_check_from_error("Connectivity", "fail", "Instagram not reachable or blocked", message, logged_in, message)]
+        return [doctor_check_from_error("Connectivity", "FAIL", "Instagram not reachable or blocked", message, logged_in, message)]
 
 
 # Confirms each configured target profile can be fetched
 def doctor_check_targets(report: DoctorReport, targets, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     if not targets:
         if WEB_DASHBOARD_ENABLED:
-            return [make_doctor_check("Targets", "ok", "No targets configured yet", "The Web Dashboard is enabled, so targets can be added there")]
-        return [make_doctor_check("Targets", "warn", "No targets configured", "Nothing will be monitored", "Pass a target on the command line, set TARGET_USERNAMES in the config or enable the Web Dashboard", QUICK_START_GUIDE_URL)]
+            return [make_doctor_check("Targets", "PASS", "No targets configured yet", "The Web Dashboard is enabled, so targets can be added there")]
+        return [make_doctor_check("Targets", "WARN", "No targets configured", "Nothing will be monitored", "Pass a target on the command line, set TARGET_USERNAMES in the config or enable the Web Dashboard", QUICK_START_GUIDE_URL)]
     if report.bot is None:
-        return [make_doctor_check("Targets", "warn", "Skipped target checks", "Instaloader could not be initialised")]
+        return [make_doctor_check("Targets", "WARN", "Skipped target checks", "Instaloader could not be initialised")]
     checks: List[DoctorCheck] = []
     for target in targets:
         if progress is not None:
             progress(f"Looking up '{target}'")
         try:
             profile_from_username_resilient(report.bot, target)
-            checks.append(make_doctor_check("Targets", "ok", f"Target '{target}' found"))
+            checks.append(make_doctor_check("Targets", "PASS", f"Target '{target}' found"))
         except Exception as exc:
             message = format_error_message(exc)
-            checks.append(doctor_check_from_error("Targets", "warn", f"Target '{target}' could not be fetched", message, True, message))
+            checks.append(doctor_check_from_error("Targets", "WARN", f"Target '{target}' could not be fetched", message, True, message))
     return checks
 
 
@@ -15630,7 +15641,7 @@ def email_settings_problem() -> Optional[Tuple[str, str]]:
 
 # Returns the doctor row for email alerts whose settings cannot deliver, worded the same way by every sibling monitor
 def doctor_email_unusable_check(detail: str, fix: str) -> DoctorCheck:
-    return make_doctor_check("Notifications", "warn", EMAIL_UNUSABLE_CHECK_LABEL, detail, fix, SMTP_GUIDE_URL)
+    return make_doctor_check("Notifications", "WARN", EMAIL_UNUSABLE_CHECK_LABEL, detail, fix, SMTP_GUIDE_URL)
 
 
 # Checks SMTP login and webhook configuration without sending anything
@@ -15638,7 +15649,7 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
     checks: List[DoctorCheck] = []
     problem = email_settings_problem()
     if not email_notifications_enabled():
-        checks.append(make_doctor_check("Notifications", "ok", "Email notifications are disabled", "No SMTP connection was attempted and no email was sent"))
+        checks.append(make_doctor_check("Notifications", "PASS", "Email notifications are disabled", "No SMTP connection was attempted and no email was sent"))
     elif problem is not None:
         checks.append(doctor_email_unusable_check(*problem))
     else:
@@ -15652,35 +15663,35 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
             smtp.login(SMTP_USER, SMTP_PASSWORD)
             smtp.quit()
             report.smtp_ready = True
-            checks.append(make_doctor_check("Notifications", "ok", SMTP_READY_CHECK_LABEL, f"Alerts: {', '.join(_startup_email_notification_categories())}. No email was sent during this passive check"))
+            checks.append(make_doctor_check("Notifications", "PASS", SMTP_READY_CHECK_LABEL, f"Alerts: {', '.join(_startup_email_notification_categories())}. No email was sent during this passive check"))
         except Exception as exc:
             summary, fix = classify_smtp_error(exc)
-            checks.append(make_doctor_check("Notifications", "fail", summary, format_error_message(exc), fix, SMTP_GUIDE_URL))
+            checks.append(make_doctor_check("Notifications", "FAIL", summary, format_error_message(exc), fix, SMTP_GUIDE_URL))
 
     if not WEBHOOK_ENABLED:
-        checks.append(make_doctor_check("Notifications", "ok", "Webhook alerts are disabled"))
+        checks.append(make_doctor_check("Notifications", "PASS", "Webhook alerts are disabled"))
         return checks
     if is_placeholder_setting(WEBHOOK_URL):
-        checks.append(make_doctor_check("Notifications", "warn", "Webhook enabled but WEBHOOK_URL is not set", "No webhook was sent", "Set WEBHOOK_URL (or via .env) or disable webhooks", WEBHOOK_GUIDE_URL))
+        checks.append(make_doctor_check("Notifications", "WARN", "Webhook enabled but WEBHOOK_URL is not set", "No webhook was sent", "Set WEBHOOK_URL (or via .env) or disable webhooks", WEBHOOK_GUIDE_URL))
         return checks
     if not normalized_webhook_provider():
-        checks.append(make_doctor_check("Notifications", "fail", "Webhook provider is invalid", "", "Set WEBHOOK_PROVIDER to 'discord' or 'ntfy'", WEBHOOK_GUIDE_URL))
+        checks.append(make_doctor_check("Notifications", "FAIL", "Webhook provider is invalid", "", "Set WEBHOOK_PROVIDER to 'discord' or 'ntfy'", WEBHOOK_GUIDE_URL))
         return checks
     if not validate_webhook_url(WEBHOOK_URL):
-        checks.append(make_doctor_check("Notifications", "fail", "Webhook URL is not a complete HTTPS URL", "", "Use a complete HTTPS destination with a path and no embedded credentials", WEBHOOK_GUIDE_URL))
+        checks.append(make_doctor_check("Notifications", "FAIL", "Webhook URL is not a complete HTTPS URL", "", "Use a complete HTTPS destination with a path and no embedded credentials", WEBHOOK_GUIDE_URL))
         return checks
 
     customization_error = validate_webhook_customization(normalized_webhook_provider())
     header_error = validate_webhook_headers(normalized_webhook_provider())
     if customization_error is not None:
-        checks.append(make_doctor_check("Notifications", "fail", "Webhook customization is invalid", customization_error, "Correct the reported webhook customization setting", WEBHOOK_GUIDE_URL))
+        checks.append(make_doctor_check("Notifications", "FAIL", "Webhook customization is invalid", customization_error, "Correct the reported webhook customization setting", WEBHOOK_GUIDE_URL))
     elif header_error is not None:
-        checks.append(make_doctor_check("Notifications", "fail", "Webhook headers are invalid", header_error, "Correct the reported WEBHOOK_HEADERS entry", WEBHOOK_GUIDE_URL))
+        checks.append(make_doctor_check("Notifications", "FAIL", "Webhook headers are invalid", header_error, "Correct the reported WEBHOOK_HEADERS entry", WEBHOOK_GUIDE_URL))
     elif not webhook_notifications_enabled():
-        checks.append(make_doctor_check("Notifications", "warn", "Webhook alerts are on but no alert types are selected", "No webhook was sent during this passive check", "Turn on at least one webhook alert or set WEBHOOK_ENABLED to False", WEBHOOK_GUIDE_URL))
+        checks.append(make_doctor_check("Notifications", "WARN", "Webhook alerts are on but no alert types are selected", "No webhook was sent during this passive check", "Turn on at least one webhook alert or set WEBHOOK_ENABLED to False", WEBHOOK_GUIDE_URL))
     else:
         report.webhook_ready = True
-        checks.append(make_doctor_check("Notifications", "ok", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", f"Alerts: {', '.join(_startup_webhook_notification_categories())}. The private link was not displayed. No webhook was sent during this passive check"))
+        checks.append(make_doctor_check("Notifications", "PASS", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", f"Alerts: {', '.join(_startup_webhook_notification_categories())}. The private link was not displayed. No webhook was sent during this passive check"))
     return checks
 
 
@@ -15715,10 +15726,11 @@ def render_doctor_report(report: DoctorReport) -> None:
         print(colorize("section", section if index == 0 else f"\n{section}"))
         for check in section_checks:
             _doctor_line(check.status, check.label, check.detail)
-            if check.fix and check.status in ("fail", "warn"):
-                print(f"To fix: {check.fix}")
+            if check.fix and check.status != "PASS":
+                print(f"  {colorize('info', f'To fix: {check.fix}')}")
+                # The closing summary already points at the doctor page, so a row links only to a page of its own
                 if check.guide:
-                    print(f"Guide: {check.guide}")
+                    print(f"  Guide: {check.guide}")
 
 
 # Prints the closing summary for one rendered report
@@ -15743,8 +15755,8 @@ def run_doctor(targets, config_errors: Sequence[dict] = (), retired_settings: Se
         _doctor_progress_clear()
 
     render_doctor_report(report)
-    fails = report.count("fail") + _doctor_offer_notification_tests(report.smtp_ready, report.webhook_ready)
-    render_doctor_summary(fails, report.count("warn"))
+    fails = report.count("FAIL") + _doctor_offer_notification_tests(report.smtp_ready, report.webhook_ready)
+    render_doctor_summary(fails, report.count("WARN"))
     return fails
 
 

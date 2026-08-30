@@ -37,7 +37,7 @@ def _setup_no_network(monkeypatch, im):
 
 
 class TestDoctorLine:
-    @pytest.mark.parametrize("status", ["ok", "warn", "fail", "info"])
+    @pytest.mark.parametrize("status", ["PASS", "WARN", "FAIL", "SKIP"])
     def test_prints_label_and_detail(self, im_module, capsys, status):
         im_module._doctor_line(status, "the-label", "the-detail")
         out = capsys.readouterr().out
@@ -59,7 +59,7 @@ class TestDoctorChecks:
         errors = [{"summary": "* Error loading config file 'x.conf':", "detail": "line 2: bad", "fix": "use documented settings."}]
 
         checks = im_module.doctor_check_configuration([], errors, ())
-        failures = [check for check in checks if check.status == "fail"]
+        failures = [check for check in checks if check.status == "FAIL"]
 
         assert len(failures) == 1
         assert failures[0].label == "Error loading config file 'x.conf'"
@@ -72,7 +72,7 @@ class TestDoctorChecks:
         monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
 
         checks = im_module.doctor_check_configuration([], (), ["DISCORD_MAX_FIELDS"])
-        warnings = [check for check in checks if check.status == "warn"]
+        warnings = [check for check in checks if check.status == "WARN"]
 
         assert len(warnings) == 1
         assert "DISCORD_MAX_FIELDS" in warnings[0].detail
@@ -87,7 +87,7 @@ class TestDoctorChecks:
 
         checks = im_module.doctor_check_configuration([])
 
-        assert ("ok", "Local timezone can be detected", "Time zone: Europe/Warsaw") in {(check.status, check.label, check.detail) for check in checks}
+        assert ("PASS", "Local timezone can be detected", "Time zone: Europe/Warsaw") in {(check.status, check.label, check.detail) for check in checks}
 
     # Without tzlocal an automatic timezone cannot be resolved, so Doctor names the missing package
     def test_automatic_timezone_without_tzlocal_fails(self, im_module, monkeypatch):
@@ -99,7 +99,7 @@ class TestDoctorChecks:
         checks = im_module.doctor_check_configuration([])
         check = next(item for item in checks if item.label == "Automatic timezone detection is unavailable")
 
-        assert check.status == "fail"
+        assert check.status == "FAIL"
         assert "tzlocal" in check.fix
         assert check.guide == im_module.CONFIG_FILE_GUIDE_URL
 
@@ -112,7 +112,7 @@ class TestDoctorChecks:
         checks = im_module.doctor_check_configuration([])
         check = next(item for item in checks if item.label == "Local timezone is invalid")
 
-        assert check.status == "fail"
+        assert check.status == "FAIL"
         assert check.detail == "Time zone: Europe/Nowhere"
         assert check.fix == "Set LOCAL_TIMEZONE to a valid pytz timezone"
 
@@ -129,7 +129,7 @@ class TestDoctorChecks:
         report.bot = _NoSession()
         checks = im_module.doctor_check_session(report)
 
-        assert checks[0].status == "fail"
+        assert checks[0].status == "FAIL"
         assert "No saved session" in checks[0].fix
         assert checks[0].guide == im_module.SESSION_IMPORT_GUIDE_URL
 
@@ -146,7 +146,7 @@ class TestDoctorChecks:
         checks = im_module.doctor_check_notifications(report)
 
         assert report.webhook_ready is True
-        assert any(check.status == "ok" and "Webhook URL" in check.label for check in checks)
+        assert any(check.status == "PASS" and "Webhook URL" in check.label for check in checks)
 
     # Configured SMTP credentials with placeholder addresses cannot deliver, so Doctor must not report a working setup
     def test_placeholder_email_addresses_fail_before_login(self, im_module, monkeypatch):
@@ -162,7 +162,7 @@ class TestDoctorChecks:
         checks = im_module.doctor_check_notifications(report)
 
         assert report.smtp_ready is False
-        warning = next(check for check in checks if check.status == "warn")
+        warning = next(check for check in checks if check.status == "WARN")
         assert warning.label == im_module.EMAIL_UNUSABLE_CHECK_LABEL
         assert warning.detail == "SENDER_EMAIL or RECEIVER_EMAIL is not an email address"
         assert warning.fix == "Correct SENDER_EMAIL and RECEIVER_EMAIL or turn the email alerts off"
@@ -179,7 +179,7 @@ class TestDoctorChecks:
         checks = im_module.doctor_check_notifications(report)
 
         assert report.webhook_ready is False
-        assert any(check.status == "ok" and check.label == "Webhook alerts are disabled" for check in checks)
+        assert any(check.status == "PASS" and check.label == "Webhook alerts are disabled" for check in checks)
         assert not any("look valid" in check.label for check in checks)
 
     # The error alert ships on, so it must not report email as enabled until an SMTP host exists
@@ -195,7 +195,7 @@ class TestDoctorChecks:
         checks = im_module.doctor_check_notifications(report)
 
         assert im_module.email_notifications_enabled() is False
-        assert any(check.status == "ok" and check.label == "Email notifications are disabled" for check in checks)
+        assert any(check.status == "PASS" and check.label == "Email notifications are disabled" for check in checks)
 
     # Email alerts that can fire without a usable SMTP host are a warning, not a silent pass
     def test_enabled_email_without_smtp_warns(self, im_module, monkeypatch):
@@ -208,7 +208,7 @@ class TestDoctorChecks:
         checks = im_module.doctor_check_notifications(report)
 
         assert report.smtp_ready is False
-        warning = next(check for check in checks if check.status == "warn")
+        warning = next(check for check in checks if check.status == "WARN")
         assert warning.label == im_module.EMAIL_UNUSABLE_CHECK_LABEL
         assert warning.detail == "SMTP_HOST, SMTP_USER or SMTP_PASSWORD is empty or still set to its placeholder"
         assert warning.fix == "Set SMTP_HOST, SMTP_USER and SMTP_PASSWORD or turn the email alerts off"
@@ -227,7 +227,7 @@ class TestDoctorChecks:
 
         checks = im_module.doctor_check_notifications(im_module.DoctorReport())
 
-        warning = next(check for check in checks if check.status == "warn")
+        warning = next(check for check in checks if check.status == "WARN")
         assert warning.label == im_module.EMAIL_UNUSABLE_CHECK_LABEL
         assert warning.detail == "SMTP_PASSWORD is empty or still set to its placeholder"
         assert warning.fix == "Set SMTP_PASSWORD or turn the email alerts off"
@@ -242,8 +242,8 @@ class TestDoctorChecks:
         checks = im_module.doctor_check_notifications(report)
 
         assert report.webhook_ready is False
-        assert not any(check.status == "fail" for check in checks)
-        assert any(check.status == "ok" and "Webhook alerts are disabled" in check.label for check in checks)
+        assert not any(check.status == "FAIL" for check in checks)
+        assert any(check.status == "PASS" and "Webhook alerts are disabled" in check.label for check in checks)
 
     # An enabled webhook still holding the placeholder is a warning about missing setup, not an invalid URL
     def test_enabled_webhook_placeholder_warns_about_setup(self, im_module, monkeypatch):
@@ -254,22 +254,22 @@ class TestDoctorChecks:
 
         checks = im_module.doctor_check_notifications(report)
 
-        assert not any(check.status == "fail" for check in checks)
-        assert any(check.status == "warn" and "WEBHOOK_URL is not set" in check.label for check in checks)
+        assert not any(check.status == "FAIL" for check in checks)
+        assert any(check.status == "WARN" and "WEBHOOK_URL is not set" in check.label for check in checks)
 
     # Every failure a user sees must offer an action, which is what the renderer guarantees
     def test_renderer_prints_an_action_for_every_failure(self, im_module, capsys, monkeypatch):
         monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
         report = im_module.DoctorReport()
         report.checks = [
-            im_module.make_doctor_check("Session", "fail", "broken", "detail text", "do the thing.", "https://example.invalid/guide"),
-            im_module.make_doctor_check("Targets", "ok", "fine"),
+            im_module.make_doctor_check("Session", "FAIL", "broken", "detail text", "do the thing.", "https://example.invalid/guide"),
+            im_module.make_doctor_check("Targets", "PASS", "fine"),
         ]
 
         im_module.render_doctor_report(report)
         out = capsys.readouterr().out
 
-        assert "[FAIL] broken\n  detail text\nTo fix: do the thing.\nGuide: https://example.invalid/guide" in out
+        assert "[FAIL] broken\n  detail text\n  To fix: do the thing.\n  Guide: https://example.invalid/guide" in out
         assert "To fix:" not in out.split("[PASS] fine", 1)[1]
 
     # The renderer owns the 'To fix:' prefix, so a recorded action must not carry its own
@@ -366,8 +366,8 @@ class TestRunDoctor:
 
         rows = {(check.status, check.label, check.detail) for check in checks}
         # The labels say everything, so neither row carries a detail that only repeats them
-        assert ("ok", "CSV logging is disabled", "") in rows
-        assert ("ok", "Output logging is disabled", "") in rows
+        assert ("PASS", "CSV logging is disabled", "") in rows
+        assert ("PASS", "Output logging is disabled", "") in rows
 
     # Exported secrets are a documented alternative to a dotenv file, so they must apply when no file is loaded
     def test_environment_secrets_apply_without_a_dotenv_file(self, im_module, monkeypatch):
@@ -456,7 +456,7 @@ class TestRunDoctor:
         checks = im_module.doctor_check_environment((3, 12, 1), lambda name: None if name == "colorama" else object())
 
         missing = next(check for check in checks if "colorama" in check.label)
-        assert missing.status == "warn"
+        assert missing.status == "WARN"
         assert "Coloured output may not render in the classic Windows Command Prompt" in missing.detail
         assert "Windows Terminal needs nothing extra" in missing.detail
         assert "pip install colorama" in missing.fix
@@ -549,7 +549,7 @@ class TestRunDoctor:
 
         checks = im_module.doctor_check_notifications(report)
 
-        assert any(check.status == "warn" and check.label == "Webhook alerts are on but no alert types are selected" for check in checks)
+        assert any(check.status == "WARN" and check.label == "Webhook alerts are on but no alert types are selected" for check in checks)
         assert report.webhook_ready is False
 
     # Doctor reports one fully validated webhook under the label shared with the sibling monitors
@@ -563,7 +563,7 @@ class TestRunDoctor:
 
         checks = im_module.doctor_check_notifications(report)
 
-        assert any(check.status == "ok" and check.label == f"{im_module.WEBHOOK_READY_CHECK_LABEL} for Discord" for check in checks)
+        assert any(check.status == "PASS" and check.label == f"{im_module.WEBHOOK_READY_CHECK_LABEL} for Discord" for check in checks)
         assert report.webhook_ready is True
 
     # Doctor rejects an unsupported webhook provider without sending a message
@@ -781,9 +781,9 @@ class TestPythonRow:
         supported = im_module.doctor_check_environment((3, 12, 1), lambda _name: object())[0]
         unsupported = im_module.doctor_check_environment(below, lambda _name: object())[0]
 
-        assert supported.status == "ok"
+        assert supported.status == "PASS"
         assert supported.detail == f"Minimum supported version: {minimum}"
-        assert unsupported.status == "fail"
+        assert unsupported.status == "FAIL"
         assert unsupported.detail == supported.detail
 
 
@@ -817,3 +817,43 @@ def test_doctor_details_keep_to_the_agreed_shapes(im_module):
             offenders.append(f"{node.lineno}: the detail ends with a full stop")
 
     assert not offenders, "doctor details outside the agreed shapes:\n" + "\n".join(offenders)
+
+
+# Verifies the constructor drops a detail that only repeats its label, so no row says the same thing twice
+def test_a_detail_that_repeats_its_label_is_dropped(im_module):
+    check = im_module.make_doctor_check("Configuration", "PASS", "Output logging is disabled", "Output logging is disabled")
+
+    assert check.detail == ""
+
+
+# Verifies only the four shared markers can reach a report, so the neutral fifth cannot come back
+def test_only_the_four_shared_markers_are_accepted(im_module):
+    assert im_module.DOCTOR_STATUSES == ("PASS", "WARN", "FAIL", "SKIP")
+    assert [im_module.make_doctor_check("Configuration", status, "a label").status for status in im_module.DOCTOR_STATUSES] == list(im_module.DOCTOR_STATUSES)
+    assert set(im_module.DOCTOR_MARK_STYLES) == set(im_module.DOCTOR_STATUSES)
+
+    with pytest.raises(ValueError):
+        im_module.make_doctor_check("Configuration", "info", "a label")
+
+
+# Verifies one row reads as one block: the action lines sit under the marker at the detail indent while a pass row has none
+def test_the_action_lines_sit_indented_under_their_marker(im_module, capsys, monkeypatch):
+    monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+    report = im_module.DoctorReport()
+    report.checks = [
+        im_module.make_doctor_check("Configuration", "WARN", "a warning row", "a detail worth keeping", "do the thing", im_module.DOCTOR_GUIDE_URL),
+        im_module.make_doctor_check("Configuration", "PASS", "a passing row"),
+    ]
+
+    im_module.render_doctor_report(report)
+    lines = capsys.readouterr().out.splitlines()
+    rows = lines[lines.index("[WARN] a warning row"):]
+
+    assert rows[:5] == ["[WARN] a warning row", "  a detail worth keeping", "  To fix: do the thing", f"  Guide: {im_module.DOCTOR_GUIDE_URL}", "[PASS] a passing row"]
+
+
+# Verifies the follow analysis states its findings as plain value rows rather than borrowing a doctor marker
+def test_the_follow_analysis_states_values_without_a_marker(im_module, capsys):
+    im_module._report_value_line("Followers: 42")
+
+    assert capsys.readouterr().out == "* Followers: 42\n"
