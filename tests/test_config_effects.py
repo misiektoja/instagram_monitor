@@ -169,6 +169,25 @@ class TestStartupScreenClearing:
         assert cleared == [expected]
 
 
+    # Verifies the one-shot commands keep whatever is already on the screen, so their output stays scrollable
+    @pytest.mark.parametrize(("argv", "expected"), ((["instagram_monitor.py", "--doctor"], True), (["instagram_monitor.py", "--set-smtp-password"], True), (["instagram_monitor.py", "--send-test-email"], True), (["instagram_monitor.py", "--help"], True), (["instagram_monitor.py", "target.user"], False)))
+    def test_one_shot_commands_keep_the_terminal_history(self, im_module, monkeypatch, argv, expected):
+        monkeypatch.setattr(im_module.sys, "argv", argv)
+
+        assert im_module.keep_terminal_history() is expected
+
+
+    # Verifies a redirected stdout is never cleared, so no escape sequence or TERM warning reaches the captured output
+    def test_a_redirected_stdout_is_never_cleared(self, im_module, monkeypatch):
+        commands = []
+        monkeypatch.setattr(im_module.sys.stdout, "isatty", lambda: False, raising=False)
+        monkeypatch.setattr(im_module.os, "system", lambda command: commands.append(command))
+
+        im_module.clear_screen(True)
+
+        assert commands == []
+
+
 @pytest.mark.parametrize("source, position", [("dotenv file", 0), ("environment", 1), ("configuration file or command line", 2), ("command line", 3)])
 # Verifies each source that can supply a secret lands in its own bucket, so none of them is filed under another
 def test_each_secret_source_lands_in_its_own_bucket(im_module, monkeypatch, source, position):
