@@ -39,6 +39,21 @@ def im_module():
     return im
 
 
+_REAL_WIZARD_VERIFY_SMTP = im._wizard_verify_smtp
+
+
+@pytest.fixture(autouse=True)
+# Keeps the wizard's mail server sign-in check offline, so a scripted setup run never opens a connection
+def accepted_smtp_sign_in(monkeypatch):
+    monkeypatch.setattr(im, "_wizard_verify_smtp", lambda values, password: None)
+
+
+@pytest.fixture
+# Restores the real sign-in check for the tests that exercise it directly against a stubbed SMTP class
+def real_smtp_sign_in(monkeypatch, accepted_smtp_sign_in):
+    monkeypatch.setattr(im, "_wizard_verify_smtp", _REAL_WIZARD_VERIFY_SMTP)
+
+
 # Keeps the identity exposure ledger inside the test's temporary directory so no test can write account state into the repository
 @pytest.fixture(autouse=True)
 def isolated_exposure_ledger(monkeypatch, tmp_path):

@@ -430,7 +430,7 @@ def test_setup_wizard_persists_ntfy_secrets_privately(im_module, monkeypatch, ca
         topic_url = f"https://ntfy.sh/{topic_name}"
         token = "tk_private_access_token"
         answers = iter([True, False, True, True, False, False])
-        choices = iter([0, 2, 1, 0])
+        choices = iter([0, 2, 1, 0, 0])
         secrets = iter([topic_name, token])
         monkeypatch.delenv("WEBHOOK_URL", raising=False)
         monkeypatch.delenv("NTFY_ACCESS_TOKEN", raising=False)

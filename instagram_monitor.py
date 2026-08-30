@@ -13132,6 +13132,24 @@ def _wizard_ask_text(question: str, default: str = "", required: bool = False) -
             return ""
 
 
+# Returns a saved value fit to show as a prompt default, so shipped placeholders are never offered back
+def _wizard_default(value) -> str:
+    return str(value) if doctor_secret_is_set(value if isinstance(value, str) else str(value or "")) else ""
+
+
+# Prompts until the answer is a positive whole number
+def _wizard_ask_positive_int(question: str, default: int) -> int:
+    while True:
+        answer = _wizard_ask_text(question, default=str(default), required=True)
+        try:
+            parsed = int(answer)
+        except ValueError:
+            parsed = 0
+        if parsed > 0:
+            return parsed
+        print(colorize("warning", "  Enter a positive whole number."))
+
+
 # Converts a duration to a compact seconds plus human-readable wizard label
 def _wizard_format_duration(seconds: int) -> str:
     remaining = seconds
@@ -13277,9 +13295,19 @@ def _wizard_collect_ntfy_access_token(secret_updates: dict, env_path: Path) -> N
 # Config values reset before one setup section is collected again
 WIZARD_LOGIN_CONFIG_KEYS = ("SESSION_USERNAME", "SKIP_SESSION")
 WIZARD_INTERFACE_CONFIG_KEYS = ("WEB_DASHBOARD_ENABLED", "DASHBOARD_ENABLED", "WEB_DASHBOARD_HOST")
-WIZARD_WEBHOOK_CONFIG_KEYS = ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_STATUS_NOTIFICATION")
-WIZARD_EMAIL_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL", "STATUS_NOTIFICATION")
+WIZARD_WEBHOOK_CONFIG_KEYS = ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_FOLLOWERS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
+WIZARD_EMAIL_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL", "STATUS_NOTIFICATION", "FOLLOWERS_NOTIFICATION", "ERROR_NOTIFICATION")
 WIZARD_OUTPUT_CONFIG_KEYS = ("DISABLE_LOGGING", "CSV_FILE")
+
+
+# The mail server settings the wizard collects, and how long its sign-in check waits for the server
+WIZARD_SMTP_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL")
+WIZARD_SMTP_TIMEOUT = 5
+
+
+# The alert settings each channel owns, so one preset answer can switch the whole channel on
+WIZARD_EMAIL_NOTIFICATION_KEYS = ("STATUS_NOTIFICATION", "FOLLOWERS_NOTIFICATION", "ERROR_NOTIFICATION")
+WIZARD_WEBHOOK_NOTIFICATION_KEYS = ("WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_FOLLOWERS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
 
 
 # Holds editable setup answers until the user explicitly saves them
@@ -13374,7 +13402,7 @@ def _wizard_collect_target_section(state: WizardSetupState, allow_empty: bool = 
         print(colorize("info", "  No initial targets selected. Add them later in the Web Dashboard."))
         return
     print()
-    state.persist_targets = _wizard_ask_yes_no("Save the target(s) in the config file too?", default=state.persist_targets)
+    state.persist_targets = _wizard_ask_yes_no("Persist these targets in the generated config?", default=state.persist_targets)
     state.config_values["TARGET_USERNAMES"] = list(targets) if state.persist_targets else []
 
 
@@ -13473,7 +13501,8 @@ def _wizard_collect_interface_section(state: WizardSetupState, method: str) -> N
 # Switches the channel and every alert it owns off together, so a half-configured webhook cannot be written
 def _wizard_disable_webhook(state: WizardSetupState) -> None:
     state.want_webhook = False
-    state.config_values.update({"WEBHOOK_ENABLED": False, "WEBHOOK_STATUS_NOTIFICATION": False})
+    state.config_values.update({"WEBHOOK_ENABLED": False})
+    state.config_values.update({name: False for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS})
 
 
 # Collects webhook settings and hidden secrets
@@ -13519,13 +13548,32 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
     if provider == "ntfy":
         _wizard_collect_ntfy_access_token(state.secret_updates, state.env_path)
     state.want_webhook = True
-    state.config_values.update({"WEBHOOK_ENABLED": True, "WEBHOOK_STATUS_NOTIFICATION": True})
+    state.config_values["WEBHOOK_ENABLED"] = True
+    preset = _wizard_ask_choice("Which webhook alerts should be sent?", [
+        ("Status and errors, recommended", "New posts, reels, stories, bio and picture changes, plus monitoring errors."),
+        ("Every supported alert", "Also alerts on follower and following changes."),
+        ("Custom", "Choose each webhook alert separately."),
+    ])
+    if preset == 0:
+        selected = {"WEBHOOK_STATUS_NOTIFICATION": True, "WEBHOOK_FOLLOWERS_NOTIFICATION": False, "WEBHOOK_ERROR_NOTIFICATION": True}
+    elif preset == 1:
+        selected = {name: True for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS}
+    else:
+        print()
+        questions = (
+            ("WEBHOOK_STATUS_NOTIFICATION", "Send a webhook alert on new posts, reels, stories and profile changes?"),
+            ("WEBHOOK_FOLLOWERS_NOTIFICATION", "Send a webhook alert when followers or followings change?"),
+            ("WEBHOOK_ERROR_NOTIFICATION", "Send a webhook alert on monitoring errors?"),
+        )
+        selected = {name: _wizard_ask_yes_no(question, default=False) for name, question in questions}
+    state.config_values.update(selected)
 
 
 # Switches every email alert off together, so an abandoned answer cannot leave half a mail server configured
 def _wizard_disable_email(state: WizardSetupState) -> None:
     state.want_email = False
-    state.config_values["STATUS_NOTIFICATION"] = False
+    _wizard_reset_section(state, WIZARD_SMTP_CONFIG_KEYS, ("SMTP_PASSWORD",))
+    state.config_values.update({name: False for name in WIZARD_EMAIL_NOTIFICATION_KEYS})
 
 
 # Reports whether one required mail server answer was abandoned, switching the channel off when it was
@@ -13537,35 +13585,104 @@ def _wizard_email_answer_missing(state: WizardSetupState, answer: str) -> bool:
     return True
 
 
-# Collects email settings and the hidden SMTP password
+# Signs in to the collected mail server without sending anything, so a refused login is caught during setup
+def _wizard_verify_smtp(values: dict, password: str) -> Optional[Tuple[str, str, str, bool]]:
+    names = WIZARD_SMTP_CONFIG_KEYS + ("SMTP_PASSWORD",)
+    previous = {name: globals()[name] for name in names}
+    smtp = None
+    try:
+        globals().update(values)
+        # A blank answer keeps the password already stored, which is the one the sign-in must then prove
+        globals()["SMTP_PASSWORD"] = password or previous["SMTP_PASSWORD"]
+        smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=WIZARD_SMTP_TIMEOUT)
+        if SMTP_SSL:
+            smtp.starttls(context=ssl.create_default_context())
+        smtp.login(SMTP_USER, SMTP_PASSWORD)
+        return None
+    except Exception as exc:
+        summary, fix = classify_smtp_error(exc)
+        # A rejected sign-in cannot start working on its own, unlike an unreachable server
+        retryable = not isinstance(exc, smtplib.SMTPAuthenticationError)
+        return summary, format_error_message(exc), fix, retryable
+    finally:
+        if smtp is not None:
+            try:
+                smtp.quit()
+            except Exception:
+                pass
+        globals().update(previous)
+
+
+# Reports the outcome of the sign-in check: True to continue, False to ask again, None to switch email off
+def _wizard_smtp_sign_in_accepted(values: dict, password: str) -> Optional[bool]:
+    print("  Checking the sign-in with the mail server ...")
+    problem = _wizard_verify_smtp(values, password)
+    if problem is None:
+        print("  The mail server accepted the sign-in. No email was sent.")
+        return True
+    summary, detail, fix, retryable = problem
+    print(colorize("warning", f"  {summary}: {detail}" if detail else f"  {summary}"))
+    print(f"  To fix: {fix}")
+    if _wizard_offer_retry("mail server settings"):
+        return False
+    if retryable:
+        # Being offline is the usual reason a correct setup fails here, so the answers are kept rather than discarded
+        print("  The settings were kept without being checked. Run --doctor to check the sign-in again.")
+        return True
+    print(colorize("warning", "  Email notifications stay off until the mail server accepts the settings."))
+    return None
+
+
+# Collects email settings, the hidden SMTP password and the alerts email should send
 def _wizard_collect_email_section(state: WizardSetupState) -> None:
     _wizard_reset_section(state, WIZARD_EMAIL_CONFIG_KEYS, ("SMTP_PASSWORD",))
     print()
-    if not _wizard_ask_yes_no("Set up email (SMTP) alerts now?", default=state.want_email):
+    if not _wizard_ask_yes_no("Configure email notifications?", default=state.want_email):
         _wizard_disable_email(state)
         return
-    host = _wizard_ask_text("SMTP server host (e.g. smtp.gmail.com)", required=True)
-    if _wizard_email_answer_missing(state, host):
-        return
-    port_text = _wizard_ask_text("SMTP port", default=str(state.config_values.get("SMTP_PORT") or 587))
-    try:
-        port = int(port_text)
-    except ValueError:
-        port = 587
-    use_ssl = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(state.config_values.get("SMTP_SSL", True)))
-    user = _wizard_ask_text("SMTP username", required=True)
-    if _wizard_email_answer_missing(state, user):
-        return
-    password = _wizard_ask_secret("SMTP password")
-    if password:
-        state.secret_updates["SMTP_PASSWORD"] = password
-    sender = _wizard_ask_text("Sender email (From)", required=True)
-    if _wizard_email_answer_missing(state, sender):
-        return
-    receiver = _wizard_ask_text("Recipient email (To)", required=True)
-    if _wizard_email_answer_missing(state, receiver):
-        return
-    state.config_values.update({"SMTP_HOST": host, "SMTP_PORT": port, "SMTP_SSL": use_ssl, "SMTP_USER": user, "SENDER_EMAIL": sender, "RECEIVER_EMAIL": receiver, "STATUS_NOTIFICATION": True})
+    saved_password = _wizard_secret_value("SMTP_PASSWORD", state.env_path) or ""
+    while True:
+        state.config_values["SMTP_HOST"] = _wizard_ask_text("SMTP host", default=_wizard_default(state.config_values.get("SMTP_HOST")), required=True)
+        if _wizard_email_answer_missing(state, state.config_values["SMTP_HOST"]):
+            return
+        state.config_values["SMTP_PORT"] = _wizard_ask_positive_int("SMTP port", int(state.config_values.get("SMTP_PORT") or 587))
+        state.config_values["SMTP_SSL"] = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(state.config_values.get("SMTP_SSL", True)))
+        state.config_values["SMTP_USER"] = _wizard_ask_text("SMTP username", default=_wizard_default(state.config_values.get("SMTP_USER")), required=True)
+        if _wizard_email_answer_missing(state, state.config_values["SMTP_USER"]):
+            return
+        state.config_values["SENDER_EMAIL"] = _wizard_ask_text("Sender email", default=_wizard_default(state.config_values.get("SENDER_EMAIL")), required=True)
+        if _wizard_email_answer_missing(state, state.config_values["SENDER_EMAIL"]):
+            return
+        state.config_values["RECEIVER_EMAIL"] = _wizard_ask_text("Receiver email", default=_wizard_default(state.config_values.get("RECEIVER_EMAIL")), required=True)
+        if _wizard_email_answer_missing(state, state.config_values["RECEIVER_EMAIL"]):
+            return
+        password = _wizard_ask_secret("SMTP password")
+        if password:
+            state.secret_updates["SMTP_PASSWORD"] = password
+        outcome = _wizard_smtp_sign_in_accepted({name: state.config_values[name] for name in WIZARD_SMTP_CONFIG_KEYS}, password or saved_password)
+        if outcome is None:
+            _wizard_disable_email(state)
+            return
+        if outcome:
+            break
+    preset = _wizard_ask_choice("Which email notifications should be enabled?", [
+        ("Status and errors, recommended", "New posts, reels, stories, bio and picture changes, plus monitoring errors."),
+        ("Every supported event", "Also emails on follower and following changes."),
+        ("Custom", "Choose each notification type separately."),
+    ])
+    if preset == 0:
+        selected = {"STATUS_NOTIFICATION": True, "FOLLOWERS_NOTIFICATION": False, "ERROR_NOTIFICATION": True}
+    elif preset == 1:
+        selected = {name: True for name in WIZARD_EMAIL_NOTIFICATION_KEYS}
+    else:
+        print()
+        questions = (
+            ("STATUS_NOTIFICATION", "Email on new posts, reels, stories and profile changes?"),
+            ("FOLLOWERS_NOTIFICATION", "Email when followers or followings change?"),
+            ("ERROR_NOTIFICATION", "Email on monitoring errors?"),
+        )
+        selected = {name: _wizard_ask_yes_no(question, default=False) for name, question in questions}
+    state.config_values.update(selected)
     state.want_email = True
 
 

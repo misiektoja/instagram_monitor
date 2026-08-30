@@ -250,7 +250,7 @@ class TestPromptWording:
 
             assert questions == ["Set up webhook alerts (Discord, ntfy etc.)?"]
 
-    def test_email_section_uses_the_requested_tls_ssl_question(self, im_module, monkeypatch):
+    def test_email_section_asks_the_mail_server_questions_in_the_shared_order(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
             state = make_setup_state(im_module, Path(directory_name))
             questions = []
@@ -260,13 +260,18 @@ class TestPromptWording:
             def ask_yes_no(question, default=True):
                 questions.append(question)
                 return next(answers)
+            # Records the text prompts in the order the wizard asks them
+            def ask_text(question, default="", required=False):
+                questions.append(question)
+                return next(texts)
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", ask_yes_no)
-            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: next(texts))
+            monkeypatch.setattr(im_module, "_wizard_ask_text", ask_text)
             monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda *args, **kwargs: "private-password")
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: questions.append(question) or 0)
 
             im_module._wizard_collect_email_section(state)
 
-            assert questions == ["Set up email (SMTP) alerts now?", "Enable TLS/SSL for SMTP?"]
+            assert questions == ["Configure email notifications?", "SMTP host", "SMTP port", "Enable TLS/SSL for SMTP?", "SMTP username", "Sender email", "Receiver email", "Which email notifications should be enabled?"]
             assert state.config_values["SMTP_SSL"] is True
 
 
@@ -477,7 +482,7 @@ class TestWizardSafetyGates:
             config_path = directory / "instagram_monitor.conf"
             env_path = directory / ".env"
             answers = iter([True, False, True])
-            choices = iter([0, 2, 0, 0])
+            choices = iter([0, 2, 0, 0, 0])
             protect_setup_globals(im_module, monkeypatch)
             monkeypatch.delenv("WEBHOOK_URL", raising=False)
             monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
@@ -614,7 +619,7 @@ class TestRejectedAnswerEscape:
         assert im_module._wizard_ask_secret("SMTP password") == ""
 
     # Verifies abandoning any mail server answer switches every email alert off rather than saving half a server
-    @pytest.mark.parametrize("abandoned", ["SMTP server host (e.g. smtp.gmail.com)", "SMTP username", "Sender email (From)", "Recipient email (To)"])
+    @pytest.mark.parametrize("abandoned", ["SMTP host", "SMTP username", "Sender email", "Receiver email"])
     def test_an_abandoned_mail_server_answer_switches_email_off(self, im_module, monkeypatch, abandoned):
         with make_test_directory() as directory_name:
             state = make_setup_state(im_module, Path(directory_name))
@@ -622,8 +627,9 @@ class TestRejectedAnswerEscape:
             state.baseline_values["STATUS_NOTIFICATION"] = True
             state.config_values["STATUS_NOTIFICATION"] = True
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
-            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: "" if question == abandoned else "answer@example.test")
+            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: "" if question == abandoned else "587" if question == "SMTP port" else "answer@example.test")
             monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: "private-password")
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: 0)
 
             im_module._wizard_collect_email_section(state)
 
@@ -638,6 +644,7 @@ class TestRejectedAnswerEscape:
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
             monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: "587" if question == "SMTP port" else "answer@example.test")
             monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: "")
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: 0)
 
             im_module._wizard_collect_email_section(state)
 
@@ -753,3 +760,115 @@ class TestRejectedAnswerEscape:
             assert state.login_method == "no-login"
             assert "SESSION_PASSWORD" not in state.secret_updates
             assert state.config_values["SKIP_SESSION"] is True
+
+
+class TestMailServerSignIn:
+    # Returns scripted answers for one complete mail server section
+    @staticmethod
+    def scripted_email(im_module, monkeypatch, choices=(0,), secrets=("private-password",), yes_no=None):
+        texts = iter(["smtp.example.test", "587", "monitor@example.test", "monitor@example.test", "alerts@example.test"])
+        answers = iter(yes_no if yes_no is not None else [True, True])
+        secret_values = iter(secrets)
+        choice_values = iter(choices)
+        monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: next(texts))
+        monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: next(answers))
+        monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: next(secret_values))
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: next(choice_values))
+
+    # Verifies the wizard signs in with exactly the answers just given, so a wrong password is caught during setup
+    def test_the_wizard_signs_in_with_the_collected_mail_server(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            attempts = []
+            self.scripted_email(im_module, monkeypatch)
+            monkeypatch.setattr(im_module, "_wizard_verify_smtp", lambda values, password: attempts.append((values, password)) or None)
+
+            im_module._wizard_collect_email_section(state)
+
+            assert attempts == [({"SMTP_HOST": "smtp.example.test", "SMTP_PORT": 587, "SMTP_SSL": True, "SMTP_USER": "monitor@example.test", "SENDER_EMAIL": "monitor@example.test", "RECEIVER_EMAIL": "alerts@example.test"}, "private-password")]
+            assert "The mail server accepted the sign-in. No email was sent." in capsys.readouterr().out
+            assert state.config_values["STATUS_NOTIFICATION"] is True
+            assert state.config_values["ERROR_NOTIFICATION"] is True
+            assert state.config_values["FOLLOWERS_NOTIFICATION"] is False
+
+    # Verifies a refused sign-in offers the mail server questions again rather than saving settings that cannot work
+    def test_a_refused_sign_in_offers_another_attempt(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            texts = iter(["smtp.example.test", "587", "monitor@example.test", "monitor@example.test", "alerts@example.test"] * 2)
+            answers = iter([True, True, True, True])
+            secrets = iter(["wrong-password", "right-password"])
+            problems = [("The SMTP server rejected the sign-in", "535 authentication failed", "Use an app password", False), None]
+            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: next(texts))
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: next(answers))
+            monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: next(secrets))
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: 0)
+            monkeypatch.setattr(im_module, "_wizard_offer_retry", lambda label, consequence="": True)
+            monkeypatch.setattr(im_module, "_wizard_verify_smtp", lambda values, password: problems.pop(0))
+
+            im_module._wizard_collect_email_section(state)
+
+            output = capsys.readouterr().out
+            assert "The SMTP server rejected the sign-in: 535 authentication failed" in output
+            assert "To fix: Use an app password" in output
+            assert state.secret_updates["SMTP_PASSWORD"] == "right-password"
+            assert state.want_email is True
+
+    # Verifies giving up on a refused sign-in switches every email alert off rather than saving settings that cannot work
+    def test_an_abandoned_sign_in_switches_email_off(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            self.scripted_email(im_module, monkeypatch)
+            monkeypatch.setattr(im_module, "_wizard_offer_retry", lambda label, consequence="": False)
+            monkeypatch.setattr(im_module, "_wizard_verify_smtp", lambda values, password: ("The SMTP server rejected the sign-in", "535 authentication failed", "Use an app password", False))
+
+            im_module._wizard_collect_email_section(state)
+
+            assert "Email notifications stay off until the mail server accepts the settings." in capsys.readouterr().out
+            assert state.want_email is False
+            assert all(state.config_values[name] is False for name in im_module.WIZARD_EMAIL_NOTIFICATION_KEYS)
+
+    # Verifies an unreachable mail server keeps the answers, since being offline is the usual reason a correct setup fails here
+    def test_an_unreachable_mail_server_keeps_the_answers(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            self.scripted_email(im_module, monkeypatch)
+            monkeypatch.setattr(im_module, "_wizard_offer_retry", lambda label, consequence="": False)
+            monkeypatch.setattr(im_module, "_wizard_verify_smtp", lambda values, password: ("The SMTP server could not be reached", "", "Check SMTP_HOST", True))
+
+            im_module._wizard_collect_email_section(state)
+
+            assert "The settings were kept without being checked. Run --doctor to check the sign-in again." in capsys.readouterr().out
+            assert state.config_values["SMTP_HOST"] == "smtp.example.test"
+            assert state.want_email is True
+
+    # Verifies the sign-in check reads the answers just given instead of the settings already loaded
+    def test_the_sign_in_check_uses_the_collected_settings_then_restores_them(self, im_module, monkeypatch, real_smtp_sign_in):
+        seen = {}
+        monkeypatch.setattr(im_module, "SMTP_HOST", "old.example.test", raising=False)
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "old-password", raising=False)
+        # Records the settings the sign-in would use without opening a connection
+        class RecordingSMTP:
+            def __init__(self, host, port, timeout=None):
+                seen["host"] = host
+                seen["port"] = port
+                seen["timeout"] = timeout
+
+            def starttls(self, context=None):
+                seen["tls"] = True
+
+            def login(self, user, password):
+                seen["login"] = (user, password)
+
+            def quit(self):
+                seen["quit"] = True
+        monkeypatch.setattr(im_module.smtplib, "SMTP", RecordingSMTP)
+
+        assert im_module._wizard_verify_smtp({"SMTP_HOST": "smtp.example.test", "SMTP_PORT": 587, "SMTP_SSL": True, "SMTP_USER": "monitor@example.test", "SENDER_EMAIL": "monitor@example.test", "RECEIVER_EMAIL": "alerts@example.test"}, "") is None
+
+        assert seen["host"] == "smtp.example.test"
+        assert seen["port"] == 587
+        assert seen["timeout"] == im_module.WIZARD_SMTP_TIMEOUT
+        assert seen["login"] == ("monitor@example.test", "old-password")
+        assert seen["quit"] is True
+        assert im_module.SMTP_HOST == "old.example.test"
