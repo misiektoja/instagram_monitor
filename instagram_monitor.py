@@ -13865,9 +13865,17 @@ def run_main():
             if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("-"):
                 # Write directly to file (bypasses PowerShell UTF-16 encoding issue on Windows)
                 output_file = sys.argv[idx + 1]
-                with open(output_file, "w", encoding="utf-8") as f:
-                    f.write(config_content)
-                print(f"Config written to: {output_file}")
+                # Routed through the shared writer so an existing config is backed up rather than truncated.
+                # Caught here because the outer handler treats a ValueError as "no filename given" and would
+                # otherwise fall through to stdout after the requested file failed to be written.
+                try:
+                    write_status = write_config_file(output_file, config_content)
+                except (OSError, ValueError) as exc:
+                    print(f"* Error: Could not write config file '{output_file}': {type(exc).__name__}: {exc}")
+                    sys.exit(1)
+                print(f"Config written to: {write_status['path']}")
+                if write_status["backup_path"]:
+                    print(f"Backup written to: {write_status['backup_path']}")
                 sys.exit(0)
         except (ValueError, IndexError):
             pass
@@ -14482,16 +14490,19 @@ def run_main():
         try:
             from dotenv import load_dotenv, find_dotenv
 
+            # An exported variable wins over the file at startup, matching python-dotenv's own default, so a
+            # one-off secret or one injected by systemd or a container is not silently shadowed by the dotenv.
+            # The SIGHUP reload still overrides, because there the edited file is exactly what must take effect.
             if DOTENV_FILE:
                 env_path = DOTENV_FILE
                 if not os.path.isfile(env_path):
                     print(f"* Warning: dotenv file '{env_path}' does not exist\n")
                 else:
-                    load_dotenv(env_path, override=True, interpolate=False)
+                    load_dotenv(env_path, override=False, interpolate=False)
             else:
                 env_path = find_dotenv() or None
                 if env_path:
-                    load_dotenv(env_path, override=True, interpolate=False)
+                    load_dotenv(env_path, override=False, interpolate=False)
         except ImportError:
             env_path = DOTENV_FILE if DOTENV_FILE else None
             if env_path:
