@@ -872,3 +872,88 @@ class TestMailServerSignIn:
         assert seen["login"] == ("monitor@example.test", "old-password")
         assert seen["quit"] is True
         assert im_module.SMTP_HOST == "old.example.test"
+
+
+# Private mail server password entry signs in first and never displays what was typed
+def test_set_smtp_password_signs_in_before_saving(im_module, monkeypatch, capsys):
+    with make_test_directory() as directory_name:
+        env_path = Path(directory_name) / ".env"
+        password = "app-password-value"
+        sign_in = Mock(return_value="monitor@example.test")
+        monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
+
+        result = im_module.run_set_smtp_password(env_file=env_path, interactive=True, getpass_func=lambda prompt: password, sign_in=sign_in)
+
+        assert result == str(env_path.resolve())
+        sign_in.assert_called_once_with(password, timeout=5)
+        assert f'SMTP_PASSWORD="{password}"' in env_path.read_text(encoding="utf-8")
+        output = capsys.readouterr().out
+        assert password not in output
+        assert "The mail server accepted the password for monitor@example.test" in output
+
+
+# A password the mail server refuses leaves the private settings file untouched
+def test_set_smtp_password_refused_by_the_server_is_not_saved(im_module):
+    with make_test_directory() as directory_name:
+        env_path = Path(directory_name) / ".env"
+        env_path.write_text("KEEP=value\n", encoding="utf-8")
+        refuse = Mock(side_effect=im_module.smtplib.SMTPAuthenticationError(535, b"authentication failed"))
+
+        with pytest.raises(im_module.SmtpConfigurationError, match="did not accept the password"):
+            im_module.run_set_smtp_password(env_file=env_path, interactive=True, getpass_func=lambda prompt: "wrong", sign_in=refuse)
+
+        assert env_path.read_text(encoding="utf-8") == "KEEP=value\n"
+
+
+# Private mail server password entry requires a terminal, so the password cannot be echoed or piped in
+def test_set_smtp_password_requires_a_terminal(im_module):
+    with make_test_directory() as directory_name:
+        env_path = Path(directory_name) / ".env"
+
+        with pytest.raises(im_module.SmtpConfigurationError, match="interactive terminal"):
+            im_module.run_set_smtp_password(env_file=env_path, interactive=False)
+
+        assert not env_path.exists()
+
+
+# Declining replacement leaves an existing private mail server password unchanged
+def test_set_smtp_password_declined_replacement_is_non_destructive(im_module):
+    with make_test_directory() as directory_name:
+        env_path = Path(directory_name) / ".env"
+        env_path.write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
+
+        with pytest.raises(im_module.SmtpConfigurationError, match="cancelled"):
+            im_module.run_set_smtp_password(env_file=env_path, interactive=True, input_func=lambda prompt: "no", getpass_func=lambda prompt: "replacement", sign_in=Mock())
+
+        assert env_path.read_text(encoding="utf-8") == 'SMTP_PASSWORD="original"\n'
+
+
+# The sign-in reaches the configured mail server and gives back the password it borrowed
+def test_smtp_sign_in_uses_the_configured_mail_server(im_module, monkeypatch):
+    session = Mock()
+    connect = Mock(return_value=session)
+    for name, value in (("SMTP_HOST", "smtp.example.test"), ("SMTP_PORT", 587), ("SMTP_SSL", True), ("SMTP_USER", "monitor@example.test"), ("SMTP_PASSWORD", "saved"), ("SENDER_EMAIL", "monitor@example.test"), ("RECEIVER_EMAIL", "alerts@example.test")):
+        monkeypatch.setattr(im_module, name, value)
+    monkeypatch.setattr(im_module.smtplib, "SMTP", connect)
+
+    assert im_module.smtp_sign_in("entered", timeout=5) == "monitor@example.test"
+
+    connect.assert_called_once_with("smtp.example.test", 587, timeout=5)
+    session.login.assert_called_once_with("monitor@example.test", "entered")
+    session.quit.assert_called_once()
+    assert im_module.SMTP_PASSWORD == "saved"
+
+
+# An unconfigured mail server is named instead of surfacing as a bare connection failure
+def test_smtp_sign_in_reports_incomplete_settings(im_module, monkeypatch):
+    for name, value in (("SMTP_HOST", "your_smtp_server_ssl"), ("SMTP_USER", "your_smtp_user"), ("SENDER_EMAIL", "your_sender_email"), ("RECEIVER_EMAIL", "your_receiver_email")):
+        monkeypatch.setattr(im_module, name, value)
+
+    with pytest.raises(im_module.SmtpConfigurationError, match="settings are incomplete"):
+        im_module.smtp_sign_in("entered")
+
+
+# A blank password is refused rather than saved as an empty secret
+def test_blank_smtp_password_is_refused(im_module):
+    with pytest.raises(im_module.SmtpConfigurationError, match="No SMTP password"):
+        im_module.smtp_sign_in("")

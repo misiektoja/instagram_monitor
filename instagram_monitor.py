@@ -1068,6 +1068,87 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
     return str(destination)
 
 
+# Raised when private mail server password entry cannot be completed safely
+class SmtpConfigurationError(Exception):
+    pass
+
+
+# Signs in to the configured mail server with one entered password, so nothing is saved that cannot deliver
+def smtp_sign_in(password, timeout=5):
+    global SMTP_PASSWORD
+
+    candidate = str(password or "")
+    if not candidate or candidate == "your_smtp_password":
+        raise SmtpConfigurationError("No SMTP password was entered. The private settings file was not changed.")
+    if any(is_placeholder_setting(value) for value in (SMTP_HOST, SMTP_USER)) or not all(is_valid_email_address(value) for value in (SENDER_EMAIL, RECEIVER_EMAIL)):
+        raise SmtpConfigurationError("The mail server settings are incomplete. Set SMTP_HOST, SMTP_USER, SENDER_EMAIL and RECEIVER_EMAIL first, or run --setup.")
+    previous_password = SMTP_PASSWORD
+    SMTP_PASSWORD = candidate
+    smtp = None
+    try:
+        smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=timeout)
+        if SMTP_SSL:
+            smtp.starttls(context=smtp_ssl_context())
+        smtp.login(SMTP_USER, candidate)
+    finally:
+        if smtp is not None:
+            try:
+                smtp.quit()
+            except Exception:
+                pass
+        SMTP_PASSWORD = previous_password
+    return str(SMTP_USER)
+
+
+# Checks one privately entered mail server password against the server and saves it only once it signs in
+def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getpass_func=None, config_path=None, sign_in=None):
+    if env_file is not None and str(env_file).casefold() == "none":
+        raise SmtpConfigurationError("SMTP password setup requires a dotenv destination. Replace '--env-file none' with a writable path.")
+    destination = (Path.cwd() / ".env" if env_file is None else Path(env_file).expanduser()).resolve()
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
+    if not terminal_is_interactive:
+        raise SmtpConfigurationError("--set-smtp-password requires an interactive terminal. Run it in a terminal window so the password stays hidden while you type it.")
+    prompt = input if input_func is None else input_func
+    try:
+        password_already_saved = _dotenv_contains_key(destination, "SMTP_PASSWORD")
+    except WebhookConfigurationError as exc:
+        raise SmtpConfigurationError(str(exc)) from None
+    if password_already_saved:
+        try:
+            confirmed = prompt(f"Replace the saved SMTP password in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            confirmed = False
+        if not confirmed:
+            raise SmtpConfigurationError("SMTP password setup was cancelled. The private settings file was not changed.")
+    print(f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent")
+    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
+    try:
+        smtp_password = str(hidden_prompt("Enter the SMTP password (input hidden): ")).strip()
+    except (EOFError, KeyboardInterrupt):
+        raise SmtpConfigurationError("SMTP password setup was cancelled. The private settings file was not changed.") from None
+    check = smtp_sign_in if sign_in is None else sign_in
+    try:
+        signed_in_user = check(smtp_password, timeout=5)
+    except SmtpConfigurationError:
+        raise
+    except Exception as exc:
+        raise SmtpConfigurationError(f"The mail server did not accept the password: {format_error_message(exc)}. The private settings file was not changed.") from None
+    try:
+        update_dotenv_file(destination, {"SMTP_PASSWORD": smtp_password})
+    except Exception:
+        raise SmtpConfigurationError(f"Could not save the SMTP password in '{destination}'. Check file permissions or choose another path with --env-file.") from None
+    selected_config = config_path or find_config_file()
+    method = _wizard_install_method()
+    test_command = _wizard_action_command(method, "--send-test-email", selected_config, destination)
+    doctor_command = _wizard_action_command(method, "--doctor", selected_config, destination)
+    print(f"* The mail server accepted the password for {signed_in_user}")
+    print(f"* Updated private settings file: {destination}")
+    print()
+    _wizard_print_command("Send a test email:", test_command)
+    _wizard_print_command("Check setup again:", doctor_command)
+    return str(destination)
+
+
 # Default dummy values so linters shut up
 # Do not change values below - modify them in the configuration section or config file instead
 SESSION_USERNAME = ""
@@ -1203,6 +1284,9 @@ DEFAULT_CONFIG_FILENAME = "instagram_monitor.conf"
 
 # List of secret keys to load from env/config
 SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD", "WEBHOOK_URL", "PROXY_URL", "NTFY_ACCESS_TOKEN")
+
+# The one-shot commands that only save a secret, so the other early exits do not swallow them
+SECRET_ACTION_FLAGS = ("--set-smtp-password", "--set-webhook-url")
 
 # Effective source name for each configured secret without storing another copy of its value
 SECRET_SOURCES = {}
@@ -14965,7 +15049,7 @@ def run_main():
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
     global SECRET_SOURCES
 
-    if "--generate-config" in sys.argv and "--set-webhook-url" not in sys.argv:
+    if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
         # Check if a filename was provided after --generate-config
         try:
@@ -14992,7 +15076,7 @@ def run_main():
         sys.stdout.buffer.flush()
         sys.exit(0)
 
-    if "--version" in sys.argv and "--set-webhook-url" not in sys.argv:
+    if "--version" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         print(f"{os.path.basename(sys.argv[0])} v{VERSION}")
         sys.exit(0)
 
@@ -15013,7 +15097,7 @@ def run_main():
     early_dashboard_enabled = "--dashboard" in sys.argv and "--no-dashboard" not in sys.argv
 
     # Clear screen BEFORE printing the header
-    keep_cli_history = any(flag in sys.argv for flag in ("--import-browser-session", "--import-firefox-session", "--set-webhook-url", "--doctor", "--analyze-follows"))
+    keep_cli_history = any(flag in sys.argv for flag in ("--import-browser-session", "--import-firefox-session", *SECRET_ACTION_FLAGS, "--doctor", "--analyze-follows"))
     clear_screen(CLEAR_SCREEN and not keep_cli_history)
 
     if not (early_dashboard_enabled and RICH_AVAILABLE):
@@ -15083,6 +15167,12 @@ def run_main():
         dest="set_webhook_url",
         action="store_true",
         help="Save a Discord or ntfy webhook URL through a hidden prompt",
+    )
+    conf.add_argument(
+        "--set-smtp-password",
+        dest="set_smtp_password",
+        action="store_true",
+        help="Save the mail server password through a hidden prompt, after signing in to check it",
     )
 
     # Session login credentials
@@ -15561,7 +15651,7 @@ def run_main():
     apply_diagnostic_cli_overrides(args)
 
     import_requested = bool(args.import_firefox_session or args.import_browser_session)
-    requested_actions = [label for label, enabled in (("--setup", args.setup), ("--set-webhook-url", args.set_webhook_url), ("--doctor", args.doctor), ("--analyze-follows", args.analyze_follows), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--clear-breaker", args.clear_breaker), ("--exposure", args.show_exposure), ("--generate-config", args.generate_config is not None)) if enabled]
+    requested_actions = [label for label, enabled in (("--setup", args.setup), ("--set-webhook-url", args.set_webhook_url), ("--set-smtp-password", args.set_smtp_password), ("--doctor", args.doctor), ("--analyze-follows", args.analyze_follows), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--clear-breaker", args.clear_breaker), ("--exposure", args.show_exposure), ("--generate-config", args.generate_config is not None)) if enabled]
     if len(requested_actions) > 1:
         parser.error("standalone actions cannot be combined: " + ", ".join(requested_actions))
     if args.setup:
@@ -15804,7 +15894,7 @@ def run_main():
                 print(f"* Error: Proxy certificate file does not exist. '{PROXY_CERT_PATH}'")
                 sys.exit(1)
 
-    if not args.doctor and not args.analyze_follows and not check_internet():
+    if not args.doctor and not args.analyze_follows and not args.set_smtp_password and not check_internet():
         sys.exit(1)
 
     # Advanced Follower/Followee Fetching Settings
@@ -15882,6 +15972,14 @@ def run_main():
             print(line)
         print(f"\nLedger file:\t\t\t\t{exposure_state_path()}")
         print_cur_ts("Timestamp:\t\t\t\t")
+        sys.exit(0)
+
+    if args.set_smtp_password:
+        try:
+            run_set_smtp_password(env_file=args.env_file, config_path=args.config_file)
+        except SmtpConfigurationError as exc:
+            print(f"* Error: {exc}")
+            sys.exit(1)
         sys.exit(0)
 
     if args.send_test_email:

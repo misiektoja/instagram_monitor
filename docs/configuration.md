@@ -269,7 +269,7 @@ Set `TIME_FORMAT_12H = True` to display times in 12-hour format instead of the d
 <a id="smtp-settings"></a>
 ## SMTP Settings
 
-Email notifications need the SMTP server details for the email account that sends the messages. Add them to `instagram_monitor.conf` or use the setup wizard.
+Email notifications need the SMTP server details for the email account that sends the messages. Add them to `instagram_monitor.conf` or use the setup wizard. Keep the password out of the config file and save it with [`--set-smtp-password`](#storing-secrets).
 
 Send one test message to verify the settings:
 
@@ -289,6 +289,14 @@ instagram_monitor --set-webhook-url
 ```
 
 Paste the complete HTTPS URL at the hidden prompt. Instagram Monitor validates it then updates only `WEBHOOK_URL` in `.env` without displaying the value. Standard Discord and public `ntfy.sh` URLs select the matching request format automatically. Configure `WEBHOOK_PROVIDER` in `instagram_monitor.conf` for a self-hosted or compatible endpoint. Use `--env-file PATH` with this command to select another dotenv destination.
+
+The mail server password has its own command:
+
+```sh
+instagram_monitor --set-smtp-password
+```
+
+Type the password at the hidden prompt. Instagram Monitor signs in to the mail server with it and saves `SMTP_PASSWORD` in `.env` only once the server accepts it. No email is sent. The other SMTP settings have to be in place first, so run this after `--setup` or after filling in `SMTP_HOST`, `SMTP_USER`, `SENDER_EMAIL` and `RECEIVER_EMAIL`.
 
 You can use operating system environment variables instead of a file. Set them with `export` on Linux, Unix, macOS or WSL:
 
