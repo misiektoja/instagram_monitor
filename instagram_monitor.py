@@ -1146,6 +1146,9 @@ DEFAULT_CONFIG_FILENAME = "instagram_monitor.conf"
 # List of secret keys to load from env/config
 SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD", "WEBHOOK_URL", "PROXY_URL", "NTFY_ACCESS_TOKEN")
 
+# Effective source name for each configured secret without storing another copy of its value
+SECRET_SOURCES = {}
+
 # Config values that must retain safe template defaults during generated output
 SENSITIVE_CONFIG_KEYS = frozenset((*SECRET_KEYS, "WEBHOOK_HEADERS"))
 
@@ -6233,6 +6236,7 @@ def reload_secrets_signal_handler(sig, frame):
                     proxy_url_changed = True
                 if secret == "WEBHOOK_URL":
                     webhook_url_changed = True
+                SECRET_SOURCES[secret] = "dotenv file reload"
                 # This prints the setting name and environment-file path, never the secret value
 
                 # codeql[py/clear-text-logging-sensitive-data]
@@ -13595,22 +13599,16 @@ def doctor_secret_is_set(value) -> bool:
 
 # Groups configured secret names by the source each value actually came from
 def doctor_secret_sources(env_path=None) -> Tuple[List[str], List[str], List[str]]:
-    file_keys = set()
-    if env_path:
-        try:
-            from dotenv import dotenv_values
-            file_keys = {key for key, value in dotenv_values(env_path, interpolate=False).items() if value}
-        except Exception:
-            file_keys = set()
     from_file: List[str] = []
     from_environment: List[str] = []
     from_settings: List[str] = []
     for key in SECRET_KEYS:
         if not doctor_secret_is_set(globals().get(key)):
             continue
-        if key in file_keys:
+        source = SECRET_SOURCES.get(key, "configuration file or command line")
+        if source.startswith("dotenv file"):
             from_file.append(key)
-        elif os.environ.get(key):
+        elif source == "environment":
             from_environment.append(key)
         else:
             from_settings.append(key)
@@ -13864,6 +13862,7 @@ def run_main():
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
+    global SECRET_SOURCES
 
     if "--generate-config" in sys.argv and "--set-webhook-url" not in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -14492,6 +14491,12 @@ def run_main():
         if DOTENV_FILE:
             DOTENV_FILE = os.path.expanduser(DOTENV_FILE)
 
+    exported_secret_keys = frozenset(secret for secret in SECRET_KEYS if os.getenv(secret) is not None)
+    SECRET_SOURCES.clear()
+    for secret in SECRET_KEYS:
+        if doctor_secret_is_set(globals().get(secret)):
+            SECRET_SOURCES[secret] = "configuration file or command line"
+
     if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
         env_path = None
     else:
@@ -14521,6 +14526,7 @@ def run_main():
         val = os.getenv(secret)
         if val is not None:
             globals()[secret] = val
+            SECRET_SOURCES[secret] = "environment" if secret in exported_secret_keys else "dotenv file"
 
     # The shipped WEBHOOK_URL placeholder means 'not configured', so it must not reach code that treats it as a destination
     if is_placeholder_setting(WEBHOOK_URL):
@@ -14630,6 +14636,7 @@ def run_main():
 
     if args.proxy_url:
         PROXY_URL = str(args.proxy_url or "")
+        SECRET_SOURCES["PROXY_URL"] = "command line"
 
     if args.proxy_cert_path:
         PROXY_CERT_PATH = str(args.proxy_cert_path or "")
@@ -14686,6 +14693,7 @@ def run_main():
             print("* Error: Invalid webhook URL format. Must be a complete HTTPS URL without embedded credentials.")
             sys.exit(1)
         WEBHOOK_URL = str(args.webhook_url or "")
+        SECRET_SOURCES["WEBHOOK_URL"] = "command line"
         WEBHOOK_ENABLED = True
 
     if args.webhook_provider:
@@ -14859,6 +14867,7 @@ def run_main():
 
     if args.session_password:
         SESSION_PASSWORD = args.session_password
+        SECRET_SOURCES["SESSION_PASSWORD"] = "command line"
 
     if not SESSION_USERNAME:
         SKIP_SESSION = True

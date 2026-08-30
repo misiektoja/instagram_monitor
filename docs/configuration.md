@@ -52,10 +52,11 @@ If the same setting appears in more than one place, the item later in this list 
 
 1. Built-in defaults
 2. The discovered or explicitly selected configuration file
-3. Supported private values from `.env` or process environment variables
-4. Command-line options
+3. Supported private values from the selected `.env` file
+4. Supported private values exported in the process environment
+5. Command-line options
 
-The `.env` and process environment layer applies only to `SESSION_PASSWORD`, `SMTP_PASSWORD`, `WEBHOOK_URL`, `PROXY_URL` and `NTFY_ACCESS_TOKEN`. For these keys, a value in the selected `.env` file replaces a value that was already exported in the shell. Use `--config-file PATH` and `--env-file PATH` if you do not want automatic file discovery.
+The `.env` and process environment layers apply only to `SESSION_PASSWORD`, `SMTP_PASSWORD`, `WEBHOOK_URL`, `PROXY_URL` and `NTFY_ACCESS_TOKEN`. For these keys, a value exported in the process environment wins when the same key also exists in the selected `.env` file. Use `--config-file PATH` and `--env-file PATH` if you do not want automatic file discovery.
 
 ### Proxy IP Lookup Endpoints
 
