@@ -576,3 +576,180 @@ def test_a_blank_csv_answer_disables_csv_output(im_module, monkeypatch):
 
         assert state.config_values["DISABLE_LOGGING"] is False
         assert state.config_values["CSV_FILE"] == ""
+
+
+class TestRejectedAnswerEscape:
+    # Verifies the two escape wordings, so a blank answer and a rejected one are never asked the same way
+    @pytest.mark.parametrize("consequence, question, answer, expected", [("", "Try entering the webhook URL again?", "y", True), ("", "Try entering the webhook URL again?", "n", False), ("Webhook alerts stay off until one is set", "Continue without the webhook URL? Webhook alerts stay off until one is set", "y", False), ("Webhook alerts stay off until one is set", "Continue without the webhook URL? Webhook alerts stay off until one is set", "n", True)])
+    def test_the_escape_wording_matches_the_kind_of_rejection(self, im_module, monkeypatch, consequence, question, answer, expected):
+        questions = []
+        # Records the escape question while answering it as the case requires
+        def ask(prompt):
+            questions.append(prompt)
+            return answer
+        monkeypatch.setattr(im_module, "_wizard_input", ask)
+
+        assert im_module._wizard_offer_retry("webhook URL", consequence) is expected
+        assert question in questions[0]
+
+    # Verifies a required answer can be abandoned instead of trapping the wizard in its own loop
+    def test_a_required_text_answer_can_be_abandoned(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "_wizard_input", Mock(return_value=""))
+        monkeypatch.setattr(im_module, "_wizard_offer_retry", lambda label, consequence="": False)
+
+        assert im_module._wizard_ask_text("SMTP username", required=True) == ""
+
+    # Verifies a retried required answer is still collected
+    def test_a_retried_required_text_answer_is_accepted(self, im_module, monkeypatch):
+        answers = iter(["", "smtp-user"])
+        monkeypatch.setattr(im_module, "_wizard_input", lambda prompt: next(answers))
+        monkeypatch.setattr(im_module, "_wizard_offer_retry", lambda label, consequence="": True)
+
+        assert im_module._wizard_ask_text("SMTP username", required=True) == "smtp-user"
+
+    # Verifies the hidden prompt returns a blank secret instead of looping, leaving the decision to its caller
+    def test_a_blank_secret_returns_instead_of_looping(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module.getpass, "getpass", Mock(return_value=""))
+
+        assert im_module._wizard_ask_secret("SMTP password") == ""
+
+    # Verifies abandoning any mail server answer switches every email alert off rather than saving half a server
+    @pytest.mark.parametrize("abandoned", ["SMTP server host (e.g. smtp.gmail.com)", "SMTP username", "Sender email (From)", "Recipient email (To)"])
+    def test_an_abandoned_mail_server_answer_switches_email_off(self, im_module, monkeypatch, abandoned):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            state.want_email = True
+            state.baseline_values["STATUS_NOTIFICATION"] = True
+            state.config_values["STATUS_NOTIFICATION"] = True
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
+            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: "" if question == abandoned else "answer@example.test")
+            monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: "private-password")
+
+            im_module._wizard_collect_email_section(state)
+
+            assert state.want_email is False
+            assert state.config_values["STATUS_NOTIFICATION"] is False
+            assert state.config_values.get("SMTP_USER") != "answer@example.test"
+
+    # Verifies a blank SMTP password leaves the saved one alone rather than storing an empty secret
+    def test_a_blank_smtp_password_is_not_saved(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
+            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: "587" if question == "SMTP port" else "answer@example.test")
+            monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: "")
+
+            im_module._wizard_collect_email_section(state)
+
+            assert "SMTP_PASSWORD" not in state.secret_updates
+            assert state.want_email is True
+
+    # Verifies a webhook URL nobody can supply switches the channel off instead of repeating the prompt
+    @pytest.mark.parametrize("entry, consequence_expected", [("", True), ("not-a-url", False)])
+    def test_an_unusable_webhook_url_can_be_abandoned(self, im_module, monkeypatch, entry, consequence_expected):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            state.want_webhook = True
+            state.baseline_values.update({"WEBHOOK_ENABLED": True, "WEBHOOK_STATUS_NOTIFICATION": True})
+            state.config_values.update({"WEBHOOK_ENABLED": True, "WEBHOOK_STATUS_NOTIFICATION": True})
+            labels = []
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: 0)
+            monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: entry)
+            # Refuses the escape after recording which wording the wizard offered
+            def offer_retry(label, consequence=""):
+                labels.append((label, consequence))
+                return False
+            monkeypatch.setattr(im_module, "_wizard_offer_retry", offer_retry)
+
+            im_module._wizard_collect_webhook_section(state)
+
+            assert labels == [("webhook URL", "Webhook alerts stay off until one is set" if consequence_expected else "")]
+            assert state.want_webhook is False
+            assert state.config_values["WEBHOOK_ENABLED"] is False
+            assert state.config_values["WEBHOOK_STATUS_NOTIFICATION"] is False
+            assert "WEBHOOK_URL" not in state.secret_updates
+
+    # Verifies a retried webhook URL is still collected after one unusable entry
+    def test_a_retried_webhook_url_is_accepted(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            entries = iter(["", "https://discord.com/api/webhooks/1/token"])
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: 0)
+            monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: next(entries))
+            monkeypatch.setattr(im_module, "_wizard_offer_retry", lambda label, consequence="": True)
+
+            im_module._wizard_collect_webhook_section(state)
+
+            assert state.secret_updates["WEBHOOK_URL"] == "https://discord.com/api/webhooks/1/token"
+            assert state.config_values["WEBHOOK_ENABLED"] is True
+
+    # Verifies a blank ntfy access token means no token rather than an unanswerable prompt
+    def test_a_blank_ntfy_access_token_means_no_token(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            secret_updates = {}
+            monkeypatch.delenv("NTFY_ACCESS_TOKEN", raising=False)
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
+            monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: "")
+            monkeypatch.setattr(im_module, "_wizard_offer_retry", Mock(side_effect=AssertionError("a blank token should not be rejected")))
+
+            im_module._wizard_collect_ntfy_access_token(secret_updates, Path(directory_name) / ".env")
+
+            assert secret_updates == {}
+
+    # Verifies a token pasted with its authorization scheme can be abandoned and is never saved
+    def test_an_ntfy_access_token_pasted_with_its_scheme_can_be_abandoned(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            secret_updates = {}
+            labels = []
+            monkeypatch.delenv("NTFY_ACCESS_TOKEN", raising=False)
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
+            monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: "Bearer tk_secret")
+            # Refuses the escape after recording the label the wizard offered
+            def offer_retry(label, consequence=""):
+                labels.append(label)
+                return False
+            monkeypatch.setattr(im_module, "_wizard_offer_retry", offer_retry)
+
+            im_module._wizard_collect_ntfy_access_token(secret_updates, Path(directory_name) / ".env")
+
+            assert labels == ["ntfy access token"]
+            assert secret_updates == {}
+
+    # Verifies an abandoned sign-in answer leaves no-login rather than writing half a session
+    @pytest.mark.parametrize("username, password", [("", "private-password"), ("monitoring.account", "")])
+    def test_an_abandoned_sign_in_answer_falls_back_to_no_login(self, im_module, monkeypatch, username, password):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            state.baseline_values["SKIP_SESSION"] = False
+            state.config_values["SKIP_SESSION"] = False
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: len(options) - 1)
+            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: username)
+            monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: password)
+            monkeypatch.setattr(im_module, "_wizard_offer_retry", lambda label, consequence="": False)
+
+            im_module._wizard_collect_login_section(state, "pip")
+
+            assert state.login_method == "no-login"
+            assert state.logged_in is False
+            assert state.session_username == ""
+            assert state.config_values["SKIP_SESSION"] is True
+            assert "SESSION_PASSWORD" not in state.secret_updates
+
+    # Verifies a password left blank on the retry too still leaves no-login rather than saving an empty secret
+    def test_a_password_abandoned_after_a_retry_still_falls_back(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            state.baseline_values["SKIP_SESSION"] = False
+            state.config_values["SKIP_SESSION"] = False
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: len(options) - 1)
+            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: "monitoring.account")
+            monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: "")
+            monkeypatch.setattr(im_module, "_wizard_offer_retry", lambda label, consequence="": True)
+
+            im_module._wizard_collect_login_section(state, "pip")
+
+            assert state.login_method == "no-login"
+            assert "SESSION_PASSWORD" not in state.secret_updates
+            assert state.config_values["SKIP_SESSION"] is True

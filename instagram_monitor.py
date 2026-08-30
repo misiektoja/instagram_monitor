@@ -322,6 +322,11 @@ PROXY_URL = ""
 # Optional local TLS certificate used by the proxy
 PROXY_CERT_PATH = ""
 
+# Whether to verify TLS certificates on every outbound request
+# Only set this to False on a network that intercepts TLS with its own certificate authority
+# Switching it off removes the protection against an intercepted connection
+VERIFY_SSL = True
+
 # Whether webhook requests should use the proxy
 PROXY_WEBHOOKS = False
 
@@ -1122,6 +1127,7 @@ PROXY_ENABLED = False
 PROXY_URL = ""
 PROXY_CERT_PATH = ""
 PROXY_WEBHOOKS = False
+VERIFY_SSL = True
 COLORED_OUTPUT = False
 COLOR_THEME = {}
 DEBUG_MODE = False
@@ -1197,6 +1203,7 @@ SESSION_IMPORT_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#option-3-session
 SMTP_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#smtp-settings"
 WEBHOOK_GUIDE_URL = DOCUMENTATION_URL + "/usage/#webhook-notifications"
 PROXY_GUIDE_URL = DOCUMENTATION_URL + "/usage/#routing-traffic-through-a-proxy"
+TLS_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#tls-verification"
 ANTI_DETECTION_INTERVAL_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#keep-the-polling-interval-reasonable"
 ANTI_DETECTION_SESSION_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#sign-in-using-session-mode-with-browser-cookies"
 CONNECTION_ERRORS_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#connection-errors-during-monitoring"
@@ -1309,6 +1316,7 @@ from dateutil import relativedelta
 from dateutil.parser import isoparse, parse
 import calendar
 import requests as req
+import urllib3
 WEBHOOK_SESSION = req.Session()
 import atexit
 import errno
@@ -1443,7 +1451,6 @@ except ImportError:
 
 try:
     import instaloader
-    from instaloader import Instaloader
 except ModuleNotFoundError:
     raise SystemExit("Error: Couldn't find the instaloader library !\n\nTo install it, run:\n    pip3 install instaloader\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://instaloader.github.io/")
 
@@ -3231,7 +3238,7 @@ def create_web_dashboard_app():
             return jsonify({'success': False, 'error': 'No session configured'})  # type: ignore
 
         try:
-            L = Instaloader()
+            L = instaloader_client()
             L.load_session_from_file(SESSION_USERNAME)
             # Test if session is actually valid by trying to get profile
             test_username = L.test_login()
@@ -3299,7 +3306,7 @@ def create_web_dashboard_app():
             return jsonify({'success': False, 'error': 'No session configured'})  # type: ignore
 
         try:
-            L = Instaloader()
+            L = instaloader_client()
             # Try to reload from file first
             try:
                 L.load_session_from_file(SESSION_USERNAME)
@@ -4276,6 +4283,12 @@ def _startup_notification_summary_rows() -> List[Tuple[str, bool, bool]]:
     return [(f"* Notifications (email):\t\t{email_state}", True, True), (f"* Notifications (webhook):\t\t{webhook_state}", True, True)]
 
 
+# Builds the startup row for TLS verification, shown in the concise view only while the check is off
+def _startup_tls_summary_row() -> Tuple[str, bool, bool]:
+    state = "On" if VERIFY_SSL else "Off, server certificates are not checked"
+    return (f"* TLS verification:\t\t\t{state}", not VERIFY_SSL, True)
+
+
 # Helper to apply a block style while preserving internal highlights
 def _apply_style_nested(line, style_name):
     start_style = _COLOR_STYLES.get(style_name)
@@ -4703,7 +4716,7 @@ def check_internet(url=None, timeout=None):
     url = CHECK_INTERNET_URL if url is None else url
     timeout = CHECK_INTERNET_TIMEOUT if timeout is None else timeout
     try:
-        # Certificate verification is always True or an existing CA bundle selected by the local operator
+        # Certificate verification follows VERIFY_SSL, which the local operator turns off only for an intercepting network
 
         # codeql[py/request-without-cert-validation]
         _ = req.get(url, headers={'User-Agent': USER_AGENT}, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
@@ -5381,7 +5394,7 @@ def post_webhook_request(webhook_url, verify, proxies, **request_kwargs):
     destination = str(webhook_url or "").strip()
     if not validate_webhook_url(destination):
         raise ValueError("webhook destination must be a complete HTTPS URL")
-    if verify is not True:
+    if verify not in (True, False):
         verify = resolve_existing_file_path(verify, "proxy certificate")
     # The destination is intentionally operator-configurable and dashboard writes are restricted to the trusted local UI
 
@@ -5474,7 +5487,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         final_post_proxy_ssl = get_proxies_ssl()
     else:
         final_post_proxy = {}
-        final_post_proxy_ssl = True
+        final_post_proxy_ssl = VERIFY_SSL
 
     ntfy_title, ntfy_message = build_ntfy_webhook_message(str(payload["title"]), str(payload["description"]), payload["fields"], webhook_image_url) if provider == "ntfy" else ("", "")
     ntfy_image = build_ntfy_local_image(local_image_file) if provider == "ntfy" else None
@@ -5635,7 +5648,7 @@ def get_ip_address(max_retries=3, timeout=10, retry_delay=5, long_retry=120, lon
                 return f"(unavailable: {format_error_message(last_err) if last_err else 'stopped'})"
             url = urls[attempt_index % len(urls)]
             try:
-                # Certificate verification is always True or an existing CA bundle selected by the local operator
+                # Certificate verification follows VERIFY_SSL, which the local operator turns off only for an intercepting network
 
                 # codeql[py/request-without-cert-validation]
                 ip_response = req.get(url, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
@@ -5698,18 +5711,39 @@ def resolve_existing_file_path(value, label) -> str:
     return candidate
 
 
-# Returns the requests verify arg: cert path when PROXY_CERT_PATH is set under an enabled proxy, else True
+# Silences the repeated certificate warning once verification is off, so the choice is reported by the summary and the doctor instead of on every request
+def apply_tls_verification_setting():
+    if not VERIFY_SSL:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+# Returns the requests verify arg every outbound request shares: False while VERIFY_SSL is off, the proxy cert path when one is configured, else True
 def get_proxies_ssl():
+    if not VERIFY_SSL:
+        return False
     if PROXY_ENABLED and PROXY_CERT_PATH:
         return resolve_existing_file_path(PROXY_CERT_PATH, "proxy certificate")
     return True
 
 
-# Applies current proxy and SSL-verify settings to the instaloader bot's underlying requests session
+# Applies the current proxy and TLS verification settings to the instaloader bot's underlying requests session
 def set_instaloader_proxies(instabot):
-    instabot.context._session.proxies.clear()
-    instabot.context._session.proxies.update(get_proxies())
-    instabot.context._session.verify = get_proxies_ssl()
+    # A future instaloader that moves its session should still start, verifying, rather than fail on the missing attribute
+    try:
+        session = instabot.context._session
+        session.proxies.clear()
+        session.proxies.update(get_proxies())
+        session.verify = get_proxies_ssl()
+    except AttributeError as exc:
+        debug_print(f"TLS verification could not be applied to the instaloader session: {exc}")
+
+
+# Returns an Instaloader whose session honours the configured proxy and TLS verification settings before its first request
+def instaloader_client(**kwargs):
+    # Constructed through the module attribute, which is the seam the offline tests replace
+    bot = instaloader.Instaloader(**kwargs)
+    set_instaloader_proxies(bot)
+    return bot
 
 
 # Reapplies proxy settings on the bot when runtime configuration has bumped PROXY_REFRESH_VERSION
@@ -6282,7 +6316,7 @@ def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0):
     image_video_response = None
     expected_bytes = None
     try:
-        # Certificate verification is always True or an existing CA bundle selected by the local operator
+        # Certificate verification follows VERIFY_SSL, which the local operator turns off only for an intercepting network
 
         # codeql[py/request-without-cert-validation]
         image_video_response = req.get(image_video_url, headers={'User-Agent': USER_AGENT}, timeout=FUNCTION_TIMEOUT, stream=True, verify=get_proxies_ssl(), proxies=get_proxies())
@@ -7344,7 +7378,7 @@ def select_chromium_profile_cli(browser, explicit_profile):
 def import_browser_session_dashboard(browser, cookiefile=None, profile=None):
     cookie_dict = get_browser_cookie_dict(browser, cookiefile, profile=profile)
 
-    L = Instaloader(user_agent=USER_AGENT, max_connection_attempts=1)
+    L = instaloader_client(user_agent=USER_AGENT, max_connection_attempts=1)
     L.context._session.cookies.update(cookie_dict)
     username = L.test_login()
 
@@ -7372,7 +7406,7 @@ def import_session(browser, cookiefile, sessionfile, profile=None):
     except CookieImportError as e:
         raise SystemExit(f"Error: {e}")
 
-    instaloader = Instaloader(user_agent=USER_AGENT, max_connection_attempts=1)
+    instaloader = instaloader_client(user_agent=USER_AGENT, max_connection_attempts=1)
     instaloader.context._session.cookies.update(cookie_dict)
     username = instaloader.test_login()
 
@@ -9831,11 +9865,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
     bot = None
 
     try:
-        bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True, quiet=True)
-
-        # Inject proxy and cert into Instaloader's session
-        if PROXY_ENABLED:
-            set_instaloader_proxies(bot)
+        # The session carries the proxy and the TLS verification setting before the first request is made
+        bot = instaloader_client(user_agent=USER_AGENT, iphone_support=True, quiet=True)
 
         ctx = bot.context
         session = ctx._session
@@ -12593,6 +12624,8 @@ def _wizard_ask_text(question: str, default: str = "", required: bool = False) -
         if raw or not required:
             return raw
         print(colorize("warning", "  This value is required."))
+        if not _wizard_offer_retry(question):
+            return ""
 
 
 # Converts a duration to a compact seconds plus human-readable wizard label
@@ -12643,17 +12676,13 @@ def _wizard_ask_duration(question: str, default: int) -> int:
         print(colorize("warning", "  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d."))
 
 
-# Reads a required secret through getpass without echoing the entered value
+# Reads one secret through getpass without echoing the entered value
 def _wizard_ask_secret(question: str) -> str:
-    while True:
-        try:
-            value = getpass.getpass(f"{question}: ")
-        except (EOFError, KeyboardInterrupt):
-            print("\n" + colorize("warning", "Setup cancelled."))
-            raise SystemExit(1) from None
-        if value:
-            return value
-        print(colorize("warning", "  This secret is required and cannot be empty."))
+    try:
+        return str(getpass.getpass(f"{question}: "))
+    except (EOFError, KeyboardInterrupt):
+        print("\n" + colorize("warning", "Setup cancelled."))
+        raise SystemExit(1) from None
 
 
 # Prompts a yes/no question and returns the boolean answer
@@ -12668,6 +12697,13 @@ def _wizard_ask_yes_no(question: str, default: bool = True) -> bool:
         if raw in ("n", "no"):
             return False
         print(colorize("warning", "  Please answer 'y' or 'n'."))
+
+
+# Offers the one way out after an entry the wizard cannot use, so declining keeps every answer already given
+def _wizard_offer_retry(label: str, consequence: str = "") -> bool:
+    if consequence:
+        return not _wizard_ask_yes_no(f"Continue without the {label}? {consequence}", default=False)
+    return _wizard_ask_yes_no(f"Try entering the {label} again?", default=True)
 
 
 # Prints a numbered menu and returns the zero-based index the user selected
@@ -12725,10 +12761,13 @@ def _wizard_collect_ntfy_access_token(secret_updates: dict, env_path: Path) -> N
         return
     while True:
         token = _wizard_ask_secret("Paste the ntfy access token only").strip()
-        if token and "\r" not in token and "\n" not in token and not token.casefold().startswith(("bearer ", "basic ")):
-            break
+        if not token or ("\r" not in token and "\n" not in token and not token.casefold().startswith(("bearer ", "basic "))):
+            if token:
+                secret_updates["NTFY_ACCESS_TOKEN"] = token
+            return
         print("  Paste only the access token without a Bearer or Basic prefix.")
-    secret_updates["NTFY_ACCESS_TOKEN"] = token
+        if not _wizard_offer_retry("ntfy access token"):
+            return
 
 
 # Config values reset before one setup section is collected again
@@ -12758,6 +12797,16 @@ class WizardSetupState:
     want_terminal: bool
     want_webhook: bool
     want_email: bool
+
+
+# Leaves the tool in no-login mode, so an abandoned sign-in answer cannot save half a session
+def _wizard_fall_back_to_no_login(state: WizardSetupState, reason: str) -> None:
+    print(colorize("warning", f"  {reason}"))
+    state.login_method = "no-login"
+    state.logged_in = False
+    state.import_browser = None
+    state.session_username = ""
+    state.config_values.update({"SKIP_SESSION": True, "SESSION_USERNAME": ""})
 
 
 # Selects one supported Docker host and Firefox profile layout for deferred import
@@ -12882,8 +12931,21 @@ def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
         state.session_username = _wizard_ask_text(f"Your Instagram username (leave empty to detect it from {browser_label(state.import_browser)} import)").lstrip("@")
     else:
         state.session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
+        if not state.session_username:
+            _wizard_fall_back_to_no_login(state, "Sign-in stays off until the username is given.")
+            return
     if action == "password":
-        state.secret_updates["SESSION_PASSWORD"] = _wizard_ask_secret("Instagram password")
+        password = _wizard_ask_secret("Instagram password")
+        if not password:
+            if not _wizard_offer_retry("Instagram password", "Sign-in stays off until one is set"):
+                _wizard_fall_back_to_no_login(state, "Sign-in stays off until the password is given.")
+                return
+            password = _wizard_ask_secret("Instagram password")
+        if password:
+            state.secret_updates["SESSION_PASSWORD"] = password
+        else:
+            _wizard_fall_back_to_no_login(state, "Sign-in stays off until the password is given.")
+            return
     state.config_values.update({"SKIP_SESSION": False, "SESSION_USERNAME": state.session_username})
 
 
@@ -12904,13 +12966,18 @@ def _wizard_collect_interface_section(state: WizardSetupState, method: str) -> N
         print(colorize("warning", "  Note: rich is not installed, so the terminal dashboard will remain unavailable until it is installed."))
 
 
+# Switches the channel and every alert it owns off together, so a half-configured webhook cannot be written
+def _wizard_disable_webhook(state: WizardSetupState) -> None:
+    state.want_webhook = False
+    state.config_values.update({"WEBHOOK_ENABLED": False, "WEBHOOK_STATUS_NOTIFICATION": False})
+
+
 # Collects webhook settings and hidden secrets
 def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
     _wizard_reset_section(state, WIZARD_WEBHOOK_CONFIG_KEYS, ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN"))
     print()
     if not _wizard_ask_yes_no("Set up webhook alerts (Discord, ntfy etc.)?", default=state.want_webhook):
-        state.want_webhook = False
-        state.config_values.update({"WEBHOOK_ENABLED": False, "WEBHOOK_STATUS_NOTIFICATION": False})
+        _wizard_disable_webhook(state)
         return
     provider_choice = _wizard_ask_choice("Which webhook service should receive alerts?", [("Discord", "Sends a Discord embed with supported image attachments."), ("ntfy", "Sends a native notification to one ntfy topic URL.")], default_index=0 if state.config_values.get("WEBHOOK_PROVIDER", "discord") == "discord" else 1)
     provider = "discord" if provider_choice == 0 else "ntfy"
@@ -12931,10 +12998,19 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
             webhook_url = normalize_ntfy_topic_url(webhook_input) if provider == "ntfy" else webhook_input.strip()
             if validate_webhook_url(webhook_url):
                 break
+            # Nothing can be delivered without a destination, so giving up has to stay reachable from the prompt
+            if not webhook_input.strip():
+                if not _wizard_offer_retry("webhook URL", "Webhook alerts stay off until one is set"):
+                    _wizard_disable_webhook(state)
+                    return
+                continue
             if provider == "ntfy":
                 print(colorize("warning", "  Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores."))
             else:
                 print(colorize("warning", "  That does not look like a complete HTTPS webhook URL. Copy it from the webhook service and try again."))
+            if not _wizard_offer_retry("webhook URL"):
+                _wizard_disable_webhook(state)
+                return
         state.secret_updates["WEBHOOK_URL"] = webhook_url
     if provider == "ntfy":
         _wizard_collect_ntfy_access_token(state.secret_updates, state.env_path)
@@ -12942,15 +13018,31 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
     state.config_values.update({"WEBHOOK_ENABLED": True, "WEBHOOK_STATUS_NOTIFICATION": True})
 
 
+# Switches every email alert off together, so an abandoned answer cannot leave half a mail server configured
+def _wizard_disable_email(state: WizardSetupState) -> None:
+    state.want_email = False
+    state.config_values["STATUS_NOTIFICATION"] = False
+
+
+# Reports whether one required mail server answer was abandoned, switching the channel off when it was
+def _wizard_email_answer_missing(state: WizardSetupState, answer: str) -> bool:
+    if answer:
+        return False
+    print(colorize("warning", "  Email notifications stay off until every mail server setting is answered."))
+    _wizard_disable_email(state)
+    return True
+
+
 # Collects email settings and the hidden SMTP password
 def _wizard_collect_email_section(state: WizardSetupState) -> None:
     _wizard_reset_section(state, WIZARD_EMAIL_CONFIG_KEYS, ("SMTP_PASSWORD",))
     print()
     if not _wizard_ask_yes_no("Set up email (SMTP) alerts now?", default=state.want_email):
-        state.want_email = False
-        state.config_values["STATUS_NOTIFICATION"] = False
+        _wizard_disable_email(state)
         return
     host = _wizard_ask_text("SMTP server host (e.g. smtp.gmail.com)", required=True)
+    if _wizard_email_answer_missing(state, host):
+        return
     port_text = _wizard_ask_text("SMTP port", default=str(state.config_values.get("SMTP_PORT") or 587))
     try:
         port = int(port_text)
@@ -12958,9 +13050,17 @@ def _wizard_collect_email_section(state: WizardSetupState) -> None:
         port = 587
     use_ssl = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(state.config_values.get("SMTP_SSL", True)))
     user = _wizard_ask_text("SMTP username", required=True)
-    state.secret_updates["SMTP_PASSWORD"] = _wizard_ask_secret("SMTP password")
+    if _wizard_email_answer_missing(state, user):
+        return
+    password = _wizard_ask_secret("SMTP password")
+    if password:
+        state.secret_updates["SMTP_PASSWORD"] = password
     sender = _wizard_ask_text("Sender email (From)", required=True)
+    if _wizard_email_answer_missing(state, sender):
+        return
     receiver = _wizard_ask_text("Recipient email (To)", required=True)
+    if _wizard_email_answer_missing(state, receiver):
+        return
     state.config_values.update({"SMTP_HOST": host, "SMTP_PORT": port, "SMTP_SSL": use_ssl, "SMTP_USER": user, "SENDER_EMAIL": sender, "RECEIVER_EMAIL": receiver, "STATUS_NOTIFICATION": True})
     state.want_email = True
 
@@ -13116,6 +13216,9 @@ def _wizard_finish_browser_import(state: WizardSetupState, method: str) -> bool:
     if not state.session_username:
         print(colorize("warning", "No username was detected from the browser session."))
         state.session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
+        if not state.session_username:
+            _wizard_fall_back_to_no_login(state, "Sign-in stays off until the username is given.")
+            return import_completed
     state.config_values["SESSION_USERNAME"] = state.session_username
     return import_completed
 
@@ -13740,6 +13843,11 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
     else:
         checks.append(make_doctor_check("Configuration", "fail", "Local timezone is invalid", str(LOCAL_TIMEZONE), "Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
 
+    if VERIFY_SSL:
+        checks.append(make_doctor_check("Configuration", "ok", "TLS certificate verification is on", "Every outbound request checks the server certificate"))
+    else:
+        checks.append(make_doctor_check("Configuration", "warn", "TLS certificate verification is off", "VERIFY_SSL is False, so an intercepted connection cannot be told apart from the real service", "Set VERIFY_SSL back to True unless this network intercepts TLS with its own certificate authority", TLS_GUIDE_URL))
+
     if not CSV_FILE:
         checks.append(make_doctor_check("Configuration", "ok", "CSV logging is disabled", "No CSV file will be written"))
     else:
@@ -13768,9 +13876,7 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
 # Builds the single Instaloader instance the live checks share and reports a failure to create it
 def doctor_prepare_bot(report: DoctorReport) -> List[DoctorCheck]:
     try:
-        report.bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True, quiet=True)
-        if PROXY_ENABLED:
-            set_instaloader_proxies(report.bot)
+        report.bot = instaloader_client(user_agent=USER_AGENT, iphone_support=True, quiet=True)
     except Exception as exc:
         return [make_doctor_check("Configuration", "fail", "Could not initialise Instaloader", format_error_message(exc))]
     return []
@@ -14587,6 +14693,8 @@ def run_main():
     # Config loading can replace these globals, so reapply explicit flags to preserve CLI precedence
     apply_diagnostic_cli_overrides(args)
 
+    apply_tls_verification_setting()
+
     if args.output_dir:
         OUTPUT_DIR = os.path.expanduser(args.output_dir)
 
@@ -15215,6 +15323,8 @@ def run_main():
         summary_rows.append((f"* HTTP backend:\t\t\t\trequests", True, True))
 
     summary_rows.append((f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}", bool(ENABLE_JITTER), True))
+
+    summary_rows.append(_startup_tls_summary_row())
 
     summary_rows.append((f"* Proxies:\t\t\t\t" + ("Enabled" if PROXY_ENABLED else "Disabled"), bool(PROXY_ENABLED), True))
     if PROXY_ENABLED:

@@ -7,6 +7,8 @@ This page assumes Instagram Monitor is already installed (see [Installation](ins
 
 Then use the interactive setup wizard. It asks which Instagram accounts to monitor, whether to use a saved login, how often to poll, which interface to start, which alerts to enable and where output goes. The output questions cover the per-target log file and an optional CSV path, and leaving the CSV answer blank disables it. Leave the targets question empty if you want to start with only the Web Dashboard then add accounts in your browser. Terminal Dashboard and plain-text setups ask for at least one target before saving. The polling interval accepts seconds directly, decimal units such as `1.5h` or compound durations such as `1h 30m`. Supported units are `s`, `m`, `h` and `d`. You can review and change your answers before saving. Regular settings go in `instagram_monitor.conf`. Private values such as passwords and webhook URLs go in `.env`.
 
+Every answer setup cannot use offers a way out, so one value you cannot produce right now does not cost you the answers already given. A blank answer asks whether to continue without it and names what stops working, and a rejected one offers to enter it again. Declining switches the part that needed it off, so half a mail server, a webhook with no destination or a login with no password is never written.
+
 For a local install, the wizard can check the setup and start monitoring immediately. In a container, it prints the next Docker or Docker Compose commands to run.
 
 Use the tab that matches how you installed the tool. Copy and run only the commands in that tab.

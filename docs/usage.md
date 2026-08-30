@@ -567,7 +567,7 @@ instagram_monitor <target_insta_user> --enable-proxy --proxy-url "http://user:pa
 
 Additional options:
 
-- `PROXY_CERT_PATH` or `--proxy-cert` selects a local certificate used to verify the proxy connection
+- `PROXY_CERT_PATH` or `--proxy-cert` selects a local certificate used to verify the proxy connection. It applies only while [TLS verification](configuration.md#tls-verification) is on
 - `PROXY_WEBHOOKS` or `--enable-proxy-webhooks` also sends webhook requests through the proxy. It is off by default because some proxies do not allow these requests
 - `IP_ADDRESS_URL` selects one trusted IP lookup URL or an ordered non-empty list of fallback URLs
 

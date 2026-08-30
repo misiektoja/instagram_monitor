@@ -11,6 +11,9 @@ import yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_URL = "https://github.com/misiektoja/instagram_monitor"
+REPOSITORY_MARKDOWN = ("README.md", "SUPPORT.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "THIRD_PARTY_NOTICES.md", ".github/pull_request_template.md")
+ISSUE_TEMPLATES = (".github/ISSUE_TEMPLATE/config.yml", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE/feature_request.yml")
 
 
 # Reads one repository text asset as UTF-8
@@ -33,6 +36,21 @@ def markdown_headings(text: str) -> list[tuple[int, int, str]]:
                 headings.append((offset, len(match.group(1)), match.group(2)))
         offset += len(line)
     return headings
+
+
+# Returns the anchors one Markdown page defines, from its headings and from explicit anchor tags
+def page_anchors(path: Path) -> set[str]:
+    text = path.read_text(encoding="utf-8")
+    anchors = set(re.findall(r'<a id="([^"]+)"></a>', text))
+    for _offset, _level, title in markdown_headings(text):
+        anchors.add("".join(character for character in title.casefold().replace(" ", "-") if character.isalnum() or character in "-_"))
+    return anchors
+
+
+# Returns every local link target in one repository document, including README anchors written as absolute project links
+def repository_link_targets(text: str) -> list[str]:
+    targets = re.findall(r"\]\((?!https?:|mailto:)([^)]+)\)", text)
+    return list(targets) + [f"README.md#{anchor}" for anchor in re.findall(rf"{re.escape(PROJECT_URL)}/?#([^\s)\"']+)", text)]
 
 
 # Returns one Markdown section whose heading contains every requested term
@@ -379,6 +397,25 @@ def test_support_document_routes_every_request_type():
     assert_concepts(support, "session cookies", "webhook URLs", "--debug")
 
 
+# Verifies no repository document points at a missing file or a heading that no longer exists, which is how a docs move leaves dead links behind
+def test_no_repository_document_links_at_a_missing_local_target():
+    broken = []
+    for relative_path in REPOSITORY_MARKDOWN + ISSUE_TEMPLATES:
+        path = PROJECT_ROOT / relative_path
+        if not path.exists():
+            continue
+        for target in repository_link_targets(path.read_text(encoding="utf-8")):
+            page_part, _, anchor = target.partition("#")
+            target_page = path if not page_part else (PROJECT_ROOT / page_part)
+            if page_part and not target_page.exists():
+                broken.append(f"{relative_path} -> {target}")
+                continue
+            if anchor and anchor not in page_anchors(target_page):
+                broken.append(f"{relative_path} -> {target}")
+
+    assert not broken, f"repository documents linking at missing targets: {broken}"
+
+
 # Verifies Git normalizes line endings, since one CRLF commit from a Windows contributor rewrites whole files
 def test_line_ending_policy_is_declared():
     attributes = read_asset(".gitattributes")
@@ -420,3 +457,11 @@ def test_release_archives_ship_checksums_and_provenance():
     assert "_SHA256SUMS.txt" in upload["with"]["files"]
     # Offline verifiers need the bundle as an asset, since the attestations API may be unreachable
     assert ".intoto.jsonl" in upload["with"]["files"]
+
+
+# Verifies the documentation build is a step CI runs, rather than only a job name that says so
+def test_the_documentation_build_is_a_ci_gate():
+    commands = [match.strip() for match in re.findall(r"^\s*run:\s*(.+)$", read_asset(".github/workflows/tests.yml"), flags=re.MULTILINE)]
+
+    assert any("mkdocs build --strict" in command for command in commands), "CI does not build the documentation site"
+    assert any("docs/requirements.txt" in command for command in commands), "CI does not install the documentation dependencies"
