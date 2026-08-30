@@ -4120,7 +4120,8 @@ _STYLE_CODES = {
 _FROM_TO_COUNT_RE = re.compile(r"(from\s+)(\d+)(\s+to\s+)(\d+)")
 _DIFF_COUNT_UP_RE = re.compile(r"(\(\+\d+\))")
 _DIFF_COUNT_DOWN_RE = re.compile(r"(\(-\d+\))")
-_USER_TAG_RE = re.compile(r"((?:for|by|of|Session|Initial|Monitoring\s+Instagram)\s+user:?|Username:|Target:|Tracking:?|(?:Starting\s+)?check\s+#\d+\s+(?:completed\s+)?for|paused\s+for|resuming\s+for|(?:Firefox|Chrome|Brave|Chromium)\s+for:|User(?=\s+[\w._-]+\s+has))([\t ]+)([\w._-]+)", re.IGNORECASE)
+# The separator is a space in prose and an equals sign in the key=value diagnostic fields
+_USER_TAG_RE = re.compile(r"((?:for|by|of|Session|Initial|Monitoring\s+Instagram)\s+user:?|Username:|Target:|Tracking:?|(?:Starting\s+)?check\s+#\d+\s+(?:completed\s+)?for|paused\s+for|resuming\s+for|(?:Firefox|Chrome|Brave|Chromium)\s+for:|\buser|User(?=\s+[\w._-]+\s+has))([\t ]+|=)([\w._-]+)", re.IGNORECASE)
 _DURATION_RE = re.compile(r"\b[0-9]{1,20}[ \t]{1,20}(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\b", re.IGNORECASE)
 _LONG_DATE_RE = re.compile(r"\b(?:\w{3}\s+)?\d{1,2}\s+\w{3}(?:\s+\d{2,4})?[\s,]*\d{2}:\d{2}(:\d{2})?(\s*[AP]M)?\b", re.IGNORECASE)
 _TIME_ONLY_RE = re.compile(r"(?<![\w:])(~?(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:\s*[AP]M)?)(?![\w:])", re.IGNORECASE)
@@ -7535,7 +7536,10 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
 
     retired_settings = []
     try:
-        target_namespace.update(parse_config_content(content, str(config_path), retired_settings))
+        parsed_values = parse_config_content(content, str(config_path), retired_settings)
+        target_namespace.update(parsed_values)
+        if report_errors:
+            verbose_print(f"Loaded {len(parsed_values)} settings from the configuration file")
         if retired_out is not None:
             retired_out.extend(retired_settings)
         if retired_settings and report_errors:
@@ -12201,6 +12205,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             consecutive_main_errors = 0
 
         if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
+            verbose_print(f"Monitoring healthy for {user}. No tracked change since the last check")
             print_cur_ts("Liveness check, timestamp:\t")
             alive_counter = 0
 
