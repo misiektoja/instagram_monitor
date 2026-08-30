@@ -15496,15 +15496,15 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
             detected_timezone = ""
             timezone_error = exc
         if detected_timezone and is_valid_timezone(detected_timezone):
-            checks.append(make_doctor_check("Configuration", "ok", "Local timezone can be detected", detected_timezone))
+            checks.append(make_doctor_check("Configuration", "ok", "Local timezone can be detected", f"Time zone: {detected_timezone}"))
         elif get_localzone is None:
             checks.append(make_doctor_check("Configuration", "fail", "Automatic timezone detection is unavailable", "LOCAL_TIMEZONE is Auto but tzlocal is unavailable", "Install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
         else:
             checks.append(make_doctor_check("Configuration", "fail", "Automatic timezone detection failed", f"tzlocal did not return a supported timezone{f': {timezone_error}' if timezone_error else ''}", "Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
     elif is_valid_timezone(LOCAL_TIMEZONE):
-        checks.append(make_doctor_check("Configuration", "ok", "Local timezone is valid", str(LOCAL_TIMEZONE)))
+        checks.append(make_doctor_check("Configuration", "ok", "Local timezone is valid", f"Time zone: {LOCAL_TIMEZONE}"))
     else:
-        checks.append(make_doctor_check("Configuration", "fail", "Local timezone is invalid", str(LOCAL_TIMEZONE), "Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
+        checks.append(make_doctor_check("Configuration", "fail", "Local timezone is invalid", f"Time zone: {LOCAL_TIMEZONE}", "Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
 
     if VERIFY_SSL:
         checks.append(make_doctor_check("Configuration", "ok", "TLS certificate verification is on", "Every outbound request checks the server certificate"))
@@ -15522,7 +15522,7 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
             checks.append(make_doctor_check("Configuration", "fail", "The browser follower list source cannot run", browser_detail, browser_fix, FOLLOW_LIST_SOURCE_GUIDE_URL))
 
     if not CSV_FILE:
-        checks.append(make_doctor_check("Configuration", "ok", "CSV logging is disabled", "No CSV file will be written"))
+        checks.append(make_doctor_check("Configuration", "ok", "CSV logging is disabled"))
     else:
         for target in targets or [""]:
             target_csv = get_target_paths(target)[0] if target else CSV_FILE
@@ -15533,7 +15533,7 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
                 checks.append(make_doctor_check("Configuration", "fail", f"{label} is not writable", f"Path: {target_csv}", "Choose a writable path with --csv-file or CSV_FILE"))
 
     if DISABLE_LOGGING:
-        checks.append(make_doctor_check("Configuration", "ok", "Output logging is disabled", "No log file will be written"))
+        checks.append(make_doctor_check("Configuration", "ok", "Output logging is disabled"))
     elif targets:
         for target in targets:
             _, target_log = get_target_paths(target)
@@ -15559,7 +15559,7 @@ def doctor_prepare_bot(report: DoctorReport) -> List[DoctorCheck]:
 def doctor_check_session(report: DoctorReport, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
     if not logged_in:
-        return [make_doctor_check("Session", "ok", "No-login mode", "No session needed. Stories, reels and follower churn require Logged-in mode.")]
+        return [make_doctor_check("Session", "ok", "No-login mode", "Stories, reels and follower churn require Logged-in mode")]
     if report.bot is None:
         return [make_doctor_check("Session", "warn", "Skipped session check", "Instaloader could not be initialised")]
     if progress is not None:
@@ -15658,7 +15658,7 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
             checks.append(make_doctor_check("Notifications", "fail", summary, format_error_message(exc), fix, SMTP_GUIDE_URL))
 
     if not WEBHOOK_ENABLED:
-        checks.append(make_doctor_check("Notifications", "ok", "Webhook alerts are disabled", "No webhook was sent"))
+        checks.append(make_doctor_check("Notifications", "ok", "Webhook alerts are disabled"))
         return checks
     if is_placeholder_setting(WEBHOOK_URL):
         checks.append(make_doctor_check("Notifications", "warn", "Webhook enabled but WEBHOOK_URL is not set", "No webhook was sent", "Set WEBHOOK_URL (or via .env) or disable webhooks", WEBHOOK_GUIDE_URL))

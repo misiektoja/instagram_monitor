@@ -87,7 +87,7 @@ class TestDoctorChecks:
 
         checks = im_module.doctor_check_configuration([])
 
-        assert ("ok", "Local timezone can be detected", "Europe/Warsaw") in {(check.status, check.label, check.detail) for check in checks}
+        assert ("ok", "Local timezone can be detected", "Time zone: Europe/Warsaw") in {(check.status, check.label, check.detail) for check in checks}
 
     # Without tzlocal an automatic timezone cannot be resolved, so Doctor names the missing package
     def test_automatic_timezone_without_tzlocal_fails(self, im_module, monkeypatch):
@@ -113,7 +113,7 @@ class TestDoctorChecks:
         check = next(item for item in checks if item.label == "Local timezone is invalid")
 
         assert check.status == "fail"
-        assert check.detail == "Europe/Nowhere"
+        assert check.detail == "Time zone: Europe/Nowhere"
         assert check.fix == "Set LOCAL_TIMEZONE to a valid pytz timezone"
 
     # Session advice is derived from the shared fix hints so Doctor and monitoring stay consistent
@@ -365,8 +365,9 @@ class TestRunDoctor:
         checks = im_module.doctor_check_configuration([])
 
         rows = {(check.status, check.label, check.detail) for check in checks}
-        assert ("ok", "CSV logging is disabled", "No CSV file will be written") in rows
-        assert ("ok", "Output logging is disabled", "No log file will be written") in rows
+        # The labels say everything, so neither row carries a detail that only repeats them
+        assert ("ok", "CSV logging is disabled", "") in rows
+        assert ("ok", "Output logging is disabled", "") in rows
 
     # Exported secrets are a documented alternative to a dotenv file, so they must apply when no file is loaded
     def test_environment_secrets_apply_without_a_dotenv_file(self, im_module, monkeypatch):
@@ -784,3 +785,35 @@ class TestPythonRow:
         assert supported.detail == f"Minimum supported version: {minimum}"
         assert unsupported.status == "fail"
         assert unsupported.detail == supported.detail
+
+
+# Verifies every doctor detail keeps to the agreed shapes: it never repeats its label, gives an instruction or joins values with a pipe
+def test_doctor_details_keep_to_the_agreed_shapes(im_module):
+    import ast
+    import inspect
+
+    # Renders one detail argument as text, standing in {} for the parts an f-string fills at runtime
+    def detail_text(node):
+        if isinstance(node, ast.Constant):
+            return node.value if isinstance(node.value, str) else None
+        if isinstance(node, ast.JoinedStr):
+            return "".join(part.value if isinstance(part, ast.Constant) else "{}" for part in node.values)
+        return None
+
+    offenders = []
+    for node in ast.walk(ast.parse(inspect.getsource(im_module))):
+        if not isinstance(node, ast.Call) or ast.unparse(node.func) not in {"make_doctor_check", "report.add"} or len(node.args) < 4:
+            continue
+        label, text = node.args[2], detail_text(node.args[3])
+        if text is None:
+            continue
+        if isinstance(label, ast.Constant) and text == label.value:
+            offenders.append(f"{node.lineno}: the detail repeats its label")
+        if text.startswith(("Use ", "Set ", "Run ")):
+            offenders.append(f"{node.lineno}: the detail gives an instruction, which belongs in the fix line")
+        if " | " in text:
+            offenders.append(f"{node.lineno}: the detail joins two values with a pipe")
+        if text.endswith("."):
+            offenders.append(f"{node.lineno}: the detail ends with a full stop")
+
+    assert not offenders, "doctor details outside the agreed shapes:\n" + "\n".join(offenders)
