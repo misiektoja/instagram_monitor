@@ -13589,7 +13589,6 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
             checks.append(make_doctor_check("Environment", "ok", f"Optional dependency {package_name} is installed", purpose))
         else:
             checks.append(make_doctor_check("Environment", "warn", f"Optional dependency {package_name} is not installed", missing_purpose, f"install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
-    checks.append(make_doctor_check("Environment", "ok", f"Install method: {_wizard_install_method()}"))
     return checks
 
 
@@ -13650,6 +13649,17 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
     else:
         checks.append(make_doctor_check("Configuration", "ok", "No dotenv file selected", "Using environment variables and other configured sources"))
     checks.extend(doctor_secret_checks(env_path))
+
+    if not CSV_FILE:
+        checks.append(make_doctor_check("Configuration", "ok", "CSV logging is disabled", "No CSV file will be written"))
+    else:
+        for target in targets or [""]:
+            target_csv = get_target_paths(target)[0] if target else CSV_FILE
+            label = f"CSV destination for '{target}'" if target else "CSV destination"
+            if output_destination_is_writable(target_csv):
+                checks.append(make_doctor_check("Configuration", "ok", f"{label} appears writable", f"Path: {target_csv}"))
+            else:
+                checks.append(make_doctor_check("Configuration", "fail", f"{label} is not writable", f"Path: {target_csv}", "choose a writable path with --csv-file or CSV_FILE."))
 
     if DISABLE_LOGGING:
         checks.append(make_doctor_check("Configuration", "ok", "Output logging is disabled", "No log file will be written"))
@@ -13807,7 +13817,10 @@ def render_doctor_notice() -> None:
 
 # Prints one sectioned doctor report, keeping the marker and indent format scripts and users already read
 def render_doctor_report(report: DoctorReport) -> None:
-    print(colorize("header", "Doctor\n"))
+    print(colorize("header", "Doctor"))
+    # The install method is context rather than a check: it cannot fail, so it is stated once here
+    # instead of taking a result row that no marker describes
+    print(f"Detected install method: {colorize('username', _wizard_install_method())}\n")
     for index, section in enumerate(("Environment", "Configuration", "Session", "Connectivity", "Targets", "Notifications")):
         section_checks = [check for check in report.checks if check.section == section]
         if not section_checks:
