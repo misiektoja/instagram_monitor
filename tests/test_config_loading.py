@@ -1,5 +1,8 @@
 """Offline tests for restricted configuration file loading."""
 
+import subprocess as _subprocess
+import sys as _sys
+from pathlib import Path as _Path
 from unittest.mock import Mock
 
 import pytest
@@ -246,3 +249,14 @@ class TestEarlyOutputConfig:
     ])
     def test_config_file_argument_is_recovered(self, im_module, arguments, expected):
         assert im_module.early_config_file_argument(arguments) == expected
+
+
+class TestConfigDiscoverySentinel:
+    # `--config-file none` switches discovery off instead of being read as a missing file
+    def test_config_file_none_disables_discovery(self, tmp_path):
+        project_root = _Path(__file__).resolve().parents[1]
+        result = _subprocess.run([_sys.executable, str(project_root / "instagram_monitor.py"), "--config-file", "none", "--env-file", "none", "--no-color"], cwd=tmp_path, capture_output=True, text=True, check=False)
+
+        output = result.stdout + result.stderr
+        assert "Config file 'none' does not exist" not in output
+        assert "<username>" in output

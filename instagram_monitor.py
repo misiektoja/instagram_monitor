@@ -1390,6 +1390,9 @@ imgcat_exe = ""
 
 CLI_CONFIG_PATH = None
 
+# Set when --config-file none switches discovery off, so no later lookup can find a file the run rejected
+CONFIG_DISCOVERY_DISABLED = False
+
 # To solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
 
@@ -15447,17 +15450,23 @@ def doctor_secret_checks(env_path=None) -> List[DoctorCheck]:
     return checks
 
 
+# Turns one startup error line into a doctor label, since the printed "* Error:" prefix is not part of the finding
+def doctor_label_from_error(summary) -> str:
+    label = str(summary).lstrip("* ").rstrip(":")
+    return label[len("Error:"):].strip() if label.startswith("Error:") else label
+
+
 # Reports the selected configuration, any startup rejection, known secrets and the final log destinations
 def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None) -> List[DoctorCheck]:
     checks: List[DoctorCheck] = []
-    cfg = find_config_file(CLI_CONFIG_PATH)
+    cfg = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
     if config_errors:
         for config_error in config_errors:
-            checks.append(make_doctor_check("Configuration", "fail", config_error["summary"].lstrip("* ").rstrip(":"), config_error.get("detail", ""), config_error.get("fix", ""), CONFIG_FILE_GUIDE_URL))
+            checks.append(make_doctor_check("Configuration", "fail", doctor_label_from_error(config_error["summary"]), config_error.get("detail", ""), config_error.get("fix", ""), CONFIG_FILE_GUIDE_URL))
     elif cfg:
         checks.append(make_doctor_check("Configuration", "ok", "Configuration file loaded", f"Path: {cfg}"))
     else:
-        checks.append(make_doctor_check("Configuration", "ok", "No configuration file selected", "Using built-in defaults and command-line overrides. Create one with --setup"))
+        checks.append(make_doctor_check("Configuration", "ok", "No configuration file selected", "Using built-in defaults and command-line overrides"))
     if retired_settings:
         checks.append(make_doctor_check("Configuration", "warn", "Config file contains removed settings", describe_retired_settings(retired_settings, cfg), "Delete the reported settings or regenerate the file with --generate-config", CONFIG_FILE_GUIDE_URL))
 
@@ -15738,7 +15747,7 @@ def apply_diagnostic_cli_overrides(args: argparse.Namespace) -> None:
 
 # Parses configuration and command-line options then starts the selected operation
 def run_main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE, IDENTITY_BUDGET_PER_DAY, CIRCUIT_BREAKER, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
+    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE, IDENTITY_BUDGET_PER_DAY, CIRCUIT_BREAKER, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H, TRUNCATE_CHARS
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
@@ -15834,7 +15843,7 @@ def run_main():
         "--config-file",
         dest="config_file",
         metavar="PATH",
-        help="Location of the optional config file",
+        help="Location of the optional config file (auto-search if not set, disable with 'none')",
     )
     conf.add_argument(
         "--generate-config",
@@ -16376,10 +16385,12 @@ def run_main():
             sys.exit(1)
         sys.exit(0)
 
-    if args.config_file:
+    # "none" is the documented sentinel that switches discovery off, so it is a selection rather than a missing file
+    CONFIG_DISCOVERY_DISABLED = args.config_file is not None and str(args.config_file).casefold() == "none"
+    if args.config_file and not CONFIG_DISCOVERY_DISABLED:
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
 
-    cfg_path = find_config_file(CLI_CONFIG_PATH)
+    cfg_path = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
 
     if cfg_path:
         CLI_CONFIG_PATH = cfg_path  # Update global for dashboard display
@@ -16391,12 +16402,12 @@ def run_main():
     doctor_config_retired: List[str] = []
 
     if not cfg_path and CLI_CONFIG_PATH:
-        summary = f"* Error: Config file '{CLI_CONFIG_PATH}' does not exist"
+        summary = f"Config file '{CLI_CONFIG_PATH}' does not exist"
         fix = "Check the path passed to --config-file or create a config with 'instagram_monitor --setup' or 'instagram_monitor --generate-config instagram_monitor.conf'"
         if doctor_mode:
             doctor_config_errors.append({"summary": summary, "detail": "", "fix": fix})
         else:
-            print(summary)
+            print(f"* Error: {summary}")
             print(colorize("info", f"To fix: {fix}"))
             print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
             sys.exit(1)

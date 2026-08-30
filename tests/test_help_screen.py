@@ -74,3 +74,11 @@ def test_help_shows_one_startup_banner(help_screen):
 def test_the_truncate_flag_is_offered(help_screen):
     assert "--truncate N" in help_screen
     assert "use 999 to auto-detect terminal width" in help_screen
+
+
+# Verifies both file flags advertise the `none` sentinel, since either can switch its own discovery off
+def test_both_file_flags_advertise_the_none_sentinel(help_screen):
+    compact = " ".join(help_screen.split())
+
+    assert "Location of the optional config file (auto-search if not set, disable with 'none')" in compact
+    assert "Path to optional dotenv file (auto-search if not set, disable with 'none')" in compact

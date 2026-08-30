@@ -31,7 +31,7 @@ Without `--config-file`, Instagram Monitor uses the first configuration it finds
 2. `~/.instagram_monitor.conf` in the home directory
 3. `instagram_monitor.conf` next to the script
 
-An explicit `--config-file PATH` is always used and the command stops with an error if that file does not exist.
+An explicit `--config-file PATH` is always used and the command stops with an error if that file does not exist. `--config-file none` switches automatic config discovery off for one run.
 
 <a id="what-a-configuration-file-may-contain"></a>
 ### What a Configuration File May Contain
