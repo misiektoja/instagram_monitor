@@ -13977,13 +13977,14 @@ def _build_help_epilog() -> str:
     return _render_help_examples(groups, QUICK_START_GUIDE_URL)
 
 
-# Reads a single line of input, exiting cleanly if the user aborts with Ctrl+C or Ctrl+D
+# Reads one input line, letting a cancelled prompt reach the handler that knows what was written
 def _wizard_input(prompt_text: str) -> str:
     try:
         return input(prompt_text)
     except (EOFError, KeyboardInterrupt):
-        print("\n" + colorize("warning", "Setup cancelled."))
-        sys.exit(1)
+        # The interrupted prompt owns the line break, so every handler prints its message alone
+        print()
+        raise
 
 
 # Prompts for a line of text, returning the default on empty input and re-asking when a required value is blank
@@ -14071,8 +14072,8 @@ def _wizard_ask_secret(question: str) -> str:
     try:
         return str(getpass.getpass(f"{question}: "))
     except (EOFError, KeyboardInterrupt):
-        print("\n" + colorize("warning", "Setup cancelled."))
-        raise SystemExit(1) from None
+        print()
+        raise
 
 
 # Prompts a yes/no question and returns the boolean answer
@@ -14246,7 +14247,7 @@ def _wizard_choose_config_destination(config_path: Path) -> Path:
     while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. Replace it with a fresh configuration built from defaults and create a timestamped backup?", default=False):
         alternative = _wizard_ask_text("Another config destination or leave empty to cancel")
         if not alternative:
-            print(colorize("warning", "Setup cancelled. Destination files were not changed."))
+            print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
             raise SystemExit(1)
         selected = Path(alternative).expanduser().resolve()
     return selected
@@ -14758,30 +14759,34 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     print(f"Configuration:          {config_path}")
     print(f"Dotenv:                 {env_path}")
 
-    config_path = _wizard_choose_config_destination(config_path)
-    for secret_key in SECRET_KEYS:
-        existing_secret = _wizard_secret_value(secret_key, env_path)
-        if existing_secret is not None:
-            globals()[secret_key] = existing_secret
-    baseline_values = dict(globals())
-    config_values = dict(baseline_values)
-    config_values["DOTENV_FILE"] = str(env_path)
-    state = WizardSetupState(config_path, env_path, baseline_values, config_values, {}, [], True, False, "no-login", "", None, None, True, False, False, False)
+    try:
+        config_path = _wizard_choose_config_destination(config_path)
+        for secret_key in SECRET_KEYS:
+            existing_secret = _wizard_secret_value(secret_key, env_path)
+            if existing_secret is not None:
+                globals()[secret_key] = existing_secret
+        baseline_values = dict(globals())
+        config_values = dict(baseline_values)
+        config_values["DOTENV_FILE"] = str(env_path)
+        state = WizardSetupState(config_path, env_path, baseline_values, config_values, {}, [], True, False, "no-login", "", None, None, True, False, False, False)
 
-    print()
-    _wizard_collect_target_section(state, allow_empty=True)
-    _wizard_collect_polling_section(state)
-    _wizard_collect_login_section(state, method)
-    _wizard_collect_interface_section(state, method)
-    _wizard_collect_email_section(state)
-    _wizard_collect_webhook_section(state)
-    _wizard_collect_output_section(state)
-    if not _wizard_review_setup(state, method):
+        print()
+        _wizard_collect_target_section(state, allow_empty=True)
+        _wizard_collect_polling_section(state)
+        _wizard_collect_login_section(state, method)
+        _wizard_collect_interface_section(state, method)
+        _wizard_collect_email_section(state)
+        _wizard_collect_webhook_section(state)
+        _wizard_collect_output_section(state)
+        if not _wizard_review_setup(state, method):
+            print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
+            raise SystemExit(1)
+
+        print()
+        browser_import_complete = _wizard_finish_browser_import(state, method)
+    except (EOFError, KeyboardInterrupt):
         print(colorize("warning", "Setup cancelled. Destination files were not changed."))
-        raise SystemExit(1)
-
-    print()
-    browser_import_complete = _wizard_finish_browser_import(state, method)
+        raise SystemExit(1) from None
     state.config_values.update({"TARGET_USERNAMES": list(state.targets) if state.persist_targets else [], "SESSION_USERNAME": state.session_username, "SKIP_SESSION": not state.logged_in, "DOTENV_FILE": str(state.env_path)})
     config_content = generate_config_with_current_values(state.config_values)
     try:
@@ -14823,9 +14828,13 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     doctor_offered = not container_browser_import_pending
     if doctor_offered:
         print()
-    if doctor_offered and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
-        doctor_ran = True
-        doctor_failures = run_doctor(state.targets, env_path=state.env_path)
+    try:
+        if doctor_offered and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
+            doctor_ran = True
+            doctor_failures = run_doctor(state.targets, env_path=state.env_path)
+    except (EOFError, KeyboardInterrupt):
+        # The files are already written, so an interrupt here only skips the optional check
+        print(colorize("warning", "Setup is saved. Use the commands below when ready."))
 
     command_targets = [] if state.persist_targets else state.targets
     run_command = _wizard_action_command(method, "", state.config_path, state.env_path, command_targets, web_dashboard=state.want_web, host_os=state.container_host)
@@ -14846,9 +14855,15 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         _wizard_print_command("Send a test webhook:", _wizard_action_command(method, "--send-test-webhook", state.config_path, state.env_path, host_os=state.container_host))
     print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}\n")
 
+    try:
+        start_monitoring = bool(not doctor_failures and method not in ("docker", "compose") and (not local_browser_import_pending or doctor_ran) and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True))
+    except (EOFError, KeyboardInterrupt):
+        # The files are already written, so an interrupt here only skips the optional launch
+        print(colorize("warning", "Setup is saved. Start monitoring with the command above when ready."))
+        raise SystemExit(0) from None
     if doctor_failures:
         print(colorize("warning", "Setup was saved but doctor found failures. Fix them before starting monitoring."))
-    elif method not in ("docker", "compose") and (not local_browser_import_pending or doctor_ran) and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True):
+    elif start_monitoring:
         launch_arguments = _wizard_local_command_args(method, exact=True)
         launch_arguments.extend(command_targets)
         launch_arguments.extend(("--config-file", str(state.config_path), "--env-file", str(state.env_path)))
@@ -14873,7 +14888,15 @@ def _wizard_welcome(parser) -> None:
     _wizard_print_command("Check setup before monitoring:", f"{prefix} --doctor <instagram_target>")
     print(f"Full options: {colorize('section', prefix + ' --help')}")
     print(f"\nGuide:        {colorize('link', QUICK_START_GUIDE_URL)}\n")
-    if interactive and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
+    if not interactive:
+        return
+    try:
+        start_setup = _wizard_ask_yes_no("Run the guided setup wizard now?", default=True)
+    except (EOFError, KeyboardInterrupt):
+        # This prompt sits outside the wizard, which reports what happened to the destination files
+        print(colorize("warning", "Setup cancelled."))
+        raise SystemExit(1) from None
+    if start_setup:
         print()
         run_setup_wizard()
 

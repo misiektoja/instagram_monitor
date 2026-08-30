@@ -974,3 +974,72 @@ def test_interrupting_the_welcome_offer_reports_a_cancellation(im_module, monkey
 
     assert exit_error.value.code == 1
     assert "Setup cancelled." in capsys.readouterr().out
+
+
+# Puts the wizard on the shortest path to the save, so a test can interrupt one chosen prompt
+def install_saving_wizard_flow(im_module, monkeypatch, answers):
+    choices = iter([0, 2, 1, 0, 0])
+    protect_setup_globals(im_module, monkeypatch)
+    monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+    monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
+    monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: "target.user")
+    monkeypatch.setattr(im_module, "_wizard_ask_duration", lambda question, default: default)
+    monkeypatch.setattr(im_module, "_wizard_ask_yes_no", Mock(side_effect=list(answers)))
+    monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
+    monkeypatch.setattr(im_module, "run_doctor", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
+
+
+# Verifies an interrupt before the save says the destination files are untouched
+def test_interrupting_the_questions_reports_untouched_files(im_module, monkeypatch, capsys):
+    with make_test_directory() as directory_name:
+        directory = Path(directory_name)
+        config_path = directory / "instagram_monitor.conf"
+        protect_setup_globals(im_module, monkeypatch)
+        monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+        monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
+        monkeypatch.setattr(builtins, "input", Mock(side_effect=KeyboardInterrupt))
+
+        with pytest.raises(SystemExit) as error:
+            im_module.run_setup_wizard(config_file=config_path, env_file=directory / ".env")
+
+        assert error.value.code == 1
+        assert "Setup cancelled. Destination files were not changed." in capsys.readouterr().out
+        assert not config_path.exists()
+
+
+# Verifies an interrupt at the doctor offer reports the saved setup instead of a cancellation
+def test_interrupting_the_doctor_offer_keeps_the_saved_setup(im_module, monkeypatch, capsys):
+    with make_test_directory() as directory_name:
+        directory = Path(directory_name)
+        config_path = directory / "instagram_monitor.conf"
+        install_saving_wizard_flow(im_module, monkeypatch, [True, False, False, False, KeyboardInterrupt, False])
+
+        with pytest.raises(SystemExit) as error:
+            im_module.run_setup_wizard(config_file=config_path, env_file=directory / ".env")
+
+        output = capsys.readouterr().out
+        assert error.value.code == 0
+        assert "Setup is saved. Use the commands below when ready." in output
+        assert "Setup cancelled" not in output
+        assert "Next steps" in output
+        assert config_path.is_file()
+
+
+# Verifies an interrupt at the launch offer reports the saved setup and points at the printed command
+def test_interrupting_the_launch_offer_keeps_the_saved_setup(im_module, monkeypatch, capsys):
+    with make_test_directory() as directory_name:
+        directory = Path(directory_name)
+        config_path = directory / "instagram_monitor.conf"
+        install_saving_wizard_flow(im_module, monkeypatch, [True, False, False, False, False, KeyboardInterrupt])
+        execv_mock = Mock()
+        monkeypatch.setattr(im_module.os, "execv", execv_mock)
+
+        with pytest.raises(SystemExit) as error:
+            im_module.run_setup_wizard(config_file=config_path, env_file=directory / ".env")
+
+        output = capsys.readouterr().out
+        assert error.value.code == 0
+        assert "Setup is saved. Start monitoring with the command above when ready." in output
+        assert "Setup cancelled" not in output
+        execv_mock.assert_not_called()
