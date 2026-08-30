@@ -1072,14 +1072,14 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
     prompt = input if input_func is None else input_func
     if _dotenv_contains_key(destination, "WEBHOOK_URL"):
         try:
-            confirmed = prompt(f"Replace the saved webhook URL in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+            confirmed = read_interactively(prompt, f"Replace the saved webhook URL in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
             confirmed = False
         if not confirmed:
             raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
-        webhook_url = hidden_prompt("Paste the Discord or ntfy webhook URL (input hidden): ").strip()
+        webhook_url = read_interactively(hidden_prompt, "Paste the Discord or ntfy webhook URL (input hidden): ").strip()
     except (EOFError, KeyboardInterrupt):
         raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.") from None
     if not validate_webhook_url(webhook_url):
@@ -1147,7 +1147,7 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
         raise SmtpConfigurationError(str(exc)) from None
     if password_already_saved:
         try:
-            confirmed = prompt(f"Replace the saved SMTP password in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+            confirmed = read_interactively(prompt, f"Replace the saved SMTP password in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
             confirmed = False
         if not confirmed:
@@ -1155,7 +1155,7 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     print(f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent")
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
-        smtp_password = str(hidden_prompt("Enter the SMTP password (input hidden): ")).strip()
+        smtp_password = str(read_interactively(hidden_prompt, "Enter the SMTP password (input hidden): ")).strip()
     except (EOFError, KeyboardInterrupt):
         raise SmtpConfigurationError("SMTP password setup was cancelled. The private settings file was not changed.") from None
     check = smtp_sign_in if sign_in is None else sign_in
@@ -1465,6 +1465,23 @@ import signal
 # Early signal handler to catch Ctrl+C during imports/initialization
 def _startup_sigint_handler(signum, frame):
     sys.exit(0)
+
+
+# Reads one answer with Python's default Ctrl+C behavior, so the prompt reports the outcome instead of the signal handler
+def read_interactively(reader, *args, **kwargs):
+    try:
+        previous_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+    except (ValueError, OSError):
+        # Handlers can only be replaced from the main thread, which is where every prompt runs
+        return reader(*args, **kwargs)
+    try:
+        return reader(*args, **kwargs)
+    finally:
+        try:
+            signal.signal(signal.SIGINT, previous_handler)
+        except (ValueError, OSError):
+            pass
 
 
 signal.signal(signal.SIGINT, _startup_sigint_handler)
@@ -13980,7 +13997,7 @@ def _build_help_epilog() -> str:
 # Reads one input line, letting a cancelled prompt reach the handler that knows what was written
 def _wizard_input(prompt_text: str) -> str:
     try:
-        return input(prompt_text)
+        return read_interactively(input, prompt_text)
     except (EOFError, KeyboardInterrupt):
         # The interrupted prompt owns the line break, so every handler prints its message alone
         print()
@@ -14070,7 +14087,7 @@ def _wizard_ask_duration(question: str, default: int) -> int:
 # Reads one secret through getpass without echoing the entered value
 def _wizard_ask_secret(question: str) -> str:
     try:
-        return str(getpass.getpass(f"{question}: "))
+        return str(read_interactively(getpass.getpass, f"{question}: "))
     except (EOFError, KeyboardInterrupt):
         print()
         raise
@@ -14978,7 +14995,7 @@ def _doctor_progress_clear() -> None:
 def _doctor_ask_yes_no(question: str) -> bool:
     while True:
         try:
-            raw = input(colorize("info", f"{question} [y/N]: ")).strip().lower()
+            raw = read_interactively(input, colorize("info", f"{question} [y/N]: ")).strip().lower()
         except (EOFError, KeyboardInterrupt):
             print("\n" + colorize("info", "Delivery test skipped."))
             return False
