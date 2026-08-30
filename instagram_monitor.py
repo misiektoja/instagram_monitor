@@ -13722,6 +13722,24 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
         checks.append(make_doctor_check("Configuration", "ok", "No dotenv file selected", "Using environment variables and other configured sources"))
     checks.extend(doctor_secret_checks(env_path))
 
+    if LOCAL_TIMEZONE == "Auto":
+        timezone_error = None
+        try:
+            detected_timezone = str(get_localzone()) if get_localzone is not None else ""
+        except Exception as exc:
+            detected_timezone = ""
+            timezone_error = exc
+        if detected_timezone and is_valid_timezone(detected_timezone):
+            checks.append(make_doctor_check("Configuration", "ok", "Local timezone can be detected", detected_timezone))
+        elif get_localzone is None:
+            checks.append(make_doctor_check("Configuration", "fail", "Automatic timezone detection is unavailable", "LOCAL_TIMEZONE is Auto but tzlocal is unavailable", "install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone.", CONFIG_FILE_GUIDE_URL))
+        else:
+            checks.append(make_doctor_check("Configuration", "fail", "Automatic timezone detection failed", f"tzlocal did not return a supported timezone{f': {timezone_error}' if timezone_error else ''}", "set LOCAL_TIMEZONE to a valid pytz timezone.", CONFIG_FILE_GUIDE_URL))
+    elif is_valid_timezone(LOCAL_TIMEZONE):
+        checks.append(make_doctor_check("Configuration", "ok", "Local timezone is valid", str(LOCAL_TIMEZONE)))
+    else:
+        checks.append(make_doctor_check("Configuration", "fail", "Local timezone is invalid", str(LOCAL_TIMEZONE), "set LOCAL_TIMEZONE to a valid pytz timezone.", CONFIG_FILE_GUIDE_URL))
+
     if not CSV_FILE:
         checks.append(make_doctor_check("Configuration", "ok", "CSV logging is disabled", "No CSV file will be written"))
     else:
@@ -14670,25 +14688,27 @@ def run_main():
             _wizard_print_command("After Doctor passes, start monitoring:", monitor_command)
         sys.exit(0)
 
-    local_tz = None
-    if LOCAL_TIMEZONE == "Auto":
-        # Ensure we update the global variable so API sees it
-        if get_localzone is not None:
-            try:
-                local_tz = get_localzone()
-            except Exception:
-                pass
-        if local_tz:
-            LOCAL_TIMEZONE = str(local_tz)
+    # Doctor reports the timezone itself, so leave the configured value untouched and let the report explain any problem
+    if not doctor_mode:
+        local_tz = None
+        if LOCAL_TIMEZONE == "Auto":
+            # Ensure we update the global variable so API sees it
+            if get_localzone is not None:
+                try:
+                    local_tz = get_localzone()
+                except Exception:
+                    pass
+            if local_tz:
+                LOCAL_TIMEZONE = str(local_tz)
+            else:
+                print("* Error: Cannot detect local timezone.")
+                print("* Hint: This can happen if the optional 'tzlocal' library is missing. Install it with: pip install tzlocal")
+                print("* Or set LOCAL_TIMEZONE to your local timezone manually.")
+                sys.exit(1)
         else:
-            print("* Error: Cannot detect local timezone.")
-            print("* Hint: This can happen if the optional 'tzlocal' library is missing. Install it with: pip install tzlocal")
-            print("* Or set LOCAL_TIMEZONE to your local timezone manually.")
-            sys.exit(1)
-    else:
-        if not is_valid_timezone(LOCAL_TIMEZONE):
-            print(f"* Error: Configured LOCAL_TIMEZONE '{LOCAL_TIMEZONE}' is not valid. Please use a valid pytz timezone name.")
-            sys.exit(1)
+            if not is_valid_timezone(LOCAL_TIMEZONE):
+                print(f"* Error: Configured LOCAL_TIMEZONE '{LOCAL_TIMEZONE}' is not valid. Please use a valid pytz timezone name.")
+                sys.exit(1)
 
     if args.user_agent:
         USER_AGENT = args.user_agent

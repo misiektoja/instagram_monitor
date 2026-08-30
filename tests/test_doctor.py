@@ -76,6 +76,44 @@ class TestDoctorChecks:
         assert "DISCORD_MAX_FIELDS" in warnings[0].detail
         assert warnings[0].guide == im_module.CONFIG_FILE_GUIDE_URL
 
+    # Doctor resolves an automatic timezone instead of reporting the literal Auto value
+    def test_automatic_timezone_is_resolved(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
+        monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "Auto", raising=False)
+        monkeypatch.setattr(im_module, "get_localzone", Mock(return_value="Europe/Warsaw"), raising=False)
+
+        checks = im_module.doctor_check_configuration([])
+
+        assert ("ok", "Local timezone can be detected", "Europe/Warsaw") in {(check.status, check.label, check.detail) for check in checks}
+
+    # Without tzlocal an automatic timezone cannot be resolved, so Doctor names the missing package
+    def test_automatic_timezone_without_tzlocal_fails(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
+        monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "Auto", raising=False)
+        monkeypatch.setattr(im_module, "get_localzone", None, raising=False)
+
+        checks = im_module.doctor_check_configuration([])
+        check = next(item for item in checks if item.label == "Automatic timezone detection is unavailable")
+
+        assert check.status == "fail"
+        assert "tzlocal" in check.fix
+        assert check.guide == im_module.CONFIG_FILE_GUIDE_URL
+
+    # An unusable timezone name is reported before monitoring rather than at the first timestamp
+    def test_invalid_timezone_fails(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
+        monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "Europe/Nowhere", raising=False)
+
+        checks = im_module.doctor_check_configuration([])
+        check = next(item for item in checks if item.label == "Local timezone is invalid")
+
+        assert check.status == "fail"
+        assert check.detail == "Europe/Nowhere"
+        assert check.fix == "set LOCAL_TIMEZONE to a valid pytz timezone."
+
     # Session advice is derived from the shared fix hints so Doctor and monitoring stay consistent
     def test_session_failure_carries_the_shared_fix_hint(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "SESSION_USERNAME", "someacct", raising=False)

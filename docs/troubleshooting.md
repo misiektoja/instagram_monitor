@@ -15,6 +15,8 @@ Doctor does not change files. It opens with the raw `manual`, `pip`, `docker` or
 
 A configuration file Instagram Monitor cannot accept is reported by Doctor as a `FAIL` naming the line and the reason, instead of stopping the command before the checks run. This means you can point Doctor at a configuration you are still fixing. Settings that a later release removed are reported as a `WARN` and ignored, so an older configuration file still runs.
 
+The Configuration section resolves `LOCAL_TIMEZONE`. It reports the detected zone when the setting is `Auto` and fails when the zone is invalid or cannot be detected.
+
 The Notifications section signs in to the configured SMTP server and checks webhook settings without sending a message, and each ready row lists the alert categories that channel would deliver.
 
 In an interactive terminal, Doctor can offer one real delivery test for each configured notification channel that passes its checks. A channel that is switched off is reported as disabled and is not validated further. A channel that is switched on but cannot deliver, such as a webhook with no alert types selected or email alerts with no SMTP host, is reported as a `WARN` and gets no delivery test, since nothing could ever be sent. Each prompt defaults to No. Answering Yes to the email prompt sends one test email. Answering Yes to the webhook prompt sends one Discord or ntfy message. Doctor never offers delivery tests when it runs without an interactive terminal.
