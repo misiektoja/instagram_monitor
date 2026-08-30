@@ -1,5 +1,7 @@
 """Verifies config-file settings actually reach the code that consumes them (no network)."""
 
+from pathlib import Path
+
 import pytest
 
 
@@ -65,3 +67,14 @@ class TestLivenessCounterRecomputation:
         im_module.recompute_liveness_check_counter()
 
         assert im_module.LIVENESS_CHECK_COUNTER == 0
+
+
+class TestPerCheckReporting:
+    # Verifies the per-check lines stay debug traces, since two verbose blocks per cycle buried the events worth reading
+    def test_the_check_boundaries_are_debug_only_traces(self):
+        source = (Path(__file__).resolve().parents[1] / "instagram_monitor.py").read_text(encoding="utf-8")
+
+        assert 'verbose_print(f"Starting check #' not in source
+        assert 'verbose_print(f"Check #' not in source
+        assert 'debug_print("Starting check"' in source
+        assert 'debug_print("Completed check"' in source

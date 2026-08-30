@@ -116,8 +116,8 @@ Report which source works at [Discussions](https://github.com/misiektoja/instagr
 ## Choosing the Right Logging Level
 
 - **Default mode** logs detected changes and important errors.
-- **Verbose mode (`--verbose`)** also logs the previous check time, next check time and interval. Use it to confirm that a background process is still checking targets.
-- **Debug mode (`--debug`)** adds HTTP details and internal decisions for troubleshooting. Each line names the operation, then lists its details as comma-separated `key=value` fields, and every outbound call reports `outcome=OK` or `outcome=failed`.
+- **Verbose mode (`--verbose`)** also logs operational events such as follower and following counts and how many settings the configuration file supplied. It prints nothing per check, so an uneventful run stays quiet.
+- **Debug mode (`--debug`)** adds HTTP details, internal decisions and the previous check time, next check time and interval for each cycle. Use it to confirm that a background process is still checking targets. Each line names the operation, then lists its details as comma-separated `key=value` fields, and every outbound call reports `outcome=OK` or `outcome=failed`.
 
 Either mode also expands the startup summary with the detected install method and the names of the secrets that came from the dotenv file, the environment or the configuration file. Secret values never appear.
 

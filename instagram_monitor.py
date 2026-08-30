@@ -8887,14 +8887,14 @@ def stop_dashboard():
         DASHBOARD_LIVE = None
 
 
-# Prints remaining sleep time message
+# Prints the check schedule once per cycle, in debug only, since one block per check buries the events worth reading
 def print_check_timing(r_sleep_time, prefix="", user=None):
-    global VERBOSE_MODE, DEBUG_MODE
+    global DEBUG_MODE
 
     if DASHBOARD_ENABLED and RICH_AVAILABLE:
         return
 
-    if DEBUG_MODE or VERBOSE_MODE:
+    if DEBUG_MODE:
         # Calculate next check time from now + sleep time
         now = now_local_naive()
         next_check = now + timedelta(seconds=r_sleep_time)
@@ -12106,13 +12106,10 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
         # Debug/Verbose: show check start
         ip_str = ""
-        if PROXY_ENABLED and (VERBOSE_MODE or DEBUG_MODE):
+        if PROXY_ENABLED and DEBUG_MODE:
             ipaddr = get_ip_address(stop_event=stop_event)
             ip_str = f" with proxy IP address of {ipaddr}"
-        if VERBOSE_MODE:
-            verbose_print(f"Starting check #{CHECK_COUNT} for {user} ...{ip_str}")
-            print_cur_ts(newline=True)
-        elif DEBUG_MODE:
+        if DEBUG_MODE:
             debug_print("Starting check", check=f"#{CHECK_COUNT}", user=user, proxy_ip=ipaddr if ip_str else None)
 
         cur_h = now_local_naive().strftime("%H")
@@ -13242,10 +13239,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             log_activity("Check completed", user=user)
             manual_recheck_active = False
             manual_override_active = False
-        elif VERBOSE_MODE:
-            verbose_print(f"Check #{CHECK_COUNT} completed for {user} ...\n")
-            print_cur_ts()
         elif DEBUG_MODE:
+            debug_print("Completed check", check=f"#{CHECK_COUNT}", user=user)
             print_cur_ts()
 
         if WEB_DASHBOARD_ENABLED:
