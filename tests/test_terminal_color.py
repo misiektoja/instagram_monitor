@@ -3,10 +3,26 @@ from io import StringIO
 import pytest
 
 
+# Reads a block the template ships commented out, as the parser would see it once uncommented
+def uncomment_block(source, first_line):
+    lines = source.split("\n")
+    start = next(index for index, line in enumerate(lines) if line.startswith(first_line))
+    end = next(index for index in range(start, len(lines)) if lines[index].rstrip() == "# }")
+    return "\n".join(line[2:] if line.startswith("# ") else line[1:] for line in lines[start:end + 1])
+
+
 # Verifies the shipped config template and the built-in theme describe exactly the same colours, so
 # generating a config file cannot silently change how any part of the output looks
 def test_config_template_theme_matches_the_built_in_theme(im_module):
-    assert im_module.COLOR_THEME == im_module.DEFAULT_COLOR_THEME
+    commented = im_module.parse_config_content(uncomment_block(im_module.CONFIG_BLOCK, "# COLOR_THEME = {"), "<built-in-config>")
+
+    assert "COLOR_THEME" not in im_module.parse_config_content(im_module.CONFIG_BLOCK, "<built-in-config>")
+    assert commented["COLOR_THEME"] == im_module.DEFAULT_COLOR_THEME
+
+
+# Verifies a configuration that sets the commented-out theme is still accepted, since older files all set it
+def test_a_config_setting_the_theme_is_still_accepted(im_module):
+    assert im_module.parse_config_content('COLOR_THEME = { "username": "green" }\n', "<config>") == {"COLOR_THEME": {"username": "green"}}
 
 
 # Verifies the Timestamp label is left uncoloured, matching the sibling monitors

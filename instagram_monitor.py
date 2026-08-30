@@ -728,47 +728,49 @@ COLORED_OUTPUT = True
 #   "bright_cyan bold", "yellow", "red underline", "bright_magenta bold underline", "red bold blink"
 # Valid colour names: black, red, green, yellow, blue, magenta, cyan, white,
 # and their bright_ variants (bright_red, bright_green, ...).
-COLOR_THEME = {
-    # General sections
-    "header": "bright_cyan",
-    "section": "bright_white",
-    # Identity
-    "username": "bright_cyan underline",
-    "id": "bright_magenta",
-    # Status values
-    "status_online": "green",
-    "status_offline": "red",
-    "status_other": "white",
-    # Content types
-    "post": "bright_green",
-    "reel": "bright_magenta",
-    "story": "bright_yellow",
-    # Activity info
-    "status_change": "yellow",
-    "duration": "green",
-    # Misc
-    "timestamp_label": "",
-    "timestamp_value": "cyan",
-    "info": "cyan",
-    "warning": "yellow",
-    "error": "red",
-    "signal": "yellow",
-    "email": "bright_cyan",
-    "webhook": "bright_blue",
-    # Dates
-    "date": "magenta",
-    "date_range": "magenta",
-    # Boolean values
-    "boolean_true": "green",
-    "boolean_false": "red",
-    # Counters and differences
-    "count_up": "green",
-    "count_down": "red",
-    "link": "blue underline",
-    # Proxies
-    "proxy_ip": "yellow",
-    "ip_address": "yellow",
-}
+# The defaults below are what the tool uses while this block stays commented out. Uncomment it to override
+# them and keep only the lines you want to change, so the rest keep following the tool's own defaults.
+# COLOR_THEME = {
+#     # General sections
+#     "header": "bright_cyan",
+#     "section": "bright_white",
+#     # Identity
+#     "username": "bright_cyan underline",
+#     "id": "bright_magenta",
+#     # Status values
+#     "status_online": "green",
+#     "status_offline": "red",
+#     "status_other": "white",
+#     # Content types
+#     "post": "bright_green",
+#     "reel": "bright_magenta",
+#     "story": "bright_yellow",
+#     # Activity info
+#     "status_change": "yellow",
+#     "duration": "green",
+#     # Misc
+#     "timestamp_label": "",
+#     "timestamp_value": "cyan",
+#     "info": "cyan",
+#     "warning": "yellow",
+#     "error": "red",
+#     "signal": "yellow",
+#     "email": "bright_cyan",
+#     "webhook": "bright_blue",
+#     # Dates
+#     "date": "magenta",
+#     "date_range": "magenta",
+#     # Boolean values
+#     "boolean_true": "green",
+#     "boolean_false": "red",
+#     # Counters and differences
+#     "count_up": "green",
+#     "count_down": "red",
+#     "link": "blue underline",
+#     # Proxies
+#     "proxy_ip": "yellow",
+#     "ip_address": "yellow",
+# }
 """
 
 # -------------------------
@@ -813,7 +815,7 @@ def _format_config_value(value, prefer_double_quotes: bool) -> str:
 
 
 # Advanced settings documented for config files but deliberately kept out of the generated template
-EXTRA_CONFIG_KEYS = frozenset(("FLAGGED_PROBE_USERNAME", "FLAGGED_PROBE_TTL"))
+EXTRA_CONFIG_KEYS = frozenset(("FLAGGED_PROBE_USERNAME", "FLAGGED_PROBE_TTL", "COLOR_THEME"))
 
 # Settings that an earlier version wrote into generated configuration files and that a later release
 # removed. Ignoring them with a note keeps an untouched older configuration working on upgrade, while
