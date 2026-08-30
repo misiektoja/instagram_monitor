@@ -179,10 +179,11 @@ def test_the_doctor_warns_while_verification_is_off(im_module, tls_setting):
 def test_the_summary_promotes_the_row_only_while_verification_is_off(im_module, tls_setting, verify, concise):
     tls_setting.setattr(im_module, "VERIFY_SSL", verify)
 
-    text, in_concise, in_full = im_module._startup_tls_summary_row()
+    row = im_module._startup_tls_summary_row()
 
-    assert (in_concise, in_full) == (concise, True)
-    assert text.endswith("On" if verify else "Off, server certificates are not checked")
+    assert (row.concise, row.full) == (concise, True)
+    assert row.label == "TLS verification"
+    assert row.value == ("On" if verify else "Off, server certificates are not checked")
 
 
 # Verifies certificates are verified unless the reader turns that off, in the shipped config and the fallback alike

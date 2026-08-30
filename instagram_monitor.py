@@ -1321,6 +1321,7 @@ WEBHOOK_SESSION = req.Session()
 import atexit
 import errno
 import shutil
+import textwrap
 import smtplib
 import ssl
 from email.utils import parsedate_to_datetime
@@ -1756,6 +1757,12 @@ def _curl_cffi_impersonate_target() -> str:
     if target in ("", "auto"):
         return _impersonate_target_from_ua(USER_AGENT)
     return target
+
+
+# Returns the impersonation target for the startup summary, showing what Auto actually resolved to
+def _curl_cffi_impersonate_display() -> str:
+    resolved = _curl_cffi_impersonate_target()
+    return f"auto -> {resolved}" if str(CURL_CFFI_IMPERSONATE or "auto").strip().lower() in ("", "auto") else resolved
 
 
 # Minimal urllib3-style raw wrapper exposing the read/stream surface requests and instaloader downloads rely on
@@ -4275,19 +4282,69 @@ def webhook_notifications_enabled() -> bool:
     return bool(WEBHOOK_ENABLED and _startup_webhook_notification_categories())
 
 
+# One startup summary setting, routed independently to the concise view, the full view and the log file
+@dataclass(frozen=True)
+class StartupSummaryRow:
+    label: str
+    value: str
+    concise: bool = False
+    full: bool = True
+    log: bool = True
+
+
 # Builds notification summary rows shared by concise, verbose and logged views
-def _startup_notification_summary_rows() -> List[Tuple[str, bool, bool]]:
+def _startup_notification_summary_rows() -> List["StartupSummaryRow"]:
     email_categories = _startup_email_notification_categories()
     webhook_categories = _startup_webhook_notification_categories()
     email_state = "On (" + ", ".join(email_categories) + ")" if email_categories else "Off"
     webhook_state = "On (" + ", ".join(webhook_categories) + ")" if webhook_categories else "Off"
-    return [(f"* Notifications (email):\t\t{email_state}", True, True), (f"* Notifications (webhook):\t\t{webhook_state}", True, True)]
+    return [StartupSummaryRow("Notifications (email)", email_state, concise=True), StartupSummaryRow("Notifications (webhook)", webhook_state, concise=True)]
 
 
 # Builds the startup row for TLS verification, shown in the concise view only while the check is off
-def _startup_tls_summary_row() -> Tuple[str, bool, bool]:
+def _startup_tls_summary_row() -> "StartupSummaryRow":
     state = "On" if VERIFY_SSL else "Off, server certificates are not checked"
-    return (f"* TLS verification:\t\t\t{state}", not VERIFY_SSL, True)
+    return StartupSummaryRow("TLS verification", state, concise=not VERIFY_SSL)
+
+
+# Reports the install method, which secrets came from where by name and never by value, and the shared output settings
+def _startup_environment_rows(env_path) -> List["StartupSummaryRow"]:
+    from_file, from_environment, from_settings = doctor_secret_sources(env_path)
+    return [
+        StartupSummaryRow("Local timezone", str(LOCAL_TIMEZONE)),
+        StartupSummaryRow("12h time format", str(TIME_FORMAT_12H)),
+        StartupSummaryRow("Install method", install_method_display_name()),
+        StartupSummaryRow("Secrets from dotenv", ", ".join(sorted(from_file)) if from_file else "None"),
+        StartupSummaryRow("Secrets from environment", ", ".join(sorted(from_environment)) if from_environment else "None"),
+        StartupSummaryRow("Secrets from config file", ", ".join(sorted(from_settings)) if from_settings else "None"),
+        _startup_tls_summary_row(),
+        StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})"),
+        # The resolved state, not the setting: colour also switches itself off when the output is not a terminal
+        StartupSummaryRow("Coloured output", f"{COLOR_ENABLED} (setting: {COLORED_OUTPUT})"),
+    ]
+
+
+# Formats one startup summary row with aligned plain ASCII columns
+def _format_startup_summary_row(row: "StartupSummaryRow") -> str:
+    prefix = f"* {(row.label + ':'):<30}"
+    if row.label in ("Notifications (email)", "Notifications (webhook)"):
+        return textwrap.fill(str(row.value), width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False) + "\n"
+    return f"{prefix}{row.value}\n"
+
+
+# Routes concise or complete startup rows independently to the terminal and the log, which always keeps the full set
+def emit_startup_summary(rows: Sequence["StartupSummaryRow"], show_full: bool, stream=None, suppress_terminal: bool = False) -> None:
+    destination: Any = sys.stdout if stream is None else stream
+    for row in rows:
+        line = _format_startup_summary_row(row)
+        if row.full and row.log and hasattr(destination, "log_only"):
+            destination.log_only(line)
+        if suppress_terminal or not (row.full if show_full else row.concise):
+            continue
+        if hasattr(destination, "terminal_only"):
+            destination.terminal_only(line)
+        else:
+            destination.write(line)
 
 
 # Helper to apply a block style while preserving internal highlights
@@ -4319,18 +4376,17 @@ def _colorize_line(line):
         state_style = "boolean_true" if state == "On" else "boolean_false"
         return f"{prefix}{colorize(state_style, state)}{suffix}"
 
-    is_summary_line = any(line.startswith(p) for p in ("* Output directory:", "* Hours for fetching:", "* Skip fetching:", "* Email notifications:", "* Recheck All:", "* Followers: reported", "* Followings: reported", "* Followers (", "* Followings (", "User ID:", "* Browser user agent:", "* Mobile user agent:"))
+    is_summary_line = any(line.startswith(p) for p in ("* Output directory:", "* Hours for fetching updates:", "* Skip fetching ", "* Email notifications:", "* Recheck All:", "* Followers: reported", "* Followings: reported", "* Followers (", "* Followings (", "User ID:", "* Browser user agent:", "* Mobile user agent:"))
 
     if line.startswith(("* IP Address:", "*   Proxy", "* Proxy")):
-        parts = line.rsplit("\t", 1)
-        if len(parts) == 2:
-            line = parts[0] + "\t" + colorize("proxy_ip", parts[1])
-            return line
-        else:
-            return _apply_style_nested(line, "proxy_ip")
+        labeled_value = _split_output_label(line, ("IP Address:", "Proxy IP Address:", "Proxy URL:", "Proxy Certificate:", "Proxy for Webhooks:", "Proxies:"))
+        if labeled_value:
+            label, value = labeled_value
+            return f"{label}{colorize('proxy_ip', value)}" + ("\n" if line.endswith("\n") else "")
+        return _apply_style_nested(line, "proxy_ip")
 
     # Session mode value is free-form text (e.g. "No login ...") - keep it plain so words like "No" are not mistaken for an offline/boolean keyword
-    if line.startswith("* Session Mode:"):
+    if line.startswith("* Session mode:"):
         return line
 
     # Case for list items (e.g. - username [ link ]) - color username yellow
@@ -15290,12 +15346,12 @@ def run_main():
         FOLLOWERS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
 
-    # Build the run summary as (text, show_in_concise, show_in_full) rows
+    # Build the run summary as StartupSummaryRow entries, in the order every sibling monitor prints
     # The concise terminal view leads with the targets and hides off/default rows; the full view (every row) is written to the log and also shown on the terminal under --verbose/--debug
-    summary_rows = []
+    summary_rows: List[StartupSummaryRow] = []
 
-    summary_rows.append((f"* Targets:\t\t\t\t{', '.join(targets)}", True, True))
-    summary_rows.append((f"* Instagram polling interval:\t\t[ {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)} ]", True, True))
+    summary_rows.append(StartupSummaryRow("Targets", ", ".join(targets), concise=True))
+    summary_rows.append(StartupSummaryRow("Polling interval", f"[ {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)} ]", concise=True))
 
     hours_ranges_str = ""
     if CHECK_POSTS_IN_HOURS_RANGE:
@@ -15311,61 +15367,50 @@ def run_main():
             hours_ranges_str = "None (both ranges disabled)"
     else:
         hours_ranges_str = format_hour_range(0, 23)
-    summary_rows.append(("* Hours for fetching updates:\t\t" + hours_ranges_str, bool(CHECK_POSTS_IN_HOURS_RANGE), True))
+    summary_rows.append(StartupSummaryRow("Hours for fetching updates", hours_ranges_str, concise=bool(CHECK_POSTS_IN_HOURS_RANGE)))
 
     # Reuse the same compact per-channel notification rows in every summary view
     summary_rows.extend(_startup_notification_summary_rows())
 
-    summary_rows.append((f"* Session Mode:\t\t\t\t{mode_of_the_tool}", True, True))
-    summary_rows.append((f"* Human mode:\t\t\t\t{BE_HUMAN}" + (f" (Verbose)" if BE_HUMAN_VERBOSE else ""), bool(BE_HUMAN), True))
-    summary_rows.append((f"* Skip session login:\t\t\t{SKIP_SESSION}", bool(SKIP_SESSION), True))
-    summary_rows.append((f"* Skip fetching followers:\t\t{SKIP_FOLLOWERS}", bool(SKIP_FOLLOWERS), True))
-    summary_rows.append((f"* Skip fetching followings:\t\t{SKIP_FOLLOWINGS}", bool(SKIP_FOLLOWINGS), True))
-    summary_rows.append((f"* Skip reporting follows changes:\t{SKIP_FOLLOW_CHANGES}", bool(SKIP_FOLLOW_CHANGES), True))
-    summary_rows.append((f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}", bool(SKIP_GETTING_STORY_DETAILS), True))
-    summary_rows.append((f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}", bool(SKIP_GETTING_POSTS_DETAILS), True))
-    summary_rows.append((f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}", bool(GET_MORE_POST_DETAILS), True))
-    summary_rows.append((f"* Detect collab posts (private):\t{DETECT_COLLAB_POSTS}", not DETECT_COLLAB_POSTS, True))
+    output_state = FINAL_LOG_PATH if not DISABLE_LOGGING else "Terminal only (logging disabled)"
+    summary_rows.append(StartupSummaryRow("Output", str(output_state), concise=True, full=False, log=False))
+    summary_rows.append(StartupSummaryRow("Output logging", str(FINAL_LOG_PATH) if not DISABLE_LOGGING else "Disabled"))
+    summary_rows.append(StartupSummaryRow("Config", str(cfg_path) if cfg_path else "None", concise=True))
+    summary_rows.append(StartupSummaryRow("Dotenv", str(env_path) if env_path else "None", concise=True))
+
+    if OUTPUT_DIR:
+        output_dir_desc = "(root for user data & logs)" if len(targets) == 1 else "(container for per-user subdirectories & logs)"
+        summary_rows.append(StartupSummaryRow("Output directory", f"{OUTPUT_DIR} {output_dir_desc}", concise=True))
+    else:
+        summary_rows.append(StartupSummaryRow("Output directory", f"{os.getcwd()} (current working directory)", concise=True))
+
+    summary_rows.append(StartupSummaryRow("Session mode", mode_of_the_tool, concise=True))
+    summary_rows.append(StartupSummaryRow("Human mode", f"{BE_HUMAN}" + (" (Verbose)" if BE_HUMAN_VERBOSE else ""), concise=bool(BE_HUMAN)))
+    summary_rows.append(StartupSummaryRow("Skip session login", str(SKIP_SESSION), concise=bool(SKIP_SESSION)))
+    summary_rows.append(StartupSummaryRow("Skip fetching followers", str(SKIP_FOLLOWERS), concise=bool(SKIP_FOLLOWERS)))
+    summary_rows.append(StartupSummaryRow("Skip fetching followings", str(SKIP_FOLLOWINGS), concise=bool(SKIP_FOLLOWINGS)))
+    summary_rows.append(StartupSummaryRow("Skip follow change reports", str(SKIP_FOLLOW_CHANGES), concise=bool(SKIP_FOLLOW_CHANGES)))
+    summary_rows.append(StartupSummaryRow("Skip stories details", str(SKIP_GETTING_STORY_DETAILS), concise=bool(SKIP_GETTING_STORY_DETAILS)))
+    summary_rows.append(StartupSummaryRow("Skip posts details", str(SKIP_GETTING_POSTS_DETAILS), concise=bool(SKIP_GETTING_POSTS_DETAILS)))
+    summary_rows.append(StartupSummaryRow("Get more posts details", str(GET_MORE_POST_DETAILS), concise=bool(GET_MORE_POST_DETAILS)))
+    summary_rows.append(StartupSummaryRow("Detect collab posts", str(DETECT_COLLAB_POSTS), concise=not DETECT_COLLAB_POSTS))
 
     churn_status = str(FOLLOWERS_CHURN_DETECTION)
     if FOLLOWERS_CHURN_AUTODISABLED:
         churn_status += f" ({FOLLOWERS_CHURN_AUTODISABLED_REASON})"
-    summary_rows.append((f"* Follower churn detection:\t\t{churn_status}", bool(FOLLOWERS_CHURN_DETECTION or FOLLOWERS_CHURN_AUTODISABLED), True))
-
-    summary_rows.append((f"* Browser user agent:\t\t\t{USER_AGENT}", False, True))
-    summary_rows.append((f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}", False, True))
-
-    if _curl_cffi_backend_active():
-        impersonate_resolved = _curl_cffi_impersonate_target()
-        impersonate_display = f"auto -> {impersonate_resolved}" if str(CURL_CFFI_IMPERSONATE or "auto").strip().lower() in ("", "auto") else impersonate_resolved
-        summary_rows.append((f"* HTTP backend:\t\t\t\tcurl_cffi (impersonate: {impersonate_display})", True, True))
-    else:
-        summary_rows.append((f"* HTTP backend:\t\t\t\trequests", True, True))
-
-    summary_rows.append((f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}", bool(ENABLE_JITTER), True))
-
-    summary_rows.append(_startup_tls_summary_row())
-
-    summary_rows.append((f"* Proxies:\t\t\t\t" + ("Enabled" if PROXY_ENABLED else "Disabled"), bool(PROXY_ENABLED), True))
-    if PROXY_ENABLED:
-        ipaddr = get_ip_address()
-        masked_proxy_url = mask_url_credentials(PROXY_URL)
-        summary_rows.append((f"*   Proxy IP Address:\t\t\t{ipaddr}", True, True))
-        summary_rows.append((f"*   Proxy URL:\t\t\t\t{masked_proxy_url[:50]}", True, True))
-        summary_rows.append((f"*   Proxy Certificate:\t\t\t{PROXY_CERT_PATH or '-'}", True, True))
-        summary_rows.append((f"*   Proxy for Webhooks:\t\t\t" + ("Enabled" if PROXY_WEBHOOKS else "Disabled"), True, True))
+    summary_rows.append(StartupSummaryRow("Follower churn detection", churn_status, concise=bool(FOLLOWERS_CHURN_DETECTION or FOLLOWERS_CHURN_AUTODISABLED)))
 
     follower_str = build_follow_string(ADVANCED_FOLLOWER_FETCH, FOLLOWER_LIMIT_TO_FETCH, FOLLOWERS_PER_BATCH, FOLLOWER_DELAY_PER_BATCH)
     followee_str = build_follow_string(ADVANCED_FOLLOWEE_FETCH, FOLLOWEE_LIMIT_TO_FETCH, FOLLOWEES_PER_BATCH, FOLLOWEE_DELAY_PER_BATCH)
-    summary_rows.append((f"* Advanced Follower Fetching:\t\t{follower_str}", bool(ADVANCED_FOLLOWER_FETCH), True))
-    summary_rows.append((f"* Advanced Followee Fetching:\t\t{followee_str}", bool(ADVANCED_FOLLOWEE_FETCH), True))
-    summary_rows.append((f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""), not LIVENESS_CHECK_INTERVAL, True))
-    summary_rows.append((f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}", not DETECT_CHANGED_PROFILE_PIC, True))
-    summary_rows.append((f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""), bool(imgcat_exe), True))
-    summary_rows.append((f"* Empty profile pic template:\t\t{profile_pic_file_exists}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""), bool(profile_pic_file_exists), True))
+    summary_rows.append(StartupSummaryRow("Advanced follower fetching", follower_str, concise=bool(ADVANCED_FOLLOWER_FETCH)))
+    summary_rows.append(StartupSummaryRow("Advanced followee fetching", followee_str, concise=bool(ADVANCED_FOLLOWEE_FETCH)))
+
+    summary_rows.append(StartupSummaryRow("Profile picture changes", str(DETECT_CHANGED_PROFILE_PIC), concise=not DETECT_CHANGED_PROFILE_PIC))
+    summary_rows.append(StartupSummaryRow("Profile picture display", imgcat_exe or "Disabled", concise=bool(imgcat_exe)))
+    summary_rows.append(StartupSummaryRow("Empty profile pic template", PROFILE_PIC_FILE_EMPTY if profile_pic_file_exists else "Disabled", concise=bool(profile_pic_file_exists)))
 
     thumbnail_adnotation = " (forced by Web Dashboard)" if THUMBNAILS_FORCED_BY_WEB else ""
-    summary_rows.append((f"* Download thumbnail images:\t\t{DOWNLOAD_THUMBNAILS}{thumbnail_adnotation}", (not DOWNLOAD_THUMBNAILS) or THUMBNAILS_FORCED_BY_WEB, True))
+    summary_rows.append(StartupSummaryRow("Download thumbnail images", f"{DOWNLOAD_THUMBNAILS}{thumbnail_adnotation}", concise=(not DOWNLOAD_THUMBNAILS) or THUMBNAILS_FORCED_BY_WEB))
 
     # Dashboard status
     dashboard_status = DASHBOARD_ENABLED and RICH_AVAILABLE
@@ -15375,7 +15420,7 @@ def run_main():
             dashboard_reason = " (missing rich)"
         elif not DASHBOARD_ENABLED:
             dashboard_reason = " (disabled)"
-    summary_rows.append((f"* Dashboard:\t\t\t\t{dashboard_status}{dashboard_reason}", bool(DASHBOARD_ENABLED), True))
+    summary_rows.append(StartupSummaryRow("Dashboard", f"{dashboard_status}{dashboard_reason}", concise=bool(DASHBOARD_ENABLED)))
 
     # Web Dashboard status
     web_dashboard_status = WEB_DASHBOARD_ENABLED and FLASK_AVAILABLE
@@ -15385,33 +15430,7 @@ def run_main():
             web_dashboard_reason = " (disabled)"
         elif not FLASK_AVAILABLE:
             web_dashboard_reason = " (missing Flask)"
-    summary_rows.append((f"* Web Dashboard:\t\t\t{web_dashboard_status}{web_dashboard_reason}", bool(WEB_DASHBOARD_ENABLED), True))
-
-    if len(targets) == 1:
-        summary_rows.append((f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""), bool(CSV_FILE), True))
-    else:
-        if CSV_FILE:
-            summary_rows.append((f"* CSV logging enabled:\t\t\tTrue (per-user files, base: {CSV_FILE})", True, True))
-        else:
-            summary_rows.append((f"* CSV logging enabled:\t\t\tFalse", False, True))
-
-    summary_rows.append((f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""), bool(DISABLE_LOGGING), True))
-    summary_rows.append((f"* ASCII log separators:\t\t\t{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})", False, True))
-
-    if OUTPUT_DIR:
-        output_dir_desc = "(root for user data & logs)" if len(targets) == 1 else "(container for per-user subdirectories & logs)"
-        summary_rows.append((f"* Output directory:\t\t\t{OUTPUT_DIR} {output_dir_desc}", True, True))
-    else:
-        summary_rows.append((f"* Output directory:\t\t\t{os.getcwd()} (current working directory)", True, True))
-
-    summary_rows.append((f"* Configuration file:\t\t\t{cfg_path}", True, True))
-    summary_rows.append((f"* Dotenv file:\t\t\t\t{env_path or 'None'}", True, True))
-
-    # Names only, never values, so the complete summary stays safe to paste into a bug report
-    secrets_from_file, secrets_from_environment, _ = doctor_secret_sources(env_path)
-    summary_rows.append((f"* Install method:\t\t\t{install_method_display_name()}", False, True))
-    summary_rows.append((f"* Secrets from dotenv:\t\t\t{', '.join(sorted(secrets_from_file)) if secrets_from_file else 'None'}", False, True))
-    summary_rows.append((f"* Secrets from environment:\t\t{', '.join(sorted(secrets_from_environment)) if secrets_from_environment else 'None'}", False, True))
+    summary_rows.append(StartupSummaryRow("Web dashboard", f"{web_dashboard_status}{web_dashboard_reason}", concise=bool(WEB_DASHBOARD_ENABLED)))
 
     if WEB_DASHBOARD_ENABLED:
         if WEB_DASHBOARD_TEMPLATE_DIR:
@@ -15419,30 +15438,37 @@ def run_main():
         else:
             detected = _peek_web_dashboard_template_dir_autodetect()
             templates_display = "Auto-detect" + (f" ({detected})" if detected else "")
-        summary_rows.append((f"* Web Dashboard templates:\t\t{templates_display}", False, True))
+        summary_rows.append(StartupSummaryRow("Web dashboard templates", templates_display))
 
-    summary_rows.append((f"* Verbose mode:\t\t\t\t{VERBOSE_MODE}", bool(VERBOSE_MODE), True))
-    summary_rows.append((f"* Debug mode:\t\t\t\t{DEBUG_MODE}", bool(DEBUG_MODE), True))
-    summary_rows.append((f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}", False, True))
-    summary_rows.append((f"* 12h time format:\t\t\t{TIME_FORMAT_12H}", False, True))
+    summary_rows.append(StartupSummaryRow("Liveness output", display_time(LIVENESS_CHECK_INTERVAL) if LIVENESS_CHECK_INTERVAL else "Disabled", concise=bool(LIVENESS_CHECK_INTERVAL)))
 
-    # Concise-only hint pointing at the full settings dump
-    summary_rows.append(("* (run with --verbose to see all settings)", True, False))
+    if len(targets) == 1:
+        summary_rows.append(StartupSummaryRow("CSV output", CSV_FILE or "Disabled", concise=bool(CSV_FILE)))
+    else:
+        summary_rows.append(StartupSummaryRow("CSV output", f"Per-target files, base: {CSV_FILE}" if CSV_FILE else "Disabled", concise=bool(CSV_FILE)))
 
-    # Emit the summary: full rows always go to the log; the terminal shows the full set under --verbose/--debug, otherwise the concise set (suppressed entirely while the terminal dashboard owns the screen)
-    show_full_on_terminal = bool(VERBOSE_MODE or DEBUG_MODE)
-    terminal_suppressed = bool(DASHBOARD_ENABLED and RICH_AVAILABLE)
-    summary_out = sys.stdout
-    for row_text, in_concise, in_full in summary_rows:
-        row_line = row_text + "\n"
-        to_terminal = (in_full if show_full_on_terminal else in_concise) and not terminal_suppressed
-        if in_full and hasattr(summary_out, "log_only"):
-            summary_out.log_only(row_line)
-        if to_terminal:
-            if hasattr(summary_out, "terminal_only"):
-                summary_out.terminal_only(row_line)
-            else:
-                print(row_text)
+    summary_rows.append(StartupSummaryRow("HTTP backend", f"curl_cffi (impersonate: {_curl_cffi_impersonate_display()})" if _curl_cffi_backend_active() else "requests", concise=True))
+    summary_rows.append(StartupSummaryRow("HTTP jitter/back-off", str(ENABLE_JITTER), concise=bool(ENABLE_JITTER)))
+    summary_rows.append(StartupSummaryRow("Browser user agent", USER_AGENT))
+    summary_rows.append(StartupSummaryRow("Mobile user agent", USER_AGENT_MOBILE))
+
+    summary_rows.append(StartupSummaryRow("Proxies", "Enabled" if PROXY_ENABLED else "Disabled", concise=bool(PROXY_ENABLED)))
+    if PROXY_ENABLED:
+        summary_rows.append(StartupSummaryRow("  Proxy IP Address", str(get_ip_address()), concise=True))
+        summary_rows.append(StartupSummaryRow("  Proxy URL", str(mask_url_credentials(PROXY_URL))[:50], concise=True))
+        summary_rows.append(StartupSummaryRow("  Proxy Certificate", PROXY_CERT_PATH or "-", concise=True))
+        summary_rows.append(StartupSummaryRow("  Proxy for Webhooks", "Enabled" if PROXY_WEBHOOKS else "Disabled", concise=True))
+
+    summary_rows.extend(_startup_environment_rows(env_path))
+
+    summary_rows.append(StartupSummaryRow("Verbose mode", str(VERBOSE_MODE), concise=bool(VERBOSE_MODE)))
+    summary_rows.append(StartupSummaryRow("Debug mode", str(DEBUG_MODE), concise=bool(DEBUG_MODE)))
+
+    # Points at the two modes for a reader who does not know they exist, so the full view drops it
+    summary_rows.append(StartupSummaryRow("More details", "use --verbose or --debug", concise=True, full=False, log=False))
+
+    # Full rows always go to the log; the terminal shows the full set under --verbose/--debug, otherwise the concise set (suppressed entirely while the terminal dashboard owns the screen)
+    emit_startup_summary(summary_rows, show_full=bool(VERBOSE_MODE or DEBUG_MODE), suppress_terminal=bool(DASHBOARD_ENABLED and RICH_AVAILABLE))
 
     # More visible warnings if requested features are missing (still only printed to terminal when dashboard is not active)
     if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
