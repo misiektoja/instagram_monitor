@@ -38,6 +38,65 @@ By default, it performs about five of these actions over 24 hours. Change the li
 
 Set `BE_HUMAN_VERBOSE = True` to log each action.
 
+<a id="set-an-identity-budget"></a>
+## Set an Identity Budget
+
+Instagram scores automated collection by how much user-identifiable information a response returns, not by how many requests were sent. Meta describes this in [Predictive Response Optimization](https://arxiv.org/abs/2502.17693): the metric their system optimizes counts each request "weighted by the number of units of user-identifiable information returned to the user".
+
+That means fetching follower and following names is far more expensive than checking counts, posts or stories, even though each is one request. It also means batch sizes and delays matter less than the total number of names you pull per day.
+
+`IDENTITY_BUDGET_PER_DAY` caps that total for the logged-in account. It is shared by every monitored target and every worker in the process, and it resets at local midnight.
+
+```
+IDENTITY_BUDGET_PER_DAY = 750
+```
+
+Once the budget is spent, name fetching stops until the next day. Counts, posts, reels, stories and profile changes keep being monitored normally, so you still see that the follower number moved, just not who moved.
+
+The budget is disabled by default. Names are always counted whether or not you set one, so you can watch your own usage first with `--exposure` and pick a number from that. If you have been challenged before, somewhere around 500 to 1000 is a reasonable starting point.
+
+You can also set it for one run with `--identity-budget 750`.
+
+A partial fetch is never written to the baseline file. If the budget stops a fetch halfway, the previous complete list stays in place and the comparison is skipped rather than reporting every unfetched account as an unfollow.
+
+<a id="let-the-circuit-breaker-stop-the-account"></a>
+## Let the Circuit Breaker Stop the Account
+
+When Instagram returns a challenge, a checkpoint or an expired session, it has acted against the account rather than against one request. Continuing to send requests after that is what turns a warning into a suspension.
+
+`CIRCUIT_BREAKER` is enabled by default. On the first account-level response it stops every target at once, not just the one that hit the problem, and it stays stopped across restarts.
+
+```
+* Circuit breaker: Instagram acted against session account your_account (challenge). Stopping all Instagram requests for this account
+```
+
+Clear the challenge in your browser first, then resume:
+
+```
+instagram_monitor --clear-breaker
+```
+
+Rate limits, network errors and Instagram API changes do not trip the breaker. Only responses that act against the account do.
+
+<a id="check-your-exposure"></a>
+## Check Your Exposure
+
+`--exposure` prints today's totals for the logged-in account:
+
+```
+instagram_monitor --exposure
+```
+
+It shows how many names were returned today, how many failures of each kind occurred, and whether the circuit breaker is armed or tripped. Failures are grouped so you can tell the three problems apart:
+
+| Group | Meaning | What helps |
+|---|---|---|
+| A | The transport was blocked, usually a first-request HTTP 429 | [HTTP Transport Backend](usage.md#http-transport-backend) |
+| B | Instagram changed an API, so a query stopped returning data | Update to the latest version |
+| C | Instagram acted against the account | Lower the identity budget, raise the interval, monitor fewer targets |
+
+This is local only. The ledger is a file on your machine, it is never transmitted anywhere and nothing reads it but the tool. It lives next to your output directory as `instagram_monitor_exposure.json`.
+
 <a id="use-the-jitter-mode"></a>
 ## Use the Jitter Mode
 

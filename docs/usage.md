@@ -551,6 +551,35 @@ This feature requires [Logged-In Mode](configuration.md#logged-in-mode-with-sess
 
 A maximum intentionally produces a partial list. Partial lists are not compared with or saved over the last complete baseline. Reported count changes remain available without claiming which usernames changed.
 
+<a id="identity-budget-and-circuit-breaker"></a>
+## Identity Budget and Circuit Breaker
+
+Follower and following names are the most expensive thing the tool asks Instagram for, and a challenge against the account is the most damaging answer it can get back. Two settings bound both.
+
+```ini
+# Maximum follower and following names to fetch per day for the logged-in account (0 = no budget)
+IDENTITY_BUDGET_PER_DAY = 0
+
+# Stop all Instagram requests for the account after Instagram challenges it
+CIRCUIT_BREAKER = True
+```
+
+The budget is shared by every target and resets at local midnight. When it is spent, name fetching stops for the day while counts, posts, reels, stories and profile changes carry on. Names are counted even with no budget set, so you can measure first and choose a number afterwards.
+
+The circuit breaker stops every target at once when Instagram returns a challenge, a checkpoint or an expired session, and stays stopped across restarts. Rate limits, network errors and Instagram API changes do not trip it.
+
+Three commands:
+
+```
+instagram_monitor --exposure                   # today's names, failures and breaker state
+instagram_monitor --identity-budget 750        # set the budget for this run
+instagram_monitor --clear-breaker              # resume after clearing the challenge in a browser
+```
+
+Everything is stored locally in `instagram_monitor_exposure.json` next to your output directory. Nothing is transmitted anywhere.
+
+See [Set an Identity Budget](anti-detection.md#set-an-identity-budget) for how to choose a value and why names rather than requests are the unit that matters.
+
 <a id="routing-traffic-through-a-proxy"></a>
 ## Routing Traffic Through a Proxy
 

@@ -293,6 +293,31 @@ FOLLOWEE_LIMIT_TO_FETCH  = 0
 FOLLOWEE_DELAY_PER_BATCH = 0
 
 # ----------------------------
+# Account Safety
+# ----------------------------
+
+# Maximum number of follower and following names to fetch per day for the logged-in account
+#
+# Instagram scores automated collection by how much user-identifiable information a response returns,
+# not by how many requests were sent, so this budget counts names rather than requests. It is shared
+# by every monitored target and every worker in this process
+#
+# Once the budget is spent, name fetching is skipped until the next local day. Counts, posts, reels,
+# stories and profile changes keep being monitored normally
+#
+# 0 disables the budget (default). Around 500 to 1000 is a reasonable starting point if you have been
+# challenged before. Today's total is always counted and shown, whether or not a budget is set
+# Can also be set using the --identity-budget flag
+IDENTITY_BUDGET_PER_DAY = 0
+
+# Whether to stop all Instagram requests for the logged-in account after Instagram acts against it
+#
+# When Instagram returns a challenge, a checkpoint or an expired session, continuing to send requests
+# is what turns a warning into a suspension. With this enabled the tool stops every target at once and
+# stays stopped across restarts until you resume it with --clear-breaker
+CIRCUIT_BREAKER = True
+
+# ----------------------------
 # Privacy
 # ----------------------------
 
@@ -1078,6 +1103,8 @@ FOLLOWER_LIMIT_TO_FETCH = 0
 FOLLOWEE_LIMIT_TO_FETCH = 0
 FOLLOWER_DELAY_PER_BATCH = 0
 FOLLOWEE_DELAY_PER_BATCH = 0
+IDENTITY_BUDGET_PER_DAY = 0
+CIRCUIT_BREAKER = True
 ADVANCED_FOLLOWER_FETCH = False
 ADVANCED_FOLLOWEE_FETCH = False
 LIVENESS_CHECK_INTERVAL = 0
@@ -9244,6 +9271,8 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'get_more_post_details': GET_MORE_POST_DETAILS,
         'detect_collab_posts': DETECT_COLLAB_POSTS,
         'followers_churn': FOLLOWERS_CHURN_DETECTION,
+        'identity_budget': IDENTITY_BUDGET_PER_DAY,
+        'circuit_breaker': bool(circuit_breaker_state()) if CIRCUIT_BREAKER else None,
         'verbose_mode': VERBOSE_MODE,
         'debug_mode': DEBUG_MODE,
         'hours_verbose': HOURS_VERBOSE,
@@ -9327,51 +9356,103 @@ def session_recovery_command() -> str:
     return _firefox_import_cmd(_wizard_install_method())
 
 
+# Ordered match terms for every recognized failure, shared by the message and the failure-class lookups so the two cannot drift
+FAILURE_TERMS = {
+    'rate_limit': ("429", "too many requests", "wait a few minutes", "rate limit", "please wait"),
+    'challenge': ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data"),
+    'session_missing': ("session file",),
+    'auth_expired': ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required", "bad request"),
+    'target_unavailable': ("profilenotexists", "does not exist", "not found", "404"),
+    'impersonate_unsupported': ("impersonat",),
+    'proxy_unresolved': ("could not resolve proxy",),
+    'dns_failure': ("could not resolve host", "temporary failure in name resolution", "name or service not known", "nodename nor servname", "curl: (6)"),
+    'network': ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl"),
+    'schema_change': ("empty data for posts", "fetching post metadata failed", "not subscriptable"),
+}
+
+# Evaluation order of FAILURE_TERMS, matching the branch order in classify_error_message
+FAILURE_CLASS_ORDER = ('rate_limit', 'challenge', 'session_missing', 'auth_expired', 'target_unavailable', 'impersonate_unsupported', 'proxy_unresolved', 'dns_failure', 'network', 'schema_change')
+
+# Reliability group each failure class belongs to: A blocks the transport, B breaks on an Instagram API change, C acts against the session account
+FAILURE_CLASS_GROUPS = {
+    'rate_limit': 'A',
+    'schema_change': 'B',
+    'challenge': 'C',
+    'auth_expired': 'C',
+}
+
+# Short label for each reliability group, used in logs and the exposure summary
+FAILURE_GROUP_LABELS = {
+    'A': "transport blocked",
+    'B': "Instagram API changed",
+    'C': "account challenged",
+}
+
+
+# Returns the stable failure class for one error message, or 'unknown' when nothing matches
+def classify_failure_class(error_msg: str) -> str:
+    m = (error_msg or "").lower()
+    for name in FAILURE_CLASS_ORDER:
+        if any(t in m for t in FAILURE_TERMS[name]):
+            return name
+    return 'unknown'
+
+
+# Returns the reliability group (A, B or C) for one failure class, or an empty string when it belongs to none
+def failure_class_group(failure_class: str) -> str:
+    return FAILURE_CLASS_GROUPS.get(failure_class, "")
+
+
+# Returns True when a failure means Instagram acted against the session account rather than against one request or target
+def is_account_level_failure(failure_class: str) -> bool:
+    return failure_class_group(failure_class) == 'C'
+
+
 # Maps one error message to a stable summary plus the matching fix and guide, so every surface explains it the same way
 def classify_error_message(error_msg: str, is_logged_in: bool = False) -> Tuple[str, str, str]:
     m = (error_msg or "").lower()
 
     # Rate limiting or TLS-fingerprint blocks
-    if any(t in m for t in ("429", "too many requests", "wait a few minutes", "rate limit", "please wait")):
+    if any(t in m for t in FAILURE_TERMS['rate_limit']):
         return "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users", ANTI_DETECTION_INTERVAL_GUIDE_URL
 
     # Challenge, checkpoint or shadowban
-    if any(t in m for t in ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data")):
+    if any(t in m for t in FAILURE_TERMS['challenge']):
         return "Instagram is asking this session or IP to pass a challenge", f"Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'. Also raise the check interval", ANTI_DETECTION_SESSION_GUIDE_URL
 
     # Missing session file
-    if "session file" in m:
+    if any(t in m for t in FAILURE_TERMS['session_missing']):
         return "No saved Instagram session was found", f"No saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_user>'. In the Web Dashboard you can import from the Session page", SESSION_IMPORT_GUIDE_URL
 
     # Invalid or expired session
-    if any(t in m for t in ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required", "bad request")):
+    if any(t in m for t in FAILURE_TERMS['auth_expired']):
         return "The saved Instagram session is invalid or expired", f"Your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_user>'. In the Web Dashboard you can re-import from the Session page", SESSION_IMPORT_GUIDE_URL
 
     # Profile not found
-    if any(t in m for t in ("profilenotexists", "does not exist", "not found", "404")):
+    if any(t in m for t in FAILURE_TERMS['target_unavailable']):
         fix = "Check the target username is spelled correctly and the account still exists and is reachable"
         if is_logged_in:
             fix += ". If the username is correct, your session or IP may be temporarily flagged"
         return "Instagram could not find the requested profile", fix, ""
 
     # An unsupported impersonation target surfaces as a connection error, so name the real cause before the network hint
-    if "impersonat" in m:
+    if any(t in m for t in FAILURE_TERMS['impersonate_unsupported']):
         return "The configured browser profile cannot be impersonated", "The configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto' or pick a supported target such as chrome, safari, edge or firefox", ""
 
     # An unresolvable proxy hostname is a proxy configuration problem, so it is the one resolution failure the proxy guide fits
-    if "could not resolve proxy" in m:
+    if any(t in m for t in FAILURE_TERMS['proxy_unresolved']):
         return "The configured proxy hostname could not be resolved", "The proxy hostname you configured cannot be resolved. Check PROXY_URL for a typo and confirm the proxy host is reachable from this machine", PROXY_GUIDE_URL
 
     # DNS failures are resolver-side, so they need their own fix before the generic network branch swallows them
-    if any(t in m for t in ("could not resolve host", "temporary failure in name resolution", "name or service not known", "nodename nor servname", "curl: (6)")):
+    if any(t in m for t in FAILURE_TERMS['dns_failure']):
         return "Instagram's address could not be resolved", "Your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com') and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again", CONNECTION_ERRORS_GUIDE_URL
 
     # Network or connectivity problems
-    if any(t in m for t in ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl")):
+    if any(t in m for t in FAILURE_TERMS['network']):
         return "Instagram could not be reached", "This looks like a network problem. Check your internet connection, then your proxy settings if --enable-proxy is set, then try again", CONNECTION_ERRORS_GUIDE_URL
 
     # Deprecated GraphQL doc_id returning null data, or a temporary block
-    if any(t in m for t in ("empty data for posts", "fetching post metadata failed", "not subscriptable")):
+    if any(t in m for t in FAILURE_TERMS['schema_change']):
         return "Instagram returned empty data for this query", "Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version and report it at https://github.com/misiektoja/instagram_monitor/issues if you are already current)", ""
 
     return "An unexpected error stopped the requested action", "", ""
@@ -9493,6 +9574,11 @@ def notify_monitoring_error(user, error_msg, failure_count, check_interval):
 
 # Sends a one-off email and webhook alert when the session account or IP is flagged, bypassing ERROR_FAILURE_THRESHOLD since a flag is terminal and operator-actionable
 def notify_session_flagged(user, err_str, error_msg):
+    # A flag is an account-level action, so stop every target durably before the alerting de-dupe below can return early.
+    # A probe-confirmed flag counts as a challenge even when the triggering message only said the profile was missing
+    flag_class = classify_failure_class(error_msg)
+    record_failure_event(flag_class if is_account_level_failure(flag_class) else 'challenge', user, error_msg)
+
     # One shared session flag trips every target thread, so de-dupe within the flag-probe window to alert once instead of once per target
     now = time.time()
     with FLAGGED_NOTIFY_LOCK:
@@ -9514,6 +9600,232 @@ def notify_session_flagged(user, err_str, error_msg):
         color=0xFF0000,
         notification_type="error"
     )
+
+
+# ---------------------------------------------------------------------------
+# Identity exposure ledger and account circuit breaker
+#
+# Instagram scores automated collection by how much user-identifiable
+# information a response returns, not by how many requests were sent (Meta,
+# "Predictive Response Optimization", USENIX Security 2025). Follower and
+# following enumeration therefore costs far more than a profile check even
+# though both are one request. This ledger counts identities returned per
+# session account per local day so a budget can cap them, and it records the
+# reliability group of every failure so an account-level action stops all work
+# instead of being retried into a suspension.
+#
+# Everything here is local. The ledger is a file on this machine, it is never
+# transmitted anywhere and nothing reads it but this process.
+# ---------------------------------------------------------------------------
+
+EXPOSURE_LOCK = threading.Lock()
+EXPOSURE_STATE_FILENAME = "instagram_monitor_exposure.json"
+EXPOSURE_STATE_VERSION = 1
+
+
+# Returns the absolute path of the local exposure ledger, honoring OUTPUT_DIR when one is configured
+def exposure_state_path() -> str:
+    base = OUTPUT_DIR if OUTPUT_DIR else "."
+    return os.path.abspath(os.path.join(base, EXPOSURE_STATE_FILENAME))
+
+
+# Returns the ledger key for the account whose exposure is being tracked, or the anonymous marker when no session is used
+def exposure_account_name() -> str:
+    return SESSION_USERNAME if (SESSION_USERNAME and not SKIP_SESSION) else "<anonymous>"
+
+
+# Returns today's date in the configured local timezone as an ISO day string
+def _exposure_today() -> str:
+    try:
+        return datetime.now(pytz.timezone(LOCAL_TIMEZONE)).strftime("%Y-%m-%d")
+    except Exception:
+        return datetime.now().strftime("%Y-%m-%d")
+
+
+# Reads the ledger from disk, returning an empty structure when it is missing or unreadable
+def _load_exposure_file() -> Dict[str, Any]:
+    try:
+        with open(exposure_state_path(), 'r', encoding="utf-8") as handle:
+            data = json.load(handle)
+        if isinstance(data, dict) and isinstance(data.get('accounts'), dict):
+            return data
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        debug_print("Exposure ledger unreadable, starting a new one", error=f"{type(e).__name__}: {e}")
+    return {'version': EXPOSURE_STATE_VERSION, 'accounts': {}}
+
+
+# Atomically replaces the ledger on disk so a crash mid-write cannot corrupt it
+def _write_exposure_file(data: Dict[str, Any]) -> None:
+    destination = exposure_state_path()
+    destination_dir = os.path.dirname(destination)
+    temporary_path = None
+    try:
+        os.makedirs(destination_dir, exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=destination_dir, prefix=f".{os.path.basename(destination)}.", suffix='.tmp', delete=False) as handle:
+            temporary_path = handle.name
+            json.dump(data, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, destination)
+    except Exception as e:
+        debug_print("Exposure ledger could not be saved", error=f"{type(e).__name__}: {e}")
+    finally:
+        if temporary_path and os.path.exists(temporary_path):
+            try:
+                os.remove(temporary_path)
+            except OSError:
+                pass
+
+
+# Returns the current account's ledger record, rolling the daily counters over when the local date changed
+def _exposure_record(data: Dict[str, Any], account: str) -> Dict[str, Any]:
+    record = data['accounts'].get(account)
+    if not isinstance(record, dict):
+        record = {}
+    today = _exposure_today()
+    if record.get('date') != today:
+        record = {'date': today, 'identities': 0, 'failures': {}, 'breaker': record.get('breaker'), 'last_account_failure': record.get('last_account_failure')}
+    record.setdefault('identities', 0)
+    record.setdefault('failures', {})
+    data['accounts'][account] = record
+    return record
+
+
+# Applies a mutation to the current account's ledger record under the ledger lock and persists the result
+def _update_exposure(mutate: Callable[[Dict[str, Any]], Any]) -> Any:
+    with EXPOSURE_LOCK:
+        data = _load_exposure_file()
+        record = _exposure_record(data, exposure_account_name())
+        outcome = mutate(record)
+        _write_exposure_file(data)
+        return outcome
+
+
+# Returns a read-only copy of the current account's ledger record
+def exposure_snapshot() -> Dict[str, Any]:
+    with EXPOSURE_LOCK:
+        data = _load_exposure_file()
+        return dict(_exposure_record(data, exposure_account_name()))
+
+
+# Adds identities returned by a completed fetch batch to today's total and returns the new total
+def record_identities_returned(count: int) -> int:
+    if count <= 0:
+        return exposure_snapshot().get('identities', 0)
+
+    def mutate(record):
+        record['identities'] = int(record.get('identities', 0)) + int(count)
+        return record['identities']
+
+    return _update_exposure(mutate)
+
+
+# Returns how many identities today's budget still allows, or None when no budget is configured
+def identity_budget_remaining() -> Optional[int]:
+    if not IDENTITY_BUDGET_PER_DAY or IDENTITY_BUDGET_PER_DAY <= 0:
+        return None
+    return max(0, int(IDENTITY_BUDGET_PER_DAY) - int(exposure_snapshot().get('identities', 0)))
+
+
+# Returns True when a configured identity budget is already spent for today
+def identity_budget_exhausted() -> bool:
+    remaining = identity_budget_remaining()
+    return remaining is not None and remaining <= 0
+
+
+# Returns the stored circuit breaker record when the session account is stopped, otherwise None
+def circuit_breaker_state() -> Optional[Dict[str, Any]]:
+    if not CIRCUIT_BREAKER:
+        return None
+    breaker = exposure_snapshot().get('breaker')
+    return breaker if isinstance(breaker, dict) and breaker.get('tripped_ts') else None
+
+
+# Returns True when the session account is stopped by the circuit breaker
+def circuit_breaker_tripped() -> bool:
+    return circuit_breaker_state() is not None
+
+
+# Stops all further Instagram work for the session account after an account-level action, returning True when this call tripped it
+def trip_circuit_breaker(failure_class: str, user: str = "", error_msg: str = "") -> bool:
+    if not CIRCUIT_BREAKER:
+        return False
+
+    def mutate(record):
+        if isinstance(record.get('breaker'), dict) and record['breaker'].get('tripped_ts'):
+            return False
+        record['breaker'] = {'tripped_ts': int(time.time()), 'failure_class': failure_class, 'target': user, 'error': (error_msg or "")[:500]}
+        return True
+
+    tripped = _update_exposure(mutate)
+    if tripped:
+        account = exposure_account_name()
+        print(f"\n* Circuit breaker: Instagram acted against session account {account} ({failure_class}). Stopping all Instagram requests for this account")
+        print(f"* Continuing after an account-level action is what turns a warning into a suspension. Resume with '--clear-breaker' once you have cleared the challenge in a browser")
+        log_activity(f"Circuit breaker tripped for {account}: {failure_class}", user=user or account, level='system')
+    return bool(tripped)
+
+
+# Clears the circuit breaker so monitoring can resume, returning the record that was cleared
+def clear_circuit_breaker() -> Optional[Dict[str, Any]]:
+    def mutate(record):
+        previous = record.get('breaker')
+        record['breaker'] = None
+        return previous if isinstance(previous, dict) and previous.get('tripped_ts') else None
+
+    return _update_exposure(mutate)
+
+
+# Records one classified failure against the session account and trips the circuit breaker on account-level actions
+def record_failure_event(failure_class: str, user: str = "", error_msg: str = "") -> None:
+    if not failure_class:
+        return
+
+    def mutate(record):
+        failures = record.setdefault('failures', {})
+        failures[failure_class] = int(failures.get(failure_class, 0)) + 1
+        if is_account_level_failure(failure_class):
+            record['last_account_failure'] = {'ts': int(time.time()), 'failure_class': failure_class, 'target': user}
+        return None
+
+    _update_exposure(mutate)
+    if is_account_level_failure(failure_class):
+        trip_circuit_breaker(failure_class, user, error_msg)
+
+
+# Classifies one error message, records it against the session account and returns its failure class
+def note_instagram_failure(error_msg: str, user: str = "") -> str:
+    failure_class = classify_failure_class(error_msg)
+    record_failure_event(failure_class, user, error_msg)
+    return failure_class
+
+
+# Returns the console lines describing today's local exposure for the session account
+def exposure_summary_lines() -> List[str]:
+    record = exposure_snapshot()
+    account = exposure_account_name()
+    identities = int(record.get('identities', 0))
+    budget = f"{identities} of {IDENTITY_BUDGET_PER_DAY}" if IDENTITY_BUDGET_PER_DAY else f"{identities} (no budget set)"
+    lines = [f"Account:\t\t\t\t{account}", f"Date:\t\t\t\t\t{record.get('date', _exposure_today())}", f"Identities returned today:\t\t{budget}"]
+
+    failures = record.get('failures') or {}
+    if failures:
+        for name in sorted(failures):
+            group = failure_class_group(name)
+            group_str = f" [{group}: {FAILURE_GROUP_LABELS[group]}]" if group else ""
+            lines.append(f"  {name}:\t\t\t\t{failures[name]}{group_str}")
+    else:
+        lines.append("Failures today:\t\t\t\tnone")
+
+    breaker = record.get('breaker')
+    if isinstance(breaker, dict) and breaker.get('tripped_ts'):
+        lines.append(f"Circuit breaker:\t\t\tTRIPPED at {get_date_from_ts(int(breaker['tripped_ts']))} ({breaker.get('failure_class', 'unknown')})")
+        lines.append("Resume with:\t\t\t\t--clear-breaker")
+    else:
+        lines.append("Circuit breaker:\t\t\tarmed" if CIRCUIT_BREAKER else "Circuit breaker:\t\t\tdisabled")
+    return lines
 
 
 # Returns unique, validated hours (0-23) from the configured ranges
@@ -9793,9 +10105,26 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
     """
     results = PaginatedUsernameResult()
     results.complete = False
-    gen = get_generator_fn()  # single generator — keeps cursor position across batches
 
     thread_pbar = getattr(_thread_local, 'pbar', None)
+
+    # Name fetching is the most expensive operation against the account, so it is the one place the
+    # breaker and the daily budget are enforced. Both leave the result incomplete on purpose, which
+    # stops save_username_baseline from overwriting a good baseline with a truncated one
+    breaker = circuit_breaker_state()
+    if breaker:
+        msg = f"Skipping name fetch: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')}). Resume with --clear-breaker"
+        print(f"* {msg}")
+        log_activity(msg, user=user, level='system')
+        return results
+
+    if identity_budget_exhausted():
+        msg = f"Skipping name fetch: daily identity budget of {IDENTITY_BUDGET_PER_DAY} is spent for {exposure_account_name()}. Counts and posts keep being monitored"
+        print(f"* {msg}")
+        log_activity(msg, user=user, level='system')
+        return results
+
+    gen = get_generator_fn()  # single generator — keeps cursor position across batches
     if advanced_fetch:
         msg = f"Fetching {build_follow_string(advanced_fetch, estimated_limit, max_per_batch, fetch_delay, alt_format=True)}"
         if thread_pbar:
@@ -9809,24 +10138,42 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
         if stop_event is not None and stop_event.is_set():
             return results
 
+        budget_left = identity_budget_remaining()
+        if budget_left is not None and budget_left <= 0:
+            print(f"* Daily identity budget of {IDENTITY_BUDGET_PER_DAY} reached, stopping the name fetch here")
+            log_activity(f"Daily identity budget reached after {len(results)} names", user=user, level='system')
+            break
+
         batch = []
         generator_exhausted = False
-        for f in gen:
-            batch.append(f.username)
-            if advanced_fetch and max_per_batch and (len(batch) >= max_per_batch):
-                break  # pause; generator retains its position
-            # Stop mid-batch if the overall total_limit would be exceeded, otherwise a per_batch
-            # larger than total_limit (e.g. limit=30, per_batch=50) over-fetches by a full batch
-            if advanced_fetch and total_limit and (len(results) + len(batch) >= total_limit):
-                break
-        else:
-            generator_exhausted = True
+        try:
+            for f in gen:
+                batch.append(f.username)
+                # The budget counts names returned, so it caps the batch even mid-flight
+                if budget_left is not None and len(batch) >= budget_left:
+                    break
+                if advanced_fetch and max_per_batch and (len(batch) >= max_per_batch):
+                    break  # pause; generator retains its position
+                # Stop mid-batch if the overall total_limit would be exceeded, otherwise a per_batch
+                # larger than total_limit (e.g. limit=30, per_batch=50) over-fetches by a full batch
+                if advanced_fetch and total_limit and (len(results) + len(batch) >= total_limit):
+                    break
+            else:
+                generator_exhausted = True
+        except Exception as fetch_error:
+            # Names already returned still cost the account, so bank them before the error propagates,
+            # and classify it here where we know the request was an identity fetch
+            results.extend(batch)
+            record_identities_returned(len(batch))
+            note_instagram_failure(format_error_message(fetch_error), user)
+            raise
 
         if not batch:
             results.complete = True
             break  # generator fully exhausted
 
         results.extend(batch)
+        record_identities_returned(len(batch))
 
         if generator_exhausted:
             results.complete = True
@@ -11162,6 +11509,16 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         if current_refresh_generation != session_refresh_generation:
             log_activity("Live settings changed, rebuilding monitor context", user=user)
             return _MonitorRestart(get_target_paths(user)[0], manual_recheck_active)
+
+        # One account-level action stops every target, not just the one that hit it. The check is made here
+        # rather than once at startup so a flag raised by another thread halts this one on its next cycle
+        breaker = circuit_breaker_state()
+        if breaker:
+            update_ui_data(targets={user: {'status': 'Stopped (breaker)'}})
+            print(f"* Monitoring paused for {user}: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')})")
+            print(f"* Clear the challenge in a browser, then resume with '--clear-breaker'\n")
+            print_cur_ts()
+            return
 
         skip_session = SKIP_SESSION
         skip_followers = SKIP_FOLLOWERS
@@ -14216,7 +14573,7 @@ def apply_diagnostic_cli_overrides(args: argparse.Namespace) -> None:
 
 # Parses configuration and command-line options then starts the selected operation
 def run_main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, IDENTITY_BUDGET_PER_DAY, CIRCUIT_BREAKER, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H, TRUNCATE_CHARS
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
@@ -14616,6 +14973,25 @@ def run_main():
         help="Browser profile curl_cffi impersonates when --http-backend is curl_cffi: 'auto' (match the user agent, default) or a pinned target like chrome, safari, safari_ios, edge, firefox"
     )
     session_opts.add_argument(
+        "--identity-budget",
+        dest="identity_budget",
+        metavar="NAMES_PER_DAY",
+        type=int,
+        help="Maximum follower and following names to fetch per day for the logged-in account, shared by all targets (0 disables the budget)"
+    )
+    session_opts.add_argument(
+        "--clear-breaker",
+        dest="clear_breaker",
+        action='store_true',
+        help="Resume monitoring after Instagram acted against the logged-in account, then exit. Clear the challenge in a browser first"
+    )
+    session_opts.add_argument(
+        "--exposure",
+        dest="show_exposure",
+        action='store_true',
+        help="Show today's local identity exposure and failure counts for the logged-in account, then exit"
+    )
+    session_opts.add_argument(
         "--be-human",
         dest="be_human",
         action="store_true",
@@ -14791,7 +15167,7 @@ def run_main():
     apply_diagnostic_cli_overrides(args)
 
     import_requested = bool(args.import_firefox_session or args.import_browser_session)
-    requested_actions = [label for label, enabled in (("--setup", args.setup), ("--set-webhook-url", args.set_webhook_url), ("--doctor", args.doctor), ("--analyze-follows", args.analyze_follows), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--generate-config", args.generate_config is not None)) if enabled]
+    requested_actions = [label for label, enabled in (("--setup", args.setup), ("--set-webhook-url", args.set_webhook_url), ("--doctor", args.doctor), ("--analyze-follows", args.analyze_follows), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--clear-breaker", args.clear_breaker), ("--exposure", args.show_exposure), ("--generate-config", args.generate_config is not None)) if enabled]
     if len(requested_actions) > 1:
         parser.error("standalone actions cannot be combined: " + ", ".join(requested_actions))
     if args.setup:
@@ -14990,6 +15366,12 @@ def run_main():
     if args.impersonate:
         CURL_CFFI_IMPERSONATE = args.impersonate
 
+    if args.identity_budget is not None:
+        if args.identity_budget < 0:
+            print("* Error: --identity-budget cannot be negative")
+            sys.exit(1)
+        IDENTITY_BUDGET_PER_DAY = args.identity_budget
+
     impersonate_error = validate_impersonate_target(CURL_CFFI_IMPERSONATE)
     if impersonate_error is not None:
         print(f"* Error: CURL_CFFI_IMPERSONATE {impersonate_error}")
@@ -15085,6 +15467,25 @@ def run_main():
     if args.webhook_errors is True:
         WEBHOOK_ERROR_NOTIFICATION = True
         WEBHOOK_ENABLED = True
+
+    if args.clear_breaker:
+        cleared = clear_circuit_breaker()
+        if cleared:
+            print(f"* Circuit breaker cleared for {exposure_account_name()}")
+            print(f"* It was tripped at {get_date_from_ts(int(cleared.get('tripped_ts', 0)))} by: {cleared.get('failure_class', 'unknown')}")
+            print("* Monitoring will resume on the next run. Raise your check interval or lower --identity-budget if it trips again")
+        else:
+            print(f"* Circuit breaker is not tripped for {exposure_account_name()}, nothing to clear")
+        sys.exit(0)
+
+    if args.show_exposure:
+        print("\nIdentity exposure (local only, never sent anywhere)")
+        print("─" * HORIZONTAL_LINE)
+        for line in exposure_summary_lines():
+            print(line)
+        print(f"\nLedger file:\t\t\t\t{exposure_state_path()}")
+        print_cur_ts("Timestamp:\t\t\t\t")
+        sys.exit(0)
 
     if args.send_test_email:
         print("* Sending test email notification ...\n")
@@ -15484,6 +15885,16 @@ def run_main():
     followee_str = build_follow_string(ADVANCED_FOLLOWEE_FETCH, FOLLOWEE_LIMIT_TO_FETCH, FOLLOWEES_PER_BATCH, FOLLOWEE_DELAY_PER_BATCH)
     summary_rows.append(StartupSummaryRow("Advanced follower fetching", follower_str, concise=bool(ADVANCED_FOLLOWER_FETCH)))
     summary_rows.append(StartupSummaryRow("Advanced followee fetching", followee_str, concise=bool(ADVANCED_FOLLOWEE_FETCH)))
+
+    identity_budget_str = f"{IDENTITY_BUDGET_PER_DAY} names/day" if IDENTITY_BUDGET_PER_DAY else "Disabled (counted but not capped)"
+    summary_rows.append(StartupSummaryRow("Identity budget", identity_budget_str, concise=bool(IDENTITY_BUDGET_PER_DAY)))
+
+    breaker_state = circuit_breaker_state()
+    if breaker_state:
+        breaker_str = f"TRIPPED ({breaker_state.get('failure_class', 'unknown')}) - resume with --clear-breaker"
+    else:
+        breaker_str = "Armed" if CIRCUIT_BREAKER else "Disabled"
+    summary_rows.append(StartupSummaryRow("Account circuit breaker", breaker_str, concise=bool(CIRCUIT_BREAKER) and not breaker_state))
 
     summary_rows.append(StartupSummaryRow("Profile picture changes", str(DETECT_CHANGED_PROFILE_PIC), concise=not DETECT_CHANGED_PROFILE_PIC))
     summary_rows.append(StartupSummaryRow("Profile picture display", imgcat_exe or "Disabled", concise=bool(imgcat_exe)))

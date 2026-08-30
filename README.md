@@ -109,6 +109,8 @@ For the manual single-file method, optional browser support and upgrade commands
 - **Error Reporting**: Be notified if the monitoring process hits a snag.
 
 ### 🛡️ Privacy & Detection Avoidance
+- **Identity Budget**: Caps how many follower and following names are fetched per day.
+- **Circuit Breaker**: Stops every target after Instagram challenges your account, until you clear it.
 - **Be Human Mode**: Simulates random user actions to blend in.
 - **Jitter Mode**: Adds human-like delays to HTTP requests.
 - **Hour-Range Checking**: Limits activity to specific hours of the day.

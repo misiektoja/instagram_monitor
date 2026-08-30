@@ -211,3 +211,6 @@ tmp/
 # macOS metadata
 .DS_Store
 *.DS_Store
+
+# Local identity exposure ledger and circuit breaker state (never leaves the machine)
+instagram_monitor_exposure.json

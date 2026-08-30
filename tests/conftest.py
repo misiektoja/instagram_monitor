@@ -39,6 +39,14 @@ def im_module():
     return im
 
 
+# Keeps the identity exposure ledger inside the test's temporary directory so no test can write account state into the repository
+@pytest.fixture(autouse=True)
+def isolated_exposure_ledger(monkeypatch, tmp_path):
+    ledger_path = tmp_path / "exposure" / im.EXPOSURE_STATE_FILENAME
+    monkeypatch.setattr(im, "exposure_state_path", lambda: str(ledger_path), raising=False)
+    return ledger_path
+
+
 # Resets the handful of module-level globals the helpers read so each test starts from a known, deterministic baseline
 @pytest.fixture(autouse=True)
 def deterministic_globals(monkeypatch):
