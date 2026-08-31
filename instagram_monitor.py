@@ -15606,7 +15606,7 @@ def doctor_connectivity_endpoint_check() -> DoctorCheck:
     LAST_CONNECTIVITY_ERROR = None
     if check_internet(quiet=True):
         return make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", f"Endpoint: {CHECK_INTERNET_URL}")
-    return make_doctor_check("Connectivity", "FAIL", "The connectivity endpoint could not be reached", f"Endpoint: {CHECK_INTERNET_URL}", "Check network, DNS, proxy and CHECK_INTERNET_URL settings", DOCTOR_GUIDE_URL)
+    return make_doctor_check("Connectivity", "FAIL", "The connectivity endpoint could not be reached", f"Endpoint: {CHECK_INTERNET_URL}", "Check network, DNS, proxy and CHECK_INTERNET_URL settings")
 
 
 # Confirms Instagram answers a public profile request through the configured transport
