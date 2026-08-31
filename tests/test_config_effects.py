@@ -1,5 +1,6 @@
 """Verifies config-file settings actually reach the code that consumes them (no network)."""
 
+import inspect
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -20,7 +21,9 @@ def restored_globals(im_module):
 class TestConnectivityCheckResolution:
     # Verifies no connectivity setting is frozen into the function signature where a config file cannot reach it
     def test_connectivity_defaults_are_not_bound_at_import(self, im_module):
-        assert im_module.check_internet.__defaults__ == (None, None), "resolving these at import time would freeze them before any config file loads"
+        parameters = inspect.signature(im_module.check_internet).parameters
+
+        assert [parameters[name].default for name in ("url", "timeout")] == [None, None], "resolving these at import time would freeze them before any config file loads"
 
     # Verifies a config-file URL and timeout reach the startup check rather than the built-in defaults
     def test_configured_url_and_timeout_reach_the_request(self, im_module, monkeypatch):

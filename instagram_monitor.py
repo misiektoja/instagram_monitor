@@ -5098,9 +5098,12 @@ def signal_handler(sig, frame, message=None):
         # Background thread: use os._exit after cleanup to ensure process exits
         os._exit(0)
 
+# The last connectivity failure, so a quiet caller can classify it instead of the check printing it
+LAST_CONNECTIVITY_ERROR = None
+
 
 # Checks internet connectivity
-def check_internet(url=None, timeout=None):
+def check_internet(url=None, timeout=None, quiet=False):
     # Resolve at call time so config file and dotenv overrides take effect (these globals change after import)
     url = CHECK_INTERNET_URL if url is None else url
     timeout = CHECK_INTERNET_TIMEOUT if timeout is None else timeout
@@ -5111,7 +5114,11 @@ def check_internet(url=None, timeout=None):
         _ = req.get(url, headers={'User-Agent': USER_AGENT}, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
         return True
     except req.RequestException as e:
-        print(f"* No connectivity, please check your network:\n\n{e}")
+        global LAST_CONNECTIVITY_ERROR
+        LAST_CONNECTIVITY_ERROR = e
+        # Quiet callers render the failure themselves, which doctor needs so nothing lands on its progress line
+        if not quiet:
+            print(f"* No connectivity, please check your network:\n\n{e}")
         return False
 
 
@@ -13981,16 +13988,6 @@ def _wizard_action_command(method: str, action: str, config_path, env_path, targ
     return " ".join(parts)
 
 
-# Prints the install-aware monitoring command after a successful Doctor run
-def _wizard_print_monitor_after_doctor(config_path, env_path, targets=(), web_dashboard: bool = False) -> None:
-    method = _wizard_install_method()
-    command = _wizard_action_command(method, "", config_path, env_path, targets, web_dashboard=web_dashboard)
-    print(colorize("header", "\nNext steps\n"))
-    _wizard_print_command("After Doctor passes, start monitoring:", command)
-    if web_dashboard:
-        print(f"Then open {colorize('link', _web_dashboard_browser_url())} in your browser.\n")
-
-
 # Returns the full Firefox import command with an optional exact dotenv destination
 def _firefox_import_cmd(method: str, env_path=None, exact: bool = False, host_os: Optional[str] = None, config_path=None, targets=()) -> str:
     selected_host = host_os or "linux"
@@ -15603,19 +15600,29 @@ def doctor_check_session(report: DoctorReport, progress: Optional[Callable[[str]
         return [doctor_check_from_error("Session", "FAIL", "", message, True, message)]
 
 
+# Confirms the endpoint the tool checks at startup answers, using the configured URL and timeout
+def doctor_connectivity_endpoint_check() -> DoctorCheck:
+    global LAST_CONNECTIVITY_ERROR
+    LAST_CONNECTIVITY_ERROR = None
+    if check_internet(quiet=True):
+        return make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", f"Endpoint: {CHECK_INTERNET_URL}")
+    return make_doctor_check("Connectivity", "FAIL", "The connectivity endpoint could not be reached", f"Endpoint: {CHECK_INTERNET_URL}", "Check network, DNS, proxy and CHECK_INTERNET_URL settings", DOCTOR_GUIDE_URL)
+
+
 # Confirms Instagram answers a public profile request through the configured transport
 def doctor_check_connectivity(report: DoctorReport, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
+    checks = [doctor_connectivity_endpoint_check()]
     if report.bot is None:
-        return [make_doctor_check("Connectivity", "WARN", "Skipped connectivity check", "Instaloader could not be initialised")]
+        return checks + [make_doctor_check("Connectivity", "WARN", "Skipped connectivity check", "Instaloader could not be initialised")]
     if progress is not None:
         progress("Contacting Instagram")
     try:
         profile_from_username_resilient(report.bot, FLAGGED_PROBE_USERNAME)
-        return [make_doctor_check("Connectivity", "PASS", "Instagram reachable", f"Fetched public account '{FLAGGED_PROBE_USERNAME}'")]
+        return checks + [make_doctor_check("Connectivity", "PASS", "Instagram reachable", f"Fetched public account '{FLAGGED_PROBE_USERNAME}'")]
     except Exception as exc:
         message = format_error_message(exc)
         logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
-        return [doctor_check_from_error("Connectivity", "FAIL", "Instagram not reachable or blocked", message, logged_in, message)]
+        return checks + [doctor_check_from_error("Connectivity", "FAIL", "Instagram not reachable or blocked", message, logged_in, message)]
 
 
 # Confirms each configured target profile can be fetched
@@ -16904,15 +16911,6 @@ def run_main():
     # Run preflight checks once the effective session mode and targets are resolved
     if getattr(args, "doctor", False):
         doctor_failures = run_doctor(targets, doctor_config_errors, doctor_config_retired, env_path)
-        if not doctor_failures:
-            explicit_targets = bool(getattr(args, "targets", None) or getattr(args, "usernames", None))
-            command_targets = targets if explicit_targets else ()
-            selected_env = "none" if args.env_file and str(args.env_file).casefold() == "none" else env_path
-            if targets or WEB_DASHBOARD_ENABLED:
-                _wizard_print_monitor_after_doctor(cfg_path, selected_env, command_targets, web_dashboard=WEB_DASHBOARD_ENABLED)
-            else:
-                print(colorize("header", "\nNext steps\n"))
-                _wizard_print_command("Doctor passed, but no monitoring target or Web Dashboard is configured.", f"{_wizard_cmd_prefix(_wizard_install_method())} --setup")
         sys.exit(1 if doctor_failures else 0)
 
     # Offline follow relationship analysis: read the already-saved lists, print the result and exit (no network requests, no monitoring loop)

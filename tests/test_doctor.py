@@ -626,7 +626,8 @@ class TestRunDoctor:
         assert exc.value.code == 0
         assert providers == ["ntfy"]
 
-    def test_cli_doctor_success_prints_monitoring_command(self, im_module, monkeypatch, capsys):
+    # The report ends at the guide line in every sibling, so nothing follows it here either
+    def test_cli_doctor_ends_at_the_guide_line(self, im_module, monkeypatch, capsys):
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--env-file", "none", "--no-color"])
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
         monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
@@ -637,9 +638,8 @@ class TestRunDoctor:
 
         assert exc.value.code == 0
         output = capsys.readouterr().out
-        assert "After Doctor passes, start monitoring:" in output
-        assert "target.user --env-file none" in output
-        assert "--doctor" not in output.split("After Doctor passes, start monitoring:", 1)[1]
+        assert "Next steps" not in output
+        assert "After Doctor passes, start monitoring:" not in output
 
     # Doctor exists to explain a broken setup, so a rejected config must reach it instead of exiting first
     def test_cli_doctor_reports_a_rejected_config_instead_of_exiting(self, im_module, monkeypatch, tmp_path):
@@ -908,3 +908,15 @@ def test_a_missing_target_reuses_the_startup_gate_fix(im_module):
 
     assert checks[0].status == "WARN"
     assert checks[0].fix == im_module.NO_TARGET_FIX
+
+
+# Verifies the connectivity row carries the label and the endpoint detail shared with the sibling monitors
+def test_the_connectivity_row_names_the_shared_endpoint(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "CHECK_INTERNET_URL", "https://probe.example/ping")
+    monkeypatch.setattr(im_module, "check_internet", lambda **kwargs: True)
+    passing = im_module.doctor_connectivity_endpoint_check()
+    monkeypatch.setattr(im_module, "check_internet", lambda **kwargs: False)
+    failing = im_module.doctor_connectivity_endpoint_check()
+
+    assert (passing.status, passing.label, passing.detail) == ("PASS", "The connectivity endpoint is reachable", "Endpoint: https://probe.example/ping")
+    assert (failing.status, failing.label, failing.detail) == ("FAIL", "The connectivity endpoint could not be reached", "Endpoint: https://probe.example/ping")
