@@ -1354,6 +1354,9 @@ SECRET_ACTION_FLAGS = ("--set-smtp-password", "--set-webhook-url")
 # Effective source name for each configured secret without storing another copy of its value
 SECRET_SOURCES = {}
 
+# Secret keys that were already exported when the tool started, so a dotenv file cannot be credited for them
+EXPORTED_SECRET_KEYS: frozenset = frozenset()
+
 # Config values that must retain safe template defaults during generated output
 SENSITIVE_CONFIG_KEYS = frozenset((*SECRET_KEYS, "WEBHOOK_HEADERS"))
 
@@ -14257,6 +14260,22 @@ def _wizard_secret_value(key: str, env_path: Path) -> Optional[str]:
     return value if isinstance(value, str) else None
 
 
+# Puts the values setup just saved into effect, so doctor checks the written files instead of the earlier state.
+# Each secret records where it came from, so the report names the source a restart would name
+def _wizard_apply_saved_values(state):
+    globals().update(state.config_values)
+    for secret_key in SECRET_KEYS:
+        saved_secret = _wizard_secret_value(secret_key, state.env_path)
+        globals()[secret_key] = saved_secret if saved_secret is not None else ""
+        if saved_secret is None:
+            SECRET_SOURCES.pop(secret_key, None)
+        else:
+            SECRET_SOURCES[secret_key] = "environment" if secret_key in EXPORTED_SECRET_KEYS else "dotenv file"
+    globals().update(state.secret_updates)
+    for secret_key in state.secret_updates:
+        SECRET_SOURCES[secret_key] = "environment" if secret_key in EXPORTED_SECRET_KEYS else "dotenv file"
+
+
 # Queues one secret for the save step, asking first when the dotenv file already assigns it
 def _wizard_queue_secret(secret_updates: dict, env_path: Path, key: str, value: str) -> bool:
     if not value:
@@ -14947,11 +14966,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     # A dotenv that was never written does not exist, so no command names it
     env_argument = state.env_path if update_status is not None else None
 
-    globals().update(state.config_values)
-    for secret_key in SECRET_KEYS:
-        saved_secret = _wizard_secret_value(secret_key, state.env_path)
-        globals()[secret_key] = saved_secret if saved_secret is not None else ""
-    globals().update(state.secret_updates)
+    _wizard_apply_saved_values(state)
     CLI_CONFIG_PATH = str(state.config_path)
     DOTENV_FILE = str(state.env_path)
 
@@ -15797,7 +15812,7 @@ def run_main():
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H, TRUNCATE_CHARS
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
-    global SECRET_SOURCES
+    global SECRET_SOURCES, EXPORTED_SECRET_KEYS
 
     if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -16474,7 +16489,7 @@ def run_main():
         if DOTENV_FILE:
             DOTENV_FILE = os.path.expanduser(DOTENV_FILE)
 
-    exported_secret_keys = frozenset(secret for secret in SECRET_KEYS if os.getenv(secret) is not None)
+    EXPORTED_SECRET_KEYS = frozenset(secret for secret in SECRET_KEYS if os.getenv(secret) is not None)
     SECRET_SOURCES.clear()
     for secret in SECRET_KEYS:
         if doctor_secret_is_set(globals().get(secret)):
@@ -16509,7 +16524,7 @@ def run_main():
         val = os.getenv(secret)
         if val is not None:
             globals()[secret] = val
-            SECRET_SOURCES[secret] = "environment" if secret in exported_secret_keys else "dotenv file"
+            SECRET_SOURCES[secret] = "environment" if secret in EXPORTED_SECRET_KEYS else "dotenv file"
 
     # The shipped WEBHOOK_URL placeholder means 'not configured', so it must not reach code that treats it as a destination
     if is_placeholder_setting(WEBHOOK_URL):

@@ -3,6 +3,7 @@
 import builtins
 import os
 import tempfile
+import types
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import Mock
@@ -1174,3 +1175,30 @@ def test_the_polling_question_starts_its_own_group(im_module, monkeypatch, capsy
 # Verifies the guide link opens the setup page the sibling monitors link, with no section fragment
 def test_the_welcome_guide_link_opens_the_shared_setup_page(im_module):
     assert im_module.QUICK_START_GUIDE_URL.endswith("/setup-and-first-run/")
+
+# Verifies the doctor setup runs credits the dotenv file, not the fallback the empty source map produces
+def test_saved_secrets_are_credited_to_the_dotenv_file(im_module, monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("SESSION_PASSWORD=a-saved-session-password\n", encoding="utf-8")
+    monkeypatch.setattr(im_module, "SECRET_SOURCES", {})
+    monkeypatch.setattr(im_module, "EXPORTED_SECRET_KEYS", frozenset())
+    state = make_setup_state(im_module, tmp_path)
+    state.env_path = env_path
+
+    im_module._wizard_apply_saved_values(state)
+
+    assert im_module.SECRET_SOURCES["SESSION_PASSWORD"] == "dotenv file"
+
+
+# Verifies a secret exported before startup keeps the environment as its source, since the export still wins
+def test_an_exported_secret_is_not_credited_to_the_dotenv_file(im_module, monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("SESSION_PASSWORD=a-saved-session-password\n", encoding="utf-8")
+    monkeypatch.setattr(im_module, "SECRET_SOURCES", {})
+    monkeypatch.setattr(im_module, "EXPORTED_SECRET_KEYS", frozenset({"SESSION_PASSWORD"}))
+    state = make_setup_state(im_module, tmp_path)
+    state.env_path = env_path
+
+    im_module._wizard_apply_saved_values(state)
+
+    assert im_module.SECRET_SOURCES["SESSION_PASSWORD"] == "environment"
