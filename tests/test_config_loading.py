@@ -259,4 +259,4 @@ class TestConfigDiscoverySentinel:
 
         output = result.stdout + result.stderr
         assert "Config file 'none' does not exist" not in output
-        assert "<username>" in output
+        assert "At least one TARGET_USERNAME argument is required" in output

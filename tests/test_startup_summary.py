@@ -1,6 +1,9 @@
 """Tests for the startup summary block, driven through the real CLI path with no network call."""
 
 import re
+import subprocess
+import sys
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -54,3 +57,16 @@ def test_the_concise_view_points_at_the_diagnostic_modes(im_module, monkeypatch,
     assert "* More details:" in output and "use --verbose or --debug" in output
     assert "* Install method:" not in output
     assert "* Secrets from dotenv:" not in output
+
+
+# Verifies a run without a target reports the shared three-line block rather than dumping the whole help screen
+def test_a_missing_target_reports_the_shared_error_block(im_module, tmp_path):
+    project_root = Path(__file__).resolve().parents[1]
+    result = subprocess.run([sys.executable, str(project_root / "instagram_monitor.py"), "--config-file", "none", "--env-file", "none", "--no-color"], cwd=tmp_path, capture_output=True, text=True, check=False)
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert "* Error: At least one TARGET_USERNAME argument is required" in output
+    assert f"To fix: {im_module.NO_TARGET_FIX}" in output
+    assert f"Guide: {im_module.QUICK_START_GUIDE_URL}" in output
+    assert "usage: instagram_monitor" not in output

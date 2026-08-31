@@ -898,3 +898,13 @@ def test_the_summary_is_rendered_after_the_delivery_tests(im_module):
         assert max(offers) < min(summaries), f"{function.name} renders the summary before the delivery tests"
 
     assert checked, "no doctor entry point runs the delivery tests and then the summary"
+
+
+# Verifies the Doctor target row names the same fix as the startup gate, so the two surfaces cannot word it differently
+def test_a_missing_target_reuses_the_startup_gate_fix(im_module):
+    report = im_module.DoctorReport()
+
+    checks = im_module.doctor_check_targets(report, [])
+
+    assert checks[0].status == "WARN"
+    assert checks[0].fix == im_module.NO_TARGET_FIX

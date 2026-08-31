@@ -76,7 +76,7 @@ For Docker or Docker Compose, choose **Import from Firefox after setup**. The wi
 
 Firefox import works in every local installation without an extra package. Chrome, Brave and Chromium import works on macOS and Linux with the optional browser dependency. Container setup uses Firefox because Chromium cookie decryption needs a password service from the host that is not available inside the container. See [Session Login Using Browser Cookies](configuration.md#option-3-session-login-using-browser-cookies-recommended).
 
-If no targets or Web Dashboard setting have been saved, running the tool with no arguments opens the wizard in an interactive terminal. Leave its targets question empty then select **Web dashboard** to save an empty browser control panel. If `TARGET_USERNAMES` contains saved targets, the same command starts monitoring them. If only the Web Dashboard is enabled, it starts an empty browser control panel where you can add targets.
+If no targets or Web Dashboard setting have been saved, running the tool with no arguments opens the wizard in an interactive terminal. Leave its targets question empty then select **Web dashboard** to save an empty browser control panel. If `TARGET_USERNAMES` contains saved targets, the same command starts monitoring them. If only the Web Dashboard is enabled, it starts an empty browser control panel where you can add targets. A run with no target and no Web Dashboard reports the missing target with a `To fix:` action and a `Guide:` link rather than printing the whole help screen.
 
 <a id="not-sure-which-mode-you-want"></a>
 ## Not sure which command you need?

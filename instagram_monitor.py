@@ -1411,6 +1411,9 @@ ANTI_DETECTION_SESSION_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#sign-in
 CONNECTION_ERRORS_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#connection-errors-during-monitoring"
 DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
 
+# The fix named when nothing is being monitored, shared by the startup gate and the Doctor target check
+NO_TARGET_FIX = "Pass a target on the command line, set TARGET_USERNAMES in the config or enable the Web Dashboard"
+
 # Label of the Doctor check that reports a fully validated webhook, shared with the sibling monitors
 SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
 WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
@@ -15625,7 +15628,7 @@ def doctor_check_targets(report: DoctorReport, targets, progress: Optional[Calla
     if not targets:
         if WEB_DASHBOARD_ENABLED:
             return [make_doctor_check("Targets", "PASS", "No targets configured yet", "The Web Dashboard is enabled, so targets can be added there")]
-        return [make_doctor_check("Targets", "WARN", "No targets configured", "Nothing will be monitored", "Pass a target on the command line, set TARGET_USERNAMES in the config or enable the Web Dashboard", QUICK_START_GUIDE_URL)]
+        return [make_doctor_check("Targets", "WARN", "No targets configured", "Nothing will be monitored", NO_TARGET_FIX, QUICK_START_GUIDE_URL)]
     if report.bot is None:
         return [make_doctor_check("Targets", "WARN", "Skipped target checks", "Instaloader could not be initialised")]
     checks: List[DoctorCheck] = []
@@ -16829,16 +16832,9 @@ def run_main():
 
     # Allow empty targets with specific flags
     if not targets and not WEB_DASHBOARD_ENABLED and not args.doctor and not args.analyze_follows:
-        utility_flags = {
-            "--no-color", "-h", "--help",
-            "--web-dashboard", "--version"
-        }
-        complex_args = [a for a in sys.argv[1:] if a not in utility_flags]
-
-        if complex_args:
-            print("\n* Error: At least one TARGET_USERNAME argument is required !\n", flush=True)
-
-        parser.print_help(sys.stderr)
+        print("* Error: At least one TARGET_USERNAME argument is required")
+        print(colorize("info", f"To fix: {NO_TARGET_FIX}"))
+        print(f"Guide: {QUICK_START_GUIDE_URL}")
         sys.exit(1)
 
     if args.skip_session is True:
