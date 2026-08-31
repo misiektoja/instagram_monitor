@@ -266,7 +266,7 @@ class TestDoctorChecks:
             im_module.make_doctor_check("Targets", "PASS", "fine"),
         ]
 
-        im_module.render_doctor_report(report)
+        im_module.render_doctor_sections(report)
         out = capsys.readouterr().out
 
         assert "[FAIL] broken\n  detail text\n  To fix: do the thing.\n  Guide: https://example.invalid/guide" in out
@@ -351,7 +351,7 @@ class TestRunDoctor:
     # The install method is context rather than a check, so it is stated once instead of taking a result row
     def test_the_install_method_is_stated_without_a_marker(self, im_module, capsys):
         checks = im_module.doctor_check_environment((3, 12, 1), lambda _name: object())
-        im_module.render_doctor_report(im_module.DoctorReport(checks=checks))
+        im_module.render_doctor_sections(im_module.DoctorReport(checks=checks))
 
         output = capsys.readouterr().out
         assert not any(check.label.startswith("Install method") for check in checks)
@@ -698,7 +698,9 @@ class TestDoctorDeliveryTests:
         monkeypatch.setattr(im_module, "_doctor_ask_yes_no", consent)
         monkeypatch.setattr(im_module, "send_email", email)
         monkeypatch.setattr(im_module, "_doctor_send_test_webhook", webhook)
-        assert im_module._doctor_offer_notification_tests(True, True) == 0
+        report = im_module.DoctorReport(smtp_ready=True, webhook_ready=True)
+        im_module._doctor_offer_notification_tests(report)
+        assert report.count("FAIL") == 0
         assert consent.call_count == 2
         email.assert_not_called()
         webhook.assert_not_called()
@@ -726,7 +728,9 @@ class TestDoctorDeliveryTests:
         monkeypatch.setattr(im_module, "_doctor_ask_yes_no", consent)
         monkeypatch.setattr(im_module, "send_email", email)
         monkeypatch.setattr(im_module, "_doctor_send_test_webhook", webhook)
-        assert im_module._doctor_offer_notification_tests(True, True) == 0
+        report = im_module.DoctorReport(smtp_ready=True, webhook_ready=True)
+        im_module._doctor_offer_notification_tests(report)
+        assert report.count("FAIL") == 0
         email.assert_called_once_with("instagram_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "This test email was sent after approval in <b>--doctor</b>. Your SMTP delivery settings work.", im_module.SMTP_SSL, smtp_timeout=5)
         webhook.assert_called_once_with()
 
@@ -737,7 +741,9 @@ class TestDoctorDeliveryTests:
         monkeypatch.setattr(im_module, "_doctor_ask_yes_no", Mock(side_effect=AssertionError("consent prompt attempted")))
         monkeypatch.setattr(im_module, "send_email", Mock(side_effect=AssertionError("email attempted")))
         monkeypatch.setattr(im_module, "_doctor_send_test_webhook", Mock(side_effect=AssertionError("webhook attempted")))
-        assert im_module._doctor_offer_notification_tests(True, True) == 0
+        report = im_module.DoctorReport(smtp_ready=True, webhook_ready=True)
+        im_module._doctor_offer_notification_tests(report)
+        assert report.checks == []
 
     # An approved delivery failure contributes one doctor failure
     def test_approved_delivery_failure_is_counted(self, im_module, monkeypatch):
@@ -746,7 +752,9 @@ class TestDoctorDeliveryTests:
         monkeypatch.setattr(im_module.sys, "stdout", stream)
         monkeypatch.setattr(im_module, "_doctor_ask_yes_no", Mock(return_value=True))
         monkeypatch.setattr(im_module, "send_email", Mock(return_value=1))
-        assert im_module._doctor_offer_notification_tests(True, False) == 1
+        report = im_module.DoctorReport(smtp_ready=True)
+        im_module._doctor_offer_notification_tests(report)
+        assert report.count("FAIL") == 1
 
     # Doctor webhook delivery temporarily enables sending and restores the setting
     def test_doctor_webhook_test_restores_enabled_state(self, im_module, monkeypatch):
@@ -845,7 +853,7 @@ def test_the_action_lines_sit_indented_under_their_marker(im_module, capsys, mon
         im_module.make_doctor_check("Configuration", "PASS", "a passing row"),
     ]
 
-    im_module.render_doctor_report(report)
+    im_module.render_doctor_sections(report)
     lines = capsys.readouterr().out.splitlines()
     rows = lines[lines.index("[WARN] a warning row"):]
 
@@ -857,3 +865,36 @@ def test_the_follow_analysis_states_values_without_a_marker(im_module, capsys):
     im_module._report_value_line("Followers: 42")
 
     assert capsys.readouterr().out == "* Followers: 42\n"
+
+
+# Verifies an approved delivery test that failed reaches the summary, so a failing run cannot report a clean one
+def test_a_failed_delivery_test_reaches_the_summary(im_module, monkeypatch):
+    monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+    monkeypatch.setattr(im_module.sys, "stdout", _TTYBuffer())
+    monkeypatch.setattr(im_module, "_doctor_ask_yes_no", Mock(return_value=True))
+    monkeypatch.setattr(im_module, "send_email", Mock(return_value=1))
+    report = im_module.DoctorReport(smtp_ready=True)
+
+    im_module._doctor_offer_notification_tests(report)
+
+    assert [(check.section, check.status, check.label) for check in report.checks] == [(im_module.DOCTOR_DELIVERY_SECTION, "FAIL", "Doctor test email delivery failed")]
+    assert report.count("FAIL") == 1
+
+
+# Verifies every doctor entry point renders its summary after the delivery tests, so the sentence and the exit code describe one run
+def test_the_summary_is_rendered_after_the_delivery_tests(im_module):
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(im_module))
+    checked = 0
+    for function in [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]:
+        calls = [(call.lineno, ast.unparse(call.func)) for call in ast.walk(function) if isinstance(call, ast.Call)]
+        offers = [lineno for lineno, name in calls if name.endswith("_doctor_offer_notification_tests")]
+        summaries = [lineno for lineno, name in calls if name.endswith("render_doctor_summary")]
+        if not offers or not summaries:
+            continue
+        checked += 1
+        assert max(offers) < min(summaries), f"{function.name} renders the summary before the delivery tests"
+
+    assert checked, "no doctor entry point runs the delivery tests and then the summary"
