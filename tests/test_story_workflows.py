@@ -8,9 +8,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+ARTIFACT_ROOT = PROJECT_ROOT / "local" / "test_artifacts"
+
+
 # Returns an isolated local artifact directory for one story workflow test
 def _story_artifact_dir() -> Path:
-    artifact_dir = Path("local") / "test_artifacts" / "story_workflows" / uuid.uuid4().hex
+    artifact_dir = ARTIFACT_ROOT / "story_workflows" / uuid.uuid4().hex
     artifact_dir.mkdir(parents=True, exist_ok=True)
     return artifact_dir
 
