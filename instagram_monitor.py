@@ -3679,8 +3679,8 @@ def create_web_dashboard_app():
         global SMTP_SSL
         print("* Sending test email notification (triggered via web dashboard) ...")
         m_subject = "instagram_monitor: test email"
-        m_body = "This is test email - your SMTP settings seems to be correct !"
-        m_body_html = "This is <b>test email</b> - your SMTP settings seems to be <b>correct</b> !"
+        m_body = "This test email was sent from the web dashboard. Your SMTP settings work."
+        m_body_html = "This test email was sent from the <b>web dashboard</b>. Your SMTP settings work."
         res = send_email(m_subject, m_body, m_body_html, SMTP_SSL, smtp_timeout=5)
         if res == 0:
             print("* Email notification sent successfully")
@@ -3700,7 +3700,7 @@ def create_web_dashboard_app():
         # Temporarily enable if we are testing
         old_webhook_enabled = WEBHOOK_ENABLED
         WEBHOOK_ENABLED = True
-        res = send_webhook("instagram_monitor: test webhook", "This is **test webhook** - your settings seems to be **correct** !", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE)
+        res = send_webhook("instagram_monitor: test webhook", "This test notification was sent from the web dashboard. Your webhook settings work.", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE)
         WEBHOOK_ENABLED = old_webhook_enabled
 
         if res == 0:
@@ -15156,7 +15156,7 @@ def _doctor_send_test_webhook() -> int:
     previous_enabled = WEBHOOK_ENABLED
     try:
         WEBHOOK_ENABLED = True
-        return send_webhook("Instagram Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE)
+        return send_webhook("instagram_monitor: doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE)
     finally:
         WEBHOOK_ENABLED = previous_enabled
 
@@ -15175,7 +15175,7 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> None:
             else:
                 check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", "Doctor test email delivery failed", "The approved test email could not be delivered")
         else:
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email skipped", "No email was sent")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent")
         # Recorded on the report so the summary sentence and the exit code cannot disagree about the same run
         report.checks.append(check)
         _doctor_line(check.status, check.label, check.detail)
@@ -15187,7 +15187,7 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> None:
             else:
                 check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", "Doctor test webhook delivery failed", "The approved test webhook could not be delivered")
         else:
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test webhook skipped", "No webhook was sent")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test webhook was not sent")
         report.checks.append(check)
         _doctor_line(check.status, check.label, check.detail)
 
@@ -16738,8 +16738,8 @@ def run_main():
     if args.send_test_email:
         print("* Sending test email notification ...\n")
         m_subject = "instagram_monitor: test email"
-        m_body = "This is test email - your SMTP settings seems to be correct !"
-        m_body_html = "This is <b>test email</b> - your SMTP settings seems to be <b>correct</b> !"
+        m_body = "This test email was sent by --send-test-email. Your SMTP settings work."
+        m_body_html = "This test email was sent by <b>--send-test-email</b>. Your SMTP settings work."
         if send_email(m_subject, m_body, m_body_html, SMTP_SSL, smtp_timeout=5) == 0:
             print("* Email sent successfully !")
         else:
@@ -16747,17 +16747,19 @@ def run_main():
         sys.exit(0)
 
     if args.send_test_webhook:
-        print("* Sending test webhook notification ...")
-        # Ensure we have a URL for the test
         if not WEBHOOK_URL:
-            print("* Error: WEBHOOK_URL is not set. Use --webhook-url or set it in the config file.")
+            print("* Error: No webhook destination is configured")
+            print(colorize("info", "To fix: Save one with --set-webhook-url, pass --webhook-url or set WEBHOOK_URL in the config file"))
+            print(f"Guide: {WEBHOOK_GUIDE_URL}")
             sys.exit(1)
+
+        print("* Sending test webhook notification ...")
 
         # Temporarily enable if we are testing from CLI
         old_webhook_enabled = WEBHOOK_ENABLED
         WEBHOOK_ENABLED = True
 
-        if send_webhook("instagram_monitor: test webhook", "This is **test webhook** - your settings seems to be **correct** !", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE) == 0:
+        if send_webhook("instagram_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE) == 0:
             print("* Webhook sent successfully !")
         else:
             print("* Error: Test webhook notification failed. Check the error message above.")

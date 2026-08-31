@@ -705,8 +705,8 @@ class TestDoctorDeliveryTests:
         email.assert_not_called()
         webhook.assert_not_called()
         output = stream.getvalue()
-        assert "Test email skipped" in output
-        assert "Test webhook skipped" in output
+        assert "Test email was not sent" in output
+        assert "Test webhook was not sent" in output
 
     # An empty delivery answer defaults safely to no
     def test_delivery_consent_defaults_to_no(self, im_module, monkeypatch):
@@ -763,7 +763,7 @@ class TestDoctorDeliveryTests:
         monkeypatch.setattr(im_module, "send_webhook", delivery)
         assert im_module._doctor_send_test_webhook() == 0
         assert im_module.WEBHOOK_ENABLED is False
-        delivery.assert_called_once_with("Instagram Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type=im_module.WEBHOOK_TEST_NOTIFICATION_TYPE)
+        delivery.assert_called_once_with("instagram_monitor: doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type=im_module.WEBHOOK_TEST_NOTIFICATION_TYPE)
 
 
 # Verifies a secret passed as an argument is reported under the command line rather than the configuration file

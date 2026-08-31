@@ -1,5 +1,7 @@
 """Tests for webhook / Discord notification helpers (no network)."""
 
+from unittest.mock import Mock
+
 import pytest
 
 
@@ -197,3 +199,47 @@ class TestSendFollowerChangeWebhook:
             {"name": "Change", "value": "-1", "inline": True},
         ]
         assert kwargs["fields"][3] == {"name": "**Removed followings:**", "value": "- b (<url>)\n"}
+
+
+# Verifies both test commands carry the subject, title and body shared with the sibling monitors
+def test_the_test_messages_use_the_shared_wording(im_module, monkeypatch):
+    email = Mock(return_value=0)
+    delivery = Mock(return_value=0)
+    monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+    monkeypatch.setattr(im_module, "DOTENV_FILE", "")
+    monkeypatch.setattr(im_module, "check_internet", lambda *args, **kwargs: True)
+    monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+    monkeypatch.setattr(im_module, "send_email", email)
+    monkeypatch.setattr(im_module, "send_webhook", delivery)
+    monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.sh/private-topic")
+
+    for flag in ("--send-test-email", "--send-test-webhook"):
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", flag, "--config-file", "none", "--env-file", "none"])
+        with pytest.raises(SystemExit) as exc:
+            im_module.run_main()
+        assert exc.value.code == 0
+
+    assert email.call_args.args[:2] == ("instagram_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work.")
+    assert delivery.call_args.args[:2] == ("instagram_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.")
+
+
+# Verifies a test webhook with no destination reports the shared three-line block instead of a bare error
+def test_a_missing_webhook_destination_reports_the_shared_block(im_module, monkeypatch, capsys):
+    monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+    monkeypatch.setattr(im_module, "DOTENV_FILE", "")
+    monkeypatch.setattr(im_module, "check_internet", lambda *args, **kwargs: True)
+    monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+    monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: pytest.fail("a webhook was attempted"))
+    monkeypatch.setattr(im_module, "WEBHOOK_URL", "")
+    monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--send-test-webhook", "--config-file", "none", "--env-file", "none", "--no-color"])
+
+    with pytest.raises(SystemExit) as exc:
+        im_module.run_main()
+
+    assert exc.value.code == 1
+    output = capsys.readouterr().out
+    assert "* Error: No webhook destination is configured" in output
+    assert "To fix: Save one with --set-webhook-url, pass --webhook-url or set WEBHOOK_URL in the config file" in output
+    assert f"Guide: {im_module.WEBHOOK_GUIDE_URL}" in output
+    # The run says nothing about sending, because it never got that far
+    assert "Sending test webhook notification" not in output
