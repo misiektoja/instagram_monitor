@@ -15901,13 +15901,13 @@ def run_main():
         "--setup",
         dest="setup",
         action="store_true",
-        help="Run the interactive first-run setup wizard and exit",
+        help="Run the guided setup and write a ready-to-run configuration",
     )
     conf.add_argument(
         "--doctor",
         dest="doctor",
         action="store_true",
-        help="Run preflight checks with separately approved notification delivery tests and exit",
+        help="Run read-only preflight checks and report what is ready and what is not",
     )
     conf.add_argument(
         "--set-webhook-url",
@@ -15919,7 +15919,7 @@ def run_main():
         "--set-smtp-password",
         dest="set_smtp_password",
         action="store_true",
-        help="Save the mail server password through a hidden prompt, after signing in to check it",
+        help="Enter the SMTP password privately, check it against the mail server and save it to the dotenv file",
     )
 
     # Session login credentials
@@ -16055,7 +16055,7 @@ def run_main():
         "--send-test-webhook",
         dest="send_test_webhook",
         action="store_true",
-        help="Send test webhook notification to verify settings"
+        help="Send one test webhook without starting monitoring"
     )
 
     # Browser session import options
