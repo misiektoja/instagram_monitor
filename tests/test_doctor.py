@@ -920,3 +920,4 @@ def test_the_connectivity_row_names_the_shared_endpoint(im_module, monkeypatch):
 
     assert (passing.status, passing.label, passing.detail) == ("PASS", "The connectivity endpoint is reachable", "Endpoint: https://probe.example/ping")
     assert (failing.status, failing.label, failing.detail) == ("FAIL", "The connectivity endpoint could not be reached", "Endpoint: https://probe.example/ping")
+    assert failing.fix == "Check network, DNS, proxy and CHECK_INTERNET_URL settings"
