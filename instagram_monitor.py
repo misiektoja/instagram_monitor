@@ -14590,7 +14590,7 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
         print(colorize("info", "  In Discord: Edit Channel > Integrations > Webhooks > New Webhook > Copy Webhook URL."))
         webhook_prompt = "Paste the Discord webhook URL"
     else:
-        print(colorize("info", "  In ntfy: choose a hard-to-guess topic. Paste its name for ntfy.sh or use the complete HTTPS URL for a self-hosted server."))
+        print(colorize("info", "  In ntfy: choose a hard-to-guess topic. Paste its complete topic URL, or just the topic name when it is hosted on ntfy.sh."))
         webhook_prompt = "Paste the ntfy topic URL or ntfy.sh topic name"
     existing_webhook = _wizard_existing_secret("WEBHOOK_URL", state.env_path, ("your_webhook_url",))
     replace_webhook = True
