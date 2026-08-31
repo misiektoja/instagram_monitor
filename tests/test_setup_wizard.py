@@ -1170,3 +1170,7 @@ def test_the_polling_question_starts_its_own_group(im_module, monkeypatch, capsy
         transcript = capsys.readouterr().out
         assert "\n\nPersist these targets in the generated config?" not in transcript
         assert "\n\nInstagram polling interval (seconds or use s/m/h/d)" in transcript
+
+# Verifies the guide link opens the setup page the sibling monitors link, with no section fragment
+def test_the_welcome_guide_link_opens_the_shared_setup_page(im_module):
+    assert im_module.QUICK_START_GUIDE_URL.endswith("/setup-and-first-run/")
