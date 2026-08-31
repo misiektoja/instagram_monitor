@@ -1226,6 +1226,9 @@ INSTA_CHECK_INTERVAL = 0
 RANDOM_SLEEP_DIFF_LOW = 0
 RANDOM_SLEEP_DIFF_HIGH = 0
 LOCAL_TIMEZONE = ""
+
+# How LOCAL_TIMEZONE was arrived at, which decides the row doctor prints for it
+LOCAL_TIMEZONE_STATE = "config"
 DETECT_CHANGED_PROFILE_PIC = False
 DOWNLOAD_THUMBNAILS = False
 PROFILE_PIC_FILE_EMPTY = ""
@@ -6615,6 +6618,37 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
 # Checks if the timezone name is correct
 def is_valid_timezone(tz_name):
     return tz_name in pytz.all_timezones
+
+
+TIMEZONE_CHECK_LABELS = {"config": "Local timezone is valid", "auto": "Local timezone can be detected", "auto_unavailable": "Automatic timezone detection is unavailable", "auto_failed": "Automatic timezone detection failed", "invalid": "Local timezone is invalid"}
+
+
+# Resolves LOCAL_TIMEZONE and the state doctor reports it with, returning advice when no zone could be determined
+def resolve_local_timezone():
+    global LOCAL_TIMEZONE, LOCAL_TIMEZONE_STATE
+
+    LOCAL_TIMEZONE_STATE = "config"
+    timezone_advice = None
+    local_tz = None
+    if LOCAL_TIMEZONE == "Auto":
+        if get_localzone is not None:
+            try:
+                local_tz = get_localzone()
+            except Exception as exc:
+                debug_print("Local timezone detection", outcome="failed", error=f"{type(exc).__name__}: {exc}")
+        if local_tz and is_valid_timezone(str(local_tz)):
+            LOCAL_TIMEZONE = str(local_tz)
+            LOCAL_TIMEZONE_STATE = "auto"
+        elif get_localzone is None:
+            LOCAL_TIMEZONE_STATE = "auto_unavailable"
+            timezone_advice = {"summary": "The local timezone could not be detected", "detail": "LOCAL_TIMEZONE is Auto but tzlocal is unavailable", "fix": "Install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone", "guide": CONFIG_FILE_GUIDE_URL}
+        else:
+            LOCAL_TIMEZONE_STATE = "auto_failed"
+            timezone_advice = {"summary": "The local timezone could not be detected", "detail": "tzlocal did not return a supported timezone", "fix": "Set LOCAL_TIMEZONE to a valid pytz timezone", "guide": CONFIG_FILE_GUIDE_URL}
+    elif not is_valid_timezone(LOCAL_TIMEZONE):
+        LOCAL_TIMEZONE_STATE = "invalid"
+        timezone_advice = {"summary": f"Configured LOCAL_TIMEZONE '{LOCAL_TIMEZONE}' is not valid", "detail": f"Time zone: {LOCAL_TIMEZONE}", "fix": "Set LOCAL_TIMEZONE to a valid pytz timezone", "guide": CONFIG_FILE_GUIDE_URL}
+    return timezone_advice
 
 
 # Signal handler for SIGUSR1 allowing to switch email notifications for new posts/reels/stories/followings/bio
@@ -14284,6 +14318,8 @@ def _wizard_apply_saved_values(state):
     globals().update(state.secret_updates)
     for secret_key in state.secret_updates:
         SECRET_SOURCES[secret_key] = "environment" if secret_key in EXPORTED_SECRET_KEYS else "dotenv file"
+    # The shared resolver rather than the configured value, so doctor names the state a restart would find
+    return resolve_local_timezone()
 
 
 # Queues one secret for the save step, asking first when the dotenv file already assigns it
@@ -14976,7 +15012,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     # A dotenv that was never written does not exist, so no command names it
     env_argument = state.env_path if update_status is not None else None
 
-    _wizard_apply_saved_values(state)
+    wizard_timezone_advice = _wizard_apply_saved_values(state)
     CLI_CONFIG_PATH = str(state.config_path)
     DOTENV_FILE = str(state.env_path)
 
@@ -14998,7 +15034,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     try:
         if doctor_offered and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
             doctor_ran = True
-            doctor_failures = run_doctor(state.targets, env_path=env_argument)
+            doctor_failures = run_doctor(state.targets, env_path=env_argument, timezone_advice=wizard_timezone_advice)
     except (EOFError, KeyboardInterrupt):
         # The files are already written, so an interrupt here only skips the optional check
         print(colorize("warning", "Setup is saved. Use the commands below when ready."))
@@ -15517,7 +15553,7 @@ def doctor_label_from_error(summary) -> str:
 
 
 # Reports the selected configuration, any startup rejection, known secrets and the final log destinations
-def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None) -> List[DoctorCheck]:
+def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None, timezone_advice=None) -> List[DoctorCheck]:
     checks: List[DoctorCheck] = []
     cfg = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
     if config_errors:
@@ -15536,23 +15572,11 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
         checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file selected", "Using environment variables and other configured sources"))
     checks.extend(doctor_secret_checks(env_path))
 
-    if LOCAL_TIMEZONE == "Auto":
-        timezone_error = None
-        try:
-            detected_timezone = str(get_localzone()) if get_localzone is not None else ""
-        except Exception as exc:
-            detected_timezone = ""
-            timezone_error = exc
-        if detected_timezone and is_valid_timezone(detected_timezone):
-            checks.append(make_doctor_check("Configuration", "PASS", "Local timezone can be detected", f"Time zone: {detected_timezone}"))
-        elif get_localzone is None:
-            checks.append(make_doctor_check("Configuration", "FAIL", "Automatic timezone detection is unavailable", "LOCAL_TIMEZONE is Auto but tzlocal is unavailable", "Install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
-        else:
-            checks.append(make_doctor_check("Configuration", "FAIL", "Automatic timezone detection failed", f"tzlocal did not return a supported timezone{f': {timezone_error}' if timezone_error else ''}", "Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
-    elif is_valid_timezone(LOCAL_TIMEZONE):
-        checks.append(make_doctor_check("Configuration", "PASS", "Local timezone is valid", f"Time zone: {LOCAL_TIMEZONE}"))
+    timezone_label = TIMEZONE_CHECK_LABELS[LOCAL_TIMEZONE_STATE]
+    if timezone_advice is not None:
+        checks.append(make_doctor_check("Configuration", "FAIL", timezone_label, timezone_advice["detail"], timezone_advice["fix"], timezone_advice["guide"]))
     else:
-        checks.append(make_doctor_check("Configuration", "FAIL", "Local timezone is invalid", f"Time zone: {LOCAL_TIMEZONE}", "Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL))
+        checks.append(make_doctor_check("Configuration", "PASS", timezone_label, f"Time zone: {LOCAL_TIMEZONE}"))
 
     if VERIFY_SSL:
         checks.append(make_doctor_check("Configuration", "PASS", "TLS certificate verification is on", "Every outbound request checks the server certificate"))
@@ -15743,10 +15767,10 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
 
 
 # Runs every preflight check in order and returns them with the shared state they produced
-def build_doctor_report(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), progress: Optional[Callable[[str], None]] = None, env_path=None) -> DoctorReport:
+def build_doctor_report(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), progress: Optional[Callable[[str], None]] = None, env_path=None, timezone_advice=None) -> DoctorReport:
     report = DoctorReport()
     report.checks.extend(doctor_check_environment())
-    report.checks.extend(doctor_check_configuration(targets, config_errors, retired_settings, env_path))
+    report.checks.extend(doctor_check_configuration(targets, config_errors, retired_settings, env_path, timezone_advice))
     report.checks.extend(doctor_prepare_bot(report))
     report.checks.extend(doctor_check_session(report, progress))
     report.checks.extend(doctor_check_connectivity(report, progress))
@@ -15793,11 +15817,11 @@ def render_doctor_summary(fails: int, warns: int) -> None:
 
 
 # Runs doctor preflight plus approved delivery tests and returns the number of failed checks
-def run_doctor(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None) -> int:
+def run_doctor(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None, timezone_advice=None) -> int:
     progress = _doctor_progress if sys.stdout.isatty() else None
     render_doctor_notice()
     try:
-        report = build_doctor_report(targets, config_errors, retired_settings, progress, env_path)
+        report = build_doctor_report(targets, config_errors, retired_settings, progress, env_path, timezone_advice)
     finally:
         _doctor_progress_clear()
 
@@ -16591,27 +16615,16 @@ def run_main():
             _wizard_print_command("After Doctor passes, start monitoring:", monitor_command)
         sys.exit(0)
 
-    # Doctor reports the timezone itself, so leave the configured value untouched and let the report explain any problem
-    if not doctor_mode:
-        local_tz = None
-        if LOCAL_TIMEZONE == "Auto":
-            # Ensure we update the global variable so API sees it
-            if get_localzone is not None:
-                try:
-                    local_tz = get_localzone()
-                except Exception:
-                    pass
-            if local_tz:
-                LOCAL_TIMEZONE = str(local_tz)
-            else:
-                print("* Error: Cannot detect local timezone.")
-                print("* Hint: This can happen if the optional 'tzlocal' library is missing. Install it with: pip install tzlocal")
-                print("* Or set LOCAL_TIMEZONE to your local timezone manually.")
-                sys.exit(1)
-        else:
-            if not is_valid_timezone(LOCAL_TIMEZONE):
-                print(f"* Error: Configured LOCAL_TIMEZONE '{LOCAL_TIMEZONE}' is not valid. Please use a valid pytz timezone name.")
-                sys.exit(1)
+    timezone_advice = resolve_local_timezone()
+
+    if timezone_advice is not None:
+        if not doctor_mode:
+            print(f"* Error: {timezone_advice['summary']}")
+            print(colorize("info", f"To fix: {timezone_advice['fix']}"))
+            print(f"Guide: {timezone_advice['guide']}")
+            sys.exit(1)
+        # The report still stamps timestamps, so it falls back rather than stopping before the diagnosis
+        LOCAL_TIMEZONE = "UTC"
 
     if args.user_agent:
         USER_AGENT = args.user_agent
@@ -16935,7 +16948,7 @@ def run_main():
 
     # Run preflight checks once the effective session mode and targets are resolved
     if getattr(args, "doctor", False):
-        doctor_failures = run_doctor(targets, doctor_config_errors, doctor_config_retired, env_path)
+        doctor_failures = run_doctor(targets, doctor_config_errors, doctor_config_retired, env_path, timezone_advice)
         # Targets already saved in the config file are left out, so the command stays as short as the wizard's
         print_doctor_next_steps([] if not args.usernames else targets, cfg_path, env_path, doctor_failures)
         sys.exit(1 if doctor_failures else 0)

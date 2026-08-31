@@ -84,8 +84,9 @@ class TestDoctorChecks:
         monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
         monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "Auto", raising=False)
         monkeypatch.setattr(im_module, "get_localzone", Mock(return_value="Europe/Warsaw"), raising=False)
+        monkeypatch.setattr(im_module, "LOCAL_TIMEZONE_STATE", "config", raising=False)
 
-        checks = im_module.doctor_check_configuration([])
+        checks = im_module.doctor_check_configuration([], timezone_advice=im_module.resolve_local_timezone())
 
         assert ("PASS", "Local timezone can be detected", "Time zone: Europe/Warsaw") in {(check.status, check.label, check.detail) for check in checks}
 
@@ -95,8 +96,9 @@ class TestDoctorChecks:
         monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
         monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "Auto", raising=False)
         monkeypatch.setattr(im_module, "get_localzone", None, raising=False)
+        monkeypatch.setattr(im_module, "LOCAL_TIMEZONE_STATE", "config", raising=False)
 
-        checks = im_module.doctor_check_configuration([])
+        checks = im_module.doctor_check_configuration([], timezone_advice=im_module.resolve_local_timezone())
         check = next(item for item in checks if item.label == "Automatic timezone detection is unavailable")
 
         assert check.status == "FAIL"
@@ -108,8 +110,9 @@ class TestDoctorChecks:
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
         monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
         monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "Europe/Nowhere", raising=False)
+        monkeypatch.setattr(im_module, "LOCAL_TIMEZONE_STATE", "config", raising=False)
 
-        checks = im_module.doctor_check_configuration([])
+        checks = im_module.doctor_check_configuration([], timezone_advice=im_module.resolve_local_timezone())
         check = next(item for item in checks if item.label == "Local timezone is invalid")
 
         assert check.status == "FAIL"
@@ -294,7 +297,7 @@ class TestDoctorChecks:
     def test_missing_config_file_action_does_not_repeat_the_prefix(self, im_module, monkeypatch, tmp_path):
         recorded = {}
 
-        def _capture(targets, config_errors=(), retired_settings=(), env_path=None):
+        def _capture(targets, config_errors=(), retired_settings=(), env_path=None, timezone_advice=None):
             recorded["errors"] = list(config_errors)
             return 0
 
@@ -650,7 +653,7 @@ class TestRunDoctor:
         received = {}
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--config-file", str(config_path), "--env-file", "none", "--no-color"])
         monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
-        monkeypatch.setattr(im_module, "run_doctor", lambda targets, errors=(), retired=(), env_path=None: received.update(errors=list(errors), retired=list(retired)) or len(errors))
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, errors=(), retired=(), env_path=None, timezone_advice=None: received.update(errors=list(errors), retired=list(retired)) or len(errors))
 
         with pytest.raises(SystemExit) as exc:
             im_module.run_main()
@@ -666,7 +669,7 @@ class TestRunDoctor:
         received = {}
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--config-file", str(config_path), "--env-file", "none", "--no-color"])
         monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
-        monkeypatch.setattr(im_module, "run_doctor", lambda targets, errors=(), retired=(), env_path=None: received.update(errors=list(errors), retired=list(retired)) or 0)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, errors=(), retired=(), env_path=None, timezone_advice=None: received.update(errors=list(errors), retired=list(retired)) or 0)
 
         with pytest.raises(SystemExit) as exc:
             im_module.run_main()
@@ -925,3 +928,15 @@ def test_the_connectivity_row_names_the_shared_endpoint(im_module, monkeypatch):
     assert (failing.status, failing.label, failing.detail) == ("FAIL", "The connectivity endpoint could not be reached", "Endpoint: https://probe.example/ping")
     # The row carries no guide, because no page covers this check and the report ends with the doctor link
     assert (failing.fix, failing.guide) == ("Check network, DNS, proxy and CHECK_INTERNET_URL settings", "")
+
+
+# Verifies the row names the state the shared resolver settled on, so it says what a restart would say
+def test_the_timezone_row_follows_the_shared_resolver(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "Mars/Olympus_Mons")
+    monkeypatch.setattr(im_module, "LOCAL_TIMEZONE_STATE", "config", raising=False)
+
+    advice = im_module.resolve_local_timezone()
+
+    assert im_module.LOCAL_TIMEZONE_STATE == "invalid"
+    row = next(item for item in im_module.doctor_check_configuration([], timezone_advice=advice) if item.label in im_module.TIMEZONE_CHECK_LABELS.values())
+    assert (row.status, row.label, row.detail) == ("FAIL", "Local timezone is invalid", "Time zone: Mars/Olympus_Mons")
