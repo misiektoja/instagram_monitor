@@ -412,6 +412,7 @@ class TestWizardSafetyGates:
     def test_browser_import_keeps_history_and_repeats_dashboard_ready_commands(self, im_module, monkeypatch, capsys, method, port_option):
         with make_test_directory() as directory_name:
             directory = Path(directory_name)
+            monkeypatch.chdir(directory)
             config_path = directory / "instagram_monitor.conf"
             env_path = directory / ".env"
             cookie_path = directory / "cookies.sqlite"
