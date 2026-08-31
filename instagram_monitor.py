@@ -9647,9 +9647,14 @@ def format_error_message(e: Exception) -> str:
     return f"{error_type}: {strip_curl_noise(error_str)}"
 
 
+# Returns the dotenv path this run was given when a file was named and discovery is on, otherwise None
+def active_dotenv_path():
+    return None if not DOTENV_FILE or str(DOTENV_FILE).casefold() == "none" else DOTENV_FILE
+
+
 # Returns the browser session import command matching the current installation
 def session_recovery_command() -> str:
-    return _firefox_import_cmd(_wizard_install_method())
+    return _firefox_import_cmd(_wizard_install_method(), active_dotenv_path(), config_path=CLI_CONFIG_PATH)
 
 
 # Ordered match terms for every recognized failure, shared by the message and the failure-class lookups so the two cannot drift
@@ -13965,7 +13970,7 @@ def _wizard_print_command(label: str, command: str, suffix: str = "") -> None:
 
 # Builds one install-aware action command with safe paths and optional targets
 def _wizard_action_command(method: str, action: str, config_path, env_path, targets=(), web_dashboard: bool = False, host_os: Optional[str] = None) -> str:
-    parts = [_wizard_cmd_prefix(method, web_dashboard=web_dashboard, exact=True, host_os=host_os)]
+    parts = [_wizard_cmd_prefix(method, web_dashboard=web_dashboard, host_os=host_os)]
     if action:
         parts.append(action)
     parts.extend(_wizard_quote_argument(target) for target in targets)
@@ -13994,6 +13999,8 @@ def _firefox_import_cmd(method: str, env_path=None, exact: bool = False, host_os
     prefix = _wizard_cmd_prefix(method, exact=exact, host_os=selected_host if method in ("docker", "compose") else host_os)
     if method not in ("docker", "compose"):
         command = f"{prefix} --import-browser-session --browser firefox"
+        if config_path is not None:
+            command += f" --config-file {_wizard_quote_argument(str(Path(config_path).expanduser().resolve()))}"
         if env_path is not None:
             command += f" --env-file {_wizard_quote_argument(str(Path(env_path).expanduser().resolve()))}"
         return command
@@ -14809,7 +14816,7 @@ def _wizard_finish_browser_import(state: WizardSetupState, method: str) -> bool:
     if not state.import_browser:
         return True
     label = browser_label(state.import_browser)
-    retry_hint = f"{_wizard_cmd_prefix(method, exact=True, host_os=state.container_host)} --import-browser-session --browser {state.import_browser} --env-file {_wizard_quote_argument(str(state.env_path))}"
+    retry_hint = f"{_wizard_cmd_prefix(method, host_os=state.container_host)} --import-browser-session --browser {state.import_browser} --env-file {_wizard_quote_argument(str(state.env_path))}"
     if method in ("docker", "compose"):
         state.config_values["SESSION_USERNAME"] = state.session_username
         return False
@@ -14984,7 +14991,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         selected_host = cast(str, state.container_host)
         host_label = CONTAINER_FIREFOX_HOSTS[selected_host][0]
         print("Before import, open https://www.instagram.com/ in Firefox on the host and sign in to the Instagram account used for monitoring.\n")
-        _wizard_print_command(f"Import Instagram login from Firefox on {host_label}:", _firefox_import_cmd(method, state.env_path, exact=True, host_os=selected_host, config_path=state.config_path, targets=command_targets))
+        _wizard_print_command(f"Import Instagram login from Firefox on {host_label}:", _firefox_import_cmd(method, state.env_path, host_os=selected_host, config_path=state.config_path, targets=command_targets))
     _wizard_print_command("After the import succeeds, check setup:" if container_browser_import_pending else "Check setup again:", doctor_command)
     _wizard_print_command("After Doctor passes, start monitoring:" if container_browser_import_pending or local_browser_import_pending else "Start monitoring:", run_command)
     if state.want_web:

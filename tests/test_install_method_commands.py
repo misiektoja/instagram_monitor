@@ -253,7 +253,7 @@ class TestPortableWizardCommands:
 
         command = im_module._wizard_action_command("manual", "--doctor", config_path, env_path, ["target.user"])
 
-        assert command.startswith("'/opt/Python Runtime/python3'")
+        assert command.startswith("python3 instagram_monitor.py --doctor")
         assert f"--config-file '{config_path.resolve()}'" in command
         assert f"--env-file '{env_path.resolve()}'" in command
         assert "target.user" in command
@@ -366,3 +366,23 @@ class TestHiddenPromptPresentation:
         assert im_module.read_secret_privately(lambda prompt: seen.append(im_module.DEBUG_MODE) or "value", "Enter it: ") == "value"
         assert seen == [False, False]
         assert im_module.DEBUG_MODE is True
+
+
+# Verifies the session recovery command is pasteable as printed and reaches the files this run was given
+def test_the_session_recovery_command_names_the_files_this_run_was_given(im_module, monkeypatch, tmp_path):
+    config_path = tmp_path / "instagram_monitor.conf"
+    env_path = tmp_path / "private.env"
+    monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py"])
+    monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", str(config_path))
+    monkeypatch.setattr(im_module, "DOTENV_FILE", str(env_path))
+
+    assert im_module.session_recovery_command() == f"python3 instagram_monitor.py --import-browser-session --browser firefox --config-file {config_path} --env-file {env_path}"
+
+
+# Verifies a dotenv switched off with the none sentinel is not printed as a file path
+def test_the_session_recovery_command_skips_a_dotenv_switched_off(im_module, monkeypatch):
+    monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py"])
+    monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+    monkeypatch.setattr(im_module, "DOTENV_FILE", "none")
+
+    assert im_module.session_recovery_command() == "python3 instagram_monitor.py --import-browser-session --browser firefox"
