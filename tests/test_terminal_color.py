@@ -253,3 +253,23 @@ def test_signal_handler_restores_the_terminal(im_module, monkeypatch):
         im_module.signal_handler(2, None, message="")
 
     assert restored == [True]
+
+
+# Verifies the email announcement is coloured like the webhook one. The lines this tool prints all start with
+# "* Sending email", which an early return used to keep plain, leaving the shipped email colour unreachable
+@pytest.mark.parametrize("line,part", [
+    ("* Sending email notification to alerts@example.test", "email"),
+    ("* Sending webhook notification", "webhook"),
+])
+def test_a_delivery_announcement_is_painted_for_its_channel(im_module, monkeypatch, line, part):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {part: f"<{part}>"})
+    monkeypatch.setattr(im_module, "ANSI_RESET", "<reset>")
+
+    assert im_module._colorize_line(line) == f"<{part}>{line}<reset>"
+
+
+# Verifies the two channels keep the values every sibling monitor ships, so a channel reads the same in all of them
+def test_the_delivery_channels_keep_the_shared_colours(im_module):
+    assert im_module.DEFAULT_COLOR_THEME["email"] == "bright_cyan"
+    assert im_module.DEFAULT_COLOR_THEME["webhook"] == "bright_blue"

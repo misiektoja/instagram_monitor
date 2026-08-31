@@ -4642,11 +4642,6 @@ def _colorize_quoted_content(match):
 def _colorize_line(line):
     lowered = line.lower()
 
-    # Skip block coloring (yellow/info/warning), but allow internal highlights (booleans etc.) except for "Sending email"
-    # lines which remain plain
-    if line.startswith("* Sending email"):
-        return line
-
     notification_match = _NOTIFICATION_SUMMARY_STATE_RE.match(line)
     if notification_match:
         prefix, state, suffix = notification_match.groups()
