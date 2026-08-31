@@ -153,6 +153,8 @@ class TestDoctorChecks:
         monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.com", raising=False)
         monkeypatch.setattr(im_module, "SMTP_USER", "user", raising=False)
         monkeypatch.setattr(im_module, "SMTP_PASSWORD", "secret", raising=False)
+        # Set here rather than inherited, since the check only reaches the address test while an email alert can fire
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True, raising=False)
         monkeypatch.setattr(im_module, "SENDER_EMAIL", "your_sender_email", raising=False)
         monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "your_receiver_email", raising=False)
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "", raising=False)

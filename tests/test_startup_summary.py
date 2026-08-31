@@ -14,6 +14,15 @@ SHARED_ROW_ORDER = ("Targets", "Polling interval", "Notifications (email)", "Not
 SUMMARY_LINE_RE = re.compile(r"^\* (?P<label>[^:]+): +\S")
 
 
+@pytest.fixture(autouse=True)
+# Restores every module setting, since these tests run the real startup path and it rewrites them in place
+def restored_settings(im_module):
+    snapshot = {name: value for name, value in vars(im_module).items() if name.isupper()}
+    yield
+    for name, value in snapshot.items():
+        setattr(im_module, name, value)
+
+
 # Runs the startup path far enough to print the summary and returns what the terminal was shown
 def rendered_summary(im_module, monkeypatch, capsys, tmp_path, *extra_args):
     monkeypatch.chdir(tmp_path)
