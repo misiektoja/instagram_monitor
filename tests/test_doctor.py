@@ -628,8 +628,8 @@ class TestRunDoctor:
         assert exc.value.code == 0
         assert providers == ["ntfy"]
 
-    # The report ends at the guide line in every sibling, so nothing follows it here either
-    def test_cli_doctor_ends_at_the_guide_line(self, im_module, monkeypatch, capsys):
+    # The report ends with the next action in every sibling, so it ends with one here too
+    def test_cli_doctor_ends_with_the_monitoring_command(self, im_module, monkeypatch, capsys):
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--env-file", "none", "--no-color"])
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
         monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
@@ -640,8 +640,8 @@ class TestRunDoctor:
 
         assert exc.value.code == 0
         output = capsys.readouterr().out
-        assert "Next steps" not in output
-        assert "After Doctor passes, start monitoring:" not in output
+        assert "Next steps" in output
+        assert "Start monitoring:" in output
 
     # Doctor exists to explain a broken setup, so a rejected config must reach it instead of exiting first
     def test_cli_doctor_reports_a_rejected_config_instead_of_exiting(self, im_module, monkeypatch, tmp_path):
@@ -675,7 +675,8 @@ class TestRunDoctor:
         assert received["errors"] == []
         assert received["retired"] == ["DISCORD_MAX_FIELDS"]
 
-    def test_cli_doctor_failure_does_not_print_monitoring_command(self, im_module, monkeypatch, capsys):
+    # A failing report still names the command, labelled so the failures are fixed first
+    def test_cli_doctor_failure_asks_for_the_failures_first(self, im_module, monkeypatch, capsys):
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--env-file", "none", "--no-color"])
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
         monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
@@ -685,7 +686,7 @@ class TestRunDoctor:
             im_module.run_main()
 
         assert exc.value.code == 1
-        assert "After Doctor passes, start monitoring:" not in capsys.readouterr().out
+        assert "After Doctor passes, start monitoring:" in capsys.readouterr().out
 
 
 class TestDoctorDeliveryTests:

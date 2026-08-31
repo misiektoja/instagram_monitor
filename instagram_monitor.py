@@ -13976,6 +13976,16 @@ def _wizard_print_command(label: str, command: str, suffix: str = "") -> None:
     print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
 
 
+# Prints the command that starts monitoring with the files this run checked, so a report read on its own
+# ends with the next action rather than leaving the reader to assemble the command
+def print_doctor_next_steps(targets=(), config_path=None, env_path=None, doctor_exit: int = 0) -> None:
+    command = _wizard_action_command(_wizard_install_method(), "", config_path, env_path, targets, web_dashboard=WEB_DASHBOARD_ENABLED)
+    print(colorize("header", "\nNext steps\n"))
+    _wizard_print_command("After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:", command)
+    print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}")
+
+
+
 # Builds one install-aware action command with safe paths and optional targets
 def _wizard_action_command(method: str, action: str, config_path, env_path, targets=(), web_dashboard: bool = False, host_os: Optional[str] = None) -> str:
     parts = [_wizard_cmd_prefix(method, web_dashboard=web_dashboard, host_os=host_os)]
@@ -16926,6 +16936,8 @@ def run_main():
     # Run preflight checks once the effective session mode and targets are resolved
     if getattr(args, "doctor", False):
         doctor_failures = run_doctor(targets, doctor_config_errors, doctor_config_retired, env_path)
+        # Targets already saved in the config file are left out, so the command stays as short as the wizard's
+        print_doctor_next_steps([] if not args.usernames else targets, cfg_path, env_path, doctor_failures)
         sys.exit(1 if doctor_failures else 0)
 
     # Offline follow relationship analysis: read the already-saved lists, print the result and exit (no network requests, no monitoring loop)
