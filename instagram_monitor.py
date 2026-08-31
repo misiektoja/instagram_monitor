@@ -15046,6 +15046,9 @@ def _wizard_should_offer_first_run(arguments, configured_targets, web_dashboard_
 # tools, because every state it would cover is a state the others already call PASS
 DOCTOR_STATUSES = ("PASS", "WARN", "FAIL", "SKIP")
 
+# Delivery results are printed as they happen rather than inside a section, but they still count in the summary
+DOCTOR_DELIVERY_SECTION = "Optional delivery tests"
+
 DOCTOR_MARK_STYLES = {"PASS": "boolean_true", "WARN": "warning", "FAIL": "error", "SKIP": "info"}
 
 
@@ -15148,33 +15151,34 @@ def _doctor_send_test_webhook() -> int:
 
 
 # Offers separate real delivery tests only after interactive confirmation
-def _doctor_offer_notification_tests(smtp_ready: bool, webhook_ready: bool) -> int:
-    if not sys.stdin.isatty() or not sys.stdout.isatty() or not (smtp_ready or webhook_ready):
-        return 0
+def _doctor_offer_notification_tests(report: DoctorReport) -> None:
+    if not sys.stdin.isatty() or not sys.stdout.isatty() or not (report.smtp_ready or report.webhook_ready):
+        return
     print(colorize("section", "\nOptional delivery tests\n"))
     print("Doctor will not write files. Each approved test sends one real message.\n")
-    failures = 0
-    if smtp_ready:
+    if report.smtp_ready:
         if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
             result = send_email("instagram_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "This test email was sent after approval in <b>--doctor</b>. Your SMTP delivery settings work.", SMTP_SSL, smtp_timeout=5)
             if result == 0:
-                _doctor_line("PASS", "Doctor test email delivered", "One real test email was sent after confirmation")
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", "Doctor test email delivered", "One real test email was sent after confirmation")
             else:
-                failures += 1
-                _doctor_line("FAIL", "Doctor test email delivery failed", "The approved test email could not be delivered")
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", "Doctor test email delivery failed", "The approved test email could not be delivered")
         else:
-            _doctor_line("SKIP", "Test email skipped", "No email was sent")
-    if webhook_ready:
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email skipped", "No email was sent")
+        # Recorded on the report so the summary sentence and the exit code cannot disagree about the same run
+        report.checks.append(check)
+        _doctor_line(check.status, check.label, check.detail)
+    if report.webhook_ready:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
             if _doctor_send_test_webhook() == 0:
-                _doctor_line("PASS", "Doctor test webhook delivered", "One real test webhook was sent after confirmation")
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", "Doctor test webhook delivered", "One real test webhook was sent after confirmation")
             else:
-                failures += 1
-                _doctor_line("FAIL", "Doctor test webhook delivery failed", "The approved test webhook could not be delivered")
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", "Doctor test webhook delivery failed", "The approved test webhook could not be delivered")
         else:
-            _doctor_line("SKIP", "Test webhook skipped", "No webhook was sent")
-    return failures
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test webhook skipped", "No webhook was sent")
+        report.checks.append(check)
+        _doctor_line(check.status, check.label, check.detail)
 
 
 # Resolves the saved follower and following JSON list paths for a validated target
@@ -15713,8 +15717,8 @@ def render_doctor_notice() -> None:
     print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.\n")
 
 
-# Prints one sectioned doctor report, keeping the marker and indent format scripts and users already read
-def render_doctor_report(report: DoctorReport) -> None:
+# Prints the heading and every non-empty section, keeping the marker and indent format scripts and users already read
+def render_doctor_sections(report: DoctorReport) -> None:
     print(colorize("header", "Doctor"))
     # The install method is context rather than a check: it cannot fail, so it is stated once here
     # instead of taking a result row that no marker describes
@@ -15754,10 +15758,10 @@ def run_doctor(targets, config_errors: Sequence[dict] = (), retired_settings: Se
     finally:
         _doctor_progress_clear()
 
-    render_doctor_report(report)
-    fails = report.count("FAIL") + _doctor_offer_notification_tests(report.smtp_ready, report.webhook_ready)
-    render_doctor_summary(fails, report.count("WARN"))
-    return fails
+    render_doctor_sections(report)
+    _doctor_offer_notification_tests(report)
+    render_doctor_summary(report.count("FAIL"), report.count("WARN"))
+    return report.count("FAIL")
 
 
 # Applies diagnostic flags both before config error reporting and after config precedence resolution
