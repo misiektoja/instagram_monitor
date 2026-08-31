@@ -14406,7 +14406,6 @@ def _wizard_collect_target_section(state: WizardSetupState, allow_empty: bool = 
         state.config_values["TARGET_USERNAMES"] = []
         print(colorize("info", "  No initial targets selected. Add them later in the Web Dashboard."))
         return
-    print()
     state.persist_targets = _wizard_ask_yes_no("Persist these targets in the generated config?", default=state.persist_targets)
     state.config_values["TARGET_USERNAMES"] = list(targets) if state.persist_targets else []
 
@@ -14908,6 +14907,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
 
         print()
         _wizard_collect_target_section(state, allow_empty=True)
+        print()
         _wizard_collect_polling_section(state)
         _wizard_collect_login_section(state, method)
         _wizard_collect_interface_section(state, method)
@@ -14931,7 +14931,8 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         print(colorize("error", f"Could not write config file '{state.config_path}': {exc}"))
         raise SystemExit(1) from None
 
-    if state.secret_updates or not state.env_path.exists():
+    # A dotenv with nothing in it is noise beside the config, so an empty one is never created
+    if state.secret_updates:
         try:
             update_status = update_dotenv_file(state.env_path, state.secret_updates)
         except Exception as exc:
@@ -14940,6 +14941,9 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
             raise SystemExit(1) from None
     else:
         update_status = None
+
+    # A dotenv that was never written does not exist, so no command names it
+    env_argument = state.env_path if update_status is not None else None
 
     globals().update(state.config_values)
     for secret_key in SECRET_KEYS:
@@ -14967,14 +14971,14 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     try:
         if doctor_offered and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
             doctor_ran = True
-            doctor_failures = run_doctor(state.targets, env_path=state.env_path)
+            doctor_failures = run_doctor(state.targets, env_path=env_argument)
     except (EOFError, KeyboardInterrupt):
         # The files are already written, so an interrupt here only skips the optional check
         print(colorize("warning", "Setup is saved. Use the commands below when ready."))
 
     command_targets = [] if state.persist_targets else state.targets
-    run_command = _wizard_action_command(method, "", state.config_path, state.env_path, command_targets, web_dashboard=state.want_web, host_os=state.container_host)
-    doctor_command = _wizard_action_command(method, "--doctor", state.config_path, state.env_path, command_targets, host_os=state.container_host)
+    run_command = _wizard_action_command(method, "", state.config_path, env_argument, command_targets, web_dashboard=state.want_web, host_os=state.container_host)
+    doctor_command = _wizard_action_command(method, "--doctor", state.config_path, env_argument, command_targets, host_os=state.container_host)
     print(colorize("header", "\nNext steps\n"))
     if container_browser_import_pending:
         selected_host = cast(str, state.container_host)
@@ -14986,9 +14990,9 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     if state.want_web:
         print(f"Then open {colorize('link', 'http://127.0.0.1:8000/')} in your browser.\n")
     if state.want_email:
-        _wizard_print_command("Send a test email:", _wizard_action_command(method, "--send-test-email", state.config_path, state.env_path, host_os=state.container_host))
+        _wizard_print_command("Send a test email:", _wizard_action_command(method, "--send-test-email", state.config_path, env_argument, host_os=state.container_host))
     if state.want_webhook:
-        _wizard_print_command("Send a test webhook:", _wizard_action_command(method, "--send-test-webhook", state.config_path, state.env_path, host_os=state.container_host))
+        _wizard_print_command("Send a test webhook:", _wizard_action_command(method, "--send-test-webhook", state.config_path, env_argument, host_os=state.container_host))
     print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}\n")
 
     try:
@@ -15002,7 +15006,9 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     elif start_monitoring:
         launch_arguments = _wizard_local_command_args(method, exact=True)
         launch_arguments.extend(command_targets)
-        launch_arguments.extend(("--config-file", str(state.config_path), "--env-file", str(state.env_path)))
+        launch_arguments.extend(("--config-file", str(state.config_path)))
+        if env_argument is not None:
+            launch_arguments.extend(("--env-file", str(env_argument)))
         sys.stdout.flush()
         raise SystemExit(_wizard_launch_monitor(launch_arguments))
     elif local_browser_import_pending and not doctor_ran:

@@ -160,8 +160,9 @@ class TestEditableReview:
             assert namespace["DOTENV_FILE"] == str(env_path.resolve())
             output = capsys.readouterr().out
             assert "second.target" in output
-            assert "--env-file" in output
-            assert "custom secrets.env" in output
+            # No secret was entered, so nothing was written to the dotenv and no printed command names it
+            assert not env_path.exists()
+            assert "--env-file" not in output
 
 
 class TestBrowserOnboarding:
@@ -392,7 +393,7 @@ class TestWizardSafetyGates:
                 im_module.run_setup_wizard(config_file=directory / "instagram_monitor.conf", env_file=directory / ".env")
 
             assert error.value.code == 0
-            assert (directory / ".env").read_text(encoding="utf-8") == ""
+            assert not (directory / ".env").exists()
             ask_mock.assert_not_called()
             doctor_mock.assert_not_called()
             output = capsys.readouterr().out
@@ -1142,3 +1143,29 @@ def test_a_cancelled_secret_command_prints_its_fix_and_guide(im_module, capsys):
     assert lines[0] == "* Error: SMTP password setup was cancelled and the dotenv file was not changed"
     assert lines[1].endswith("To fix: Run --set-smtp-password again when you have the value ready")
     assert lines[2] == f"Guide: {im_module.SMTP_GUIDE_URL}"
+
+
+# Verifies the target answer and the polling question sit in the groups the sibling wizards use
+def test_the_polling_question_starts_its_own_group(im_module, monkeypatch, capsys):
+    with make_test_directory() as directory_name:
+        directory = Path(directory_name)
+        answers = iter(["someuser", "y", ""])
+
+        # Echoes each prompt with its answer, so the captured text is the transcript a user reads
+        def answer(prompt=""):
+            typed = next(answers)
+            print(f"{prompt}{typed}")
+            return typed
+
+        protect_setup_globals(im_module, monkeypatch)
+        monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+        monkeypatch.setattr(builtins, "input", answer)
+        monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
+        monkeypatch.setattr(im_module, "_wizard_collect_login_section", Mock(side_effect=KeyboardInterrupt))
+
+        with pytest.raises(SystemExit):
+            im_module.run_setup_wizard(config_file=directory / "instagram_monitor.conf", env_file=directory / ".env")
+
+        transcript = capsys.readouterr().out
+        assert "\n\nPersist these targets in the generated config?" not in transcript
+        assert "\n\nInstagram polling interval (seconds or use s/m/h/d)" in transcript
