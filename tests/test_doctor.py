@@ -646,6 +646,18 @@ class TestRunDoctor:
         assert "Next steps" in output
         assert "Start monitoring:" in output
 
+    # Both sentinels belong in the printed command, so the retest monitors with the setup doctor just checked
+    def test_cli_doctor_carries_both_disabled_searches_into_the_monitoring_command(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--config-file", "none", "--env-file", "none", "--no-color"])
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "run_doctor", lambda targets, *doctor_findings: 0)
+
+        with pytest.raises(SystemExit) as exc:
+            im_module.run_main()
+
+        assert exc.value.code == 0
+        assert "--config-file none --env-file none" in capsys.readouterr().out
+
     # Doctor exists to explain a broken setup, so a rejected config must reach it instead of exiting first
     def test_cli_doctor_reports_a_rejected_config_instead_of_exiting(self, im_module, monkeypatch, tmp_path):
         config_path = tmp_path / "instagram_monitor.conf"

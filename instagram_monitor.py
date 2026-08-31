@@ -9694,9 +9694,15 @@ def active_dotenv_path():
     return None if not DOTENV_FILE or str(DOTENV_FILE).casefold() == "none" else DOTENV_FILE
 
 
+# Returns the config path this run was given, or the "none" sentinel when discovery was switched off
+def active_config_path():
+    return CLI_CONFIG_PATH or ("none" if CONFIG_DISCOVERY_DISABLED else None)
+
+
 # Returns the browser session import command matching the current installation
 def session_recovery_command() -> str:
-    return _firefox_import_cmd(_wizard_install_method(), active_dotenv_path(), config_path=CLI_CONFIG_PATH)
+    # The import reads the config and writes the dotenv, so the config sentinel is carried while the dotenv one is not
+    return _firefox_import_cmd(_wizard_install_method(), active_dotenv_path(), config_path=active_config_path())
 
 
 # Ordered match terms for every recognized failure, shared by the message and the failure-class lookups so the two cannot drift
@@ -14027,7 +14033,8 @@ def _wizard_action_command(method: str, action: str, config_path, env_path, targ
         parts.append(action)
     parts.extend(_wizard_quote_argument(target) for target in targets)
     if config_path is not None:
-        selected_config = _wizard_container_path(config_path) if method in ("docker", "compose") else str(Path(config_path).expanduser().resolve())
+        # The sentinel is passed through rather than resolved, since resolving it would name a file called "none"
+        selected_config = "none" if str(config_path).casefold() == "none" else _wizard_container_path(config_path) if method in ("docker", "compose") else str(Path(config_path).expanduser().resolve())
         parts.extend(("--config-file", _wizard_quote_argument(selected_config)))
     if env_path is not None:
         selected_env = "none" if str(env_path).casefold() == "none" else _wizard_container_path(env_path) if method in ("docker", "compose") else str(Path(env_path).expanduser().resolve())
@@ -14042,7 +14049,9 @@ def _firefox_import_cmd(method: str, env_path=None, exact: bool = False, host_os
     if method not in ("docker", "compose"):
         command = f"{prefix} --import-browser-session --browser firefox"
         if config_path is not None:
-            command += f" --config-file {_wizard_quote_argument(str(Path(config_path).expanduser().resolve()))}"
+            # The sentinel is passed through rather than resolved, since resolving it would name a file called "none"
+            selected_config = "none" if str(config_path).casefold() == "none" else str(Path(config_path).expanduser().resolve())
+            command += f" --config-file {_wizard_quote_argument(selected_config)}"
         if env_path is not None:
             command += f" --env-file {_wizard_quote_argument(str(Path(env_path).expanduser().resolve()))}"
         return command
@@ -14055,7 +14064,8 @@ def _firefox_import_cmd(method: str, env_path=None, exact: bool = False, host_os
     command = f"{with_mount} --import-browser-session --browser firefox"
     command += "".join(f" {_wizard_quote_argument(target)}" for target in targets)
     if config_path is not None:
-        selected_config = _wizard_container_path(config_path) if method in ("docker", "compose") else str(Path(config_path).expanduser().resolve())
+        # The sentinel is passed through rather than resolved, since resolving it would name a file called "none"
+        selected_config = "none" if str(config_path).casefold() == "none" else _wizard_container_path(config_path) if method in ("docker", "compose") else str(Path(config_path).expanduser().resolve())
         command += f" --config-file {_wizard_quote_argument(selected_config)}"
     if env_path is not None:
         command += f" --env-file {_wizard_quote_argument(_wizard_container_path(env_path))}"
@@ -16460,6 +16470,8 @@ def run_main():
     if args.setup:
         if args.usernames or args.targets:
             parser.error("--setup cannot be combined with monitoring targets")
+        if args.config_file and str(args.config_file).casefold() == "none":
+            parser.error("--setup requires a config destination and cannot use --config-file none")
         if args.env_file and str(args.env_file).casefold() == "none":
             parser.error("--setup requires a dotenv destination and cannot use --env-file none")
         run_setup_wizard(config_file=args.config_file, env_file=args.env_file)
@@ -16481,7 +16493,9 @@ def run_main():
 
     # "none" is the documented sentinel that switches discovery off, so it is a selection rather than a missing file
     CONFIG_DISCOVERY_DISABLED = args.config_file is not None and str(args.config_file).casefold() == "none"
-    if args.config_file and not CONFIG_DISCOVERY_DISABLED:
+    if CONFIG_DISCOVERY_DISABLED:
+        CLI_CONFIG_PATH = None
+    elif args.config_file:
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
 
     cfg_path = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
@@ -16950,7 +16964,9 @@ def run_main():
     if getattr(args, "doctor", False):
         doctor_failures = run_doctor(targets, doctor_config_errors, doctor_config_retired, env_path, timezone_advice)
         # Targets already saved in the config file are left out, so the command stays as short as the wizard's
-        print_doctor_next_steps([] if not args.usernames else targets, cfg_path, env_path, doctor_failures)
+        # Both "none" sentinels are carried, since the printed command monitors with the setup doctor just checked
+        next_env_path = "none" if DOTENV_FILE and str(DOTENV_FILE).casefold() == "none" else env_path
+        print_doctor_next_steps([] if not args.usernames else targets, cfg_path or active_config_path(), next_env_path, doctor_failures)
         sys.exit(1 if doctor_failures else 0)
 
     # Offline follow relationship analysis: read the already-saved lists, print the result and exit (no network requests, no monitoring loop)

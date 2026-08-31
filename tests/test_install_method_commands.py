@@ -386,3 +386,13 @@ def test_the_session_recovery_command_skips_a_dotenv_switched_off(im_module, mon
     monkeypatch.setattr(im_module, "DOTENV_FILE", "none")
 
     assert im_module.session_recovery_command() == "python3 instagram_monitor.py --import-browser-session --browser firefox"
+
+
+# Verifies the config sentinel is carried, since the import it suggests reads the config rather than writing it
+def test_the_session_recovery_command_carries_the_config_sentinel(im_module, monkeypatch):
+    monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py"])
+    monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+    monkeypatch.setattr(im_module, "CONFIG_DISCOVERY_DISABLED", True)
+    monkeypatch.setattr(im_module, "DOTENV_FILE", "")
+
+    assert im_module.session_recovery_command() == "python3 instagram_monitor.py --import-browser-session --browser firefox --config-file none"

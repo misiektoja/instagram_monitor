@@ -72,6 +72,8 @@ The wizard detects PyPI, a downloaded script, Docker or Docker Compose and print
 
 Container setup destinations must stay inside `/data`. That directory is the current host directory mounted into the temporary setup container, so files written there survive `--rm`. The wizard rejects paths such as `/tmp/instagram_monitor.conf` instead of printing a command for a different file.
 
+`--setup` needs somewhere to put both files, so it refuses `--config-file none` and `--env-file none`.
+
 For Docker or Docker Compose, choose **Import from Firefox after setup**. The wizard asks whether Docker runs on macOS, standard Linux, Linux with Snap, Linux with Flatpak, Windows PowerShell or Windows Command Prompt. It then prints the matching command to mount the signed-in host profile read-only once and save the imported login in the persistent `instagram_monitor_session` volume. Windows commands use the Firefox profile under `%APPDATA%\Mozilla\Firefox`.
 
 Firefox import works in every local installation without an extra package. Chrome, Brave and Chromium import works on macOS and Linux with the optional browser dependency. Container setup uses Firefox because Chromium cookie decryption needs a password service from the host that is not available inside the container. See [Session Login Using Browser Cookies](configuration.md#option-3-session-login-using-browser-cookies-recommended).

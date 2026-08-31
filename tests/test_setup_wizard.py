@@ -2,6 +2,8 @@
 
 import builtins
 import os
+import subprocess
+import sys
 import tempfile
 import types
 from contextlib import contextmanager
@@ -1202,3 +1204,12 @@ def test_an_exported_secret_is_not_credited_to_the_dotenv_file(im_module, monkey
     im_module._wizard_apply_saved_values(state)
 
     assert im_module.SECRET_SOURCES["SESSION_PASSWORD"] == "environment"
+
+
+# Verifies a config destination switched off is refused, rather than writing settings to a file named 'none'
+def test_setup_refuses_a_config_destination_switched_off(tmp_path):
+    result = subprocess.run([sys.executable, str(PROJECT_ROOT / "instagram_monitor.py"), "--setup", "--config-file", "none"], cwd=tmp_path, capture_output=True, text=True, check=False)
+
+    assert result.returncode == 2
+    assert "--setup requires a config destination and cannot use --config-file none" in result.stderr
+    assert not (tmp_path / "none").exists()
