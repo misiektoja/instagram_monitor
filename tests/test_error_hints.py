@@ -313,3 +313,23 @@ class TestOutageReporting:
         assert "fix_hint_printed = print_fix_hint(error_msg, recovery_hint_tracker)" in source
         assert "if not fix_hint_printed and outage_outcome in (\"full\", \"repeat\") and (" in source
         assert source.count("session_recovery_command()") == 2
+
+    # The liveness banner explains itself without --verbose, so a plain run never prints a bare timestamp
+    def test_the_liveness_banner_explains_itself_without_diagnostics(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "UTC")
+        monkeypatch.setattr(im_module, "VERBOSE_MODE", False)
+
+        im_module.print_liveness_banner("Monitoring healthy for misiektoja. No tracked change since the last check")
+
+        lines = capsys.readouterr().out.splitlines()
+        assert lines[0] == "* Monitoring healthy for misiektoja. No tracked change since the last check"
+        assert lines[1].startswith("Liveness check, timestamp:")
+
+    # The monitoring loop reports its healthy banner through the shared helper
+    def test_the_loop_reports_its_healthy_banner_unconditionally(self, im_module):
+        module_source = inspect.getsource(im_module)
+        start = module_source.index("def _run_instagram_monitor_pass(")
+        source = module_source[start:module_source.index("\ndef ", start)]
+
+        assert 'print_liveness_banner(f"Monitoring healthy for {user}.' in source
+        assert 'verbose_print(f"Monitoring healthy' not in source, "the healthy banner is no longer verbose-only"

@@ -9924,6 +9924,12 @@ class OutageReporter:
         return lasted
 
 
+# Reports that nothing changed, so a quiet run still says it is alive on the liveness cadence
+def print_liveness_banner(message: str) -> None:
+    print(f"* {message}")  # substitution applied in LOGGER.write
+    print_cur_ts("Liveness check, timestamp:\t")
+
+
 # Reports a lasting failure on the liveness cadence, so a broken run still says it is alive without repeating itself
 def print_outage_liveness(target: str, advice: RecoveryAdvice, since: int) -> None:
     print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}")
@@ -13857,8 +13863,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 print_outage_recovery(user, outage_lasted)
 
         if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
-            verbose_print(f"Monitoring healthy for {user}. No tracked change since the last check")
-            print_cur_ts("Liveness check, timestamp:\t")
+            print_liveness_banner(f"Monitoring healthy for {user}. No tracked change since the last check")
             alive_counter = 0
 
         debug_print("After check", manual_recheck_active=manual_recheck_active)
