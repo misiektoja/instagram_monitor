@@ -14668,11 +14668,17 @@ def _wizard_collect_target_section(state: WizardSetupState, allow_empty: bool = 
         targets = [target.strip().lstrip("@") for target in targets_raw.split(",") if target.strip()]
         if targets or allow_empty:
             break
+        print("  Enter one or more Instagram usernames separated by commas.")
+        # Leaving the list empty has to be a decision rather than a loop the user can only leave with Ctrl+C
+        if not _wizard_offer_retry("Instagram target", "Nothing can be monitored until one is added"):
+            break
+        default_targets = ""
     state.targets = targets
     if not targets:
         state.persist_targets = False
         state.config_values["TARGET_USERNAMES"] = []
-        print(colorize("info", "  No initial targets selected. Add them later in the Web Dashboard."))
+        later = "Add them later in the Web Dashboard." if allow_empty else "Add them later by running --setup again."
+        print(colorize("info", f"  No initial targets selected. {later}"))
         return
     state.persist_targets = _wizard_ask_yes_no("Persist these targets in the generated config?", default=state.persist_targets)
     state.config_values["TARGET_USERNAMES"] = list(targets) if state.persist_targets else []

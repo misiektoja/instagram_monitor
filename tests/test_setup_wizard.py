@@ -81,6 +81,31 @@ class TestTargetCollection:
             ask_yes_no.assert_not_called()
             assert "No initial targets selected. Add them later in the Web Dashboard." in capsys.readouterr().out
 
+    # Verifies an answer holding no usable name says so, so a rejected answer is not silently asked again
+    def test_an_answer_without_a_usable_name_is_explained(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            monkeypatch.setattr(im_module, "_wizard_ask_text", Mock(side_effect=[",", "target.user"]))
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", Mock(side_effect=[False, True]))
+
+            im_module._wizard_collect_target_section(state, allow_empty=False)
+
+            assert state.targets == ["target.user"]
+            assert "Enter one or more Instagram usernames separated by commas." in capsys.readouterr().out
+
+    # Verifies a required target can be abandoned, so the question is not a loop the user can only leave with Ctrl+C
+    def test_a_required_target_can_be_abandoned(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            monkeypatch.setattr(im_module, "_wizard_ask_text", Mock(side_effect=[","]))
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", Mock(side_effect=[True]))
+
+            im_module._wizard_collect_target_section(state, allow_empty=False)
+
+            assert state.targets == []
+            assert state.config_values["TARGET_USERNAMES"] == []
+            assert "No initial targets selected. Add them later by running --setup again." in capsys.readouterr().out
+
     # Verifies non-Web interfaces collect a required target after an initially empty answer
     @pytest.mark.parametrize("interface", [1, 2])
     def test_non_web_interface_requires_a_target(self, im_module, monkeypatch, interface):
