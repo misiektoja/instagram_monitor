@@ -15208,9 +15208,13 @@ def _doctor_ask_yes_no(question: str) -> bool:
     while True:
         try:
             raw = read_interactively(input, colorize("info", f"{question} [y/N]: ")).strip().lower()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print("\n" + colorize("info", "Delivery test skipped."))
             return False
+        except KeyboardInterrupt:
+            # Ctrl+C ends the run here the way it does anywhere else, rather than only declining this one test
+            signal_handler(signal.SIGINT, None)
+            raise
         if not raw or raw in ("n", "no"):
             return False
         if raw in ("y", "yes"):
