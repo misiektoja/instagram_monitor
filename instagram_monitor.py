@@ -15960,7 +15960,7 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
         checks.append(make_doctor_check("Notifications", "PASS", "Webhook alerts are disabled"))
         return checks
     if is_placeholder_setting(WEBHOOK_URL):
-        checks.append(make_doctor_check("Notifications", "WARN", "Webhook enabled but WEBHOOK_URL is not set", "No webhook was sent", "Set WEBHOOK_URL (or via .env) or disable webhooks", WEBHOOK_GUIDE_URL))
+        checks.append(make_doctor_check("Notifications", "FAIL", "Webhook enabled but WEBHOOK_URL is not set", "No webhook was sent", "Set WEBHOOK_URL (or via .env) or disable webhooks", WEBHOOK_GUIDE_URL))
         return checks
     if not normalized_webhook_provider():
         checks.append(make_doctor_check("Notifications", "FAIL", "Webhook provider is invalid", "", "Set WEBHOOK_PROVIDER to 'discord' or 'ntfy'", WEBHOOK_GUIDE_URL))

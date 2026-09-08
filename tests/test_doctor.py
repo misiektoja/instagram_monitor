@@ -250,8 +250,8 @@ class TestDoctorChecks:
         assert not any(check.status == "FAIL" for check in checks)
         assert any(check.status == "PASS" and "Webhook alerts are disabled" in check.label for check in checks)
 
-    # An enabled webhook still holding the placeholder is a warning about missing setup, not an invalid URL
-    def test_enabled_webhook_placeholder_warns_about_setup(self, im_module, monkeypatch):
+    # An enabled webhook still holding the placeholder can never deliver, so it fails rather than warns
+    def test_enabled_webhook_placeholder_fails_about_setup(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "SMTP_HOST", "your_smtp_server_ssl", raising=False)
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "your_webhook_url", raising=False)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True, raising=False)
@@ -259,8 +259,7 @@ class TestDoctorChecks:
 
         checks = im_module.doctor_check_notifications(report)
 
-        assert not any(check.status == "FAIL" for check in checks)
-        assert any(check.status == "WARN" and "WEBHOOK_URL is not set" in check.label for check in checks)
+        assert any(check.status == "FAIL" and "WEBHOOK_URL is not set" in check.label for check in checks)
 
     # Every failure a user sees must offer an action, which is what the renderer guarantees
     def test_renderer_prints_an_action_for_every_failure(self, im_module, capsys, monkeypatch):
