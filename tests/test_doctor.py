@@ -90,6 +90,19 @@ class TestDoctorChecks:
 
         assert ("PASS", "Local timezone can be detected", "Time zone: Europe/Warsaw") in {(check.status, check.label, check.detail) for check in checks}
 
+    # Every unusable timing or count setting is named in one row, so a fix does not need one run per setting
+    def test_invalid_numeric_settings_are_reported_in_one_row(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
+        monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", 0, raising=False)
+        monkeypatch.setattr(im_module, "MAX_H1", 24, raising=False)
+        monkeypatch.setattr(im_module, "SMTP_PORT", 70000, raising=False)
+
+        rows = [item for item in im_module.doctor_check_configuration([]) if item.label == "One or more numeric settings are invalid"]
+
+        assert [item.status for item in rows] == ["FAIL"]
+        assert all(name in rows[0].detail for name in ("INSTA_CHECK_INTERVAL", "MAX_H1", "SMTP_PORT"))
+
     # Without tzlocal an automatic timezone cannot be resolved, so Doctor names the missing package
     def test_automatic_timezone_without_tzlocal_fails(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)

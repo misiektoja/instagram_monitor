@@ -15769,6 +15769,36 @@ def doctor_label_from_error(summary) -> str:
     return label[len("Error:"):].strip() if label.startswith("Error:") else label
 
 
+# Returns all type and range errors in settings that control runtime timing or counts
+def runtime_configuration_errors() -> List[str]:
+    errors: List[str] = []
+    positive_numbers = (("INSTA_CHECK_INTERVAL", INSTA_CHECK_INTERVAL), ("CHECK_INTERNET_TIMEOUT", CHECK_INTERNET_TIMEOUT), ("FOLLOW_LIST_BROWSER_TIMEOUT", FOLLOW_LIST_BROWSER_TIMEOUT))
+    nonnegative_numbers = (("RANDOM_SLEEP_DIFF_LOW", RANDOM_SLEEP_DIFF_LOW), ("RANDOM_SLEEP_DIFF_HIGH", RANDOM_SLEEP_DIFF_HIGH), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL), ("NEXT_OPERATION_DELAY", NEXT_OPERATION_DELAY), ("FOLLOWER_DELAY_PER_BATCH", FOLLOWER_DELAY_PER_BATCH), ("FOLLOWEE_DELAY_PER_BATCH", FOLLOWEE_DELAY_PER_BATCH), ("FOLLOW_LIST_BROWSER_SCROLL_DELAY", FOLLOW_LIST_BROWSER_SCROLL_DELAY), ("MULTI_TARGET_STAGGER", MULTI_TARGET_STAGGER), ("MULTI_TARGET_STAGGER_JITTER", MULTI_TARGET_STAGGER_JITTER))
+    positive_integers = (("ERROR_FAILURE_THRESHOLD", ERROR_FAILURE_THRESHOLD),)
+    nonnegative_integers = (("DAILY_HUMAN_HITS", DAILY_HUMAN_HITS), ("FOLLOWERS_PER_BATCH", FOLLOWERS_PER_BATCH), ("FOLLOWEES_PER_BATCH", FOLLOWEES_PER_BATCH), ("FOLLOWER_LIMIT_TO_FETCH", FOLLOWER_LIMIT_TO_FETCH), ("FOLLOWEE_LIMIT_TO_FETCH", FOLLOWEE_LIMIT_TO_FETCH), ("IDENTITY_BUDGET_PER_DAY", IDENTITY_BUDGET_PER_DAY))
+    hours = (("MIN_H1", MIN_H1), ("MAX_H1", MAX_H1), ("MIN_H2", MIN_H2), ("MAX_H2", MAX_H2))
+    ports = (("SMTP_PORT", SMTP_PORT), ("WEB_DASHBOARD_PORT", WEB_DASHBOARD_PORT))
+    for name, value in positive_numbers:
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+            errors.append(f"{name} must be a number greater than zero, not {value!r}")
+    for name, value in nonnegative_numbers:
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+            errors.append(f"{name} must be a number zero or greater, not {value!r}")
+    for name, value in positive_integers:
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            errors.append(f"{name} must be an integer greater than zero, not {value!r}")
+    for name, value in nonnegative_integers:
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            errors.append(f"{name} must be an integer zero or greater, not {value!r}")
+    for name, value in hours:
+        if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 23:
+            errors.append(f"{name} must be an integer from 0 through 23, not {value!r}")
+    for name, value in ports:
+        if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 65535:
+            errors.append(f"{name} must be an integer from 1 through 65535, not {value!r}")
+    return errors
+
+
 # Reports the selected configuration, any startup rejection, known secrets and the final log destinations
 def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None, timezone_advice=None) -> List[DoctorCheck]:
     checks: List[DoctorCheck] = []
@@ -15799,6 +15829,10 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
         checks.append(make_doctor_check("Configuration", "PASS", "TLS certificate verification is on", "Every outbound request checks the server certificate"))
     else:
         checks.append(make_doctor_check("Configuration", "WARN", "TLS certificate verification is off", "VERIFY_SSL is False, so an intercepted connection cannot be told apart from the real service", "Set VERIFY_SSL back to True unless this network intercepts TLS with its own certificate authority", TLS_GUIDE_URL))
+
+    numeric_errors = runtime_configuration_errors()
+    if numeric_errors:
+        checks.append(make_doctor_check("Configuration", "FAIL", "One or more numeric settings are invalid", "Invalid numeric settings: " + "; ".join(numeric_errors), "Correct the reported settings in the configuration file", CONFIG_FILE_GUIDE_URL))
 
     follow_source = active_follow_list_source()
     if follow_source != 'browser':
