@@ -14117,7 +14117,18 @@ def _wizard_validate_destination(method: str, path, label: str) -> Path:
         if ".." in relative.parts:
             raise ValueError(f"{label} must be inside /data so it remains on the host after the setup container exits")
         return Path(PurePosixPath("/data", *relative.parts).as_posix())
-    return Path(path).expanduser().resolve()
+    # Inside the setup container /data is the mount itself, so the filesystem checks apply only to a host destination
+    destination = Path(path).expanduser().resolve()
+    if destination.exists() and destination.is_dir():
+        raise ValueError(f"{label} must be a file path, not a directory")
+    parent = destination.parent
+    while not parent.exists() and parent != parent.parent:
+        parent = parent.parent
+    if not parent.is_dir():
+        raise ValueError(f"{label} does not have a usable parent directory")
+    if not os.access(str(parent), os.W_OK):
+        raise ValueError(f"{label} is not writable through parent '{parent}'")
+    return destination
 
 
 # Converts a wizard destination into the matching path inside the data container mount
@@ -14650,14 +14661,18 @@ def _wizard_reset_section(state: WizardSetupState, config_keys, secret_keys) -> 
 
 
 # Confirms replacement or selects another config destination before answers are collected
-def _wizard_choose_config_destination(config_path: Path) -> Path:
+def _wizard_choose_config_destination(config_path: Path, method: str) -> Path:
     selected = config_path.expanduser().resolve()
     while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. A timestamped backup is kept. Rebuild it from your answers, starting from its current settings?", default=False):
         alternative = _wizard_ask_text("Another config destination or leave empty to cancel")
         if not alternative:
             print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
             raise SystemExit(1)
-        selected = Path(alternative).expanduser().resolve()
+        # The alternative gets the same checks as the destinations shown before the first question, so a bad path is refused here rather than at the save
+        try:
+            selected = _wizard_validate_destination(method, alternative, "Configuration destination")
+        except ValueError as exc:
+            print(f"  {exc}.")
     return selected
 
 
@@ -14998,7 +15013,7 @@ def _wizard_collect_destination_section(state: WizardSetupState, method: str) ->
         except ValueError as exc:
             print(f"  {exc}.")
     if selected_config != state.config_path:
-        state.config_path = _wizard_choose_config_destination(selected_config)
+        state.config_path = _wizard_choose_config_destination(selected_config, method)
     while True:
         env_text = _wizard_ask_text("Dotenv file destination", default=str(state.env_path), required=True)
         if env_text.casefold() == "none":
@@ -15185,7 +15200,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     print(f"Dotenv:                 {env_path}")
 
     try:
-        config_path = _wizard_choose_config_destination(config_path)
+        config_path = _wizard_choose_config_destination(config_path, method)
         for secret_key in SECRET_KEYS:
             existing_secret = _wizard_secret_value(secret_key, env_path)
             if existing_secret is not None:

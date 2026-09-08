@@ -9,6 +9,8 @@ Then use the interactive setup wizard. It asks which Instagram accounts to monit
 
 Every answer setup cannot use offers a way out, so one value you cannot produce right now does not cost you the answers already given. A blank answer asks whether to continue without it and names what stops working, and a rejected one offers to enter it again. Declining switches the part that needed it off, so half a mail server, a webhook with no destination or a login with no password is never written. A rebuilt file starts from the settings already in place with your answers applied over them. A section you decline is cleared rather than carried over, so declining email leaves no mail server behind. Email setup signs in to the mail server before saving, so a wrong password or an unreachable host is caught during setup instead of at the first alert. No email is sent. A refused sign-in offers the mail server questions again, and if the server was only unreachable the answers are kept so `--doctor` can check them later.
 
+The configuration and dotenv destinations are checked before the first question, so an unwritable path or a directory given by mistake is reported straight away rather than after you have answered everything.
+
 For a local install, the wizard can check the setup and start monitoring immediately. In a container, it prints the next Docker or Docker Compose commands to run.
 
 Use the tab that matches how you installed the tool. Copy and run only the commands in that tab.

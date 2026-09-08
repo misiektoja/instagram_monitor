@@ -259,7 +259,7 @@ class TestPromptWording:
                 im_module.run_setup_wizard(config_file=config_path, env_file=env_path)
 
             assert error.value.code == 23
-            choose_destination.assert_called_once_with(config_path.resolve())
+            choose_destination.assert_called_once_with(config_path.resolve(), "manual")
             output = capsys.readouterr().out
             assert "Setup Wizard\n\nThis asks a few questions" in output
             assert "Secrets go to the dotenv file. Non-secret settings go to the config file." in output
@@ -506,7 +506,34 @@ class TestWizardSafetyGates:
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
             monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: str(second))
 
-            assert im_module._wizard_choose_config_destination(first) == second.resolve()
+            assert im_module._wizard_choose_config_destination(first, "manual") == second.resolve()
+
+    # An alternate destination that cannot be written is refused and asked again instead of failing at the save
+    def test_existing_config_decline_rejects_an_unusable_alternate_path(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            existing = directory / "instagram_monitor.conf"
+            alternate = directory / "alternate.conf"
+            existing.write_text("old\n", encoding="utf-8")
+            answers = iter([str(directory), str(existing / "nested.conf"), str(alternate)])
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: False)
+            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: next(answers))
+
+            assert im_module._wizard_choose_config_destination(existing, "manual") == alternate.resolve()
+
+            output = capsys.readouterr().out
+            assert "Configuration destination must be a file path, not a directory." in output
+            assert "Configuration destination does not have a usable parent directory." in output
+
+    # A host destination is checked for being a file with a writable parent, as the setup page promises
+    def test_host_destinations_are_checked_before_the_first_question(self, im_module, tmp_path):
+        with pytest.raises(ValueError, match="must be a file path, not a directory"):
+            im_module._wizard_validate_destination("manual", tmp_path, "Configuration destination")
+        blocker = tmp_path / "blocker"
+        blocker.write_text("", encoding="utf-8")
+        with pytest.raises(ValueError, match="does not have a usable parent directory"):
+            im_module._wizard_validate_destination("pip", blocker / "nested.conf", "Dotenv destination")
+        assert im_module._wizard_validate_destination("manual", tmp_path / "missing" / "instagram_monitor.conf", "Configuration destination") == (tmp_path / "missing" / "instagram_monitor.conf").resolve()
 
     def test_dotenv_failure_blocks_doctor_and_start(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
