@@ -646,6 +646,24 @@ class TestRunDoctor:
         assert "Next steps" in output
         assert "Start monitoring:" in output
 
+    # The monitoring command needs a target, so it carries one the config will not supply and drops one it does
+    def test_the_monitoring_command_leaves_out_targets_the_config_supplies(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", False)
+
+        im_module.print_doctor_next_steps(["target.user"], None, None, ["target.user"])
+        saved_output = capsys.readouterr().out
+        im_module.print_doctor_next_steps([], None, None, [])
+        unsaved_output = capsys.readouterr().out
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", True)
+        im_module.print_doctor_next_steps([], None, None, [])
+        dashboard_output = capsys.readouterr().out
+
+        assert "target.user" not in saved_output
+        assert "<username>" not in saved_output
+        assert "<username>" in unsaved_output
+        # The dashboard can add a target after startup, so the command stays complete without one
+        assert "<username>" not in dashboard_output
+
     # Both sentinels belong in the printed command, so the retest monitors with the setup doctor just checked
     def test_cli_doctor_carries_both_disabled_searches_into_the_monitoring_command(self, im_module, monkeypatch, capsys):
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--doctor", "--config-file", "none", "--env-file", "none", "--no-color"])

@@ -13921,13 +13921,15 @@ def _wizard_local_command_args(method: str, exact: bool = False) -> List[str]:
 
 # Renders command arguments for the active host shell
 def _wizard_render_command(arguments) -> str:
-    values = [str(argument) for argument in arguments]
-    return subprocess.list2cmdline(values) if system() == "Windows" else shlex.join(values)
+    return " ".join(_wizard_quote_argument(argument) for argument in arguments)
 
 
-# Quotes one command argument for the active host shell
+# Quotes one command argument for the active host shell, leaving a <placeholder> as documentation for the reader
 def _wizard_quote_argument(value) -> str:
-    return _wizard_render_command([str(value)])
+    text = str(value)
+    if text.startswith("<") and text.endswith(">"):
+        return text
+    return subprocess.list2cmdline([text]) if system() == "Windows" else shlex.quote(text)
 
 
 # Returns the command prefix used to invoke the tool for the detected install method
@@ -14018,12 +14020,34 @@ def _wizard_print_command(label: str, command: str, suffix: str = "") -> None:
 
 # Prints the command that starts monitoring with the files this run checked, so a report read on its own
 # ends with the next action rather than leaving the reader to assemble the command
-def print_doctor_next_steps(targets=(), config_path=None, env_path=None, doctor_exit: int = 0) -> None:
-    command = _wizard_action_command(_wizard_install_method(), "", config_path, env_path, targets, web_dashboard=WEB_DASHBOARD_ENABLED)
+def print_doctor_next_steps(targets=(), config_path=None, env_path=None, saved_targets=(), doctor_exit: int = 0) -> None:
+    command = _wizard_action_command(_wizard_install_method(), "", config_path, env_path, _wizard_command_targets(targets, saved_targets)[1], web_dashboard=WEB_DASHBOARD_ENABLED)
     print(colorize("header", "\nNext steps\n"))
     _wizard_print_command("After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:", command)
     print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}")
 
+
+
+# Reads only the persisted targets from a config file, so a printed command can omit ones the config already supplies
+def _config_file_targets(config_path):
+    if not config_path or str(config_path).casefold() == "none":
+        return []
+    namespace: dict = {}
+    if not load_config_file(config_path, namespace=namespace, report_errors=False):
+        return []
+    return [str(target) for target in (namespace.get("TARGET_USERNAMES") or [])]
+
+
+# Returns the targets for the printed doctor and monitoring commands, dropping ones the effective config already supplies
+def _wizard_command_targets(explicit_targets=(), saved_targets=(), placeholder="<username>"):
+    explicit = [str(target) for target in explicit_targets or ()]
+    saved = [str(target) for target in saved_targets or ()]
+    known = explicit or saved
+    if not known:
+        # Monitoring needs a target unless the web dashboard adds one later, so the placeholder fills that gap
+        return (), (() if WEB_DASHBOARD_ENABLED else (placeholder,))
+    printed = () if known == saved else tuple(known)
+    return printed, printed
 
 
 # Builds one install-aware action command with safe paths and optional targets
@@ -16626,8 +16650,9 @@ def run_main():
         if cfg_path:
             method = _wizard_install_method()
             selected_env = env_path or Path.cwd() / ".env"
-            doctor_command = _wizard_action_command(method, "--doctor", cfg_path, selected_env, args.usernames)
-            monitor_command = _wizard_action_command(method, "", cfg_path, selected_env, args.usernames, web_dashboard=WEB_DASHBOARD_ENABLED)
+            doctor_targets, monitor_targets = _wizard_command_targets(args.usernames, TARGET_USERNAMES)
+            doctor_command = _wizard_action_command(method, "--doctor", cfg_path, selected_env, doctor_targets)
+            monitor_command = _wizard_action_command(method, "", cfg_path, selected_env, monitor_targets, web_dashboard=WEB_DASHBOARD_ENABLED)
             print(colorize("header", "\nNext steps\n"))
             _wizard_print_command("Check setup again:", doctor_command)
             _wizard_print_command("After Doctor passes, start monitoring:", monitor_command)
@@ -16970,7 +16995,7 @@ def run_main():
         # Targets already saved in the config file are left out, so the command stays as short as the wizard's
         # Both "none" sentinels are carried, since the printed command monitors with the setup doctor just checked
         next_env_path = "none" if DOTENV_FILE and str(DOTENV_FILE).casefold() == "none" else env_path
-        print_doctor_next_steps([] if not args.usernames else targets, cfg_path or active_config_path(), next_env_path, doctor_failures)
+        print_doctor_next_steps([] if not args.usernames else targets, cfg_path or active_config_path(), next_env_path, TARGET_USERNAMES, doctor_failures)
         sys.exit(1 if doctor_failures else 0)
 
     # Offline follow relationship analysis: read the already-saved lists, print the result and exit (no network requests, no monitoring loop)
