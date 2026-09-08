@@ -15153,7 +15153,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     global CLI_CONFIG_PATH, DOTENV_FILE
     if not sys.stdin.isatty():
         print(colorize("warning", "The setup wizard needs an interactive terminal (TTY)."))
-        print("Run it from an interactive shell or use --generate-config and edit the config file by hand.")
+        print("Run --setup from an interactive shell or use --generate-config and edit the files manually.")
         raise SystemExit(1)
 
     method = _wizard_install_method()
@@ -15391,7 +15391,7 @@ def _doctor_progress(text: str) -> None:
     previous_width = getattr(_doctor_progress, "width", 0)
     if previous_width:
         sys.stdout.write("\r" + " " * previous_width + "\r")
-    line = f"{text} ..."
+    line = f"* Checking {ANSI_ESCAPE_RE.sub('', sanitize_terminal_text(text))} ..."
     _doctor_progress.width = len(line)  # type: ignore[attr-defined]
     sys.stdout.write("\r" + colorize("info", line))
     sys.stdout.flush()
@@ -15852,7 +15852,7 @@ def doctor_check_session(report: DoctorReport, progress: Optional[Callable[[str]
     if report.bot is None:
         return [make_doctor_check("Session", "WARN", "Skipped session check", "Instaloader could not be initialised")]
     if progress is not None:
-        progress(f"Validating session for {SESSION_USERNAME}")
+        progress(f"the session for {SESSION_USERNAME}")
     try:
         report.bot.load_session_from_file(SESSION_USERNAME)
         who = report.bot.test_login()
@@ -15881,7 +15881,7 @@ def doctor_check_connectivity(report: DoctorReport, progress: Optional[Callable[
     if report.bot is None:
         return checks + [make_doctor_check("Connectivity", "WARN", "Skipped connectivity check", "Instaloader could not be initialised")]
     if progress is not None:
-        progress("Contacting Instagram")
+        progress("connectivity")
     try:
         profile_from_username_resilient(report.bot, FLAGGED_PROBE_USERNAME)
         return checks + [make_doctor_check("Connectivity", "PASS", "Instagram reachable", f"Fetched public account '{FLAGGED_PROBE_USERNAME}'")]
@@ -15902,7 +15902,7 @@ def doctor_check_targets(report: DoctorReport, targets, progress: Optional[Calla
     checks: List[DoctorCheck] = []
     for target in targets:
         if progress is not None:
-            progress(f"Looking up '{target}'")
+            progress(f"the monitored profile '{target}'")
         try:
             profile_from_username_resilient(report.bot, target)
             checks.append(make_doctor_check("Targets", "PASS", f"Target '{target}' found"))
@@ -15942,7 +15942,7 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
         checks.append(doctor_email_unusable_check(*problem))
     else:
         if progress is not None:
-            progress(f"Connecting to SMTP server {SMTP_HOST}")
+            progress(f"the mail server {SMTP_HOST}")
         try:
             context = smtp_ssl_context()
             smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=5)

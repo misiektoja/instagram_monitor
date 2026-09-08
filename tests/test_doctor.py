@@ -332,8 +332,8 @@ class TestDoctorProgress:
         monkeypatch.setattr(im_module.sys, "stdout", stream)
         monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
         im_module._doctor_progress.width = 0
-        im_module._doctor_progress("Checking authentication")
-        line = "Checking authentication ..."
+        im_module._doctor_progress("authentication")
+        line = "* Checking authentication ..."
         assert stream.getvalue() == "\r" + line
         im_module._doctor_progress_clear()
         assert stream.getvalue() == "\r" + line + "\r" + (" " * len(line)) + "\r"
@@ -344,10 +344,10 @@ class TestDoctorProgress:
         monkeypatch.setattr(im_module.sys, "stdout", stream)
         monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
         im_module._doctor_progress.width = 0
-        im_module._doctor_progress("Contacting Instagram")
-        first = "Contacting Instagram ..."
-        im_module._doctor_progress("Looking up 'testuser'")
-        second = "Looking up 'testuser' ..."
+        im_module._doctor_progress("the monitored profile 'testuser'")
+        first = "* Checking the monitored profile 'testuser' ..."
+        im_module._doctor_progress("connectivity")
+        second = "* Checking connectivity ..."
         expected = "\r" + first + "\r" + (" " * len(first)) + "\r" + "\r" + second
         assert stream.getvalue() == expected
 

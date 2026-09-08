@@ -1278,3 +1278,15 @@ def test_setup_refuses_a_config_destination_switched_off(tmp_path):
     assert result.returncode == 2
     assert "--setup requires a config destination and cannot use --config-file none" in result.stderr
     assert not (tmp_path / "none").exists()
+
+
+# Verifies the non-interactive message points at the same command and files the sibling monitors name
+def test_a_non_interactive_setup_names_the_shared_fallback(im_module, monkeypatch, capsys):
+    monkeypatch.setattr(im_module.sys.stdin, "isatty", lambda: False)
+
+    with pytest.raises(SystemExit) as raised:
+        im_module.run_setup_wizard()
+
+    assert raised.value.code == 1
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[-1] == "Run --setup from an interactive shell or use --generate-config and edit the files manually."
