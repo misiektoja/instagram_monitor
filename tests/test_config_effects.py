@@ -62,7 +62,7 @@ class TestConnectivityCheckResolution:
 
 class TestLivenessCounterRecomputation:
     # Verifies a changed check interval rescales the liveness cadence rather than keeping the import-time ratio
-    @pytest.mark.parametrize("check_interval,liveness_interval,expected", [(300, 43200, 144.0), (600, 43200, 72.0), (3600, 21600, 6.0)])
+    @pytest.mark.parametrize("check_interval,liveness_interval,expected", [(300, 43200, 144), (600, 43200, 72), (3600, 21600, 6), (5400, 43200, 8), (86400, 43200, 1)])
     def test_recompute_follows_the_effective_interval(self, im_module, monkeypatch, check_interval, liveness_interval, expected):
         monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", check_interval)
         monkeypatch.setattr(im_module, "LIVENESS_CHECK_INTERVAL", liveness_interval)
@@ -82,6 +82,37 @@ class TestLivenessCounterRecomputation:
         im_module.recompute_liveness_check_counter()
 
         assert im_module.LIVENESS_CHECK_COUNTER == 0
+
+
+class TestVerboseNotices:
+    # Verifies a verbose notice closes with the timestamp trailer once the monitoring screen has started
+    def test_a_verbose_notice_closes_with_the_timestamp_trailer(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "VERBOSE_MODE", True)
+        monkeypatch.setattr(im_module, "MONITORING_ACTIVE", False)
+
+        im_module.verbose_notice("Skipping updates for someone")
+        assert capsys.readouterr().out == "* Skipping updates for someone\n"
+
+        im_module.mark_monitoring_started()
+        im_module.verbose_notice("Skipping updates for someone")
+        output = capsys.readouterr().out
+
+        assert output.startswith("* Skipping updates for someone\n")
+        assert "Timestamp:" in output
+
+    # Verifies a verbose notice stays silent without the flag, so the quiet default is unchanged
+    def test_a_verbose_notice_stays_silent_without_the_flag(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "VERBOSE_MODE", False)
+
+        im_module.verbose_notice("Skipping updates for someone")
+
+        assert capsys.readouterr().out == ""
+
+    # Verifies the per-check hours-range notice goes through the shared notice helper rather than a bare print
+    def test_the_hours_range_notice_uses_the_shared_helper(self):
+        source = (Path(__file__).resolve().parents[1] / "instagram_monitor.py").read_text(encoding="utf-8")
+
+        assert "verbose_notice(skip_notice)" in source
 
 
 class TestPerCheckReporting:

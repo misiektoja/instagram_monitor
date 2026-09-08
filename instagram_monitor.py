@@ -1387,6 +1387,9 @@ MEDIA_DOWNLOAD_CHUNK_BYTES = 64 * 1024
 # Computed later once final INSTA_CHECK_INTERVAL is known (config/env/CLI) and updated on SIGTRAP/SIGABRT
 LIVENESS_CHECK_COUNTER = 0
 
+# Whether the monitoring screen has started, so a verbose notice knows if it needs to close itself with a timestamp
+MONITORING_ACTIVE = False
+
 stdout_bck = None
 last_output = []
 csvfieldnames = ['Date', 'Type', 'Old', 'New']
@@ -6259,6 +6262,23 @@ def verbose_print(message):
         print(f"* {message}")  # substitution applied in LOGGER.write
 
 
+# Prints verbose-only notices as one block, so a standalone line is not left without the timestamp trailer
+def verbose_notice(*messages):
+    if not VERBOSE_MODE or not messages:
+        return
+    for message in messages:
+        verbose_print(message)
+    # Before monitoring starts the notice belongs to the startup screen, which the monitoring header closes
+    if MONITORING_ACTIVE:
+        print_cur_ts()
+
+
+# Records that the monitoring screen has started, so a later verbose notice closes with its own timestamp
+def mark_monitoring_started():
+    global MONITORING_ACTIVE
+    MONITORING_ACTIVE = True
+
+
 # Prefixes one CSV value so spreadsheet software cannot evaluate Instagram-supplied text as a formula
 def escape_csv_formula(value):
     return f"'{value}" if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r") else value
@@ -6411,7 +6431,8 @@ def format_hour_range(h_min, h_max):
 def recompute_liveness_check_counter() -> None:
     global LIVENESS_CHECK_COUNTER
     if LIVENESS_CHECK_INTERVAL and INSTA_CHECK_INTERVAL > 0:
-        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / INSTA_CHECK_INTERVAL
+        # Whole checks, so a check interval longer than the liveness interval still waits one check instead of reporting on every check
+        LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // INSTA_CHECK_INTERVAL))
     else:
         LIVENESS_CHECK_COUNTER = 0
 
@@ -12542,6 +12563,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             return
 
     alive_counter = 0
+    mark_monitoring_started()
 
     # Primary loop
     consecutive_main_errors = 0
@@ -13709,9 +13731,13 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         highest_collab_ts_old = max(highest_collab_ts_old, max(p.get("ts", 0) for p in leaked))
 
         else:
-            if HOURS_VERBOSE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE) or DEBUG_MODE:
-                print(f"* Skipping updates for {user}, current hour: {int(cur_h)}, allowed: [{format_hours_as_ranges(hours_to_check())}]")
-                # print("─" * HORIZONTAL_LINE)
+            # Reached only while the hours range is on, so verbose mode alone decides the quiet form of this notice
+            skip_notice = f"Skipping updates for {user}, current hour: {int(cur_h)}, allowed: [{format_hours_as_ranges(hours_to_check())}]"
+            if HOURS_VERBOSE or DEBUG_MODE:
+                print(f"* {skip_notice}")
+                print_cur_ts()
+            else:
+                verbose_notice(skip_notice)
 
         alive_counter += 1
 
