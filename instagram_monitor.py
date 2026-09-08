@@ -1386,6 +1386,8 @@ MEDIA_DOWNLOAD_CHUNK_BYTES = 64 * 1024
 
 # Computed later once final INSTA_CHECK_INTERVAL is known (config/env/CLI) and updated on SIGTRAP/SIGABRT
 LIVENESS_CHECK_COUNTER = 0
+# Seconds rather than checks, because a failing run usually retries on a different interval than a healthy one
+LIVENESS_REMINDER_SECONDS = 0
 
 # Whether the monitoring screen has started, so a verbose notice knows if it needs to close itself with a timestamp
 MONITORING_ACTIVE = False
@@ -6429,12 +6431,14 @@ def format_hour_range(h_min, h_max):
 
 # Recomputes cycle-based liveness counter after INSTA_CHECK_INTERVAL changes
 def recompute_liveness_check_counter() -> None:
-    global LIVENESS_CHECK_COUNTER
+    global LIVENESS_CHECK_COUNTER, LIVENESS_REMINDER_SECONDS
     if LIVENESS_CHECK_INTERVAL and INSTA_CHECK_INTERVAL > 0:
         # Whole checks, so a check interval longer than the liveness interval still waits one check instead of reporting on every check
         LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // INSTA_CHECK_INTERVAL))
+        LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL
     else:
         LIVENESS_CHECK_COUNTER = 0
+        LIVENESS_REMINDER_SECONDS = 0
 
 
 # Returns the timestamp/datetime object in human readable format (long version); eg. Sun 21 Apr 2024, 15:08:45
@@ -9894,22 +9898,23 @@ class OutageReporter:
     def __init__(self) -> None:
         self.code: Optional[str] = None
         self.since: int = 0
-        self.checks: int = 0
+        self.reported_at: int = 0
 
-    # Records one failed check and returns "full" for a new failure, "degraded" on the liveness cadence,
+    # Records one failed check and returns "full" for a new failure, "degraded" once the liveness interval has passed,
     # "repeat" while the liveness banner is switched off or "" while the same failure is merely continuing
-    def failed(self, advice: RecoveryAdvice, liveness_counter: int) -> str:
+    def failed(self, advice: RecoveryAdvice, liveness_interval: int) -> str:
+        now = int(time.time())
         if advice.code != self.code:
             self.code = advice.code
-            self.since = int(time.time())
-            self.checks = 0
+            self.since = now
+            self.reported_at = now
             return "full"
-        self.checks += 1
         # With the liveness banner off there is nothing to carry the reminder, so the summary keeps its old cadence
-        if not liveness_counter:
+        if not liveness_interval:
             return "repeat"
-        if self.checks >= liveness_counter:
-            self.checks = 0
+        # Timed rather than counted, because a failing run usually retries on a different interval than a healthy one
+        if now - self.reported_at >= liveness_interval:
+            self.reported_at = now
             return "degraded"
         return ""
 
@@ -9920,7 +9925,7 @@ class OutageReporter:
         lasted = int(time.time()) - self.since
         self.code = None
         self.since = 0
-        self.checks = 0
+        self.reported_at = 0
         return lasted
 
 
@@ -12826,7 +12831,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 advice = classify_recovery_error(error_msg, bool(SESSION_USERNAME) and not skip_session)
 
                 # A failure that has not changed is left to the liveness cadence rather than repeated every check
-                outage_outcome = outage.failed(advice, LIVENESS_CHECK_COUNTER)
+                outage_outcome = outage.failed(advice, LIVENESS_REMINDER_SECONDS)
                 if outage_outcome in ("full", "repeat"):
                     print(f"* Error: {error_msg} (retrying in {display_time(r_sleep_time)})")
                 elif outage_outcome == "degraded":
@@ -13633,7 +13638,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     posts_advice = classify_recovery_error(error_msg, bool(SESSION_USERNAME) and not skip_session)
 
                     # A failure that has not changed is left to the liveness cadence rather than repeated every check
-                    outage_outcome = outage.failed(posts_advice, LIVENESS_CHECK_COUNTER)
+                    outage_outcome = outage.failed(posts_advice, LIVENESS_REMINDER_SECONDS)
                     if outage_outcome in ("full", "repeat"):
                         print(f"* Error: {error_msg} (retrying in {display_time(r_sleep_time)})")
                         print_fix_hint(error_msg, recovery_hint_tracker)
@@ -16023,7 +16028,7 @@ def apply_diagnostic_cli_overrides(args: argparse.Namespace) -> None:
 
 # Parses configuration and command-line options then starts the selected operation
 def run_main():
-    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE, IDENTITY_BUDGET_PER_DAY, CIRCUIT_BREAKER, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
+    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, LIVENESS_REMINDER_SECONDS, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE, IDENTITY_BUDGET_PER_DAY, CIRCUIT_BREAKER, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H, TRUNCATE_CHARS
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
