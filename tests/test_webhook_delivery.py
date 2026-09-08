@@ -440,6 +440,7 @@ def test_setup_wizard_persists_ntfy_secrets_privately(im_module, monkeypatch, ca
         monkeypatch.setattr(im_module, "_wizard_ask_duration", lambda question, default: default)
         monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
         monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
+        monkeypatch.setattr(im_module, "_wizard_collect_connection_section", lambda state: None)
         monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
         monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda *args, **kwargs: next(secrets))
         monkeypatch.setattr(im_module, "run_doctor", Mock(side_effect=AssertionError("doctor called")))

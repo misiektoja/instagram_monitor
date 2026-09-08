@@ -543,6 +543,8 @@ instagram_monitor <target_insta_user> --follow-list-source graphql
 
 The startup summary names the source in use. Anonymous mode is unaffected, since neither surface lists followers without a session.
 
+`--setup` asks for the source in login mode, and the Web Dashboard changes it under **Settings** in the **Instagram Connection** card.
+
 ### Browser Source (experimental)
 
 `browser` is a third source that does not call Instagram's API at all. It drives a real browser through the ordinary web pages, opens the follower or following dialog and reads the names off the rendered list, the same way a person scrolling that dialog would.
@@ -727,6 +729,8 @@ instagram_monitor <target_insta_user> --http-backend curl_cffi --impersonate fir
 See the [curl_cffi documentation](https://github.com/lexiforest/curl_cffi) for the full list of impersonation targets available in your installed version.
 
 The target is checked against that list at startup and when saved from the Web Dashboard. An unrecognized value stops the tool with a message naming supported targets, rather than letting every Instagram request fail later as a connection error.
+
+`--setup` asks for the backend and the impersonated browser, offering only the targets the installed curl_cffi accepts. The Web Dashboard changes both under **Settings** in the **Instagram Connection** card, where curl_cffi is not selectable when the package is missing.
 
 <a id="privacy-substitutions"></a>
 ## Privacy Substitutions

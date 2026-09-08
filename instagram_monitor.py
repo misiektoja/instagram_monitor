@@ -3295,8 +3295,11 @@ def create_web_dashboard_app():
                 'profile_pic_changes': DETECT_CHANGED_PROFILE_PIC,
                 'skip_session_login': SKIP_SESSION,
                 'http_backend': HTTP_BACKEND,
+                'curl_cffi_available': _CURL_CFFI_AVAILABLE,
                 'follow_list_source': FOLLOW_LIST_SOURCE,
+                'follow_list_sources': list(FOLLOW_LIST_SOURCES),
                 'impersonate': CURL_CFFI_IMPERSONATE,
+                'impersonate_targets': sorted(curl_cffi_supported_impersonate_targets()),
                 'config_file': CLI_CONFIG_PATH or "None",
                 'dotenv_file': DOTENV_FILE or "None",
                 'template_dir': WEB_DASHBOARD_TEMPLATE_DIR or "Auto",
@@ -14592,6 +14595,7 @@ WIZARD_INTERFACE_CONFIG_KEYS = ("WEB_DASHBOARD_ENABLED", "DASHBOARD_ENABLED", "W
 WIZARD_WEBHOOK_CONFIG_KEYS = ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_FOLLOWERS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
 WIZARD_EMAIL_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL", "STATUS_NOTIFICATION", "FOLLOWERS_NOTIFICATION", "ERROR_NOTIFICATION")
 WIZARD_OUTPUT_CONFIG_KEYS = ("DISABLE_LOGGING", "CSV_FILE")
+WIZARD_CONNECTION_CONFIG_KEYS = ("HTTP_BACKEND", "CURL_CFFI_IMPERSONATE", "FOLLOW_LIST_SOURCE")
 
 
 # The mail server settings the wizard collects, and how long its sign-in check waits for the server
@@ -15021,6 +15025,41 @@ def _wizard_collect_output_section(state: WizardSetupState) -> None:
     state.config_values["CSV_FILE"] = _wizard_normalize_csv_path(_wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or "")))
 
 
+
+# Browser profiles the wizard offers as pinned curl_cffi impersonation targets
+WIZARD_IMPERSONATE_CHOICES = ("chrome", "firefox", "safari", "safari_ios", "edge")
+
+
+# Returns the pinned impersonation targets to offer, keeping only what the installed curl_cffi accepts
+def _wizard_impersonate_options() -> List[str]:
+    supported = curl_cffi_supported_impersonate_targets()
+    # A curl_cffi build that does not expose its target list is trusted rather than reduced to nothing
+    if not supported:
+        return list(WIZARD_IMPERSONATE_CHOICES)
+    return [target for target in WIZARD_IMPERSONATE_CHOICES if target in supported]
+
+
+# Collects the HTTP transport, its impersonated browser and the surface follower lists are read from
+def _wizard_collect_connection_section(state: WizardSetupState) -> None:
+    _wizard_reset_section(state, WIZARD_CONNECTION_CONFIG_KEYS, ())
+    backend_options = [("curl_cffi", "Impersonate a real browser's TLS fingerprint.\nAvoids Instagram answering the very first request with 429, most often seen on Linux and Raspberry Pi."), ("requests", "The stock transport using this machine's own TLS stack.")]
+    if not _CURL_CFFI_AVAILABLE:
+        backend_options[0] = ("curl_cffi", "Impersonate a real browser's TLS fingerprint.\nThe curl_cffi package is not installed here, so monitoring would fall back to requests until you install it.")
+    backend = "requests" if _wizard_ask_choice("How should requests to Instagram be sent?", backend_options, default_index=0 if _CURL_CFFI_AVAILABLE else 1) else "curl_cffi"
+    state.config_values["HTTP_BACKEND"] = backend
+
+    if backend == "curl_cffi":
+        targets = _wizard_impersonate_options()
+        options = [("Auto", "Match the browser identity in USER_AGENT, so the TLS and header fingerprints stay consistent.")]
+        options.extend((target, "") for target in targets)
+        selected = _wizard_ask_choice("Which browser should curl_cffi impersonate?", options, default_index=0)
+        state.config_values["CURL_CFFI_IMPERSONATE"] = "auto" if selected == 0 else targets[selected - 1]
+
+    # Neither surface lists followers without a session, so the question is only worth asking in login mode
+    if state.logged_in:
+        source_options = [("Auto", "Read over the REST endpoints Instagram's own web app calls.\nRetry over GraphQL only when REST is missing or unreadable and nothing was returned yet."), ("REST only", "Report the error instead of retrying on the other surface."), ("GraphQL only", "The older queries, which is what versions before 4.0 used.")]
+        state.config_values["FOLLOW_LIST_SOURCE"] = ("auto", "rest", "graphql")[_wizard_ask_choice("Where should follower and following lists be read from?", source_options, default_index=0)]
+
 # Lets the user change file destinations and recollects secret-dependent sections when needed
 def _wizard_collect_destination_section(state: WizardSetupState, method: str) -> None:
     while True:
@@ -15060,6 +15099,9 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
     email_categories = _wizard_notification_categories(state.config_values) if state.want_email else []
     webhook_categories = _wizard_notification_categories(state.config_values, "WEBHOOK_") if state.want_webhook else []
     webhook_state = f"enabled ({webhook_provider_display_name(state.config_values.get('WEBHOOK_PROVIDER'))})" if state.want_webhook else "disabled"
+    backend_summary = str(state.config_values.get("HTTP_BACKEND") or "curl_cffi")
+    if backend_summary == "curl_cffi":
+        backend_summary += f" impersonating {state.config_values.get('CURL_CFFI_IMPERSONATE') or 'auto'}"
     rows = [
         ("Targets", target_summary),
         ("Persist targets", "yes" if state.persist_targets else "no"),
@@ -15071,6 +15113,9 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
         rows.append(("Browser", browser_label(state.import_browser)))
     if state.container_host:
         rows.append(("Docker host", CONTAINER_FIREFOX_HOSTS[state.container_host][0]))
+    rows.append(("HTTP backend", backend_summary))
+    if state.logged_in:
+        rows.append(("Follower list source", str(state.config_values.get("FOLLOW_LIST_SOURCE") or "auto")))
     rows.extend([
         ("Interface", interface),
         ("Email", "enabled" if state.want_email else "disabled"),
@@ -15089,7 +15134,7 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
 
 # Opens one selected setup section then returns to the summary
 def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
-    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets", "Change the Instagram accounts that are monitored."), ("Polling interval", "Change how often Instagram is checked."), ("Login and session", "Change no-login, browser or credential settings."), ("Interface", "Change the dashboard or plain text mode."), ("Email notifications", "Change SMTP details and email events."), ("Webhook alerts", "Change Discord or ntfy details and events."), ("Output files", "Change log and CSV output settings."), ("File destinations", "Change the configuration or dotenv output path."), ("Return to summary", "Keep every current answer.")])
+    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets", "Change the Instagram accounts that are monitored."), ("Polling interval", "Change how often Instagram is checked."), ("Login and session", "Change no-login, browser or credential settings."), ("Instagram connection", "Change the HTTP backend and the follower list source."), ("Interface", "Change the dashboard or plain text mode."), ("Email notifications", "Change SMTP details and email events."), ("Webhook alerts", "Change Discord or ntfy details and events."), ("Output files", "Change log and CSV output settings."), ("File destinations", "Change the configuration or dotenv output path."), ("Return to summary", "Keep every current answer.")])
     if section == 0:
         print()
         _wizard_collect_target_section(state, allow_empty=state.want_web)
@@ -15099,14 +15144,16 @@ def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
     elif section == 2:
         _wizard_collect_login_section(state, method)
     elif section == 3:
-        _wizard_collect_interface_section(state, method)
+        _wizard_collect_connection_section(state)
     elif section == 4:
-        _wizard_collect_email_section(state)
+        _wizard_collect_interface_section(state, method)
     elif section == 5:
-        _wizard_collect_webhook_section(state)
+        _wizard_collect_email_section(state)
     elif section == 6:
-        _wizard_collect_output_section(state)
+        _wizard_collect_webhook_section(state)
     elif section == 7:
+        _wizard_collect_output_section(state)
+    elif section == 8:
         print()
         _wizard_collect_destination_section(state, method)
 
@@ -15234,6 +15281,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         print()
         _wizard_collect_polling_section(state)
         _wizard_collect_login_section(state, method)
+        _wizard_collect_connection_section(state)
         _wizard_collect_interface_section(state, method)
         _wizard_collect_email_section(state)
         _wizard_collect_webhook_section(state)

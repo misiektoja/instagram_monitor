@@ -1469,6 +1469,36 @@
                     </div>
                 </div>
 
+                <!-- Instagram Connection Card -->
+                <div class="card">
+                    <div class="card-title">Instagram Connection</div>
+                    <div class="form-group" style="margin: 10px 0;">
+                        <label class="form-label">HTTP Backend</label>
+                        <select class="form-input" id="http-backend" onchange="updateConnectionNote()">
+                            <option value="curl_cffi">curl_cffi (browser TLS fingerprint)</option>
+                            <option value="requests">requests (system TLS stack)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin: 10px 0;" id="impersonate-group">
+                        <label class="form-label">Impersonated Browser</label>
+                        <select class="form-input" id="impersonate">
+                            <option value="auto">Auto (match the user agent)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin: 10px 0;">
+                        <label class="form-label">Follower List Source</label>
+                        <select class="form-input" id="follow-list-source" onchange="updateConnectionNote()">
+                            <option value="auto">Auto (REST, retry over GraphQL)</option>
+                            <option value="rest">REST only</option>
+                            <option value="graphql">GraphQL only</option>
+                            <option value="browser">Browser (experimental)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin: 10px 0;">
+                        <label class="form-label" id="connection-note"></label>
+                    </div>
+                </div>
+
                 <!-- Proxy Settings Card -->
                 <div class="card">
                     <div class="card-title">Proxy Settings</div>
@@ -1956,6 +1986,42 @@
             `;
         }
 
+        // Browser profiles offered when the installed curl_cffi does not publish its own list
+        const FALLBACK_IMPERSONATE_TARGETS = ['chrome', 'firefox', 'safari', 'safari_ios', 'edge'];
+
+        function populateConnectionSettings(s) {
+            const backend = document.getElementById('http-backend');
+            const curlOption = backend.querySelector('option[value="curl_cffi"]');
+            const available = s.curl_cffi_available !== false;
+            curlOption.disabled = !available;
+            curlOption.textContent = available ? 'curl_cffi (browser TLS fingerprint)' : 'curl_cffi (not installed)';
+            backend.value = s.http_backend || (available ? 'curl_cffi' : 'requests');
+
+            const impersonate = document.getElementById('impersonate');
+            const targets = (s.impersonate_targets && s.impersonate_targets.length) ? s.impersonate_targets : FALLBACK_IMPERSONATE_TARGETS;
+            const current = s.impersonate || 'auto';
+            // The saved target is kept selectable even when this curl_cffi build no longer lists it
+            const selectable = targets.includes(current) || current === 'auto' ? targets : [current].concat(targets);
+            impersonate.innerHTML = '<option value="auto">Auto (match the user agent)</option>' +
+                selectable.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+            impersonate.value = current;
+
+            document.getElementById('follow-list-source').value = s.follow_list_source || 'auto';
+            updateConnectionNote();
+        }
+
+        function updateConnectionNote() {
+            const backend = document.getElementById('http-backend').value;
+            const source = document.getElementById('follow-list-source').value;
+            document.getElementById('impersonate-group').style.display = backend === 'curl_cffi' ? '' : 'none';
+            const notes = [];
+            if (source === 'browser') {
+                notes.push('The browser source drives a real browser and needs Playwright. It is experimental and risks the logged-in account.');
+            }
+            notes.push('Backend changes take effect on the next Instagram request.');
+            document.getElementById('connection-note').innerHTML = '<BR>' + notes.map(escapeHtml).join('<BR>');
+        }
+
         function renderFullConfig(config) {
             const grid = document.getElementById('full-config-grid');
             if (!grid) return;
@@ -2011,6 +2077,9 @@
             const envItems = [
                 { l: 'Browser User Agent', v: config.user_agent ? config.user_agent : '-' },
                 { l: 'Mobile User Agent', v: config.user_agent_mobile ? config.user_agent_mobile : '-' },
+                { l: 'HTTP Backend', v: config.http_backend },
+                { l: 'Impersonated Browser', v: config.http_backend === 'curl_cffi' ? (config.impersonate || 'auto') : '-' },
+                { l: 'Follower List Source', v: config.follow_list_source },
                 { l: 'Local Timezone', v: config.local_timezone },
                 { l: 'Config File', v: config.config_file },
                 { l: 'Dotenv File', v: config.dotenv_file },
@@ -2240,6 +2309,8 @@
             document.getElementById('webhook-status').checked = s.webhook_status || false;
             document.getElementById('webhook-followers').checked = s.webhook_followers || false;
             document.getElementById('webhook-errors').checked = s.webhook_errors || false;
+
+            populateConnectionSettings(s);
 
             document.getElementById('proxy-enabled').checked = s.proxy_enabled || false;
             const proxyUrl = document.getElementById('proxy-url');
@@ -2518,6 +2589,10 @@
                 webhook_status: document.getElementById('webhook-status').checked,
                 webhook_followers: document.getElementById('webhook-followers').checked,
                 webhook_errors: document.getElementById('webhook-errors').checked,
+
+                http_backend: document.getElementById('http-backend').value,
+                impersonate: document.getElementById('impersonate').value,
+                follow_list_source: document.getElementById('follow-list-source').value,
 
                 proxy_enabled: document.getElementById('proxy-enabled').checked,
                 proxy_url: document.getElementById('proxy-url').value,

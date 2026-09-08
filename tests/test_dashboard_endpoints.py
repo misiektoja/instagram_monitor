@@ -102,6 +102,59 @@ class TestDashboardSettings:
         assert response.status_code == 200
         assert im_module.WEBHOOK_PROVIDER == "ntfy"
 
+    # The connection card offers every transport and list surface the settings endpoint accepts
+    def test_settings_form_offers_the_connection_choices(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+
+        html = client.get("/").get_data(as_text=True)
+
+        assert 'id="http-backend"' in html and 'id="impersonate"' in html and 'id="follow-list-source"' in html
+        for backend in ("curl_cffi", "requests"):
+            assert f'<option value="{backend}">' in html
+        for source in im_module.FOLLOW_LIST_SOURCES:
+            assert f'<option value="{source}">' in html
+
+    # Settings GET reports what the installed curl_cffi can do, so the form cannot offer an unusable choice
+    def test_settings_get_reports_the_installed_transport_options(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
+        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"chrome", "edge"})
+
+        data = client.get("/api/settings").get_json()
+
+        assert data["curl_cffi_available"] is False
+        assert data["impersonate_targets"] == ["chrome", "edge"]
+        assert data["follow_list_sources"] == list(im_module.FOLLOW_LIST_SOURCES)
+
+    # Settings POST applies the connection choices the form sends
+    def test_settings_round_trip_the_connection_choices(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "requests")
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "auto")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "auto")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"chrome", "firefox"})
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"http_backend": "curl_cffi", "impersonate": "firefox", "follow_list_source": "rest"})
+
+        assert response.status_code == 200
+        assert im_module.HTTP_BACKEND == "curl_cffi"
+        assert im_module.CURL_CFFI_IMPERSONATE == "firefox"
+        assert im_module.FOLLOW_LIST_SOURCE == "rest"
+
+    # Settings POST rejects a transport this machine cannot use instead of failing every later request
+    def test_settings_post_rejects_an_uninstalled_transport(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "requests")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
+
+        response = client.post("/api/settings", json={"http_backend": "curl_cffi"})
+
+        assert response.status_code == 400
+        assert im_module.HTTP_BACKEND == "requests"
+
     # Settings POST rejects a too-small interval without changing the live value
     def test_settings_post_rejects_too_small_check_interval(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)

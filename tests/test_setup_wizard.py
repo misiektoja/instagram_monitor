@@ -5,7 +5,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import types
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import Mock
@@ -151,6 +150,7 @@ class TestEditableReview:
             monkeypatch.setattr(im_module, "_wizard_ask_duration", lambda question, default: default)
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
             monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
+            monkeypatch.setattr(im_module, "_wizard_collect_connection_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
 
             with pytest.raises(SystemExit) as error:
@@ -176,6 +176,7 @@ class TestEditableReview:
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
             monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
             monkeypatch.setattr(im_module, "run_doctor", Mock(side_effect=AssertionError("doctor called")))
+            monkeypatch.setattr(im_module, "_wizard_collect_connection_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
 
             with pytest.raises(SystemExit) as error:
@@ -321,6 +322,7 @@ class TestSectionOrder:
             monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: calls.append("interface"))
             monkeypatch.setattr(im_module, "_wizard_collect_email_section", lambda state: calls.append("email"))
             monkeypatch.setattr(im_module, "_wizard_collect_webhook_section", lambda state: calls.append("webhook"))
+            monkeypatch.setattr(im_module, "_wizard_collect_connection_section", lambda state: calls.append("connection"))
             monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: calls.append("output"))
             monkeypatch.setattr(im_module, "_wizard_review_setup", lambda state, method: calls.append("review") or False)
 
@@ -329,7 +331,7 @@ class TestSectionOrder:
 
             output = capsys.readouterr().out
             assert error.value.code == 1
-            assert calls == ["target:True", "polling", "login", "interface", "email", "webhook", "output", "review"]
+            assert calls == ["target:True", "polling", "login", "connection", "interface", "email", "webhook", "output", "review"]
             assert "Instagram polling interval [5400s - 1h 30m]:\n\nHow do you want to access Instagram?" in output
             assert "Instagram polling interval [5400s - 1h 30m]:\n\n\nHow do you want to access Instagram?" not in output
 
@@ -354,14 +356,14 @@ class TestSectionOrder:
         with make_test_directory() as directory_name:
             state = make_setup_state(im_module, Path(directory_name))
             labels = []
-            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: labels.extend(label for label, _ in options) or 8)
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: labels.extend(label for label, _ in options) or 9)
 
             im_module._wizard_print_setup_summary(state, "manual")
             summary = capsys.readouterr().out
             im_module._wizard_edit_setup_section(state, "manual")
 
             assert summary.index("Polling interval:") < summary.index("Login:")
-            assert labels == ["Targets", "Polling interval", "Login and session", "Interface", "Email notifications", "Webhook alerts", "Output files", "File destinations", "Return to summary"]
+            assert labels == ["Targets", "Polling interval", "Login and session", "Instagram connection", "Interface", "Email notifications", "Webhook alerts", "Output files", "File destinations", "Return to summary"]
 
 
 class TestWizardSafetyGates:
@@ -379,6 +381,7 @@ class TestWizardSafetyGates:
             monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: None)
             monkeypatch.setattr(im_module, "_wizard_collect_email_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_webhook_section", lambda state: None)
+            monkeypatch.setattr(im_module, "_wizard_collect_connection_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_review_setup", lambda state, method: True)
             monkeypatch.setattr(im_module, "run_doctor", Mock(side_effect=AssertionError("doctor ran")))
@@ -410,6 +413,7 @@ class TestWizardSafetyGates:
             monkeypatch.setattr(im_module, "_wizard_collect_interface_section", lambda state, method: None)
             monkeypatch.setattr(im_module, "_wizard_collect_email_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_webhook_section", lambda state: None)
+            monkeypatch.setattr(im_module, "_wizard_collect_connection_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_review_setup", lambda state, method: True)
             ask_mock = Mock(side_effect=AssertionError("Doctor prompt was offered before Firefox import"))
@@ -551,6 +555,7 @@ class TestWizardSafetyGates:
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
             monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
             monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda *args, **kwargs: "https://discord.example.test/hook")
+            monkeypatch.setattr(im_module, "_wizard_collect_connection_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
             monkeypatch.setattr(im_module, "update_dotenv_file", Mock(side_effect=OSError("write failed")))
             monkeypatch.setattr(im_module, "run_doctor", Mock(side_effect=AssertionError("doctor called")))
@@ -580,6 +585,7 @@ class TestWizardSafetyGates:
                 return next(answers)
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", ask_yes_no)
             monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
+            monkeypatch.setattr(im_module, "_wizard_collect_connection_section", lambda state: None)
             monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
             monkeypatch.setattr(im_module, "run_doctor", Mock(return_value=2))
             monkeypatch.setattr(im_module, "_wizard_launch_monitor", Mock(side_effect=AssertionError("monitor started")))
@@ -640,6 +646,123 @@ def test_a_blank_csv_answer_disables_csv_output(im_module, monkeypatch):
 
         assert state.config_values["DISABLE_LOGGING"] is False
         assert state.config_values["CSV_FILE"] == ""
+
+
+# Answers each connection question by the index named for it, and records what was offered
+def scripted_connection_choices(im_module, monkeypatch, answers):
+    asked = {}
+
+    def ask(question, options, default_index=0):
+        key = "backend" if "requests to Instagram" in question else "impersonate" if "impersonate" in question else "source"
+        asked[key] = {"options": [label for label, _ in options], "default": default_index}
+        return answers.get(key, default_index)
+
+    monkeypatch.setattr(im_module, "_wizard_ask_choice", ask)
+    return asked
+
+
+# Verifies the connection section records the transport, the impersonated browser and the list surface
+def test_the_connection_section_records_every_answer(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"chrome", "firefox", "safari"})
+        scripted_connection_choices(im_module, monkeypatch, {"backend": 0, "impersonate": 2, "source": 2})
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert state.config_values["HTTP_BACKEND"] == "curl_cffi"
+        assert state.config_values["CURL_CFFI_IMPERSONATE"] == "firefox"
+        assert state.config_values["FOLLOW_LIST_SOURCE"] == "graphql"
+
+
+# Verifies the stock transport skips the impersonation question, which only curl_cffi acts on
+def test_the_requests_backend_is_not_asked_which_browser_to_impersonate(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        asked = scripted_connection_choices(im_module, monkeypatch, {"backend": 1})
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert state.config_values["HTTP_BACKEND"] == "requests"
+        assert "impersonate" not in asked
+        assert state.config_values["CURL_CFFI_IMPERSONATE"] == state.baseline_values["CURL_CFFI_IMPERSONATE"]
+
+
+# Verifies no-login setup is not asked a question about lists no surface returns without a session
+def test_no_login_setup_is_not_asked_for_a_follower_list_source(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        asked = scripted_connection_choices(im_module, monkeypatch, {"backend": 0})
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert "source" not in asked
+        assert state.config_values["FOLLOW_LIST_SOURCE"] == state.baseline_values["FOLLOW_LIST_SOURCE"]
+
+
+# Verifies a machine without curl_cffi defaults to the transport it can actually use and says so
+def test_a_missing_curl_cffi_defaults_to_the_stock_transport(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
+        asked = scripted_connection_choices(im_module, monkeypatch, {})
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert asked["backend"]["default"] == 1
+        assert state.config_values["HTTP_BACKEND"] == "requests"
+
+
+# Verifies only impersonation targets the installed curl_cffi accepts are offered
+def test_the_impersonation_targets_come_from_the_installed_curl_cffi(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"chrome", "edge"})
+        asked = scripted_connection_choices(im_module, monkeypatch, {"backend": 0})
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert asked["impersonate"]["options"] == ["Auto", "chrome", "edge"]
+        assert state.config_values["CURL_CFFI_IMPERSONATE"] == "auto"
+
+
+# Verifies a curl_cffi build that publishes no target list is trusted rather than left with no choice
+def test_an_unlisted_curl_cffi_build_still_offers_the_common_targets(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: set())
+
+    assert im_module._wizard_impersonate_options() == list(im_module.WIZARD_IMPERSONATE_CHOICES)
+
+
+# Verifies the review summary names the transport and, in login mode, the list surface
+def test_the_summary_names_the_connection_answers(im_module, monkeypatch, capsys):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        state.config_values.update({"HTTP_BACKEND": "curl_cffi", "CURL_CFFI_IMPERSONATE": "firefox", "FOLLOW_LIST_SOURCE": "rest"})
+
+        im_module._wizard_print_setup_summary(state, "manual")
+
+        summary = capsys.readouterr().out
+        assert "HTTP backend:" in summary and "curl_cffi impersonating firefox" in summary
+        assert "Follower list source:" in summary and "rest" in summary
+
+
+# Verifies no-login setup is not shown a follower list row for lists it never fetches
+def test_the_summary_hides_the_list_source_without_a_session(im_module, capsys):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+
+        im_module._wizard_print_setup_summary(state, "manual")
+
+        summary = capsys.readouterr().out
+        assert "HTTP backend:" in summary
+        assert "Follower list source:" not in summary
 
 
 class TestRejectedAnswerEscape:
@@ -827,7 +950,7 @@ def test_the_csv_answer_gains_a_csv_extension_when_it_has_none(im_module, monkey
         state = make_setup_state(im_module, Path(directory_name))
         monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
         for typed, expected in (("activity", "activity.csv"), ("activity.csv", "activity.csv"), ("activity.txt", "activity.txt"), ("", "")):
-            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", **kwargs: typed)
+            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", answer=typed, **kwargs: answer)
             im_module._wizard_collect_output_section(state)
             assert state.config_values["CSV_FILE"] == expected
 
@@ -1073,6 +1196,7 @@ def install_saving_wizard_flow(im_module, monkeypatch, answers):
     monkeypatch.setattr(im_module, "_wizard_ask_yes_no", Mock(side_effect=list(answers)))
     monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
     monkeypatch.setattr(im_module, "run_doctor", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(im_module, "_wizard_collect_connection_section", lambda state: None)
     monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
 
 
