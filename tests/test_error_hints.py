@@ -1,5 +1,6 @@
 """Tests for the action-oriented error hint classifier (no network)."""
 
+import inspect
 import smtplib
 
 import pytest
@@ -197,3 +198,86 @@ class TestSmtpErrorSummary:
     ])
     def test_smtp_failures_get_a_stable_summary(self, im_module, error, summary):
         assert im_module.classify_smtp_error(error)[0] == summary
+
+
+class TestOutageReporting:
+    # Every classified failure carries a stable code, so a repeat can be recognized without re-reading its text
+    @pytest.mark.parametrize("msg, code", [
+        ("ConnectionException: 429 Too Many Requests", "instagram.rate_limited"),
+        ("JSONDecodeError: challenge_required", "instagram.challenge"),
+        ("FileNotFoundError: Instagram session file for me not found", "session.missing"),
+        ("ConnectionException: Login required, redirected", "session.expired"),
+        ("ProfileNotExistsException: Profile xyz does not exist", "target.not_found"),
+        ("ConnectionException: HTTPSConnectionPool max retries exceeded", "network.unavailable"),
+        ("SomethingElse: totally unknown error", "unknown"),
+    ])
+    def test_known_errors_get_a_stable_recovery_code(self, im_module, msg, code):
+        advice = im_module.classify_recovery_error(msg)
+
+        assert advice.code == code
+        assert advice.summary == im_module.classify_error_message(msg)[0]
+
+    # A repeated failure prints its fix once, so a long outage does not repeat the same paragraph every check
+    def test_a_repeated_failure_prints_its_fix_once(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+        tracker = im_module.RecoveryHintTracker()
+
+        im_module.print_fix_hint("ConnectionException: 429 Too Many Requests", tracker)
+        first = capsys.readouterr().out
+        im_module.print_fix_hint("ConnectionException: 429 Too Many Requests", tracker)
+        second = capsys.readouterr().out
+        tracker.reset()
+        im_module.print_fix_hint("ConnectionException: 429 Too Many Requests", tracker)
+        third = capsys.readouterr().out
+
+        assert "To fix: " in first
+        assert second == ""
+        assert third == first
+
+    # A lasting failure is reported once and then only on the liveness cadence
+    def test_the_outage_reporter_reports_once_then_on_the_cadence(self, im_module):
+        reporter = im_module.OutageReporter()
+        advice = im_module.classify_recovery_error("ConnectionException: 429 Too Many Requests")
+
+        assert reporter.failed(advice, 3) == "full"
+        assert [reporter.failed(advice, 3) for _ in range(3)] == ["", "", "degraded"]
+        assert reporter.recovered() is not None
+        assert reporter.recovered() is None
+
+    # The summary keeps its every-check cadence when the liveness banner is switched off
+    def test_the_outage_reporter_keeps_repeating_without_a_liveness_banner(self, im_module):
+        reporter = im_module.OutageReporter()
+        advice = im_module.classify_recovery_error("ConnectionException: 429 Too Many Requests")
+
+        assert reporter.failed(advice, 0) == "full"
+        assert [reporter.failed(advice, 0) for _ in range(2)] == ["repeat", "repeat"]
+
+    # A failure category that changes is reported in full again rather than hidden by the previous one
+    def test_a_changed_failure_category_is_reported_in_full(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "UTC")
+        reporter = im_module.OutageReporter()
+        limited = im_module.classify_recovery_error("ConnectionException: 429 Too Many Requests")
+        expired = im_module.classify_recovery_error("ConnectionException: Login required, redirected")
+
+        assert reporter.failed(limited, 5) == "full"
+        assert reporter.failed(limited, 5) == ""
+        assert reporter.failed(expired, 5) == "full"
+
+        im_module.print_outage_liveness("misiektoja", expired, int(im_module.time.time()) - 60)
+        im_module.print_outage_recovery("misiektoja", 60)
+
+        output = capsys.readouterr().out
+        assert f"* Monitoring degraded for misiektoja. {expired.summary} since " in output
+        assert "Liveness check, timestamp:" in output
+        assert "* Monitoring recovered for misiektoja after 1 minute" in output
+
+    # Both loop failure paths route through the outage reporter, so neither repeats itself every check
+    def test_the_loop_routes_its_failures_through_the_outage_reporter(self, im_module):
+        module_source = inspect.getsource(im_module)
+        start = module_source.index("def _run_instagram_monitor_pass(")
+        source = module_source[start:module_source.index("\ndef ", start)]
+
+        assert source.count("outage.failed(") == 2
+        assert source.count("print_outage_liveness(user, ") == 2
+        assert "print_outage_recovery(user, outage_lasted)" in source
+        assert source.count("print_fix_hint(error_msg, recovery_hint_tracker)") == 2

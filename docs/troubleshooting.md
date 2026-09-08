@@ -43,6 +43,8 @@ For more detail, add `--debug` to Doctor or a normal run. Debug output includes 
 
 When a check fails, Instagram Monitor prints the error, a `To fix:` action and a `Guide:` link where one applies, then retries automatically at the next interval. You do not need to restart the tool. A command in the fix text matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is.
 
+During a long outage the failure is reported in full once, then the liveness banner takes over with `* Monitoring degraded for <instagram_user>` and the summary of what is still failing, so a broken run keeps saying it is alive without repeating the same paragraph. When the failure clears, `* Monitoring recovered for <instagram_user>` reports how long it lasted. Setting `LIVENESS_CHECK_INTERVAL` to 0 removes the banner that carries the reminder, so the one-line summary goes back to printing on every check.
+
 A message naming `Could not resolve host` means the machine could not look up Instagram's address. This is a DNS problem on your side rather than an Instagram block, and it is common on devices that start monitoring before the network is fully up, such as a Raspberry Pi booting from cold. Check that name lookups work:
 
 ```sh

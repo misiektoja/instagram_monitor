@@ -9778,54 +9778,72 @@ def is_account_level_failure(failure_class: str) -> bool:
     return failure_class_group(failure_class) == 'C'
 
 
+@dataclass(frozen=True)
+class RecoveryAdvice:
+    code: str
+    summary: str
+    fix: str
+    guide: str = ""
+
+
+# Classifies one error message into code-carrying advice, so a repeated failure is recognized without re-reading its text
+def classify_recovery_error(error_msg: str, is_logged_in: bool = False) -> RecoveryAdvice:
+    return RecoveryAdvice(*classify_error_parts(error_msg, is_logged_in))
+
+
 # Maps one error message to a stable summary plus the matching fix and guide, so every surface explains it the same way
 def classify_error_message(error_msg: str, is_logged_in: bool = False) -> Tuple[str, str, str]:
+    return classify_error_parts(error_msg, is_logged_in)[1:]
+
+
+# Maps one error message to the stable code behind its summary, fix and guide
+def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[str, str, str, str]:
     m = (error_msg or "").lower()
 
     # Rate limiting or TLS-fingerprint blocks
     if any(t in m for t in FAILURE_TERMS['rate_limit']):
-        return "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users", ANTI_DETECTION_INTERVAL_GUIDE_URL
+        return "instagram.rate_limited", "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users", ANTI_DETECTION_INTERVAL_GUIDE_URL
 
     # Challenge, checkpoint or shadowban
     if any(t in m for t in FAILURE_TERMS['challenge']):
-        return "Instagram is asking this session or IP to pass a challenge", f"Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'. Also raise the check interval", ANTI_DETECTION_SESSION_GUIDE_URL
+        return "instagram.challenge", "Instagram is asking this session or IP to pass a challenge", f"Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'. Also raise the check interval", ANTI_DETECTION_SESSION_GUIDE_URL
 
     # Missing session file
     if any(t in m for t in FAILURE_TERMS['session_missing']):
-        return "No saved Instagram session was found", f"No saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can import from the Session page", SESSION_IMPORT_GUIDE_URL
+        return "session.missing", "No saved Instagram session was found", f"No saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can import from the Session page", SESSION_IMPORT_GUIDE_URL
 
     # Invalid or expired session
     if any(t in m for t in FAILURE_TERMS['auth_expired']):
-        return "The saved Instagram session is invalid or expired", f"Your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can re-import from the Session page", SESSION_IMPORT_GUIDE_URL
+        return "session.expired", "The saved Instagram session is invalid or expired", f"Your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can re-import from the Session page", SESSION_IMPORT_GUIDE_URL
 
     # Profile not found
     if any(t in m for t in FAILURE_TERMS['target_unavailable']):
         fix = "Check the target username is spelled correctly and the account still exists and is reachable"
         if is_logged_in:
             fix += ". If the username is correct, your session or IP may be temporarily flagged"
-        return "Instagram could not find the requested profile", fix, ""
+        return "target.not_found", "Instagram could not find the requested profile", fix, ""
 
     # An unsupported impersonation target surfaces as a connection error, so name the real cause before the network hint
     if any(t in m for t in FAILURE_TERMS['impersonate_unsupported']):
-        return "The configured browser profile cannot be impersonated", "The configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto' or pick a supported target such as chrome, safari, edge or firefox", ""
+        return "config.impersonate_unsupported", "The configured browser profile cannot be impersonated", "The configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto' or pick a supported target such as chrome, safari, edge or firefox", ""
 
     # An unresolvable proxy hostname is a proxy configuration problem, so it is the one resolution failure the proxy guide fits
     if any(t in m for t in FAILURE_TERMS['proxy_unresolved']):
-        return "The configured proxy hostname could not be resolved", "The proxy hostname you configured cannot be resolved. Check PROXY_URL for a typo and confirm the proxy host is reachable from this machine", PROXY_GUIDE_URL
+        return "proxy.unresolved", "The configured proxy hostname could not be resolved", "The proxy hostname you configured cannot be resolved. Check PROXY_URL for a typo and confirm the proxy host is reachable from this machine", PROXY_GUIDE_URL
 
     # DNS failures are resolver-side, so they need their own fix before the generic network branch swallows them
     if any(t in m for t in FAILURE_TERMS['dns_failure']):
-        return "Instagram's address could not be resolved", "Your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com') and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again", CONNECTION_ERRORS_GUIDE_URL
+        return "network.dns", "Instagram's address could not be resolved", "Your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com') and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again", CONNECTION_ERRORS_GUIDE_URL
 
     # Network or connectivity problems
     if any(t in m for t in FAILURE_TERMS['network']):
-        return "Instagram could not be reached", "This looks like a network problem. Check your internet connection, then your proxy settings if --enable-proxy is set, then try again", CONNECTION_ERRORS_GUIDE_URL
+        return "network.unavailable", "Instagram could not be reached", "This looks like a network problem. Check your internet connection, then your proxy settings if --enable-proxy is set, then try again", CONNECTION_ERRORS_GUIDE_URL
 
     # Deprecated GraphQL doc_id returning null data, or a temporary block
     if any(t in m for t in FAILURE_TERMS['schema_change']):
-        return "Instagram returned empty data for this query", "Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version and report it at https://github.com/misiektoja/instagram_monitor/issues if you are already current)", ""
+        return "instagram.empty_data", "Instagram returned empty data for this query", "Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version and report it at https://github.com/misiektoja/instagram_monitor/issues if you are already current)", ""
 
-    return "An unexpected error stopped the requested action", "", ""
+    return "unknown", "An unexpected error stopped the requested action", "", ""
 
 
 # Maps one SMTP failure to a stable summary plus the matching fix, keeping the technical text for the detail line
@@ -9852,9 +9870,77 @@ def error_fix_hint(error_msg: str, is_logged_in: bool = False) -> str:
     return f"To fix: {fix}" + (f"\nGuide: {guide}" if guide else "")
 
 
-# Prints an actionable fix hint for the given error to the console when one is available
-def print_fix_hint(error_msg: str) -> None:
+# Suppresses a repeated fix paragraph until the failure category changes or a check succeeds
+class RecoveryHintTracker:
+    # Starts with no category recorded, so the first failure is always reported in full
+    def __init__(self) -> None:
+        self.last_code: Optional[str] = None
+
+    # Reports whether this category is new and therefore worth printing the fix for again
+    def should_render(self, advice: RecoveryAdvice) -> bool:
+        if advice.code == self.last_code:
+            return False
+        self.last_code = advice.code
+        return True
+
+    # Clears the suppression after a successful check
+    def reset(self) -> None:
+        self.last_code = None
+
+
+# Decides how a lasting failure is reported: in full when it is new, then on the liveness cadence while it lasts
+class OutageReporter:
+    # Starts with no failure recorded, so the first failure of any category is reported in full
+    def __init__(self) -> None:
+        self.code: Optional[str] = None
+        self.since: int = 0
+        self.checks: int = 0
+
+    # Records one failed check and returns "full" for a new failure, "degraded" on the liveness cadence,
+    # "repeat" while the liveness banner is switched off or "" while the same failure is merely continuing
+    def failed(self, advice: RecoveryAdvice, liveness_counter: int) -> str:
+        if advice.code != self.code:
+            self.code = advice.code
+            self.since = int(time.time())
+            self.checks = 0
+            return "full"
+        self.checks += 1
+        # With the liveness banner off there is nothing to carry the reminder, so the summary keeps its old cadence
+        if not liveness_counter:
+            return "repeat"
+        if self.checks >= liveness_counter:
+            self.checks = 0
+            return "degraded"
+        return ""
+
+    # Clears the failure after a successful check and returns how long it lasted, or None when none was active
+    def recovered(self) -> Optional[int]:
+        if not self.code:
+            return None
+        lasted = int(time.time()) - self.since
+        self.code = None
+        self.since = 0
+        self.checks = 0
+        return lasted
+
+
+# Reports a lasting failure on the liveness cadence, so a broken run still says it is alive without repeating itself
+def print_outage_liveness(target: str, advice: RecoveryAdvice, since: int) -> None:
+    print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}")
+    print_cur_ts("Liveness check, timestamp:\t")
+
+
+# Reports that a failure cleared, since a throttled failure no longer stops printing when it is over
+def print_outage_recovery(target: str, lasted: int) -> None:
+    print(f"* Monitoring recovered for {target} after {display_time(max(1, lasted))}")
+    print_cur_ts()
+
+
+# Prints an actionable fix hint for the given error to the console when one is available and not already shown
+def print_fix_hint(error_msg: str, tracker: Optional[RecoveryHintTracker] = None) -> None:
     is_logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
+    if tracker is not None and not tracker.should_render(classify_recovery_error(error_msg, is_logged_in)):
+        return
     hint = error_fix_hint(error_msg, is_logged_in)
     if hint:
         print(colorize("info", hint))
@@ -12568,6 +12654,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
     # Primary loop
     consecutive_main_errors = 0
     consecutive_behuman_errors = 0
+    recovery_hint_tracker = RecoveryHintTracker()
+    outage = OutageReporter()
     debug_print("Entering primary loop")
     while True:
         # Check stop event at the start of each loop iteration
@@ -12728,7 +12816,14 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             except Exception as e:
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
                 error_msg = format_error_message(e)
-                print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
+                advice = classify_recovery_error(error_msg, bool(SESSION_USERNAME) and not skip_session)
+
+                # A failure that has not changed is left to the liveness cadence rather than repeated every check
+                outage_outcome = outage.failed(advice, LIVENESS_CHECK_COUNTER)
+                if outage_outcome in ("full", "repeat"):
+                    print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
+                elif outage_outcome == "degraded":
+                    print_outage_liveness(user, advice, outage.since)
                 log_activity(f"Error: {error_msg}", user=user)
                 debug_print("Full exception", outcome="failed", error=f"{type(e).__name__}: {e}")
 
@@ -12738,7 +12833,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 session_flagged = is_session_flagged(error_msg, bot)
 
                 if not session_flagged:
-                    print_fix_hint(error_msg)
+                    if outage_outcome in ("full", "repeat"):
+                        print_fix_hint(error_msg, recovery_hint_tracker)
                     notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
 
                 # Handle session recovery for automated checks/challenge errors
@@ -12808,14 +12904,15 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         return
                     continue  # Retry the main loop
 
-                if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
+                if outage_outcome in ("full", "repeat") and ('Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e)):
                     print("* Session might not be valid anymore! Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page.")
 
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
                 r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
                 update_check_times(next_time=next_check_val, user=user, increment_count=False)
-                print_cur_ts(newline=True)
+                if outage_outcome in ("full", "repeat"):
+                    print_cur_ts(newline=True)
                 if interruptible_sleep(r_sleep_time, stop_event):
                     return
                 continue
@@ -13524,11 +13621,19 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
                     error_msg = format_error_message(e)
                     consecutive_main_errors += 1
-                    print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
-                    print_fix_hint(error_msg)
+                    posts_advice = classify_recovery_error(error_msg, bool(SESSION_USERNAME) and not skip_session)
+
+                    # A failure that has not changed is left to the liveness cadence rather than repeated every check
+                    outage_outcome = outage.failed(posts_advice, LIVENESS_CHECK_COUNTER)
+                    if outage_outcome in ("full", "repeat"):
+                        print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
+                        print_fix_hint(error_msg, recovery_hint_tracker)
+                    elif outage_outcome == "degraded":
+                        print_outage_liveness(user, posts_advice, outage.since)
                     notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
 
-                    print_cur_ts()
+                    if outage_outcome in ("full", "repeat"):
+                        print_cur_ts()
 
                     update_check_times(next_time=next_check_val, user=user, increment_count=False)
                     if interruptible_sleep(r_sleep_time, stop_event):
@@ -13743,6 +13848,10 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
         if in_allowed_hours:
             consecutive_main_errors = 0
+            recovery_hint_tracker.reset()
+            outage_lasted = outage.recovered()
+            if outage_lasted is not None:
+                print_outage_recovery(user, outage_lasted)
 
         if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
             verbose_print(f"Monitoring healthy for {user}. No tracked change since the last check")
