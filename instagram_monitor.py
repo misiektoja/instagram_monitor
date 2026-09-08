@@ -15119,12 +15119,12 @@ def _wizard_welcome(parser) -> None:
     prefix = _wizard_cmd_prefix(method)
     web_prefix = _wizard_cmd_prefix(method, web_dashboard=True)
     interactive = sys.stdin.isatty()
-    print("For <instagram_target>, use an Instagram username or complete profile URL.\n")
-    _wizard_print_command("Quickest start (no setup, no login):", f"{prefix} <instagram_target>")
+    print("For <target_insta_user>, use an Instagram username or complete profile URL.\n")
+    _wizard_print_command("Quickest start (no setup, no login):", f"{prefix} <target_insta_user>")
     setup_suffix = "   (or just answer Y below)" if interactive else ""
     _wizard_print_command("Easiest start (guided setup wizard):", f"{prefix} --setup", setup_suffix)
     _wizard_print_command("Point-and-click (no command line):", f"{web_prefix} --web-dashboard", "      then open http://127.0.0.1:8000")
-    _wizard_print_command("Check setup before monitoring:", f"{prefix} --doctor <instagram_target>")
+    _wizard_print_command("Check setup before monitoring:", f"{prefix} --doctor <target_insta_user>")
     print(f"Full options: {colorize('section', prefix + ' --help')}")
     print(f"\nGuide:        {colorize('link', QUICK_START_GUIDE_URL)}\n")
     if not interactive:
