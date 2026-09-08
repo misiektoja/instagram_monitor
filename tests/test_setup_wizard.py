@@ -769,6 +769,34 @@ class TestRejectedAnswerEscape:
             assert state.config_values["SKIP_SESSION"] is True
 
 
+# Verifies a CSV answer without an extension is saved as a .csv file while an explicit extension is left alone
+def test_the_csv_answer_gains_a_csv_extension_when_it_has_none(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
+        for typed, expected in (("activity", "activity.csv"), ("activity.csv", "activity.csv"), ("activity.txt", "activity.txt"), ("", "")):
+            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", **kwargs: typed)
+            im_module._wizard_collect_output_section(state)
+            assert state.config_values["CSV_FILE"] == expected
+
+
+# Verifies a declined email section clears the mail server, so the written config cannot contradict the summary
+def test_a_declined_email_section_clears_the_mail_server(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        mail_server = {"SMTP_HOST": "smtp.example.com", "SMTP_USER": "monitor", "SENDER_EMAIL": "sender@example.com", "RECEIVER_EMAIL": "receiver@example.com"}
+        state.baseline_values.update(mail_server)
+        state.config_values.update(mail_server)
+        state.secret_updates["SMTP_PASSWORD"] = "private-password"
+        monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: False)
+
+        im_module._wizard_collect_email_section(state)
+
+        defaults = im_module.config_template_defaults()
+        assert all(state.config_values[name] == defaults[name] for name in im_module.WIZARD_SMTP_CONFIG_KEYS)
+        assert "SMTP_PASSWORD" not in state.secret_updates
+
+
 class TestMailServerSignIn:
     # Returns scripted answers for one complete mail server section
     @staticmethod
@@ -1108,16 +1136,53 @@ class TestSecretReplacePrompt:
             assert im_module._wizard_queue_secret(state.secret_updates, state.env_path, "SESSION_PASSWORD", "typed-password") is True
             assert state.secret_updates["SESSION_PASSWORD"] == "typed-password"
 
-    # Verifies both password prompts route through the replace guard rather than overwriting the stored value
+    # Verifies both password prompts guard a stored value, the session password through its own replace question
     def test_both_password_sections_route_through_the_replace_guard(self, im_module):
         from pathlib import Path as _Path
 
         source = _Path(im_module.__file__).read_text(encoding="utf-8")
 
-        assert 'state.secret_updates["SESSION_PASSWORD"] =' not in source
         assert 'state.secret_updates["SMTP_PASSWORD"] =' not in source
-        assert source.count('_wizard_queue_secret(state.secret_updates, state.env_path, "SESSION_PASSWORD"') == 1
         assert source.count('_wizard_queue_secret(state.secret_updates, state.env_path, "SMTP_PASSWORD"') == 1
+        assert source.count('_wizard_existing_secret("SESSION_PASSWORD", state.env_path)') == 1
+        assert source.count('state.secret_updates["SESSION_PASSWORD"] =') == 1
+        assert '_wizard_queue_secret(state.secret_updates, state.env_path, "SESSION_PASSWORD"' not in source
+
+    # Verifies a saved Instagram password is offered for replacement before the hidden prompt rather than after it
+    def test_a_saved_instagram_password_is_kept_without_being_retyped(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            (directory / ".env").write_text('SESSION_PASSWORD="original"\n', encoding="utf-8")
+            state = make_setup_state(im_module, directory)
+            questions = []
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: len(options) - 1)
+            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: "monitoring.account")
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: questions.append(question) or False)
+            monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: pytest.fail(f"Setup asked for a password it already has: {question!r}"))
+
+            im_module._wizard_collect_login_section(state, "pip")
+
+            assert questions == ["Replace the Instagram password already configured?"]
+            assert "SESSION_PASSWORD" not in state.secret_updates
+            assert state.config_values["SKIP_SESSION"] is False
+            assert state.config_values["SESSION_USERNAME"] == "monitoring.account"
+            assert "Existing SESSION_PASSWORD will be retained" in capsys.readouterr().out
+
+    # Verifies confirming the replacement collects the new Instagram password and queues it once
+    def test_a_confirmed_instagram_password_replacement_is_queued(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            (directory / ".env").write_text('SESSION_PASSWORD="original"\n', encoding="utf-8")
+            state = make_setup_state(im_module, directory)
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: len(options) - 1)
+            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: "monitoring.account")
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
+            monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: "replacement-password")
+
+            im_module._wizard_collect_login_section(state, "pip")
+
+            assert state.secret_updates["SESSION_PASSWORD"] == "replacement-password"
+            assert state.config_values["SKIP_SESSION"] is False
 
 
 # Verifies an interrupted entry carries the action and guide the console block prints

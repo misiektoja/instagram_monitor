@@ -848,6 +848,20 @@ def config_allowed_names() -> frozenset:
     return frozenset(declared | EXTRA_CONFIG_KEYS)
 
 
+# Returns the literal values the built-in config template ships with, used to clear a section the user declined
+def config_template_defaults() -> dict:
+    import ast
+    defaults = {}
+    for statement in ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec").body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
+            continue
+        try:
+            defaults[statement.targets[0].id] = ast.literal_eval(statement.value)
+        except ValueError:
+            continue
+    return defaults
+
+
 # Reads allowlisted literal assignments from config content without executing any of it
 def parse_config_content(content: str, filename: str = "<config>", retired_out=None) -> dict:
     import ast
@@ -14608,6 +14622,18 @@ def _wizard_select_container_firefox_host() -> Optional[str]:
     return ("macos", "linux", "linux-snap", "linux-flatpak", "windows-powershell", "windows-cmd")[selected]
 
 
+# Returns one declined section to the built-in template values, so nothing the user turned down is written
+def _wizard_clear_section(state: WizardSetupState, config_keys, secret_keys=()) -> None:
+    defaults = config_template_defaults()
+    for key in config_keys:
+        if key in defaults:
+            state.config_values[key] = defaults[key]
+        else:
+            state.config_values.pop(key, None)
+    for key in secret_keys:
+        state.secret_updates.pop(key, None)
+
+
 # Restores one editable section to its setup-start values and drops pending secrets
 def _wizard_reset_section(state: WizardSetupState, config_keys, secret_keys) -> None:
     for key in config_keys:
@@ -14622,7 +14648,7 @@ def _wizard_reset_section(state: WizardSetupState, config_keys, secret_keys) -> 
 # Confirms replacement or selects another config destination before answers are collected
 def _wizard_choose_config_destination(config_path: Path) -> Path:
     selected = config_path.expanduser().resolve()
-    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. Replace it with a fresh configuration built from defaults and create a timestamped backup?", default=False):
+    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. A timestamped backup is kept. Rebuild it from your answers, starting from its current settings?", default=False):
         alternative = _wizard_ask_text("Another config destination or leave empty to cancel")
         if not alternative:
             print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
@@ -14712,7 +14738,8 @@ def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
         if not state.session_username:
             _wizard_fall_back_to_no_login(state, "Sign-in stays off until the username is given.")
             return
-    if action == "password":
+    # Asked before the hidden prompt, so a password that is already saved is never retyped only to be discarded
+    if action == "password" and (not _wizard_existing_secret("SESSION_PASSWORD", state.env_path) or _wizard_ask_yes_no("Replace the Instagram password already configured?", default=False)):
         password = _wizard_ask_secret("Instagram password")
         if not password:
             if not _wizard_offer_retry("Instagram password", "Sign-in stays off until one is set"):
@@ -14720,10 +14747,12 @@ def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
                 return
             password = _wizard_ask_secret("Instagram password")
         if password:
-            _wizard_queue_secret(state.secret_updates, state.env_path, "SESSION_PASSWORD", password)
+            state.secret_updates["SESSION_PASSWORD"] = password
         else:
             _wizard_fall_back_to_no_login(state, "Sign-in stays off until the password is given.")
             return
+    elif action == "password":
+        print("  Existing SESSION_PASSWORD will be retained without being displayed or rewritten.")
     state.config_values.update({"SKIP_SESSION": False, "SESSION_USERNAME": state.session_username})
 
 
@@ -14747,6 +14776,7 @@ def _wizard_collect_interface_section(state: WizardSetupState, method: str) -> N
 # Switches the channel and every alert it owns off together, so a half-configured webhook cannot be written
 def _wizard_disable_webhook(state: WizardSetupState) -> None:
     state.want_webhook = False
+    _wizard_clear_section(state, ("WEBHOOK_PROVIDER",), ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN"))
     state.config_values.update({"WEBHOOK_ENABLED": False})
     state.config_values.update({name: False for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS})
 
@@ -14818,7 +14848,7 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
 # Switches every email alert off together, so an abandoned answer cannot leave half a mail server configured
 def _wizard_disable_email(state: WizardSetupState) -> None:
     state.want_email = False
-    _wizard_reset_section(state, WIZARD_SMTP_CONFIG_KEYS, ("SMTP_PASSWORD",))
+    _wizard_clear_section(state, WIZARD_SMTP_CONFIG_KEYS, ("SMTP_PASSWORD",))
     state.config_values.update({name: False for name in WIZARD_EMAIL_NOTIFICATION_KEYS})
 
 
@@ -14932,12 +14962,20 @@ def _wizard_collect_email_section(state: WizardSetupState) -> None:
     state.want_email = True
 
 
+# Adds the .csv extension when the answer carries none, so a bare name still names a CSV file
+def _wizard_normalize_csv_path(answer: str) -> str:
+    text = str(answer).strip()
+    if not text or Path(text).suffix:
+        return text
+    return text + ".csv"
+
+
 # Collects the log and CSV output destinations monitoring would write
 def _wizard_collect_output_section(state: WizardSetupState) -> None:
     _wizard_reset_section(state, WIZARD_OUTPUT_CONFIG_KEYS, ())
     print()
     state.config_values["DISABLE_LOGGING"] = not _wizard_ask_yes_no("Write the normal per-target log file?", default=not bool(state.config_values.get("DISABLE_LOGGING")))
-    state.config_values["CSV_FILE"] = _wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or ""))
+    state.config_values["CSV_FILE"] = _wizard_normalize_csv_path(_wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or "")))
 
 
 # Lets the user change file destinations and recollects secret-dependent sections when needed
