@@ -9771,11 +9771,11 @@ def classify_error_message(error_msg: str, is_logged_in: bool = False) -> Tuple[
 
     # Missing session file
     if any(t in m for t in FAILURE_TERMS['session_missing']):
-        return "No saved Instagram session was found", f"No saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_user>'. In the Web Dashboard you can import from the Session page", SESSION_IMPORT_GUIDE_URL
+        return "No saved Instagram session was found", f"No saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can import from the Session page", SESSION_IMPORT_GUIDE_URL
 
     # Invalid or expired session
     if any(t in m for t in FAILURE_TERMS['auth_expired']):
-        return "The saved Instagram session is invalid or expired", f"Your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_user>'. In the Web Dashboard you can re-import from the Session page", SESSION_IMPORT_GUIDE_URL
+        return "The saved Instagram session is invalid or expired", f"Your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can re-import from the Session page", SESSION_IMPORT_GUIDE_URL
 
     # Profile not found
     if any(t in m for t in FAILURE_TERMS['target_unavailable']):
@@ -14039,7 +14039,7 @@ def _config_file_targets(config_path):
 
 
 # Returns the targets for the printed doctor and monitoring commands, dropping ones the effective config already supplies
-def _wizard_command_targets(explicit_targets=(), saved_targets=(), placeholder="<username>"):
+def _wizard_command_targets(explicit_targets=(), saved_targets=(), placeholder="<target_insta_user>"):
     explicit = [str(target) for target in explicit_targets or ()]
     saved = [str(target) for target in saved_targets or ()]
     known = explicit or saved
@@ -14165,12 +14165,12 @@ def _build_help_epilog() -> str:
     groups = (
         ("Getting started", (
             ("Guided setup (recommended for the first run)", f"{prefix} --setup"),
-            ("Check the setup before relying on it", f"{prefix} --doctor <username>"),
-            ("Start monitoring without login (new posts, bio and follower counts)", f"{prefix} <username>"),
+            ("Check the setup before relying on it", f"{prefix} --doctor <target_insta_user>"),
+            ("Start monitoring without login (new posts, bio and follower counts)", f"{prefix} <target_insta_user>"),
         )),
         ("Full detail (stories, reels, follower churn)", (
             (import_comment, _firefox_import_cmd(method)),
-            ("Then monitor with that session", f"{prefix} -u <your_user> <username>"),
+            ("Then monitor with that session", f"{prefix} -u <your_insta_user> <target_insta_user>"),
         )),
         ("Notifications", (
             ("Save a Discord or ntfy webhook URL through a hidden prompt", f"{prefix} --set-webhook-url"),
@@ -14179,7 +14179,7 @@ def _build_help_epilog() -> str:
         )),
         ("Information and diagnostics", (
             ("Point-and-click web dashboard (add targets in the browser)", f"{web_prefix} --web-dashboard"),
-            ("Trace what the tool is doing", f"{prefix} <username> --debug"),
+            ("Trace what the tool is doing", f"{prefix} <target_insta_user> --debug"),
         )),
     )
     return _render_help_examples(groups, QUICK_START_GUIDE_URL)

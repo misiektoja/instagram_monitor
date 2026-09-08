@@ -11,7 +11,7 @@ Before a long monitoring run, check the current configuration:
 instagram_monitor --doctor
 ```
 
-Doctor does not change files. It opens with the raw `manual`, `pip`, `docker` or `compose` install method, then uses `[PASS]`, `[WARN]`, `[FAIL]` and `[SKIP]` markers for the Python version, required and optional packages, configuration, private values, login session, the connectivity endpoint, the Instagram connection, target usernames and notification settings. A missing optional package is a `WARN` naming the feature it powers, so you can ignore the ones you do not use. Running with no target is a `PASS` when the Web Dashboard is enabled, since targets can be added there, and a `WARN` otherwise, since nothing would be monitored. Login session checks apply only to Logged-In Mode. The Configuration section names the configuration file and the dotenv file it loaded, then lists which secrets are in effect and whether each one came from the dotenv file, an environment variable or the configuration file. Secret names are listed, never their values. It also names the log and CSV files each target would write and reports whether they can be created, or says so when either is disabled. The report carries a `Summary` line and a link back to this page. The summary is printed after any approved delivery tests and counts their results, so the sentence and the exit code always describe the same run. It then ends with a **Next steps** block naming the command that starts monitoring, carrying the same `--config-file` and `--env-file` this run checked. It carries the targets this run used, leaves them out when the configuration file already supplies them and otherwise shows `<username>` for you to replace, unless the Web Dashboard is enabled and targets can be added there. While a check is failing it asks for the failures first.
+Doctor does not change files. It opens with the raw `manual`, `pip`, `docker` or `compose` install method, then uses `[PASS]`, `[WARN]`, `[FAIL]` and `[SKIP]` markers for the Python version, required and optional packages, configuration, private values, login session, the connectivity endpoint, the Instagram connection, target usernames and notification settings. A missing optional package is a `WARN` naming the feature it powers, so you can ignore the ones you do not use. Running with no target is a `PASS` when the Web Dashboard is enabled, since targets can be added there, and a `WARN` otherwise, since nothing would be monitored. Login session checks apply only to Logged-In Mode. The Configuration section names the configuration file and the dotenv file it loaded, then lists which secrets are in effect and whether each one came from the dotenv file, an environment variable or the configuration file. Secret names are listed, never their values. It also names the log and CSV files each target would write and reports whether they can be created, or says so when either is disabled. The report carries a `Summary` line and a link back to this page. The summary is printed after any approved delivery tests and counts their results, so the sentence and the exit code always describe the same run. It then ends with a **Next steps** block naming the command that starts monitoring, carrying the same `--config-file` and `--env-file` this run checked. It carries the targets this run used, leaves them out when the configuration file already supplies them and otherwise shows `<target_insta_user>` for you to replace, unless the Web Dashboard is enabled and targets can be added there. While a check is failing it asks for the failures first.
 
 A configuration file Instagram Monitor cannot accept is reported by Doctor as a `FAIL` naming the line and the reason, instead of stopping the command before the checks run. This means you can point Doctor at a configuration you are still fixing. Settings that a later release removed are reported as a `WARN` and ignored, so an older configuration file still runs.
 
@@ -25,7 +25,7 @@ Each failure and warning includes a `To fix:` action, and a `Guide:` link to the
 
 ```sh
 instagram_monitor --doctor
-instagram_monitor -u <your_user> <target> --doctor
+instagram_monitor -u <your_insta_user> <target_insta_user> --doctor
 ```
 
 For Docker Compose use:
@@ -63,13 +63,13 @@ Open the default dashboard at [http://127.0.0.1:8000/](http://127.0.0.1:8000/). 
 For a one-off Compose run, the command must contain `--service-ports` before the service name:
 
 ```sh
-docker compose run --rm --service-ports instagram_monitor <target> --web-dashboard
+docker compose run --rm --service-ports instagram_monitor <target_insta_user> --web-dashboard
 ```
 
 For direct Docker, the command must contain `-p 127.0.0.1:8000:8000` before the image name:
 
 ```sh
-docker run --rm -it --init -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -p 127.0.0.1:8000:8000 misiektoja/instagram-monitor:latest <target> --web-dashboard
+docker run --rm -it --init -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -p 127.0.0.1:8000:8000 misiektoja/instagram-monitor:latest <target_insta_user> --web-dashboard
 ```
 
 Check the `PORTS` column while the container is running:

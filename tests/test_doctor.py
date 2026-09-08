@@ -659,10 +659,10 @@ class TestRunDoctor:
         dashboard_output = capsys.readouterr().out
 
         assert "target.user" not in saved_output
-        assert "<username>" not in saved_output
-        assert "<username>" in unsaved_output
+        assert "<target_insta_user>" not in saved_output
+        assert "<target_insta_user>" in unsaved_output
         # The dashboard can add a target after startup, so the command stays complete without one
-        assert "<username>" not in dashboard_output
+        assert "<target_insta_user>" not in dashboard_output
 
     # Both sentinels belong in the printed command, so the retest monitors with the setup doctor just checked
     def test_cli_doctor_carries_both_disabled_searches_into_the_monitoring_command(self, im_module, monkeypatch, capsys):
