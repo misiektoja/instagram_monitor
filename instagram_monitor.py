@@ -12821,7 +12821,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 # A failure that has not changed is left to the liveness cadence rather than repeated every check
                 outage_outcome = outage.failed(advice, LIVENESS_CHECK_COUNTER)
                 if outage_outcome in ("full", "repeat"):
-                    print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
+                    print(f"* Error: {error_msg} (retrying in {display_time(r_sleep_time)})")
                 elif outage_outcome == "degraded":
                     print_outage_liveness(user, advice, outage.since)
                 log_activity(f"Error: {error_msg}", user=user)
@@ -12921,8 +12921,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
                 consecutive_main_errors += 1
                 error_msg = f"HTTP redirect while checking {user}: {get_thread_output()}"
-                print("* Session might not be valid anymore! Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page.")
-                print(f"Retrying in {display_time(r_sleep_time)}")
+                print(f"* Error: The saved Instagram session may no longer be valid (retrying in {display_time(r_sleep_time)})")
+                print("To fix: Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page")
                 notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
@@ -13626,7 +13626,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     # A failure that has not changed is left to the liveness cadence rather than repeated every check
                     outage_outcome = outage.failed(posts_advice, LIVENESS_CHECK_COUNTER)
                     if outage_outcome in ("full", "repeat"):
-                        print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
+                        print(f"* Error: {error_msg} (retrying in {display_time(r_sleep_time)})")
                         print_fix_hint(error_msg, recovery_hint_tracker)
                     elif outage_outcome == "degraded":
                         print_outage_liveness(user, posts_advice, outage.since)

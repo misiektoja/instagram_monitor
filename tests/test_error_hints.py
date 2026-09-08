@@ -281,3 +281,13 @@ class TestOutageReporting:
         assert source.count("print_outage_liveness(user, ") == 2
         assert "print_outage_recovery(user, outage_lasted)" in source
         assert source.count("print_fix_hint(error_msg, recovery_hint_tracker)") == 2
+
+    # Every reported loop failure uses the line shape shared with the sibling monitors
+    def test_reported_failures_use_the_shared_line_shape(self, im_module):
+        module_source = inspect.getsource(im_module)
+        start = module_source.index("def _run_instagram_monitor_pass(")
+        source = module_source[start:module_source.index("\ndef ", start)]
+
+        assert source.count('print(f"* Error: {error_msg} (retrying in {display_time(r_sleep_time)})")') == 2
+        assert "* Error, retrying in " not in source, "the report line must carry its retry note in parentheses"
+        assert 'print(f"Retrying in ' not in source, "the retry note belongs on the report line, not on one of its own"
