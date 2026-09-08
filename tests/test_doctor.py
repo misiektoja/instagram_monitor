@@ -517,7 +517,7 @@ class TestRunDoctor:
         assert missing.status == "WARN"
         assert "Coloured output may not render in the classic Windows Command Prompt" in missing.detail
         assert "Windows Terminal needs nothing extra" in missing.detail
-        assert "pip install colorama" in missing.fix
+        assert 'pip3 install "colorama"' in missing.fix
 
     # Verifies Doctor checks and displays the final target-specific log filename
     def test_log_destination_uses_final_target_path(self, im_module, monkeypatch, capsys):

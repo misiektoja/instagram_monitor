@@ -15071,7 +15071,7 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
 
 # Opens one selected setup section then returns to the summary
 def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
-    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets and persistence", "Change monitored accounts and whether they are saved."), ("Polling interval", "Change how often Instagram is checked."), ("Login and session", "Change no-login, browser or credential settings."), ("Interface", "Change the dashboard or plain text mode."), ("Email alerts", "Change SMTP settings."), ("Webhook alerts", "Change Discord or ntfy settings."), ("Output files", "Change log and CSV output settings."), ("File destinations", "Change the config or dotenv path."), ("Return to summary", "Keep every current answer.")])
+    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets", "Change the Instagram accounts that are monitored."), ("Polling interval", "Change how often Instagram is checked."), ("Login and session", "Change no-login, browser or credential settings."), ("Interface", "Change the dashboard or plain text mode."), ("Email notifications", "Change SMTP details and email events."), ("Webhook alerts", "Change Discord or ntfy details and events."), ("Output files", "Change log and CSV output settings."), ("File destinations", "Change the configuration or dotenv output path."), ("Return to summary", "Keep every current answer.")])
     if section == 0:
         print()
         _wizard_collect_target_section(state, allow_empty=state.want_web)
@@ -15177,8 +15177,9 @@ def _wizard_launch_monitor(arguments) -> int:
 def run_setup_wizard(config_file=None, env_file=None) -> None:
     global CLI_CONFIG_PATH, DOTENV_FILE
     if not sys.stdin.isatty():
-        print(colorize("warning", "The setup wizard needs an interactive terminal (TTY)."))
+        print("The setup wizard needs an interactive terminal (TTY).")
         print("Run --setup from an interactive shell or use --generate-config and edit the files manually.")
+        print(f"Guide: {QUICK_START_GUIDE_URL}")
         raise SystemExit(1)
 
     method = _wizard_install_method()
@@ -15416,6 +15417,8 @@ def _report_value_line(text: str) -> None:
 
 
 # Prints an inline 'doing X...' status that the upcoming result line overwrites, on interactive terminals only
+# The line stays uncoloured on purpose: it is erased by writing exactly len(line) spaces, and escape
+# sequences would make that width wrong and leave a styled remnant behind
 def _doctor_progress(text: str) -> None:
     if not sys.stdout.isatty():
         return
@@ -15424,7 +15427,7 @@ def _doctor_progress(text: str) -> None:
         sys.stdout.write("\r" + " " * previous_width + "\r")
     line = f"* Checking {ANSI_ESCAPE_RE.sub('', sanitize_terminal_text(text))} ..."
     _doctor_progress.width = len(line)  # type: ignore[attr-defined]
-    sys.stdout.write("\r" + colorize("info", line))
+    sys.stdout.write("\r" + line)
     sys.stdout.flush()
 
 
@@ -15443,7 +15446,7 @@ def _doctor_ask_yes_no(question: str) -> bool:
         try:
             raw = read_interactively(input, colorize("info", f"{question} [y/N]: ")).strip().lower()
         except EOFError:
-            print("\n" + colorize("info", "Delivery test skipped."))
+            print("\nDelivery test skipped.")
             return False
         except KeyboardInterrupt:
             # Ctrl+C ends the run here the way it does anywhere else, rather than only declining this one test
@@ -15730,7 +15733,7 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         if module_present(module_name):
             checks.append(make_doctor_check("Environment", "PASS", f"Required dependency {package_name} is installed"))
         else:
-            checks.append(make_doctor_check("Environment", "FAIL", f"Required dependency {package_name} is missing", "", f"Install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
+            checks.append(make_doctor_check("Environment", "FAIL", f"Required dependency {package_name} is missing", "", f'Install it with: pip3 install "{package_name}"', INSTALLATION_GUIDE_URL))
 
     optional = (
         ("curl_cffi", "curl_cffi", _CURL_CFFI_AVAILABLE, "Used for browser TLS impersonation that avoids first-request 429 blocks", "Normal monitoring works without it, but Instagram is more likely to answer the first request with 429"),
@@ -15746,7 +15749,7 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         if present:
             checks.append(make_doctor_check("Environment", "PASS", f"Optional dependency {package_name} is installed", purpose))
         else:
-            checks.append(make_doctor_check("Environment", "WARN", f"Optional dependency {package_name} is not installed", missing_purpose, f"Install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
+            checks.append(make_doctor_check("Environment", "WARN", f"Optional dependency {package_name} is not installed", missing_purpose, f'Install it with: pip3 install "{package_name}"', INSTALLATION_GUIDE_URL))
     return checks
 
 
@@ -15786,11 +15789,11 @@ def doctor_secret_checks(env_path=None) -> List[DoctorCheck]:
     if from_environment:
         checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the environment", ", ".join(from_environment)))
     if from_settings:
-        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the configuration file or command line", ", ".join(from_settings)))
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the configuration file", ", ".join(from_settings)))
     if from_command_line:
         checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the command line", ", ".join(from_command_line)))
     if not checks:
-        checks.append(make_doctor_check("Configuration", "PASS", "No secrets loaded", "Nothing was read from a dotenv file, the environment or the command line"))
+        checks.append(make_doctor_check("Configuration", "PASS", "No secrets loaded", "Nothing was read from a dotenv file, the environment, the configuration file or the command line"))
     return checks
 
 
@@ -16096,7 +16099,7 @@ def render_doctor_sections(report: DoctorReport) -> None:
                 print(f"  {colorize('info', f'To fix: {check.fix}')}")
                 # The closing summary already points at the doctor page, so a row links only to a page of its own
                 if check.guide:
-                    print(f"  Guide: {check.guide}")
+                    print(f"  {colorize('info', f'Guide: {check.guide}')}")
 
 
 # Prints the closing summary for one rendered report
@@ -16108,7 +16111,7 @@ def render_doctor_summary(fails: int, warns: int) -> None:
         print(colorize("warning", f"  All critical checks passed with {warns} warning(s). Review the warnings above."))
     else:
         print(colorize("boolean_true", "  All checks passed. You are good to go!"))
-    print(f"\nGuide: {DOCTOR_GUIDE_URL}")
+    print("\n" + colorize("info", f"Guide: {DOCTOR_GUIDE_URL}"))
 
 
 # Runs doctor preflight plus approved delivery tests and returns the number of failed checks

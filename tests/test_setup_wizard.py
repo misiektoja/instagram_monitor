@@ -361,7 +361,7 @@ class TestSectionOrder:
             im_module._wizard_edit_setup_section(state, "manual")
 
             assert summary.index("Polling interval:") < summary.index("Login:")
-            assert labels == ["Targets and persistence", "Polling interval", "Login and session", "Interface", "Email alerts", "Webhook alerts", "Output files", "File destinations", "Return to summary"]
+            assert labels == ["Targets", "Polling interval", "Login and session", "Interface", "Email notifications", "Webhook alerts", "Output files", "File destinations", "Return to summary"]
 
 
 class TestWizardSafetyGates:
@@ -1342,7 +1342,8 @@ def test_a_non_interactive_setup_names_the_shared_fallback(im_module, monkeypatc
 
     assert raised.value.code == 1
     lines = capsys.readouterr().out.splitlines()
-    assert lines[-1] == "Run --setup from an interactive shell or use --generate-config and edit the files manually."
+    assert lines[-2] == "Run --setup from an interactive shell or use --generate-config and edit the files manually."
+    assert lines[-1] == f"Guide: {im_module.QUICK_START_GUIDE_URL}"
 
 
 # Verifies the port question rejects a number no TCP port can be, instead of saving it for the doctor to reject
