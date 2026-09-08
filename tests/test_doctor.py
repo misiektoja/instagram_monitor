@@ -952,3 +952,18 @@ def test_the_timezone_row_follows_the_shared_resolver(im_module, monkeypatch):
     assert im_module.LOCAL_TIMEZONE_STATE == "invalid"
     row = next(item for item in im_module.doctor_check_configuration([], timezone_advice=advice) if item.label in im_module.TIMEZONE_CHECK_LABELS.values())
     assert (row.status, row.label, row.detail) == ("FAIL", "Local timezone is invalid", "Time zone: Mars/Olympus_Mons")
+
+
+# Verifies Ctrl+C at a delivery prompt ends the run instead of declining one test and asking the next
+def test_a_delivery_prompt_interrupt_ends_the_run(im_module, monkeypatch):
+    def interrupt(prompt=""):
+        raise KeyboardInterrupt
+
+    # The handler restores the saved stream, so it is pointed at the one this test captures
+    monkeypatch.setattr(im_module, "stdout_bck", im_module.sys.stdout)
+    monkeypatch.setattr("builtins.input", interrupt)
+
+    with pytest.raises(SystemExit) as raised:
+        im_module._doctor_ask_yes_no("Send one test")
+
+    assert raised.value.code == 0
