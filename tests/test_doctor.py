@@ -52,6 +52,28 @@ class TestDoctorChecks:
         with pytest.raises(ValueError, match="Unsupported doctor status"):
             im_module.make_doctor_check("Environment", "broken", "label")
 
+    # An explicitly selected missing dotenv file is reported as missing rather than loaded
+    def test_a_missing_dotenv_file_is_a_warning(self, im_module, tmp_path):
+        missing = tmp_path / "missing.env"
+
+        checks = im_module.doctor_check_configuration([], env_path=str(missing))
+        missing_check = next(check for check in checks if check.label == "The requested dotenv file was not found")
+
+        assert missing_check.status == "WARN"
+        assert missing_check.detail == f"Path: {missing}"
+        assert "--env-file" in missing_check.fix
+        assert missing_check.guide == im_module.SECRETS_GUIDE_URL
+        assert not any(check.label == "Dotenv file loaded" for check in checks)
+
+    # A dotenv file that exists is named as loaded
+    def test_an_existing_dotenv_file_is_named(self, im_module, tmp_path):
+        env_path = tmp_path / ".env"
+        env_path.write_text("", encoding="utf-8")
+
+        checks = im_module.doctor_check_configuration([], env_path=str(env_path))
+
+        assert any(check.label == "Dotenv file loaded" and check.detail == f"Path: {env_path}" and check.status == "PASS" for check in checks)
+
     # A configuration rejected at startup becomes a failing check carrying its fix and guide
     def test_configuration_rejection_becomes_a_failing_check(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)

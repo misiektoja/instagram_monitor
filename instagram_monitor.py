@@ -1434,6 +1434,7 @@ ANTI_DETECTION_INTERVAL_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#keep-t
 ANTI_DETECTION_SESSION_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#sign-in-using-session-mode-with-browser-cookies"
 CONNECTION_ERRORS_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#connection-errors-during-monitoring"
 DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
+SECRETS_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#storing-secrets"
 
 # The fix named when nothing is being monitored, shared by the startup gate and the Doctor target check
 NO_TARGET_FIX = "Pass a target on the command line, set TARGET_USERNAMES in the config or enable the Web Dashboard"
@@ -15828,8 +15829,10 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
     if retired_settings:
         checks.append(make_doctor_check("Configuration", "WARN", "Config file contains removed settings", describe_retired_settings(retired_settings, cfg), "Delete the reported settings or regenerate the file with --generate-config", CONFIG_FILE_GUIDE_URL))
 
-    if env_path:
+    if env_path and os.path.isfile(str(env_path)):
         checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
+    elif env_path:
+        checks.append(make_doctor_check("Configuration", "WARN", "The requested dotenv file was not found", f"Path: {env_path}", "Create the file or select an existing path with --env-file", SECRETS_GUIDE_URL))
     else:
         checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file selected", "Using environment variables and other configured sources"))
     checks.extend(doctor_secret_checks(env_path))
