@@ -103,6 +103,25 @@ class TestDoctorChecks:
         assert [item.status for item in rows] == ["FAIL"]
         assert all(name in rows[0].detail for name in ("INSTA_CHECK_INTERVAL", "MAX_H1", "SMTP_PORT"))
 
+    # An interval below the documented minimum makes a challenge far more likely, which looks like the tool being broken
+    def test_a_rate_limiting_interval_is_warned_about(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
+        monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", 60, raising=False)
+
+        rows = [item for item in im_module.doctor_check_configuration([]) if item.label == "Check intervals are short"]
+
+        assert [item.status for item in rows] == ["WARN"]
+        assert str(im_module.DOCTOR_MIN_SAFE_CHECK_INTERVAL) in rows[0].fix
+
+    # The default interval is safe, so the row must stay away rather than warning about every run
+    def test_a_safe_interval_is_not_warned_about(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
+        monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", im_module.DOCTOR_MIN_SAFE_CHECK_INTERVAL, raising=False)
+
+        assert not [item for item in im_module.doctor_check_configuration([]) if item.label == "Check intervals are short"]
+
     # Without tzlocal an automatic timezone cannot be resolved, so Doctor names the missing package
     def test_automatic_timezone_without_tzlocal_fails(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)

@@ -15334,6 +15334,9 @@ def _wizard_should_offer_first_run(arguments, configured_targets, web_dashboard_
 # tools, because every state it would cover is a state the others already call PASS
 DOCTOR_STATUSES = ("PASS", "WARN", "FAIL", "SKIP")
 
+# The documented minimum polling interval, below which Instagram is far more likely to challenge the account
+DOCTOR_MIN_SAFE_CHECK_INTERVAL = 3600
+
 # Delivery results are printed as they happen rather than inside a section, but they still count in the summary
 DOCTOR_DELIVERY_SECTION = "Optional delivery tests"
 
@@ -15830,6 +15833,10 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
         checks.append(make_doctor_check("Configuration", "FAIL", timezone_label, timezone_advice["detail"], timezone_advice["fix"], timezone_advice["guide"]))
     else:
         checks.append(make_doctor_check("Configuration", "PASS", timezone_label, f"Time zone: {LOCAL_TIMEZONE}"))
+
+    intervals = f"{display_time(INSTA_CHECK_INTERVAL)} between checks"
+    if INSTA_CHECK_INTERVAL < DOCTOR_MIN_SAFE_CHECK_INTERVAL:
+        checks.append(make_doctor_check("Configuration", "WARN", "Check intervals are short", intervals, f"Raise INSTA_CHECK_INTERVAL to at least {DOCTOR_MIN_SAFE_CHECK_INTERVAL} seconds", ANTI_DETECTION_INTERVAL_GUIDE_URL))
 
     if VERIFY_SSL:
         checks.append(make_doctor_check("Configuration", "PASS", "TLS certificate verification is on", "Every outbound request checks the server certificate"))

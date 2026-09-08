@@ -915,7 +915,7 @@ instagram_monitor <target_insta_user> -c 3600
 
 **Note**: You can also adjust check intervals and randomization timers live via the **Settings** menu in the **Web Dashboard**.
 
-Use at least 3600 seconds unless you have a specific reason to send more frequent requests. Shorter intervals create more Instagram traffic and may increase the chance of limits.
+Use at least 3600 seconds unless you have a specific reason to send more frequent requests. Shorter intervals create more Instagram traffic and may increase the chance of limits. `--doctor` warns when the configured interval is shorter than that.
 
 By default, the actual wait changes on each cycle. The range is:
 
