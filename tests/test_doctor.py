@@ -1018,6 +1018,23 @@ def test_the_action_lines_sit_indented_under_their_marker(im_module, capsys, mon
     assert rows[:5] == ["[WARN] a warning row", "  a detail worth keeping", "  To fix: do the thing", f"  Guide: {im_module.DOCTOR_GUIDE_URL}", "[PASS] a passing row"]
 
 
+# Verifies a link in a detail line takes the link colour while a styled action line keeps its own colour
+def test_a_link_in_a_detail_line_is_coloured_as_a_link(im_module, capsys, monkeypatch):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {name: im_module._build_ansi_sequence(value) for name, value in im_module.DEFAULT_COLOR_THEME.items() if im_module._build_ansi_sequence(value)})
+    report = im_module.DoctorReport()
+    report.checks = [
+        im_module.make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", "Endpoint: https://www.instagram.com/"),
+        im_module.make_doctor_check("Session", "FAIL", "The session did not validate", "", "Sign in again at https://www.instagram.com/", im_module.DOCTOR_GUIDE_URL),
+    ]
+
+    im_module.render_doctor_sections(report)
+    rendered = capsys.readouterr().out
+    fix_line = next(line for line in rendered.splitlines() if "To fix:" in line)
+
+    assert f"  Endpoint: {im_module.colorize('link', 'https://www.instagram.com/')}" in rendered
+    assert fix_line == f"  {im_module.colorize('info', 'To fix: Sign in again at https://www.instagram.com/')}"
+
 # Verifies the follow analysis states its findings as plain value rows rather than borrowing a doctor marker
 def test_the_follow_analysis_states_values_without_a_marker(im_module, capsys):
     im_module._report_value_line("Followers: 42")

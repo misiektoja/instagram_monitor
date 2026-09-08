@@ -4641,6 +4641,24 @@ def emit_startup_summary(rows: Sequence["StartupSummaryRow"], show_full: bool, s
             destination.write(line)
 
 
+# Applies a substitution only to the parts of a line outside already coloured spans, so styles never nest
+def _sub_outside_color(pattern, replacement, line):
+    if ANSI_RESET not in line:
+        return pattern.sub(replacement, line)
+    parts = []
+    position = 0
+    inside = False
+    for match in SGR_SEQUENCE_RE.finditer(line):
+        segment = line[position:match.start()]
+        parts.append(segment if inside else pattern.sub(replacement, segment))
+        parts.append(match.group(0))
+        inside = match.group(0) != ANSI_RESET
+        position = match.end()
+    trailing = line[position:]
+    parts.append(trailing if inside else pattern.sub(replacement, trailing))
+    return "".join(parts)
+
+
 # Helper to apply a block style while preserving internal highlights
 def _apply_style_nested(line, style_name):
     start_style = _COLOR_STYLES.get(style_name)
@@ -4784,7 +4802,7 @@ def _colorize_line(line):
     line = _TIME_ONLY_RE.sub(lambda mo: colorize("date", mo.group(0)), line)
 
     # Highlight URLs / links
-    line = _URL_RE.sub(lambda mo: colorize("link", mo.group(0)), line)
+    line = _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), line)
 
     # Highlight quoted content (captions etc.)
     line = _QUOTED_CONTENT_RE.sub(_colorize_quoted_content, line)
@@ -15408,7 +15426,8 @@ def doctor_check_from_error(section: str, status: str, label: str, error_message
 def _doctor_line(status: str, label: str, detail: str = "") -> None:
     print(f"{colorize(DOCTOR_MARK_STYLES[status], f'[{status}]')} {label}")
     if detail:
-        print(f"  {detail}")
+        # The report is printed before the colour stream is installed, so the link colour every other line gets from it is applied here
+        print(f"  {_sub_outside_color(_URL_RE, lambda mo: colorize('link', mo.group(0)), detail)}")
 
 
 # Prints one plain value row for a report that states findings rather than check results
