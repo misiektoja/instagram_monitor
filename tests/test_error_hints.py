@@ -291,3 +291,25 @@ class TestOutageReporting:
         assert source.count('print(f"* Error: {error_msg} (retrying in {display_time(r_sleep_time)})")') == 2
         assert "* Error, retrying in " not in source, "the report line must carry its retry note in parentheses"
         assert 'print(f"Retrying in ' not in source, "the retry note belongs on the report line, not on one of its own"
+        assert "* Session might not be valid anymore" not in source, "advice belongs on a To fix line, not on a second starred line"
+
+    # A fix hint reports whether it printed, so a second piece of advice cannot repeat what is already on screen
+    def test_a_printed_fix_hint_reports_itself(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+        tracker = im_module.RecoveryHintTracker()
+
+        assert im_module.print_fix_hint("ConnectionException: 429 Too Many Requests", tracker) is True
+        assert im_module.print_fix_hint("ConnectionException: 429 Too Many Requests", tracker) is False
+        assert im_module.print_fix_hint("SomethingElse: totally unknown error") is False
+
+        assert capsys.readouterr().out.count("To fix: ") == 1
+
+    # The session hint is suppressed when the classifier already printed a fix for the same failure
+    def test_the_session_hint_gives_way_to_a_classified_fix(self, im_module):
+        module_source = inspect.getsource(im_module)
+        start = module_source.index("def _run_instagram_monitor_pass(")
+        source = module_source[start:module_source.index("\ndef ", start)]
+
+        assert "fix_hint_printed = print_fix_hint(error_msg, recovery_hint_tracker)" in source
+        assert "if not fix_hint_printed and outage_outcome in (\"full\", \"repeat\") and (" in source
+        assert source.count("session_recovery_command()") == 2

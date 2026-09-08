@@ -45,6 +45,8 @@ When a check fails, Instagram Monitor prints the error, a `To fix:` action and a
 
 A monitoring failure is reported as `* Error: <what failed> (retrying in <time>)`, with the `To fix:` paragraph under it the first time that category appears. Every monitor in this family prints that same line. During a long outage the failure is reported in full once, then the liveness banner takes over with `* Monitoring degraded for <instagram_user>` and the summary of what is still failing, so a broken run keeps saying it is alive without repeating the same paragraph. When the failure clears, `* Monitoring recovered for <instagram_user>` reports how long it lasted. Setting `LIVENESS_CHECK_INTERVAL` to 0 removes the banner that carries the reminder, so the one-line summary goes back to printing on every check.
 
+A redirect or a rejected request usually means the saved session. When the failure was not recognized well enough to suggest anything else, the `To fix:` line names the session and the exact re-import command instead.
+
 A message naming `Could not resolve host` means the machine could not look up Instagram's address. This is a DNS problem on your side rather than an Instagram block, and it is common on devices that start monitoring before the network is fully up, such as a Raspberry Pi booting from cold. Check that name lookups work:
 
 ```sh

@@ -9937,13 +9937,14 @@ def print_outage_recovery(target: str, lasted: int) -> None:
 
 
 # Prints an actionable fix hint for the given error to the console when one is available and not already shown
-def print_fix_hint(error_msg: str, tracker: Optional[RecoveryHintTracker] = None) -> None:
+def print_fix_hint(error_msg: str, tracker: Optional[RecoveryHintTracker] = None) -> bool:
     is_logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
     if tracker is not None and not tracker.should_render(classify_recovery_error(error_msg, is_logged_in)):
-        return
+        return False
     hint = error_fix_hint(error_msg, is_logged_in)
     if hint:
         print(colorize("info", hint))
+    return bool(hint)
 
 
 # Returns True when the formatted error indicates a profile could not be found (deleted/renamed target or a flagged session masking every profile)
@@ -12828,13 +12829,14 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 debug_print("Full exception", outcome="failed", error=f"{type(e).__name__}: {e}")
 
                 consecutive_main_errors += 1
+                fix_hint_printed = False
 
                 # A flagged session/IP is terminal and operator-actionable, so detect it up front to alert immediately and skip the generic threshold alert below
                 session_flagged = is_session_flagged(error_msg, bot)
 
                 if not session_flagged:
                     if outage_outcome in ("full", "repeat"):
-                        print_fix_hint(error_msg, recovery_hint_tracker)
+                        fix_hint_printed = print_fix_hint(error_msg, recovery_hint_tracker)
                     notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
 
                 # Handle session recovery for automated checks/challenge errors
@@ -12904,8 +12906,9 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         return
                     continue  # Retry the main loop
 
-                if outage_outcome in ("full", "repeat") and ('Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e)):
-                    print("* Session might not be valid anymore! Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page.")
+                # A redirect or a rejected request usually means the session, so name it when the classifier had no fix of its own
+                if not fix_hint_printed and outage_outcome in ("full", "repeat") and ('Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e)):
+                    print(colorize("info", f"To fix: The saved session may no longer be valid. Re-import it with '{session_recovery_command()}' or from the Web Dashboard Session page"))
 
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
@@ -12922,7 +12925,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 consecutive_main_errors += 1
                 error_msg = f"HTTP redirect while checking {user}: {get_thread_output()}"
                 print(f"* Error: The saved Instagram session may no longer be valid (retrying in {display_time(r_sleep_time)})")
-                print("To fix: Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page")
+                print(colorize("info", f"To fix: Re-import the session with '{session_recovery_command()}' or from the Web Dashboard Session page"))
                 notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
