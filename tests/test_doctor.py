@@ -1047,3 +1047,36 @@ def test_a_delivery_prompt_interrupt_ends_the_run(im_module, monkeypatch):
         im_module._doctor_ask_yes_no("Send one test")
 
     assert raised.value.code == 0
+
+
+# Verifies an Instaloader that cannot be built becomes one failure row with an action, not a crash of the whole report
+def test_an_instaloader_that_cannot_be_built_is_one_failure_row(im_module, monkeypatch):
+    def refuse(**kwargs):
+        raise RuntimeError("no instaloader today")
+    monkeypatch.setattr(im_module, "instaloader_client", refuse)
+    report = im_module.DoctorReport()
+
+    checks = im_module.doctor_prepare_bot(report)
+
+    assert report.bot is None
+    assert (checks[0].section, checks[0].status, checks[0].label) == ("Configuration", "FAIL", "Could not initialise Instaloader")
+    assert "no instaloader today" in checks[0].detail
+    assert checks[0].fix == "Reinstall the instaloader package then run --doctor again"
+    assert checks[0].guide == im_module.INSTALLATION_GUIDE_URL
+
+
+# Verifies the live checks that need Instaloader are skipped with a reason when it could not be built, the way the sibling monitors skip a check that cannot run
+def test_the_live_checks_are_skipped_without_instaloader(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "SESSION_USERNAME", "monitor_account")
+    monkeypatch.setattr(im_module, "SKIP_SESSION", False)
+    monkeypatch.setattr(im_module, "check_internet", lambda **kwargs: True)
+    report = im_module.DoctorReport()
+
+    session = im_module.doctor_check_session(report)
+    connectivity = im_module.doctor_check_connectivity(report)
+    targets = im_module.doctor_check_targets(report, ["someone"])
+
+    assert (session[0].status, session[0].label) == ("SKIP", "The saved session was not checked")
+    assert (connectivity[-1].status, connectivity[-1].label) == ("SKIP", "Instagram connectivity check was skipped")
+    assert (targets[0].status, targets[0].label) == ("SKIP", "The monitored profiles were not checked")
+    assert all(row.detail.startswith("Instaloader could not be initialised") for row in (session[0], connectivity[-1], targets[0]))

@@ -15893,7 +15893,7 @@ def doctor_prepare_bot(report: DoctorReport) -> List[DoctorCheck]:
     try:
         report.bot = instaloader_client(user_agent=USER_AGENT, iphone_support=True, quiet=True)
     except Exception as exc:
-        return [make_doctor_check("Configuration", "FAIL", "Could not initialise Instaloader", format_error_message(exc))]
+        return [make_doctor_check("Configuration", "FAIL", "Could not initialise Instaloader", format_error_message(exc), "Reinstall the instaloader package then run --doctor again", INSTALLATION_GUIDE_URL)]
     return []
 
 
@@ -15903,7 +15903,7 @@ def doctor_check_session(report: DoctorReport, progress: Optional[Callable[[str]
     if not logged_in:
         return [make_doctor_check("Session", "PASS", "No-login mode", "Stories, reels and follower churn require Logged-in mode")]
     if report.bot is None:
-        return [make_doctor_check("Session", "WARN", "Skipped session check", "Instaloader could not be initialised")]
+        return [make_doctor_check("Session", "SKIP", "The saved session was not checked", "Instaloader could not be initialised, so no sign-in was attempted")]
     if progress is not None:
         progress(f"the session for {SESSION_USERNAME}")
     try:
@@ -15932,7 +15932,7 @@ def doctor_connectivity_endpoint_check() -> DoctorCheck:
 def doctor_check_connectivity(report: DoctorReport, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     checks = [doctor_connectivity_endpoint_check()]
     if report.bot is None:
-        return checks + [make_doctor_check("Connectivity", "WARN", "Skipped connectivity check", "Instaloader could not be initialised")]
+        return checks + [make_doctor_check("Connectivity", "SKIP", "Instagram connectivity check was skipped", "Instaloader could not be initialised, so no request was attempted")]
     if progress is not None:
         progress("connectivity")
     try:
@@ -15951,7 +15951,7 @@ def doctor_check_targets(report: DoctorReport, targets, progress: Optional[Calla
             return [make_doctor_check("Targets", "PASS", "No targets configured yet", "The Web Dashboard is enabled, so targets can be added there")]
         return [make_doctor_check("Targets", "WARN", "No targets configured", "Nothing will be monitored", NO_TARGET_FIX, QUICK_START_GUIDE_URL)]
     if report.bot is None:
-        return [make_doctor_check("Targets", "WARN", "Skipped target checks", "Instaloader could not be initialised")]
+        return [make_doctor_check("Targets", "SKIP", "The monitored profiles were not checked", "Instaloader could not be initialised, so no lookup was attempted")]
     checks: List[DoctorCheck] = []
     for target in targets:
         if progress is not None:
