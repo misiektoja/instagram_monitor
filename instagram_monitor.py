@@ -14282,7 +14282,7 @@ def _wizard_install_chromium_dependency(method: str) -> bool:
     try:
         result = subprocess.run(command, check=False)
     except OSError as exc:
-        print(colorize("warning", f"  Installation could not start: {exc}"))
+        print(f"  Installation could not start: {exc}")
         return False
     importlib.invalidate_caches()
     if result.returncode == 0 and _wizard_chromium_dependency_available():
@@ -14359,7 +14359,7 @@ def _wizard_ask_text(question: str, default: str = "", required: bool = False) -
             raw = default
         if raw or not required:
             return raw
-        print(colorize("warning", "  This value is required."))
+        print("  This value is required.")
         if not _wizard_offer_retry(question):
             return ""
 
@@ -14370,16 +14370,19 @@ def _wizard_default(value) -> str:
 
 
 # Prompts until the answer is a positive whole number
-def _wizard_ask_positive_int(question: str, default: int) -> int:
+def _wizard_ask_positive_int(question: str, default: int, maximum: Optional[int] = None) -> int:
     while True:
         answer = _wizard_ask_text(question, default=str(default), required=True)
+        # An empty answer means the retry offer was declined, so the default stands instead of asking again
+        if not answer:
+            return int(default)
         try:
             parsed = int(answer)
         except ValueError:
             parsed = 0
-        if parsed > 0:
+        if parsed > 0 and (maximum is None or parsed <= maximum):
             return parsed
-        print(colorize("warning", "  Enter a positive whole number."))
+        print(f"  Enter a whole number from 1 through {maximum}." if maximum is not None else "  Enter a positive whole number.")
 
 
 # Converts a duration to a compact seconds plus human-readable wizard label
@@ -14427,7 +14430,7 @@ def _wizard_ask_duration(question: str, default: int) -> int:
         parsed = _wizard_parse_duration(value)
         if parsed is not None:
             return parsed
-        print(colorize("warning", "  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d."))
+        print("  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d.")
 
 
 # Reads one secret through getpass without echoing it, coloured like the visible prompts and with debug output off
@@ -14450,7 +14453,7 @@ def _wizard_ask_yes_no(question: str, default: bool = True) -> bool:
             return True
         if raw in ("n", "no"):
             return False
-        print(colorize("warning", "  Please answer 'y' or 'n'."))
+        print("  Please answer 'y' or 'n'.")
 
 
 # Offers the one way out after an entry the wizard cannot use, so declining keeps every answer already given
@@ -14476,7 +14479,7 @@ def _wizard_ask_choice(question: str, options, default_index: int = 0) -> int:
             return default_index
         if raw.isdigit() and 1 <= int(raw) <= len(options):
             return int(raw) - 1
-        print(colorize("warning", f"  Enter a number between 1 and {len(options)}."))
+        print(f"  Enter a number between 1 and {len(options)}.")
 
 
 # Returns a secret from the selected dotenv file or environment without displaying it
@@ -14594,7 +14597,7 @@ class WizardSetupState:
 
 # Leaves the tool in no-login mode, so an abandoned sign-in answer cannot save half a session
 def _wizard_fall_back_to_no_login(state: WizardSetupState, reason: str) -> None:
-    print(colorize("warning", f"  {reason}"))
+    print(f"  {reason}")
     state.login_method = "no-login"
     state.logged_in = False
     state.import_browser = None
@@ -14771,12 +14774,12 @@ def _wizard_collect_interface_section(state: WizardSetupState, method: str) -> N
     state.want_terminal = interface == 1
     state.config_values.update({"WEB_DASHBOARD_ENABLED": state.want_web, "DASHBOARD_ENABLED": state.want_terminal})
     if not state.want_web and not state.targets:
-        print(colorize("warning", "  Terminal and plain-text monitoring need at least one target."))
+        print("  Terminal and plain-text monitoring need at least one target.")
         _wizard_collect_target_section(state, allow_empty=False)
     if state.want_web and not FLASK_AVAILABLE:
-        print(colorize("warning", "  Note: flask is not installed, so the web dashboard will remain unavailable until it is installed."))
+        print("  Note: flask is not installed, so the web dashboard will remain unavailable until it is installed.")
     if state.want_terminal and not RICH_AVAILABLE:
-        print(colorize("warning", "  Note: rich is not installed, so the terminal dashboard will remain unavailable until it is installed."))
+        print("  Note: rich is not installed, so the terminal dashboard will remain unavailable until it is installed.")
 
 
 # Switches the channel and every alert it owns off together, so a half-configured webhook cannot be written
@@ -14820,9 +14823,9 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
                     return
                 continue
             if provider == "ntfy":
-                print(colorize("warning", "  Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores."))
+                print("  Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores.")
             else:
-                print(colorize("warning", "  That does not look like a complete HTTPS webhook URL. Copy it from the webhook service and try again."))
+                print("  That does not look like a complete HTTPS webhook URL. Copy it from the webhook service and try again.")
             if not _wizard_offer_retry("webhook URL"):
                 _wizard_disable_webhook(state)
                 return
@@ -14862,7 +14865,7 @@ def _wizard_disable_email(state: WizardSetupState) -> None:
 def _wizard_email_answer_missing(state: WizardSetupState, answer: str) -> bool:
     if answer:
         return False
-    print(colorize("warning", "  Email notifications stay off until every mail server setting is answered."))
+    print("  Email notifications stay off until every mail server setting is answered.")
     _wizard_disable_email(state)
     return True
 
@@ -14903,7 +14906,7 @@ def _wizard_smtp_sign_in_accepted(values: dict, password: str) -> Optional[bool]
         print("  The mail server accepted the sign-in. No email was sent.")
         return True
     summary, detail, fix, retryable = problem
-    print(colorize("warning", f"  {summary}: {detail}" if detail else f"  {summary}"))
+    print(f"  {summary}: {detail}" if detail else f"  {summary}")
     print(f"  To fix: {fix}")
     if _wizard_offer_retry("mail server settings"):
         return False
@@ -14911,7 +14914,7 @@ def _wizard_smtp_sign_in_accepted(values: dict, password: str) -> Optional[bool]
         # Being offline is the usual reason a correct setup fails here, so the answers are kept rather than discarded
         print("  The settings were kept without being checked. Run --doctor to check the sign-in again.")
         return True
-    print(colorize("warning", "  Email notifications stay off until the mail server accepts the settings."))
+    print("  Email notifications stay off until the mail server accepts the settings.")
     return None
 
 
@@ -14927,7 +14930,7 @@ def _wizard_collect_email_section(state: WizardSetupState) -> None:
         state.config_values["SMTP_HOST"] = _wizard_ask_text("SMTP host", default=_wizard_default(state.config_values.get("SMTP_HOST")), required=True)
         if _wizard_email_answer_missing(state, state.config_values["SMTP_HOST"]):
             return
-        state.config_values["SMTP_PORT"] = _wizard_ask_positive_int("SMTP port", int(state.config_values.get("SMTP_PORT") or 587))
+        state.config_values["SMTP_PORT"] = _wizard_ask_positive_int("SMTP port", int(state.config_values.get("SMTP_PORT") or 587), maximum=65535)
         state.config_values["SMTP_SSL"] = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(state.config_values.get("SMTP_SSL", True)))
         state.config_values["SMTP_USER"] = _wizard_ask_text("SMTP username", default=_wizard_default(state.config_values.get("SMTP_USER")), required=True)
         if _wizard_email_answer_missing(state, state.config_values["SMTP_USER"]):
@@ -14992,19 +14995,19 @@ def _wizard_collect_destination_section(state: WizardSetupState, method: str) ->
             selected_config = _wizard_validate_destination(method, config_text, "Configuration destination")
             break
         except ValueError as exc:
-            print(colorize("warning", f"  {exc}."))
+            print(f"  {exc}.")
     if selected_config != state.config_path:
         state.config_path = _wizard_choose_config_destination(selected_config)
     while True:
         env_text = _wizard_ask_text("Dotenv file destination", default=str(state.env_path), required=True)
         if env_text.casefold() == "none":
-            print(colorize("warning", "  Setup needs a writable dotenv file and cannot use 'none'."))
+            print("  Setup needs a writable dotenv file and cannot use 'none'.")
             continue
         try:
             selected_env = _wizard_validate_destination(method, env_text, "Dotenv destination")
             break
         except ValueError as exc:
-            print(colorize("warning", f"  {exc}."))
+            print(f"  {exc}.")
     state.config_values["DOTENV_FILE"] = str(selected_env)
     if selected_env == state.env_path:
         return
@@ -15371,6 +15374,9 @@ class DoctorReport:
 def make_doctor_check(section: str, status: str, label: str, detail: str = "", fix: str = "", guide: str = "") -> DoctorCheck:
     if status not in DOCTOR_STATUSES:
         raise ValueError(f"Unsupported doctor status: {status}")
+    # A row the user has to act on is useless without an action, so the row is rejected rather than printed bare
+    if status in ("WARN", "FAIL") and not fix:
+        raise ValueError(f"Doctor {status} rows require a fix")
     # Several rows carry the same text as their label and printing it twice reads as two problems
     return DoctorCheck(section, status, label, "" if detail.strip() == label.strip() else detail, fix, guide)
 
@@ -15431,7 +15437,7 @@ def _doctor_ask_yes_no(question: str) -> bool:
             return False
         if raw in ("y", "yes"):
             return True
-        print(colorize("warning", "  Please answer 'y' or 'n'."))
+        print("  Please answer 'y' or 'n'.")
 
 
 # Sends one approved doctor webhook while restoring its configured enabled state
@@ -15457,7 +15463,7 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> None:
             if result == 0:
                 check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", "Doctor test email delivered", "One real test email was sent after confirmation")
             else:
-                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", "Doctor test email delivery failed", "The approved test email could not be delivered. Review the SMTP error above")
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", "Doctor test email delivery failed", "The approved test email could not be delivered", "Review the SMTP error above and correct the email settings", SMTP_GUIDE_URL)
         else:
             check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent", "You declined the real delivery test. Run doctor again and approve the email test when ready")
         # Recorded on the report so the summary sentence and the exit code cannot disagree about the same run
@@ -15469,7 +15475,7 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> None:
             if _doctor_send_test_webhook() == 0:
                 check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", f"Doctor test webhook through {provider} delivered", "One real test webhook was sent after confirmation")
             else:
-                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", f"Doctor test webhook through {provider} delivery failed", "The approved test webhook could not be delivered. Review the webhook error above")
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", f"Doctor test webhook through {provider} delivery failed", "The approved test webhook could not be delivered", "Review the webhook error above and correct the destination settings", WEBHOOK_GUIDE_URL)
         else:
             check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", f"Test webhook through {provider} was not sent", "You declined the real delivery test. Run doctor again and approve the webhook test when ready")
         report.checks.append(check)

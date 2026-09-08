@@ -1315,3 +1315,22 @@ def test_a_non_interactive_setup_names_the_shared_fallback(im_module, monkeypatc
     assert raised.value.code == 1
     lines = capsys.readouterr().out.splitlines()
     assert lines[-1] == "Run --setup from an interactive shell or use --generate-config and edit the files manually."
+
+
+# Verifies the port question rejects a number no TCP port can be, instead of saving it for the doctor to reject
+def test_the_smtp_port_question_rejects_a_number_above_the_port_range(im_module, monkeypatch, capsys):
+    answers = iter(["70000", "2525"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+
+    chosen = im_module._wizard_ask_positive_int("SMTP port", 587, maximum=65535)
+
+    assert chosen == 2525
+    assert "  Enter a whole number from 1 through 65535." in capsys.readouterr().out
+
+
+# Verifies declining the retry offer keeps the saved value rather than asking the same question forever
+def test_declining_the_retry_offer_keeps_the_saved_number(im_module, monkeypatch, capsys):
+    answers = iter(["", "n"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+
+    assert im_module._wizard_ask_positive_int("SMTP port", 587, maximum=65535) == 587

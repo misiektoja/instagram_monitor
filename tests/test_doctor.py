@@ -924,9 +924,18 @@ def test_a_detail_that_repeats_its_label_is_dropped(im_module):
 
 
 # Verifies only the four shared markers can reach a report, so the neutral fifth cannot come back
+def test_an_actionable_row_is_rejected_without_a_fix(im_module):
+    for status in ("WARN", "FAIL"):
+        with pytest.raises(ValueError):
+            im_module.make_doctor_check("Configuration", status, "a label", "some detail")
+
+    assert im_module.make_doctor_check("Configuration", "SKIP", "a label").status == "SKIP"
+
+
+# Verifies only the four shared markers can reach a report
 def test_only_the_four_shared_markers_are_accepted(im_module):
     assert im_module.DOCTOR_STATUSES == ("PASS", "WARN", "FAIL", "SKIP")
-    assert [im_module.make_doctor_check("Configuration", status, "a label").status for status in im_module.DOCTOR_STATUSES] == list(im_module.DOCTOR_STATUSES)
+    assert [im_module.make_doctor_check("Configuration", status, "a label", "", "do the thing").status for status in im_module.DOCTOR_STATUSES] == list(im_module.DOCTOR_STATUSES)
     assert set(im_module.DOCTOR_MARK_STYLES) == set(im_module.DOCTOR_STATUSES)
 
     with pytest.raises(ValueError):

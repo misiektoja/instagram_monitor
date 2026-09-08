@@ -1,4 +1,6 @@
+import re
 from io import StringIO
+from pathlib import Path
 
 import pytest
 
@@ -273,3 +275,13 @@ def test_a_delivery_announcement_is_painted_for_its_channel(im_module, monkeypat
 def test_the_delivery_channels_keep_the_shared_colours(im_module):
     assert im_module.DEFAULT_COLOR_THEME["email"] == "bright_cyan"
     assert im_module.DEFAULT_COLOR_THEME["webhook"] == "bright_blue"
+
+
+# Verifies indented wizard hints stay plain, matching the five tools that never coloured them
+def test_indented_wizard_hints_are_not_colored():
+    source = (Path(__file__).resolve().parents[1] / "instagram_monitor.py").read_text(encoding="utf-8")
+
+    coloured = re.findall(r'colorize\("warning", f?"  [^"]*', source)
+
+    # The doctor summary sentence is the one indented line all seven colour
+    assert [line for line in coloured if "All critical checks passed" not in line] == []
