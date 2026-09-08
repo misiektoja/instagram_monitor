@@ -742,7 +742,29 @@ class TestDoctorDeliveryTests:
         webhook.assert_not_called()
         output = stream.getvalue()
         assert "Test email was not sent" in output
-        assert "Test webhook was not sent" in output
+        assert f"Test webhook through {im_module.webhook_provider_display_name()} was not sent" in output
+
+    # The delivery rows print the same label and detail the sibling tools print
+    def test_the_delivery_rows_print_the_shared_label_and_detail(self, im_module, monkeypatch):
+        consent = Mock(side_effect=[True, False])
+        stream = _TTYBuffer()
+        monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+        monkeypatch.setattr(im_module.sys, "stdout", stream)
+        monkeypatch.setattr(im_module, "_doctor_ask_yes_no", consent)
+        monkeypatch.setattr(im_module, "send_email", Mock(return_value=0))
+        monkeypatch.setattr(im_module, "_doctor_send_test_webhook", Mock(side_effect=AssertionError("webhook sent without approval")))
+        report = im_module.DoctorReport(smtp_ready=True, webhook_ready=True)
+
+        im_module._doctor_offer_notification_tests(report)
+        output = stream.getvalue()
+        provider = im_module.webhook_provider_display_name()
+
+        assert "Optional delivery tests" in output
+        assert "Doctor test email delivered" in output
+        assert "One real test email was sent after confirmation" in output
+        assert f"Test webhook through {provider} was not sent" in output
+        assert "You declined the real delivery test. Run doctor again and approve the webhook test when ready" in output
+
 
     # An empty delivery answer defaults safely to no
     def test_delivery_consent_defaults_to_no(self, im_module, monkeypatch):

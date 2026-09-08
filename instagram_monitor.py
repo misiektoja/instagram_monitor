@@ -13861,7 +13861,7 @@ def get_target_paths(user):
                 # Single target: OUTPUT_DIR/logs/monitor.log
                 target_log = os.path.join(OUTPUT_DIR, "logs", f"{Path(INSTA_LOGFILE).stem}.log")
         else:
-            # Traditional behavior: monitor_<user>.log
+            # Traditional behavior: monitor_<username>.log
             log_path = Path(os.path.expanduser(INSTA_LOGFILE))
             suffix = f"_{user}"
             if log_path.suffix == "":
@@ -15261,7 +15261,7 @@ def _doctor_send_test_webhook() -> int:
 def _doctor_offer_notification_tests(report: DoctorReport) -> None:
     if not sys.stdin.isatty() or not sys.stdout.isatty() or not (report.smtp_ready or report.webhook_ready):
         return
-    print(colorize("section", "\nOptional delivery tests\n"))
+    print("\n" + colorize("section", "Optional delivery tests") + "\n")
     print("Doctor will not write files. Each approved test sends one real message.\n")
     if report.smtp_ready:
         if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
@@ -15269,9 +15269,9 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> None:
             if result == 0:
                 check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", "Doctor test email delivered", "One real test email was sent after confirmation")
             else:
-                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", "Doctor test email delivery failed", "The approved test email could not be delivered")
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", "Doctor test email delivery failed", "The approved test email could not be delivered. Review the SMTP error above")
         else:
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent", "You declined the real delivery test. Run doctor again and approve the email test when ready")
         # Recorded on the report so the summary sentence and the exit code cannot disagree about the same run
         report.checks.append(check)
         _doctor_line(check.status, check.label, check.detail)
@@ -15279,11 +15279,11 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> None:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
             if _doctor_send_test_webhook() == 0:
-                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", "Doctor test webhook delivered", "One real test webhook was sent after confirmation")
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", f"Doctor test webhook through {provider} delivered", "One real test webhook was sent after confirmation")
             else:
-                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", "Doctor test webhook delivery failed", "The approved test webhook could not be delivered")
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", f"Doctor test webhook through {provider} delivery failed", "The approved test webhook could not be delivered. Review the webhook error above")
         else:
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test webhook was not sent")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", f"Test webhook through {provider} was not sent", "You declined the real delivery test. Run doctor again and approve the webhook test when ready")
         report.checks.append(check)
         _doctor_line(check.status, check.label, check.detail)
 

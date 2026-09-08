@@ -123,7 +123,7 @@ With several targets, the tool spreads their first checks across `INSTA_CHECK_IN
 instagram_monitor target_user_1 target_user_2 --targets-stagger 300
 ```
 
-The tool saves text output to `instagram_monitor_<suffix>.log`. Change the name through `INSTA_LOGFILE`. Disable file logging through `DISABLE_LOGGING` or `-d`.
+The tool saves text output to `instagram_monitor_<username>.log`. Change the name through `INSTA_LOGFILE`. Disable file logging through `DISABLE_LOGGING` or `-d`.
 
 Set `ASCII_LOG_SEPARATORS` to `"Auto"` (default) to use ASCII separator-only lines on Windows, `"On"` to use them on every operating system or `"Off"` to preserve Unicode separators in logs everywhere. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
 
