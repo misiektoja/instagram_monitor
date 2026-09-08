@@ -563,7 +563,7 @@ class TestRunDoctor:
         assert rc >= 1
         assert "No saved session" in out
 
-    def test_bad_target_warns_but_does_not_fail(self, im_module, monkeypatch, capsys):
+    def test_bad_target_fails(self, im_module, monkeypatch, capsys):
         _setup_no_network(monkeypatch, im_module)
         monkeypatch.setattr(im_module, "SKIP_SESSION", True, raising=False)
         monkeypatch.setattr(im_module, "SESSION_USERNAME", "", raising=False)
@@ -576,8 +576,8 @@ class TestRunDoctor:
         monkeypatch.setattr(im_module, "profile_from_username_resilient", resolver)
         rc = im_module.run_doctor(["ghost"])
         out = capsys.readouterr().out
-        assert rc == 0
-        assert "could not be fetched" in out
+        assert rc == 1
+        assert "[FAIL] Target 'ghost' could not be fetched" in out
 
     def test_connectivity_failure_fails(self, im_module, monkeypatch, capsys):
         _setup_no_network(monkeypatch, im_module)
@@ -609,6 +609,44 @@ class TestRunDoctor:
 
         assert any(check.status == "WARN" and check.label == "Webhook alerts are on but no alert types are selected" for check in checks)
         assert report.webhook_ready is False
+
+    # Webhook alert types selected while the channel is off warn, since nothing would ever be delivered
+    def test_webhook_alerts_selected_but_switched_off_warn(self, im_module, monkeypatch):
+        _setup_no_network(monkeypatch, im_module)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", True, raising=False)
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", False, raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True, raising=False)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        webhook = checks[-1]
+        assert (webhook.status, webhook.label) == ("WARN", "Webhook alert types are selected but webhooks are switched off")
+        assert "WEBHOOK_ENABLED" in webhook.fix
+        assert report.webhook_ready is False
+
+    # Configured mail settings with no alert types selected warn, since nothing would ever be emailed
+    def test_email_configured_but_nothing_selected_warns(self, im_module, monkeypatch):
+        _setup_no_network(monkeypatch, im_module)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", True, raising=False)
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "", raising=False)
+        for setting in ("STATUS_NOTIFICATION", "FOLLOWERS_NOTIFICATION", "ERROR_NOTIFICATION"):
+            monkeypatch.setattr(im_module, setting, False, raising=False)
+        monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.test")
+        monkeypatch.setattr(im_module, "SMTP_USER", "monitor")
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "private-password")
+        monkeypatch.setattr(im_module, "SENDER_EMAIL", "monitor@example.test")
+        monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "alerts@example.test")
+        monkeypatch.setattr(im_module.smtplib, "SMTP", Mock(side_effect=AssertionError("SMTP was contacted")))
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        email = checks[0]
+        assert (email.status, email.label) == ("WARN", "Email is configured but no alert types are selected")
+        assert email.fix == "Turn on at least one email alert in the configuration file"
+        assert report.smtp_ready is False
 
     # Doctor reports one fully validated webhook under the label shared with the sibling monitors
     def test_valid_webhook_reports_the_shared_ready_label(self, im_module, monkeypatch, capsys):
