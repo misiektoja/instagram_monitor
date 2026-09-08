@@ -355,3 +355,4 @@ class TestOutageReporting:
 
         assert 'print_liveness_banner(f"Monitoring healthy for {user}.' in source
         assert 'verbose_print(f"Monitoring healthy' not in source, "the healthy banner is no longer verbose-only"
+        assert "int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS" in source, "the healthy banner is timed rather than counted"

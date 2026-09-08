@@ -1385,7 +1385,6 @@ MEDIA_DOWNLOAD_MAX_BYTES = 100 * 1024 * 1024
 MEDIA_DOWNLOAD_CHUNK_BYTES = 64 * 1024
 
 # Computed later once final INSTA_CHECK_INTERVAL is known (config/env/CLI) and updated on SIGTRAP/SIGABRT
-LIVENESS_CHECK_COUNTER = 0
 # Seconds rather than checks, because a failing run usually retries on a different interval than a healthy one
 LIVENESS_REMINDER_SECONDS = 0
 
@@ -3171,7 +3170,7 @@ def create_web_dashboard_app():
         MAX_H2 = int(update_setting('max_h2', MAX_H2, int))
         DASHBOARD_SHOW_CHECK_SECONDS = bool(update_setting('dashboard_show_check_seconds', DASHBOARD_SHOW_CHECK_SECONDS, bool))
         TIME_FORMAT_12H = bool(update_setting('time_format_12h', TIME_FORMAT_12H, bool))
-        recompute_liveness_check_counter()
+        recompute_liveness_reminder()
 
         # HTTP transport backend
         HTTP_BACKEND = str(update_setting('http_backend', HTTP_BACKEND, str))
@@ -6429,16 +6428,10 @@ def format_hour_range(h_min, h_max):
         return f"{h_min:02d}:00 - {h_max:02d}:59"
 
 
-# Recomputes cycle-based liveness counter after INSTA_CHECK_INTERVAL changes
-def recompute_liveness_check_counter() -> None:
-    global LIVENESS_CHECK_COUNTER, LIVENESS_REMINDER_SECONDS
-    if LIVENESS_CHECK_INTERVAL and INSTA_CHECK_INTERVAL > 0:
-        # Whole checks, so a check interval longer than the liveness interval still waits one check instead of reporting on every check
-        LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // INSTA_CHECK_INTERVAL))
-        LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL
-    else:
-        LIVENESS_CHECK_COUNTER = 0
-        LIVENESS_REMINDER_SECONDS = 0
+# Recomputes the liveness reminder after LIVENESS_CHECK_INTERVAL changes
+def recompute_liveness_reminder() -> None:
+    global LIVENESS_REMINDER_SECONDS
+    LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL and INSTA_CHECK_INTERVAL > 0 else 0
 
 
 # Returns the timestamp/datetime object in human readable format (long version); eg. Sun 21 Apr 2024, 15:08:45
@@ -6700,7 +6693,7 @@ def toggle_followers_notifications_signal_handler(sig, frame):
 def increase_check_signal_handler(sig, frame):
     global INSTA_CHECK_INTERVAL
     INSTA_CHECK_INTERVAL = INSTA_CHECK_INTERVAL + INSTA_CHECK_SIGNAL_VALUE
-    recompute_liveness_check_counter()
+    recompute_liveness_reminder()
     if INSTA_CHECK_INTERVAL <= RANDOM_SLEEP_DIFF_LOW:
         check_interval_low = INSTA_CHECK_INTERVAL
     else:
@@ -6716,7 +6709,7 @@ def decrease_check_signal_handler(sig, frame):
     global INSTA_CHECK_INTERVAL
     if (INSTA_CHECK_INTERVAL - RANDOM_SLEEP_DIFF_LOW - INSTA_CHECK_SIGNAL_VALUE) > 0:
         INSTA_CHECK_INTERVAL = INSTA_CHECK_INTERVAL - INSTA_CHECK_SIGNAL_VALUE
-    recompute_liveness_check_counter()
+    recompute_liveness_reminder()
     if INSTA_CHECK_INTERVAL <= RANDOM_SLEEP_DIFF_LOW:
         check_interval_low = INSTA_CHECK_INTERVAL
     else:
@@ -12660,7 +12653,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         if interruptible_sleep(r_sleep_time, stop_event):
             return
 
-    alive_counter = 0
+    alive_since = int(time.time())
     mark_monitoring_started()
 
     # Primary loop
@@ -13858,7 +13851,6 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             else:
                 verbose_notice(skip_notice)
 
-        alive_counter += 1
 
         if in_allowed_hours:
             consecutive_main_errors = 0
@@ -13866,10 +13858,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             outage_lasted = outage.recovered()
             if outage_lasted is not None:
                 print_outage_recovery(user, outage_lasted)
+                alive_since = int(time.time())
 
-        if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
+        if LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
             print_liveness_banner(f"Monitoring healthy for {user}. No tracked change since the last check")
-            alive_counter = 0
+            alive_since = int(time.time())
 
         debug_print("After check", manual_recheck_active=manual_recheck_active)
 
@@ -16028,7 +16021,7 @@ def apply_diagnostic_cli_overrides(args: argparse.Namespace) -> None:
 
 # Parses configuration and command-line options then starts the selected operation
 def run_main():
-    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, LIVENESS_REMINDER_SECONDS, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE, IDENTITY_BUDGET_PER_DAY, CIRCUIT_BREAKER, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
+    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_REMINDER_SECONDS, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE, IDENTITY_BUDGET_PER_DAY, CIRCUIT_BREAKER, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H, TRUNCATE_CHARS
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
@@ -17125,7 +17118,7 @@ def run_main():
         sys.exit(1)
 
     # Finalize liveness cadence after config/env/CLI have been applied
-    recompute_liveness_check_counter()
+    recompute_liveness_reminder()
 
     if SKIP_SESSION is True:
         SKIP_FOLLOWERS = True

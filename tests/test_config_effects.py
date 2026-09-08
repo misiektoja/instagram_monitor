@@ -60,28 +60,28 @@ class TestConnectivityCheckResolution:
         assert seen == ["https://first.example", "https://second.example"]
 
 
-class TestLivenessCounterRecomputation:
-    # Verifies a changed check interval rescales the liveness cadence rather than keeping the import-time ratio
-    @pytest.mark.parametrize("check_interval,liveness_interval,expected", [(300, 43200, 144), (600, 43200, 72), (3600, 21600, 6), (5400, 43200, 8), (86400, 43200, 1)])
+class TestLivenessReminderRecomputation:
+    # Verifies the reminder follows the configured liveness interval whatever the check interval is
+    @pytest.mark.parametrize("check_interval,liveness_interval,expected", [(300, 43200, 43200), (600, 43200, 43200), (3600, 21600, 21600), (5400, 43200, 43200), (86400, 43200, 43200)])
     def test_recompute_follows_the_effective_interval(self, im_module, monkeypatch, check_interval, liveness_interval, expected):
         monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", check_interval)
         monkeypatch.setattr(im_module, "LIVENESS_CHECK_INTERVAL", liveness_interval)
-        monkeypatch.setattr(im_module, "LIVENESS_CHECK_COUNTER", 0)
+        monkeypatch.setattr(im_module, "LIVENESS_REMINDER_SECONDS", 0)
 
-        im_module.recompute_liveness_check_counter()
+        im_module.recompute_liveness_reminder()
 
-        assert im_module.LIVENESS_CHECK_COUNTER == expected
+        assert im_module.LIVENESS_REMINDER_SECONDS == expected
 
-    # Verifies a disabled liveness interval switches the counter off instead of dividing by it
+    # Verifies a disabled liveness interval or a stopped poll switches the reminder off
     @pytest.mark.parametrize("check_interval,liveness_interval", [(300, 0), (0, 43200), (0, 0)])
-    def test_disabled_settings_switch_the_counter_off(self, im_module, monkeypatch, check_interval, liveness_interval):
+    def test_disabled_settings_switch_the_reminder_off(self, im_module, monkeypatch, check_interval, liveness_interval):
         monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", check_interval)
         monkeypatch.setattr(im_module, "LIVENESS_CHECK_INTERVAL", liveness_interval)
-        monkeypatch.setattr(im_module, "LIVENESS_CHECK_COUNTER", 99)
+        monkeypatch.setattr(im_module, "LIVENESS_REMINDER_SECONDS", 99)
 
-        im_module.recompute_liveness_check_counter()
+        im_module.recompute_liveness_reminder()
 
-        assert im_module.LIVENESS_CHECK_COUNTER == 0
+        assert im_module.LIVENESS_REMINDER_SECONDS == 0
 
 
 class TestVerboseNotices:

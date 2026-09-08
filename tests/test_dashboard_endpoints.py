@@ -159,19 +159,19 @@ class TestDashboardSettings:
         assert "cannot be greater" in response.get_json()["error"]
         assert im_module.MIN_H1 == 8
 
-    # Valid interval changes recompute the cycle-based liveness threshold
-    def test_settings_post_recomputes_liveness_counter(self, im_module, monkeypatch):
+    # Valid interval changes recompute the liveness reminder
+    def test_settings_post_recomputes_the_liveness_reminder(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", 3600)
         monkeypatch.setattr(im_module, "LIVENESS_CHECK_INTERVAL", 43200)
-        monkeypatch.setattr(im_module, "LIVENESS_CHECK_COUNTER", 12)
+        monkeypatch.setattr(im_module, "LIVENESS_REMINDER_SECONDS", 12)
         monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
         monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
 
         response = client.post("/api/settings", json={"check_interval": 7200, "liveness_check_interval": 21600})
 
         assert response.status_code == 200
-        assert im_module.LIVENESS_CHECK_COUNTER == 3
+        assert im_module.LIVENESS_REMINDER_SECONDS == 21600
 
 
 class TestDashboardConfigAndSession:
