@@ -15259,8 +15259,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     if write_status["backup_path"]:
         print(f"  Backup:        {write_status['backup_path']}")
     if update_status is not None:
-        label = "Secrets" if state.secret_updates else "Dotenv"
-        print(f"  {label + ':':<15}{update_status['path']}")
+        print(f"  {'Secrets:':<15}{update_status['path']}")
 
     container_browser_import_pending = method in ("docker", "compose") and state.import_browser == "firefox" and state.container_host is not None and not browser_import_complete
     local_browser_import_pending = method not in ("docker", "compose") and bool(state.import_browser) and not browser_import_complete
@@ -15297,7 +15296,8 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}\n")
 
     try:
-        start_monitoring = bool(not doctor_failures and method not in ("docker", "compose") and (not local_browser_import_pending or doctor_ran) and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True))
+        # Only a doctor run that passed proves the saved setup can monitor, so the launch offer waits for it
+        start_monitoring = bool(doctor_ran and not doctor_failures and method not in ("docker", "compose") and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True))
     except (EOFError, KeyboardInterrupt):
         # The files are already written, so an interrupt here only skips the optional launch
         print(colorize("warning", "Setup is saved. Start monitoring with the command above when ready."))
@@ -16756,9 +16756,11 @@ def run_main():
         if args.usernames or args.targets:
             parser.error("--setup cannot be combined with monitoring targets")
         if args.config_file and str(args.config_file).casefold() == "none":
-            parser.error("--setup requires a config destination and cannot use --config-file none")
+            print("Setup cannot start: --setup requires a config destination. Replace '--config-file none' with a writable path.")
+            sys.exit(1)
         if args.env_file and str(args.env_file).casefold() == "none":
-            parser.error("--setup requires a dotenv destination and cannot use --env-file none")
+            print("Setup cannot start: --setup requires a dotenv destination. Replace '--env-file none' with a writable path.")
+            sys.exit(1)
         run_setup_wizard(config_file=args.config_file, env_file=args.env_file)
         sys.exit(0)
     if args.set_webhook_url:

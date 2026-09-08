@@ -1117,7 +1117,7 @@ def test_interrupting_the_launch_offer_keeps_the_saved_setup(im_module, monkeypa
     with make_test_directory() as directory_name:
         directory = Path(directory_name)
         config_path = directory / "instagram_monitor.conf"
-        install_saving_wizard_flow(im_module, monkeypatch, [True, False, False, False, False, KeyboardInterrupt])
+        install_saving_wizard_flow(im_module, monkeypatch, [True, False, False, False, True, KeyboardInterrupt])
         execv_mock = Mock()
         monkeypatch.setattr(im_module.os, "execv", execv_mock)
 
@@ -1327,8 +1327,9 @@ def test_an_exported_secret_is_not_credited_to_the_dotenv_file(im_module, monkey
 def test_setup_refuses_a_config_destination_switched_off(tmp_path):
     result = subprocess.run([sys.executable, str(PROJECT_ROOT / "instagram_monitor.py"), "--setup", "--config-file", "none"], cwd=tmp_path, capture_output=True, text=True, check=False)
 
-    assert result.returncode == 2
-    assert "--setup requires a config destination and cannot use --config-file none" in result.stderr
+    assert result.returncode == 1
+    assert "Setup cannot start: --setup requires a config destination. Replace '--config-file none' with a writable path." in result.stdout
+    assert "usage:" not in result.stderr
     assert not (tmp_path / "none").exists()
 
 
@@ -1361,3 +1362,35 @@ def test_declining_the_retry_offer_keeps_the_saved_number(im_module, monkeypatch
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
 
     assert im_module._wizard_ask_positive_int("SMTP port", 587, maximum=65535) == 587
+
+
+# Verifies the launch offer only follows a doctor run that passed, so a declined doctor ends at the printed commands
+def test_declining_the_doctor_removes_the_launch_offer(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        directory = Path(directory_name)
+        install_saving_wizard_flow(im_module, monkeypatch, [True, False, False, False, False])
+        launch_mock = Mock(side_effect=AssertionError("monitor started"))
+        monkeypatch.setattr(im_module, "_wizard_launch_monitor", launch_mock)
+
+        with pytest.raises(SystemExit) as error:
+            im_module.run_setup_wizard(config_file=directory / "instagram_monitor.conf", env_file=directory / ".env")
+
+        assert error.value.code == 0
+        questions = [call.args[0] for call in im_module._wizard_ask_yes_no.call_args_list]
+        assert not any(question.startswith("Start monitoring now?") for question in questions)
+        launch_mock.assert_not_called()
+
+
+# Verifies a doctor run that passed is what unlocks the launch offer
+def test_a_passed_doctor_run_unlocks_the_launch_offer(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        directory = Path(directory_name)
+        install_saving_wizard_flow(im_module, monkeypatch, [True, False, False, False, True, True])
+        launch_mock = Mock(return_value=0)
+        monkeypatch.setattr(im_module, "_wizard_launch_monitor", launch_mock)
+
+        with pytest.raises(SystemExit) as error:
+            im_module.run_setup_wizard(config_file=directory / "instagram_monitor.conf", env_file=directory / ".env")
+
+        assert error.value.code == 0
+        launch_mock.assert_called_once()

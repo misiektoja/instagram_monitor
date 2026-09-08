@@ -11,7 +11,7 @@ Every answer setup cannot use offers a way out, so one value you cannot produce 
 
 The configuration and dotenv destinations are checked before the first question, so an unwritable path or a directory given by mistake is reported straight away rather than after you have answered everything.
 
-For a local install, the wizard can check the setup and start monitoring immediately. In a container, it prints the next Docker or Docker Compose commands to run.
+After saving, the wizard offers the Doctor checks. For a local install it then offers to start monitoring once those checks passed. In a container, it prints the next Docker or Docker Compose commands to run.
 
 Use the tab that matches how you installed the tool. Copy and run only the commands in that tab.
 
