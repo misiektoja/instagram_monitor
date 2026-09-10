@@ -1261,7 +1261,7 @@ def test_interrupting_the_welcome_offer_reports_a_cancellation(im_module, monkey
     monkeypatch.setattr(im_module, "run_setup_wizard", lambda *args, **kwargs: pytest.fail("the wizard ran after being interrupted"))
 
     with pytest.raises(SystemExit) as exit_error:
-        im_module._wizard_welcome(None)
+        im_module.print_welcome_screen(None)
 
     assert exit_error.value.code == 1
     assert "Setup cancelled." in capsys.readouterr().out

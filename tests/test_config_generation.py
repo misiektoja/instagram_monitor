@@ -1,5 +1,7 @@
 """Tests for config file parsing and round-tripping helpers."""
 
+import stat
+import re
 import os
 from pathlib import Path
 import tempfile
@@ -358,3 +360,34 @@ def test_the_writer_refuses_a_key_this_tool_does_not_ship(tmp_path, im_module):
 def test_the_writer_refuses_a_value_that_is_not_text(tmp_path, im_module):
     with pytest.raises(TypeError):
         im_module.update_dotenv_file(tmp_path / ".env", {"SMTP_PASSWORD": 1234})
+
+
+# Verifies the backup name every tool in this family writes, so one documented shape covers them all
+def test_the_backup_carries_the_family_name_and_mode(tmp_path, im_module):
+    destination = tmp_path / "monitor.conf"
+    destination.write_text("SETTING = 1\n", encoding="utf-8")
+
+    backup_path = im_module.create_timestamped_backup(destination)
+
+    assert re.fullmatch(r"monitor\.conf\.\d{14}\.bak", Path(backup_path).name)
+    assert Path(backup_path).read_text(encoding="utf-8") == "SETTING = 1\n"
+    assert stat.S_IMODE(Path(backup_path).stat().st_mode) == 0o600
+
+
+# Verifies a second backup in the same second takes its own name rather than overwriting the first
+def test_a_second_backup_in_the_same_second_keeps_the_first(tmp_path, im_module):
+    destination = tmp_path / "monitor.conf"
+    destination.write_text("first\n", encoding="utf-8")
+    first = im_module.create_timestamped_backup(destination)
+    destination.write_text("second\n", encoding="utf-8")
+
+    second = im_module.create_timestamped_backup(destination)
+
+    assert first != second
+    assert Path(first).read_text(encoding="utf-8") == "first\n"
+    assert Path(second).read_text(encoding="utf-8") == "second\n"
+
+
+# Verifies a destination that is not there yet earns no backup, since there is nothing to copy
+def test_a_missing_destination_earns_no_backup(tmp_path, im_module):
+    assert im_module.create_timestamped_backup(tmp_path / "absent.conf") is None
