@@ -32,6 +32,16 @@ def test_timestamp_label_is_uncolored(im_module):
     assert im_module.DEFAULT_COLOR_THEME["timestamp_label"] == ""
 
 
+# Verifies the liveness banner timestamp carries the timestamp colour instead of the generic date colour
+def test_liveness_check_timestamp_uses_timestamp_style(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {"timestamp_value": "\033[36m", "date": "\033[35m"})
+
+    colored = im_module._colorize_line("Liveness check, timestamp:\tWed 26 Aug 2026, 20:23:03")
+
+    assert colored == "Liveness check, timestamp:\t\033[36mWed 26 Aug 2026, 20:23:03" + im_module.ANSI_RESET
+
+
 # Verifies every style word used by the shipped theme resolves, allowing a deliberately uncoloured part
 def test_default_theme_styles_all_resolve(im_module):
     for name, value in im_module.DEFAULT_COLOR_THEME.items():

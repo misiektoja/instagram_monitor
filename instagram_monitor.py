@@ -4807,7 +4807,7 @@ def _colorize_line(line):
             return colored + ("\n" if line.endswith("\n") else "")
 
     # Timestamp lines
-    labeled_value = _split_output_label(line, ("Timestamp:",))
+    labeled_value = _split_output_label(line, ("Timestamp:", "Liveness check, timestamp:"))
     if labeled_value:
         label, rest = labeled_value
         colored = f"{colorize('timestamp_label', label)}{colorize('timestamp_value', rest)}"

@@ -19,7 +19,7 @@ colours=unchanged, unchanged, blue underline
 regexp=.*Token belongs to:\s+(.*)$
 colours=unchanged, blue underline
 -
-regexp=Timestamp:\s+(.*)$
+regexp=(?:Timestamp:|Liveness check, timestamp:)\s+(.*)$
 colours=unchanged, cyan
 -
 regexp=Last activity:\s+(.*)(\(inactive timer:.*\))$
@@ -137,7 +137,7 @@ colours=unchanged, bold magenta, unchanged
 regexp=^Match start-end date:.* -.*(\d\d:\d\d:\d\d)
 colours=unchanged, bold magenta
 -
-regexp=^(Timestamp:)(\s+.*)(\d\d:\d\d:\d\d)
+regexp=^(Timestamp:|Liveness check, timestamp:)(\s+.*)(\d\d:\d\d:\d\d)
 colours=unchanged, unchanged, unchanged, underline cyan
 -
 regexp=^User played last time:\s+(\w\w\w\s.*$)
@@ -161,7 +161,7 @@ colours=unchanged, bold magenta
 regexp=^(Date:|Match start date:|Last modified:|\*\*\* Last activity:|\*\*\* Friend got.*after being.*for.*)(\s+.*)(\d\d:\d\d:\d\d)
 colours=unchanged, unchanged, unchanged, bold magenta
 -
-regexp=^(Timestamp:)(\s+.*)(\d\d:\d\d:\d\d)
+regexp=^(Timestamp:|Liveness check, timestamp:)(\s+.*)(\d\d:\d\d:\d\d)
 colours=unchanged, unchanged, unchanged, underline cyan
 -
 regexp=(?i).*(\*\*\* Friend is|\*\*\* User is).*
