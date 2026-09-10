@@ -2,6 +2,7 @@
 
 import ast
 import inspect
+import re
 import smtplib
 
 import pytest
@@ -29,6 +30,45 @@ def _context_advice_calls(im_module):
     source = inspect.getsource(im_module.classify_recovery_error)
     calls = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "advice" and len(node.args) == 5]
     return [node for node in calls if not (isinstance(node.args[4], ast.Name) and node.args[4].id == "guide")]
+
+
+# Returns every print of a problem that does not already carry an action, as (line number, literal text)
+def _problem_prints(im_module):
+    source = inspect.getsource(im_module)
+    lines = source.splitlines()
+    problem = re.compile(r"(?i)\b(error|failed|failure|could not|cannot|unable|invalid|missing|not found|refused|denied|no such|warning)\b")
+    fixers = ("print_fix_hint", "error_fix_hint", "To fix", "print_recovery_error", "render_recovery_error", "print_recovery_fix")
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "print"):
+            continue
+        text = _printed_text(node)
+        if text is None or not problem.search(text):
+            continue
+        window = "\n".join(lines[max(0, node.lineno - 9):node.lineno + 8])
+        if not any(fixer in window for fixer in fixers):
+            found.append((node.lineno, text.strip()))
+    return found
+
+
+# Returns the literal text a print would produce, with every substitution shown as its own expression
+def _printed_text(node):
+    if not node.args:
+        return None
+    argument = node.args[0]
+    if isinstance(argument, ast.Call) and isinstance(argument.func, ast.Name) and argument.func.id == "colorize" and len(argument.args) > 1:
+        argument = argument.args[1]
+    if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+        return argument.value
+    if isinstance(argument, ast.JoinedStr):
+        parts = []
+        for part in argument.values:
+            if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                parts.append(part.value)
+            elif isinstance(part, ast.FormattedValue):
+                parts.append("{" + ast.unparse(part.value) + "}")
+        return "".join(parts)
+    return None
 
 
 # Reports whether an argument is one of the documentation constants rather than an empty placeholder
@@ -426,7 +466,6 @@ class TestRecoveryCodeSet:
             ("ConnectionException: HTTPSConnectionPool max retries exceeded", "runtime"),
             ("RuntimeError: Instagram returned empty data for posts", "runtime"),
             ("SomethingElse: totally unknown error", "runtime"),
-            ("The 'rich' library is not installed", "dependency"),
             ("PROXY_URL is not set", "config_missing"),
             ("--identity-budget cannot be negative", "config"),
             ("The dotenv file could not be written", "secret"),
@@ -446,6 +485,7 @@ class TestRecoveryCodeSet:
             (OSError("Port 7862 is in use"), "dashboard"),
         ]
         produced = {im_module.classify_recovery_error(failure, context=context).code for failure, context in failures}
+        produced.add(im_module.missing_dependency_advice("rich", "The Terminal Dashboard cannot start", "pip install rich").code)
 
         assert im_module.RECOVERY_CODES - produced == set()
 
@@ -485,3 +525,90 @@ class TestRecoveryCodeSet:
 
         assert "topsecrettoken" not in advice.summary
         assert "hunter2pass" not in advice.detail
+
+
+# Anything the tool reports as a problem goes through the classifier, so it carries an action and a page
+class TestEveryProblemIsReported:
+    # Each entry is a printed line the block would make worse, with the reason it stays a plain print
+    EXEMPT = {
+        "* Error: Failed to send test email. Check the error message above.": "the failing send already printed its own block",
+        "* Error: Test webhook notification failed. Check the error message above.": "the failing send already printed its own block",
+        "* Cannot clear the screen contents": "cosmetic, and the run continues unchanged",
+        "* Warning: Configured webhook provider did not match the URL. Using ": "self-correcting, and the line says what was used instead",
+        "* Warning: Backslashes in ": "carries its own instruction in the same sentence",
+        "* Sending error notification to ": "progress, not a failure",
+        "* Sending BeHuman error notification to ": "progress, not a failure",
+        "* Continuing after an account-level action ": "advice text rather than a failure report",
+        "* BeHuman ": "one step of the human simulation, which reports its own outcome as a whole",
+        "* Warning: Could not apply custom mobile user-agent patch": "an Instaloader internal the user cannot act on, and the next line says what is used instead",
+        "* Warning: Webhook notification for ": "the failing send already printed its own block",
+        "* Error: {error_msg} (retrying in ": "the monitoring loop prints its fix through print_fix_hint, which throttles repeats",
+        "* Warning: {warning}": "the warning text carries its own reason and threshold",
+        "* Warning: It is not easy to be a human": "the simulation is best effort and the run continues",
+        "Installation could not start: ": "a wizard question follows, offering the way out",
+        "Chromium browser support could not be installed. Choose Firefox or another login method.": "names the alternative in the same sentence",
+        "Setup needs a writable dotenv file and cannot use 'none'.": "the wizard re-asks the question straight after",
+        "Could not find Firefox cookies at ": "names the command to import later in the same sentence",
+        "{label} import failed: ": "the wizard offers the other login methods straight after",
+        "{fails} check(s) failed, ": "the doctor summary, which reports rows that carried their own fixes",
+        "All critical checks passed with ": "the doctor summary, which reports rows that carried their own fixes",
+        "Setup cannot start: --setup requires a config destination.": "names the flag and the replacement in the same sentence",
+        "Setup cannot start: --setup requires a dotenv destination.": "names the flag and the replacement in the same sentence",
+        "CRITICAL ERROR ENCOUNTERED": "the full traceback follows, which is the technical cause the fix line would point at",
+        "The Web Dashboard may have disconnected due to this error.": "a consequence of the crash reported above it",
+        "* Error: Python version ": "runs before the module is loaded, so it prints its action and page as literals",
+        "* Error: Web Dashboard templates not found": "followed by the searched paths and a numbered list of the four ways to fix it",
+    }
+
+    def test_every_reported_problem_carries_an_action(self, im_module):
+        bare = [text for _lineno, text in _problem_prints(im_module) if not any(text.startswith(prefix) for prefix in self.EXEMPT)]
+
+        assert bare == []
+
+    # The guard above is only worth its name while it still finds the prints it inspects
+    def test_the_routing_guard_still_inspects_the_source(self, im_module):
+        assert len(_problem_prints(im_module)) >= 25, "the problem-print scan stopped finding its subjects"
+
+    # The helper is what puts a fix under every one of those call sites, so it has to be the one in use
+    def test_the_recovery_block_is_the_reporting_path(self, im_module):
+        source = inspect.getsource(im_module)
+
+        assert source.count("print_recovery_error(") > 60
+        assert source.count("missing_dependency_advice(") > 4
+
+    # The block is two lines: what went wrong, then the one action that clears it
+    def test_the_block_prints_the_summary_then_the_action(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+
+        im_module.print_recovery_error("The check interval must be greater than 0", context="config")
+
+        lines = capsys.readouterr().out.splitlines()
+        assert lines[0] == "* Error: The check interval must be greater than 0"
+        assert lines[1].startswith("To fix: Correct the value")
+        assert lines[2] == f"Guide: {im_module.CONFIG_FILE_GUIDE_URL}"
+
+    # A problem the run recovers from keeps its own label, so a warning is not reported as a failure
+    def test_a_warning_keeps_its_label(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+
+        im_module.print_recovery_error("dotenv file '/nope/.env' does not exist", context="dotenv_missing", label="Warning")
+
+        assert capsys.readouterr().out.splitlines()[0].startswith("* Warning: dotenv file")
+
+    # An optional library is only actionable with the command that installs it into this interpreter
+    def test_a_missing_library_names_the_command_that_installs_it(self, im_module):
+        advice = im_module.missing_dependency_advice("rich", "The Terminal Dashboard cannot start", im_module.pip_install_command("rich"))
+
+        assert advice.code == "dependency.missing"
+        assert "'rich' library is missing" in advice.summary
+        assert "-m pip install rich" in advice.fix
+        assert im_module.INSTALLATION_GUIDE_URL in advice.fix
+
+    # A secret the run holds can appear in the text a failing call carries, so the summary is cleaned as well
+    def test_the_summary_a_call_site_supplies_is_cleaned(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/topsecrettoken")
+
+        im_module.print_recovery_error("Sending the webhook failed: https://discord.com/api/webhooks/1/topsecrettoken refused", context="webhook")
+
+        assert "topsecrettoken" not in capsys.readouterr().out
