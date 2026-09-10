@@ -779,6 +779,15 @@ COLORED_OUTPUT = True
 #     # Proxies
 #     "proxy_ip": "bright_yellow",
 #     "ip_address": "bright_yellow",
+#     # Help screen
+#     "help_heading": "bright_cyan bold",
+#     "help_usage": "bright_white bold",
+#     "help_option": "bright_green",
+#     "help_metavar": "yellow",
+#     "help_placeholder": "bright_magenta",
+#     "help_command": "bright_white",
+#     "help_comment": "bright_black",
+#     "help_default": "bright_black",
 # }
 """
 
@@ -4456,6 +4465,15 @@ DEFAULT_COLOR_THEME = {
     # Proxies
     "proxy_ip": "bright_yellow",
     "ip_address": "bright_yellow",
+    # Help screen
+    "help_heading": "bright_cyan bold",
+    "help_usage": "bright_white bold",
+    "help_option": "bright_green",
+    "help_metavar": "yellow",
+    "help_placeholder": "bright_magenta",
+    "help_command": "bright_white",
+    "help_comment": "bright_black",
+    "help_default": "bright_black",
 }
 
 # Whole-line styles, listed so the palette test can prove no value colour disappears inside one of them.
@@ -5248,6 +5266,123 @@ class ColorStream(object):
 
     def flush(self):
         self.terminal.flush()
+
+
+# Help screen parts. argparse measures its column layout on the plain text, so the palette is applied to the
+# finished help screen rather than to the pieces argparse assembles and the layout stays identical
+_HELP_USAGE_LABEL = "usage:"
+_HELP_HEADING_RE = re.compile(r"^\S.*:$")
+_HELP_OPTION_ROW_RE = re.compile(r"^( {2,})(-{1,2}[^\s,]+(?:, *--?[^\s,]+)*)(.*)$")
+_HELP_POSITIONAL_ROW_RE = re.compile(r"^( {2,})([A-Z][A-Z0-9_]*)( {2,}.*)$")
+_HELP_COLUMN_GAP_RE = re.compile(r" {2,}")
+# A value placeholder is an upper-case metavar, a choice list or an angle-bracket name, including a
+# colon-joined pair of them
+_HELP_METAVAR_RE = re.compile(r"\{[^}]*\}|<[^>]+>|\b[A-Z][A-Z0-9_]*(?::[A-Z][A-Z0-9_]*)*\b")
+_HELP_OPTION_RE = re.compile(r"(?<![\w-])(--?[A-Za-z][\w-]*)")
+_HELP_PLACEHOLDER_RE = re.compile(r"<[^>]+>")
+_HELP_DEFAULT_RE = re.compile(r"\(default:[^)]*\)")
+
+
+# Returns the terminal behind any number of colouring stream wrappers
+def _help_output_stream(stream):
+    while isinstance(stream, ColorStream):
+        stream = stream.terminal
+    return stream
+
+
+# Colours the links and the default notes inside one line of help prose
+def _colorize_help_prose(line):
+    line = _URL_RE.sub(lambda match: colorize("link", match.group(1)), line)
+    return _HELP_DEFAULT_RE.sub(lambda match: colorize("help_default", match.group(0)), line)
+
+
+# Colours the option names and the value placeholders of one usage line or option column
+def _colorize_help_signature(text):
+    text = _HELP_METAVAR_RE.sub(lambda match: colorize("help_metavar", match.group(0)), text)
+    return _sub_outside_color(_HELP_OPTION_RE, lambda match: colorize("help_option", match.group(1)), text)
+
+
+# Colours the usage block, the group headings and the option rows of the help screen
+def _colorize_help_body(text):
+    lines = []
+    in_usage = False
+    for line in text.split("\n"):
+        if line.startswith(_HELP_USAGE_LABEL):
+            in_usage = True
+            lines.append(colorize("help_usage", _HELP_USAGE_LABEL) + _colorize_help_signature(line[len(_HELP_USAGE_LABEL):]))
+            continue
+        if in_usage:
+            if line.strip():
+                lines.append(_colorize_help_signature(line))
+                continue
+            in_usage = False
+        if _HELP_HEADING_RE.match(line):
+            lines.append(colorize("help_heading", line))
+            continue
+        option_row = _HELP_OPTION_ROW_RE.match(line)
+        if option_row:
+            indent, names, remainder = option_row.groups()
+            gap = _HELP_COLUMN_GAP_RE.search(remainder)
+            metavars, description = (remainder[:gap.start()], remainder[gap.start():]) if gap else (remainder, "")
+            lines.append(indent + _colorize_help_signature(names + metavars) + _colorize_help_prose(description))
+            continue
+        positional_row = _HELP_POSITIONAL_ROW_RE.match(line)
+        if positional_row:
+            indent, name, description = positional_row.groups()
+            lines.append(indent + colorize("help_metavar", name) + _colorize_help_prose(description))
+            continue
+        lines.append(_colorize_help_prose(line))
+    return "\n".join(lines)
+
+
+# Colours the examples of the help epilog: the task headings, the comments and the commands to run
+def _colorize_help_epilog(text):
+    lines = []
+    for line in text.split("\n"):
+        if _HELP_HEADING_RE.match(line):
+            lines.append(colorize("help_heading", line))
+            continue
+        if not line.strip() or not line.startswith(" "):
+            lines.append(_colorize_help_prose(line))
+            continue
+        if line.lstrip().startswith("#"):
+            comment = _apply_style_nested(_colorize_help_prose(line), "help_comment")
+            lines.append(comment)
+            continue
+        placeholders = _HELP_PLACEHOLDER_RE.sub(lambda match: colorize("help_placeholder", match.group(0)), line)
+        command = _apply_style_nested(placeholders, "help_command")
+        lines.append(command)
+    return "\n".join(lines)
+
+
+# Colours one finished help screen, leaving its column layout untouched
+def colorize_help_text(text, epilog=None):
+    if not COLOR_ENABLED or not isinstance(text, str) or not text:
+        return text
+    examples = (epilog or "").strip("\n")
+    start = text.rfind(examples) if examples else -1
+    if start == -1:
+        return _colorize_help_body(text)
+    return _colorize_help_body(text[:start]) + _colorize_help_epilog(text[start:])
+
+
+# Parser that colours its own help screen and writes it past the output colouriser, which would otherwise
+# repaint the finished help with the rules meant for monitoring output
+class ColoredHelpParser(argparse.ArgumentParser):
+    # Returns the help screen with the help palette already applied
+    def format_help(self) -> str:
+        return colorize_help_text(super().format_help(), self.epilog)
+
+    # Writes one parser message straight to the terminal behind any colouring wrapper
+    def _print_message(self, message, file=None) -> None:
+        if not message:
+            return
+        stream = sys.stderr if file is None else file
+        target = _help_output_stream(stream)
+        target.write(sanitize_terminal_text(message))
+        flush = getattr(target, "flush", None)
+        if callable(flush):
+            flush()
 
 
 # Terminal attributes saved before the dashboard input handler switched the terminal out of line mode
@@ -16762,7 +16897,7 @@ def run_main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    parser = argparse.ArgumentParser(
+    parser = ColoredHelpParser(
         prog="instagram_monitor",
         description=("Monitor Instagram activity and send customizable email or webhook alerts [ https://github.com/misiektoja/instagram_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter,
         epilog=_build_help_epilog(), **argparse_color_kwargs()

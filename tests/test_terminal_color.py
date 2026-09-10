@@ -1,3 +1,4 @@
+import argparse
 import re
 from io import StringIO
 from pathlib import Path
@@ -167,7 +168,10 @@ def test_the_parser_is_built_with_the_argparse_colour_switch(im_module):
 
     source = Path(im_module.__file__).read_text(encoding="utf-8")
 
-    assert "**argparse_color_kwargs()" in source.split("argparse.ArgumentParser(", 1)[1].split("\n\n", 1)[0]
+    construction = re.search(r"\n    parser = \w+\(\n(.*?)\n\n", source, re.S)
+
+    assert construction is not None, "the parser construction could not be found"
+    assert "**argparse_color_kwargs()" in construction.group(1)
 
 
 # Verifies labeled output and status changes keep their text while using direct bounded parsing
@@ -385,3 +389,92 @@ def test_the_tls_row_colours_its_state(im_module, monkeypatch):
 
     assert on_row == f"* TLS verification:             \033[32mOn{im_module.ANSI_RESET}"
     assert off_row == f"* TLS verification:             \033[31mOff{im_module.ANSI_RESET}, server certificates are not checked"
+
+
+HELP_SAMPLE = """usage: monitor [-h] [--config-file PATH] [TARGET]
+
+positional arguments:
+  TARGET                The target to monitor
+
+Configuration & dotenv files:
+  --config-file PATH    Path to a config file
+  -m, --check-interval SECONDS
+                        Time between checks (default: 60)
+
+Examples:
+
+Getting started:
+  # Guided setup, see https://example.invalid/guide/
+  python3 monitor.py --setup <target>
+
+Guide: https://example.invalid/guide/
+"""
+
+HELP_SAMPLE_EPILOG = HELP_SAMPLE[HELP_SAMPLE.index("Examples:"):]
+
+
+# Enables colour with the shipped theme and returns the escape sequence of every part
+@pytest.fixture
+def help_palette(monkeypatch, im_module):
+    styles = {name: im_module._build_ansi_sequence(value) for name, value in im_module.DEFAULT_COLOR_THEME.items() if im_module._build_ansi_sequence(value)}
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", styles)
+    return styles
+
+
+# Returns the sample help screen with the help palette applied
+@pytest.fixture
+def colored_help(help_palette, im_module):
+    return im_module.colorize_help_text(HELP_SAMPLE, HELP_SAMPLE_EPILOG)
+
+
+# Verifies colouring changes no character of the screen, since argparse laid out its columns on the plain text
+def test_the_coloured_help_keeps_the_plain_layout(colored_help, im_module):
+    assert im_module.ANSI_ESCAPE_RE.sub("", colored_help) == HELP_SAMPLE
+
+
+# Verifies the argument groups and the example tasks share one heading colour, the anchors the reader scans for
+def test_the_help_headings_carry_the_heading_colour(help_palette, colored_help, im_module):
+    for heading in ("positional arguments:", "Configuration & dotenv files:", "Examples:", "Getting started:"):
+        assert f"{help_palette['help_heading']}{heading}{im_module.ANSI_RESET}" in colored_help
+
+
+# Verifies an option name and the value it takes are coloured apart, in the usage block and in the option rows
+def test_the_help_option_names_and_their_values_are_coloured_apart(help_palette, colored_help, im_module):
+    option = f"{help_palette['help_option']}--config-file{im_module.ANSI_RESET}"
+    metavar = f"{help_palette['help_metavar']}PATH{im_module.ANSI_RESET}"
+
+    assert f"{option} {metavar}" in colored_help
+    assert f"[{option} {metavar}]" in colored_help
+    assert f"{help_palette['help_usage']}usage:{im_module.ANSI_RESET}" in colored_help
+    assert f"{help_palette['help_metavar']}TARGET{im_module.ANSI_RESET}                The target to monitor" in colored_help
+
+
+# Verifies the examples separate the comment from the command and mark the value the reader has to replace
+def test_the_help_examples_mark_comments_commands_and_placeholders(help_palette, colored_help, im_module):
+    assert f"{help_palette['help_comment']}  # Guided setup" in colored_help
+    assert f"{help_palette['help_command']}  python3 monitor.py --setup" in colored_help
+    assert f"{help_palette['help_placeholder']}<target>{im_module.ANSI_RESET}" in colored_help
+
+
+# Verifies a default note is dimmed and a documentation link keeps the shared link colour
+def test_the_help_default_notes_and_links_stay_secondary(help_palette, colored_help, im_module):
+    assert f"{help_palette['help_default']}(default: 60){im_module.ANSI_RESET}" in colored_help
+    assert f"{help_palette['link']}https://example.invalid/guide/{im_module.ANSI_RESET}" in colored_help
+
+
+# Verifies the help screen stays plain while colour is switched off, so --no-color and NO_COLOR clear all of it
+def test_the_help_palette_switches_off_with_colour(im_module):
+    assert im_module.colorize_help_text(HELP_SAMPLE, HELP_SAMPLE_EPILOG) == HELP_SAMPLE
+
+
+# Verifies the finished help screen reaches the terminal untouched, past the colouriser that paints monitoring output
+def test_the_help_screen_is_not_repainted_by_the_monitoring_rules(help_palette, im_module):
+    buffer = StringIO()
+    parser = im_module.ColoredHelpParser(prog="monitor", formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("--config-file", metavar="PATH", help="Path to a config file")
+    parser.print_help(im_module.ColorStream(buffer))
+
+    written = buffer.getvalue()
+    assert written == parser.format_help()
+    assert help_palette["help_option"] in written

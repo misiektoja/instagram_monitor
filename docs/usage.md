@@ -982,7 +982,7 @@ A local Windows process supports only a limited signal set. Linux containers can
 <a id="coloring-log-output-with-grc"></a>
 ## Coloring Log Output with GRC
 
-Instagram Monitor can color live terminal output through `COLORED_OUTPUT` and `COLOR_THEME`. To color saved log files when viewing them later, you can use [GRC](https://github.com/garabik/grc).
+Instagram Monitor can color live terminal output through `COLORED_OUTPUT` and `COLOR_THEME`. The `--help` screen is colored too: group headings, option names, the values those options take, the example commands and the comments above them each get their own color. To color saved log files when viewing them later, you can use [GRC](https://github.com/garabik/grc).
 
 On Windows, install the optional `colorama` package for colour in the classic Command Prompt. Windows Terminal needs nothing extra.
 
