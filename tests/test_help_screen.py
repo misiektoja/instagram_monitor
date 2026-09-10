@@ -63,6 +63,13 @@ def test_the_wizard_is_the_first_example(help_screen):
     assert first == ["# Guided setup, recommended for the first run", "python3 instagram_monitor.py --setup"]
 
 
+# Verifies the one-line description carries the repository link in the form the sibling monitors print
+def test_the_description_links_the_repository(help_screen):
+    header = help_screen.split("positional arguments:", 1)[0]
+
+    assert "[ https://github.com/misiektoja/instagram_monitor/ ]" in header
+
+
 # Verifies every example command is introduced by a comment saying what it is for
 def test_every_example_command_has_a_comment(help_screen):
     lines = [line for line in help_screen.split("Examples:", 1)[1].splitlines() if line.startswith("  ")]
