@@ -394,10 +394,14 @@ def test_tracked_text_files_obey_the_declared_whitespace_rules():
     if listing.returncode != 0:
         pytest.skip("not a git checkout")
 
+    # The binary types are declared once in .gitattributes, so this list cannot drift away from that one
+    binary_suffixes = {suffix.casefold() for suffix in re.findall(r"^\*(\.[A-Za-z0-9]+)\s+binary\b", read_asset(".gitattributes"), re.M)}
+    assert binary_suffixes
+
     offenders = []
     for name in listing.stdout.split():
         asset = PROJECT_ROOT / name
-        if not asset.is_file() or asset.suffix.casefold() in {".png", ".jpg", ".gif"}:
+        if not asset.is_file() or asset.suffix.casefold() in binary_suffixes:
             continue
         content = asset.read_bytes()
         if b"\r\n" in content:
