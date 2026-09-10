@@ -55,6 +55,14 @@ class TestParseConfigContent:
 
         assert retired == ["DISCORD_MAX_FIELDS", "DISCORD_EMBED_TITLE_LIMIT"]
 
+    # The counted error threshold gave way to a timed alert, so an older config naming it still loads
+    def test_the_retired_error_threshold_is_ignored(self, im_module):
+        retired = []
+        parsed = im_module.parse_config_content("ERROR_FAILURE_THRESHOLD = 3\nINSTA_CHECK_INTERVAL = 3600\n", "<legacy>", retired)
+
+        assert parsed == {"INSTA_CHECK_INTERVAL": 3600}
+        assert retired == ["ERROR_FAILURE_THRESHOLD"]
+
     # Allowing retired names must not weaken rejection of any other unknown setting
     def test_retired_allowance_does_not_accept_other_unknown_names(self, im_module):
         assert im_module.RETIRED_CONFIG_SETTINGS.isdisjoint(im_module.config_allowed_names())

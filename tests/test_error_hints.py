@@ -431,13 +431,16 @@ class TestOutageReporting:
         assert "Liveness check, timestamp:" in output
         assert "* Monitoring recovered for misiektoja after 1 minute" in output
 
-    # Both loop failure paths route through the outage reporter, so neither repeats itself every check
+    # Every loop failure path, the redirect one included, routes through the outage reporter, so the error alert
+    # delay counts from the first failing check whichever path failed first
     def test_the_loop_routes_its_failures_through_the_outage_reporter(self, im_module):
         module_source = inspect.getsource(im_module)
         start = module_source.index("def _run_instagram_monitor_pass(")
         source = module_source[start:module_source.index("\ndef ", start)]
 
-        assert source.count("outage.failed(") == 2
+        assert source.count("outage.failed(") == 3
+        assert source.count("notify_monitoring_error(user, ") == 3
+        assert source.count(", outage.since, consecutive_main_errors, ") == 3
         assert source.count("print_outage_liveness(user, ") == 2
         assert "print_outage_recovery(user, outage_lasted)" in source
         assert source.count("print_fix_hint(error_msg, recovery_hint_tracker)") == 2

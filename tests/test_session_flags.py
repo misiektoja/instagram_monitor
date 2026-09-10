@@ -4,6 +4,7 @@ The flag probe normally resolves a canonical public account over the network.
 Here profile_from_username_resilient is stubbed so the logic runs fully offline.
 """
 
+import time
 
 
 class _FakeBot:
@@ -66,33 +67,46 @@ class TestNotifyMonitoringError:
         calls = {"email": [], "webhook": []}
         monkeypatch.setattr(im_module, "send_email", lambda *a, **k: calls["email"].append((a, k)) or email_results[min(len(calls["email"]), len(email_results)) - 1])
         monkeypatch.setattr(im_module, "send_webhook", lambda *a, **k: calls["webhook"].append((a, k)) or webhook_results[min(len(calls["webhook"]), len(webhook_results)) - 1])
-        monkeypatch.setattr(im_module, "ERROR_FAILURE_THRESHOLD", 2)
+        monkeypatch.setattr(im_module, "ERROR_ALERT_AFTER_SECONDS", 300)
         monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "ops@example.com", raising=False)
         monkeypatch.setattr(im_module, "SMTP_SSL", True, raising=False)
         return calls
 
     # Runs one failing check through the alert with the given error, keeping the state between calls
-    def _notify(self, im_module, state, error, failure_count):
+    def _notify(self, im_module, state, error, failure_count, lasted=600):
         advice = im_module.classify_recovery_error(error, is_logged_in=True)
-        return im_module.notify_monitoring_error("targetuser", advice, error, failure_count, 60, state)
+        return im_module.notify_monitoring_error("targetuser", advice, error, int(time.time()) - lasted, failure_count, 60, state)
 
-    def test_email_and_webhook_send_once_at_threshold(self, im_module, monkeypatch):
+    # A failure the tool can retry away waits until it has lasted ERROR_ALERT_AFTER_SECONDS, then alerts each channel once
+    def test_email_and_webhook_send_once_after_the_alert_delay(self, im_module, monkeypatch):
         calls = self._capture(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
         state = im_module.ErrorAlertState()
 
-        results = [self._notify(im_module, state, "401 Unauthorized", failure_count) for failure_count in (1, 2, 3)]
+        results = [self._notify(im_module, state, "The read operation timed out", failure_count, lasted) for failure_count, lasted in ((1, 0), (2, 299), (3, 300), (4, 3600))]
 
-        assert results == [False, True, False]
+        assert results == [False, False, True, False]
         assert len(calls["email"]) == 1
         assert len(calls["webhook"]) == 1
-        assert "failure #2, threshold: 2" in calls["email"][0][0][0]
-        assert "failure #2, threshold: 2" in calls["webhook"][0][0][1]
+        assert "failure #3, failing for 5 minutes" in calls["email"][0][0][0]
+        assert "failure #3, failing for 5 minutes" in calls["webhook"][0][0][1]
         assert "To fix:" in calls["email"][0][0][1]
 
-    def test_webhook_threshold_does_not_depend_on_email_toggle(self, im_module, monkeypatch):
+    # A failure that cannot clear on its own, such as an expired session, is alerted on the first failing check
+    def test_a_failure_the_tool_cannot_retry_away_alerts_at_once(self, im_module, monkeypatch):
+        calls = self._capture(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+
+        assert im_module.classify_recovery_error("401 Unauthorized", is_logged_in=True).retryable is False
+        assert self._notify(im_module, im_module.ErrorAlertState(), "401 Unauthorized", 1, 0) is True
+        assert len(calls["email"]) == 1
+        assert len(calls["webhook"]) == 1
+
+    def test_webhook_alert_does_not_depend_on_email_toggle(self, im_module, monkeypatch):
         calls = self._capture(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", False)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
@@ -148,7 +162,7 @@ class TestNotifyMonitoringError:
 
 
 class TestNotifySessionFlagged:
-    """A flag is terminal and operator-actionable, so the alert must fire on detection regardless of ERROR_FAILURE_THRESHOLD."""
+    """A flag is terminal and operator-actionable, so the alert must fire on detection regardless of the error alert delay."""
 
     # Replaces send_email/send_webhook with recorders and gives the email path valid-looking globals
     def _capture(self, im_module, monkeypatch):

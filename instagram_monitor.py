@@ -141,12 +141,6 @@ NTFY_ACCESS_TOKEN = ""
 # Monitoring Settings
 # ----------------------------
 
-# Number of consecutive errors required before triggering an alert
-# Each kind of failure then alerts once per enabled channel, a channel that failed to deliver is retried
-# Useful for avoiding repeated alerts during transient network problems
-# Can also be set via the --error-threshold flag
-ERROR_FAILURE_THRESHOLD = 2
-
 # How often to check for user activity in seconds
 # Can also be set using the -c flag
 INSTA_CHECK_INTERVAL = 5400  # 1.5 hours
@@ -839,7 +833,7 @@ EXTRA_CONFIG_KEYS = frozenset(("FLAGGED_PROBE_USERNAME", "FLAGGED_PROBE_TTL", "C
 # removed. Ignoring them with a note keeps an untouched older configuration working on upgrade, while
 # any other unknown name is still rejected so a typo cannot silently do nothing.
 # The DISCORD_* limits below shipped in the 3.0 template and were renamed to WEBHOOK_* in 3.1.
-RETIRED_CONFIG_SETTINGS = frozenset(("DISCORD_EMBED_DESCRIPTION_LIMIT", "DISCORD_EMBED_TITLE_LIMIT", "DISCORD_FIELD_NAME_LIMIT", "DISCORD_FIELD_VALUE_LIMIT", "DISCORD_MAX_FIELDS"))
+RETIRED_CONFIG_SETTINGS = frozenset(("DISCORD_EMBED_DESCRIPTION_LIMIT", "DISCORD_EMBED_TITLE_LIMIT", "DISCORD_FIELD_NAME_LIMIT", "DISCORD_FIELD_VALUE_LIMIT", "DISCORD_MAX_FIELDS", "ERROR_FAILURE_THRESHOLD"))
 
 
 # Describes ignored retired settings in one sentence, optionally naming the file they can be deleted from
@@ -1013,6 +1007,11 @@ def write_config_file(destination, content: str):
     return {"path": str(destination_path), "backup_path": str(backup_path) if backup_path is not None else None}
 
 
+# Raised when an existing config is not replaced because nobody could confirm it, as opposed to a path in the way of writing one
+class ConfigExistsError(FileExistsError):
+    pass
+
+
 # Asks before an existing config is replaced, and refuses where there is no terminal to ask on
 def confirm_generated_config_replacement(destination, force: bool = False, interactive=None, input_func=input) -> bool:
     destination_path = Path(destination).expanduser()
@@ -1020,7 +1019,7 @@ def confirm_generated_config_replacement(destination, force: bool = False, inter
         return True
     terminal_is_interactive = bool(sys.stdin.isatty()) if interactive is None else bool(interactive)
     if not terminal_is_interactive:
-        raise FileExistsError(f"Config file '{destination_path}' already exists and there is no terminal to confirm replacing it")
+        raise ConfigExistsError(f"Config file '{destination_path}' already exists and there is no terminal to confirm replacing it")
     try:
         answer = str(read_interactively(input_func, f"Config file '{destination_path}' exists. Replace it and keep a timestamped backup? [y/N]: ")).strip().casefold()
     except (EOFError, KeyboardInterrupt):
@@ -1301,7 +1300,6 @@ RECEIVER_EMAIL: str = ""
 STATUS_NOTIFICATION = False
 FOLLOWERS_NOTIFICATION = False
 ERROR_NOTIFICATION = False
-ERROR_FAILURE_THRESHOLD = 0
 INSTA_CHECK_INTERVAL = 0
 RANDOM_SLEEP_DIFF_LOW = 0
 RANDOM_SLEEP_DIFF_HIGH = 0
@@ -5070,11 +5068,13 @@ def truncate_string_per_line(message, truncate_width, tabsize=8):
         current_width = 0
         truncated = []
         position = 0
+        style_open = False
         while position < len(expanded_line):
             # A colour sequence is copied through free of charge, so styling never eats into the visible width
             escape = SGR_SEQUENCE_RE.match(expanded_line, position)
             if escape:
                 truncated.append(escape.group(0))
+                style_open = escape.group(0) not in ("\x1b[0m", "\x1b[m")
                 position = escape.end()
                 continue
             char = expanded_line[position]
@@ -5082,6 +5082,9 @@ def truncate_string_per_line(message, truncate_width, tabsize=8):
             if char_width is None or char_width < 0:
                 char_width = 0
             if current_width + char_width > truncate_width:
+                # The cut may have dropped the reset, which would leave the colour running into every later line
+                if style_open:
+                    truncated.append(ANSI_RESET)
                 break
             truncated.append(char)
             current_width += char_width
@@ -10346,6 +10349,8 @@ class RecoveryHintTracker:
 # Decides how a lasting failure is reported: in full when it is new, then on the liveness cadence while it lasts
 # How long a reported failure may go on before the run reminds about it, whatever the liveness banner is set to
 OUTAGE_REMINDER_SECONDS = 3600  # 1 hour
+# How long a failure the tool can retry away must last before it is alerted, a failure it cannot is alerted at once
+ERROR_ALERT_AFTER_SECONDS = 300  # 5 minutes
 
 
 # Returns the family a failure code belongs to, so the DNS and timeout failures of one internet outage count as one
@@ -10560,20 +10565,22 @@ class ErrorAlertState:
         self.code = None
 
 
-# Alerts both channels once a failure streak reaches ERROR_FAILURE_THRESHOLD, once per failure category and per channel
-def notify_monitoring_error(user, advice, error_msg, failure_count, check_interval, alert_state):
+# Alerts both channels once a failure has lasted ERROR_ALERT_AFTER_SECONDS or at once when it cannot clear on its own, once per failure category and per channel
+def notify_monitoring_error(user, advice, error_msg, failed_since, failure_count, check_interval, alert_state):
     # A failure that changes category is a different failure, so each channel earns a new alert for it
     if advice.code != alert_state.code:
         alert_state.reset()
         alert_state.code = advice.code
-    if failure_count < ERROR_FAILURE_THRESHOLD:
+    # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
+    lasted = max(0, int(time.time()) - failed_since)
+    if advice.retryable and lasted < ERROR_ALERT_AFTER_SECONDS:
         return False
-    # Attempted on every failing check rather than only at the threshold, so a channel that failed is tried again
+    # Attempted on every failing check rather than only once the alert is due, so a channel that failed is tried again
     email_pending = ERROR_NOTIFICATION and not alert_state.email_sent
     webhook_pending = webhook_event_enabled("error") and not alert_state.webhook_sent
     if not (email_pending or webhook_pending):
         return False
-    streak = f"failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD}"
+    streak = f"failure #{failure_count}, failing for {display_time(lasted)}"
     interval = f"{display_time(check_interval)} ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)})"
     alert_subject = f"instagram_monitor: error for {user} ({streak})"
     alert_body = f"{advice.summary} ({streak})\n{error_msg}\n\nTo fix: {advice.fix}\n\nCheck interval: {interval}{get_cur_ts(nl_ch + 'Timestamp: ')}"
@@ -10594,7 +10601,7 @@ def alert_identity_rows() -> List[Tuple[str, str]]:
     return rows
 
 
-# Sends a one-off email and webhook alert when the session account or IP is flagged, bypassing ERROR_FAILURE_THRESHOLD since a flag is terminal and operator-actionable
+# Sends a one-off email and webhook alert when the session account or IP is flagged, bypassing the error alert delay since a flag is terminal and operator-actionable
 def notify_session_flagged(user, err_str, error_msg):
     # A flag is an account-level action, so stop every target durably before the alerting de-dupe below can return early.
     # A probe-confirmed flag counts as a challenge even when the triggering message only said the profile was missing
@@ -12401,7 +12408,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
             print_recovery_error(error_msg, summary=err_str)
 
-            # A flag is terminal for every target, so alert the operator immediately regardless of ERROR_FAILURE_THRESHOLD
+            # A flag is terminal for every target, so alert the operator immediately regardless of the error alert delay
             notify_session_flagged(user, err_str, error_msg)
 
             # Pause all other threads once the session account is flagged.
@@ -13305,6 +13312,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
     # Primary loop
     consecutive_main_errors = 0
     consecutive_behuman_errors = 0
+    behuman_failed_since = 0
     error_alert = ErrorAlertState()
     behuman_alert = ErrorAlertState()
     recovery_hint_tracker = RecoveryHintTracker()
@@ -13491,7 +13499,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 if not session_flagged:
                     if outage_outcome == "full":
                         fix_hint_printed = print_fix_hint(error_msg, recovery_hint_tracker)
-                    notify_monitoring_error(user, advice, error_msg, consecutive_main_errors, r_sleep_time, error_alert)
+                    notify_monitoring_error(user, advice, error_msg, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
 
                 # Handle session recovery for automated checks/challenge errors
                 if session_flagged:
@@ -13499,7 +13507,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
                     print(f"* Error: {err_str}")
 
-                    # A flag is terminal for every target, so alert the operator immediately regardless of ERROR_FAILURE_THRESHOLD
+                    # A flag is terminal for every target, so alert the operator immediately regardless of the error alert delay
                     notify_session_flagged(user, err_str, error_msg)
 
                     # Pause all other threads once the session account is flagged.
@@ -13579,9 +13587,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
                 consecutive_main_errors += 1
                 error_msg = f"HTTP redirect while checking {user}: {get_thread_output()}"
+                redirect_advice = classify_recovery_error(error_msg, is_logged_in=bool(SESSION_USERNAME) and not skip_session)
+                outage.failed(redirect_advice)
                 print(f"* Error: The saved Instagram session may no longer be valid (retrying in {display_time(r_sleep_time)})")
                 print(colorize("info", f"To fix: Re-import the session with '{session_recovery_command()}' or from the Web Dashboard Session page"))
-                notify_monitoring_error(user, classify_recovery_error(error_msg, is_logged_in=bool(SESSION_USERNAME) and not skip_session), error_msg, consecutive_main_errors, r_sleep_time, error_alert)
+                notify_monitoring_error(user, redirect_advice, error_msg, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
                 r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
@@ -14225,7 +14235,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         print_outage_change(user, posts_advice)
                     elif outage_outcome == "reminder":
                         print_outage_liveness(user, posts_advice, outage.since, outage.failures)
-                    notify_monitoring_error(user, posts_advice, error_msg, consecutive_main_errors, r_sleep_time, error_alert)
+                    notify_monitoring_error(user, posts_advice, error_msg, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
 
                     if outage_outcome in ("full", "changed"):
                         print_cur_ts()
@@ -14466,18 +14476,21 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             if BE_HUMAN and in_allowed_hours:
                 simulate_human_actions(bot, target_sleep_time)
                 consecutive_behuman_errors = 0
+                behuman_failed_since = 0
                 behuman_alert.reset()
         except Exception as e:
 
             consecutive_behuman_errors += 1
+            behuman_failed_since = behuman_failed_since or int(time.time())
             print(f"* Warning: It is not easy to be a human, our simulation failed: {e}")
-            if consecutive_behuman_errors >= ERROR_FAILURE_THRESHOLD:
+            # A failed simulation is alerted once it has lasted ERROR_ALERT_AFTER_SECONDS, the same rule as a failed check
+            if int(time.time()) - behuman_failed_since >= ERROR_ALERT_AFTER_SECONDS:
                 error_msg = format_error_message(e)
-                streak = f"failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD}"
+                streak = f"failure #{consecutive_behuman_errors}, failing for {display_time(int(time.time()) - behuman_failed_since)}"
                 alert_subject = f"instagram_monitor: BeHuman mode error for {user} ({streak})"
                 alert_body = f"A BeHuman simulation error occurred for user {user} ({streak}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                 alert_body_html = f"A BeHuman simulation error occurred for user <b>{escape(str(user))}</b> ({escape(streak)}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                # Attempted on every failing simulation past the threshold, so a channel that failed is tried again
+                # Attempted on every failing simulation once the alert is due, so a channel that failed is tried again
                 email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=ERROR_NOTIFICATION and not behuman_alert.email_sent, webhook_enabled=webhook_event_enabled("error") and not behuman_alert.webhook_sent, webhook_title=f"BeHuman Error for {user}", webhook_description=f"{error_msg}\n({streak})", webhook_color=0xFF0000)
                 behuman_alert.email_sent = behuman_alert.email_sent or email_delivered
                 behuman_alert.webhook_sent = behuman_alert.webhook_sent or webhook_delivered
@@ -16456,7 +16469,6 @@ def runtime_configuration_errors() -> List[str]:
     errors: List[str] = []
     positive_numbers = (("INSTA_CHECK_INTERVAL", INSTA_CHECK_INTERVAL), ("CHECK_INTERNET_TIMEOUT", CHECK_INTERNET_TIMEOUT), ("FOLLOW_LIST_BROWSER_TIMEOUT", FOLLOW_LIST_BROWSER_TIMEOUT))
     nonnegative_numbers = (("RANDOM_SLEEP_DIFF_LOW", RANDOM_SLEEP_DIFF_LOW), ("RANDOM_SLEEP_DIFF_HIGH", RANDOM_SLEEP_DIFF_HIGH), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL), ("NEXT_OPERATION_DELAY", NEXT_OPERATION_DELAY), ("FOLLOWER_DELAY_PER_BATCH", FOLLOWER_DELAY_PER_BATCH), ("FOLLOWEE_DELAY_PER_BATCH", FOLLOWEE_DELAY_PER_BATCH), ("FOLLOW_LIST_BROWSER_SCROLL_DELAY", FOLLOW_LIST_BROWSER_SCROLL_DELAY), ("MULTI_TARGET_STAGGER", MULTI_TARGET_STAGGER), ("MULTI_TARGET_STAGGER_JITTER", MULTI_TARGET_STAGGER_JITTER))
-    positive_integers = (("ERROR_FAILURE_THRESHOLD", ERROR_FAILURE_THRESHOLD),)
     nonnegative_integers = (("DAILY_HUMAN_HITS", DAILY_HUMAN_HITS), ("FOLLOWERS_PER_BATCH", FOLLOWERS_PER_BATCH), ("FOLLOWEES_PER_BATCH", FOLLOWEES_PER_BATCH), ("FOLLOWER_LIMIT_TO_FETCH", FOLLOWER_LIMIT_TO_FETCH), ("FOLLOWEE_LIMIT_TO_FETCH", FOLLOWEE_LIMIT_TO_FETCH), ("IDENTITY_BUDGET_PER_DAY", IDENTITY_BUDGET_PER_DAY))
     hours = (("MIN_H1", MIN_H1), ("MAX_H1", MAX_H1), ("MIN_H2", MIN_H2), ("MAX_H2", MAX_H2))
     ports = (("SMTP_PORT", SMTP_PORT), ("WEB_DASHBOARD_PORT", WEB_DASHBOARD_PORT))
@@ -16466,9 +16478,6 @@ def runtime_configuration_errors() -> List[str]:
     for name, value in nonnegative_numbers:
         if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
             errors.append(f"{name} must be a number zero or greater, not {value!r}")
-    for name, value in positive_integers:
-        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-            errors.append(f"{name} must be an integer greater than zero, not {value!r}")
     for name, value in nonnegative_integers:
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
             errors.append(f"{name} must be an integer zero or greater, not {value!r}")
@@ -16479,6 +16488,12 @@ def runtime_configuration_errors() -> List[str]:
         if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 65535:
             errors.append(f"{name} must be an integer from 1 through 65535, not {value!r}")
     return errors
+
+
+# Names every on/off setting holding something other than True or False, since a string such as "false" would count as on
+def runtime_boolean_errors() -> List[str]:
+    booleans = [name for name, value in config_template_defaults().items() if isinstance(value, bool)]
+    return [f"{name} must be True or False, not {globals().get(name)!r}" for name in booleans if not isinstance(globals().get(name), bool)]
 
 
 # Reports the selected configuration, any startup rejection, known secrets and the final log destinations
@@ -16527,6 +16542,10 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
     if numeric_errors:
         advice = make_recovery_advice("config.invalid", "One or more numeric settings are invalid", recovery_fix_with_guide("Correct the reported settings in the configuration file", CONFIG_FILE_GUIDE_URL), False)
         checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, "Invalid numeric settings: " + "; ".join(numeric_errors), advice))
+    boolean_errors = runtime_boolean_errors()
+    if boolean_errors:
+        advice = make_recovery_advice("config.invalid", "One or more on/off settings are invalid", recovery_fix_with_guide("Set the reported settings to True or False in the configuration file", CONFIG_FILE_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, "Invalid on/off settings: " + "; ".join(boolean_errors), advice))
 
     agents = ". ".join(f"{label}: {agent}" for label, agent in (("Browser agent", USER_AGENT), ("Mobile agent", USER_AGENT_MOBILE)) if agent)
     if _curl_cffi_backend_active():
@@ -16728,7 +16747,7 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
         checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, "", advice))
         return checks
     if not validate_webhook_url(WEBHOOK_URL):
-        advice = make_recovery_advice("webhook.invalid", "Webhook URL is not a complete HTTPS URL", recovery_fix_with_guide("Use a complete HTTPS destination with a path and no embedded credentials", WEBHOOK_GUIDE_URL), False)
+        advice = make_recovery_advice("webhook.invalid", "WEBHOOK_URL must contain a complete HTTPS link", recovery_fix_with_guide("Use a complete HTTPS destination with a path and no embedded credentials", WEBHOOK_GUIDE_URL), False)
         checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, "", advice))
         return checks
 
@@ -16843,7 +16862,7 @@ def run_main():
                 # given" and would otherwise fall through to stdout after the requested file failed to be written.
                 try:
                     backup_path, written = write_generated_config(output_file, config_content, force="--force" in sys.argv)
-                except FileExistsError as exc:
+                except ConfigExistsError as exc:
                     print_recovery_error(exc, context="file_exists", summary=str(exc))
                     sys.exit(1)
                 except (OSError, ValueError) as exc:
@@ -17433,7 +17452,8 @@ def run_main():
         metavar="NUM",
         type=int,
         default=None,
-        help="Number of consecutive errors required to trigger an alert (default: 2)"
+        # Retired, still accepted so an existing command line keeps starting the run
+        help=argparse.SUPPRESS
     )
     opts.add_argument(
         "--analyze-follows",
@@ -17730,10 +17750,7 @@ def run_main():
         SKIP_FOLLOW_CHANGES = True
 
     if args.error_threshold is not None:
-        ERROR_FAILURE_THRESHOLD = int(args.error_threshold)
-        if ERROR_FAILURE_THRESHOLD < 1:
-            print("* Warning: Error threshold must be at least 1, setting to 1")
-            ERROR_FAILURE_THRESHOLD = 1
+        print(f"* Note: --error-threshold was removed in a later version and is ignored. An error alert now goes out once a failure has lasted {display_time(ERROR_ALERT_AFTER_SECONDS)}, or at once when it cannot clear on its own")
 
     # Webhook configuration
     if args.webhook_url:

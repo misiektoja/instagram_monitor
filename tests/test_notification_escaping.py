@@ -17,7 +17,6 @@ ALLOWED_UNESCAPED = frozenset({
     "likes",
     "comments",
     "failure_count",
-    "ERROR_FAILURE_THRESHOLD",
     "consecutive_behuman_errors",
     "posts_count", "posts_count_old",
     "reels_count", "reels_count_old",

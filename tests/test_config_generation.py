@@ -225,10 +225,22 @@ class TestConfigPersistence:
             destination = Path(directory_name) / "instagram_monitor.conf"
             destination.write_text("OLD_VALUE = True\n", encoding="utf-8")
 
-            with pytest.raises(FileExistsError, match="no terminal to confirm"):
+            with pytest.raises(im_module.ConfigExistsError, match="no terminal to confirm"):
                 im_module.write_generated_config(destination, "INSTA_CHECK_INTERVAL = 5400\n", interactive=False)
 
             assert destination.read_text(encoding="utf-8") == "OLD_VALUE = True\n"
+
+    # A parent path that is a file is a write failure, not an existing config, so the advice must not say --force
+    def test_a_file_in_the_way_of_the_parent_directory_is_not_an_existing_config(self, im_module):
+        with make_test_directory() as directory_name:
+            blocker = Path(directory_name) / "configs"
+            blocker.write_text("not a directory\n", encoding="utf-8")
+
+            with pytest.raises(OSError) as raised:
+                im_module.write_generated_config(blocker / "instagram_monitor.conf", "INSTA_CHECK_INTERVAL = 5400\n", interactive=False)
+
+            assert not isinstance(raised.value, im_module.ConfigExistsError)
+            assert blocker.read_text(encoding="utf-8") == "not a directory\n"
 
     # A file that does not exist yet is written without a question
     def test_generated_config_writes_a_new_file_directly(self, im_module):

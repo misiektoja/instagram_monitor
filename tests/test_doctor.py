@@ -125,6 +125,25 @@ class TestDoctorChecks:
         assert [item.status for item in rows] == ["FAIL"]
         assert all(name in rows[0].detail for name in ("INSTA_CHECK_INTERVAL", "MAX_H1", "SMTP_PORT"))
 
+    # A string such as "false" counts as on, so an on/off setting holding anything but True or False is named in one row
+    def test_invalid_boolean_settings_are_reported_in_one_row(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", "false", raising=False)
+        monkeypatch.setattr(im_module, "SMTP_SSL", 1, raising=False)
+
+        rows = [item for item in im_module.doctor_check_configuration([]) if item.label == "One or more on/off settings are invalid"]
+
+        assert [item.status for item in rows] == ["FAIL"]
+        assert "ERROR_NOTIFICATION must be True or False, not 'false'" in rows[0].detail
+        assert "SMTP_SSL must be True or False, not 1" in rows[0].detail
+        assert rows[0].advice.fix.startswith("Set the reported settings to True or False")
+
+    # The shipped defaults are all real booleans, so a run with nothing overridden never sees the on/off row
+    def test_the_shipped_defaults_pass_the_boolean_check(self, im_module):
+        assert im_module.runtime_boolean_errors() == []
+        assert "ERROR_NOTIFICATION" in [name for name, value in im_module.config_template_defaults().items() if isinstance(value, bool)]
+
     # An interval below the documented minimum makes a challenge far more likely, which looks like the tool being broken
     def test_a_rate_limiting_interval_is_warned_about(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
@@ -288,6 +307,20 @@ class TestDoctorChecks:
         assert warning.label == im_module.EMAIL_UNUSABLE_CHECK_LABEL
         assert warning.detail == "SMTP_PASSWORD is empty or still set to its placeholder"
         assert warning.advice.fix == im_module.recovery_fix_with_guide("Set SMTP_PASSWORD or turn the email alerts off", im_module.SMTP_GUIDE_URL)
+
+    # A malformed destination is a FAIL under the label every tool in the family uses, so a fix reads the same everywhere
+    def test_a_malformed_webhook_url_fails_under_the_family_label(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SMTP_HOST", "your_smtp_server_ssl", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "discord.com/api/webhooks/1/abc", raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True, raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord", raising=False)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        failure = next(check for check in checks if check.status == "FAIL")
+        assert failure.label == "WEBHOOK_URL must contain a complete HTTPS link"
+        assert failure.advice.fix.startswith("Use a complete HTTPS destination")
 
     # The shipped WEBHOOK_URL placeholder means the webhook was never configured, not that it is broken
     def test_webhook_placeholder_is_not_a_failure(self, im_module, monkeypatch):
