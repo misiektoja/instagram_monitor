@@ -122,6 +122,7 @@ class TestNotifyMonitoringError:
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "ERROR_ALERT_RETRY_SECONDS", 0)
         state = im_module.ErrorAlertState()
 
         for failure_count in (2, 3, 4):
@@ -129,6 +130,61 @@ class TestNotifyMonitoringError:
 
         assert len(calls["email"]) == 1
         assert len(calls["webhook"]) == 2
+
+    # A channel that failed is held for five minutes, then for twice the previous wait, so a broken mail server is
+    # not dialled on every failing check of a long outage, and the hold is said once per failed attempt
+    def test_a_failed_channel_backs_off_before_it_is_tried_again(self, im_module, monkeypatch, capsys):
+        calls = self._capture(im_module, monkeypatch, email_results=(1, 1, 0), webhook_results=(0,))
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", False)
+        monkeypatch.setattr(im_module, "ERROR_ALERT_RETRY_SECONDS", 300)
+        monkeypatch.setattr(im_module, "ERROR_ALERT_RETRY_MAX_SECONDS", 3600)
+        clock = {"now": 1_000_000}
+        monkeypatch.setattr(im_module.time, "time", lambda: clock["now"])
+        state = im_module.ErrorAlertState()
+        advice = im_module.classify_recovery_error("401 Unauthorized", is_logged_in=True)
+
+        attempts = []
+        for offset in (0, 60, 299, 300, 600, 899, 900, 1200):
+            clock["now"] = 1_000_000 + offset
+            im_module.notify_monitoring_error("targetuser", advice, "401 Unauthorized", 1_000_000, 1, 60, state)
+            attempts.append(len(calls["email"]))
+
+        assert attempts == [1, 1, 1, 2, 2, 2, 3, 3]
+        assert state.email_sent is True
+        assert state.email_failures == 0
+        printed = capsys.readouterr().out
+        assert "* The email alert is on hold for 5 minutes after 1 attempt, then tried again" in printed
+        assert "* The email alert is on hold for 10 minutes after 2 attempts, then tried again" in printed
+
+    # The wait stops growing at the cap, so a server that stays down is still tried every hour
+    def test_the_backoff_is_capped(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "ERROR_ALERT_RETRY_SECONDS", 300)
+        monkeypatch.setattr(im_module, "ERROR_ALERT_RETRY_MAX_SECONDS", 3600)
+        state = im_module.ErrorAlertState()
+
+        for _ in range(6):
+            state.record("webhook", True, False, 0)
+
+        assert state.webhook_failures == 6
+        assert state.webhook_retry_at == 3600
+        assert state.pending("webhook", True, 3599) is False
+        assert state.pending("webhook", True, 3600) is True
+
+    # A delivery clears the hold, and a new outage starts each channel afresh
+    def test_a_delivery_or_a_reset_clears_the_hold(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "ERROR_ALERT_RETRY_SECONDS", 300)
+        state = im_module.ErrorAlertState()
+        state.record("email", True, False, 0)
+        state.record("email", True, True, 300)
+
+        assert (state.email_sent, state.email_failures, state.email_retry_at) == (True, 0, 0)
+
+        state.record("webhook", True, False, 0)
+        state.reset()
+
+        assert (state.webhook_failures, state.webhook_retry_at) == (0, 0)
+        assert state.pending("webhook", True, 0) is True
 
     # A failure that changes category is a different failure, so it earns each channel a new alert
     def test_a_changed_failure_category_earns_a_new_alert(self, im_module, monkeypatch):

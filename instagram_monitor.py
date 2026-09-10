@@ -10351,6 +10351,9 @@ class RecoveryHintTracker:
 OUTAGE_REMINDER_SECONDS = 3600  # 1 hour
 # How long a failure the tool can retry away must last before it is alerted, a failure it cannot is alerted at once
 ERROR_ALERT_AFTER_SECONDS = 300  # 5 minutes
+# How long a channel that could not deliver an error alert waits before the next attempt, doubled on every further failure up to the cap
+ERROR_ALERT_RETRY_SECONDS = 300  # 5 minutes
+ERROR_ALERT_RETRY_MAX_SECONDS = 3600  # 1 hour
 
 
 # Returns the family a failure code belongs to, so the DNS and timeout failures of one internet outage count as one
@@ -10557,12 +10560,39 @@ class ErrorAlertState:
     email_sent: bool = False
     webhook_sent: bool = False
     code: Optional[str] = None
+    email_failures: int = 0
+    webhook_failures: int = 0
+    email_retry_at: int = 0
+    webhook_retry_at: int = 0
 
     # Forgets the delivered alert, so the next failure earns each channel a new one
     def reset(self):
         self.email_sent = False
         self.webhook_sent = False
         self.code = None
+        self.email_failures = 0
+        self.webhook_failures = 0
+        self.email_retry_at = 0
+        self.webhook_retry_at = 0
+
+    # Tells whether a channel still owes the alert and its wait after a failed attempt, if any, has passed
+    def pending(self, channel: str, enabled, now: int) -> bool:
+        return bool(enabled) and not getattr(self, f"{channel}_sent") and now >= getattr(self, f"{channel}_retry_at")
+
+    # Records one attempt, holding a channel that failed for a growing wait so a broken server is not dialled on every check
+    def record(self, channel: str, attempted: bool, delivered: bool, now: int) -> None:
+        if not attempted:
+            return
+        if delivered:
+            setattr(self, f"{channel}_sent", True)
+            setattr(self, f"{channel}_failures", 0)
+            setattr(self, f"{channel}_retry_at", 0)
+            return
+        failures = getattr(self, f"{channel}_failures") + 1
+        delay = min(ERROR_ALERT_RETRY_SECONDS * 2 ** (failures - 1), ERROR_ALERT_RETRY_MAX_SECONDS)
+        setattr(self, f"{channel}_failures", failures)
+        setattr(self, f"{channel}_retry_at", now + delay)
+        print(f"* The {channel} alert is on hold for {display_time(delay)} after {failures} {'attempt' if failures == 1 else 'attempts'}, then tried again")
 
 
 # Alerts both channels once a failure has lasted ERROR_ALERT_AFTER_SECONDS or at once when it cannot clear on its own, once per failure category and per channel
@@ -10575,9 +10605,11 @@ def notify_monitoring_error(user, advice, error_msg, failed_since, failure_count
     lasted = max(0, int(time.time()) - failed_since)
     if advice.retryable and lasted < ERROR_ALERT_AFTER_SECONDS:
         return False
-    # Attempted on every failing check rather than only once the alert is due, so a channel that failed is tried again
-    email_pending = ERROR_NOTIFICATION and not alert_state.email_sent
-    webhook_pending = webhook_event_enabled("error") and not alert_state.webhook_sent
+    # Attempted again on a later failing check rather than only once the alert is due, so a channel that failed is
+    # tried again, after a wait that grows with each failed attempt
+    now = int(time.time())
+    email_pending = alert_state.pending("email", ERROR_NOTIFICATION, now)
+    webhook_pending = alert_state.pending("webhook", webhook_event_enabled("error"), now)
     if not (email_pending or webhook_pending):
         return False
     streak = f"failure #{failure_count}, failing for {display_time(lasted)}"
@@ -10586,8 +10618,8 @@ def notify_monitoring_error(user, advice, error_msg, failed_since, failure_count
     alert_body = f"{advice.summary} ({streak})\n{error_msg}\n\nTo fix: {advice.fix}\n\nCheck interval: {interval}{get_cur_ts(nl_ch + 'Timestamp: ')}"
     alert_body_html = f"{html_text(str(advice.summary))} ({escape(streak)})<br><br><b>{html_text(str(error_msg))}</b><br><br>To fix: {html_text(str(advice.fix))}<br><br>Check interval: <b>{escape(interval)}</b>{get_cur_ts('<br>Timestamp: ')}"
     email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=email_pending, webhook_enabled=webhook_pending, webhook_title=f"Error for {user}", webhook_description=f"{advice.summary}\n{error_msg}\n({streak})\nTo fix: {advice.fix}", webhook_color=0xFF0000)
-    alert_state.email_sent = alert_state.email_sent or email_delivered
-    alert_state.webhook_sent = alert_state.webhook_sent or webhook_delivered
+    alert_state.record("email", email_pending, email_delivered, now)
+    alert_state.record("webhook", webhook_pending, webhook_delivered, now)
     return email_delivered or webhook_delivered
 
 
@@ -14490,10 +14522,13 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 alert_subject = f"instagram_monitor: BeHuman mode error for {user} ({streak})"
                 alert_body = f"A BeHuman simulation error occurred for user {user} ({streak}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                 alert_body_html = f"A BeHuman simulation error occurred for user <b>{escape(str(user))}</b> ({escape(streak)}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                # Attempted on every failing simulation once the alert is due, so a channel that failed is tried again
-                email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=ERROR_NOTIFICATION and not behuman_alert.email_sent, webhook_enabled=webhook_event_enabled("error") and not behuman_alert.webhook_sent, webhook_title=f"BeHuman Error for {user}", webhook_description=f"{error_msg}\n({streak})", webhook_color=0xFF0000)
-                behuman_alert.email_sent = behuman_alert.email_sent or email_delivered
-                behuman_alert.webhook_sent = behuman_alert.webhook_sent or webhook_delivered
+                # Tried again on a later failing simulation once the alert is due, after a wait that grows with each failed attempt
+                now = int(time.time())
+                behuman_email_pending = behuman_alert.pending("email", ERROR_NOTIFICATION, now)
+                behuman_webhook_pending = behuman_alert.pending("webhook", webhook_event_enabled("error"), now)
+                email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=behuman_email_pending, webhook_enabled=behuman_webhook_pending, webhook_title=f"BeHuman Error for {user}", webhook_description=f"{error_msg}\n({streak})", webhook_color=0xFF0000)
+                behuman_alert.record("email", behuman_email_pending, email_delivered, now)
+                behuman_alert.record("webhook", behuman_webhook_pending, webhook_delivered, now)
             print_cur_ts(newline=True)
 
         if HOURS_VERBOSE or DEBUG_MODE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE):
