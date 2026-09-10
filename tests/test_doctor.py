@@ -1056,6 +1056,35 @@ def test_a_failed_delivery_test_reaches_the_summary(im_module, monkeypatch):
     assert report.count("FAIL") == 1
 
 
+# Verifies a failed delivery test fails the whole run, so the exit code and the last sentence agree
+def test_a_failed_delivery_test_changes_the_exit_code(im_module, monkeypatch):
+    _setup_no_network(monkeypatch, im_module)
+    monkeypatch.setattr(im_module, "SKIP_SESSION", True, raising=False)
+    monkeypatch.setattr(im_module, "SESSION_USERNAME", "", raising=False)
+    monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.invalid", raising=False)
+    monkeypatch.setattr(im_module, "SMTP_PORT", 587, raising=False)
+    monkeypatch.setattr(im_module, "SMTP_SSL", True, raising=False)
+    monkeypatch.setattr(im_module, "SMTP_USER", "monitor@example.invalid", raising=False)
+    monkeypatch.setattr(im_module, "SMTP_PASSWORD", "app-password-value", raising=False)
+    monkeypatch.setattr(im_module, "SENDER_EMAIL", "monitor@example.invalid", raising=False)
+    monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "owner@example.invalid", raising=False)
+    monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", True, raising=False)
+    monkeypatch.setattr(im_module.smtplib, "SMTP", Mock(return_value=Mock()))
+    stream = _TTYBuffer()
+    monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+    monkeypatch.setattr(im_module.sys, "stdout", stream)
+    monkeypatch.setattr(im_module, "_doctor_ask_yes_no", Mock(return_value=True))
+    monkeypatch.setattr(im_module, "send_email", Mock(return_value=1))
+
+    rc = im_module.run_doctor([])
+
+    output = stream.getvalue()
+    assert rc == 1
+    assert "[FAIL] Doctor test email delivery failed" in output
+    assert "1 check(s) failed" in output
+    assert "All checks passed" not in output
+
+
 # Verifies every doctor entry point renders its summary after the delivery tests, so the sentence and the exit code describe one run
 def test_the_summary_is_rendered_after_the_delivery_tests(im_module):
     import ast
