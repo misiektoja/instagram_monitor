@@ -9972,7 +9972,7 @@ def is_too_many_open_files(error: Any) -> bool:
         if isinstance(current, OSError) and getattr(current, "errno", None) == 24:
             return True
         message = str(current).lower()
-        if "too many open files" in message or "errno 24" in message:
+        if "too many open files" in message or re.search(r"\berrno 24\b", message):
             return True
     return False
 
@@ -10158,8 +10158,10 @@ class OutageReporter:
     def failed(self, advice: RecoveryAdvice, liveness_interval: int) -> str:
         now = int(time.time())
         if advice.code != self.code:
+            # A category change mid-outage is still the same outage, so its start and the alert delay it feeds are kept
+            if not self.code:
+                self.since = now
             self.code = advice.code
-            self.since = now
             self.reported_at = now
             return "full"
         # With the liveness banner off there is nothing to carry the reminder, so the summary keeps its old cadence
@@ -17233,7 +17235,12 @@ def run_main():
         if DOTENV_FILE:
             DOTENV_FILE = os.path.expanduser(DOTENV_FILE)
 
-    EXPORTED_SECRET_KEYS = frozenset(secret for secret in SECRET_KEYS if os.getenv(secret) is not None)
+    # An empty export is a shell-profile leftover rather than a value, so it is dropped before the dotenv load,
+    # which would otherwise keep it and leave the file's value unused
+    for secret in SECRET_KEYS:
+        if os.environ.get(secret) == "":
+            os.environ.pop(secret)
+    EXPORTED_SECRET_KEYS = frozenset(secret for secret in SECRET_KEYS if os.getenv(secret))
     SECRET_SOURCES.clear()
     for secret in SECRET_KEYS:
         if doctor_secret_is_set(globals().get(secret)):
