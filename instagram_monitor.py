@@ -772,8 +772,8 @@ COLORED_OUTPUT = True
 #     "count_down": "red",
 #     "link": "blue underline",
 #     # Proxies
-#     "proxy_ip": "yellow",
-#     "ip_address": "yellow",
+#     "proxy_ip": "bright_yellow",
+#     "ip_address": "bright_yellow",
 # }
 """
 
@@ -992,6 +992,30 @@ def write_config_file(destination, content: str):
     return {"path": str(destination_path), "backup_path": str(backup_path) if backup_path is not None else None}
 
 
+# Asks before an existing config is replaced, and refuses where there is no terminal to ask on
+def confirm_generated_config_replacement(destination, force: bool = False, interactive=None, input_func=input) -> bool:
+    destination_path = Path(destination).expanduser()
+    if not destination_path.exists() or force:
+        return True
+    terminal_is_interactive = bool(sys.stdin.isatty()) if interactive is None else bool(interactive)
+    if not terminal_is_interactive:
+        raise FileExistsError(f"Config file '{destination_path}' already exists and there is no terminal to confirm replacing it")
+    try:
+        answer = str(read_interactively(input_func, f"Config file '{destination_path}' exists. Replace it and keep a timestamped backup? [y/N]: ")).strip().casefold()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        answer = ""
+    return answer in ("y", "yes")
+
+
+# Writes one generated config atomically, backing up whatever was there first
+def write_generated_config(output_file, content: str, force: bool = False, interactive=None, input_func=input):
+    destination = Path(output_file).expanduser()
+    if not confirm_generated_config_replacement(destination, force, interactive, input_func):
+        return None, False
+    return write_config_file(destination, content)["backup_path"], True
+
+
 # Quotes one secret value for lossless parsing by python-dotenv
 def _format_dotenv_value(value: str) -> str:
     if not isinstance(value, str):
@@ -1027,11 +1051,14 @@ def update_dotenv_file(destination, updates):
             continue
         if key in seen_keys:
             continue
-        output_lines.append(f"{key}={_format_dotenv_value(values_by_key[key])}")
         seen_keys.add(key)
+        # A secret cleared by its owner is removed rather than emptied, so a disabled value cannot linger here
+        if not values_by_key[key]:
+            continue
+        output_lines.append(f"{key}={_format_dotenv_value(values_by_key[key])}")
 
     for key, value in update_items:
-        if key not in seen_keys:
+        if key not in seen_keys and value:
             output_lines.append(f"{key}={_format_dotenv_value(value)}")
             seen_keys.add(key)
 
@@ -1147,6 +1174,12 @@ def print_secret_command_error(error):
         print(f"Guide: {guide}")
 
 
+# Returns the mail settings a sign-in needs that are still unset, still a placeholder or not a valid address
+def mail_sign_in_settings_missing():
+    missing = [name for name in ("SMTP_HOST", "SMTP_USER") if is_placeholder_setting(globals().get(name))]
+    return missing + [name for name in ("SENDER_EMAIL", "RECEIVER_EMAIL") if not is_valid_email_address(globals().get(name))]
+
+
 # Signs in to the configured mail server with one entered password, so nothing is saved that cannot deliver
 def smtp_sign_in(password, timeout=5):
     global SMTP_PASSWORD
@@ -1154,8 +1187,9 @@ def smtp_sign_in(password, timeout=5):
     candidate = str(password or "")
     if not candidate or candidate == "your_smtp_password":
         raise SmtpConfigurationError("No SMTP password was entered. The private settings file was not changed.")
-    if any(is_placeholder_setting(value) for value in (SMTP_HOST, SMTP_USER)) or not all(is_valid_email_address(value) for value in (SENDER_EMAIL, RECEIVER_EMAIL)):
-        raise SmtpConfigurationError("The mail server settings are incomplete. Set SMTP_HOST, SMTP_USER, SENDER_EMAIL and RECEIVER_EMAIL first, or run --setup.")
+    missing = mail_sign_in_settings_missing()
+    if missing:
+        raise SmtpConfigurationError(f"The mail server settings are incomplete. Set {join_setting_names(missing, 'and')} first, or run --setup.")
     previous_password = SMTP_PASSWORD
     SMTP_PASSWORD = candidate
     smtp = None
@@ -1182,6 +1216,11 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
     if not terminal_is_interactive:
         raise SmtpConfigurationError("--set-smtp-password requires an interactive terminal. Run it in a terminal window so the password stays hidden while you type it.")
+    # Checked before the prompts, so nobody types a password only to be told the mail server was never configured
+    missing = mail_sign_in_settings_missing()
+    if missing:
+        names = join_setting_names(missing, "and")
+        raise SmtpConfigurationError(f"The mail server settings are incomplete, {names} {'is' if len(missing) == 1 else 'are'} not set", f"Set {names} in the config file, or run --setup, then run --set-smtp-password again", SMTP_GUIDE_URL)
     prompt = input if input_func is None else input_func
     try:
         password_already_saved = _dotenv_contains_key(destination, "SMTP_PASSWORD")
@@ -4388,9 +4427,17 @@ DEFAULT_COLOR_THEME = {
     "count_down": "red",
     "link": "blue underline",
     # Proxies
-    "proxy_ip": "yellow",
-    "ip_address": "yellow",
+    "proxy_ip": "bright_yellow",
+    "ip_address": "bright_yellow",
 }
+
+# Whole-line styles, listed so the palette test can prove no value colour disappears inside one of them.
+# Warnings and signals are not on this list: both are yellow, the colour of the values that report an
+# address or a change, so they mark their own opening word instead of painting the line
+BLOCK_STYLE_PARTS = ("status_change", "error", "info", "email", "webhook")
+
+# Parts that carry a name or an address supplied by Instagram or by the user, which a block style must never hide
+NAME_STYLE_PARTS = ("username", "id", "post", "reel", "story", "link", "proxy_ip", "ip_address")
 
 ANSI_RESET = "\033[0m"
 
@@ -4441,6 +4488,10 @@ _NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webh
 _STORY_URL_RE = re.compile(r"(https?://\S+)")
 # A received signal is an event rather than a problem, so it gets its own whole-line colour
 _SIGNAL_LINE_RE = re.compile(r"^\s*\*\s*signal\b.*\breceived\b", re.IGNORECASE)
+
+# The opening word of a warning and the name of a reported signal, marked instead of painting the line
+_WARNING_LABEL_RE = re.compile(r"^(\s*\*?\s*)(Warning:|Caution:)", re.IGNORECASE)
+_SIGNAL_NAME_RE = re.compile(r"(?<=^\* Signal )(\w+)(?= received\b)")
 # Quoted content such as a caption or a name. At least one word character is required so a run of punctuation
 # between two quotes is not read as content. The closing quote has to be followed by whitespace, punctuation or
 # the end of the line, so the text's own apostrophe does not end it early
@@ -4857,16 +4908,20 @@ def _colorize_line(line):
     is_warning = any(w in lowered for w in ("* warning:", "caution:")) and "[warnings =" not in lowered
     is_info = any(k in lowered for k in ("* session login:", "* mode:", "session created", "* info:"))
 
-    if any(phrase in lowered for phrase in _ACTIVITY_HEADER_PHRASES) or _STORY_ITEM_ACTIVITY_RE.search(line):
+    # Warnings and signals mark their opening word rather than painting the line, because both are yellow,
+    # which is also the colour of the values that report an address or a change
+    is_marked_only = is_warning or bool(_SIGNAL_LINE_RE.match(line))
+    if is_warning:
+        line = _WARNING_LABEL_RE.sub(lambda mo: f"{mo.group(1)}{colorize('warning', mo.group(2))}", line, count=1)
+    elif is_marked_only:
+        line = _SIGNAL_NAME_RE.sub(lambda mo: colorize("signal", mo.group(0)), line, count=1)
+
+    if not is_marked_only and (any(phrase in lowered for phrase in _ACTIVITY_HEADER_PHRASES) or _STORY_ITEM_ACTIVITY_RE.search(line)):
         line = _apply_style_nested(line, "status_change")
     elif is_error:
         line = _apply_style_nested(line, "error")
-    elif is_warning:
-        line = _apply_style_nested(line, "warning")
-    elif is_info:
+    elif not is_marked_only and is_info:
         line = _apply_style_nested(line, "info")
-    elif _SIGNAL_LINE_RE.match(line):
-        line = _apply_style_nested(line, "signal")
 
     return line
 
@@ -16335,17 +16390,24 @@ def run_main():
             if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("-"):
                 # Write directly to file (bypasses PowerShell UTF-16 encoding issue on Windows)
                 output_file = sys.argv[idx + 1]
-                # Routed through the shared writer so an existing config is backed up rather than truncated.
-                # Caught here because the outer handler treats a ValueError as "no filename given" and would
-                # otherwise fall through to stdout after the requested file failed to be written.
+                # Routed through the shared writer so an existing config is confirmed and backed up rather
+                # than truncated. Caught here because the outer handler treats a ValueError as "no filename
+                # given" and would otherwise fall through to stdout after the requested file failed to be written.
                 try:
-                    write_status = write_config_file(output_file, config_content)
+                    backup_path, written = write_generated_config(output_file, config_content, force="--force" in sys.argv)
+                except FileExistsError as exc:
+                    print(f"* Error: {exc}")
+                    print("To fix: re-run with --force to replace it after a timestamped backup, or write to a different path with '--generate-config <new-file>'")
+                    sys.exit(1)
                 except (OSError, ValueError) as exc:
                     print(f"* Error: Could not write config file '{output_file}': {type(exc).__name__}: {exc}")
                     sys.exit(1)
-                print(f"Config written to: {write_status['path']}")
-                if write_status["backup_path"]:
-                    print(f"Backup written to: {write_status['backup_path']}")
+                if not written:
+                    print("Config was not replaced. The existing file is unchanged")
+                    sys.exit(1)
+                print(f"Config written to: {Path(output_file).expanduser()}")
+                if backup_path:
+                    print(f"Backup written to: {backup_path}")
                 sys.exit(0)
         except (ValueError, IndexError):
             pass
@@ -16425,6 +16487,12 @@ def run_main():
         const=True,
         metavar="FILENAME",
         help="Print default config template and exit (on Windows PowerShell, specify a filename to avoid redirect encoding issues)",
+    )
+    conf.add_argument(
+        "--force",
+        dest="force",
+        action="store_true",
+        help="Replace an existing file with --generate-config without asking",
     )
     conf.add_argument(
         "--env-file",
@@ -16936,6 +17004,9 @@ def run_main():
     requested_actions = [label for label, enabled in (("--setup", args.setup), ("--set-webhook-url", args.set_webhook_url), ("--set-smtp-password", args.set_smtp_password), ("--doctor", args.doctor), ("--analyze-follows", args.analyze_follows), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--clear-breaker", args.clear_breaker), ("--exposure", args.show_exposure), ("--generate-config", args.generate_config is not None)) if enabled]
     if len(requested_actions) > 1:
         parser.error("standalone actions cannot be combined: " + ", ".join(requested_actions))
+    # --generate-config with a filename exits before argparse runs, so reaching here with --force means it was passed alone
+    if args.force:
+        parser.error("--force only applies to --generate-config")
     if args.setup:
         if args.usernames or args.targets:
             parser.error("--setup cannot be combined with monitoring targets")
