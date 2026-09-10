@@ -445,6 +445,7 @@ class TestRecoveryCodeSet:
             "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
             "file.unreadable", "file.unwritable", "file.exists",
             "dashboard.unavailable",
+            "resource.exhausted",
             "unknown",
         })
 
@@ -483,6 +484,7 @@ class TestRecoveryCodeSet:
             (RuntimeError("Could not resolve proxy: myproxy.local"), "proxy"),
             (RuntimeError("Firefox cookies were not found"), "session"),
             (OSError("Port 7862 is in use"), "dashboard"),
+            (OSError(24, "Too many open files"), "runtime"),
         ]
         produced = {im_module.classify_recovery_error(failure, context=context).code for failure, context in failures}
         produced.add(im_module.missing_dependency_advice("rich", "The Terminal Dashboard cannot start", "pip install rich").code)
@@ -612,3 +614,40 @@ class TestEveryProblemIsReported:
         im_module.print_recovery_error("Sending the webhook failed: https://discord.com/api/webhooks/1/topsecrettoken refused", context="webhook")
 
         assert "topsecrettoken" not in capsys.readouterr().out
+
+
+# A local resource limit reads as a remote failure unless it is recognized before the context rules run
+class TestLocalResourceLimits:
+    # The limit is this process running out of descriptors, so nothing about Instagram or the network explains it
+    def test_a_file_descriptor_limit_is_not_reported_as_a_service_failure(self, im_module):
+        advice = im_module.classify_recovery_error(OSError(24, "Too many open files"))
+
+        assert advice.code == "resource.exhausted"
+        assert "not an Instagram problem" in advice.summary
+        assert "ulimit -n" in advice.fix
+        assert advice.retryable is False
+
+    # The limit usually surfaces wrapped in whatever call hit it, so the whole chain is walked
+    @pytest.mark.parametrize("context", ["runtime", "file_write", "webhook", "email", "config"])
+    def test_the_limit_is_found_through_the_cause_chain(self, im_module, context):
+        try:
+            try:
+                raise OSError(24, "Too many open files")
+            except OSError as inner:
+                raise RuntimeError("the request could not be sent") from inner
+        except RuntimeError as outer:
+            assert im_module.classify_recovery_error(outer, context=context).code == "resource.exhausted"
+
+    # Walking a chain must end even when an exception refers back to itself
+    def test_the_chain_walk_ends_on_a_cycle(self, im_module):
+        first = RuntimeError("first")
+        second = RuntimeError("second")
+        first.__cause__ = second
+        second.__cause__ = first
+
+        assert len(list(im_module.iter_exc_chain(first))) == 8
+
+    # A remote failure that merely mentions files is not the local limit
+    def test_an_unrelated_failure_is_not_mistaken_for_the_limit(self, im_module):
+        assert im_module.is_too_many_open_files(OSError(2, "No such file or directory")) is False
+        assert im_module.is_too_many_open_files(None) is False
