@@ -667,7 +667,7 @@ Three commands:
 ```
 instagram_monitor --exposure                   # redacted support report with names, failures and runtime context
 instagram_monitor --identity-budget 750        # set the budget for this run
-instagram_monitor --clear-breaker              # resume after clearing the challenge in a browser
+instagram_monitor --clear-breaker              # resume after fixing what tripped it
 ```
 
 Everything is stored locally in `instagram_monitor_exposure.json` next to your output directory. Nothing is transmitted anywhere. The `--exposure` report omits account names, target names, stored error text and local paths so it can be pasted into a support issue.

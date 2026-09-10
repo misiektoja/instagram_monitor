@@ -184,6 +184,27 @@ def test_transport_and_schema_failures_do_not_trip_the_breaker(ledger):
     assert im.exposure_snapshot()["failures"] == {"rate_limit": 1, "schema_change": 1}
 
 
+@pytest.mark.parametrize(("failure_class", "expected"), [
+    ("challenge", "clear the challenge"),
+    ("auth_expired", "re-import the session"),
+    ("ledger_unavailable", "account safety ledger"),
+    ("unknown", "Resolve the account issue"),
+])
+def test_the_recovery_hint_matches_the_failure_class(ledger, failure_class, expected):
+    hint = im.breaker_recovery_hint(failure_class)
+    assert expected in hint
+    assert "--clear-breaker" in hint
+
+
+def test_a_stopped_target_is_told_how_to_recover_from_an_expired_session(ledger, capsys):
+    im.note_instagram_failure("401 Unauthorized", "target")
+    im.fetch_usernames_paginated(None, lambda: _names(5), 0, 0, 0, False, 5, "target")
+    output = capsys.readouterr().out
+    assert "auth_expired" in output
+    assert "re-import the session" in output
+    assert "clear the challenge" not in output
+
+
 def test_breaker_is_cleared_explicitly(ledger):
     im.note_instagram_failure("challenge_required", "target")
     assert im.circuit_breaker_tripped() is True

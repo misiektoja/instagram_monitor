@@ -72,7 +72,7 @@ When Instagram returns a challenge, a checkpoint or an expired session, it has a
 * Circuit breaker: Instagram acted against session account your_account (challenge). Stopping all Instagram requests for this account
 ```
 
-Clear the challenge in your browser first, then resume:
+The second line of that message names the fix for the failure it recorded: clear the challenge in a browser, re-import an expired session or restore access to the safety ledger. Do that first, then resume:
 
 ```
 instagram_monitor --clear-breaker

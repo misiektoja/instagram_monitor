@@ -10329,6 +10329,17 @@ def identity_budget_exhausted() -> bool:
     return remaining is not None and remaining <= 0
 
 
+# Maps a tripped breaker to the one action that resolves its failure class, so every surface gives the same remedy
+def breaker_recovery_hint(failure_class: str) -> str:
+    if failure_class == 'auth_expired':
+        return f"Log in to Instagram again and re-import the session with '{session_recovery_command()}', then resume with '--clear-breaker'"
+    if failure_class == 'ledger_unavailable':
+        return f"Restore read and write access to the account safety ledger at {exposure_state_path()}, or move that file aside to start a fresh one, then resume with '--clear-breaker'"
+    if failure_class == 'challenge':
+        return "Open Instagram in a browser and clear the challenge, then resume with '--clear-breaker'"
+    return "Resolve the account issue on Instagram, then resume with '--clear-breaker'"
+
+
 # Returns the stored circuit breaker record when the session account is stopped, otherwise None
 def circuit_breaker_state() -> Optional[Dict[str, Any]]:
     if not CIRCUIT_BREAKER:
@@ -10373,7 +10384,7 @@ def trip_circuit_breaker(failure_class: str, user: str = "", error_msg: str = ""
     if tripped:
         account = exposure_account_name()
         print(f"\n* Circuit breaker: Instagram acted against session account {account} ({failure_class}). Stopping all Instagram requests for this account")
-        print(f"* Continuing after an account-level action is what turns a warning into a suspension. Resume with '--clear-breaker' once you have cleared the challenge in a browser")
+        print(f"* Continuing after an account-level action is what turns a warning into a suspension. {breaker_recovery_hint(failure_class)}")
         log_activity(f"Circuit breaker tripped for {account}: {failure_class}", user=user or account, level='system')
     return bool(tripped)
 
@@ -11354,14 +11365,14 @@ def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, tota
     # stops save_username_baseline from overwriting a good baseline with a truncated one
     breaker = circuit_breaker_state()
     if breaker:
-        msg = f"Skipping name fetch: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')}). Resume with --clear-breaker"
+        msg = f"Skipping name fetch: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')}). {breaker_recovery_hint(breaker.get('failure_class', ''))}"
         print(f"* {msg}")
         log_activity(msg, user=user, level='system')
         return results
 
     memory_state = _account_breaker_memory_state()
     if memory_state and memory_state.get('failure_class') == 'ledger_unavailable':
-        msg = "Skipping name fetch: account safety ledger is unavailable. Restore write access or run --clear-breaker to reset it"
+        msg = f"Skipping name fetch: account safety ledger is unavailable. {breaker_recovery_hint('ledger_unavailable')}"
         print(f"* {msg}")
         log_activity(msg, user=user, level='system')
         return results
@@ -11576,7 +11587,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         if breaker:
             update_ui_data(targets={user: {'status': 'Stopped (breaker)'}})
             print(f"* Monitoring paused for {user}: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')})")
-            print("* Clear the challenge or repair the account safety ledger, then resume with '--clear-breaker'")
+            print(f"* {breaker_recovery_hint(breaker.get('failure_class', ''))}")
             if signal_loading_complete is not None:
                 signal_loading_complete.set()
             return
@@ -12806,7 +12817,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         if breaker:
             update_ui_data(targets={user: {'status': 'Stopped (breaker)'}})
             print(f"* Monitoring paused for {user}: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')})")
-            print(f"* Clear the challenge in a browser, then resume with '--clear-breaker'\n")
+            print(f"* {breaker_recovery_hint(breaker.get('failure_class', ''))}\n")
             print_cur_ts()
             return
 
