@@ -1549,17 +1549,17 @@ WEB_DASHBOARD_MEDIA_LIMIT = 1000
 
 # ASCII art startup banner (pure ASCII for maximum terminal portability)
 STARTUP_BANNER = r"""
- .-------------.    ___           _
-|  O        .  |   |_ _|_ __  ___| |_ __ _  __ _ _ __ __ _ _ __ ___
-|    .-----.   |    | || '_ \/ __| __/ _` |/ _` | '__/ _` | '_ ` _ \
-|   |  ( )  |  |    | || | | \__ \ || (_| | (_| | | | (_| | | | | | |
-|    '-----'   |   |___|_| |_|___/\__\__,_|\__, |_|  \__,_|_| |_| |_|
- '-------------'                           |___/
-                    __  __             _ _
-                   |  \/  | ___  _ __ (_) |_ ___  _ __
-                   | |\/| |/ _ \| '_ \| | __/ _ \| '__|
-                   | |  | | (_) | | | | | || (_) | |
-                   |_|  |_|\___/|_| |_|_|\__\___/|_|"""
+ .---------------.    ___           _
+|   O        .   |   |_ _|_ __  ___| |_ __ _  __ _ _ __ __ _ _ __ ___
+|     .-----.    |    | || '_ \/ __| __/ _` |/ _` | '__/ _` | '_ ` _ \
+|    |  ( )  |   |    | || | | \__ \ || (_| | (_| | | | (_| | | | | | |
+|     '-----'    |   |___|_| |_|___/\__\__,_|\__, |_|  \__,_|_| |_| |_|
+ '---------------'                           |___/
+                      __  __             _ _
+                     |  \/  | ___  _ __ (_) |_ ___  _ __
+                     | |\/| |/ _ \| '_ \| | __/ _ \| '__|
+                     | |  | | (_) | | | | | || (_) | |
+                     |_|  |_|\___/|_| |_|_|\__\___/|_|"""
 
 
 import sys
@@ -4623,7 +4623,7 @@ def _split_output_label(value, labels):
 # Prints the ASCII art startup banner with the tagline and version, honoring color settings
 def print_startup_banner() -> None:
     print(colorize("header", STARTUP_BANNER))
-    print(colorize("info", f"                   v{VERSION}\n"))
+    print(colorize("info", f"                     v{VERSION}\n"))
 
 
 # Returns enabled email notification category names in display order

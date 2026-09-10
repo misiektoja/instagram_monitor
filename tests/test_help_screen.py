@@ -75,7 +75,7 @@ def test_every_example_command_has_a_comment(help_screen):
 
 # Verifies the help screen shows exactly one startup banner
 def test_help_shows_one_startup_banner(help_screen):
-    assert help_screen.count(" .-------------.") == 1
+    assert help_screen.count(monitor.STARTUP_BANNER.strip("\n").splitlines()[0]) == 1
 
 
 # Verifies the terminal truncation width is settable from the command line, as in the sibling monitors
