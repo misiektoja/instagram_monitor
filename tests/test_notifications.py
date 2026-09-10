@@ -15,7 +15,12 @@ class TestStartupNotificationSummary:
         for name in email_flags + webhook_flags:
             monkeypatch.setattr(im_module, name, True)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", webhook_enabled)
-        assert [(row.label, row.value, row.concise, row.full) for row in im_module._startup_notification_summary_rows()] == [("Notifications (email)", expected_email, True, True), ("Notifications (webhook)", expected_webhook, True, True)]
+        rows = {row.label: (row.value, row.concise, row.full) for row in im_module._startup_notification_summary_rows()}
+        assert rows["Notifications (email)"] == (expected_email, True, True)
+        assert rows["Notifications (webhook)"] == (expected_webhook, True, True)
+        # The detail rows sit next to the channel they describe and stay out of the short view
+        assert [label for label in rows] == ["Notifications (email)", "Email transport", "Email recipient", "Notifications (webhook)", "Webhook provider", "Delivery confirmations"]
+        assert not any(concise for label, (_, concise, _full) in rows.items() if label.startswith(("Email ", "Webhook ", "Delivery ")))
 
     # Verifies compact notification rows color only their On or Off state
     def test_channel_rows_color_on_off_state(self, im_module, monkeypatch):

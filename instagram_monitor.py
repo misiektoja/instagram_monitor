@@ -4688,13 +4688,54 @@ class StartupSummaryRow:
     full: bool = True
 
 
+
+# Returns the webhook destination's host alone, so a row can name it without exposing the private path
+def webhook_destination_host() -> str:
+    try:
+        return urlsplit(str(WEBHOOK_URL or "").strip()).hostname or ""
+    except ValueError:
+        return ""
+
+
+# Hides the middle of an address's local part, so a log can be shared while the reader can still spot a typo
+def mask_email_address(address) -> str:
+    text = str(address or "").strip()
+    local, at_sign, domain = text.partition("@")
+    if not at_sign or not local or not domain:
+        return text
+    masked = f"{local[0]}{'*' * (len(local) - 2)}{local[-1]}" if len(local) > 2 else f"{local[0]}{'*' * (len(local) - 1)}"
+    return f"{masked}@{domain}"
+
+
+# Reports the mail server and the recipient an alert would reach, without the account that signs in to the server
+def _startup_email_detail_rows() -> List["StartupSummaryRow"]:
+    transport = f"{SMTP_HOST}:{SMTP_PORT} ({'STARTTLS' if SMTP_SSL else 'TLS off'})" if SMTP_HOST and SMTP_PORT else "Not configured"
+    return [
+        StartupSummaryRow("Email transport", transport),
+        StartupSummaryRow("Email recipient", mask_email_address(RECEIVER_EMAIL) if RECEIVER_EMAIL else "Not configured"),
+    ]
+
+
+# Reports the webhook service alerts would reach and whether the delivery lines are printed at all
+def _startup_webhook_detail_rows() -> List["StartupSummaryRow"]:
+    if not WEBHOOK_ENABLED or not str(WEBHOOK_URL or "").strip():
+        provider = "Not configured"
+    else:
+        host = webhook_destination_host()
+        details = [host] if host else []
+        if normalized_webhook_provider() == "ntfy":
+            details.append("access token set" if NTFY_ACCESS_TOKEN else "no access token")
+        provider = webhook_provider_display_name() + (f" ({', '.join(details)})" if details else "")
+    return [StartupSummaryRow("Webhook provider", provider), StartupSummaryRow("Delivery confirmations", str(DELIVERY_CONFIRMATIONS))]
+
+
 # Builds notification summary rows shared by concise, verbose and logged views
 def _startup_notification_summary_rows() -> List["StartupSummaryRow"]:
     email_categories = _startup_email_notification_categories()
     webhook_categories = _startup_webhook_notification_categories()
     email_state = "On (" + ", ".join(email_categories) + ")" if email_categories else "Off"
     webhook_state = "On (" + ", ".join(webhook_categories) + ")" if webhook_categories else "Off"
-    return [StartupSummaryRow("Notifications (email)", email_state, concise=True), StartupSummaryRow("Notifications (webhook)", webhook_state, concise=True)]
+    return [StartupSummaryRow("Notifications (email)", email_state, concise=True), *_startup_email_detail_rows(), StartupSummaryRow("Notifications (webhook)", webhook_state, concise=True), *_startup_webhook_detail_rows()]
 
 
 # Builds the startup row for TLS verification, shown in the concise view only while the check is off
@@ -4707,6 +4748,9 @@ def _startup_tls_summary_row() -> "StartupSummaryRow":
 def _startup_environment_rows(env_path) -> List["StartupSummaryRow"]:
     from_file, from_environment, from_settings, from_command_line = doctor_secret_sources(env_path)
     return [
+        StartupSummaryRow("Process id", str(os.getpid())),
+        StartupSummaryRow("Python version", platform.python_version()),
+        StartupSummaryRow("Operating system", f"{platform.platform(terse=True)} ({platform.machine()})"),
         StartupSummaryRow("Local timezone", str(LOCAL_TIMEZONE)),
         StartupSummaryRow("12h time format", str(TIME_FORMAT_12H)),
         StartupSummaryRow("Install method", install_method_display_name()),
@@ -5983,7 +6027,7 @@ def send_notification_channels(notification_type, subject, body, body_html="", e
         email_delivered = send_email(subject, body, body_html, SMTP_SSL, image_file=email_image_file, image_name=email_image_name) == 0
         debug_print("Email channel", event=notification_type, outcome="OK" if email_delivered else "failed")
     if webhook_attempted:
-        print("Sending webhook notification")
+        print(f"Sending webhook notification via {webhook_provider_display_name()}")
         webhook_delivered = send_webhook(subject if webhook_title is None else webhook_title, body if webhook_description is None else webhook_description, color=webhook_color, fields=webhook_fields, image_url=image_url, local_image_file=local_image_file, notification_type=notification_type, force=True) == 0
         debug_print("Webhook channel", event=notification_type, outcome="OK" if webhook_delivered else "failed")
     # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
@@ -17993,7 +18037,7 @@ def run_main():
     output_state = FINAL_LOG_PATH if not DISABLE_LOGGING else "Terminal only (logging disabled)"
     summary_rows.append(StartupSummaryRow("Output", str(output_state), concise=True, full=False))
     summary_rows.append(StartupSummaryRow("Output logging", str(FINAL_LOG_PATH) if not DISABLE_LOGGING else "Disabled"))
-    summary_rows.append(StartupSummaryRow("Config", str(cfg_path) if cfg_path else "None", concise=True))
+    summary_rows.append(StartupSummaryRow("Config", str(cfg_path) if cfg_path else ("Discovery disabled" if CONFIG_DISCOVERY_DISABLED else "None"), concise=True))
     summary_rows.append(StartupSummaryRow("Dotenv", str(env_path) if env_path else "None", concise=True))
 
     if OUTPUT_DIR:
