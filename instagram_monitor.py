@@ -15128,6 +15128,7 @@ def _wizard_collect_connection_section(state: WizardSetupState) -> None:
         source_options = [("Auto", "Read over the REST endpoints Instagram's own web app calls.\nRetry over GraphQL only when REST is missing or unreadable and nothing was returned yet."), ("REST only", "Report the error instead of retrying on the other surface."), ("GraphQL only", "The older queries, which is what versions before 4.0 used.")]
         state.config_values["FOLLOW_LIST_SOURCE"] = ("auto", "rest", "graphql")[_wizard_ask_choice("Where should follower and following lists be read from?", source_options, default_index=0)]
 
+
 # Lets the user change file destinations and recollects secret-dependent sections when needed
 def _wizard_collect_destination_section(state: WizardSetupState, method: str) -> None:
     while True:
@@ -15170,6 +15171,9 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
     backend_summary = str(state.config_values.get("HTTP_BACKEND") or "curl_cffi")
     if backend_summary == "curl_cffi":
         backend_summary += f" impersonating {state.config_values.get('CURL_CFFI_IMPERSONATE') or 'auto'}"
+        # The answer is still saved, so the review has to show the setting and what it would do until the package is there
+        if not _CURL_CFFI_AVAILABLE:
+            backend_summary += " - not installed here, so requests is used until you install it"
     rows = [
         ("Targets", target_summary),
         ("Persist targets", "yes" if state.persist_targets else "no"),

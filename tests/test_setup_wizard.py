@@ -753,6 +753,46 @@ def test_the_summary_names_the_connection_answers(im_module, monkeypatch, capsys
         assert "Follower list source:" in summary and "rest" in summary
 
 
+# Verifies the last screen before saving does not claim a transport that would fall back
+def test_the_summary_names_the_curl_cffi_fallback(im_module, monkeypatch, capsys):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
+        state.config_values.update({"HTTP_BACKEND": "curl_cffi", "CURL_CFFI_IMPERSONATE": "auto"})
+
+        im_module._wizard_print_setup_summary(state, "manual")
+
+        summary = capsys.readouterr().out
+        assert "curl_cffi impersonating auto" in summary
+        assert "not installed here" in summary and "requests is used" in summary
+
+
+# Verifies an installed curl_cffi is reported without a fallback note that does not apply
+def test_the_summary_omits_the_fallback_when_curl_cffi_is_installed(im_module, monkeypatch, capsys):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        state.config_values.update({"HTTP_BACKEND": "curl_cffi", "CURL_CFFI_IMPERSONATE": "auto"})
+
+        im_module._wizard_print_setup_summary(state, "manual")
+
+        assert "not installed here" not in capsys.readouterr().out
+
+
+# Verifies a chosen requests transport carries no impersonation or fallback wording
+def test_the_summary_reports_the_requests_transport_plainly(im_module, monkeypatch, capsys):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
+        state.config_values.update({"HTTP_BACKEND": "requests"})
+
+        im_module._wizard_print_setup_summary(state, "manual")
+
+        summary = capsys.readouterr().out
+        assert "HTTP backend:" in summary and "requests" in summary
+        assert "impersonating" not in summary and "not installed here" not in summary
+
+
 # Verifies no-login setup is not shown a follower list row for lists it never fetches
 def test_the_summary_hides_the_list_source_without_a_session(im_module, capsys):
     with make_test_directory() as directory_name:
