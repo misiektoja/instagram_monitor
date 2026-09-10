@@ -2033,7 +2033,7 @@ def _curl_cffi_backend_active() -> bool:
     global _CURL_CFFI_UNAVAILABLE_WARNED
     active = curl_cffi_backend_active()
     if not active and str(HTTP_BACKEND).strip().lower() == "curl_cffi" and not _CURL_CFFI_UNAVAILABLE_WARNED:
-        print(render_recovery_error(missing_dependency_advice("curl_cffi", "HTTP_BACKEND is 'curl_cffi' but the 'requests' backend is used instead", pip_install_command("curl_cffi")), label="Warning"))
+        print(render_recovery_advice(missing_dependency_advice("curl_cffi", "HTTP_BACKEND is 'curl_cffi' but the 'requests' backend is used instead", pip_install_command("curl_cffi")), label="Warning"))
         _CURL_CFFI_UNAVAILABLE_WARNED = True
     return active
 
@@ -3169,7 +3169,7 @@ def create_web_dashboard_app():
                         print_recovery_error(f"Invalid HTTP backend '{processed_val}'. It must be 'curl_cffi' or 'requests'", context="config")
                         return current_val
                     if processed_val == 'curl_cffi' and not _CURL_CFFI_AVAILABLE:
-                        print(render_recovery_error(missing_dependency_advice("curl_cffi", "The curl_cffi backend cannot be selected", pip_install_command("curl_cffi"))))
+                        print(render_recovery_advice(missing_dependency_advice("curl_cffi", "The curl_cffi backend cannot be selected", pip_install_command("curl_cffi"))))
                         return current_val
 
                 if key == "webhook_url":
@@ -4099,7 +4099,7 @@ def start_web_dashboard_server():
     except Exception as e:
         # create_web_dashboard_app() already prints nice error messages, but catch any unexpected errors
         print()
-        print_recovery_error(f"The Web Dashboard application could not be created: {e}", e, context="dashboard")
+        print_recovery_error(e, context="dashboard", summary=f"The Web Dashboard application could not be created: {e}")
         return False
 
     def run_server():
@@ -5025,7 +5025,7 @@ class Logger(object):
             try:
                 self.main_log = open(main_filename, "a", buffering=1, encoding="utf-8")
             except Exception as e:
-                print(render_recovery_error(classify_recovery_error(e, "file_write"), f"Could not open main log file '{main_filename}': {e}"), file=sys.stderr)
+                print(render_recovery_advice(classify_recovery_error(e, "file_write"), summary=f"Could not open main log file '{main_filename}': {e}"), file=sys.stderr)
 
     # Adds or replaces the lazy log destination for one target
     def add_target_log(self, target, filename):
@@ -5058,7 +5058,7 @@ class Logger(object):
                 self.target_logs[target] = handle
                 return handle
             except Exception as e:
-                print(render_recovery_error(classify_recovery_error(e, "file_write"), f"Could not open log file '{filename}' for target '{target}': {e}"), file=sys.stderr)
+                print(render_recovery_advice(classify_recovery_error(e, "file_write"), summary=f"Could not open log file '{filename}' for target '{target}': {e}"), file=sys.stderr)
         return None
 
     def _get_current_target(self):
@@ -5482,7 +5482,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
         smtpObj.quit()
     except Exception as e:
-        print_recovery_error(f"Error sending email: {e}", e, context="email")
+        print_recovery_error(e, context="email", summary=f"Error sending email: {e}")
         return 1
     verbose_print(f"Email delivered to {RECEIVER_EMAIL}: {subject}")
     return 0
@@ -5680,7 +5680,7 @@ def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), f"Removed {change_type.capitalize()}", item, "")
                 except Exception as e:
-                    print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+                    print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
             print()
 
         if added:
@@ -5698,7 +5698,7 @@ def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), f"Added {change_type.capitalize()}", "", item)
                 except Exception as e:
-                    print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+                    print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
             print()
 
     return (added_list, removed_list, added_list_html, removed_list_html, added_list_webhook, removed_list_webhook, added_mbody, removed_mbody)
@@ -6016,7 +6016,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         if isinstance(final_payload, dict):
             final_payload["allowed_mentions"] = {"parse": []}
     except Exception as exc:
-        print_recovery_error(f"The webhook payload could not be built: {sanitize_webhook_error_text(exc)}", exc, context="webhook")
+        print_recovery_error(exc, context="webhook", summary=f"The webhook payload could not be built: {sanitize_webhook_error_text(exc)}")
         return 1
 
     if PROXY_ENABLED and PROXY_WEBHOOKS:
@@ -6089,16 +6089,16 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                 time.sleep(WEBHOOK_FALLBACK_RETRY_SECONDS)
                 continue
             if attempt == WEBHOOK_MAX_ATTEMPTS - 1:
-                print_recovery_error(f"Sending the webhook failed: {sanitize_webhook_error_text(exc)}", exc, context="webhook")
+                print_recovery_error(exc, context="webhook", summary=f"Sending the webhook failed: {sanitize_webhook_error_text(exc)}")
                 return 1
             debug_print("Webhook delivery", outcome="failed", retry_in=f"{WEBHOOK_FALLBACK_RETRY_SECONDS:g}s", error=sanitize_webhook_error_text(exc))
             time.sleep(WEBHOOK_FALLBACK_RETRY_SECONDS)
         except Exception as exc:
-            print_recovery_error(f"Sending the webhook failed: {sanitize_webhook_error_text(exc)}", exc, context="webhook")
+            print_recovery_error(exc, context="webhook", summary=f"Sending the webhook failed: {sanitize_webhook_error_text(exc)}")
             return 1
 
     if last_error is not None:
-        print_recovery_error(f"Sending the webhook failed: {sanitize_webhook_error_text(last_error)}", last_error, context="webhook")
+        print_recovery_error(last_error, context="webhook", summary=f"Sending the webhook failed: {sanitize_webhook_error_text(last_error)}")
     return 1
 
 
@@ -6308,7 +6308,7 @@ def refresh_proxy_if_needed(bot, user):
             set_instaloader_proxies(bot)
         except Exception as e:
             error_msg = format_error_message(e)
-            print_recovery_error(f"Error refreshing proxies for {user}: {error_msg}", e, context="proxy")
+            print_recovery_error(e, context="proxy", summary=f"Error refreshing proxies for {user}: {error_msg}")
             log_activity(f"Proxy refresh failed: {error_msg}", user=user, level='error')
 
 
@@ -7016,7 +7016,7 @@ def compare_images(file1, file2):
                     return False
             return True
     except Exception as e:
-        print_recovery_error(f"Error while comparing profile pictures: {e}", e)
+        print_recovery_error(e, summary=f"Error while comparing profile pictures: {e}")
         return False
 
 
@@ -7063,7 +7063,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 if csv_file_name and not is_empty_profile_pic:
                     write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Created", "", convert_to_local_naive(profile_pic_mdate_dt))
             except Exception as e:
-                print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+                print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
         else:
             print(f"* Error saving profile picture !{new_line}")
 
@@ -7143,7 +7143,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                         else:
                             write_csv_entry(csv_file_name, now_local_naive(), csv_text, convert_to_local_naive(profile_pic_mdate_dt), convert_to_local_naive(profile_pic_tmp_mdate_dt))
                 except Exception as e:
-                    print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+                    print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
                 try:
                     if imgcat_exe and not is_empty_profile_pic_tmp and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
@@ -7160,7 +7160,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                         os.replace(profile_pic_file, profile_pic_file_old)
                     os.replace(profile_pic_file_tmp, profile_pic_file)
                 except Exception as e:
-                    print_recovery_error(f"Error while replacing/copying files: {e}", e, context="file_write")
+                    print_recovery_error(e, context="file_write", summary=f"Error while replacing/copying files: {e}")
 
                 if send_email_notification and m_subject and m_body:
                     print(f"* Sending email notification to {RECEIVER_EMAIL}")
@@ -7500,7 +7500,7 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
         try:
             write_csv_entry(csv_file_name, convert_to_local_naive(post_dt), f"New Leaked Collab {source.capitalize()}", "", caption if caption != "(empty)" else post_url)
         except Exception as e:
-            print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+            print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
     if is_new:
         webhook_fields = [
@@ -9996,6 +9996,8 @@ def is_too_many_open_files(error: Any) -> bool:
 
 # Classifies one failure into code-carrying advice, so every surface explains the same problem the same way
 def classify_recovery_error(error: Any = None, context: str = "runtime", detail: str = "", is_logged_in: Optional[bool] = None) -> RecoveryAdvice:
+    if isinstance(error, RecoveryError):
+        return error.advice
     # Both parts are read, since a call site that adds context must not hide the text the rules match on
     message = " ".join(part for part in (str(detail or ""), str(error or "")) if part).casefold()
     safe_detail = sanitize_error_text(detail or error)
@@ -10233,22 +10235,37 @@ def print_fix_hint(error_msg: str, tracker: Optional[RecoveryHintTracker] = None
     return bool(hint)
 
 
-# Renders one classified failure as the shared summary and To fix block every surface prints
-def render_recovery_error(advice: RecoveryAdvice, summary: str = "", label: str = "Error", debug: Optional[bool] = None) -> str:
+# Returns the headline a caller supplied as text, so a raw exception still falls back to the classified summary
+def caller_summary(error: Any) -> str: return sanitize_error_text(error) if isinstance(error, str) else ""
+
+
+# Renders one built advice as the shared Error, To fix and optional Technical detail block
+def render_recovery_advice(advice: RecoveryAdvice, debug: Optional[bool] = None, retry_note: str = "", with_fix: bool = True, label: str = "Error", summary: str = "") -> str:
     headline = sanitize_error_text(summary) if summary else advice.summary
-    lines = [f"* {label}: {headline}"]
-    if advice.fix:
+    lines = [f"* {label}: {headline}" + (f" ({retry_note})" if retry_note else "")]
+    if with_fix and advice.fix:
         lines.append(colorize("info", f"To fix: {advice.fix}"))
     # A detail that only repeats a line already printed spends a line saying nothing
-    if (DEBUG_MODE if debug is None else debug) and advice.detail and advice.detail not in (headline, advice.summary):
+    if with_fix and (DEBUG_MODE if debug is None else debug) and advice.detail and advice.detail not in (headline, advice.summary):
         lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
     return "\n".join(lines)
 
 
-# Reports one failure through the recovery block, keeping the caller's own summary in front of the classified fix
-def print_recovery_error(summary: str = "", error: Any = None, context: str = "runtime", detail: str = "", label: str = "Error") -> RecoveryAdvice:
-    advice = classify_recovery_error(error, context, detail)
-    print(render_recovery_error(advice, summary, label))
+# Classifies one failure and renders it through the shared recovery block
+def render_recovery_error(error: Any = None, context: str = "runtime", debug: Optional[bool] = None, detail: str = "", retry_note: str = "", with_fix: bool = True, label: str = "Error", summary: str = "", is_logged_in: Optional[bool] = None) -> str:
+    return render_recovery_advice(classify_recovery_error(error, context, detail, is_logged_in), debug, retry_note, with_fix, label, summary or caller_summary(error))
+
+
+# Prints one built advice through the shared recovery block and returns it
+def print_recovery_advice(advice: RecoveryAdvice, debug: Optional[bool] = None, retry_note: str = "", with_fix: bool = True, label: str = "Error", summary: str = "") -> RecoveryAdvice:
+    print(render_recovery_advice(advice, debug, retry_note, with_fix, label, summary))
+    return advice
+
+
+# Classifies one failure, prints it through the shared recovery block and returns its stable advice
+def print_recovery_error(error: Any = None, context: str = "runtime", debug: Optional[bool] = None, detail: str = "", retry_note: str = "", with_fix: bool = True, label: str = "Error", summary: str = "", is_logged_in: Optional[bool] = None) -> RecoveryAdvice:
+    advice = classify_recovery_error(error, context, detail, is_logged_in)
+    print(render_recovery_advice(advice, debug, retry_note, with_fix, label, summary or caller_summary(error)))
     return advice
 
 
@@ -12122,7 +12139,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         if session_flagged:
             err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
             update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
-            print_recovery_error(err_str, error_msg)
+            print_recovery_error(error_msg, summary=err_str)
 
             # A flag is terminal for every target, so alert the operator immediately regardless of ERROR_FAILURE_THRESHOLD
             notify_session_flagged(user, err_str, error_msg)
@@ -12270,7 +12287,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             with open(insta_followers_file, 'r', encoding="utf-8") as f:
                 followers_read = json.load(f)
         except Exception as e:
-            print_recovery_error(f"Cannot load followers list from '{insta_followers_file}' file: {e}", e, context="file_read")
+            print_recovery_error(e, context="file_read", summary=f"Cannot load followers list from '{insta_followers_file}' file: {e}")
         if followers_read:
             followers_old_count = followers_read[0]
             followers_old = followers_read[1]
@@ -12306,7 +12323,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 if csv_file_name:
                     write_csv_entry(csv_file_name, now_local_naive(), "Followers Count", followers_old_count, followers_count)
             except Exception as e:
-                print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+                print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
     if ((followers_count != followers_old_count) or (followers_count > 0 and not followers) or FOLLOWERS_CHURN_DETECTION) and not skip_session and not skip_followers and can_view:
         # Fetch followers if count changed, list is empty or detailed logging is enabled
@@ -12365,7 +12382,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 else:
                     print(f"* Followers ({followers_count}) actual ({len(followers)}) saved to file '{insta_followers_file}'")
             except Exception as e:
-                print_recovery_error(f"Cannot save list of followers to '{insta_followers_file}' file: {e}", e, context="file_write")
+                print_recovery_error(e, context="file_write", summary=f"Cannot save list of followers to '{insta_followers_file}' file: {e}")
 
     # Compare followers: either count changed OR detailed logging detected a difference
     should_compare_followers = is_complete_username_baseline(followers, followers_count) and followers_baseline_available and ((followers_count != followers_old_count) or (FOLLOWERS_CHURN_DETECTION and followers != followers_old))
@@ -12420,7 +12437,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             with open(insta_followings_file, 'r', encoding="utf-8") as f:
                 followings_read = json.load(f)
         except Exception as e:
-            print_recovery_error(f"Cannot load followings list from '{insta_followings_file}' file: {e}", e, context="file_read")
+            print_recovery_error(e, context="file_read", summary=f"Cannot load followings list from '{insta_followings_file}' file: {e}")
         if followings_read:
             followings_old_count = followings_read[0]
             followings_old = followings_read[1]
@@ -12455,7 +12472,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 if csv_file_name:
                     write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
             except Exception as e:
-                print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+                print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
     if ((followings_count != followings_old_count) or (followings_count > 0 and not followings) or FOLLOWERS_CHURN_DETECTION) and not skip_session and not skip_followings and can_view:
         # Fetch followings if count changed, list is empty or detailed logging is enabled
@@ -12514,7 +12531,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 else:
                     print(f"* Followings ({followings_count}) actual ({len(followings)}) saved to file '{insta_followings_file}'")
             except Exception as e:
-                print_recovery_error(f"Cannot save list of followings to '{insta_followings_file}' file: {e}", e, context="file_write")
+                print_recovery_error(e, context="file_write", summary=f"Cannot save list of followings to '{insta_followings_file}' file: {e}")
 
     should_compare_followings = is_complete_username_baseline(followings, followings_count) and followings_baseline_available and ((followings_count != followings_old_count) or (FOLLOWERS_CHURN_DETECTION and followings != followings_old))
     if should_compare_followings and (followings != followings_old) and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
@@ -12589,7 +12606,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         try:
             detect_changed_profile_picture(user, profile_image_url, profile_pic_file, profile_pic_file_tmp, profile_pic_file_old, PROFILE_PIC_FILE_EMPTY, csv_file_name, r_sleep_time, False, 1)
         except Exception as e:
-            print_recovery_error(f"Error while processing changed profile picture: {e}", e)
+            print_recovery_error(e, summary=f"Error while processing changed profile picture: {e}")
 
     # Stories
 
@@ -12700,7 +12717,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             if csv_file_name:
                                 write_csv_entry(csv_file_name, convert_to_local_naive(local_dt), "New Story Item", "", story_type)
                         except Exception as e:
-                            print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+                            print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
                         # Update last_story for dashboard (this loop runs from oldest to newest usually, so we update on each)
                         dashboard_media = get_dashboard_media_metadata(story_thumbnail_url, story_image_filename, story_video_filename)
@@ -12823,7 +12840,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
         except Exception as e:
             error_msg = format_error_message(e)
-            print_recovery_error(f"Error while getting post's likes list / comments list: {error_msg}", error_msg)
+            print_recovery_error(error_msg, summary=f"Error while getting post's likes list / comments list: {error_msg}")
 
         post_url = f"https://www.instagram.com/{'reel' if last_source == 'reel' else 'p'}/{shortcode}/"
         print(f"* Newest {last_source.lower()} for user {user}:\n")
@@ -13354,7 +13371,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             if csv_file_name:
                                 write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
                         except Exception as e:
-                            print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+                            print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
                 added_followings_list = ""
                 removed_followings_list = ""
@@ -13411,7 +13428,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         close_pbar()
                         followings = followings_old
                         error_msg = format_error_message(e)
-                        print_recovery_error(f"Error while processing followings: {error_msg}", error_msg)
+                        print_recovery_error(error_msg, summary=f"Error while processing followings: {error_msg}")
 
                     if not getattr(followings, 'complete', False) or (not followings and followings_count > 0):
                         followings = followings_old
@@ -13503,7 +13520,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             if csv_file_name:
                                 write_csv_entry(csv_file_name, now_local_naive(), "Followers Count", followers_old_count, followers_count)
                         except Exception as e:
-                            print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+                            print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
                 added_followers_list = ""
                 removed_followers_list = ""
@@ -13560,7 +13577,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         close_pbar()
                         followers = followers_old
                         error_msg = format_error_message(e)
-                        print_recovery_error(f"Error while processing followers: {error_msg}", error_msg)
+                        print_recovery_error(error_msg, summary=f"Error while processing followers: {error_msg}")
 
                     if not getattr(followers, 'complete', False) or (not followers and followers_count > 0):
                         followers = followers_old
@@ -13636,7 +13653,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 try:
                     detect_changed_profile_picture(user, profile_image_url, profile_pic_file, profile_pic_file_tmp, profile_pic_file_old, PROFILE_PIC_FILE_EMPTY, csv_file_name, r_sleep_time, STATUS_NOTIFICATION, 2)
                 except Exception as e:
-                    print_recovery_error(f"Error while processing changed profile picture: {e}", e)
+                    print_recovery_error(e, summary=f"Error while processing changed profile picture: {e}")
 
             if bio != bio_old:
                 print(f"* Bio changed for user {user} !\n")
@@ -13651,7 +13668,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "Bio Changed", bio_old, bio)
                 except Exception as e:
-                    print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+                    print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
                 if STATUS_NOTIFICATION:
                     m_subject = f"Instagram user {user} bio has changed!"
@@ -13695,7 +13712,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "Profile Visibility", profile_visibility_old, profile_visibility)
                 except Exception as e:
-                    print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+                    print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
                 if STATUS_NOTIFICATION:
                     m_subject = f"Instagram user {user} profile visibility has changed to {profile_visibility} !"
@@ -13732,7 +13749,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "Followed By Viewer", followed_by_viewer_old, followed_by_viewer)
                 except Exception as e:
-                    print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+                    print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
                 if STATUS_NOTIFICATION:
                     m_subject = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user} !"
@@ -13765,7 +13782,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "New Story", "", "")
                 except Exception as e:
-                    print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+                    print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
                 if STATUS_NOTIFICATION:
                     m_subject = f"Instagram user {user} has a new story!"
@@ -13900,7 +13917,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                                 if csv_file_name:
                                     write_csv_entry(csv_file_name, convert_to_local_naive(local_dt), "New Story Item", "", story_type)
                             except Exception as e:
-                                print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+                                print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
                             send_story_item_notifications(user, story_type, local_ts, expire_ts, story_mentions, story_hashtags, story_caption, r_sleep_time, story_thumbnail_url, story_image_filename)
 
@@ -13931,7 +13948,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                 except Exception as e:
                     error_msg = format_error_message(e)
-                    print_recovery_error(f"Error while processing story items: {error_msg}", error_msg)
+                    print_recovery_error(error_msg, summary=f"Error while processing story items: {error_msg}")
                     print_cur_ts(newline=True)
 
             new_post = False
@@ -14051,7 +14068,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                                 post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
                 except Exception as e:
                     error_msg = format_error_message(e)
-                    print_recovery_error(f"Error while getting post's likes list / comments list: {error_msg}", error_msg)
+                    print_recovery_error(error_msg, summary=f"Error while getting post's likes list / comments list: {error_msg}")
 
                 video_filename = None
                 image_filename = None
@@ -14130,7 +14147,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         if csv_file_name:
                             write_csv_entry(csv_file_name, convert_to_local_naive(highestinsta_dt), f"New {last_source.capitalize()}", "", pcaption)
                     except Exception as e:
-                        print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
+                        print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
                     if STATUS_NOTIFICATION:
                         m_subject = f"Instagram user {user} has a new {last_source.lower()} - {get_short_date_from_ts(highestinsta_dt)} (after {calculate_timespan(highestinsta_dt, highestinsta_dt_old, show_seconds=False)} - {get_short_date_from_ts(highestinsta_dt_old)})"
@@ -16640,10 +16657,10 @@ def run_main():
                 try:
                     backup_path, written = write_generated_config(output_file, config_content, force="--force" in sys.argv)
                 except FileExistsError as exc:
-                    print_recovery_error(str(exc), exc, context="file_exists")
+                    print_recovery_error(exc, context="file_exists", summary=str(exc))
                     sys.exit(1)
                 except (OSError, ValueError) as exc:
-                    print_recovery_error(f"Could not write config file '{output_file}': {type(exc).__name__}: {exc}", exc, context="config_write")
+                    print_recovery_error(exc, context="config_write", summary=f"Could not write config file '{output_file}': {type(exc).__name__}: {exc}")
                     sys.exit(1)
                 if not written:
                     print("Config was not replaced. The existing file is unchanged")
@@ -17350,7 +17367,7 @@ def run_main():
         except ImportError:
             env_path = DOTENV_FILE if DOTENV_FILE else None
             if env_path:
-                print(render_recovery_error(missing_dependency_advice("python-dotenv", f"The dotenv file '{env_path}' cannot be loaded", pip_install_command("python-dotenv")), label="Warning"))
+                print(render_recovery_advice(missing_dependency_advice("python-dotenv", f"The dotenv file '{env_path}' cannot be loaded", pip_install_command("python-dotenv")), label="Warning"))
 
     # Environment variables are a documented alternative to a dotenv file, so they apply even when no file was loaded
     for secret in SECRET_KEYS:
@@ -18069,14 +18086,14 @@ def run_main():
     if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
         if DASHBOARD_ENABLED and not RICH_AVAILABLE:
             print("\n" + "*" * HORIZONTAL_LINE)
-            print(render_recovery_error(missing_dependency_advice("rich", "The Terminal Dashboard cannot start", pip_install_command("rich")), label="WARNING"))
+            print(render_recovery_advice(missing_dependency_advice("rich", "The Terminal Dashboard cannot start", pip_install_command("rich")), label="WARNING"))
             print("* Reverting to original text console...")
             print("*" * HORIZONTAL_LINE)
             DASHBOARD_ENABLED = False
 
         if WEB_DASHBOARD_ENABLED and not FLASK_AVAILABLE:
             print("\n" + "*" * HORIZONTAL_LINE)
-            print(render_recovery_error(missing_dependency_advice("Flask", "The Web Dashboard cannot start", pip_install_command("flask")), label="WARNING"))
+            print(render_recovery_advice(missing_dependency_advice("Flask", "The Web Dashboard cannot start", pip_install_command("flask")), label="WARNING"))
             print("* Web Dashboard will NOT be available!")
             print("*" * HORIZONTAL_LINE)
 
@@ -18337,7 +18354,7 @@ def run_main():
             except Exception as e:
                 # Surface thread exceptions so the user sees them
                 error_msg = format_error_message(e)
-                print_recovery_error(f"Error in target '{u}': {error_msg}", error_msg)
+                print_recovery_error(error_msg, summary=f"Error in target '{u}': {error_msg}")
                 traceback.print_exc()
                 # Still signal completion even on error, so next user can proceed
                 loading_events[idx + 1].set()
