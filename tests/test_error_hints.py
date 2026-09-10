@@ -1,5 +1,6 @@
 """Tests for the action-oriented error hint classifier (no network)."""
 
+import ast
 import inspect
 import smtplib
 
@@ -31,9 +32,13 @@ class TestErrorFixHint:
         assert fix[:1].isupper()
         assert not fix.endswith(".")
 
+    # An unrecognized failure is still a failure the user has to act on, so it names the one action that always applies
     @pytest.mark.parametrize("msg", ["", None, "SomethingElse: totally unknown error"])
-    def test_unknown_errors_return_empty(self, im_module, msg):
-        assert im_module.error_fix_hint(msg) == ""
+    def test_unknown_errors_still_name_an_action(self, im_module, msg):
+        hint = im_module.error_fix_hint(msg)
+
+        assert hint.startswith("To fix: Re-run with --debug")
+        assert im_module.DIAGNOSTICS_GUIDE_URL in hint
 
     def test_session_file_takes_priority_over_not_found(self, im_module):
         # A missing session file should give the session hint, not the profile-not-found hint
@@ -176,10 +181,19 @@ class TestErrorSummary:
     def test_known_errors_get_a_stable_summary(self, im_module, msg, summary):
         assert im_module.classify_error_message(msg)[0] == summary
 
-    def test_an_unknown_error_still_gets_a_summary_without_a_fix(self, im_module):
+    def test_an_unknown_error_gets_a_summary_a_fix_and_a_page(self, im_module):
         summary, fix, guide = im_module.classify_error_message("SomethingElse: totally unknown error")
         assert summary == "An unexpected error stopped the requested action"
-        assert (fix, guide) == ("", "")
+        assert fix == "Re-run with --debug to see the technical cause"
+        assert guide == im_module.DIAGNOSTICS_GUIDE_URL
+
+    # A doctor row is built from the same classification, and a row with no fix is refused outright
+    def test_an_unrecognized_failure_does_not_break_a_doctor_row(self, im_module):
+        check = im_module.doctor_check_from_error("Session", "FAIL", "", "SomethingElse: totally unknown error")
+
+        assert check.status == "FAIL"
+        assert check.fix == "Re-run with --debug to see the technical cause"
+        assert check.guide == im_module.DIAGNOSTICS_GUIDE_URL
 
     # Verifies the doctor row label comes from the classifier so no raw exception text reaches it
     def test_a_doctor_row_without_a_label_uses_the_summary(self, im_module):
@@ -322,9 +336,9 @@ class TestOutageReporting:
 
         assert im_module.print_fix_hint("ConnectionException: 429 Too Many Requests", tracker) is True
         assert im_module.print_fix_hint("ConnectionException: 429 Too Many Requests", tracker) is False
-        assert im_module.print_fix_hint("SomethingElse: totally unknown error") is False
+        assert im_module.print_fix_hint("SomethingElse: totally unknown error") is True
 
-        assert capsys.readouterr().out.count("To fix: ") == 1
+        assert capsys.readouterr().out.count("To fix: ") == 2
 
     # The session hint is suppressed when the classifier already printed a fix for the same failure
     def test_the_session_hint_gives_way_to_a_classified_fix(self, im_module):
@@ -333,7 +347,7 @@ class TestOutageReporting:
         source = module_source[start:module_source.index("\ndef ", start)]
 
         assert "fix_hint_printed = print_fix_hint(error_msg, recovery_hint_tracker)" in source
-        assert "if not fix_hint_printed and outage_outcome in (\"full\", \"repeat\") and (" in source
+        assert "if (not fix_hint_printed or advice.code == \"unknown\") and outage_outcome in (\"full\", \"repeat\") and (" in source
         assert source.count("session_recovery_command()") == 2
 
     # The liveness banner explains itself without --verbose, so a plain run never prints a bare timestamp
@@ -356,3 +370,82 @@ class TestOutageReporting:
         assert 'print_liveness_banner(f"Monitoring healthy for {user}.' in source
         assert 'verbose_print(f"Monitoring healthy' not in source, "the healthy banner is no longer verbose-only"
         assert "int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS" in source, "the healthy banner is timed rather than counted"
+
+
+# Every failure the user can see is built from one closed set of codes, so a message stays testable and deduplicable
+class TestRecoveryCodeSet:
+    def test_recovery_codes_are_stable(self, im_module):
+        assert im_module.RECOVERY_CODES == frozenset({
+            "instagram.rate_limited", "instagram.challenge", "instagram.empty_data",
+            "session.missing", "session.expired",
+            "target.not_found",
+            "config.impersonate_unsupported",
+            "proxy.unresolved",
+            "network.dns", "network.unavailable",
+            "unknown",
+        })
+
+    def test_a_code_outside_the_set_is_refused(self, im_module):
+        with pytest.raises(ValueError, match="Unsupported recovery code"):
+            im_module.make_recovery_advice("instagram.invented", "summary", "fix", False)
+
+    # A declared code nothing can produce is a dead branch, so every one is driven from a real failure message
+    def test_every_declared_code_is_reachable(self, im_module):
+        messages = [
+            "ConnectionException: 429 Too Many Requests",
+            "JSONDecodeError: challenge_required",
+            "FileNotFoundError: Instagram session file for me not found",
+            "ConnectionException: Login required, redirected",
+            "ProfileNotExistsException: Profile xyz does not exist",
+            "RuntimeError: impersonate target chrome999 is not supported",
+            "ConnectionException: Could not resolve proxy: myproxy.local",
+            "ConnectionException: Could not resolve host: www.instagram.com",
+            "ConnectionException: HTTPSConnectionPool max retries exceeded",
+            "RuntimeError: Instagram returned empty data for posts",
+            "SomethingElse: totally unknown error",
+        ]
+        produced = {im_module.classify_recovery_error(message).code for message in messages}
+
+        assert im_module.RECOVERY_CODES - produced == set()
+
+    # Every branch of the rule table names the page that covers it, so no failure leaves the user without somewhere to read
+    def test_every_failure_names_a_page(self, im_module):
+        guideless = []
+        for node in ast.walk(ast.parse(inspect.getsource(im_module.classify_error_parts))):
+            if not isinstance(node, ast.Return) or not isinstance(node.value, ast.Tuple):
+                continue
+            guide = node.value.elts[3]
+            if not (isinstance(guide, ast.Name) and guide.id.endswith("_GUIDE_URL")):
+                guideless.append(ast.unparse(node.value.elts[0]))
+
+        assert guideless == []
+
+    # The guard above is only worth its name while it still finds the returns it inspects
+    def test_the_guide_guard_still_inspects_the_rule_table(self, im_module):
+        rows = []
+        for node in ast.walk(ast.parse(inspect.getsource(im_module.classify_error_parts))):
+            if isinstance(node, ast.Return) and isinstance(node.value, ast.Tuple):
+                rows.append(node.value)
+
+        assert len(rows) == len(im_module.RECOVERY_CODES)
+        assert all(len(row.elts) == 5 for row in rows)
+
+    # Whether waiting can clear a failure decides what the tool says next, so it is carried rather than re-derived
+    @pytest.mark.parametrize("msg, retryable", [
+        ("ConnectionException: 429 Too Many Requests", True),
+        ("ConnectionException: HTTPSConnectionPool max retries exceeded", True),
+        ("ConnectionException: Login required, redirected", False),
+        ("ProfileNotExistsException: Profile xyz does not exist", False),
+        ("ConnectionException: Could not resolve proxy: myproxy.local", False),
+    ])
+    def test_a_failure_says_whether_retrying_can_clear_it(self, im_module, msg, retryable):
+        assert im_module.classify_recovery_error(msg).retryable is retryable
+
+    # Advice reaches the console, the log and the alert channels, so no secret the run holds may travel with it
+    def test_a_secret_never_travels_in_advice_text(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/topsecrettoken")
+
+        advice = im_module.make_recovery_advice("unknown", "Posting to https://discord.com/api/webhooks/1/topsecrettoken failed", "Check the address", False, "SMTP_PASSWORD=hunter2pass")
+
+        assert "topsecrettoken" not in advice.summary
+        assert "hunter2pass" not in advice.detail

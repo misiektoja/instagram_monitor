@@ -1481,6 +1481,7 @@ DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
 SECRETS_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#storing-secrets"
 DIAGNOSTICS_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#choosing-the-right-logging-level"
 MONITORING_GUIDE_URL = DOCUMENTATION_URL + "/usage/#monitoring-mode"
+WEB_DASHBOARD_GUIDE_URL = DOCUMENTATION_URL + "/view-modes/#web-dashboard"
 
 # The fix named when nothing is being monitored, shared by the startup gate and the Doctor target check
 NO_TARGET_FIX = "Pass a target on the command line, set TARGET_USERNAMES in the config or enable the Web Dashboard"
@@ -9902,9 +9903,15 @@ RECOVERY_CODES = frozenset({
     "instagram.rate_limited", "instagram.challenge", "instagram.empty_data",
     "session.missing", "session.expired",
     "target.not_found",
-    "config.impersonate_unsupported",
+    "config.missing", "config.invalid", "config.impersonate_unsupported",
+    "dependency.missing",
+    "secret.missing",
     "proxy.unresolved",
     "network.dns", "network.unavailable",
+    "smtp.invalid", "smtp.authentication", "smtp.connection",
+    "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
+    "file.unreadable", "file.unwritable", "file.exists",
+    "dashboard.unavailable",
     "unknown",
 })
 
@@ -9954,10 +9961,71 @@ def make_recovery_advice(code: str, summary: str, fix: str, retryable: bool = Fa
 def recovery_fix_with_guide(fix: str, guide_url: str) -> str: return f"{fix}\nGuide: {guide_url}"
 
 
-# Classifies one error message into code-carrying advice, so a repeated failure is recognized without re-reading its text
-def classify_recovery_error(error_msg: str, is_logged_in: bool = False) -> RecoveryAdvice:
-    code, summary, fix, guide, retryable = classify_error_parts(error_msg, is_logged_in)
-    return make_recovery_advice(code, summary, recovery_fix_with_guide(fix, guide) if guide else fix, retryable)
+# Classifies one failure into code-carrying advice, so every surface explains the same problem the same way
+def classify_recovery_error(error: Any = None, context: str = "runtime", detail: str = "", is_logged_in: Optional[bool] = None) -> RecoveryAdvice:
+    # Both parts are read, since a call site that adds context must not hide the text the rules match on
+    message = " ".join(part for part in (str(detail or ""), str(error or "")) if part).casefold()
+    safe_detail = sanitize_error_text(detail or error)
+
+    # Builds one row of this table, attaching the page that covers it where one exists
+    def advice(code: str, summary: str, fix: str, retryable: bool = False, guide_url: str = "") -> RecoveryAdvice: return make_recovery_advice(code, summary, recovery_fix_with_guide(fix, guide_url) if guide_url else fix, retryable, safe_detail)
+
+    if context == "dependency":
+        return advice("dependency.missing", "An optional library this feature needs is not installed", "Install the named package, then re-run the tool", False, INSTALLATION_GUIDE_URL)
+
+    if context == "config_missing":
+        return advice("config.missing", "A required setting has no value", "Set it in the configuration file, in the environment or with its command-line flag, then re-run the tool", False, CONFIG_FILE_GUIDE_URL)
+
+    if context == "config":
+        return advice("config.invalid", "A configured value cannot be used", "Correct the value in the configuration file or on the command line, then re-run the tool", False, CONFIG_FILE_GUIDE_URL)
+
+    if context == "secret":
+        return advice("secret.missing", "A private value could not be stored", "Check that the dotenv file is writable, or set the value in the environment instead", False, SECRETS_GUIDE_URL)
+
+    if context == "file_exists":
+        return advice("file.exists", "The destination file already exists", "Re-run with --force to replace it after a timestamped backup, or write to a different path", False, CONFIG_FILE_GUIDE_URL)
+
+    if context == "file_read":
+        return advice("file.unreadable", "A file the tool reads could not be opened", "Check the path and its permissions, and that the file is readable UTF-8 text", False, CONFIG_FILE_GUIDE_URL)
+
+    if context == "file_write":
+        return advice("file.unwritable", "A file the tool writes could not be opened", "Check that the directory exists and is writable, or choose another path", False, CONFIG_FILE_GUIDE_URL)
+
+    if context == "smtp_config":
+        return advice("smtp.invalid", "The SMTP configuration is incomplete or invalid", "Check SMTP_HOST, SMTP_PORT, SENDER_EMAIL and RECEIVER_EMAIL in the configuration file", False, SMTP_GUIDE_URL)
+
+    if context == "email":
+        code, summary, fix, retryable = classify_smtp_parts(error, message)
+        return advice(code, summary, fix, retryable, SMTP_GUIDE_URL)
+
+    if context == "webhook_config":
+        return advice("webhook.invalid", "The webhook settings cannot be used", "Check WEBHOOK_URL and WEBHOOK_PROVIDER, using a complete HTTPS link with no embedded credentials", False, WEBHOOK_GUIDE_URL)
+
+    if context == "webhook":
+        if "429" in message or "rate limit" in message or "too many requests" in message:
+            return advice("webhook.rate_limited", "The webhook service is rate limiting deliveries", "Reduce how many alert types are enabled, or wait for the service to accept deliveries again", True, WEBHOOK_GUIDE_URL)
+        if any(term in message for term in ("connection", "timed out", "timeout", "name resolution", "unreachable", "max retries")):
+            return advice("webhook.connection", "The webhook service could not be reached", "Check connectivity and any proxy, then confirm the webhook host is reachable from this machine", True, WEBHOOK_GUIDE_URL)
+        return advice("webhook.rejected", "The webhook service rejected the delivery", "Check that WEBHOOK_URL is current and still accepted by the service", False, WEBHOOK_GUIDE_URL)
+
+    if context == "proxy":
+        if "resolve" in message:
+            return advice("proxy.unresolved", "The configured proxy hostname could not be resolved", "Check PROXY_URL for a typo and confirm the proxy host is reachable from this machine", False, PROXY_GUIDE_URL)
+        return advice("config.invalid", "The proxy settings cannot be used", "Check PROXY_URL and any proxy certificate path, then re-run the tool", False, PROXY_GUIDE_URL)
+
+    if context == "session":
+        return advice("session.missing", "The Instagram session could not be imported", f"Import it with '{session_recovery_command()}' after logging in via Firefox, or use another login method", False, SESSION_IMPORT_GUIDE_URL)
+
+    if context == "dashboard":
+        return advice("dashboard.unavailable", "The Web Dashboard could not start", "Free the configured port or start the server on a different one with --web-dashboard-port, then confirm the installation is complete", False, WEB_DASHBOARD_GUIDE_URL)
+
+    if context == "setup":
+        return advice("config.invalid", "Setup cannot run with the current settings", "Correct the named setting or path, then run --setup again", False, QUICK_START_GUIDE_URL)
+
+    # Runtime, which is the monitoring loop and every Instagram request it makes
+    logged_in = (bool(SESSION_USERNAME) and not SKIP_SESSION) if is_logged_in is None else is_logged_in
+    code, summary, fix, guide, retryable = classify_error_parts(str(error or detail or ""), logged_in)
+    return advice(code, summary, fix, retryable, guide)
 
 
 # Maps one error message to a stable summary plus the matching fix and guide, so every surface explains it the same way
@@ -10017,12 +10085,17 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
 
 # Maps one SMTP failure to a stable summary plus the matching fix, keeping the technical text for the detail line
 def classify_smtp_error(error: Exception) -> Tuple[str, str]:
-    message = str(error).casefold()
+    return classify_smtp_parts(error)[1:3]
+
+
+# Maps one SMTP failure to the stable code behind its summary and fix, and to whether retrying can clear it
+def classify_smtp_parts(error: Any, message: str = "") -> Tuple[str, str, str, bool]:
+    message = message or str(error or "").casefold()
     if isinstance(error, smtplib.SMTPAuthenticationError) or any(term in message for term in ("authentication", "auth", "username and password", "535")):
-        return "The SMTP server rejected the sign-in", "Check SMTP_USER and SMTP_PASSWORD, and use an app password if the provider requires one"
+        return "smtp.authentication", "The SMTP server rejected the sign-in", "Check SMTP_USER and SMTP_PASSWORD, and use an app password if the provider requires one", False
     if any(term in message for term in ("settings are incorrect", "invalid")):
-        return "The SMTP settings are incomplete or invalid", "Check SMTP_HOST, SMTP_PORT, SENDER_EMAIL and RECEIVER_EMAIL in the configuration file"
-    return "The SMTP server could not be reached", "Check SMTP_HOST, SMTP_PORT and SMTP_SSL, then confirm the host is reachable from this machine"
+        return "smtp.invalid", "The SMTP settings are incomplete or invalid", "Check SMTP_HOST, SMTP_PORT, SENDER_EMAIL and RECEIVER_EMAIL in the configuration file", False
+    return "smtp.connection", "The SMTP server could not be reached", "Check SMTP_HOST, SMTP_PORT and SMTP_SSL, then confirm the host is reachable from this machine", True
 
 
 # Returns a short actionable next-step hint for a known error message or an empty string when none applies
@@ -10115,7 +10188,7 @@ def print_outage_recovery(target: str, lasted: int) -> None:
 # Prints an actionable fix hint for the given error to the console when one is available and not already shown
 def print_fix_hint(error_msg: str, tracker: Optional[RecoveryHintTracker] = None) -> bool:
     is_logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
-    if tracker is not None and not tracker.should_render(classify_recovery_error(error_msg, is_logged_in)):
+    if tracker is not None and not tracker.should_render(classify_recovery_error(error_msg, is_logged_in=is_logged_in)):
         return False
     hint = error_fix_hint(error_msg, is_logged_in)
     if hint:
@@ -13065,7 +13138,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             except Exception as e:
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
                 error_msg = format_error_message(e)
-                advice = classify_recovery_error(error_msg, bool(SESSION_USERNAME) and not skip_session)
+                advice = classify_recovery_error(error_msg, is_logged_in=bool(SESSION_USERNAME) and not skip_session)
 
                 # A failure that has not changed is left to the liveness cadence rather than repeated every check
                 outage_outcome = outage.failed(advice, LIVENESS_REMINDER_SECONDS)
@@ -13873,7 +13946,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
                     error_msg = format_error_message(e)
                     consecutive_main_errors += 1
-                    posts_advice = classify_recovery_error(error_msg, bool(SESSION_USERNAME) and not skip_session)
+                    posts_advice = classify_recovery_error(error_msg, is_logged_in=bool(SESSION_USERNAME) and not skip_session)
 
                     # A failure that has not changed is left to the liveness cadence rather than repeated every check
                     outage_outcome = outage.failed(posts_advice, LIVENESS_REMINDER_SECONDS)
