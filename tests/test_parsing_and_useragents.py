@@ -3,6 +3,8 @@
 import random
 import re
 
+import pytest
+
 
 
 def _followers_payload(usernames):
@@ -82,29 +84,78 @@ class TestGetRandomUserAgent:
         assert ua.startswith("Mozilla/5.0")
         assert len(ua) > 30
 
-    # Each desktop browser branch can be selected without relying on random sampling
-    def test_known_browser_family_branches(self, im_module, monkeypatch):
-        cases = [
-            ("chrome", "Chrome/80.0.3000.60"),
-            ("firefox", "Firefox/90.0"),
-            ("edge", "Edg/80.0.3000.60"),
-            ("safari", "Version/13.0 Safari"),
-        ]
-        for browser, marker in cases:
-            picks = [browser]
-            monkeypatch.setattr(random, "choice", lambda seq, picks=picks: picks.pop(0) if picks else seq[0])
-            monkeypatch.setattr(random, "randint", lambda start, stop: start)
-            monkeypatch.setattr(random, "randrange", lambda *args: args[0])
-            assert marker in im_module.get_random_user_agent()
+    # Every agent has to classify back to the family that produced it, or the impersonation target drifts
+    @pytest.mark.parametrize("family", ["chrome", "firefox", "edge", "safari"])
+    def test_each_family_classifies_back_to_itself(self, im_module, family):
+        for _ in range(40):
+            assert im_module._impersonate_target_from_ua(im_module.get_random_user_agent(family)) == family
+
+    # The engine tokens are fixed in the real browsers, so randomising them would produce a string no browser sends
+    @pytest.mark.parametrize("family, required", [("chrome", "AppleWebKit/537.36 (KHTML, like Gecko)"), ("edge", "AppleWebKit/537.36 (KHTML, like Gecko)"), ("safari", "AppleWebKit/605.1.15 (KHTML, like Gecko)"), ("firefox", "Gecko/20100101")])
+    def test_the_engine_token_is_the_one_the_browser_really_sends(self, im_module, family, required):
+        for _ in range(20):
+            assert required in im_module.get_random_user_agent(family)
+
+    # Chrome, Edge and Safari freeze the macOS version they report rather than naming the real release
+    @pytest.mark.parametrize("family", ["chrome", "edge", "safari"])
+    def test_the_reported_macos_version_is_the_frozen_one(self, im_module, family):
+        for _ in range(40):
+            agent = im_module.get_random_user_agent(family)
+            if "Macintosh" in agent:
+                assert f"Intel Mac OS X {im_module.USER_AGENT_MAC_OS})" in agent or f"Intel Mac OS X {im_module.USER_AGENT_MAC_OS};" in agent
+
+    # Chrome has reported a zeroed build and patch since it reduced user agent granularity
+    @pytest.mark.parametrize("family", ["chrome", "edge"])
+    def test_chrome_reports_a_zeroed_build(self, im_module, family):
+        for _ in range(20):
+            assert re.search(r"Chrome/\d+\.0\.0\.0(?: |$)", im_module.get_random_user_agent(family))
+
+    # A version older than the configured floor means the pool went stale and now names a retired release
+    @pytest.mark.parametrize("family, pattern, floor", [("chrome", r"Chrome/(\d+)\.", "USER_AGENT_CHROME_VERSIONS"), ("edge", r"Edg/(\d+)\.", "USER_AGENT_CHROME_VERSIONS"), ("firefox", r"Firefox/(\d+)\.", "USER_AGENT_FIREFOX_VERSIONS"), ("safari", r"Version/(\d+)\.", "USER_AGENT_SAFARI_VERSIONS")])
+    def test_no_agent_falls_below_the_configured_floor(self, im_module, family, pattern, floor):
+        low, high = getattr(im_module, floor)
+        assert low <= high
+        for _ in range(40):
+            found = re.search(pattern, im_module.get_random_user_agent(family))
+            assert found and low <= int(found.group(1)) <= high
 
 
 class TestGetRandomMobileUserAgent:
     # Mobile user-agent generation covers both iPhone and iPad shapes deterministically
     def test_instagram_app_format(self, im_module, monkeypatch):
-        pattern = re.compile(r"^Instagram \d+\.\d+\.\d+\.\d+ \((iPhone|iPad)[^)]*; iOS \d+_\d+; en_US; en-US; scale=\d\.\d\d; \d+x\d+; \d+\) AppleWebKit/420\+$")
+        pattern = re.compile(r"^Instagram \d+\.0\.0\.\d+\.\d+ \((iPhone|iPad)[^)]*; iOS \d+_\d+; en_US; en-US; scale=\d\.\d\d; \d+x\d+; \d+\) AppleWebKit/420\+$")
         for is_iphone in (True, False):
             picks = [is_iphone]
             monkeypatch.setattr(random, "choice", lambda seq, picks=picks: picks.pop(0) if picks else seq[0])
             monkeypatch.setattr(random, "randint", lambda start, stop: start)
             ua = im_module.get_random_mobile_user_agent()
             assert pattern.match(ua), ua
+
+    # A device that cannot run the iOS release it claims is an impossible pair, so the two pools have to agree
+    def test_the_device_and_the_ios_release_are_a_possible_pair(self, im_module):
+        assert im_module.MOBILE_IPHONE_MODELS and im_module.MOBILE_IPAD_MODELS
+        for model, (width, height) in im_module.MOBILE_IPHONE_MODELS + im_module.MOBILE_IPAD_MODELS:
+            generation = int(model.split(",")[0])
+            assert generation >= 13, model
+            assert height > width, model
+
+    # Apple went straight from iOS 18 to iOS 26, so a ranged pool would claim releases that never shipped
+    def test_only_shipped_ios_majors_are_claimed(self, im_module):
+        assert set(im_module.MOBILE_IOS_MAJORS).isdisjoint(range(19, 26))
+        for _ in range(60):
+            found = re.search(r"iOS (\d+)_", im_module.get_random_mobile_user_agent())
+            assert found and int(found.group(1)) in im_module.MOBILE_IOS_MAJORS
+
+    # A device reports one fixed display scale, so picking it independently would describe hardware that does not exist
+    def test_the_scale_follows_the_device(self, im_module):
+        for _ in range(60):
+            agent = im_module.get_random_mobile_user_agent()
+            assert ("scale=3.00" if "(iPhone" in agent else "scale=2.00") in agent
+
+    # The Instagram app version has to stay near the released one, since a years-old build is itself a signal
+    def test_the_app_version_pool_is_current(self, im_module):
+        low, high = im_module.MOBILE_APP_VERSIONS
+        assert low <= high
+        for _ in range(40):
+            found = re.match(r"Instagram (\d+)\.", im_module.get_random_mobile_user_agent())
+            assert found and low <= int(found.group(1)) <= high

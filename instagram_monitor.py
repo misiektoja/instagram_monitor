@@ -8096,130 +8096,103 @@ def resolve_executable(path):
     raise FileNotFoundError(f"Could not find executable '{path}'")
 
 
-# Returns random web browser user agent string
+# Browser versions the random desktop agents advertise, taken from the curl_cffi impersonation targets
+# and the Playwright Chromium build in September 2026. Refresh them when they fall behind: an agent
+# claiming a version that was retired years ago is itself a signal
+USER_AGENT_CHROME_VERSIONS = (140, 151)
+USER_AGENT_FIREFOX_VERSIONS = (140, 147)
+USER_AGENT_SAFARI_VERSIONS = (18, 26)
+
+# Chrome, Edge and Safari all report this frozen macOS version rather than the real one, and Firefox
+# reports its own frozen form, so neither is randomised
+USER_AGENT_MAC_OS = "10_15_7"
+USER_AGENT_MAC_OS_FIREFOX = "10.15"
+
+
+# Returns one random desktop user agent, optionally pinned to chrome, firefox, edge or safari
 def get_random_user_agent(family: Optional[str] = None) -> str:
     requested = str(family or "").strip().lower()
     browser = requested if requested in ('chrome', 'firefox', 'edge', 'safari') else random.choice(['chrome', 'firefox', 'edge', 'safari'])
 
     if browser == 'chrome':
-        os_choice = random.choice(['mac', 'windows'])
-        if os_choice == 'mac':
-            return (
-                f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_{random.randrange(11, 15)}_{random.randrange(4, 9)}) "
-                f"AppleWebKit/{random.randrange(530, 537)}.{random.randrange(30, 37)} (KHTML, like Gecko) "
-                f"Chrome/{random.randrange(80, 105)}.0.{random.randrange(3000, 4500)}.{random.randrange(60, 125)} "
-                f"Safari/{random.randrange(530, 537)}.{random.randrange(30, 36)}"
-            )
-        else:
-            chrome_version = random.randint(80, 105)
-            build = random.randint(3000, 4500)
-            patch = random.randint(60, 125)
-            return (
-                f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                f"AppleWebKit/537.36 (KHTML, like Gecko) "
-                f"Chrome/{chrome_version}.0.{build}.{patch} Safari/537.36"
-            )
+        # Chrome has reported a zeroed build and patch since it reduced user agent granularity
+        version = f"{random.randint(*USER_AGENT_CHROME_VERSIONS)}.0.0.0"
+        platform_part = f"Macintosh; Intel Mac OS X {USER_AGENT_MAC_OS}" if random.choice([True, False]) else "Windows NT 10.0; Win64; x64"
+        return f"Mozilla/5.0 ({platform_part}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36"
 
-    elif browser == 'firefox':
-        os_choice = random.choice(['windows', 'mac', 'linux'])
-        version = random.randint(90, 110)
-        if os_choice == 'windows':
-            return (
-                f"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:{version}.0) "
-                f"Gecko/20100101 Firefox/{version}.0"
-            )
-        elif os_choice == 'mac':
-            return (
-                f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_{random.randrange(11, 15)}_{random.randrange(0, 10)}; rv:{version}.0) "
-                f"Gecko/20100101 Firefox/{version}.0"
-            )
-        else:
-            return (
-                f"Mozilla/5.0 (X11; Linux x86_64; rv:{version}.0) "
-                f"Gecko/20100101 Firefox/{version}.0"
-            )
+    if browser == 'firefox':
+        version = random.randint(*USER_AGENT_FIREFOX_VERSIONS)
+        platform_part = random.choice([f"Macintosh; Intel Mac OS X {USER_AGENT_MAC_OS_FIREFOX}", "Windows NT 10.0; Win64; x64", "X11; Linux x86_64"])
+        return f"Mozilla/5.0 ({platform_part}; rv:{version}.0) Gecko/20100101 Firefox/{version}.0"
 
-    elif browser == 'edge':
-        os_choice = random.choice(['windows', 'mac'])
-        chrome_version = random.randint(80, 105)
-        build = random.randint(3000, 4500)
-        patch = random.randint(60, 125)
-        version_str = f"{chrome_version}.0.{build}.{patch}"
-        if os_choice == 'windows':
-            return (
-                f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                f"AppleWebKit/537.36 (KHTML, like Gecko) "
-                f"Chrome/{version_str} Safari/537.36 Edg/{version_str}"
-            )
-        else:
-            return (
-                f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_{random.randrange(11, 15)}_{random.randrange(0, 10)}) "
-                f"AppleWebKit/605.1.15 (KHTML, like Gecko) "
-                f"Version/{random.randint(13, 16)}.0 Safari/605.1.15 Edg/{version_str}"
-            )
+    if browser == 'edge':
+        # Edge is Chromium on every platform, so it reports the Chrome engine and appends its own build
+        version = f"{random.randint(*USER_AGENT_CHROME_VERSIONS)}.0.0.0"
+        platform_part = f"Macintosh; Intel Mac OS X {USER_AGENT_MAC_OS}" if random.choice([True, False]) else "Windows NT 10.0; Win64; x64"
+        return f"Mozilla/5.0 ({platform_part}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36 Edg/{version}"
 
-    elif browser == 'safari':
-        os_choice = 'mac'
-        if os_choice == 'mac':
-            mac_major = random.randrange(11, 16)
-            mac_minor = random.randrange(0, 10)
-            webkit_major = random.randint(600, 610)
-            webkit_minor = random.randint(1, 20)
-            webkit_patch = random.randint(1, 20)
-            safari_version = random.randint(13, 16)
-            return (
-                f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_{mac_major}_{mac_minor}) "
-                f"AppleWebKit/{webkit_major}.{webkit_minor}.{webkit_patch} (KHTML, like Gecko) "
-                f"Version/{safari_version}.0 Safari/{webkit_major}.{webkit_minor}.{webkit_patch}"
-            )
-        else:
-            return ""
-    else:
-        return ""
+    if browser == 'safari':
+        version = f"{random.randint(*USER_AGENT_SAFARI_VERSIONS)}.{random.randint(0, 2)}"
+        return f"Mozilla/5.0 (Macintosh; Intel Mac OS X {USER_AGENT_MAC_OS}) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/{version} Safari/605.1.15"
+
+    return ""
+
+
+# Instagram for iOS releases still in circulation, taken from the App Store listing in September 2026
+# App Store versions are always major.0.0, and the agent appends a build and patch to that
+MOBILE_APP_VERSIONS = (430, 445)
+
+# iOS majors that actually shipped, listed rather than ranged because Apple went straight from 18 to 26
+MOBILE_IOS_MAJORS = (17, 18, 26)
+
+# iPhone and iPad models with their portrait resolutions, limited to hardware that runs every iOS
+# version above, so the device and the OS it claims are never an impossible pair
+MOBILE_IPHONE_MODELS = (
+    ("13,2", (1170, 2532)),   # 12
+    ("13,3", (1170, 2532)),   # 12 Pro
+    ("13,4", (1284, 2778)),   # 12 Pro Max
+    ("14,5", (1170, 2532)),   # 13
+    ("14,2", (1170, 2532)),   # 13 Pro
+    ("14,3", (1284, 2778)),   # 13 Pro Max
+    ("15,2", (1179, 2556)),   # 14 Pro
+    ("15,3", (1290, 2796)),   # 14 Pro Max
+    ("16,1", (1179, 2556)),   # 15 Pro
+    ("16,2", (1290, 2796)),   # 15 Pro Max
+    ("17,1", (1206, 2622)),   # 16 Pro
+    ("17,2", (1320, 2868)),   # 16 Pro Max
+)
+MOBILE_IPAD_MODELS = (
+    ("13,4", (1668, 2388)),   # Pro 11" 3rd gen
+    ("13,8", (2048, 2732)),   # Pro 12.9" 5th gen
+    ("13,16", (1640, 2360)),  # Air 5th gen
+    ("14,3", (1668, 2388)),   # Pro 11" 4th gen
+    ("14,5", (2048, 2732)),   # Pro 12.9" 6th gen
+)
 
 
 # Returns random mobile user agent string (iPhone / iPad)
 def get_random_mobile_user_agent() -> str:
-    app_major = random.randint(240, 300)
-    app_minor = random.randint(0, 9)
-    app_patch = random.randint(0, 9)
-    app_revision = random.randint(100, 999)
+    app_version = f"{random.randint(*MOBILE_APP_VERSIONS)}.0.0.{random.randint(10, 60)}.{random.randint(100, 999)}"
 
     if random.choice([True, False]):
         device = "iPhone"
-        model, (width, height) = random.choice([
-            ("10,3", (1125, 2436)),  # X
-            ("11,2", (1125, 2436)),  # XS
-            ("12,5", (1242, 2688)),  # 11 Pro Max
-            ("13,4", (1284, 2778)),  # 12 Pro Max
-            ("14,2", (1179, 2532)),  # 13 Pro
-            ("14,4", (1080, 2340)),  # 13 mini
-            ("15,2", (1170, 2532)),  # 15
-            ("15,3", (1179, 2556)),  # 15 Pro
-            ("16,1", (1290, 2796)),  # 15 Pro Max
-        ])
+        model, (width, height) = random.choice(MOBILE_IPHONE_MODELS)
+        # Every iPhone listed above has a 3x display and every iPad a 2x one, so the scale follows the device
+        scale = 3.00
     else:
         device = "iPad"
-        model, (width, height) = random.choice([
-            ("7,11", (1620, 2160)),  # 7th Gen
-            ("13,4", (1668, 2388)),  # Pro 11"
-            ("13,8", (2048, 2732)),  # Pro 12.9"
-            ("14,5", (2360, 1640)),  # Air 5th Gen
-            ("15,1", (2048, 2732)),  # Pro 12.9 Gen 6
-            ("15,8", (1668, 2388)),  # Pro 11 3rd Gen
-        ])
+        model, (width, height) = random.choice(MOBILE_IPAD_MODELS)
+        scale = 2.00
 
-    os_major = random.randint(12, 17)
+    os_major = random.choice(MOBILE_IOS_MAJORS)
     os_minor = random.randint(0, 5)
 
     language = "en_US"
     locale = "en-US"
 
-    scale = random.choice([2.00, 3.00])
-
     device_id = random.randint(10**14, 10**15 - 1)
 
-    return (f"Instagram {app_major}.{app_minor}.{app_patch}.{app_revision} ({device}{model}; iOS {os_major}_{os_minor}; {language}; {locale}; scale={scale:.2f}; {width}x{height}; {device_id}) AppleWebKit/420+")
+    return (f"Instagram {app_version} ({device}{model}; iOS {os_major}_{os_minor}; {language}; {locale}; scale={scale:.2f}; {width}x{height}; {device_id}) AppleWebKit/420+")
 
 
 # Extracts usernames from a follower or following JSON response and returns [] for malformed shapes
