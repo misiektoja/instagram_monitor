@@ -60,7 +60,8 @@ def test_the_wizard_is_the_first_example(help_screen):
     block = help_screen.split("Examples:", 1)[1]
     first = [line.strip() for line in block.splitlines() if line.startswith("  ")][:2]
 
-    assert first == ["# Guided setup, recommended for the first run", "python3 instagram_monitor.py --setup"]
+    # The example names the running interpreter, which is not always called python3
+    assert first == ["# Guided setup, recommended for the first run", f"{monitor._wizard_cmd_prefix('manual')} --setup"]
 
 
 # Verifies the one-line description carries the repository link in the form the sibling monitors print

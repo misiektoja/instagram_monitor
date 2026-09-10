@@ -372,6 +372,7 @@ class TestHiddenPromptPresentation:
 def test_the_session_recovery_command_names_the_files_this_run_was_given(im_module, monkeypatch, tmp_path):
     config_path = tmp_path / "instagram_monitor.conf"
     env_path = tmp_path / "private.env"
+    monkeypatch.setattr(im_module.sys, "executable", "/opt/runtime/python3")
     monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py"])
     monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", str(config_path))
     monkeypatch.setattr(im_module, "DOTENV_FILE", str(env_path))
@@ -381,6 +382,7 @@ def test_the_session_recovery_command_names_the_files_this_run_was_given(im_modu
 
 # Verifies a dotenv switched off with the none sentinel is not printed as a file path
 def test_the_session_recovery_command_skips_a_dotenv_switched_off(im_module, monkeypatch):
+    monkeypatch.setattr(im_module.sys, "executable", "/opt/runtime/python3")
     monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py"])
     monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
     monkeypatch.setattr(im_module, "DOTENV_FILE", "none")
@@ -390,6 +392,7 @@ def test_the_session_recovery_command_skips_a_dotenv_switched_off(im_module, mon
 
 # Verifies the config sentinel is carried, since the import it suggests reads the config rather than writing it
 def test_the_session_recovery_command_carries_the_config_sentinel(im_module, monkeypatch):
+    monkeypatch.setattr(im_module.sys, "executable", "/opt/runtime/python3")
     monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py"])
     monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
     monkeypatch.setattr(im_module, "CONFIG_DISCOVERY_DISABLED", True)
