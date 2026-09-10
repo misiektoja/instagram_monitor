@@ -284,11 +284,10 @@ def test_signal_handler_restores_the_terminal(im_module, monkeypatch):
     assert restored == [True]
 
 
-# Verifies the email announcement is coloured like the webhook one. The lines this tool prints all start with
-# "* Sending email", which an early return used to keep plain, leaving the shipped email colour unreachable
+# Verifies the email announcement is coloured like the webhook one, in the shape the shared delivery helper prints
 @pytest.mark.parametrize("line,part", [
-    ("* Sending email notification to alerts@example.test", "email"),
-    ("* Sending webhook notification", "webhook"),
+    ("Sending email notification to alerts@example.test", "email"),
+    ("Sending webhook notification", "webhook"),
 ])
 def test_a_delivery_announcement_is_painted_for_its_channel(im_module, monkeypatch, line, part):
     monkeypatch.setattr(im_module, "COLOR_ENABLED", True)

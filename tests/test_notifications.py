@@ -144,61 +144,47 @@ class TestFormatPayload:
         assert im_module.format_payload(True, {}) is True
 
 
-class TestSendFollowerChangeWebhook:
-    def test_returns_one_when_webhook_disabled(self, im_module, monkeypatch):
-        # With WEBHOOK_ENABLED False (baseline), send_webhook short-circuits to 1 without any network call
-        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", False)
-        rc = im_module.send_follower_change_webhook("user", "followers", 10, 12, "- a (<url>)\n", "")
-        assert rc == 1
+class TestFollowerChangeEmbed:
+    # A follower change shapes a follower embed, green when the count went up
+    def test_a_follower_gain_shapes_a_green_follower_embed(self, im_module):
+        embed = im_module.follower_change_embed("user", "followers", 10, 12, "- a (<url>)\n", "")
 
-    def test_passes_through_when_url_missing(self, im_module, monkeypatch):
-        # Enabled but no URL -> still guarded, no network
-        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
-        monkeypatch.setattr(im_module, "WEBHOOK_URL", "")
-        rc = im_module.send_follower_change_webhook("user", "followings", 5, 4, "", "- b (<url>)\n")
-        assert rc == 1
-
-    # Follower changes pass a follower notification payload through to send_webhook
-    def test_followers_payload_passed_to_send_webhook(self, im_module, monkeypatch):
-        calls = []
-        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: calls.append((args, kwargs)) or 0)
-
-        rc = im_module.send_follower_change_webhook("user", "followers", 10, 12, "- a (<url>)\n", "")
-
-        assert rc == 0
-        assert len(calls) == 1
-        args, kwargs = calls[0]
-        assert "user Followers Changed" in args[0]
-        assert args[1] == "User **user** followers changed from **10** to **12**"
-        assert kwargs["color"] == 0x2ecc71
-        assert kwargs["notification_type"] == "followers"
-        assert kwargs["fields"][:3] == [
+        assert embed["webhook_title"].endswith("user Followers Changed")
+        assert embed["webhook_description"] == "User **user** followers changed from **10** to **12**"
+        assert embed["webhook_color"] == 0x2ecc71
+        assert embed["webhook_fields"][:3] == [
             {"name": "Old Count", "value": "10", "inline": True},
             {"name": "New Count", "value": "12", "inline": True},
             {"name": "Change", "value": "+2", "inline": True},
         ]
-        assert kwargs["fields"][3] == {"name": "**Added followers:**", "value": "- a (<url>)\n"}
+        assert embed["webhook_fields"][3] == {"name": "**Added followers:**", "value": "- a (<url>)\n"}
 
-    # Following changes pass a status notification payload through to send_webhook
-    def test_followings_payload_passed_to_send_webhook(self, im_module, monkeypatch):
-        calls = []
-        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: calls.append((args, kwargs)) or 0)
+    # A following change shapes a blue embed listing what was removed
+    def test_a_following_loss_shapes_a_blue_following_embed(self, im_module):
+        embed = im_module.follower_change_embed("user", "followings", 5, 4, "", "- b (<url>)\n")
 
-        rc = im_module.send_follower_change_webhook("user", "followings", 5, 4, "", "- b (<url>)\n")
-
-        assert rc == 0
-        assert len(calls) == 1
-        args, kwargs = calls[0]
-        assert "user Followings Changed" in args[0]
-        assert args[1] == "User **user** followings changed from **5** to **4**"
-        assert kwargs["color"] == 0x3498db
-        assert kwargs["notification_type"] == "status"
-        assert kwargs["fields"][:3] == [
+        assert embed["webhook_title"].endswith("user Followings Changed")
+        assert embed["webhook_description"] == "User **user** followings changed from **5** to **4**"
+        assert embed["webhook_color"] == 0x3498db
+        assert embed["webhook_fields"][:3] == [
             {"name": "Old Count", "value": "5", "inline": True},
             {"name": "New Count", "value": "4", "inline": True},
             {"name": "Change", "value": "-1", "inline": True},
         ]
-        assert kwargs["fields"][3] == {"name": "**Removed followings:**", "value": "- b (<url>)\n"}
+        assert embed["webhook_fields"][3] == {"name": "**Removed followings:**", "value": "- b (<url>)\n"}
+
+    # The embed is what the channels helper hands to the webhook, under the follower switch
+    def test_the_embed_reaches_the_webhook_as_a_follower_alert(self, im_module, monkeypatch):
+        calls = []
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_FOLLOWERS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: calls.append((args, kwargs)) or 0)
+        embed = im_module.follower_change_embed("user", "followers", 10, 12, "- a (<url>)\n", "")
+
+        assert im_module.send_notification_channels("followers", "subject", "body", **embed) == (False, True)
+        assert calls[0][0] == (embed["webhook_title"], embed["webhook_description"])
+        assert calls[0][1]["fields"] == embed["webhook_fields"]
+        assert calls[0][1]["notification_type"] == "followers"
 
 
 # Verifies both test commands carry the subject, title and body shared with the sibling monitors
@@ -252,11 +238,12 @@ class TestAccountFlagIdentity:
         captured: dict = {}
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "CIRCUIT_BREAKER", False)
         monkeypatch.setattr(im_module, "record_failure_event", lambda *args, **kwargs: None)
         monkeypatch.setattr(im_module, "FLAGGED_NOTIFY_STATE", {"ts": 0})
-        monkeypatch.setattr(im_module, "send_email", lambda subject, body, html, ssl, **kwargs: captured.update(body=body, html=html))
-        monkeypatch.setattr(im_module, "send_webhook", lambda **kwargs: captured.update(webhook=kwargs["description"]))
+        monkeypatch.setattr(im_module, "send_email", lambda subject, body, html, ssl, *args, **kwargs: captured.update(body=body, html=html))
+        monkeypatch.setattr(im_module, "send_webhook", lambda title, description, *args, **kwargs: captured.update(webhook=description))
 
         def run():
             im_module.notify_session_flagged("target.user", "Instagram flagged this session account", "checkpoint_required")
@@ -310,10 +297,11 @@ class TestAccountFlagIdentity:
         monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "ERROR_FAILURE_THRESHOLD", 1)
         monkeypatch.setattr(im_module, "USER_AGENT", "Mozilla/5.0 SecretBuild/1")
-        monkeypatch.setattr(im_module, "send_email", lambda subject, body, html, ssl, **kwargs: captured.update(body=body))
-        monkeypatch.setattr(im_module, "send_webhook", lambda **kwargs: captured.update(webhook=kwargs["description"]))
+        monkeypatch.setattr(im_module, "send_email", lambda subject, body, html, ssl, *args, **kwargs: captured.update(body=body))
+        monkeypatch.setattr(im_module, "send_webhook", lambda title, description, *args, **kwargs: captured.update(webhook=description))
 
-        im_module.notify_monitoring_error("target.user", "connection reset", 1, 3600)
+        advice = im_module.classify_recovery_error("connection reset", is_logged_in=True)
+        im_module.notify_monitoring_error("target.user", advice, "connection reset", 1, 3600, im_module.ErrorAlertState())
 
         assert "SecretBuild" not in captured["body"] and "SecretBuild" not in captured["webhook"]
         assert "Transport:" not in captured["body"]

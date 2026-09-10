@@ -61,29 +61,36 @@ class TestIsSessionFlagged:
 
 
 class TestNotifyMonitoringError:
-    # Captures thresholded channel delivery without contacting SMTP or webhook endpoints
-    def _capture(self, im_module, monkeypatch):
+    # Captures thresholded channel delivery without contacting SMTP or webhook endpoints, each channel answering as told
+    def _capture(self, im_module, monkeypatch, email_results=(0,), webhook_results=(0,)):
         calls = {"email": [], "webhook": []}
-        monkeypatch.setattr(im_module, "send_email", lambda *a, **k: calls["email"].append((a, k)))
-        monkeypatch.setattr(im_module, "send_webhook", lambda *a, **k: calls["webhook"].append((a, k)))
+        monkeypatch.setattr(im_module, "send_email", lambda *a, **k: calls["email"].append((a, k)) or email_results[min(len(calls["email"]), len(email_results)) - 1])
+        monkeypatch.setattr(im_module, "send_webhook", lambda *a, **k: calls["webhook"].append((a, k)) or webhook_results[min(len(calls["webhook"]), len(webhook_results)) - 1])
         monkeypatch.setattr(im_module, "ERROR_FAILURE_THRESHOLD", 2)
         monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "ops@example.com", raising=False)
         monkeypatch.setattr(im_module, "SMTP_SSL", True, raising=False)
         return calls
+
+    # Runs one failing check through the alert with the given error, keeping the state between calls
+    def _notify(self, im_module, state, error, failure_count):
+        advice = im_module.classify_recovery_error(error, is_logged_in=True)
+        return im_module.notify_monitoring_error("targetuser", advice, error, failure_count, 60, state)
 
     def test_email_and_webhook_send_once_at_threshold(self, im_module, monkeypatch):
         calls = self._capture(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+        state = im_module.ErrorAlertState()
 
-        results = [im_module.notify_monitoring_error("targetuser", "401 Unauthorized", failure_count, 60) for failure_count in (1, 2, 3)]
+        results = [self._notify(im_module, state, "401 Unauthorized", failure_count) for failure_count in (1, 2, 3)]
 
         assert results == [False, True, False]
         assert len(calls["email"]) == 1
         assert len(calls["webhook"]) == 1
         assert "failure #2, threshold: 2" in calls["email"][0][0][0]
-        assert "failure #2, threshold: 2" in calls["webhook"][0][1]["description"]
+        assert "failure #2, threshold: 2" in calls["webhook"][0][0][1]
+        assert "To fix:" in calls["email"][0][0][1]
 
     def test_webhook_threshold_does_not_depend_on_email_toggle(self, im_module, monkeypatch):
         calls = self._capture(im_module, monkeypatch)
@@ -91,9 +98,53 @@ class TestNotifyMonitoringError:
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
 
-        assert im_module.notify_monitoring_error("targetuser", "401 Unauthorized", 2, 60) is True
+        assert self._notify(im_module, im_module.ErrorAlertState(), "401 Unauthorized", 2) is True
         assert calls["email"] == []
         assert len(calls["webhook"]) == 1
+
+    # Each channel is tracked on its own, so the one that failed is retried while the one that landed is left alone
+    def test_a_failed_channel_is_retried_and_a_delivered_one_is_not(self, im_module, monkeypatch):
+        calls = self._capture(im_module, monkeypatch, email_results=(0,), webhook_results=(1, 0))
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+        state = im_module.ErrorAlertState()
+
+        for failure_count in (2, 3, 4):
+            self._notify(im_module, state, "401 Unauthorized", failure_count)
+
+        assert len(calls["email"]) == 1
+        assert len(calls["webhook"]) == 2
+
+    # A failure that changes category is a different failure, so it earns each channel a new alert
+    def test_a_changed_failure_category_earns_a_new_alert(self, im_module, monkeypatch):
+        calls = self._capture(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+        state = im_module.ErrorAlertState()
+
+        self._notify(im_module, state, "401 Unauthorized", 2)
+        self._notify(im_module, state, "401 Unauthorized", 3)
+        self._notify(im_module, state, "The read operation timed out", 4)
+
+        assert len(calls["email"]) == 2
+        assert len(calls["webhook"]) == 2
+
+    # A run that recovered and fails again is in a new outage, which deserves its own alert
+    def test_a_reset_state_alerts_again(self, im_module, monkeypatch):
+        calls = self._capture(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+        state = im_module.ErrorAlertState()
+
+        self._notify(im_module, state, "401 Unauthorized", 2)
+        state.reset()
+        self._notify(im_module, state, "401 Unauthorized", 2)
+
+        assert len(calls["email"]) == 2
+        assert len(calls["webhook"]) == 2
 
 
 class TestNotifySessionFlagged:
@@ -111,27 +162,42 @@ class TestNotifySessionFlagged:
     def test_emails_and_webhooks_when_error_notification_on(self, im_module, monkeypatch):
         calls = self._capture(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True, raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
         im_module.notify_session_flagged("targetuser", "Session flagged.", "KeyError: data")
         assert len(calls["email"]) == 1
         assert len(calls["webhook"]) == 1
         # The triggering error is carried in the email body for the operator
         assert "KeyError: data" in calls["email"][0][0][1]
-        # Classified as an error so send_webhook honors WEBHOOK_ERROR_NOTIFICATION downstream
+        # Sent as an error, past the switch the shared helper already applied
         assert calls["webhook"][0][1]["notification_type"] == "error"
+        assert calls["webhook"][0][1]["force"] is True
 
     def test_email_suppressed_when_error_notification_off(self, im_module, monkeypatch):
         calls = self._capture(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", False, raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
         im_module.notify_session_flagged("targetuser", "Session flagged.", "KeyError: data")
-        # Email honors the error-notification toggle...
+        # Email honors the error-notification toggle while the webhook follows its own switch
         assert calls["email"] == []
-        # ...but the webhook is still attempted, its own type gate decides delivery
         assert len(calls["webhook"]) == 1
+
+    def test_the_webhook_follows_its_own_switch(self, im_module, monkeypatch):
+        calls = self._capture(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True, raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", False)
+        im_module.notify_session_flagged("targetuser", "Session flagged.", "KeyError: data")
+        assert len(calls["email"]) == 1
+        assert calls["webhook"] == []
 
     def test_concurrent_flags_alert_once_within_window(self, im_module, monkeypatch):
         # One shared session flag trips every target thread, but only the first alert within the window goes out
         calls = self._capture(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True, raising=False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
         for target in ("user_a", "user_b", "user_c"):
             im_module.notify_session_flagged(target, "Session flagged.", "KeyError: data")
         assert len(calls["email"]) == 1

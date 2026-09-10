@@ -544,3 +544,140 @@ def test_a_delivered_email_is_reported_in_verbose(im_module, monkeypatch, capsys
     assert im_module.send_email("Profile picture changed", "Body", "", False) == 0
 
     assert "* Email delivered to receiver@example.com: Profile picture changed" in capsys.readouterr().out
+
+
+class TestSendNotificationChannels:
+    # Puts a real webhook destination behind a recording post and a recording email sender, each answering as told
+    def _channels(self, im_module, monkeypatch, email_result=0, post_status=204):
+        calls = {"email": [], "posts": []}
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_FOLLOWERS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "alerts@example.test")
+        monkeypatch.setattr(im_module, "SMTP_SSL", True, raising=False)
+        monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: calls["email"].append((args, kwargs)) or email_result)
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls["posts"].append(kwargs) or _FakeResponse(post_status))
+        return calls
+
+    # The helper starts with the family's parameters in the family's order, so a call written for a sibling works here
+    def test_the_helper_starts_with_the_shared_parameters(self, im_module):
+        import inspect
+        parameters = list(inspect.signature(im_module.send_notification_channels).parameters.values())
+
+        assert [parameter.name for parameter in parameters[:6]] == ["notification_type", "subject", "body", "body_html", "email_enabled", "webhook_enabled"]
+        assert [parameter.default for parameter in parameters[3:6]] == ["", False, None]
+
+    # Each enabled channel receives the alert and the return value reports delivery
+    def test_each_enabled_channel_receives_the_alert(self, im_module, monkeypatch, capsys):
+        calls = self._channels(im_module, monkeypatch)
+
+        delivered = im_module.send_notification_channels("status", "subject", "body", "<b>body</b>", email_enabled=True)
+
+        assert delivered == (True, True)
+        assert calls["email"] == [(("subject", "body", "<b>body</b>", True), {"image_file": "", "image_name": "image1"})]
+        assert len(calls["posts"]) == 1
+        output = capsys.readouterr().out
+        assert "Sending email notification to alerts@example.test" in output
+        assert "Sending webhook notification" in output
+
+    # A channel that failed reports no delivery, so the caller can retry it while leaving the other alone
+    def test_a_failed_channel_reports_no_delivery(self, im_module, monkeypatch):
+        self._channels(im_module, monkeypatch, email_result=1, post_status=400)
+
+        assert im_module.send_notification_channels("status", "subject", "body", email_enabled=True, webhook_enabled=True) == (False, False)
+
+    # A channel the caller switched off is not contacted at all
+    def test_a_channel_the_caller_switched_off_is_not_contacted(self, im_module, monkeypatch):
+        calls = self._channels(im_module, monkeypatch)
+
+        assert im_module.send_notification_channels("status", "subject", "body", email_enabled=False, webhook_enabled=False) == (False, False)
+        assert calls["email"] == []
+        assert calls["posts"] == []
+
+    # The configured switch decides the webhook channel when the caller does not say
+    def test_the_configured_switch_decides_the_webhook_when_the_caller_does_not_say(self, im_module, monkeypatch):
+        calls = self._channels(im_module, monkeypatch)
+
+        assert im_module.send_notification_channels("followers", "subject", "body")[1] is False
+        assert calls["posts"] == []
+        assert im_module.send_notification_channels("status", "subject", "body")[1] is True
+        assert len(calls["posts"]) == 1
+
+    # The embed the caller shaped reaches the webhook unchanged and the switch is not applied a second time
+    def test_the_embed_reaches_the_webhook_as_shaped(self, im_module, monkeypatch):
+        sent = {}
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: sent.update(args=args, kwargs=kwargs) or 0)
+        fields = [{"name": "Followers", "value": "10 -> 12", "inline": True}]
+
+        im_module.send_notification_channels("error", "subject", "body", webhook_title="Error for user", webhook_description="what happened", webhook_color=0xFF0000, webhook_fields=fields, image_url="https://example.test/pic.jpg", local_image_file="pic.jpg")
+
+        assert sent["args"] == ("Error for user", "what happened")
+        assert sent["kwargs"] == {"color": 0xFF0000, "fields": fields, "image_url": "https://example.test/pic.jpg", "local_image_file": "pic.jpg", "notification_type": "error", "force": True}
+
+    # Without an embed of its own the webhook carries the subject and body, the way the family's plain alerts do
+    def test_the_subject_and_body_stand_in_for_a_missing_embed(self, im_module, monkeypatch):
+        sent = {}
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: sent.update(args=args, kwargs=kwargs) or 0)
+
+        im_module.send_notification_channels("status", "subject", "body")
+
+        assert sent["args"] == ("subject", "body")
+        assert sent["kwargs"]["color"] == 0x7289DA
+
+    # An email with a picture hands the file and its name to the sender
+    def test_an_email_picture_reaches_the_sender(self, im_module, monkeypatch):
+        calls = self._channels(im_module, monkeypatch)
+
+        im_module.send_notification_channels("status", "subject", "body", "<b>body</b>", email_enabled=True, webhook_enabled=False, email_image_file="story.jpg", email_image_name="story_pic")
+
+        assert calls["email"] == [(("subject", "body", "<b>body</b>", True), {"image_file": "story.jpg", "image_name": "story_pic"})]
+
+
+class TestWebhookEventEnabled:
+    # The master switch gates every alert type, so switching webhooks off silences all of them at once
+    def test_the_master_switch_gates_every_alert_type(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_FOLLOWERS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", False)
+
+        assert [im_module.webhook_event_enabled(event) for event in ("status", "followers", "error")] == [False, False, False]
+
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+
+        assert [im_module.webhook_event_enabled(event) for event in ("status", "followers", "error")] == [True, True, True]
+
+    # Each alert type follows its own setting, so one can be on while the others are off
+    def test_each_alert_type_is_gated_by_its_own_setting(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_FOLLOWERS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", False)
+
+        assert [im_module.webhook_event_enabled(event) for event in ("status", "followers", "error")] == [False, True, False]
+
+    # An alert type the tool does not have is off rather than treated as enabled
+    def test_an_unknown_alert_type_is_off(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+
+        assert im_module.webhook_event_enabled("mastery") is False
+
+
+# A caller that already applied the switch says so, and the webhook then posts even though the switch is off
+def test_a_forced_webhook_skips_the_switch_it_was_already_given(im_module, monkeypatch):
+    posts = []
+    monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+    monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
+    monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", False)
+    monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: posts.append(kwargs) or _FakeResponse())
+
+    assert im_module.send_webhook("t", "b", notification_type="status", force=True) == 0
+    assert len(posts) == 1

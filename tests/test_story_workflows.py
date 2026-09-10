@@ -98,12 +98,14 @@ class TestStoryWorkflows:
         emails = []
         webhooks = []
         monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: emails.append((args, kwargs)))
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: webhooks.append((args, kwargs)) or 0)
 
         result = im_module.send_story_item_notifications("target", "Image", 1710000000, 1710086400, [], [], "caption", 600, "https://example.com/story.jpg")
 
-        assert result == 0
+        assert result == (False, True)
         assert emails == []
         assert len(webhooks) == 1
         assert webhooks[0][1]["notification_type"] == "status"
@@ -115,6 +117,8 @@ class TestStoryWorkflows:
         webhooks = []
         hostile_text = '<img src=x onerror="alert(1)">\nsecond line'
         monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "receiver@example.com")
         monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: emails.append((args, kwargs)) or 0)
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: webhooks.append((args, kwargs)) or 0)
