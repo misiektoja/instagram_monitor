@@ -73,7 +73,7 @@ def interpolation_is_safe(expression):
             # A method call on an already safe value, such as source.capitalize() or escape(bio).replace(...)
             return function.attr in SAFE_ATTRIBUTES and interpolation_is_safe(ast.unparse(function.value))
         name = function.id if isinstance(function, ast.Name) else ""
-        return name in {"escape", *SAFE_HELPERS}
+        return name in {"escape", "html_text", *SAFE_HELPERS}
 
     if isinstance(parsed, ast.IfExp):
         # A conditional between two literal strings, such as 'started following' if x else 'stopped following'
@@ -96,6 +96,7 @@ class TestHtmlNotificationEscaping:
     # Verifies an unescaped interpolation would actually be reported, so the sweep cannot pass vacuously
     @pytest.mark.parametrize("expression,expected", [
         ("escape(str(caption))", True),
+        ("html_text(str(advice.fix))", True),
         ("caption_html", True),
         ("user", True),
         ("source.capitalize()", True),

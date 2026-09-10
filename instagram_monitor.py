@@ -9951,6 +9951,11 @@ def recovery_fix_with_guide(fix: str, guide_url: str) -> str:
     return f"{fix}\nGuide: {guide_url}"
 
 
+# Escapes text for an HTML email body and keeps its line breaks, which HTML would otherwise collapse into spaces
+def html_text(text: str) -> str:
+    return escape(text).replace("\n", "<br>")
+
+
 # Yields the exception and each cause or context up to max_depth, to walk an exception chain
 def iter_exc_chain(error: Any, max_depth: int = 8):
     current = error
@@ -10348,7 +10353,7 @@ def notify_monitoring_error(user, advice, error_msg, failure_count, check_interv
     interval = f"{display_time(check_interval)} ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)})"
     alert_subject = f"instagram_monitor: error for {user} ({streak})"
     alert_body = f"{advice.summary} ({streak})\n{error_msg}\n\nTo fix: {advice.fix}\n\nCheck interval: {interval}{get_cur_ts(nl_ch + 'Timestamp: ')}"
-    alert_body_html = f"{escape(str(advice.summary))} ({escape(streak)})<br><br><b>{escape(str(error_msg))}</b><br><br>To fix: {escape(str(advice.fix))}<br><br>Check interval: <b>{escape(interval)}</b>{get_cur_ts('<br>Timestamp: ')}"
+    alert_body_html = f"{html_text(str(advice.summary))} ({escape(streak)})<br><br><b>{html_text(str(error_msg))}</b><br><br>To fix: {html_text(str(advice.fix))}<br><br>Check interval: <b>{escape(interval)}</b>{get_cur_ts('<br>Timestamp: ')}"
     email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=email_pending, webhook_enabled=webhook_pending, webhook_title=f"Error for {user}", webhook_description=f"{advice.summary}\n{error_msg}\n({streak})\nTo fix: {advice.fix}", webhook_color=0xFF0000)
     alert_state.email_sent = alert_state.email_sent or email_delivered
     alert_state.webhook_sent = alert_state.webhook_sent or webhook_delivered

@@ -305,3 +305,19 @@ class TestAccountFlagIdentity:
 
         assert "SecretBuild" not in captured["body"] and "SecretBuild" not in captured["webhook"]
         assert "Transport:" not in captured["body"]
+
+    # The guide link sits under the fix in the HTML body too, since HTML renders the newline the fix carries as a space
+    def test_the_guide_link_keeps_its_own_line_in_the_html_body(self, im_module, monkeypatch):
+        captured: dict = {}
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "ERROR_FAILURE_THRESHOLD", 1)
+        monkeypatch.setattr(im_module, "send_email", lambda subject, body, html, ssl, *args, **kwargs: captured.update(html=html))
+
+        advice = im_module.classify_recovery_error("connection reset", is_logged_in=True)
+        assert "\nGuide: " in advice.fix
+        im_module.notify_monitoring_error("target.user", advice, "connection reset", 1, 3600, im_module.ErrorAlertState())
+
+        parts = captured["html"].split("<br>")
+        fix_index = next(index for index, part in enumerate(parts) if part.startswith("To fix: "))
+        assert parts[fix_index + 1].startswith("Guide: https://")
+        assert "\n" not in parts[fix_index]
