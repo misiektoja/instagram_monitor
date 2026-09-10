@@ -136,7 +136,7 @@ Run `instagram_monitor --doctor` to confirm Playwright and the browser are insta
 ## Choosing the Right Logging Level
 
 - **Default mode** logs detected changes and important errors.
-- **Verbose mode (`--verbose`)** also logs operational events such as follower and following counts, an alert channel switched off because its settings are still placeholders and a line naming where each delivered alert went. It prints nothing per check, so an uneventful run stays quiet.
+- **Verbose mode (`--verbose`)** also logs operational events such as follower and following counts, an alert channel switched off because its settings are still placeholders and a line naming where each delivered alert went. It prints nothing per check, so an uneventful run stays quiet. Set `DELIVERY_CONFIRMATIONS = False` to keep verbose mode without the `* Email delivered` and `* Webhook delivered` lines, which is worth doing when alerts are frequent.
 - **Debug mode (`--debug`)** adds HTTP details, internal decisions, how many settings the configuration file supplied and the previous check time, next check time and interval for each cycle. Use it to confirm that a background process is still checking targets. Each line names the operation, then lists its details as comma-separated `key=value` fields, and every outbound call reports `outcome=OK` or `outcome=failed`. A `--debug` run leaves the terminal as it was instead of clearing it, so the output you are comparing against stays on screen. `--verbose` clears it like an ordinary run.
 
 Either mode also expands the startup summary with the detected install method and the names of the secrets that came from the dotenv file, the environment or the configuration file. Secret values never appear.

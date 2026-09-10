@@ -591,6 +591,10 @@ VERBOSE_MODE = False
 # Can also be enabled via the --debug flag, which turns it on regardless of this setting
 DEBUG_MODE = False
 
+# Whether verbose output confirms each delivered email and webhook alert
+# Applies only when VERBOSE_MODE is enabled
+DELIVERY_CONFIRMATIONS = True
+
 # ----------------------------
 # Multi-target Monitoring
 # ----------------------------
@@ -1396,6 +1400,7 @@ VERIFY_SSL = True
 COLORED_OUTPUT = False
 COLOR_THEME = {}
 DEBUG_MODE = False
+DELIVERY_CONFIRMATIONS = True
 VERBOSE_MODE = False
 DASHBOARD_ENABLED = False
 WEB_DASHBOARD_ENABLED = False
@@ -5506,7 +5511,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     except Exception as e:
         print_recovery_error(e, context="email", summary=f"Error sending email: {e}")
         return 1
-    verbose_print(f"Email delivered to {RECEIVER_EMAIL}: {subject}")
+    verbose_delivery_print(f"Email delivered to {RECEIVER_EMAIL}: '{subject}'")
     return 0
 
 
@@ -6098,7 +6103,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                     response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers=final_headers, json=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS)
 
             if 200 <= response.status_code <= 299:
-                verbose_print(f"Webhook delivered through {webhook_provider_display_name(provider)}: {payload['title']}")
+                verbose_delivery_print(f"Webhook delivered through {webhook_provider_display_name(provider)}: '{payload['title']}'")
                 return 0
             last_error = response
             if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
@@ -6418,6 +6423,12 @@ def debug_print(_operation, **fields):
 def verbose_print(message):
     if VERBOSE_MODE:
         print(f"* {message}")  # substitution applied in LOGGER.write
+
+
+# Prints one delivery confirmation in verbose mode unless DELIVERY_CONFIRMATIONS turns them off
+def verbose_delivery_print(message):
+    if DELIVERY_CONFIRMATIONS:
+        verbose_print(message)
 
 
 # Prints verbose-only notices as one block, so a standalone line is not left without the timestamp trailer
