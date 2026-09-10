@@ -320,6 +320,24 @@ class TestOutageReporting:
         assert reporter.recovered() is not None
         assert reporter.recovered() is None
 
+
+    # Verifies a category change mid-outage keeps the outage start, so the alert delay and the reminder still elapse
+    def test_an_outage_that_changes_category_keeps_its_start(self, im_module, monkeypatch):
+        clock = [1000000.0]
+        monkeypatch.setattr(im_module.time, "time", lambda: clock[0])
+        reporter = im_module.OutageReporter()
+        first = im_module.classify_recovery_error("ConnectionException: 429 Too Many Requests")
+        second = im_module.classify_recovery_error(OSError(24, "Too many open files"), context="runtime")
+        assert first.code != second.code
+
+        assert reporter.failed(first, 900) == "full"
+        for index in range(60):
+            clock[0] += 15
+            reporter.failed(second if index % 2 else first, 900)
+
+        assert reporter.since == 1000000
+        assert reporter.recovered() == 900
+
     # The reminder follows the clock, so a run that retries faster than it polls does not remind more often
     def test_the_outage_reminder_follows_the_clock_not_the_check_count(self, im_module, monkeypatch):
         clock = [1000000.0]
@@ -623,6 +641,13 @@ class TestLocalResourceLimits:
         assert "not an Instagram problem" in advice.summary
         assert "ulimit -n" in advice.fix
         assert advice.retryable is False
+
+
+    # Verifies the descriptor limit is matched as a whole errno, so errno 240 or 241 in a message is not mistaken for it
+    def test_a_neighbouring_errno_is_not_a_file_descriptor_limit(self, im_module):
+        assert im_module.is_too_many_open_files(RuntimeError("[Errno 24] Too many open files")) is True
+        assert im_module.is_too_many_open_files(RuntimeError("[Errno 240] something else")) is False
+        assert im_module.is_too_many_open_files(RuntimeError("[Errno 241] something else")) is False
 
     # The limit usually surfaces wrapped in whatever call hit it, so the whole chain is walked
     @pytest.mark.parametrize("context", ["runtime", "file_write", "webhook", "email", "config"])

@@ -34,6 +34,7 @@ def _setup_no_network(monkeypatch, im):
     monkeypatch.setattr(im, "SMTP_HOST", "your_smtp_server_ssl", raising=False)
     monkeypatch.setattr(im, "WEBHOOK_URL", "", raising=False)
     monkeypatch.setattr(im, "WEBHOOK_ENABLED", False, raising=False)
+    monkeypatch.setattr(im, "check_internet", lambda **kwargs: True)
 
 
 class TestDoctorLine:
@@ -457,6 +458,25 @@ class TestRunDoctor:
 
         assert im_module.NTFY_ACCESS_TOKEN == "tk_from_environment"
         assert im_module.SECRET_SOURCES["NTFY_ACCESS_TOKEN"] == "environment"
+
+
+    # An empty export is a shell-profile leftover rather than a value, so it neither blocks nor blanks the dotenv value
+    def test_an_empty_export_does_not_shadow_the_dotenv_value(self, im_module, monkeypatch, tmp_path):
+        env_file = tmp_path / ".env"
+        env_file.write_text("NTFY_ACCESS_TOKEN=tk_from_file\n", encoding="utf-8")
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--doctor", "--env-file", str(env_file), "--no-color"])
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "run_doctor", lambda *args, **kwargs: 0)
+        monkeypatch.setattr(im_module, "NTFY_ACCESS_TOKEN", "", raising=False)
+        monkeypatch.setattr(im_module, "SECRET_SOURCES", {}, raising=False)
+        monkeypatch.setenv("NTFY_ACCESS_TOKEN", "")
+
+        with pytest.raises(SystemExit):
+            im_module.run_main()
+
+        assert im_module.NTFY_ACCESS_TOKEN == "tk_from_file"
+        assert im_module.SECRET_SOURCES["NTFY_ACCESS_TOKEN"] == "dotenv file"
 
     # Each secret is attributed to the source it actually came from, so the report can name the dotenv path
     def test_secret_sources_split_by_origin(self, im_module, monkeypatch, tmp_path):
