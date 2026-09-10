@@ -151,6 +151,108 @@ class TestWebhookDestination:
         assert self.webhook_state_after_startup(im_module, monkeypatch, tmp_path, "https://ntfy.sh/some-topic") is True
 
 
+# Drives the real startup path with the report stubbed out, so only the resolution the run performs is observed
+def run_startup(im_module, monkeypatch, tmp_path, argv=(), config_text="", environment=None, clear_screen=False):
+    for name in im_module.SECRET_KEYS:
+        monkeypatch.delenv(name, raising=False)
+    for name, value in (environment or {}).items():
+        monkeypatch.setenv(name, value)
+    config = tmp_path / "instagram_monitor.conf"
+    config.write_text(f"CLEAR_SCREEN = {clear_screen}\nDISABLE_LOGGING = True\n" + config_text, encoding="utf-8")
+    monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--doctor", "--debug", "--no-color", "--config-file", str(config), "--env-file", "none", *argv])
+    monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+    monkeypatch.setattr(im_module, "run_doctor", lambda *args, **kwargs: 0)
+    with pytest.raises(SystemExit):
+        im_module.run_main()
+
+
+class TestSecretTrace:
+    # The diagnostic line is documented as comma-separated key=value fields, so no field value may carry one
+    @pytest.mark.parametrize("value, expected", [
+        ("a-password-the-user-picked", {"value": "set"}),
+        ("your_smtp_password", {"value": "not set"}),
+        ("", {"value": "not set"}),
+        (None, {"value": "not set"}),
+    ])
+    def test_no_secret_field_value_carries_a_comma(self, im_module, value, expected):
+        assert im_module.secret_fields(value) == expected
+        assert all("," not in str(part) for part in expected.values())
+
+    # A source outside the set is a typo rather than a new layer, so it is refused instead of reaching the summary
+    def test_an_unsupported_secret_source_is_refused(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SECRET_SOURCES", {})
+
+        with pytest.raises(ValueError, match="Unsupported secret source"):
+            im_module.record_secret_source("SMTP_PASSWORD", "somewhere else", "a-password-the-user-picked")
+
+        assert im_module.SECRET_SOURCES == {}
+
+    # A placeholder is not a value, so recording it clears the earlier answer rather than adding a row
+    def test_a_placeholder_clears_the_recorded_source(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SECRET_SOURCES", {"SMTP_PASSWORD": "dotenv file"})
+
+        im_module.record_secret_source("SMTP_PASSWORD", "command line", "your_smtp_password")
+
+        assert im_module.SECRET_SOURCES == {}
+
+    # Confirms every layer that can supply a secret is traced under the source that actually supplied it
+    @pytest.mark.parametrize("argv, environment, config_text, expected", [
+        ((), {}, 'SMTP_PASSWORD = "a-password-the-user-picked"\n', "name=SMTP_PASSWORD, source=configuration file or command line, value=set"),
+        ((), {"NTFY_ACCESS_TOKEN": "tk_exported_token"}, "", "name=NTFY_ACCESS_TOKEN, source=environment, value=set"),
+        (("--webhook-url", "https://ntfy.sh/traced-topic"), {}, "", "name=WEBHOOK_URL, source=command line, value=set"),
+        (("--proxy-url", "http://127.0.0.1:8080"), {}, "", "name=PROXY_URL, source=command line, value=set"),
+    ])
+    def test_every_secret_layer_is_traced(self, im_module, monkeypatch, tmp_path, capsys, restored_globals, argv, environment, config_text, expected):
+        run_startup(im_module, monkeypatch, tmp_path, argv, config_text, environment)
+
+        output = capsys.readouterr().out
+        assert f"Secret resolution: {expected}" in output
+        assert "a-password-the-user-picked" not in output
+
+    # The command line is the last layer to supply a secret, so a run with none says so only after it has had its say
+    def test_a_run_with_no_secret_anywhere_says_so(self, im_module, monkeypatch, tmp_path, capsys, restored_globals):
+        run_startup(im_module, monkeypatch, tmp_path)
+
+        output = capsys.readouterr().out
+        assert "Secret resolution:" not in output
+        assert "No private settings were resolved from config, dotenv, environment or the command line" in output
+
+
+class TestEarlyStartupTimestamps:
+    # LOCAL_TIMEZONE still holds the 'Auto' sentinel until it is resolved, which is not a zone pytz can build
+    def test_a_timestamp_survives_the_unresolved_timezone(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "Auto")
+
+        assert im_module.now_local().tzinfo is not None
+        assert im_module.now_local_naive().tzinfo is None
+        assert im_module.get_hour_min_from_ts(im_module.now_local(), show_seconds=True)
+
+    # The first debug line is printed before the timezone is resolved, so it must not be what ends the run
+    def test_the_first_debug_line_does_not_end_the_run(self, im_module, monkeypatch, tmp_path, capsys, restored_globals):
+        monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "Auto")
+
+        run_startup(im_module, monkeypatch, tmp_path, clear_screen=True)
+
+        assert "Terminal screen clear skipped because debug mode is active" in capsys.readouterr().out
+
+
+class TestTechnicalDetail:
+    # The classified detail is the raw failure, which belongs to a debug run rather than to the normal error block
+    @pytest.mark.parametrize("debug, expected", [(True, True), (False, False)])
+    def test_the_technical_detail_line_follows_debug_mode(self, im_module, debug, expected):
+        advice = im_module.make_recovery_advice("network.unavailable", "The service could not be reached", "Check the connection", True, "ConnectionError: [Errno 61] Connection refused")
+
+        rendered = im_module.render_recovery_error(advice, debug=debug)
+
+        assert ("Technical detail: ConnectionError: [Errno 61] Connection refused" in rendered) is expected
+
+    # A detail that only repeats a line already printed spends a line saying nothing
+    def test_a_detail_repeating_the_summary_is_dropped(self, im_module):
+        advice = im_module.make_recovery_advice("config.missing", "Config file 'x.conf' does not exist", "Correct the path", False, "Config file 'x.conf' does not exist")
+
+        assert "Technical detail:" not in im_module.render_recovery_error(advice, debug=True)
+
+
 class TestSecretReporting:
     # Confirms an unedited placeholder is never reported as a loaded secret, whichever layer recorded it
     def test_placeholder_secrets_are_not_reported_as_loaded(self, im_module, monkeypatch):
