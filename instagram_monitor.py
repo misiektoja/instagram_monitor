@@ -1414,6 +1414,9 @@ SECRET_ACTION_FLAGS = ("--set-smtp-password", "--set-webhook-url")
 # Effective source name for each configured secret without storing another copy of its value
 SECRET_SOURCES = {}
 
+# Every layer that can supply a secret, so a source outside the set is a typo rather than a new layer
+SECRET_SOURCE_ORDER = ("configuration file or command line", "dotenv file", "dotenv file reload", "environment", "command line")
+
 # Secret keys that were already exported when the tool started, so a dotenv file cannot be credited for them
 EXPORTED_SECRET_KEYS: frozenset = frozenset()
 
@@ -6879,7 +6882,7 @@ def reload_secrets_signal_handler(sig, frame):
                     proxy_url_changed = True
                 if secret == "WEBHOOK_URL":
                     webhook_url_changed = True
-                SECRET_SOURCES[secret] = "dotenv file reload"
+                record_secret_source(secret, "dotenv file reload", val)
                 # This prints the setting name and environment-file path, never the secret value
 
                 # codeql[py/clear-text-logging-sensitive-data]
@@ -14898,10 +14901,10 @@ def _wizard_apply_saved_values(state):
         if saved_secret is None:
             SECRET_SOURCES.pop(secret_key, None)
         else:
-            SECRET_SOURCES[secret_key] = "environment" if secret_key in EXPORTED_SECRET_KEYS else "dotenv file"
+            record_secret_source(secret_key, "environment" if secret_key in EXPORTED_SECRET_KEYS else "dotenv file", saved_secret)
     globals().update(state.secret_updates)
     for secret_key in state.secret_updates:
-        SECRET_SOURCES[secret_key] = "environment" if secret_key in EXPORTED_SECRET_KEYS else "dotenv file"
+        record_secret_source(secret_key, "environment" if secret_key in EXPORTED_SECRET_KEYS else "dotenv file")
     # The shared resolver rather than the configured value, so doctor names the state a restart would find
     return resolve_local_timezone()
 
@@ -16197,6 +16200,29 @@ def doctor_secret_is_set(value) -> bool:
     return isinstance(value, str) and bool(value.strip()) and not value.strip().startswith("your_")
 
 
+# Returns the diagnostic fields describing one secret, reporting presence alone since no secret here has a provider-issued length
+def secret_fields(value) -> Dict[str, Any]: return {"value": "set" if doctor_secret_is_set(value) else "not set"}
+
+
+# Records where one secret resolved from and traces it, so a later layer overwrites the earlier answer instead of adding to it
+def record_secret_source(name: str, source: str, value: Any = None) -> None:
+    if source not in SECRET_SOURCE_ORDER:
+        raise ValueError(f"Unsupported secret source: {source}")
+    resolved = globals().get(name) if value is None else value
+    # A placeholder is not a value, so it earns neither a source nor a row
+    if not doctor_secret_is_set(resolved):
+        SECRET_SOURCES.pop(name, None)
+        return
+    SECRET_SOURCES[name] = source
+    debug_print("Secret resolution", name=name, source=source, **secret_fields(resolved))
+
+
+# Reports that no layer supplied a secret, called once the command line has had its say so the answer is final
+def trace_unresolved_secrets() -> None:
+    if not SECRET_SOURCES:
+        debug_print("No private settings were resolved from config, dotenv, environment or the command line")
+
+
 # Groups configured secret names by the source each value actually came from
 def doctor_secret_sources(env_path=None) -> Tuple[List[str], List[str], List[str], List[str]]:
     from_file: List[str] = []
@@ -17294,7 +17320,7 @@ def run_main():
     SECRET_SOURCES.clear()
     for secret in SECRET_KEYS:
         if doctor_secret_is_set(globals().get(secret)):
-            SECRET_SOURCES[secret] = "configuration file or command line"
+            record_secret_source(secret, "configuration file or command line")
 
     if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
         env_path = None
@@ -17325,7 +17351,7 @@ def run_main():
         val = os.getenv(secret)
         if val is not None:
             globals()[secret] = val
-            SECRET_SOURCES[secret] = "environment" if secret in EXPORTED_SECRET_KEYS else "dotenv file"
+            record_secret_source(secret, "environment" if secret in EXPORTED_SECRET_KEYS else "dotenv file")
 
     # The shipped WEBHOOK_URL placeholder means 'not configured', so it must not reach code that treats it as a destination
     if is_placeholder_setting(WEBHOOK_URL):
@@ -17445,7 +17471,7 @@ def run_main():
 
     if args.proxy_url:
         PROXY_URL = str(args.proxy_url or "")
-        SECRET_SOURCES["PROXY_URL"] = "command line"
+        record_secret_source("PROXY_URL", "command line")
 
     if args.proxy_cert_path:
         PROXY_CERT_PATH = str(args.proxy_cert_path or "")
@@ -17502,7 +17528,7 @@ def run_main():
             print_recovery_error("Invalid webhook URL format. It must be a complete HTTPS URL without embedded credentials", context="webhook_config")
             sys.exit(1)
         WEBHOOK_URL = str(args.webhook_url or "")
-        SECRET_SOURCES["WEBHOOK_URL"] = "command line"
+        record_secret_source("WEBHOOK_URL", "command line")
         WEBHOOK_ENABLED = True
 
     if args.webhook_provider:
@@ -17702,7 +17728,9 @@ def run_main():
 
     if args.session_password:
         SESSION_PASSWORD = args.session_password
-        SECRET_SOURCES["SESSION_PASSWORD"] = "command line"
+        record_secret_source("SESSION_PASSWORD", "command line")
+
+    trace_unresolved_secrets()
 
     if not SESSION_USERNAME:
         SKIP_SESSION = True
