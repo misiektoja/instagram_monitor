@@ -243,3 +243,77 @@ def test_a_missing_webhook_destination_reports_the_shared_block(im_module, monke
     assert f"Guide: {im_module.WEBHOOK_GUIDE_URL}" in output
     # The run says nothing about sending, because it never got that far
     assert "Sending test webhook notification" not in output
+
+
+class TestAccountFlagIdentity:
+    # Captures the flagged alert without sending anything
+    @pytest.fixture
+    def flagged_alert(self, im_module, monkeypatch):
+        captured: dict = {}
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "CIRCUIT_BREAKER", False)
+        monkeypatch.setattr(im_module, "record_failure_event", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "FLAGGED_NOTIFY_STATE", {"ts": 0})
+        monkeypatch.setattr(im_module, "send_email", lambda subject, body, html, ssl, **kwargs: captured.update(body=body, html=html))
+        monkeypatch.setattr(im_module, "send_webhook", lambda **kwargs: captured.update(webhook=kwargs["description"]))
+
+        def run():
+            im_module.notify_session_flagged("target.user", "Instagram flagged this session account", "checkpoint_required")
+            return captured
+
+        return run
+
+    # A flag is only actionable if the reader knows which client produced it
+    def test_the_flag_alert_carries_the_transport_and_agent(self, im_module, monkeypatch, flagged_alert):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "auto")
+        monkeypatch.setattr(im_module, "USER_AGENT", "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0")
+
+        captured = flagged_alert()
+
+        for surface in (captured["body"], captured["html"], captured["webhook"]):
+            assert "curl_cffi impersonating firefox" in surface
+            assert "Firefox/147.0" in surface
+
+    # An impersonation that never ran is the likeliest cause of a flag, so the alert has to say so
+    def test_the_flag_alert_names_the_transport_fallback(self, im_module, monkeypatch, flagged_alert):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
+
+        assert "requests (curl_cffi is not installed)" in flagged_alert()["body"]
+
+    # An agent that is not set yet must not leave a dangling label in an outgoing message
+    def test_the_flag_alert_omits_an_unset_agent(self, im_module, monkeypatch, flagged_alert):
+        monkeypatch.setattr(im_module, "USER_AGENT", "")
+
+        captured = flagged_alert()
+
+        assert "Transport:" in captured["body"]
+        assert "Browser agent" not in captured["body"] and "Browser agent" not in captured["html"]
+
+    # The agent reaches an HTML mail body, so it goes through the same escaping as the error text
+    def test_the_agent_is_escaped_in_the_html_body(self, im_module, monkeypatch, flagged_alert):
+        monkeypatch.setattr(im_module, "USER_AGENT", "Mozilla/5.0 <script>alert(1)</script>")
+
+        html = flagged_alert()["html"]
+
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+
+    # These messages leave the machine, so routine failures must not publish the identity on every threshold hit
+    def test_a_routine_error_alert_carries_no_identity(self, im_module, monkeypatch):
+        captured: dict = {}
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "ERROR_FAILURE_THRESHOLD", 1)
+        monkeypatch.setattr(im_module, "USER_AGENT", "Mozilla/5.0 SecretBuild/1")
+        monkeypatch.setattr(im_module, "send_email", lambda subject, body, html, ssl, **kwargs: captured.update(body=body))
+        monkeypatch.setattr(im_module, "send_webhook", lambda **kwargs: captured.update(webhook=kwargs["description"]))
+
+        im_module.notify_monitoring_error("target.user", "connection reset", 1, 3600)
+
+        assert "SecretBuild" not in captured["body"] and "SecretBuild" not in captured["webhook"]
+        assert "Transport:" not in captured["body"]

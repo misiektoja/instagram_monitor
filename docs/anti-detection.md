@@ -80,6 +80,8 @@ instagram_monitor --clear-breaker
 
 Rate limits, network errors and Instagram API changes do not trip the breaker. Only responses that act against the account do.
 
+The email and webhook alert for a flagged account also carries the client identity behind it: the transport in effect, the browser `curl_cffi` impersonated and the browser user agent. That is usually what you need to decide whether the transport caused the flag. It means those values reach your notification service, so leave account-level alerts off if that matters for your webhook destination. Routine per-target error alerts carry no identity.
+
 The safety ledger also fails closed. If `instagram_monitor_exposure.json` cannot be read or saved, authenticated monitoring stops before another identity scan. Fix its contents or permissions then run `--clear-breaker` to reset unusable state.
 
 <a id="check-your-exposure"></a>

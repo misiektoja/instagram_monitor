@@ -10098,6 +10098,16 @@ def notify_monitoring_error(user, error_msg, failure_count, check_interval):
     return notified
 
 
+# Describes the client identity behind an account-level alert, since a flag is worth little to diagnose without
+# the transport and agent that produced it. Kept to account-level alerts because these notifications leave the machine
+def alert_identity_rows() -> List[Tuple[str, str]]:
+    transport = f"curl_cffi impersonating {_curl_cffi_impersonate_target()}" if curl_cffi_backend_active() else http_backend_display()
+    rows = [("Transport", transport)]
+    if USER_AGENT:
+        rows.append(("Browser agent", USER_AGENT))
+    return rows
+
+
 # Sends a one-off email and webhook alert when the session account or IP is flagged, bypassing ERROR_FAILURE_THRESHOLD since a flag is terminal and operator-actionable
 def notify_session_flagged(user, err_str, error_msg):
     # A flag is an account-level action, so stop every target durably before the alerting de-dupe below can return early.
@@ -10113,16 +10123,20 @@ def notify_session_flagged(user, err_str, error_msg):
             return
         FLAGGED_NOTIFY_STATE['ts'] = now
 
+    identity_rows = alert_identity_rows()
+    identity_text = "".join(f"\n{label}: {value}" for label, value in identity_rows)
+    identity_html = "".join(f"<br>{label}: <b>{escape(str(value))}</b>" for label, value in identity_rows)
+
     if ERROR_NOTIFICATION:
         alert_subject = f"instagram_monitor: session account flagged (target: {user})"
-        alert_body = f"{err_str}\n\nTriggering error: {error_msg}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-        alert_body_html = f"{escape(str(err_str))}<br><br>Triggering error: <b>{escape(str(error_msg))}</b>{get_cur_ts('<br><br>Timestamp: ')}"
+        alert_body = f"{err_str}\n\nTriggering error: {error_msg}\n{identity_text}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+        alert_body_html = f"{escape(str(err_str))}<br><br>Triggering error: <b>{escape(str(error_msg))}</b><br>{identity_html}{get_cur_ts('<br><br>Timestamp: ')}"
         print(f"* Sending session flagged notification to {RECEIVER_EMAIL}")
         send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
 
     send_webhook(
         title=f"🚩 Session account flagged (target: {user})",
-        description=f"{err_str}\n\nTriggering error: `{error_msg}`",
+        description=f"{err_str}\n\nTriggering error: `{error_msg}`\n{identity_text}",
         color=0xFF0000,
         notification_type="error"
     )
