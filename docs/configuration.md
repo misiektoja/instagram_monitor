@@ -23,6 +23,8 @@ instagram_monitor --generate-config instagram_monitor.conf
 
 When you include the filename, Instagram Monitor writes the template directly as UTF-8. This avoids PowerShell changing the file encoding during redirection.
 
+If that file already exists, Instagram Monitor asks before replacing it and keeps a backup whose name includes the current date and time. Add `--force` to replace it without the question, which is what you want in a script. Without a terminal to ask on, the command refuses and leaves the file alone. Redirecting with `>` still bypasses all of this, because the shell truncates the file before Instagram Monitor runs.
+
 Open `instagram_monitor.conf` in a text editor and change the settings you need. The file contains a short explanation above each setting.
 
 Without `--config-file`, Instagram Monitor uses the first configuration it finds in this order:
@@ -296,7 +298,7 @@ The mail server password has its own command:
 instagram_monitor --set-smtp-password
 ```
 
-Type the password at the hidden prompt. Instagram Monitor signs in to the mail server with it and saves `SMTP_PASSWORD` in `.env` only once the server accepts it. No email is sent. The other SMTP settings have to be in place first, so run this after `--setup` or after filling in `SMTP_HOST`, `SMTP_USER`, `SENDER_EMAIL` and `RECEIVER_EMAIL`.
+Type the password at the hidden prompt. Instagram Monitor signs in to the mail server with it and saves `SMTP_PASSWORD` in `.env` only once the server accepts it. No email is sent. The other SMTP settings have to be in place first, so run this after `--setup` or after filling in `SMTP_HOST`, `SMTP_USER`, `SENDER_EMAIL` and `RECEIVER_EMAIL`. The command checks those settings before it asks for anything and names the ones that are still missing, so you never type a password that cannot be checked.
 
 You can use operating system environment variables instead of a file. Set them with `export` on Linux, Unix, macOS or WSL:
 

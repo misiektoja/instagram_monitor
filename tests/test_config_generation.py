@@ -176,7 +176,106 @@ class TestConfigPersistence:
             assert list(destination.parent.glob("*.bak")) == []
 
 
+    # An existing config is replaced only after the user agrees to it
+    def test_generated_config_asks_before_replacing(self, im_module):
+        with make_test_directory() as directory_name:
+            destination = Path(directory_name) / "instagram_monitor.conf"
+            destination.write_text("OLD_VALUE = True\n", encoding="utf-8")
+            asked = []
+
+            backup_path, written = im_module.write_generated_config(destination, "INSTA_CHECK_INTERVAL = 5400\n", interactive=True, input_func=lambda prompt: asked.append(prompt) or "n")
+
+            assert (backup_path, written) == (None, False)
+            assert len(asked) == 1 and str(destination) in asked[0]
+            assert destination.read_text(encoding="utf-8") == "OLD_VALUE = True\n"
+            assert list(destination.parent.glob("*.bak")) == []
+
+    # Agreeing replaces the file and keeps the timestamped backup the writer takes
+    def test_generated_config_replaces_after_agreement(self, im_module):
+        with make_test_directory() as directory_name:
+            destination = Path(directory_name) / "instagram_monitor.conf"
+            destination.write_text("OLD_VALUE = True\n", encoding="utf-8")
+
+            backup_path, written = im_module.write_generated_config(destination, "INSTA_CHECK_INTERVAL = 5400\n", interactive=True, input_func=lambda prompt: "y")
+
+            assert written is True
+            assert destination.read_text(encoding="utf-8") == "INSTA_CHECK_INTERVAL = 5400\n"
+            assert Path(backup_path).read_text(encoding="utf-8") == "OLD_VALUE = True\n"
+
+    # --force replaces without asking, so the command stays usable from a script
+    def test_generated_config_force_skips_the_question(self, im_module):
+        with make_test_directory() as directory_name:
+            destination = Path(directory_name) / "instagram_monitor.conf"
+            destination.write_text("OLD_VALUE = True\n", encoding="utf-8")
+
+            def refuse(prompt=""):
+                raise AssertionError("a question was asked despite --force")
+
+            backup_path, written = im_module.write_generated_config(destination, "INSTA_CHECK_INTERVAL = 5400\n", force=True, interactive=True, input_func=refuse)
+
+            assert written is True
+            assert destination.read_text(encoding="utf-8") == "INSTA_CHECK_INTERVAL = 5400\n"
+            assert Path(backup_path).read_text(encoding="utf-8") == "OLD_VALUE = True\n"
+
+    # With no terminal to ask on, an existing config is left alone rather than replaced silently
+    def test_generated_config_refuses_without_a_terminal(self, im_module):
+        with make_test_directory() as directory_name:
+            destination = Path(directory_name) / "instagram_monitor.conf"
+            destination.write_text("OLD_VALUE = True\n", encoding="utf-8")
+
+            with pytest.raises(FileExistsError, match="no terminal to confirm"):
+                im_module.write_generated_config(destination, "INSTA_CHECK_INTERVAL = 5400\n", interactive=False)
+
+            assert destination.read_text(encoding="utf-8") == "OLD_VALUE = True\n"
+
+    # A file that does not exist yet is written without a question
+    def test_generated_config_writes_a_new_file_directly(self, im_module):
+        with make_test_directory() as directory_name:
+            destination = Path(directory_name) / "instagram_monitor.conf"
+
+            def refuse(prompt=""):
+                raise AssertionError("a question was asked for a file that does not exist")
+
+            backup_path, written = im_module.write_generated_config(destination, "INSTA_CHECK_INTERVAL = 5400\n", interactive=True, input_func=refuse)
+
+            assert (backup_path, written) == (None, True)
+            assert destination.read_text(encoding="utf-8") == "INSTA_CHECK_INTERVAL = 5400\n"
+
+
 class TestDotenvPersistence:
+    # A secret the user turns off is removed, so the next reader does not find the key still present
+    def test_cleared_secret_is_removed_rather_than_emptied(self, im_module):
+        with make_test_directory() as directory_name:
+            destination = Path(directory_name) / ".env"
+            destination.write_text('NTFY_ACCESS_TOKEN="tk_saved"\nWEBHOOK_URL=https://example.test/topic\n', encoding="utf-8")
+
+            im_module.update_dotenv_file(destination, {"NTFY_ACCESS_TOKEN": ""})
+            content = destination.read_text(encoding="utf-8")
+
+            assert "NTFY_ACCESS_TOKEN" not in content
+            assert content == "WEBHOOK_URL=https://example.test/topic\n"
+            assert "NTFY_ACCESS_TOKEN" not in dotenv_values(destination, interpolate=False)
+
+    # Turning off a secret that was never saved does not add an empty key to the file
+    def test_clearing_an_unsaved_secret_adds_nothing(self, im_module):
+        with make_test_directory() as directory_name:
+            destination = Path(directory_name) / ".env"
+            destination.write_text("WEBHOOK_URL=https://example.test/topic\n", encoding="utf-8")
+
+            im_module.update_dotenv_file(destination, {"NTFY_ACCESS_TOKEN": ""})
+
+            assert destination.read_text(encoding="utf-8") == "WEBHOOK_URL=https://example.test/topic\n"
+
+    # An exported assignment is removed the same way, so the shell form cannot keep a disabled value
+    def test_cleared_secret_is_removed_from_an_exported_line(self, im_module):
+        with make_test_directory() as directory_name:
+            destination = Path(directory_name) / ".env"
+            destination.write_text('export NTFY_ACCESS_TOKEN="tk_saved"\nKEEP=value\n', encoding="utf-8")
+
+            im_module.update_dotenv_file(destination, {"NTFY_ACCESS_TOKEN": ""})
+
+            assert destination.read_text(encoding="utf-8") == "KEEP=value\n"
+
     # Atomic dotenv updates preserve unrelated content and round-trip quoted secret values
     def test_update_preserves_content_and_special_values(self, im_module):
         with make_test_directory() as directory_name:

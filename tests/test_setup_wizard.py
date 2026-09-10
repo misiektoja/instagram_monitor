@@ -1124,12 +1124,19 @@ class TestMailServerSignIn:
         assert im_module.SMTP_HOST == "old.example.test"
 
 
+# Sets the mail settings a sign-in needs, so a test reaches the prompts rather than the completeness guard
+def configure_mail(im_module, monkeypatch):
+    for name, value in (("SMTP_HOST", "smtp.example.test"), ("SMTP_USER", "monitor@example.test"), ("SENDER_EMAIL", "monitor@example.test"), ("RECEIVER_EMAIL", "alerts@example.test")):
+        monkeypatch.setattr(im_module, name, value)
+
+
 # Private mail server password entry signs in first and never displays what was typed
 def test_set_smtp_password_signs_in_before_saving(im_module, monkeypatch, capsys):
     with make_test_directory() as directory_name:
         env_path = Path(directory_name) / ".env"
         password = "app-password-value"
         sign_in = Mock(return_value="monitor@example.test")
+        configure_mail(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
 
         result = im_module.run_set_smtp_password(env_file=env_path, interactive=True, getpass_func=lambda prompt: password, sign_in=sign_in)
@@ -1143,16 +1150,50 @@ def test_set_smtp_password_signs_in_before_saving(im_module, monkeypatch, capsys
 
 
 # A password the mail server refuses leaves the private settings file untouched
-def test_set_smtp_password_refused_by_the_server_is_not_saved(im_module):
+def test_set_smtp_password_refused_by_the_server_is_not_saved(im_module, monkeypatch):
     with make_test_directory() as directory_name:
         env_path = Path(directory_name) / ".env"
         env_path.write_text("KEEP=value\n", encoding="utf-8")
+        configure_mail(im_module, monkeypatch)
         refuse = Mock(side_effect=im_module.smtplib.SMTPAuthenticationError(535, b"authentication failed"))
 
         with pytest.raises(im_module.SmtpConfigurationError, match="did not accept the password"):
             im_module.run_set_smtp_password(env_file=env_path, interactive=True, getpass_func=lambda prompt: "wrong", sign_in=refuse)
 
         assert env_path.read_text(encoding="utf-8") == "KEEP=value\n"
+
+
+# The mail settings are checked before anything is typed, so a password is never entered for nothing
+def test_set_smtp_password_checks_the_mail_settings_before_prompting(im_module, monkeypatch, capsys):
+    with make_test_directory() as directory_name:
+        env_path = Path(directory_name) / ".env"
+        for name, value in (("SMTP_HOST", "your_smtp_server_ssl"), ("SMTP_USER", "your_smtp_user"), ("SENDER_EMAIL", "monitor@example.test"), ("RECEIVER_EMAIL", "alerts@example.test")):
+            monkeypatch.setattr(im_module, name, value)
+
+        def refuse(prompt=""):
+            raise AssertionError("a prompt was shown before the settings were checked")
+
+        with pytest.raises(im_module.SmtpConfigurationError) as raised:
+            im_module.run_set_smtp_password(env_file=env_path, interactive=True, input_func=refuse, getpass_func=refuse, sign_in=Mock(side_effect=AssertionError("signed in")))
+
+        assert str(raised.value) == "The mail server settings are incomplete, SMTP_HOST and SMTP_USER are not set"
+        assert raised.value.fix == "Set SMTP_HOST and SMTP_USER in the config file, or run --setup, then run --set-smtp-password again"
+        assert raised.value.guide == im_module.SMTP_GUIDE_URL
+        assert "your_smtp_server_ssl" not in capsys.readouterr().out
+        assert not env_path.exists()
+
+
+# The refusal names only the settings that are actually missing, so a partly configured mail server is not misreported
+def test_set_smtp_password_names_only_the_missing_settings(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        env_path = Path(directory_name) / ".env"
+        for name, value in (("SMTP_HOST", "smtp.example.test"), ("SMTP_USER", "monitor@example.test"), ("SENDER_EMAIL", "monitor@example.test"), ("RECEIVER_EMAIL", "your_receiver_email")):
+            monkeypatch.setattr(im_module, name, value)
+
+        with pytest.raises(im_module.SmtpConfigurationError) as raised:
+            im_module.run_set_smtp_password(env_file=env_path, interactive=True, getpass_func=lambda prompt: "entered", sign_in=Mock(side_effect=AssertionError("signed in")))
+
+        assert str(raised.value) == "The mail server settings are incomplete, RECEIVER_EMAIL is not set"
 
 
 # Private mail server password entry requires a terminal, so the password cannot be echoed or piped in
@@ -1167,10 +1208,11 @@ def test_set_smtp_password_requires_a_terminal(im_module):
 
 
 # Declining replacement leaves an existing private mail server password unchanged
-def test_set_smtp_password_declined_replacement_is_non_destructive(im_module):
+def test_set_smtp_password_declined_replacement_is_non_destructive(im_module, monkeypatch):
     with make_test_directory() as directory_name:
         env_path = Path(directory_name) / ".env"
         env_path.write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
+        configure_mail(im_module, monkeypatch)
 
         with pytest.raises(im_module.SmtpConfigurationError, match="left as it is"):
             im_module.run_set_smtp_password(env_file=env_path, interactive=True, input_func=lambda prompt: "no", getpass_func=lambda prompt: "replacement", sign_in=Mock())
@@ -1405,8 +1447,7 @@ class TestSecretReplacePrompt:
 def test_an_interrupted_secret_entry_carries_a_fix_and_a_guide(im_module, monkeypatch):
     with make_test_directory() as directory_name:
         destination = Path(directory_name) / ".env"
-        monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.test")
-        monkeypatch.setattr(im_module, "SMTP_USER", "monitor@example.test")
+        configure_mail(im_module, monkeypatch)
 
         def interrupt(prompt=""):
             raise KeyboardInterrupt

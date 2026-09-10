@@ -103,13 +103,30 @@ def test_quoted_values_that_are_not_content_stay_plain(im_module, monkeypatch, v
     assert "\x1b[36m" not in im_module._colorize_line(f"Value is '{value}' now")
 
 
-# Verifies a received signal is coloured as the event it is, so the shipped theme key is not a setting that does nothing
+# Verifies a received signal marks its own name, so the shipped theme key is not a setting that does nothing
 def test_a_received_signal_line_uses_the_signal_colour(im_module, monkeypatch):
     monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
     monkeypatch.setattr(im_module, "_COLOR_STYLES", {"signal": "<signal>"})
     monkeypatch.setattr(im_module, "ANSI_RESET", "<reset>")
 
-    assert im_module._colorize_line("* Signal SIGUSR1 received") == "<signal>* Signal SIGUSR1 received<reset>"
+    assert im_module._colorize_line("* Signal SIGUSR1 received") == "* Signal <signal>SIGUSR1<reset> received"
+
+
+# Verifies a warning marks its opening word instead of painting the line, so the values inside it stay visible
+def test_a_warning_marks_its_opening_word_and_leaves_the_rest(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {"warning": "<warning>", "ip_address": "<ip>"})
+    monkeypatch.setattr(im_module, "ANSI_RESET", "<reset>")
+
+    assert im_module._colorize_line("* Warning: the host 192.168.1.10 stopped responding") == "* <warning>Warning:<reset> the host <ip>192.168.1.10<reset> stopped responding"
+
+
+# Verifies a value colour never equals a whole-line style that can enclose it, which would hide the value
+def test_block_styles_never_hide_a_name(im_module):
+    resolved = {name: im_module._build_ansi_sequence(im_module.DEFAULT_COLOR_THEME[name]) for name in im_module.BLOCK_STYLE_PARTS + im_module.NAME_STYLE_PARTS}
+    for block in im_module.BLOCK_STYLE_PARTS:
+        for name in im_module.NAME_STYLE_PARTS:
+            assert resolved[name] != resolved[block], f"{name} is invisible inside a {block} line"
 
 
 # Verifies every part the shipped theme offers is actually looked up somewhere, so a documented setting cannot do nothing
