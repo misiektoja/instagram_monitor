@@ -6793,13 +6793,13 @@ def resolve_local_timezone():
             LOCAL_TIMEZONE_STATE = "auto"
         elif get_localzone is None:
             LOCAL_TIMEZONE_STATE = "auto_unavailable"
-            timezone_advice = {"summary": "The local timezone could not be detected", "detail": "LOCAL_TIMEZONE is Auto but tzlocal is unavailable", "fix": "Install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone", "guide": CONFIG_FILE_GUIDE_URL}
+            timezone_advice = make_recovery_advice("dependency.missing", "The local timezone could not be detected", recovery_fix_with_guide("Install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL), False, "LOCAL_TIMEZONE is Auto but tzlocal is unavailable")
         else:
             LOCAL_TIMEZONE_STATE = "auto_failed"
-            timezone_advice = {"summary": "The local timezone could not be detected", "detail": "tzlocal did not return a supported timezone", "fix": "Set LOCAL_TIMEZONE to a valid pytz timezone", "guide": CONFIG_FILE_GUIDE_URL}
+            timezone_advice = make_recovery_advice("config.invalid", "The local timezone could not be detected", recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL), False, "tzlocal did not return a supported timezone")
     elif not is_valid_timezone(LOCAL_TIMEZONE):
         LOCAL_TIMEZONE_STATE = "invalid"
-        timezone_advice = {"summary": f"Configured LOCAL_TIMEZONE '{LOCAL_TIMEZONE}' is not valid", "detail": f"Time zone: {LOCAL_TIMEZONE}", "fix": "Set LOCAL_TIMEZONE to a valid pytz timezone", "guide": CONFIG_FILE_GUIDE_URL}
+        timezone_advice = make_recovery_advice("config.invalid", f"Configured LOCAL_TIMEZONE '{LOCAL_TIMEZONE}' is not valid", recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL), False, f"Time zone: {LOCAL_TIMEZONE}")
     return timezone_advice
 
 
@@ -9880,7 +9880,7 @@ FAILURE_TERMS = {
     'schema_change': ("empty data for posts", "fetching post metadata failed", "not subscriptable", "unexpected follower list reply", "follower list dialog"),
 }
 
-# Evaluation order of FAILURE_TERMS, matching the branch order in classify_error_message
+# Evaluation order of FAILURE_TERMS, matching the branch order in classify_error_parts
 FAILURE_CLASS_ORDER = ('rate_limit', 'challenge', 'session_missing', 'auth_expired', 'target_unavailable', 'impersonate_unsupported', 'proxy_unresolved', 'dns_failure', 'network', 'schema_change')
 
 # Reliability group each failure class belongs to: A blocks the transport, B breaks on an Instagram API change, C acts against the session account
@@ -9922,8 +9922,8 @@ def is_account_level_failure(failure_class: str) -> bool:
 RECOVERY_CODES = frozenset({
     "instagram.rate_limited", "instagram.challenge", "instagram.empty_data",
     "session.missing", "session.expired",
-    "target.not_found",
-    "config.missing", "config.invalid", "config.impersonate_unsupported",
+    "target.missing", "target.not_found",
+    "config.missing", "config.invalid", "config.insecure", "config.impersonate_unsupported",
     "dependency.missing",
     "secret.missing",
     "proxy.unresolved",
@@ -10080,11 +10080,6 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
     return advice(code, summary, fix, retryable, guide)
 
 
-# Maps one error message to a stable summary plus the matching fix and guide, so every surface explains it the same way
-def classify_error_message(error_msg: str, is_logged_in: bool = False) -> Tuple[str, str, str]:
-    return classify_error_parts(error_msg, is_logged_in)[1:4]
-
-
 # Maps one error message to the stable code behind its summary, fix and guide, and to whether retrying can clear it
 def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[str, str, str, str, bool]:
     m = (error_msg or "").lower()
@@ -10150,18 +10145,10 @@ def classify_smtp_parts(error: Any, message: str = "") -> Tuple[str, str, str, b
     return "smtp.connection", "The SMTP server could not be reached", "Check SMTP_HOST, SMTP_PORT and SMTP_SSL, then confirm the host is reachable from this machine", True
 
 
-# Returns a short actionable next-step hint for a known error message or an empty string when none applies
-def error_fix_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[str, str]:
-    _summary, fix, guide = classify_error_message(error_msg, is_logged_in)
-    return fix, guide
-
-
 # Formats the actionable fix for one error as the console block callers already print
 def error_fix_hint(error_msg: str, is_logged_in: bool = False) -> str:
-    fix, guide = error_fix_parts(error_msg, is_logged_in)
-    if not fix:
-        return ""
-    return f"To fix: {fix}" + (f"\nGuide: {guide}" if guide else "")
+    advice = classify_recovery_error(error_msg, is_logged_in=is_logged_in)
+    return f"To fix: {advice.fix}" if advice.fix else ""
 
 
 # Suppresses a repeated fix paragraph until the failure category changes or a check succeeds
@@ -15846,8 +15833,7 @@ class DoctorCheck:
     status: str
     label: str
     detail: str = ""
-    fix: str = ""
-    guide: str = ""
+    advice: Optional[RecoveryAdvice] = None
 
 
 # Collects doctor checks plus the shared state that later checks depend on
@@ -15863,21 +15849,21 @@ class DoctorReport:
         return sum(check.status == status for check in self.checks)
 
 
-# Creates one validated doctor check
-def make_doctor_check(section: str, status: str, label: str, detail: str = "", fix: str = "", guide: str = "") -> DoctorCheck:
+# Creates one validated doctor check, carrying the advice whose fix a row that is not a pass is printed with
+def make_doctor_check(section: str, status: str, label: str, detail: str = "", advice: Optional[RecoveryAdvice] = None) -> DoctorCheck:
     if status not in DOCTOR_STATUSES:
         raise ValueError(f"Unsupported doctor status: {status}")
     # A row the user has to act on is useless without an action, so the row is rejected rather than printed bare
-    if status in ("WARN", "FAIL") and not fix:
+    if status in ("WARN", "FAIL") and (advice is None or not advice.fix):
         raise ValueError(f"Doctor {status} rows require a fix")
-    # Several rows carry the same text as their label and printing it twice reads as two problems
-    return DoctorCheck(section, status, label, "" if detail.strip() == label.strip() else detail, fix, guide)
+    # Several advice objects carry the same text as their summary and printing it twice reads as two problems
+    return DoctorCheck(section, status, label, "" if detail.strip() == label.strip() else detail, advice)
 
 
-# Builds one doctor check from an error, reusing the shared fix hints so advice stays consistent
+# Builds one doctor check from an error, classifying it through the shared table so advice stays consistent
 def doctor_check_from_error(section: str, status: str, label: str, error_message: str, is_logged_in: bool = False, detail: str = "") -> DoctorCheck:
-    summary, fix, guide = classify_error_message(error_message, is_logged_in)
-    return make_doctor_check(section, status, label or summary, detail, fix, guide)
+    advice = classify_recovery_error(error_message, is_logged_in=is_logged_in)
+    return make_doctor_check(section, status, label or advice.summary, detail, advice)
 
 
 # Prints one doctor check line with a status marker and an optional detail
@@ -15959,7 +15945,8 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> None:
             if result == 0:
                 check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", "Doctor test email delivered", "One real test email was sent after confirmation")
             else:
-                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", "Doctor test email delivery failed", "The approved test email could not be delivered", "Review the SMTP error above and correct the email settings", SMTP_GUIDE_URL)
+                advice = make_recovery_advice("smtp.connection", "Doctor test email delivery failed", recovery_fix_with_guide("Review the SMTP error above and correct the email settings", SMTP_GUIDE_URL), True)
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", advice.summary, "The approved test email could not be delivered", advice)
         else:
             check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent", "You declined the real delivery test. Run doctor again and approve the email test when ready")
         # Recorded on the report so the summary sentence and the exit code cannot disagree about the same run
@@ -15971,7 +15958,8 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> None:
             if _doctor_send_test_webhook() == 0:
                 check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", f"Doctor test webhook through {provider} delivered", "One real test webhook was sent after confirmation")
             else:
-                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", f"Doctor test webhook through {provider} delivery failed", "The approved test webhook could not be delivered", "Review the webhook error above and correct the destination settings", WEBHOOK_GUIDE_URL)
+                advice = make_recovery_advice("webhook.connection", f"Doctor test webhook through {provider} delivery failed", recovery_fix_with_guide("Review the webhook error above and correct the destination settings", WEBHOOK_GUIDE_URL), True)
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", advice.summary, "The approved test webhook could not be delivered", advice)
         else:
             check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", f"Test webhook through {provider} was not sent", "You declined the real delivery test. Run doctor again and approve the webhook test when ready")
         report.checks.append(check)
@@ -16194,7 +16182,8 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
     if tuple(selected_version)[:2] >= MINIMUM_PYTHON_VERSION:
         checks.append(make_doctor_check("Environment", "PASS", f"Python {version_text} is supported", minimum_detail))
     else:
-        checks.append(make_doctor_check("Environment", "FAIL", f"Python {version_text} is unsupported", minimum_detail, f"Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer then retry", INSTALLATION_GUIDE_URL))
+        advice = make_recovery_advice("dependency.missing", f"Python {version_text} is unsupported", recovery_fix_with_guide(f"Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer then retry", INSTALLATION_GUIDE_URL), False)
+        checks.append(make_doctor_check("Environment", "FAIL", advice.summary, minimum_detail, advice))
 
     find_spec = importlib.util.find_spec if spec_finder is None else spec_finder
 
@@ -16210,7 +16199,8 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         if module_present(module_name):
             checks.append(make_doctor_check("Environment", "PASS", f"Required dependency {package_name} is installed"))
         else:
-            checks.append(make_doctor_check("Environment", "FAIL", f"Required dependency {package_name} is missing", "", f'Install it with: pip3 install "{package_name}"', INSTALLATION_GUIDE_URL))
+            advice = make_recovery_advice("dependency.missing", f"Required dependency {package_name} is missing", recovery_fix_with_guide(f'Install it with: pip3 install "{package_name}"', INSTALLATION_GUIDE_URL), False)
+            checks.append(make_doctor_check("Environment", "FAIL", advice.summary, "", advice))
 
     optional = (
         ("curl_cffi", "curl_cffi", _CURL_CFFI_AVAILABLE, "Used for browser TLS impersonation that avoids first-request 429 blocks", "Normal monitoring works without it, but Instagram is more likely to answer the first request with 429"),
@@ -16227,7 +16217,8 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         if present:
             checks.append(make_doctor_check("Environment", "PASS", f"Optional dependency {package_name} is installed", purpose))
         else:
-            checks.append(make_doctor_check("Environment", "WARN", f"Optional dependency {package_name} is not installed", missing_purpose, f'Install it with: pip3 install "{package_name}"', INSTALLATION_GUIDE_URL))
+            advice = make_recovery_advice("dependency.missing", f"Optional dependency {package_name} is not installed", recovery_fix_with_guide(f'Install it with: pip3 install "{package_name}"', INSTALLATION_GUIDE_URL), False)
+            checks.append(make_doctor_check("Environment", "WARN", advice.summary, missing_purpose, advice))
     return checks
 
 
@@ -16340,46 +16331,53 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
     cfg = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
     if config_errors:
         for config_error in config_errors:
-            checks.append(make_doctor_check("Configuration", "FAIL", doctor_label_from_error(config_error["summary"]), config_error.get("detail", ""), config_error.get("fix", ""), CONFIG_FILE_GUIDE_URL))
+            advice = make_recovery_advice("config.invalid", doctor_label_from_error(config_error["summary"]), recovery_fix_with_guide(config_error.get("fix", ""), CONFIG_FILE_GUIDE_URL), False, config_error.get("detail", ""))
+            checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, config_error.get("detail", ""), advice))
     elif cfg:
         checks.append(make_doctor_check("Configuration", "PASS", "Configuration file loaded", f"Path: {cfg}"))
     else:
         checks.append(make_doctor_check("Configuration", "PASS", "No configuration file selected", "Using built-in defaults and command-line overrides"))
     if retired_settings:
-        checks.append(make_doctor_check("Configuration", "WARN", "Config file contains removed settings", describe_retired_settings(retired_settings, cfg), "Delete the reported settings or regenerate the file with --generate-config", CONFIG_FILE_GUIDE_URL))
+        advice = make_recovery_advice("config.invalid", "Config file contains removed settings", recovery_fix_with_guide("Delete the reported settings or regenerate the file with --generate-config", CONFIG_FILE_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "WARN", advice.summary, describe_retired_settings(retired_settings, cfg), advice))
 
     if env_path and os.path.isfile(str(env_path)):
         checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
     elif env_path:
-        checks.append(make_doctor_check("Configuration", "WARN", "The requested dotenv file was not found", f"Path: {env_path}", "Create the file or select an existing path with --env-file", SECRETS_GUIDE_URL))
+        advice = make_recovery_advice("config.missing", "The requested dotenv file was not found", recovery_fix_with_guide("Create the file or select an existing path with --env-file", SECRETS_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "WARN", advice.summary, f"Path: {env_path}", advice))
     else:
         checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file selected", "Using environment variables and other configured sources"))
     checks.extend(doctor_secret_checks(env_path))
 
     timezone_label = TIMEZONE_CHECK_LABELS[LOCAL_TIMEZONE_STATE]
     if timezone_advice is not None:
-        checks.append(make_doctor_check("Configuration", "FAIL", timezone_label, timezone_advice["detail"], timezone_advice["fix"], timezone_advice["guide"]))
+        checks.append(make_doctor_check("Configuration", "FAIL", timezone_label, timezone_advice.detail, timezone_advice))
     else:
         checks.append(make_doctor_check("Configuration", "PASS", timezone_label, f"Time zone: {LOCAL_TIMEZONE}"))
 
     intervals = f"{display_time(INSTA_CHECK_INTERVAL)} between checks"
     if INSTA_CHECK_INTERVAL < DOCTOR_MIN_SAFE_CHECK_INTERVAL:
-        checks.append(make_doctor_check("Configuration", "WARN", "Check intervals are short", intervals, f"Raise INSTA_CHECK_INTERVAL to at least {DOCTOR_MIN_SAFE_CHECK_INTERVAL} seconds", ANTI_DETECTION_INTERVAL_GUIDE_URL))
+        advice = make_recovery_advice("instagram.rate_limited", "Check intervals are short", recovery_fix_with_guide(f"Raise INSTA_CHECK_INTERVAL to at least {DOCTOR_MIN_SAFE_CHECK_INTERVAL} seconds", ANTI_DETECTION_INTERVAL_GUIDE_URL), True)
+        checks.append(make_doctor_check("Configuration", "WARN", advice.summary, intervals, advice))
 
     if VERIFY_SSL:
         checks.append(make_doctor_check("Configuration", "PASS", "TLS certificate verification is on", "Every outbound request checks the server certificate"))
     else:
-        checks.append(make_doctor_check("Configuration", "WARN", "TLS certificate verification is off", "VERIFY_SSL is False, so an intercepted connection cannot be told apart from the real service", "Set VERIFY_SSL back to True unless this network intercepts TLS with its own certificate authority", TLS_GUIDE_URL))
+        advice = make_recovery_advice("config.insecure", "TLS certificate verification is off", recovery_fix_with_guide("Set VERIFY_SSL back to True unless this network intercepts TLS with its own certificate authority", TLS_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "WARN", advice.summary, "VERIFY_SSL is False, so an intercepted connection cannot be told apart from the real service", advice))
 
     numeric_errors = runtime_configuration_errors()
     if numeric_errors:
-        checks.append(make_doctor_check("Configuration", "FAIL", "One or more numeric settings are invalid", "Invalid numeric settings: " + "; ".join(numeric_errors), "Correct the reported settings in the configuration file", CONFIG_FILE_GUIDE_URL))
+        advice = make_recovery_advice("config.invalid", "One or more numeric settings are invalid", recovery_fix_with_guide("Correct the reported settings in the configuration file", CONFIG_FILE_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, "Invalid numeric settings: " + "; ".join(numeric_errors), advice))
 
     agents = ". ".join(f"{label}: {agent}" for label, agent in (("Browser agent", USER_AGENT), ("Mobile agent", USER_AGENT_MOBILE)) if agent)
     if _curl_cffi_backend_active():
         checks.append(make_doctor_check("Configuration", "PASS", f"Requests reach Instagram as {_curl_cffi_impersonate_target()}", f"Backend: curl_cffi, impersonating {_curl_cffi_impersonate_display()}. {agents}".strip()))
     else:
-        checks.append(make_doctor_check("Configuration", "WARN", "Requests reach Instagram as a Python client", f"Backend: requests, which presents this machine's own TLS fingerprint whatever USER_AGENT claims. {agents}".strip(), "Set HTTP_BACKEND to curl_cffi to present a real browser handshake", HTTP_BACKEND_GUIDE_URL))
+        advice = make_recovery_advice("config.invalid", "Requests reach Instagram as a Python client", recovery_fix_with_guide("Set HTTP_BACKEND to curl_cffi to present a real browser handshake", HTTP_BACKEND_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "WARN", advice.summary, f"Backend: requests, which presents this machine's own TLS fingerprint whatever USER_AGENT claims. {agents}".strip(), advice))
 
     follow_source = active_follow_list_source()
     if follow_source != 'browser':
@@ -16388,11 +16386,14 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
         browser_ready, browser_detail, browser_fix = browser_follow_list_readiness()
         identity_mismatch = browser_identity_mismatch()
         if identity_mismatch is not None:
-            checks.append(make_doctor_check("Configuration", "FAIL", "The browser follower list source would not match the rest of the session", identity_mismatch[0], identity_mismatch[1], FOLLOW_LIST_SOURCE_GUIDE_URL))
+            advice = make_recovery_advice("config.invalid", "The browser follower list source would not match the rest of the session", recovery_fix_with_guide(identity_mismatch[1], FOLLOW_LIST_SOURCE_GUIDE_URL), False)
+            checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, identity_mismatch[0], advice))
         elif browser_ready:
-            checks.append(make_doctor_check("Configuration", "WARN", "Follower lists are read by a real browser", f"{browser_detail}. This source is experimental and uses far more CPU and memory than the HTTP sources", "Set FOLLOW_LIST_SOURCE back to auto if a check takes too long or the machine is small", FOLLOW_LIST_SOURCE_GUIDE_URL))
+            advice = make_recovery_advice("config.invalid", "Follower lists are read by a real browser", recovery_fix_with_guide("Set FOLLOW_LIST_SOURCE back to auto if a check takes too long or the machine is small", FOLLOW_LIST_SOURCE_GUIDE_URL), False)
+            checks.append(make_doctor_check("Configuration", "WARN", advice.summary, f"{browser_detail}. This source is experimental and uses far more CPU and memory than the HTTP sources", advice))
         else:
-            checks.append(make_doctor_check("Configuration", "FAIL", "The browser follower list source cannot run", browser_detail, browser_fix, FOLLOW_LIST_SOURCE_GUIDE_URL))
+            advice = make_recovery_advice("dependency.missing", "The browser follower list source cannot run", recovery_fix_with_guide(browser_fix, FOLLOW_LIST_SOURCE_GUIDE_URL), False)
+            checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, browser_detail, advice))
 
     if not CSV_FILE:
         checks.append(make_doctor_check("Configuration", "PASS", "CSV logging is disabled"))
@@ -16403,7 +16404,8 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
             if output_destination_is_writable(target_csv):
                 checks.append(make_doctor_check("Configuration", "PASS", f"{label} appears writable", f"Path: {target_csv}"))
             else:
-                checks.append(make_doctor_check("Configuration", "FAIL", f"{label} is not writable", f"Path: {target_csv}", "Choose a writable path with --csv-file or CSV_FILE"))
+                advice = make_recovery_advice("file.unwritable", f"{label} is not writable", "Choose a writable path with --csv-file or CSV_FILE", False)
+                checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, f"Path: {target_csv}", advice))
 
     if DISABLE_LOGGING:
         checks.append(make_doctor_check("Configuration", "PASS", "Output logging is disabled"))
@@ -16413,7 +16415,8 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
             if output_destination_is_writable(target_log):
                 checks.append(make_doctor_check("Configuration", "PASS", f"Log destination for '{target}' appears writable", f"Path: {target_log}"))
             else:
-                checks.append(make_doctor_check("Configuration", "FAIL", f"Log destination for '{target}' is not writable", f"Path: {target_log}", "Choose a writable path with --output-dir or INSTA_LOGFILE. Disable logging with -d when no log file is wanted"))
+                advice = make_recovery_advice("file.unwritable", f"Log destination for '{target}' is not writable", "Choose a writable path with --output-dir or INSTA_LOGFILE. Disable logging with -d when no log file is wanted", False)
+                checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, f"Path: {target_log}", advice))
     else:
         checks.append(make_doctor_check("Configuration", "PASS", "Log destination will be finalized after a target is selected", f"Base path: {INSTA_LOGFILE}"))
     return checks
@@ -16424,7 +16427,8 @@ def doctor_prepare_bot(report: DoctorReport) -> List[DoctorCheck]:
     try:
         report.bot = instaloader_client(user_agent=USER_AGENT, iphone_support=True, quiet=True)
     except Exception as exc:
-        return [make_doctor_check("Configuration", "FAIL", "Could not initialise Instaloader", format_error_message(exc), "Reinstall the instaloader package then run --doctor again", INSTALLATION_GUIDE_URL)]
+        advice = make_recovery_advice("dependency.missing", "Could not initialise Instaloader", recovery_fix_with_guide("Reinstall the instaloader package then run --doctor again", INSTALLATION_GUIDE_URL), False)
+        return [make_doctor_check("Configuration", "FAIL", advice.summary, format_error_message(exc), advice)]
     return []
 
 
@@ -16456,7 +16460,8 @@ def doctor_connectivity_endpoint_check() -> DoctorCheck:
     LAST_CONNECTIVITY_ERROR = None
     if check_internet(quiet=True):
         return make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", f"Endpoint: {CHECK_INTERNET_URL}")
-    return make_doctor_check("Connectivity", "FAIL", "The connectivity endpoint could not be reached", f"Endpoint: {CHECK_INTERNET_URL}", "Check network, DNS, proxy and CHECK_INTERNET_URL settings")
+    advice = make_recovery_advice("network.unavailable", "The connectivity endpoint could not be reached", "Check network, DNS, proxy and CHECK_INTERNET_URL settings", True)
+    return make_doctor_check("Connectivity", "FAIL", advice.summary, f"Endpoint: {CHECK_INTERNET_URL}", advice)
 
 
 # Confirms Instagram answers a public profile request through the configured transport
@@ -16480,7 +16485,8 @@ def doctor_check_targets(report: DoctorReport, targets, progress: Optional[Calla
     if not targets:
         if WEB_DASHBOARD_ENABLED:
             return [make_doctor_check("Targets", "PASS", "No targets configured yet", "The Web Dashboard is enabled, so targets can be added there")]
-        return [make_doctor_check("Targets", "WARN", "No targets configured", "Nothing will be monitored", NO_TARGET_FIX, QUICK_START_GUIDE_URL)]
+        advice = make_recovery_advice("target.missing", "No targets configured", recovery_fix_with_guide(NO_TARGET_FIX, QUICK_START_GUIDE_URL), False)
+        return [make_doctor_check("Targets", "WARN", advice.summary, "Nothing will be monitored", advice)]
     if report.bot is None:
         return [make_doctor_check("Targets", "SKIP", "The monitored profiles were not checked", "Instaloader could not be initialised, so no lookup was attempted")]
     checks: List[DoctorCheck] = []
@@ -16513,7 +16519,8 @@ def email_settings_problem() -> Optional[Tuple[str, str]]:
 
 # Returns the doctor row for email alerts whose settings cannot deliver, worded the same way by every sibling monitor
 def doctor_email_unusable_check(detail: str, fix: str) -> DoctorCheck:
-    return make_doctor_check("Notifications", "WARN", EMAIL_UNUSABLE_CHECK_LABEL, detail, fix, SMTP_GUIDE_URL)
+    advice = make_recovery_advice("smtp.invalid", EMAIL_UNUSABLE_CHECK_LABEL, recovery_fix_with_guide(fix, SMTP_GUIDE_URL), False, detail)
+    return make_doctor_check("Notifications", "WARN", advice.summary, detail, advice)
 
 
 # Checks SMTP login and webhook configuration without sending anything
@@ -16521,7 +16528,8 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
     checks: List[DoctorCheck] = []
     problem = email_settings_problem()
     if not _startup_email_notification_categories() and problem is None:
-        checks.append(make_doctor_check("Notifications", "WARN", "Email is configured but no alert types are selected", "Nothing would ever be emailed", "Turn on at least one email alert in the configuration file", SMTP_GUIDE_URL))
+        advice = make_recovery_advice("smtp.invalid", "Email is configured but no alert types are selected", recovery_fix_with_guide("Turn on at least one email alert in the configuration file", SMTP_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be emailed", advice))
     elif not email_notifications_enabled():
         checks.append(make_doctor_check("Notifications", "PASS", "Email notifications are disabled", "No SMTP connection was attempted and no email was sent"))
     elif problem is not None:
@@ -16539,8 +16547,8 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
             report.smtp_ready = True
             checks.append(make_doctor_check("Notifications", "PASS", SMTP_READY_CHECK_LABEL, f"Alerts: {', '.join(_startup_email_notification_categories())}. No email was sent during this passive check"))
         except Exception as exc:
-            summary, fix = classify_smtp_error(exc)
-            checks.append(make_doctor_check("Notifications", "FAIL", summary, format_error_message(exc), fix, SMTP_GUIDE_URL))
+            advice = classify_recovery_error(exc, "email")
+            checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, format_error_message(exc), advice))
 
     # The error alert ships on by default, so it alone cannot mean the channel was meant to be on
     deliberate_webhook_types = WEBHOOK_STATUS_NOTIFICATION or WEBHOOK_FOLLOWERS_NOTIFICATION
@@ -16548,26 +16556,33 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
         checks.append(make_doctor_check("Notifications", "PASS", "Webhook alerts are disabled"))
         return checks
     if not WEBHOOK_ENABLED:
-        checks.append(make_doctor_check("Notifications", "WARN", "Webhook alert types are selected but webhooks are switched off", "Nothing would ever be delivered", "Set WEBHOOK_ENABLED to True, or turn the alert types off", WEBHOOK_GUIDE_URL))
+        advice = make_recovery_advice("webhook.invalid", "Webhook alert types are selected but webhooks are switched off", recovery_fix_with_guide("Set WEBHOOK_ENABLED to True, or turn the alert types off", WEBHOOK_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be delivered", advice))
         return checks
     if is_placeholder_setting(WEBHOOK_URL):
-        checks.append(make_doctor_check("Notifications", "FAIL", "Webhook enabled but WEBHOOK_URL is not set", "No webhook was sent", "Set WEBHOOK_URL (or via .env) or disable webhooks", WEBHOOK_GUIDE_URL))
+        advice = make_recovery_advice("webhook.invalid", "Webhook enabled but WEBHOOK_URL is not set", recovery_fix_with_guide("Set WEBHOOK_URL (or via .env) or disable webhooks", WEBHOOK_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, "No webhook was sent", advice))
         return checks
     if not normalized_webhook_provider():
-        checks.append(make_doctor_check("Notifications", "FAIL", "Webhook provider is invalid", "", "Set WEBHOOK_PROVIDER to 'discord' or 'ntfy'", WEBHOOK_GUIDE_URL))
+        advice = make_recovery_advice("webhook.invalid", "Webhook provider is invalid", recovery_fix_with_guide("Set WEBHOOK_PROVIDER to 'discord' or 'ntfy'", WEBHOOK_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, "", advice))
         return checks
     if not validate_webhook_url(WEBHOOK_URL):
-        checks.append(make_doctor_check("Notifications", "FAIL", "Webhook URL is not a complete HTTPS URL", "", "Use a complete HTTPS destination with a path and no embedded credentials", WEBHOOK_GUIDE_URL))
+        advice = make_recovery_advice("webhook.invalid", "Webhook URL is not a complete HTTPS URL", recovery_fix_with_guide("Use a complete HTTPS destination with a path and no embedded credentials", WEBHOOK_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, "", advice))
         return checks
 
     customization_error = validate_webhook_customization(normalized_webhook_provider())
     header_error = validate_webhook_headers(normalized_webhook_provider())
     if customization_error is not None:
-        checks.append(make_doctor_check("Notifications", "FAIL", "Webhook customization is invalid", customization_error, "Correct the reported webhook customization setting", WEBHOOK_GUIDE_URL))
+        advice = make_recovery_advice("webhook.invalid", "Webhook customization is invalid", recovery_fix_with_guide("Correct the reported webhook customization setting", WEBHOOK_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, customization_error, advice))
     elif header_error is not None:
-        checks.append(make_doctor_check("Notifications", "FAIL", "Webhook headers are invalid", header_error, "Correct the reported WEBHOOK_HEADERS entry", WEBHOOK_GUIDE_URL))
+        advice = make_recovery_advice("webhook.invalid", "Webhook headers are invalid", recovery_fix_with_guide("Correct the reported WEBHOOK_HEADERS entry", WEBHOOK_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, header_error, advice))
     elif not webhook_notifications_enabled():
-        checks.append(make_doctor_check("Notifications", "WARN", "Webhook alerts are on but no alert types are selected", "Nothing would ever be delivered", "Turn on at least one webhook alert in the configuration file, or set WEBHOOK_ENABLED to False", WEBHOOK_GUIDE_URL))
+        advice = make_recovery_advice("webhook.invalid", "Webhook alerts are on but no alert types are selected", recovery_fix_with_guide("Turn on at least one webhook alert in the configuration file, or set WEBHOOK_ENABLED to False", WEBHOOK_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be delivered", advice))
     else:
         report.webhook_ready = True
         checks.append(make_doctor_check("Notifications", "PASS", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", f"Alerts: {', '.join(_startup_webhook_notification_categories())}. The private link was not displayed. No webhook was sent during this passive check"))
@@ -16605,11 +16620,10 @@ def render_doctor_sections(report: DoctorReport) -> None:
         print(colorize("section", section if index == 0 else f"\n{section}"))
         for check in section_checks:
             _doctor_line(check.status, check.label, check.detail)
-            if check.fix and check.status != "PASS":
-                print(f"  {colorize('info', f'To fix: {check.fix}')}")
-                # The closing summary already points at the doctor page, so a row links only to a page of its own
-                if check.guide:
-                    print(f"  {colorize('info', f'Guide: {check.guide}')}")
+            if check.status != "PASS" and check.advice is not None:
+                # The fix carries its own guide line, so each line is indented and styled on its own
+                for advice_line in f"To fix: {check.advice.fix}".splitlines():
+                    print(f"  {colorize('info', advice_line)}")
 
 
 # Prints the closing summary for one rendered report
@@ -17449,9 +17463,7 @@ def run_main():
 
     if timezone_advice is not None:
         if not doctor_mode:
-            print(f"* Error: {timezone_advice['summary']}")
-            print(colorize("info", f"To fix: {timezone_advice['fix']}"))
-            print(f"Guide: {timezone_advice['guide']}")
+            print_recovery_advice(timezone_advice)
             sys.exit(1)
         # The report still stamps timestamps, so it falls back rather than stopping before the diagnosis
         LOCAL_TIMEZONE = "UTC"
