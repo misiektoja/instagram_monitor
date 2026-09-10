@@ -8927,6 +8927,9 @@ def generate_config_dashboard(target_data, config_data):
         ("Skip Post Details", str(config_data.get('skip_posts', '-'))),
         ("Follower Churn Detection", str(config_data.get('followers_churn', '-'))),
         ("HTTP Jitter", str(config_data.get('enable_jitter', '-'))),
+        ("HTTP Backend", config_data.get('http_backend', '-')),
+        ("Impersonated Browser", config_data.get('impersonate', '-') if config_data.get('http_backend') == 'curl_cffi' else '-'),
+        ("Follower List Source", config_data.get('follow_list_source', '-')),
         ("Profile Pic Detect", str(config_data.get('profile_pic_changes', '-'))),
         ("Empty Pic Template", config_data.get('empty_profile_pic', '-')),
         ("Web Dashboard", config_data.get('web_dashboard_status', '-')),
@@ -8944,10 +8947,13 @@ def generate_config_dashboard(target_data, config_data):
 
     # UA footer (mini panel)
     ua_text = Text()
+    # Read the sanitized snapshot rather than the globals, so the agents get the privacy substitutions every other row gets
+    browser_agent = str(config_data.get('user_agent') or "")
+    mobile_agent = str(config_data.get('user_agent_mobile') or "")
     ua_text.append("Browser UA: ", style="cyan")
-    ua_text.append(f"{USER_AGENT[:70]}..." if len(USER_AGENT) > 70 else (USER_AGENT or "Auto"), style="dim")
+    ua_text.append(f"{browser_agent[:70]}..." if len(browser_agent) > 70 else (browser_agent or "Auto"), style="dim")
     ua_text.append("\nMobile UA:  ", style="cyan")
-    ua_text.append(f"{USER_AGENT_MOBILE[:70]}..." if len(USER_AGENT_MOBILE) > 70 else (USER_AGENT_MOBILE or "Auto"), style="dim")
+    ua_text.append(f"{mobile_agent[:70]}..." if len(mobile_agent) > 70 else (mobile_agent or "Auto"), style="dim")
     ua_text.append("\nConfig file: ", style="cyan")
     ua_text.append(f"{config_data.get('config_file', 'None')}", style="dim")
     ua_text.append("\nDotenv file: ", style="cyan")

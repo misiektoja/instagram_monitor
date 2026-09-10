@@ -285,3 +285,65 @@ def test_indented_wizard_hints_are_not_colored():
 
     # The doctor summary sentence is the one indented line all seven colour
     assert [line for line in coloured if "All critical checks passed" not in line] == []
+
+
+# Renders the Settings Mode panel and returns its plain text
+def render_config_panel(im_module, config_data, width=200, height=80):
+    output = StringIO()
+    im_module.Console(file=output, width=width, height=height).print(im_module.generate_config_dashboard({}, config_data))
+    return output.getvalue()
+
+
+class TestTerminalConfigIdentity:
+    # Settings Mode has to name the identity the run presents, like the other surfaces do
+    def test_the_panel_names_the_connection_settings(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "auto")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "rest")
+        monkeypatch.setattr(im_module, "USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Firefox/147.0")
+
+        plain = render_config_panel(im_module, im_module.get_dashboard_config_data())
+
+        assert "HTTP Backend" in plain and "curl_cffi" in plain
+        assert "Impersonated Browser" in plain and "auto -> firefox" in plain
+        assert "Follower List Source" in plain and "REST" in plain
+
+    # Showing curl_cffi while the run falls back to requests would misreport what Instagram sees
+    def test_the_panel_names_the_transport_fallback(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
+
+        plain = render_config_panel(im_module, im_module.get_dashboard_config_data())
+
+        assert "not installed" in plain
+
+    # Nothing is impersonated without curl_cffi, so the row must not carry a stale target
+    def test_the_panel_blanks_the_target_without_curl_cffi(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "requests")
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "firefox")
+
+        plain = render_config_panel(im_module, im_module.get_dashboard_config_data())
+
+        assert "Impersonated Browser" in plain
+        assert "firefox" not in plain
+
+    # The agents are read from the same sanitized snapshot as every other row, not from the live globals
+    def test_the_agents_follow_the_privacy_substitutions(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "USER_AGENT", "Mozilla/5.0 SecretBuild/1")
+        monkeypatch.setattr(im_module, "USER_AGENT_MOBILE", "Instagram 445.0.0.1.100 (iPhone17,1; iOS 26_0)")
+        monkeypatch.setattr(im_module, "PRIVACY_SUBSTITUTIONS", [("SecretBuild/1", "<redacted>"), ("iPhone17,1", "<device>")])
+
+        plain = render_config_panel(im_module, im_module.get_dashboard_config_data(), width=260)
+
+        assert "SecretBuild" not in plain and "iPhone17,1" not in plain
+        assert "<redacted>" in plain and "<device>" in plain
+
+    # An agent that is not set yet reads as Auto rather than as an empty row
+    def test_an_unset_agent_reads_as_auto(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "USER_AGENT", "")
+        monkeypatch.setattr(im_module, "USER_AGENT_MOBILE", "")
+
+        plain = render_config_panel(im_module, im_module.get_dashboard_config_data())
+
+        assert "Browser UA:" in plain and "Auto" in plain
