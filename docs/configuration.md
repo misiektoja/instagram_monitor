@@ -341,3 +341,12 @@ instagram_monitor <target_insta_user> --env-file none
 ```
 
 As a fallback, you can store secrets in the configuration file. Avoid putting secrets directly in the source code.
+
+A forgotten `export` can shadow the dotenv file invisibly, so `--debug` names every secret and the source it resolved from, never the value:
+
+```text
+[DEBUG 12:00:00] Secret resolution: name=SESSION_PASSWORD, source=environment, value=set
+[DEBUG 12:00:00] Secret resolution: name=SMTP_PASSWORD, source=dotenv file, value=set
+```
+
+A secret still holding its `your_...` placeholder counts as unset and is left out, and a run with no secret anywhere says so on one line.
