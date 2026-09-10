@@ -180,6 +180,21 @@ class TestVersionConsistency:
         assert newest.group(1) == im_module.VERSION
 
 
+# Verifies both documented install paths pull the same libraries, since only the wheel carries the packaging metadata
+def test_the_requirements_file_matches_the_packaged_dependencies():
+    pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    requirements = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8")
+
+    declared = re.search(r"^dependencies = \[(.*?)^\]", pyproject, re.S | re.M)
+    assert declared is not None
+    packaged = {re.split(r"[<>=!;\[ ]", entry, maxsplit=1)[0].casefold() for entry in re.findall(r'"([^"]+)"', declared.group(1))}
+    listed = {re.split(r"[<>=!;\[ ]", line, maxsplit=1)[0].casefold() for line in requirements.splitlines() if line.strip() and not line.startswith("#")}
+
+    assert listed == packaged
+    # The marker is what keeps a Linux or macOS install from pulling a library that only changes the classic Command Prompt
+    assert 'colorama; platform_system == "Windows"' in requirements
+
+
 # Verifies the minimum supported Python version is declared once and matches the packaging metadata
 def test_the_minimum_python_version_is_declared_once(im_module):
     pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")

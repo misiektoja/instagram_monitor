@@ -9,6 +9,7 @@ tqdm
 rich
 flask
 jinja2
+colorama; platform_system == "Windows"
 
 # Optional: uncomment only for display-width-aware terminal truncation (TRUNCATE_CHARS, --truncate)
 # wcwidth
