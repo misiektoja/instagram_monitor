@@ -417,7 +417,7 @@ class TestBrowserIdentityGates:
         assert len(rows) == 1
         assert rows[0].status == "FAIL"
         assert "firefox" in rows[0].detail
-        assert rows[0].fix
+        assert rows[0].advice is not None and rows[0].advice.fix
 
     # An aligned identity leaves the experimental warning as the only browser row
     def test_doctor_keeps_the_experimental_warning_when_aligned(self, im_module, monkeypatch):
@@ -512,8 +512,8 @@ class TestEffectiveIdentityReport:
         row = next(check for check in im_module.doctor_check_configuration(["target.user"]) if "Requests reach Instagram" in check.label)
 
         assert row.status == "WARN"
-        assert "curl_cffi" in row.fix
-        assert row.guide == im_module.HTTP_BACKEND_GUIDE_URL
+        assert "curl_cffi" in row.advice.fix
+        assert row.advice.fix.endswith(f"\nGuide: {im_module.HTTP_BACKEND_GUIDE_URL}")
 
     # An empty agent must not leave a dangling label in the detail line
     def test_doctor_omits_an_agent_that_is_not_set_yet(self, im_module, monkeypatch):

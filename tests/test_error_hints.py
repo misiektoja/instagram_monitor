@@ -84,7 +84,7 @@ class TestErrorFixHint:
     # Every fix reads as one capitalised instruction with no trailing period, matching the sibling monitors
     @pytest.mark.parametrize("msg", [message for message, _ in KNOWN_ERRORS])
     def test_fix_text_uses_the_shared_sentence_style(self, im_module, msg):
-        _summary, fix, _guide = im_module.classify_error_message(msg)
+        fix = im_module.classify_recovery_error(msg, is_logged_in=False).fix.splitlines()[0]
 
         assert fix[:1].isupper()
         assert not fix.endswith(".")
@@ -236,21 +236,19 @@ class TestErrorSummary:
         ("ConnectionException: HTTPSConnectionPool max retries exceeded", "Instagram could not be reached"),
     ])
     def test_known_errors_get_a_stable_summary(self, im_module, msg, summary):
-        assert im_module.classify_error_message(msg)[0] == summary
+        assert im_module.classify_recovery_error(msg, is_logged_in=False).summary == summary
 
     def test_an_unknown_error_gets_a_summary_a_fix_and_a_page(self, im_module):
-        summary, fix, guide = im_module.classify_error_message("SomethingElse: totally unknown error")
-        assert summary == "An unexpected error stopped the requested action"
-        assert fix == "Re-run with --debug to see the technical cause"
-        assert guide == im_module.DIAGNOSTICS_GUIDE_URL
+        advice = im_module.classify_recovery_error("SomethingElse: totally unknown error", is_logged_in=False)
+        assert advice.summary == "An unexpected error stopped the requested action"
+        assert advice.fix == im_module.recovery_fix_with_guide("Re-run with --debug to see the technical cause", im_module.DIAGNOSTICS_GUIDE_URL)
 
     # A doctor row is built from the same classification, and a row with no fix is refused outright
     def test_an_unrecognized_failure_does_not_break_a_doctor_row(self, im_module):
         check = im_module.doctor_check_from_error("Session", "FAIL", "", "SomethingElse: totally unknown error")
 
         assert check.status == "FAIL"
-        assert check.fix == "Re-run with --debug to see the technical cause"
-        assert check.guide == im_module.DIAGNOSTICS_GUIDE_URL
+        assert check.advice.fix == im_module.recovery_fix_with_guide("Re-run with --debug to see the technical cause", im_module.DIAGNOSTICS_GUIDE_URL)
 
     # Verifies the doctor row label comes from the classifier so no raw exception text reaches it
     def test_a_doctor_row_without_a_label_uses_the_summary(self, im_module):
@@ -258,7 +256,7 @@ class TestErrorSummary:
 
         assert check.label == "The saved Instagram session is invalid or expired"
         assert check.detail == "raw technical text"
-        assert "re-import" in check.fix.casefold()
+        assert "re-import" in check.advice.fix.casefold()
 
 
 class TestSmtpErrorSummary:
@@ -286,7 +284,7 @@ class TestOutageReporting:
         advice = im_module.classify_recovery_error(msg)
 
         assert advice.code == code
-        assert advice.summary == im_module.classify_error_message(msg)[0]
+        assert advice.summary == im_module.classify_error_parts(msg)[1]
 
     # A repeated failure prints its fix once, so a long outage does not repeat the same paragraph every check
     def test_a_repeated_failure_prints_its_fix_once(self, im_module, monkeypatch, capsys):
@@ -435,8 +433,8 @@ class TestRecoveryCodeSet:
         assert im_module.RECOVERY_CODES == frozenset({
             "instagram.rate_limited", "instagram.challenge", "instagram.empty_data",
             "session.missing", "session.expired",
-            "target.not_found",
-            "config.missing", "config.invalid", "config.impersonate_unsupported",
+            "target.missing", "target.not_found",
+            "config.missing", "config.invalid", "config.insecure", "config.impersonate_unsupported",
             "dependency.missing",
             "secret.missing",
             "proxy.unresolved",
@@ -488,6 +486,8 @@ class TestRecoveryCodeSet:
         ]
         produced = {im_module.classify_recovery_error(failure, context=context).code for failure, context in failures}
         produced.add(im_module.missing_dependency_advice("rich", "The Terminal Dashboard cannot start", "pip install rich").code)
+        # The doctor builds a few rows outside the classifier, such as the TLS and missing-target rows, so their codes count as reachable too
+        produced.update(node.args[0].value for node in ast.walk(ast.parse(inspect.getsource(im_module))) if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "make_recovery_advice" and node.args and isinstance(node.args[0], ast.Constant))
 
         assert im_module.RECOVERY_CODES - produced == set()
 

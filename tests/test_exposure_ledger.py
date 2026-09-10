@@ -61,7 +61,7 @@ def test_only_account_level_failures_are_group_c():
 def test_every_ordered_class_has_matching_terms(failure_class):
     assert im.FAILURE_TERMS[failure_class]
     sample = im.FAILURE_TERMS[failure_class][0]
-    summary, _fix, _guide = im.classify_error_message(sample)
+    summary = im.classify_recovery_error(sample, is_logged_in=False).summary
     assert summary
     assert summary != "An unexpected error stopped the requested action"
 

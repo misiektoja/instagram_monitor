@@ -61,8 +61,8 @@ class TestDoctorChecks:
 
         assert missing_check.status == "WARN"
         assert missing_check.detail == f"Path: {missing}"
-        assert "--env-file" in missing_check.fix
-        assert missing_check.guide == im_module.SECRETS_GUIDE_URL
+        assert "--env-file" in missing_check.advice.fix
+        assert missing_check.advice.fix.endswith(f"\nGuide: {im_module.SECRETS_GUIDE_URL}")
         assert not any(check.label == "Dotenv file loaded" for check in checks)
 
     # A dotenv file that exists is named as loaded
@@ -85,8 +85,7 @@ class TestDoctorChecks:
 
         assert len(failures) == 1
         assert failures[0].label == "Error loading config file 'x.conf'"
-        assert failures[0].fix == "use documented settings."
-        assert failures[0].guide == im_module.CONFIG_FILE_GUIDE_URL
+        assert failures[0].advice.fix == im_module.recovery_fix_with_guide("use documented settings.", im_module.CONFIG_FILE_GUIDE_URL)
 
     # A retired setting is a warning that still names the file and links the guide
     def test_retired_settings_become_a_warning_check(self, im_module, monkeypatch):
@@ -98,7 +97,7 @@ class TestDoctorChecks:
 
         assert len(warnings) == 1
         assert "DISCORD_MAX_FIELDS" in warnings[0].detail
-        assert warnings[0].guide == im_module.CONFIG_FILE_GUIDE_URL
+        assert warnings[0].advice.fix.endswith(f"\nGuide: {im_module.CONFIG_FILE_GUIDE_URL}")
 
     # Doctor resolves an automatic timezone instead of reporting the literal Auto value
     def test_automatic_timezone_is_resolved(self, im_module, monkeypatch):
@@ -134,7 +133,7 @@ class TestDoctorChecks:
         rows = [item for item in im_module.doctor_check_configuration([]) if item.label == "Check intervals are short"]
 
         assert [item.status for item in rows] == ["WARN"]
-        assert str(im_module.DOCTOR_MIN_SAFE_CHECK_INTERVAL) in rows[0].fix
+        assert str(im_module.DOCTOR_MIN_SAFE_CHECK_INTERVAL) in rows[0].advice.fix
 
     # The default interval is safe, so the row must stay away rather than warning about every run
     def test_a_safe_interval_is_not_warned_about(self, im_module, monkeypatch):
@@ -156,8 +155,8 @@ class TestDoctorChecks:
         check = next(item for item in checks if item.label == "Automatic timezone detection is unavailable")
 
         assert check.status == "FAIL"
-        assert "tzlocal" in check.fix
-        assert check.guide == im_module.CONFIG_FILE_GUIDE_URL
+        assert "tzlocal" in check.advice.fix
+        assert check.advice.fix.endswith(f"\nGuide: {im_module.CONFIG_FILE_GUIDE_URL}")
 
     # An unusable timezone name is reported before monitoring rather than at the first timestamp
     def test_invalid_timezone_fails(self, im_module, monkeypatch):
@@ -171,7 +170,7 @@ class TestDoctorChecks:
 
         assert check.status == "FAIL"
         assert check.detail == "Time zone: Europe/Nowhere"
-        assert check.fix == "Set LOCAL_TIMEZONE to a valid pytz timezone"
+        assert check.advice.fix == im_module.recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", im_module.CONFIG_FILE_GUIDE_URL)
 
     # Session advice is derived from the shared fix hints so Doctor and monitoring stay consistent
     def test_session_failure_carries_the_shared_fix_hint(self, im_module, monkeypatch):
@@ -187,8 +186,8 @@ class TestDoctorChecks:
         checks = im_module.doctor_check_session(report)
 
         assert checks[0].status == "FAIL"
-        assert "No saved session" in checks[0].fix
-        assert checks[0].guide == im_module.SESSION_IMPORT_GUIDE_URL
+        assert "No saved session" in checks[0].advice.fix
+        assert checks[0].advice.fix.endswith(f"\nGuide: {im_module.SESSION_IMPORT_GUIDE_URL}")
 
     # A valid webhook configuration records readiness on the report for the later delivery offer
     def test_valid_webhook_marks_the_report_ready(self, im_module, monkeypatch):
@@ -224,8 +223,7 @@ class TestDoctorChecks:
         warning = next(check for check in checks if check.status == "WARN")
         assert warning.label == im_module.EMAIL_UNUSABLE_CHECK_LABEL
         assert warning.detail == "SENDER_EMAIL or RECEIVER_EMAIL is not an email address"
-        assert warning.fix == "Correct SENDER_EMAIL and RECEIVER_EMAIL or turn the email alerts off"
-        assert warning.guide == im_module.SMTP_GUIDE_URL
+        assert warning.advice.fix == im_module.recovery_fix_with_guide("Correct SENDER_EMAIL and RECEIVER_EMAIL or turn the email alerts off", im_module.SMTP_GUIDE_URL)
 
     # A switched-off webhook is reported as disabled, not validated, so the report matches the sibling monitors
     def test_disabled_webhook_is_not_validated(self, im_module, monkeypatch):
@@ -270,8 +268,7 @@ class TestDoctorChecks:
         warning = next(check for check in checks if check.status == "WARN")
         assert warning.label == im_module.EMAIL_UNUSABLE_CHECK_LABEL
         assert warning.detail == "SMTP_HOST, SMTP_USER or SMTP_PASSWORD is empty or still set to its placeholder"
-        assert warning.fix == "Set SMTP_HOST, SMTP_USER and SMTP_PASSWORD or turn the email alerts off"
-        assert warning.guide == im_module.SMTP_GUIDE_URL
+        assert warning.advice.fix == im_module.recovery_fix_with_guide("Set SMTP_HOST, SMTP_USER and SMTP_PASSWORD or turn the email alerts off", im_module.SMTP_GUIDE_URL)
 
     # The row names only the settings that are actually unset, not every setting it checked
     def test_the_unusable_email_row_names_only_the_unset_settings(self, im_module, monkeypatch):
@@ -289,7 +286,7 @@ class TestDoctorChecks:
         warning = next(check for check in checks if check.status == "WARN")
         assert warning.label == im_module.EMAIL_UNUSABLE_CHECK_LABEL
         assert warning.detail == "SMTP_PASSWORD is empty or still set to its placeholder"
-        assert warning.fix == "Set SMTP_PASSWORD or turn the email alerts off"
+        assert warning.advice.fix == im_module.recovery_fix_with_guide("Set SMTP_PASSWORD or turn the email alerts off", im_module.SMTP_GUIDE_URL)
 
     # The shipped WEBHOOK_URL placeholder means the webhook was never configured, not that it is broken
     def test_webhook_placeholder_is_not_a_failure(self, im_module, monkeypatch):
@@ -320,7 +317,7 @@ class TestDoctorChecks:
         monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
         report = im_module.DoctorReport()
         report.checks = [
-            im_module.make_doctor_check("Session", "FAIL", "broken", "detail text", "do the thing.", "https://example.invalid/guide"),
+            im_module.make_doctor_check("Session", "FAIL", "broken", "detail text", im_module.make_recovery_advice("session.expired", "broken", im_module.recovery_fix_with_guide("do the thing.", "https://example.invalid/guide"), False)),
             im_module.make_doctor_check("Targets", "PASS", "fine"),
         ]
 
@@ -343,7 +340,7 @@ class TestDoctorChecks:
         assert errors and not errors[0]["fix"].startswith("To fix:")
 
         checks = im_module.doctor_check_configuration([], errors, ())
-        assert not any(check.fix.startswith("To fix:") for check in checks)
+        assert not any(check.advice is not None and check.advice.fix.startswith("To fix:") for check in checks)
 
 
     # The renderer owns the 'To fix:' prefix, so a missing config file must record the bare action
@@ -365,7 +362,9 @@ class TestDoctorChecks:
 
     # Every action reads as one capitalised instruction with no trailing period, matching the sibling monitors
     def test_doctor_actions_use_the_shared_sentence_style(self, im_module):
-        actions = [node.args[4] for node in ast.walk(ast.parse(inspect.getsource(im_module))) if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "make_doctor_check" and len(node.args) >= 5]
+        builders = [node for node in ast.walk(ast.parse(inspect.getsource(im_module))) if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "make_recovery_advice" and len(node.args) >= 3]
+        # The fix sits in the third slot, or inside recovery_fix_with_guide when the advice names a page
+        actions = [node.args[2].args[0] if isinstance(node.args[2], ast.Call) and getattr(node.args[2].func, "id", "") == "recovery_fix_with_guide" else node.args[2] for node in builders]
         checked = 0
         for action in actions:
             parts = action.values if isinstance(action, ast.JoinedStr) else [action]
@@ -505,7 +504,7 @@ class TestRunDoctor:
 
         assert [(check.status, check.detail) for check in installed] == [("PASS", "Used only to measure display width for screen truncation")]
         assert [(check.status, check.detail) for check in missing] == [("WARN", "Screen truncation is disabled and lines are printed in full. Normal monitoring is unaffected")]
-        assert "pip3 install \"wcwidth\"" in missing[0].fix
+        assert "pip3 install \"wcwidth\"" in missing[0].advice.fix
 
     # Verifies a warning about a library that cannot affect this machine is not shown at all
     @pytest.mark.parametrize("system, reported", [("Windows", True), ("Linux", False), ("Darwin", False)])
@@ -526,7 +525,7 @@ class TestRunDoctor:
         assert missing.status == "WARN"
         assert "Coloured output may not render in the classic Windows Command Prompt" in missing.detail
         assert "Windows Terminal needs nothing extra" in missing.detail
-        assert 'pip3 install "colorama"' in missing.fix
+        assert 'pip3 install "colorama"' in missing.advice.fix
 
     # Verifies Doctor checks and displays the final target-specific log filename
     def test_log_destination_uses_final_target_path(self, im_module, monkeypatch, capsys):
@@ -632,7 +631,7 @@ class TestRunDoctor:
 
         webhook = checks[-1]
         assert (webhook.status, webhook.label) == ("WARN", "Webhook alert types are selected but webhooks are switched off")
-        assert "WEBHOOK_ENABLED" in webhook.fix
+        assert "WEBHOOK_ENABLED" in webhook.advice.fix
         assert report.webhook_ready is False
 
     # Configured mail settings with no alert types selected warn, since nothing would ever be emailed
@@ -654,7 +653,7 @@ class TestRunDoctor:
 
         email = checks[0]
         assert (email.status, email.label) == ("WARN", "Email is configured but no alert types are selected")
-        assert email.fix == "Turn on at least one email alert in the configuration file"
+        assert email.advice.fix == im_module.recovery_fix_with_guide("Turn on at least one email alert in the configuration file", im_module.SMTP_GUIDE_URL)
         assert report.smtp_ready is False
 
     # Doctor reports one fully validated webhook under the label shared with the sibling monitors
@@ -1004,7 +1003,8 @@ def test_an_actionable_row_is_rejected_without_a_fix(im_module):
 # Verifies only the four shared markers can reach a report
 def test_only_the_four_shared_markers_are_accepted(im_module):
     assert im_module.DOCTOR_STATUSES == ("PASS", "WARN", "FAIL", "SKIP")
-    assert [im_module.make_doctor_check("Configuration", status, "a label", "", "do the thing").status for status in im_module.DOCTOR_STATUSES] == list(im_module.DOCTOR_STATUSES)
+    advice = im_module.make_recovery_advice("config.invalid", "a label", "do the thing", False)
+    assert [im_module.make_doctor_check("Configuration", status, "a label", "", advice).status for status in im_module.DOCTOR_STATUSES] == list(im_module.DOCTOR_STATUSES)
     assert set(im_module.DOCTOR_MARK_STYLES) == set(im_module.DOCTOR_STATUSES)
 
     with pytest.raises(ValueError):
@@ -1016,7 +1016,7 @@ def test_the_action_lines_sit_indented_under_their_marker(im_module, capsys, mon
     monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
     report = im_module.DoctorReport()
     report.checks = [
-        im_module.make_doctor_check("Configuration", "WARN", "a warning row", "a detail worth keeping", "do the thing", im_module.DOCTOR_GUIDE_URL),
+        im_module.make_doctor_check("Configuration", "WARN", "a warning row", "a detail worth keeping", im_module.make_recovery_advice("config.invalid", "a warning row", im_module.recovery_fix_with_guide("do the thing", im_module.DOCTOR_GUIDE_URL), False)),
         im_module.make_doctor_check("Configuration", "PASS", "a passing row"),
     ]
 
@@ -1051,7 +1051,7 @@ def test_a_link_in_a_detail_line_is_coloured_as_a_link(im_module, capsys, monkey
     report = im_module.DoctorReport()
     report.checks = [
         im_module.make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", "Endpoint: https://www.instagram.com/"),
-        im_module.make_doctor_check("Session", "FAIL", "The session did not validate", "", "Sign in again at https://www.instagram.com/", im_module.DOCTOR_GUIDE_URL),
+        im_module.make_doctor_check("Session", "FAIL", "The session did not validate", "", im_module.make_recovery_advice("session.expired", "The session did not validate", im_module.recovery_fix_with_guide("Sign in again at https://www.instagram.com/", im_module.DOCTOR_GUIDE_URL), False)),
     ]
 
     im_module.render_doctor_sections(report)
@@ -1137,7 +1137,7 @@ def test_a_missing_target_reuses_the_startup_gate_fix(im_module):
     checks = im_module.doctor_check_targets(report, [])
 
     assert checks[0].status == "WARN"
-    assert checks[0].fix == im_module.NO_TARGET_FIX
+    assert checks[0].advice.fix == im_module.recovery_fix_with_guide(im_module.NO_TARGET_FIX, im_module.QUICK_START_GUIDE_URL)
 
 
 # Verifies the connectivity row carries the label and the endpoint detail shared with the sibling monitors
@@ -1151,7 +1151,7 @@ def test_the_connectivity_row_names_the_shared_endpoint(im_module, monkeypatch):
     assert (passing.status, passing.label, passing.detail) == ("PASS", "The connectivity endpoint is reachable", "Endpoint: https://probe.example/ping")
     assert (failing.status, failing.label, failing.detail) == ("FAIL", "The connectivity endpoint could not be reached", "Endpoint: https://probe.example/ping")
     # The row carries no guide, because no page covers this check and the report ends with the doctor link
-    assert (failing.fix, failing.guide) == ("Check network, DNS, proxy and CHECK_INTERNET_URL settings", "")
+    assert failing.advice.fix == "Check network, DNS, proxy and CHECK_INTERNET_URL settings"
 
 
 # Verifies the row names the state the shared resolver settled on, so it says what a restart would say
@@ -1193,8 +1193,7 @@ def test_an_instaloader_that_cannot_be_built_is_one_failure_row(im_module, monke
     assert report.bot is None
     assert (checks[0].section, checks[0].status, checks[0].label) == ("Configuration", "FAIL", "Could not initialise Instaloader")
     assert "no instaloader today" in checks[0].detail
-    assert checks[0].fix == "Reinstall the instaloader package then run --doctor again"
-    assert checks[0].guide == im_module.INSTALLATION_GUIDE_URL
+    assert checks[0].advice.fix == im_module.recovery_fix_with_guide("Reinstall the instaloader package then run --doctor again", im_module.INSTALLATION_GUIDE_URL)
 
 
 # Verifies the live checks that need Instaloader are skipped with a reason when it could not be built, the way the sibling monitors skip a check that cannot run
@@ -1212,3 +1211,27 @@ def test_the_live_checks_are_skipped_without_instaloader(im_module, monkeypatch)
     assert (connectivity[-1].status, connectivity[-1].label) == ("SKIP", "Instagram connectivity check was skipped")
     assert (targets[0].status, targets[0].label) == ("SKIP", "The monitored profiles were not checked")
     assert all(row.detail.startswith("Instaloader could not be initialised") for row in (session[0], connectivity[-1], targets[0]))
+
+
+# One row shape and one advice shape across the family: the advice rides on the row and its fix carries the
+# guide, so a row or an advice copied from a sibling means the same thing here
+def test_the_doctor_row_and_its_advice_share_one_contract(im_module):
+    row_parameters = list(inspect.signature(im_module.make_doctor_check).parameters.values())
+    advice_parameters = list(inspect.signature(im_module.make_recovery_advice).parameters.values())
+
+    assert [parameter.name for parameter in row_parameters] == ["section", "status", "label", "detail", "advice"]
+    assert [parameter.default for parameter in row_parameters[3:]] == ["", None]
+    assert [parameter.name for parameter in advice_parameters] == ["code", "summary", "fix", "retryable", "detail"]
+    assert im_module.recovery_fix_with_guide("do the thing", "https://example.invalid/page") == "do the thing\nGuide: https://example.invalid/page"
+
+
+# A non-pass row is refused without advice and keeps the advice it was given, which is where its fix and guide live
+def test_a_row_carries_its_advice_and_refuses_to_go_without(im_module):
+    advice = im_module.make_recovery_advice("config.invalid", "a warning row", im_module.recovery_fix_with_guide("do the thing", im_module.DOCTOR_GUIDE_URL), False)
+
+    row = im_module.make_doctor_check("Configuration", "WARN", "a warning row", "a detail worth keeping", advice)
+
+    assert row.advice is advice
+    assert not hasattr(advice, "guide_url")
+    with pytest.raises(ValueError):
+        im_module.make_doctor_check("Configuration", "WARN", "a warning row", "a detail worth keeping")
