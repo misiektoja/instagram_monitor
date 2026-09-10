@@ -6447,7 +6447,7 @@ def randomize_number(number, diff_low, diff_high):
 
 # Converts a datetime to local timezone and removes timezone info (naive)
 def convert_to_local_naive(dt: Optional[datetime] = None):
-    tz = pytz.timezone(LOCAL_TIMEZONE)
+    tz = local_timezone()
 
     if dt is not None:
         if dt.tzinfo is None:
@@ -6462,12 +6462,12 @@ def convert_to_local_naive(dt: Optional[datetime] = None):
 
 # Returns current local time without timezone info (naive)
 def now_local_naive():
-    return datetime.now(pytz.timezone(LOCAL_TIMEZONE)).replace(microsecond=0, tzinfo=None)
+    return now_local().replace(microsecond=0, tzinfo=None)
 
 
 # Returns current local time with timezone info (aware)
 def now_local():
-    return datetime.now(pytz.timezone(LOCAL_TIMEZONE))
+    return datetime.now(local_timezone())
 
 
 # Converts UTC datetime object returned by Instagram API to datetime object in specified timezone
@@ -6478,7 +6478,7 @@ def convert_utc_datetime_to_tz_datetime(dt_utc):
     try:
         if dt_utc.tzinfo is None:
             dt_utc = pytz.utc.localize(dt_utc)
-        return dt_utc.astimezone(pytz.timezone(LOCAL_TIMEZONE))
+        return dt_utc.astimezone(local_timezone())
     except Exception:
         return None
 
@@ -6494,7 +6494,7 @@ def convert_utc_str_to_tz_datetime(dt_str):
         if dt.tzinfo is None:
             dt = pytz.utc.localize(dt)
 
-        return dt.astimezone(pytz.timezone(LOCAL_TIMEZONE))
+        return dt.astimezone(local_timezone())
 
     except Exception:
         return None
@@ -6552,7 +6552,7 @@ def recompute_liveness_reminder() -> None:
 
 # Returns the timestamp/datetime object in human readable format (long version); eg. Sun 21 Apr 2024, 15:08:45
 def get_date_from_ts(ts):
-    tz = pytz.timezone(LOCAL_TIMEZONE)
+    tz = local_timezone()
 
     if isinstance(ts, str):
         try:
@@ -6587,7 +6587,7 @@ def get_date_from_ts(ts):
 # Sun 21 Apr 15:08:32 (if show_seconds == True)
 # 21 Apr 15:08 (if show_weekday == False)
 def get_short_date_from_ts(ts, show_year=False, show_hour=True, show_weekday=True, show_seconds=False, always_show_year=False):
-    tz = pytz.timezone(LOCAL_TIMEZONE)
+    tz = local_timezone()
     if always_show_year:
         show_year = True
 
@@ -6634,7 +6634,7 @@ def get_short_date_from_ts(ts, show_year=False, show_hour=True, show_weekday=Tru
 # - Tom. HH:MM if tomorrow
 # - DD MMM HH:MM if other
 def get_squeezed_date_from_ts(ts, show_seconds: bool = True):
-    tz = pytz.timezone(LOCAL_TIMEZONE)
+    tz = local_timezone()
     now = datetime.now(tz)
     today = now.date()
     tomorrow = today + timedelta(days=1)
@@ -6680,7 +6680,7 @@ def get_squeezed_date_from_ts(ts, show_seconds: bool = True):
 
 # Returns the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
 def get_hour_min_from_ts(ts, show_seconds=False):
-    tz = pytz.timezone(LOCAL_TIMEZONE)
+    tz = local_timezone()
 
     if isinstance(ts, str):
         try:
@@ -6712,7 +6712,7 @@ def get_hour_min_from_ts(ts, show_seconds=False):
 
 # Returns the range between two timestamps/datetime objects; eg. Sun 21 Apr 14:09 - 14:15
 def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
-    tz = pytz.timezone(LOCAL_TIMEZONE)
+    tz = local_timezone()
 
     if isinstance(ts1, datetime):
         ts1_new = int(round(ts1.timestamp()))
@@ -6752,6 +6752,12 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
 # Checks if the timezone name is correct
 def is_valid_timezone(tz_name):
     return tz_name in pytz.all_timezones
+
+
+# Returns the timezone every timestamp is rendered in, falling back to system local time while LOCAL_TIMEZONE still holds the
+# unresolved 'Auto' sentinel, so a line printed before the timezone is resolved cannot end the run
+def local_timezone():
+    return pytz.timezone(LOCAL_TIMEZONE) if is_valid_timezone(LOCAL_TIMEZONE) else datetime.now().astimezone().tzinfo
 
 
 TIMEZONE_CHECK_LABELS = {"config": "Local timezone is valid", "auto": "Local timezone can be detected", "auto_unavailable": "Automatic timezone detection is unavailable", "auto_failed": "Automatic timezone detection failed", "invalid": "Local timezone is invalid"}
@@ -7025,7 +7031,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
     # Profile pic does not exist in the filesystem
     if not os.path.isfile(profile_pic_file):
         if save_pic_video(profile_image_url, profile_pic_file):
-            profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
+            profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), local_timezone())
 
             if profile_pic_file_empty and os.path.isfile(profile_pic_file_empty):
                 is_empty_profile_pic = compare_images(profile_pic_file, profile_pic_file_empty)
@@ -7071,10 +7077,10 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
         m_body = ""
         m_body_html = ""
         m_body_html_pic_saved_text = ""
-        profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
+        profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), local_timezone())
         profile_pic_mdate = get_short_date_from_ts(profile_pic_mdate_dt, True)
         if save_pic_video(profile_image_url, profile_pic_file_tmp):
-            profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)), pytz.timezone(LOCAL_TIMEZONE))
+            profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)), local_timezone())
             if profile_pic_file_empty and os.path.isfile(profile_pic_file_empty):
                 debug_print("Comparing current profile picture with empty template...")
                 is_empty_profile_pic = compare_images(profile_pic_file, profile_pic_file_empty)
@@ -10424,7 +10430,7 @@ def exposure_account_name() -> str:
 # Returns today's date in the configured local timezone as an ISO day string
 def _exposure_today() -> str:
     try:
-        return datetime.now(pytz.timezone(LOCAL_TIMEZONE)).strftime("%Y-%m-%d")
+        return datetime.now(local_timezone()).strftime("%Y-%m-%d")
     except Exception:
         return datetime.now().strftime("%Y-%m-%d")
 
@@ -12262,7 +12268,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             followers_baseline_available = True
             if followers_count == followers_old_count:
                 followers = followers_old
-            followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file)), pytz.timezone(LOCAL_TIMEZONE))
+            followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file)), local_timezone())
             update_ui_data(targets={user: {'status': 'Loading Followers'}})
 
             if FOLLOWERS_CHURN_DETECTION:
@@ -12412,7 +12418,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             followings_baseline_available = True
             if followings_count == followings_old_count:
                 followings = followings_old
-            following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file)), pytz.timezone(LOCAL_TIMEZONE))
+            following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file)), local_timezone())
             update_ui_data(targets={user: {'status': 'Loading Followings'}})
 
             if FOLLOWERS_CHURN_DETECTION:
