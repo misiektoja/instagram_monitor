@@ -504,3 +504,11 @@ def test_the_test_suite_guide_lists_every_test_file():
 
     assert present - listed == set(), f"test files missing from tests/README.md: {sorted(present - listed)}"
     assert {name for name in listed if name.endswith(".py")} - present == set(), f"tests/README.md names files that do not exist: {sorted({name for name in listed if name.endswith('.py')} - present)}"
+
+
+# Verifies the documented doctor sections are exactly the ones the report renders
+def test_the_documented_doctor_sections_match_the_code():
+    text = read_asset("docs/troubleshooting.md")
+
+    for section in monitor.DOCTOR_SECTIONS:
+        assert f"**{section}**" in text, f"the {section} doctor section is not documented"
