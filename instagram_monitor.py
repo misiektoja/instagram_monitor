@@ -15125,7 +15125,7 @@ def _wizard_collect_email_section(state: WizardSetupState) -> None:
         if _wizard_email_answer_missing(state, state.config_values["SMTP_HOST"]):
             return
         state.config_values["SMTP_PORT"] = _wizard_ask_positive_int("SMTP port", int(state.config_values.get("SMTP_PORT") or 587), maximum=65535)
-        state.config_values["SMTP_SSL"] = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(state.config_values.get("SMTP_SSL", True)))
+        state.config_values["SMTP_SSL"] = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(state.config_values.get("SMTP_SSL")))
         state.config_values["SMTP_USER"] = _wizard_ask_text("SMTP username", default=_wizard_default(state.config_values.get("SMTP_USER")), required=True)
         if _wizard_email_answer_missing(state, state.config_values["SMTP_USER"]):
             return
