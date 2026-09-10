@@ -14557,6 +14557,11 @@ def _wizard_default(value) -> str:
     return str(value) if doctor_secret_is_set(value if isinstance(value, str) else str(value or "")) else ""
 
 
+# Trims the parenthetical hint from a question, so the retry offer that repeats it stays one readable line
+def _wizard_retry_label(question: str) -> str:
+    return question.split(" (")[0].strip()
+
+
 # Prompts until the answer is a positive whole number
 def _wizard_ask_positive_int(question: str, default: int, maximum: Optional[int] = None) -> int:
     while True:
@@ -14571,6 +14576,10 @@ def _wizard_ask_positive_int(question: str, default: int, maximum: Optional[int]
         if parsed > 0 and (maximum is None or parsed <= maximum):
             return parsed
         print(f"  Enter a whole number from 1 through {maximum}." if maximum is not None else "  Enter a positive whole number.")
+        # A value the helper cannot use is a rejected entry, so it gets the same way out an empty one gets
+        if not _wizard_offer_retry(_wizard_retry_label(question)):
+            print(f"  Keeping {default}.")
+            return int(default)
 
 
 # Converts a duration to a compact seconds plus human-readable wizard label
@@ -14619,6 +14628,9 @@ def _wizard_ask_duration(question: str, default: int) -> int:
         if parsed is not None:
             return parsed
         print("  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d.")
+        if not _wizard_offer_retry(_wizard_retry_label(question)):
+            print(f"  Keeping {_wizard_format_duration(default)}.")
+            return default
 
 
 # Reads one secret through getpass without echoing it, coloured like the visible prompts and with debug output off
