@@ -5476,6 +5476,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         print(colorize("info", "To fix: Verify SMTP_HOST, SMTP_PORT and SMTP_SSL plus SMTP_USER / SMTP_PASSWORD. For Gmail and similar providers use an app password, not your normal login password. Test with --send-test-email"))
         print(f"Guide: {SMTP_GUIDE_URL}")
         return 1
+    verbose_print(f"Email delivered to {RECEIVER_EMAIL}: {subject}")
     return 0
 
 
@@ -6051,7 +6052,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                     response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers=final_headers, json=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS)
 
             if 200 <= response.status_code <= 299:
-                print("* Webhook notification sent successfully")
+                verbose_print(f"Webhook delivered through {provider}: {payload['title']}")
                 return 0
             last_error = response
             if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
