@@ -498,6 +498,15 @@ class TestRunDoctor:
         out = capsys.readouterr().out
         assert "Optional dependency pycookiecheat is installed\n  Used only for importing sessions from Chromium-based browsers. Firefox session import does not need it" in out
 
+    # Verifies the library the width cap needs is reported, since without it TRUNCATE_CHARS silently stops truncating
+    def test_the_truncation_library_is_reported(self, im_module):
+        installed = [check for check in im_module.doctor_check_environment((3, 12, 1), lambda _name: object()) if "wcwidth" in check.label]
+        missing = [check for check in im_module.doctor_check_environment((3, 12, 1), lambda name: None if name == "wcwidth" else object()) if "wcwidth" in check.label]
+
+        assert [(check.status, check.detail) for check in installed] == [("PASS", "Used only to measure display width for screen truncation")]
+        assert [(check.status, check.detail) for check in missing] == [("WARN", "Screen truncation is disabled and lines are printed in full. Normal monitoring is unaffected")]
+        assert "pip3 install \"wcwidth\"" in missing[0].fix
+
     # Verifies a warning about a library that cannot affect this machine is not shown at all
     @pytest.mark.parametrize("system, reported", [("Windows", True), ("Linux", False), ("Darwin", False)])
     def test_a_platform_specific_dependency_is_only_reported_where_it_applies(self, im_module, monkeypatch, system, reported):

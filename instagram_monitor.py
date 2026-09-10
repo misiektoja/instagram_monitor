@@ -15968,6 +15968,7 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         ("flask", "flask", FLASK_AVAILABLE, "Used only for the Web Dashboard", "Normal monitoring is unaffected when the Web Dashboard is unused"),
         ("dotenv", "python-dotenv", module_present("dotenv"), "Used only for loading secrets from a dotenv file", "Secrets in a dotenv file are ignored. Export them as environment variables instead"),
         ("pycookiecheat", "pycookiecheat", module_present("pycookiecheat"), "Used only for importing sessions from Chromium-based browsers. Firefox session import does not need it", "Required only for importing sessions from Chromium-based browsers. Firefox session import is unaffected"),
+        ("wcwidth", "wcwidth", module_present("wcwidth"), "Used only to measure display width for screen truncation", "Screen truncation is disabled and lines are printed in full. Normal monitoring is unaffected"),
     )
     # The classic Command Prompt is the only place this library changes anything, so a machine it cannot affect is not warned about a package it does not need
     if platform.system() == "Windows":
