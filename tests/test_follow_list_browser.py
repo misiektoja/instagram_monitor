@@ -1,6 +1,7 @@
 """Offline tests for the experimental browser follower list source, with no browser started."""
 
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import instaloader
 import pytest
@@ -41,6 +42,12 @@ def fake_profile(username="target.user", followers=0, followees=0):
 # Builds a logged-in bot stub
 def fake_bot(logged_in=True):
     return SimpleNamespace(context=SimpleNamespace(is_logged_in=logged_in, _session=SimpleNamespace()))
+
+
+CHROME_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+FIREFOX_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0"
+SAFARI_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+EDGE_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0"
 
 
 class TestDialogHarvest:
@@ -303,3 +310,165 @@ class TestDoctorReadiness:
 
         assert ready is True and fix == ""
         assert "chrome" in detail
+
+
+class TestBrowserIdentityAlignment:
+    # A Chromium build cannot honestly present a Firefox or Safari agent, so the families have to line up
+    @pytest.mark.parametrize("channel, expected", [("chromium", "chrome"), ("chrome", "chrome"), ("msedge", "edge"), ("", "chrome"), ("Chromium", "chrome")])
+    def test_each_channel_reports_the_family_it_presents(self, im_module, monkeypatch, channel, expected):
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", channel)
+
+        assert im_module.browser_channel_family() == expected
+
+    # A pinned target carries its version, which does not change the browser it impersonates
+    @pytest.mark.parametrize("target, expected", [("chrome", "chrome"), ("chrome131", "chrome"), ("safari_ios", "safari"), ("edge99", "edge"), ("", "")])
+    def test_a_versioned_target_keeps_its_family(self, im_module, target, expected):
+        assert im_module.impersonate_family(target) == expected
+
+    # An aligned session presents one browser everywhere, so nothing is reported
+    def test_an_aligned_session_reports_no_mismatch(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "auto")
+        monkeypatch.setattr(im_module, "USER_AGENT", CHROME_AGENT)
+
+        assert im_module.browser_identity_mismatch() is None
+
+    # The stock transport cannot present a browser handshake, so one session would arrive as two clients
+    def test_the_stock_transport_is_reported_as_a_mismatch(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "requests")
+        monkeypatch.setattr(im_module, "USER_AGENT", CHROME_AGENT)
+
+        detail, fix = im_module.browser_identity_mismatch()
+        assert "requests" in detail and "two different clients" in detail
+        assert "HTTP_BACKEND" in fix
+
+    # curl_cffi selected but absent leaves the stock transport in place, which is the same mismatch
+    def test_a_missing_curl_cffi_is_reported_as_a_mismatch(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
+        monkeypatch.setattr(im_module, "USER_AGENT", CHROME_AGENT)
+
+        assert im_module.browser_identity_mismatch() is not None
+
+    # This is the default-configuration defect: a random agent from another family against a Chromium build
+    @pytest.mark.parametrize("agent, named", [(FIREFOX_AGENT, "firefox"), (SAFARI_AGENT, "safari")])
+    def test_an_agent_from_another_family_is_reported(self, im_module, monkeypatch, agent, named):
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "auto")
+        monkeypatch.setattr(im_module, "USER_AGENT", agent)
+
+        detail, fix = im_module.browser_identity_mismatch()
+        assert named in detail and "announce itself as a browser it is not" in detail
+        assert "USER_AGENT" in fix
+
+    # A pinned target overrides the agent, so it is checked even when the agent itself agrees
+    def test_a_pinned_target_from_another_family_is_reported(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "firefox")
+        monkeypatch.setattr(im_module, "USER_AGENT", CHROME_AGENT)
+
+        detail, fix = im_module.browser_identity_mismatch()
+        assert "CURL_CFFI_IMPERSONATE" in fix and "firefox" in detail
+
+    # An Edge channel is aligned by an Edge agent, not by the Chrome default
+    def test_the_edge_channel_is_aligned_by_an_edge_agent(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "msedge")
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "auto")
+        monkeypatch.setattr(im_module, "USER_AGENT", EDGE_AGENT)
+
+        assert im_module.browser_identity_mismatch() is None
+
+    # A pinned family always produces an agent of that family, so the random pool cannot break the alignment
+    @pytest.mark.parametrize("family", ["chrome", "edge", "firefox", "safari"])
+    def test_a_pinned_family_produces_an_agent_of_that_family(self, im_module, family):
+        for _ in range(30):
+            assert im_module._impersonate_target_from_ua(im_module.get_random_user_agent(family)) == family
+
+    # No family keeps the original random pool, so ordinary runs still vary
+    def test_no_family_still_varies(self, im_module):
+        families = {im_module._impersonate_target_from_ua(im_module.get_random_user_agent()) for _ in range(200)}
+
+        assert len(families) > 1
+
+
+class TestBrowserIdentityGates:
+    # Doctor has to explain the mismatch, so it reports a failure row instead of the experimental warning
+    def test_doctor_fails_on_a_mismatched_identity(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "browser")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "auto")
+        monkeypatch.setattr(im_module, "USER_AGENT", FIREFOX_AGENT)
+        monkeypatch.setattr(im_module, "browser_follow_list_readiness", lambda: (True, "Channel: chromium", ""))
+
+        rows = [check for check in im_module.doctor_check_configuration(["target.user"]) if "browser follower list" in check.label]
+
+        assert len(rows) == 1
+        assert rows[0].status == "FAIL"
+        assert "firefox" in rows[0].detail
+        assert rows[0].fix
+
+    # An aligned identity leaves the experimental warning as the only browser row
+    def test_doctor_keeps_the_experimental_warning_when_aligned(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "browser")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "auto")
+        monkeypatch.setattr(im_module, "USER_AGENT", CHROME_AGENT)
+        monkeypatch.setattr(im_module, "browser_follow_list_readiness", lambda: (True, "Channel: chromium", ""))
+
+        statuses = {check.status for check in im_module.doctor_check_configuration(["target.user"]) if "browser" in check.label.casefold()}
+
+        assert statuses == {"WARN"}
+
+    # Monitoring must not start on an identity the browser source cannot present honestly
+    def test_monitoring_refuses_to_start_on_a_mismatch(self, im_module, monkeypatch, capsys, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--no-color", "--disable-logging", "--follow-list-source", "browser", "--user-agent", FIREFOX_AGENT])
+        monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "find_config_file", lambda path=None: None)
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "check_internet", lambda: True)
+
+        with pytest.raises(SystemExit) as error:
+            im_module.run_main()
+
+        output = capsys.readouterr().out
+        assert error.value.code == 1
+        assert "firefox" in output and "* To fix: " in output
+        assert im_module.FOLLOW_LIST_SOURCE_GUIDE_URL in output
+
+    # A random agent must not silently make a Chromium build claim another browser
+    def test_the_random_agent_follows_the_browser_channel(self, im_module, monkeypatch, capsys, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--no-color", "--disable-logging", "--follow-list-source", "browser"])
+        monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+        monkeypatch.setattr(im_module, "USER_AGENT", "")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "msedge")
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "find_config_file", lambda path=None: None)
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "check_internet", lambda: True)
+        monkeypatch.setattr(im_module, "start_dashboard_input_handler", Mock(side_effect=SystemExit(0)))
+
+        with pytest.raises(SystemExit):
+            im_module.run_main()
+
+        assert im_module._impersonate_target_from_ua(im_module.USER_AGENT) == "edge"
+        assert im_module.browser_identity_mismatch() is None

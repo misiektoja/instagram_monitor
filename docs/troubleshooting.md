@@ -120,6 +120,7 @@ There is a third, experimental source that reads the lists out of a real browser
 
 Common browser source errors:
 
+- **The browser source runs a chrome browser, but ...**: the browser channel and the rest of the session name different browsers. Set `HTTP_BACKEND` to `curl_cffi`, `CURL_CFFI_IMPERSONATE` to `auto` and `USER_AGENT` to a browser from the channel's family, or leave `USER_AGENT` empty. See [Browser Source](usage.md#browser-source-experimental).
 - **The browser could not start**: Playwright is installed but the browser is not. Run `playwright install chromium`, or set `FOLLOW_LIST_BROWSER_CHANNEL` to a browser already installed here, such as `chrome`.
 - **The login page, so this session is not logged in**: the cookies handed to the browser are no longer valid. Refresh the session and try again.
 - **A challenge page**: clear the challenge in an ordinary browser first. This also trips the circuit breaker.

@@ -318,6 +318,10 @@ FOLLOW_LIST_SOURCE = "auto"
 # Browser Playwright starts
 # "chromium" (default) uses the browser Playwright downloads, "chrome" or "msedge" use a copy already
 # installed on this machine, which looks more like an ordinary visitor but has to be installed first
+#
+# Every channel is a Chromium build, so USER_AGENT and CURL_CFFI_IMPERSONATE have to name the same
+# browser family: Chrome for "chromium" and "chrome", Edge for "msedge". Monitoring refuses to start
+# on a mismatch rather than let one Instagram session arrive as two different clients
 FOLLOW_LIST_BROWSER_CHANNEL = "chromium"
 
 # Whether the browser runs without a visible window
@@ -8093,8 +8097,9 @@ def resolve_executable(path):
 
 
 # Returns random web browser user agent string
-def get_random_user_agent() -> str:
-    browser = random.choice(['chrome', 'firefox', 'edge', 'safari'])
+def get_random_user_agent(family: Optional[str] = None) -> str:
+    requested = str(family or "").strip().lower()
+    browser = requested if requested in ('chrome', 'firefox', 'edge', 'safari') else random.choice(['chrome', 'firefox', 'edge', 'safari'])
 
     if browser == 'chrome':
         os_choice = random.choice(['mac', 'windows'])
@@ -11023,6 +11028,36 @@ def harvest_follow_list_dialog(page, scroll_delay: float, stall_limit: int = BRO
             return
         page.wait_for_timeout(max(0, int(float(scroll_delay) * 1000)))
 
+
+
+# The curl_cffi impersonation family each Playwright browser channel presents on the wire
+BROWSER_CHANNEL_FAMILIES = {'chromium': 'chrome', 'chrome': 'chrome', 'msedge': 'edge'}
+
+
+# Returns the browser family the configured channel presents, since Playwright only drives Chromium builds
+def browser_channel_family() -> str:
+    return BROWSER_CHANNEL_FAMILIES.get(str(FOLLOW_LIST_BROWSER_CHANNEL or "chromium").strip().lower(), "chrome")
+
+
+# Returns the browser family a curl_cffi impersonation target belongs to, so chrome131 and chrome are one family
+def impersonate_family(target) -> str:
+    match = re.match(r'[a-z]+', str(target or "").strip().lower())
+    return match.group(0) if match else ""
+
+
+# Reports why the browser source and the HTTP path would reach Instagram as different clients, or None when they agree
+def browser_identity_mismatch() -> Optional[Tuple[str, str]]:
+    channel = str(FOLLOW_LIST_BROWSER_CHANNEL or "chromium").strip().lower()
+    family = browser_channel_family()
+    if str(HTTP_BACKEND).strip().lower() != "curl_cffi" or not _CURL_CFFI_AVAILABLE:
+        return (f"The browser source runs a {family} browser, but every other request uses the 'requests' backend, which cannot present a browser TLS fingerprint. One session would reach Instagram as two different clients", "Set HTTP_BACKEND to curl_cffi, or set FOLLOW_LIST_SOURCE back to auto")
+    agent_family = _impersonate_target_from_ua(USER_AGENT)
+    if agent_family != family:
+        return (f"The browser source runs a {family} browser through the '{channel}' channel, but USER_AGENT claims {agent_family}, so it would announce itself as a browser it is not", f"Set USER_AGENT to a {family} browser, or set FOLLOW_LIST_BROWSER_CHANNEL to a channel that matches it")
+    target_family = impersonate_family(_curl_cffi_impersonate_target())
+    if target_family != family:
+        return (f"The browser source runs a {family} browser, but CURL_CFFI_IMPERSONATE pins {target_family} for every other request. One session would reach Instagram as two different clients", f"Set CURL_CFFI_IMPERSONATE to auto or to a {family} target")
+    return None
 
 # Returns whether the browser provider can run here, plus a detail line and the action that fixes it
 def browser_follow_list_readiness() -> Tuple[bool, str, str]:
@@ -15946,7 +15981,10 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
         checks.append(make_doctor_check("Configuration", "PASS", f"Follower lists are read over {follow_list_source_display()}"))
     else:
         browser_ready, browser_detail, browser_fix = browser_follow_list_readiness()
-        if browser_ready:
+        identity_mismatch = browser_identity_mismatch()
+        if identity_mismatch is not None:
+            checks.append(make_doctor_check("Configuration", "FAIL", "The browser follower list source would not match the rest of the session", identity_mismatch[0], identity_mismatch[1], FOLLOW_LIST_SOURCE_GUIDE_URL))
+        elif browser_ready:
             checks.append(make_doctor_check("Configuration", "WARN", "Follower lists are read by a real browser", f"{browser_detail}. This source is experimental and uses far more CPU and memory than the HTTP sources", "Set FOLLOW_LIST_SOURCE back to auto if a check takes too long or the machine is small", FOLLOW_LIST_SOURCE_GUIDE_URL))
         else:
             checks.append(make_doctor_check("Configuration", "FAIL", "The browser follower list source cannot run", browser_detail, browser_fix, FOLLOW_LIST_SOURCE_GUIDE_URL))
@@ -16998,18 +17036,6 @@ def run_main():
         # The report still stamps timestamps, so it falls back rather than stopping before the diagnosis
         LOCAL_TIMEZONE = "UTC"
 
-    if args.user_agent:
-        USER_AGENT = args.user_agent
-
-    if not USER_AGENT:
-        USER_AGENT = get_random_user_agent()
-
-    if args.user_agent_mobile:
-        USER_AGENT_MOBILE = args.user_agent_mobile
-
-    if not USER_AGENT_MOBILE:
-        USER_AGENT_MOBILE = get_random_mobile_user_agent()
-
     if args.http_backend:
         HTTP_BACKEND = args.http_backend
 
@@ -17018,6 +17044,20 @@ def run_main():
 
     if args.follow_list_source:
         FOLLOW_LIST_SOURCE = args.follow_list_source
+
+    if args.user_agent:
+        USER_AGENT = args.user_agent
+
+    if not USER_AGENT:
+        # The browser source can only drive a Chromium build, so a random Firefox or Safari agent
+        # would make it announce itself as a browser it is not
+        USER_AGENT = get_random_user_agent(browser_channel_family() if active_follow_list_source() == 'browser' else None)
+
+    if args.user_agent_mobile:
+        USER_AGENT_MOBILE = args.user_agent_mobile
+
+    if not USER_AGENT_MOBILE:
+        USER_AGENT_MOBILE = get_random_mobile_user_agent()
 
     if args.identity_budget is not None:
         if args.identity_budget < 0:
@@ -17032,6 +17072,15 @@ def run_main():
 
     if str(HTTP_BACKEND).strip().lower() == "curl_cffi" and not _CURL_CFFI_AVAILABLE:
         print("* Warning: HTTP_BACKEND is 'curl_cffi' but the 'curl_cffi' package is not installed, using the 'requests' backend instead (run: pip3 install curl_cffi)")
+
+    # Only a run that will monitor can present two clients, and --doctor has to report this rather than die on it
+    if not requested_actions and active_follow_list_source() == 'browser':
+        identity_mismatch = browser_identity_mismatch()
+        if identity_mismatch is not None:
+            print(f"* Error: {identity_mismatch[0]}")
+            print(f"* To fix: {identity_mismatch[1]}")
+            print(f"Guide: {FOLLOW_LIST_SOURCE_GUIDE_URL}")
+            sys.exit(1)
 
     if args.proxy_enabled is True:
         PROXY_ENABLED = True

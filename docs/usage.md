@@ -584,6 +584,15 @@ FOLLOW_LIST_BROWSER_SCROLL_DELAY = 1.5
 FOLLOW_LIST_BROWSER_TIMEOUT = 30
 ```
 
+Every Playwright channel is a Chromium build, so the browser source only works when the rest of the session presents the same browser. Monitoring refuses to start otherwise, rather than let one Instagram session arrive as two different clients:
+
+| `FOLLOW_LIST_BROWSER_CHANNEL` | needs `USER_AGENT` and `CURL_CFFI_IMPERSONATE` |
+| --- | --- |
+| `chromium`, `chrome` | Chrome |
+| `msedge` | Edge |
+
+`HTTP_BACKEND` must be `curl_cffi`, since the stock `requests` transport cannot present a browser TLS fingerprint at all. `CURL_CFFI_IMPERSONATE = "auto"` follows `USER_AGENT` and is the simplest way to satisfy this. If you leave `USER_AGENT` empty the tool picks one from the matching family instead of at random. `--doctor` reports a mismatch and names the setting to change.
+
 What to expect:
 
 - It is much slower than REST or GraphQL and uses far more CPU and memory. A list of a few thousand names takes minutes, not seconds.
