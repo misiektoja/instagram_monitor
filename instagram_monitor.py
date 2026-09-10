@@ -1479,6 +1479,8 @@ ANTI_DETECTION_SESSION_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#sign-in
 CONNECTION_ERRORS_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#connection-errors-during-monitoring"
 DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
 SECRETS_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#storing-secrets"
+DIAGNOSTICS_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#choosing-the-right-logging-level"
+MONITORING_GUIDE_URL = DOCUMENTATION_URL + "/usage/#monitoring-mode"
 
 # The fix named when nothing is being monitored, shared by the startup gate and the Doctor target check
 NO_TARGET_FIX = "Pass a target on the command line, set TARGET_USERNAMES in the config or enable the Web Dashboard"
@@ -9895,72 +9897,122 @@ def is_account_level_failure(failure_class: str) -> bool:
     return failure_class_group(failure_class) == 'C'
 
 
+# Every recovery category the tool can report, kept closed so a message is testable, deduplicable and translatable later
+RECOVERY_CODES = frozenset({
+    "instagram.rate_limited", "instagram.challenge", "instagram.empty_data",
+    "session.missing", "session.expired",
+    "target.not_found",
+    "config.impersonate_unsupported",
+    "proxy.unresolved",
+    "network.dns", "network.unavailable",
+    "unknown",
+})
+
+# Matches a secret assignment so error text quoting a configuration line cannot carry the value with it
+SECRET_ASSIGNMENT_RE = re.compile(r"(?im)(\b(?:" + "|".join(SECRET_KEYS) + r")\b\s*=\s*)[^\r\n]*")
+
+
+# Removes private values and secret assignments from error text before it reaches the console, a log or an alert
+def sanitize_error_text(text: Any) -> str:
+    sanitized = apply_privacy_substitutions(str(text or ""))
+    for name in SECRET_KEYS:
+        private_value = globals().get(name)
+        # A short value would match unrelated words, and no real secret this tool stores is that short
+        if isinstance(private_value, str) and len(private_value) > 4:
+            sanitized = sanitized.replace(private_value, "[private value]")
+    return SECRET_ASSIGNMENT_RE.sub(r"\1<redacted>", sanitized)
+
+
 @dataclass(frozen=True)
 class RecoveryAdvice:
     code: str
     summary: str
     fix: str
-    guide: str = ""
+    retryable: bool = False
+    detail: str = ""
+
+
+# Carries structured recovery advice across an exception boundary without exposing technical detail
+class RecoveryError(Exception):
+    # Initializes a structured recovery exception, keeping the original cause attached for debug output
+    def __init__(self, advice: RecoveryAdvice, cause: Optional[BaseException] = None) -> None:
+        self.advice = advice
+        self.cause = cause
+        if cause is not None:
+            self.__cause__ = cause
+        super().__init__(advice.summary)
+
+
+# Builds one piece of recovery advice, refusing any code outside the closed set and sanitizing every field
+def make_recovery_advice(code: str, summary: str, fix: str, retryable: bool = False, detail: str = "") -> RecoveryAdvice:
+    if code not in RECOVERY_CODES:
+        raise ValueError(f"Unsupported recovery code: {code}")
+    return RecoveryAdvice(code, sanitize_error_text(summary), sanitize_error_text(fix), bool(retryable), sanitize_error_text(detail) if detail else "")
+
+
+# Adds a directly relevant documentation link on its own line
+def recovery_fix_with_guide(fix: str, guide_url: str) -> str: return f"{fix}\nGuide: {guide_url}"
 
 
 # Classifies one error message into code-carrying advice, so a repeated failure is recognized without re-reading its text
 def classify_recovery_error(error_msg: str, is_logged_in: bool = False) -> RecoveryAdvice:
-    return RecoveryAdvice(*classify_error_parts(error_msg, is_logged_in))
+    code, summary, fix, guide, retryable = classify_error_parts(error_msg, is_logged_in)
+    return make_recovery_advice(code, summary, recovery_fix_with_guide(fix, guide) if guide else fix, retryable)
 
 
 # Maps one error message to a stable summary plus the matching fix and guide, so every surface explains it the same way
 def classify_error_message(error_msg: str, is_logged_in: bool = False) -> Tuple[str, str, str]:
-    return classify_error_parts(error_msg, is_logged_in)[1:]
+    return classify_error_parts(error_msg, is_logged_in)[1:4]
 
 
-# Maps one error message to the stable code behind its summary, fix and guide
-def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[str, str, str, str]:
+# Maps one error message to the stable code behind its summary, fix and guide, and to whether retrying can clear it
+def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[str, str, str, str, bool]:
     m = (error_msg or "").lower()
 
     # Rate limiting or TLS-fingerprint blocks
     if any(t in m for t in FAILURE_TERMS['rate_limit']):
-        return "instagram.rate_limited", "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users", ANTI_DETECTION_INTERVAL_GUIDE_URL
+        return "instagram.rate_limited", "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
 
     # Challenge, checkpoint or shadowban
     if any(t in m for t in FAILURE_TERMS['challenge']):
-        return "instagram.challenge", "Instagram is asking this session or IP to pass a challenge", f"Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'. Also raise the check interval", ANTI_DETECTION_SESSION_GUIDE_URL
+        return "instagram.challenge", "Instagram is asking this session or IP to pass a challenge", f"Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'. Also raise the check interval", ANTI_DETECTION_SESSION_GUIDE_URL, False
 
     # Missing session file
     if any(t in m for t in FAILURE_TERMS['session_missing']):
-        return "session.missing", "No saved Instagram session was found", f"No saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can import from the Session page", SESSION_IMPORT_GUIDE_URL
+        return "session.missing", "No saved Instagram session was found", f"No saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can import from the Session page", SESSION_IMPORT_GUIDE_URL, False
 
     # Invalid or expired session
     if any(t in m for t in FAILURE_TERMS['auth_expired']):
-        return "session.expired", "The saved Instagram session is invalid or expired", f"Your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can re-import from the Session page", SESSION_IMPORT_GUIDE_URL
+        return "session.expired", "The saved Instagram session is invalid or expired", f"Your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can re-import from the Session page", SESSION_IMPORT_GUIDE_URL, False
 
     # Profile not found
     if any(t in m for t in FAILURE_TERMS['target_unavailable']):
         fix = "Check the target username is spelled correctly and the account still exists and is reachable"
         if is_logged_in:
             fix += ". If the username is correct, your session or IP may be temporarily flagged"
-        return "target.not_found", "Instagram could not find the requested profile", fix, ""
+        return "target.not_found", "Instagram could not find the requested profile", fix, MONITORING_GUIDE_URL, False
 
     # An unsupported impersonation target surfaces as a connection error, so name the real cause before the network hint
     if any(t in m for t in FAILURE_TERMS['impersonate_unsupported']):
-        return "config.impersonate_unsupported", "The configured browser profile cannot be impersonated", "The configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto' or pick a supported target such as chrome, safari, edge or firefox", ""
+        return "config.impersonate_unsupported", "The configured browser profile cannot be impersonated", "The configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto' or pick a supported target such as chrome, safari, edge or firefox", HTTP_BACKEND_GUIDE_URL, False
 
     # An unresolvable proxy hostname is a proxy configuration problem, so it is the one resolution failure the proxy guide fits
     if any(t in m for t in FAILURE_TERMS['proxy_unresolved']):
-        return "proxy.unresolved", "The configured proxy hostname could not be resolved", "The proxy hostname you configured cannot be resolved. Check PROXY_URL for a typo and confirm the proxy host is reachable from this machine", PROXY_GUIDE_URL
+        return "proxy.unresolved", "The configured proxy hostname could not be resolved", "The proxy hostname you configured cannot be resolved. Check PROXY_URL for a typo and confirm the proxy host is reachable from this machine", PROXY_GUIDE_URL, False
 
     # DNS failures are resolver-side, so they need their own fix before the generic network branch swallows them
     if any(t in m for t in FAILURE_TERMS['dns_failure']):
-        return "network.dns", "Instagram's address could not be resolved", "Your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com') and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again", CONNECTION_ERRORS_GUIDE_URL
+        return "network.dns", "Instagram's address could not be resolved", "Your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com') and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again", CONNECTION_ERRORS_GUIDE_URL, True
 
     # Network or connectivity problems
     if any(t in m for t in FAILURE_TERMS['network']):
-        return "network.unavailable", "Instagram could not be reached", "This looks like a network problem. Check your internet connection, then your proxy settings if --enable-proxy is set, then try again", CONNECTION_ERRORS_GUIDE_URL
+        return "network.unavailable", "Instagram could not be reached", "This looks like a network problem. Check your internet connection, then your proxy settings if --enable-proxy is set, then try again", CONNECTION_ERRORS_GUIDE_URL, True
 
     # Deprecated GraphQL doc_id returning null data, or a temporary block
     if any(t in m for t in FAILURE_TERMS['schema_change']):
-        return "instagram.empty_data", "Instagram returned empty data for this query", "Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version and report it at https://github.com/misiektoja/instagram_monitor/issues if you are already current)", ""
+        return "instagram.empty_data", "Instagram returned empty data for this query", "Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version and report it at https://github.com/misiektoja/instagram_monitor/issues if you are already current)", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
 
-    return "unknown", "An unexpected error stopped the requested action", "", ""
+    return "unknown", "An unexpected error stopped the requested action", "Re-run with --debug to see the technical cause", DIAGNOSTICS_GUIDE_URL, True
 
 
 # Maps one SMTP failure to a stable summary plus the matching fix, keeping the technical text for the detail line
@@ -13103,7 +13155,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     continue  # Retry the main loop
 
                 # A redirect or a rejected request usually means the session, so name it when the classifier had no fix of its own
-                if not fix_hint_printed and outage_outcome in ("full", "repeat") and ('Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e)):
+                # A generic fix is not an answer for a failure whose text points at the session, so the specific advice still follows it
+                if (not fix_hint_printed or advice.code == "unknown") and outage_outcome in ("full", "repeat") and ('Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e)):
                     print(colorize("info", f"To fix: The saved session may no longer be valid. Re-import it with '{session_recovery_command()}' or from the Web Dashboard Session page"))
 
                 # Respect hour-range gating for retries as well
