@@ -399,3 +399,41 @@ def test_clear_breaker_recovers_a_corrupt_ledger(ledger, tmp_path):
     assert cleared is not None and cleared["failure_class"] == "ledger_unavailable"
     assert im.circuit_breaker_tripped() is False
     assert im.exposure_snapshot()["identities"] == 0
+
+
+# A report pasted into an issue has to say whether impersonation actually ran, not only which backend was set
+def test_exposure_summary_names_the_transport_fallback(ledger, monkeypatch, capsys):
+    monkeypatch.setattr(im, "HTTP_BACKEND", "curl_cffi", raising=False)
+    monkeypatch.setattr(im, "_CURL_CFFI_AVAILABLE", False, raising=False)
+    monkeypatch.setattr(im, "_CURL_CFFI_UNAVAILABLE_WARNED", False, raising=False)
+
+    backend = _backend_line()
+
+    assert "requests" in backend and "not installed" in backend
+    # Building the report must not print into the report
+    assert capsys.readouterr().out == ""
+
+
+# A deliberate stock transport is a different report from an impersonation that never happened
+def test_exposure_summary_reports_a_chosen_requests_backend_plainly(ledger, monkeypatch):
+    monkeypatch.setattr(im, "HTTP_BACKEND", "requests", raising=False)
+
+    backend = _backend_line()
+
+    assert backend.endswith("requests")
+    assert "not installed" not in backend
+
+
+# Auto is a setting, so the report has to name the browser the handshake actually presents
+def test_exposure_summary_resolves_the_impersonation_target(ledger, monkeypatch):
+    monkeypatch.setattr(im, "HTTP_BACKEND", "curl_cffi", raising=False)
+    monkeypatch.setattr(im, "_CURL_CFFI_AVAILABLE", True, raising=False)
+    monkeypatch.setattr(im, "CURL_CFFI_IMPERSONATE", "auto", raising=False)
+    monkeypatch.setattr(im, "USER_AGENT", "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0", raising=False)
+
+    assert "curl_cffi (impersonate: auto -> firefox)" in _backend_line()
+
+
+# Returns the HTTP backend row of the exposure report
+def _backend_line() -> str:
+    return next(line for line in im.exposure_summary_lines() if line.startswith("HTTP backend")).expandtabs(40).strip()

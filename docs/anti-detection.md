@@ -91,7 +91,7 @@ The safety ledger also fails closed. If `instagram_monitor_exposure.json` cannot
 instagram_monitor --exposure
 ```
 
-It shows the Instagram Monitor version, operating system, Python version, HTTP backend, follower-list source, session mode, identity total, sanitized failure counts and circuit-breaker state. It omits the account name, target names, stored error text and local file paths. Failures are grouped so you can tell the three problems apart:
+It shows the Instagram Monitor version, operating system, Python version, HTTP backend, follower-list source, session mode, identity total, sanitized failure counts and circuit-breaker state. The backend and list source are the ones in effect, so the report names the browser `curl_cffi` impersonated and says when a `curl_cffi` setting fell back to `requests` because the package is missing. It omits the account name, target names, stored error text and local file paths. Failures are grouped so you can tell the three problems apart:
 
 | Group | Meaning | What helps |
 |---|---|---|

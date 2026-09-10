@@ -10424,7 +10424,9 @@ def _exposure_row(label: str, value: str, column: int = 40) -> str:
 # Returns a redacted support report describing today's local account exposure
 def exposure_summary_lines() -> List[str]:
     session_mode = "authenticated (account redacted)" if exposure_account_name() != "<anonymous>" else "anonymous"
-    backend = f"curl_cffi (impersonate: {_curl_cffi_impersonate_display()})" if _curl_cffi_backend_active() else "requests"
+    # A report pasted into an issue has to distinguish a chosen stock transport from an impersonation that
+    # never happened, and building it must not print the fallback warning into the report itself
+    backend = f"curl_cffi (impersonate: {_curl_cffi_impersonate_display()})" if curl_cffi_backend_active() else http_backend_display()
     lines = [_exposure_row("Version", VERSION), _exposure_row("Generated", get_date_from_ts(int(time.time()))), _exposure_row("Platform", f"{platform.system()} / Python {sys.version_info.major}.{sys.version_info.minor}"), _exposure_row("Session mode", session_mode), _exposure_row("HTTP backend", backend), _exposure_row("Follow list source", follow_list_source_display())]
 
     # An unreadable ledger still reports the breaker, since that is the state the reader most needs
