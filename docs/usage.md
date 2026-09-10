@@ -988,6 +988,8 @@ On Windows, install the optional `colorama` package for colour in the classic Co
 
 Usernames are `bright_cyan underline`, the numeric user ID is `bright_magenta` and links are `blue underline`. Generated configuration files ship the `COLOR_THEME` block commented out, so these defaults apply and a later change to them reaches you. A configuration file written by an earlier version sets every colour explicitly and therefore keeps the old ones: delete its `COLOR_THEME` block to follow the current defaults, or edit the values you want to keep. Such a file still loads unchanged.
 
+The bundled recipe follows the same colors as the live output. It also covers the other monitors in the family, so one copy in `~/.grc/` colors every tool's logs.
+
 Add to your GRC config (`~/.grc/grc.conf`):
 
 ```
