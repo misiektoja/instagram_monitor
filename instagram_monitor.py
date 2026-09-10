@@ -2034,6 +2034,13 @@ def _curl_cffi_impersonate_display() -> str:
     return f"auto -> {resolved}" if str(CURL_CFFI_IMPERSONATE or "auto").strip().lower() in ("", "auto") else resolved
 
 
+# Names the transport that will actually carry requests, with the reason when a selected curl_cffi cannot be used
+def http_backend_display() -> str:
+    if curl_cffi_backend_active():
+        return "curl_cffi"
+    return "requests (curl_cffi is not installed)" if str(HTTP_BACKEND).strip().lower() == "curl_cffi" else "requests"
+
+
 # Minimal urllib3-style raw wrapper exposing the read/stream surface requests and instaloader downloads rely on
 class _CurlCffiRaw:
     def __init__(self, body: bytes, header_pairs, status: int, reason: str):
@@ -9662,9 +9669,9 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'session_mode': mode_val,
         'profile_pic_changes': DETECT_CHANGED_PROFILE_PIC,
         'skip_session_login': SKIP_SESSION,
-        'http_backend': HTTP_BACKEND,
-        'follow_list_source': FOLLOW_LIST_SOURCE,
-        'impersonate': CURL_CFFI_IMPERSONATE,
+        'http_backend': http_backend_display(),
+        'follow_list_source': follow_list_source_display(),
+        'impersonate': _curl_cffi_impersonate_display(),
         'skip_followers': SKIP_FOLLOWERS,
         'skip_followings': SKIP_FOLLOWINGS,
         'skip_follow_changes': SKIP_FOLLOW_CHANGES,

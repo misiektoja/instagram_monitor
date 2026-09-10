@@ -787,3 +787,67 @@ class TestDashboardCredentialBoundary:
 
         assert response.status_code == 400
         assert "must end with .conf" in response.get_json()["error"]
+
+
+class TestDashboardEffectiveIdentity:
+    # The read-only config view has to report the transport that will really carry requests
+    def test_config_reports_the_transport_that_will_run(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+
+        assert im_module.get_dashboard_config_data()["http_backend"] == "curl_cffi"
+
+    # Claiming curl_cffi while the run falls back to requests would misreport what Instagram sees
+    def test_config_names_the_fallback_when_curl_cffi_is_missing(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
+
+        backend = im_module.get_dashboard_config_data()["http_backend"]
+
+        assert backend.startswith("requests")
+        assert "not installed" in backend
+
+    # A deliberate requests backend needs no fallback reason
+    def test_config_reports_a_chosen_requests_backend_plainly(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "requests")
+
+        assert im_module.get_dashboard_config_data()["http_backend"] == "requests"
+
+    # Auto is a setting, not an identity, so the view has to resolve it like the startup summary does
+    def test_config_resolves_the_impersonation_target(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "auto")
+        monkeypatch.setattr(im_module, "USER_AGENT", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15")
+
+        assert im_module.get_dashboard_config_data()["impersonate"] == "auto -> safari"
+
+    # A pinned target is already an identity and must be shown as itself
+    def test_config_leaves_a_pinned_target_alone(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "firefox")
+
+        assert im_module.get_dashboard_config_data()["impersonate"] == "firefox"
+
+    # The browser source hides its channel and window mode behind the bare setting name
+    def test_config_describes_the_follow_list_source(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "browser")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_HEADLESS", True)
+
+        assert im_module.get_dashboard_config_data()["follow_list_source"] == "browser (experimental, headless chromium)"
+
+    # The settings form edits configuration, so its payload must keep the raw values the selects need
+    def test_settings_keeps_the_configured_values_for_the_form(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "auto")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "browser")
+
+        data = client.get("/api/settings").get_json()
+
+        assert data["http_backend"] == "curl_cffi"
+        assert data["impersonate"] == "auto"
+        assert data["follow_list_source"] == "browser"

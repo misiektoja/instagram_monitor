@@ -149,6 +149,7 @@ Both dashboards offer two views:
 2. **Config Mode** (`config`):
     - Detailed view showing all internal settings.
     - Displays User Agent strings, Hour Ranges, Jitter status and more.
+    - Reports the identity in effect rather than the raw settings: the transport actually carrying requests, the browser `curl_cffi` impersonates once `Auto` has resolved and the follower list source with its browser channel. A `curl_cffi` selection that fell back because the package is missing is shown as `requests (curl_cffi is not installed)`.
     - Useful for auditing your setup and verifying configuration.
 
 Switch views with the **'m'** key in the Terminal Dashboard or the view button in the Web Dashboard.
