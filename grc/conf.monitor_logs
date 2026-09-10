@@ -1,399 +1,446 @@
-regexp=.* user:\s+(.*)$
-colours=unchanged, blue underline
+# grc colouriser for the log files of the monitor family
+#
+# Covers spotify_monitor, spotify_profile_monitor, lastfm_monitor, github_monitor,
+# instagram_monitor, xbox_monitor, psn_monitor, steam_monitor and lol_monitor.
+#
+# The colours mirror the built-in COLOR_THEME of the tools, so a saved log replayed through
+# grc looks like the live terminal output. Theme part to colour:
+#
+#   username  bright_cyan underline      id        bright_magenta
+#   track, artist, game, champion, commit, story, proxy_ip   bright_yellow
+#   album, playlist, game_mode           yellow    platform   blue
+#   repository green                     event, post, trophy, achievement, rank  bright_green
+#   branch, reel  bright_magenta         date, date_range      magenta
+#   timestamp_value cyan                 info      cyan        link  blue underline
+#   warning, signal, status_change yellow          error       red
+#   email bright_cyan                    webhook   bright_blue
+#   boolean_true, count_up, duration, status_active  green
+#   boolean_false, count_down, status_inactive, status_offline  red
+#
+# grc runs every rule in file order and the last rule to paint a character wins, so this file
+# runs from the widest match to the narrowest. Rows the tools colour before they stop reading
+# the line use count=stop here, in the same order the code checks them.
+#
+# Two things a saved log cannot carry. The tools compare the two numbers in "from N to M" and
+# paint a drop red, which needs both values at once, so both are green here. They also know
+# whether a monitored target is a handle or an opaque identifier, so here a target is read as a
+# handle unless it has the shape of a Spotify URI ID or a Steam64 ID.
+
 -
-regexp=.*Display name:\s+(.*)$
-colours=unchanged, blue underline
+
+# ----------------------------------------------------------------------------
+# Rows the tools colour and then stop reading. A label sits behind a - or * bullet or behind nothing
+# ---------------------------------------------------------------------------
+
+regexp=^(\* Notifications \((?:email|webhook)\):[\t ]+)(On)
+colours=unchanged, unchanged, green
+count=stop
 -
-regexp=.*Summoner name:\s+(.*)$
-colours=unchanged, blue underline
+regexp=^(\* Notifications \((?:email|webhook)\):[\t ]+)(Off)
+colours=unchanged, unchanged, red
+count=stop
 -
-regexp=.*RIOT ID \(name#tag\):\s+(.*)$
-colours=unchanged, blue underline
+# A heading names what follows instead of reporting a value
+regexp=^(?:Doctor|Summary|Next steps)$
+colours=bright_cyan
+count=stop
 -
-regexp=.*Username:\s+(.*)$
-colours=unchanged, blue underline
+regexp=^(?:Environment|Configuration|Authentication|Connectivity|Target|Notifications|Ranked Information|Banned champions|User last played match):?$
+colours=bright_white
+count=stop
 -
-regexp=.*(Playstation ID:|Xbox user gamertag:)\s+(.*)$
-colours=unchanged, unchanged, blue underline
+regexp=^(\* TLS verification:[\t ]+)(On)
+colours=unchanged, unchanged, green
+count=stop
 -
-regexp=.*Token belongs to:\s+(.*)$
-colours=unchanged, blue underline
+regexp=^(\* TLS verification:[\t ]+)(Off)
+colours=unchanged, unchanged, red
+count=stop
 -
-regexp=(?:Timestamp:|Liveness check, timestamp:)\s+(.*)$
+# Doctor status markers keep the rest of their line plain so long labels stay readable
+regexp=^\[PASS\]
+colours=green
+count=stop
+-
+regexp=^\[WARN\]
+colours=yellow
+count=stop
+-
+regexp=^\[FAIL\]
+colours=red
+count=stop
+-
+regexp=^\[SKIP\]
+colours=cyan
+count=stop
+-
+regexp=^[\t ]*(?:[-*][\t ]+)?(?:Timestamp:|Liveness check, timestamp:)[\t ]+(\S.*?)[\t ]*$
 colours=unchanged, cyan
+count=stop
 -
-regexp=Last activity:\s+(.*)(\(inactive timer:.*\))$
-colours=unchanged, magenta, unchanged
+# Any "<something> URL:" row carries a link, checked before the label table so "Album URL:"
+# is not read as "Album:"
+regexp=URL:[\t ]+(https?://[^\s\]]+?)(?=[.,;:!?'")>]*(?:[\s\]]|$))
+colours=unchanged, blue underline
+count=stop
 -
-regexp=Last activity:\s+(.*\d\d)$
-colours=unchanged, magenta, unchanged
+regexp=(?i)^[\t ]*(?:[-*][\t ]+)?STATUS:[\t ]+(online|available|active|playing|private mode)[\t ]*$
+colours=unchanged, green
+count=stop
 -
-regexp=.*between (.*) and (.*)$
-colours=unchanged, magenta, magenta
--
-regexp=\(last track start changed from (.*) to (.*) - offline mode \?\)$
-colours=unchanged, magenta, magenta
--
-#regexp=^(User played game from (.*) to (.*)$)|(^User is currently in-game:.*$)
-#regexp=^(^User is currently in-game:.*$)
-#colours=yellow, yellow
--
-regexp=^User played game from (.*) to (.*)$
-colours=unchanged, magenta, magenta
--
-regexp=\* Last status:.*\((.*)\)$
-colours=unchanged, magenta, unchanged
--
-regexp=\* Last time user was online:\s+(.*)$
-colours=unchanged, magenta
--
-regexp=\* Last time user was available:\s+(.*)$
-colours=unchanged, magenta
--
-regexp=^Estimated last activity:\s+(\w+ \d+ \w+ \d+, \d\d:\d\d:\d\d)(.*)$
-colours=unchanged, magenta, unchanged
--
-regexp=^Last seen:\s+(.*)$
-colours=unchanged, magenta
--
-regexp=Track:\s+(.*)$
+regexp=(?i)^[\t ]*(?:[-*][\t ]+)?STATUS:[\t ]+(away)[\t ]*$
 colours=unchanged, yellow
+count=stop
 -
-regexp=^User last played match:$
-colours=yellow
--
-regexp=^\*\*\* .*matched with the list\!$
-colours=yellow
--
-regexp=Last track:\s+(.*)$
-colours=unchanged, yellow
--
-regexp=Last played:\s+(.*)$
-colours=unchanged, yellow
--
-regexp=Playlist:\s+(.*)$
-colours=unchanged, yellow
--
-regexp=Context.*\):\s+(.*)$
-colours=unchanged, yellow
--
-regexp=Match start-end date:\s+(.*)$
+regexp=(?i)^[\t ]*(?:[-*][\t ]+)?STATUS:[\t ]+(snooze)[\t ]*$
 colours=unchanged, magenta
+count=stop
 -
-regexp=Account creation date:\s+(.*)$
-colours=unchanged, magenta
--
-regexp=(Match start date:|Match creation:|Last modified:)\s+(.*)$
-colours=unchanged, unchanged, magenta
--
-regexp=^Date:\s+(\w+ \d+ \w+ \d+, \d\d:\d\d:\d\d).*$
-colours=unchanged, magenta
--
-regexp=^\[ date: (.*) - .* \]$
-colours=unchanged, magenta, unchanged
--
-regexp=^\[ update: (.*) - .* \]$
-colours=unchanged, magenta, unchanged
--
-regexp=^(Account creation date:|Account updated date:)\s+(.*)\(.*\)$
-colours=unchanged, unchanged, magenta
--
-regexp=^(Old account update date:|New account update date:|Old repo update date:|New repo update date:)\s+(.*)$
-colours=unchanged, unchanged, magenta
--
-regexp=(^Event date:)\s+(\w+ \d+ \w+ \d+, \d\d:\d\d:\d\d)$
-colours=unchanged, yellow, magenta, unchanged
--
-regexp=(^Event date:)\s+(\w+ \d+ \w+ \d+, \d\d:\d\d:\d\d) \(.*\)$
-colours=unchanged, yellow, magenta, unchanged
--
-regexp=^Event ID:\s+(\d+).*$
-colours=unchanged, cyan, unchanged
--
-regexp=^ - Commit date:\s+(.*)$
-colours=unchanged, magenta
--
-regexp=^User played last time:\s+(\w\w\w\s.*$)
-colours=unchanged, magenta
--
-regexp=^- '.*'$
-colours=yellow
--
-regexp=^(- .*) \[( .* )\]$
-colours=unchanged, yellow, unchanged, unchanged
--
-regexp=^(- .*) \[( http.* )\]$
-colours=unchanged, yellow, blue, unchanged
--
-regexp=^(- .*) \[( \w+ \d+ \w+ \d+, \d\d:\d\d:\d\d )\]$
-colours=unchanged, unchanged, magenta, unchanged
--
-regexp=^\*\*\* Friend got.*after being.*for.* \((.*)\)$
-colours=unchanged, magenta
--
-regexp=^Match start-end date:\s+.*(\d\d:\d\d:\d\d) - \w+
-colours=unchanged, bold magenta, unchanged
--
-regexp=^Match start-end date:.* -.*(\d\d:\d\d:\d\d)
-colours=unchanged, bold magenta
--
-regexp=^(Timestamp:|Liveness check, timestamp:)(\s+.*)(\d\d:\d\d:\d\d)
-colours=unchanged, unchanged, unchanged, underline cyan
--
-regexp=^User played last time:\s+(\w\w\w\s.*$)
-colours=unchanged, magenta
--
-regexp=^- '.*'$
-colours=yellow
--
-#regexp=(?i).*(GOT ACTIVE|GOT INACTIVE|GOT OFFLINE|is currently ACTIVE).*
-#colours=yellow
--
-regexp=^\*\*\* Friend got.*after being.*for.* \((.*)\)$
-colours=unchanged, magenta
--
-regexp=^Match start-end date:\s+.*(\d\d:\d\d:\d\d) - \w+
-colours=unchanged, bold magenta, unchanged
--
-regexp=^Match start-end date:.* -.*(\d\d:\d\d:\d\d)
-colours=unchanged, bold magenta
--
-regexp=^(Date:|Match start date:|Last modified:|\*\*\* Last activity:|\*\*\* Friend got.*after being.*for.*)(\s+.*)(\d\d:\d\d:\d\d)
-colours=unchanged, unchanged, unchanged, bold magenta
--
-regexp=^(Timestamp:|Liveness check, timestamp:)(\s+.*)(\d\d:\d\d:\d\d)
-colours=unchanged, unchanged, unchanged, underline cyan
--
-regexp=(?i).*(\*\*\* Friend is|\*\*\* User is).*
-colours=yellow
--
-regexp=(User played the previous track for|User PAUSED playing|User RESUMED playing|User SKIPPED the previous track|User plays song on LOOP)
-colours=yellow
--
-regexp=(User )(SKIPPED)( the previous track)
-colours=unchanged, unchanged, red, unchanged
--
-regexp=(User )(CONT)( the previous track)
-colours=unchanged, unchanged, yellow, unchanged
--
-regexp=(User )(PAUSED)( playing)
-colours=unchanged, unchanged, red, unchanged
--
-regexp=(User plays song on )(LOOP)( \()(.*times)(\))
-colours=unchanged, unchanged, green, unchanged, green, unchanged
--
-regexp=(User )(RESUMED)( playing)
-colours=unchanged, unchanged, green, unchanged
--
-regexp=(.*)( - SKIPPED )(\()(\d+\%)(\))
-colours=unchanged, unchanged, red, unchanged, green, unchanged
--
-regexp=(.*)( - CONT )(\()(\d+\%)(\))
-colours=unchanged, unchanged, yellow, unchanged, green, unchanged
--
-regexp=(.*)( - LONGER than track duration )(\()(\+.*\%)(\))
-colours=unchanged, unchanged, red, unchanged, green, unchanged
--
-#regexp=(?i).*(changed status|started playing|stopped playing|changed game|is in game|details of last played match).*
-#colours=yellow
--
-regexp=(?i)(^Short offline interruption, online start timestamp set back to ).*
-colours=yellow, unchanged
--
-regexp=.*(Steam user |PSN user |Xbox user )(.*)( started| stopped| changed).*$
-colours=unchanged, unchanged, blue underline, unchanged, unchanged
--
-regexp=.*LoL user (\w*) (is in|stopped playing)(.*)$
-colours=unchanged, blue underline, unchanged
--
-regexp=.*Getting details of last played match for (\w*) (\.\.\..*)$
-colours=unchanged, blue underline, unchanged
--
-regexp=.* playing '(.*)'
-colours=unchanged, yellow bold
--
-regexp=.* changed game from '(.*)'( to )'(.*)'
-colours=unchanged, magenta, unchanged, magenta
--
-regexp=User is currently in-game:\s+(.*)
-colours=unchanged, yellow bold
--
-regexp=\*\*\* (Friend|User) played music from (.*) to (.*)$
-colours=unchanged, unchanged, magenta, magenta
--
-regexp=(?i)\*\*\* Duplicate entries \((\d+)\) found, possible private mode \((.*)\)$
-colours=unchanged, green, magenta
--
-regexp=(?i)\*\*\* Duplicate entries found, possible private mode \((.*)\)$
-colours=unchanged, magenta
--
-regexp=^\*\*\* User got .* \(after.*\: (.*)\)
-colours=unchanged, magenta
--
-regexp=.* \(was offline since (.*)\)$
-colours=unchanged, magenta, unchanged
--
-regexp=.*^Short offline interruption, online start timestamp set back to (.*)
-colours=unchanged, magenta
--
-regexp=^Check interval:.*\((.*)\)$
-colours=unchanged, magenta, unchanged
--
-regexp=^User was .*for.*\((.*)\)$
-colours=unchanged, magenta, unchanged
--
-regexp=^\*\*\* User got .* \(after.*\: .*(\d\d:\d\d) -.*(\d\d:\d\d)\)
-colours=unchanged, bold magenta, bold magenta
--
-regexp=.*\(was offline since.*, (\d\d:\d\d:\d\d)
-colours=unchanged, bold magenta
--
-regexp=(?i).*(story for user|Newest post|Followers number changed|Followings number changed|Playlists number changed|Bio changed for|New post for user|number changed|number of|Followings changed|Followers changed|name changed to|has changed for user|has been updated for user|number of tracks changed|number of likes changed|name changed to new name|description changed from|changed profile picture|removed profile picture|set profile picture|update date changed|has new story item|story items:).*
-colours=yellow
--
-regexp=.*number.*from (\d+ )to (\d+)
-colours=unchanged, green, green
--
-regexp=.*\((\+\d+)\).*$
-colours=unchanged, green, green
--
-regexp=.*\((-\d+)\).*$
-colours=unchanged, red, red
--
-regexp=(?i)\* Signal.*received
-colours=yellow
--
-regexp=(?i)^Status:\s+(offline|inactive|invisible)\s*$
+regexp=(?i)^[\t ]*(?:[-*][\t ]+)?STATUS:[\t ]+(offline|invisible|inactive|standby)[\t ]*$
 colours=unchanged, red
+count=stop
 -
-regexp=(?i)^Status:\s+(away)\s*$
+regexp=(?i)^[\t ]*(?:[-*][\t ]+)?STATUS:[\t ]+(\S.*?)[\t ]*$
+colours=unchanged, white
+count=stop
+-
+regexp=(?i)^[\t ]*(?:[-*][\t ]+)?Victory:[\t ]+(yes|active|in game)[\t ]*$
+colours=unchanged, green
+count=stop
+-
+regexp=(?i)^[\t ]*(?:[-*][\t ]+)?Victory:[\t ]+(no|inactive|offline)[\t ]*$
+colours=unchanged, red
+count=stop
+-
+# The monitored target is a handle in most tools and an opaque identifier in spotify_monitor
+# and steam_monitor, which a saved log can only tell apart by the shape of the value
+regexp=^[\t ]*(?:[-*][\t ]+)?Targets?:[\t ]+([A-Za-z0-9]{20,}|\d{17})[\t ]*$
+colours=unchanged, bright_magenta
+count=stop
+-
+regexp=^[\t ]*(?:[-*][\t ]+)?Targets?:[\t ]+(\S.*?)[\t ]*$
+colours=unchanged, bright_cyan underline
+count=stop
+-
+regexp=^[\t ]*(?:[-*][\t ]+)?(?:Username|Display name|Spotify user|Owner|Last\.fm user|Token belongs to|Event actor login|Event actor name|Published by|Commit author|Issue author|Comment author|Discussion comment by|Member added|Assignee|Requested reviewer|Author|Gamertag|PlayStation ID|PSN ID|Riot ID \(name#tag\)|Summoner name):[\t ]+(\S.*?)[\t ]*$
+colours=unchanged, bright_cyan underline
+count=stop
+-
+regexp=^[\t ]*(?:[-*][\t ]+)?(?:User URI ID|Spotify user ID|User URI|Playlist ID|Event ID|Review ID|Commit SHA reviewed|Commit SHA|XUID|PSN account ID|Account ID|User ID|Steam64 ID|Riot PUUID|Match ID):[\t ]+(\S.*?)[\t ]*$
+colours=unchanged, bright_magenta
+count=stop
+-
+regexp=^[\t ]*(?:[-*][\t ]+)?(?:Last played|Last track|Track|Context \(Artist\)|Artist|Champion):[\t ]+(\S.*?)[\t ]*$
+colours=unchanged, bright_yellow
+count=stop
+-
+regexp=^[\t ]*(?:[-*][\t ]+)?(?:Context \(Album\)|Last album|Album|Playlist|Game mode):[\t ]+(\S.*?)[\t ]*$
 colours=unchanged, yellow
+count=stop
 -
-regexp=(?i)^Status:\s+(snooze)\s*$
-colours=unchanged, magenta
+regexp=^[\t ]*(?:[-*][\t ]+)?(?:Last track duration|Match duration|Match finished|Duration):[\t ]+(\S.*?)[\t ]*$
+colours=unchanged, green
+count=stop
 -
-regexp=(?i)^Status:\s+(online|available|active)\s*$
+regexp=^[\t ]*(?:[-*][\t ]+)?(?:Current game|Title name|User is currently in-game|In-game|Game|Commit message|IP Address):[\t ]+(\S.*?)(?:[\t ]*\((PS[A-Z0-9_]*|MOBILE_APP)\))?[\t ]*$
+colours=unchanged, bright_yellow, blue
+count=stop
+-
+regexp=^[\t ]*(?:[-*][\t ]+)?Platform:[\t ]+(\S.*?)[\t ]*$
+colours=unchanged, blue
+count=stop
+-
+regexp=^[\t ]*(?:[-*][\t ]+)?(?:Gamerscore|Trophies earned|Trophy level):[\t ]+(\S.*?)[\t ]*$
+colours=unchanged, bright_green
+count=stop
+-
+regexp=^[\t ]*(?:[-*][\t ]+)?(?:Repo name|Forked to repo):[\t ]+(\S.*?)[\t ]*$
+colours=unchanged, green
+count=stop
+-
+regexp=^[\t ]*(?:[-*][\t ]+)?(?:Event type|Release name|Release tag name|Issue title|Discussion title):[\t ]+(\S.*?)[\t ]*$
+colours=unchanged, bright_green
+count=stop
+-
+regexp=^[\t ]*(?:[-*][\t ]+)?(?:Object name|Target commitish|Branch \(default\)):[\t ]+(\S.*?)[\t ]*$
+colours=unchanged, bright_magenta
+count=stop
+-
+regexp=^[\t ]*(?:[-*][\t ]+)?Email:[\t ]+(\S.*?)[\t ]*$
+colours=unchanged, bright_cyan
+count=stop
+-
+# A roster entry names a player and what they played
+regexp=^(-[\t ]+)([^:(\n]+?)([\t ]+\()([^()]+)(\)[\t ]*)$
+colours=unchanged, unchanged, bright_cyan underline, unchanged, bright_yellow, unchanged
+count=stop
+
+-
+
+# ----------------------------------------------------------------------------
+# Whole-line highlights, painted first so the values inside keep their own colour
+# ---------------------------------------------------------------------------
+
+regexp=(?i)^[\t ]*\*[\t ]*info\b.*$
+colours=cyan
+count=once
+-
+regexp=(?i)^.*(?:\bsending webhook\b|\bwebhook sent successfully\b).*$
+colours=bright_blue
+count=once
+-
+regexp=(?i)^.*(?:\bsending email\b|\bemail sent successfully\b).*$
+colours=bright_cyan
+count=once
+-
+regexp=(?i)^[\t ]*(?:[-*][\t ]+)?(?:error\b|critical:|failure\b).*$
+colours=red
+count=once
+-
+# A problem word used as a key in a "key=value" detail names a setting or a counter, not a failure
+regexp=(?i)^[^'\n]*\b(?:failures?|failed|forbidden|timeout|disappeared)\b(?![\t ]*=).*$
+colours=red
+count=once
+-
+# A change notice is painted whole, the way instagram_monitor reports one
+regexp=(?i)^.*(?:story for user|newest post|new post for user|bio changed for|changed profile picture|removed profile picture|set profile picture|has new story item|story items:|has[\t ]+\d+[\t ]+story[\t ]+items?).*$
+colours=yellow
+count=once
+-
+# A startup row whose label happens to contain a problem word reports a setting
+regexp=(?i)^[\t ]*\*[\t ]+(?!error\b|warning\b|critical\b|failure\b)[\w()/-]+[\t ]+[\w()/ -]*:[\t ]+\S.*$
+colours=default
+count=once
+-
+# A startup row whose label names a timer reports a setting, not a failure
+regexp=(?i)^\*[\t ]+(?:disappeared|error retry)[\t ]+timer:.*$
+colours=default
+count=once
+-
+# A backend fallback notice reports a recovery that worked, not the failure that caused it
+regexp=(?i)^.*\bswitched to\b.*$
+colours=default
+count=once
+-
+# A debug trace records what was tried, including attempts that fail and are then handled
+regexp=(?i)^\[debug \d\d:\d\d:\d\d\].*$
+colours=default
+count=once
+-
+regexp=(?i)^.*\[errors =.*$
+colours=default
+count=once
+-
+regexp=(?i)^[\t ]*to fix:.*$
+colours=cyan
+count=once
+
+-
+
+# ----------------------------------------------------------------------------
+# Presence and playback words
+# ---------------------------------------------------------------------------
+
+regexp=\b(ACTIVE|ONLINE|PRIVATE MODE)\b
+colours=green
+-
+regexp=\b(INACTIVE|OFFLINE|STANDBY)\b
+colours=red
+-
+regexp=\b(AWAY)\b
+colours=yellow
+-
+regexp=\b(SNOOZE)\b
+colours=magenta
+-
+regexp=\b(RESUMED|LOOP|PLAYING)\b
+colours=green
+-
+regexp=\b(SKIPPED|PAUSED)\b
+colours=red
+-
+regexp=\b(CONT)\b
+colours=yellow
+-
+regexp=\bstarted playing\b
+colours=green
+-
+regexp=\bstopped playing\b|\bis not in game currently\b
+colours=red
+-
+regexp=\bis in game now\b
+colours=green
+-
+# A ranked standing
+regexp=\b(?:IRON|BRONZE|SILVER|GOLD|PLATINUM|EMERALD|DIAMOND|MASTER|GRANDMASTER|CHALLENGER)(?:[\t ]+(?:I|II|III|IV))?\b|\bUnranked\b
+colours=bright_green
+-
+# A champion mastery entry names the champion before the level it reports
+regexp=^([\t ]+\d+\.[\t ]+)([^:\n]+)(:[\t ]+Level[\t ]+\d+)
+colours=unchanged, unchanged, bright_yellow, unchanged
+-
+regexp=\b(?:changed status|changed game)\b
+colours=yellow
+-
+# A status named in prose rather than in a Status: row
+regexp=(?i)changed status from[\t ]+(online|available|active)\b
 colours=unchanged, green
 -
-regexp=(?i)( online| appeared | available)|\bYes\b|\bTrue\b
-colours=green
-count=more
+regexp=(?i)changed status from[\t ]+(offline|inactive|standby|away)\b
+colours=unchanged, red
 -
-regexp=(?i)( away)
-colours=yellow
-count=more
+regexp=(?i)changed status from[\t ]+\w+[\t ]+to[\t ]+(online|available|active)\b
+colours=unchanged, green
 -
-regexp=(?i)( snooze)
-colours=magenta
-count=more
+regexp=(?i)changed status from[\t ]+\w+[\t ]+to[\t ]+(offline|inactive|standby|away)\b
+colours=unchanged, red
 -
-regexp=(?i)( offline)|\bNo\b|\bFalse\b
-colours=red
-count=more
--
-regexp=( ACTIVE)
-colours=blink green
-#colours=green
-count=more
--
-regexp=(?i)( PRIVATE MODE)
-colours=blink green
-#colours=green
-count=more
--
-regexp=( INACTIVE)
-colours=red
-count=more
--
-regexp=^\*\*\* User played (\d+) songs.*$
-colours=unchanged, green, unchanged
--
-regexp=^\*\*\* User played \d+ songs, skipped (\d+) songs.*$
-colours=unchanged, green, unchanged
--
-regexp=^\*\*\* User paused music (\d+) times.*$
-colours=unchanged, green, unchanged
--
-regexp=(?i)(Error |Error:|^Error|Warning|Failure|connect error|HTTP redirect| disappeared|Redirected to login| timeout)
-colours=red
-count=more
--
-regexp=.*\; was available since (.*)\)$
-colours=unchanged, magenta
--
-regexp=.*\; was available since .*, (\d\d:\d\d:\d\d)\)$
-colours=unchanged, bold magenta
--
-regexp=(?i)(\[Error |\[Errors )
-colours=white
--
-regexp=^(Event type:)\s+(.*)
-colours=unchanged, unchanged, green
--
-regexp=^(Repo name:)\s+(.*)
-colours=unchanged, unchanged, green
--
-regexp=^\*.* (by|for)\s(user)\s([\w_-]+)(\s|:).*
-colours=unchanged, unchanged, unchanged, blue underline, unchanged
--
-regexp=^\*.* (by|for)\s(user)\s(.+) from .*
-colours=unchanged, unchanged, unchanged, blue underline, unchanged
--
-regexp=^\*.* (by|for)\s(user)\s([\w_-]+) !
-colours=unchanged, unchanged, unchanged, blue underline, unchanged
--
-regexp=\* Playlist \'(.*)\'(\s|:)(.*)$
-colours=unchanged, green, unchanged, unchanged
--
-regexp=^\* User ([\w_-]+) has .*
-colours=unchanged, blue underline, unchanged
--
-regexp=^\* User [\w_-]+ has .* added on (\d+ \w+ \d+, \d\d:\d\d)
-colours=unchanged, magenta, unchanged
--
-regexp=^\* User [\w_-]+ has .* added on (\w+ \d+ \w+( \d+,)* \d\d:\d\d)
-colours=unchanged, magenta, unchanged
--
-regexp=^\* User [\w_-]+ has set .* \((\w+ \d+ \w+( \d+,)* \d\d:\d\d)\)
-colours=unchanged, magenta, unchanged
--
-regexp=^\* Profile picture has been added on (\w+ \d+ \w+( \d+,)* \d\d:\d\d).*
-colours=unchanged, magenta, unchanged
--
-regexp=^\* New post for user .* after .* \((\w+ \d+ \w+ \d+, \d\d:\d\d:\d\d)\)
-colours=unchanged, magenta, unchanged
--
-regexp=^.*; previous update: (\w+ \d+ \w+( \d+,)* \d\d:\d\d)\)
-colours=unchanged, magenta, unchanged
--
-regexp=^User played (\d+) games for total time of (.*)
-colours=unchanged, green, unchanged
--
-regexp=.*(online start timestamp).*
-colours=unchanged, white, unchanged
--
-regexp=.*, online start timestamp set back to (\w+ \d+ \w+ \d\d:\d\d)
-colours=unchanged, magenta
--
-regexp=\s+(~\d+ (seconds*|minutes*|hours*|days*|weeks*|months*|years*), \d+ (seconds*|minutes*|hours*|days*|weeks*|months*|years*))
-colours=unchanged, green, green, green, green
--
-regexp=\s+(~\d+ (seconds*|minutes*|hours*|days*|weeks*|months*|years*))( ago)*
-colours=unchanged, green, green
--
-regexp=\s+(\d+ seconds*|\d+ minutes*|\d+ hours*|\d+ days*|\d+ weeks*|\d+ months*|\d+ years*)( ago)*
-colours=green
-count=more
--
-regexp=\s+\((\d+\%|\d+ seconds*|\d+ minutes*|\d+ hours*|\d+ days*|\d+ weeks*|\d+ months*|\d+ years*)( ago)*
-colours=unchanged, green, green
-count=more
--
-regexp=^Event actor login:\s+(.*)$
-colours=unchanged, blue, unchanged
--
-regexp=^\* Repo \'(.*)\'([: ]).*$
-colours=unchanged, green, unchanged
--
-regexp=^\* Playlist URL: (.*)
+# The console a game was launched on
+regexp=\((PS[A-Z0-9_]*|MOBILE_APP)\)
 colours=unchanged, blue
+
+-
+
+# ----------------------------------------------------------------------------
+# Warnings and signals mark their opening word instead of painting the line
+# ---------------------------------------------------------------------------
+
+regexp=^[\t ]*\*+[\t ]*(Warning:|Caution:)
+colours=unchanged, yellow
+-
+regexp=^\* Signal (\w+) received$
+colours=unchanged, yellow
+
+-
+
+# ----------------------------------------------------------------------------
+# Values inside a line
+# ---------------------------------------------------------------------------
+
+regexp=\bTrue\b|\bEnabled\b
+colours=green
+-
+regexp=:[\t ]+(Yes)[\t ]*$
+colours=unchanged, green
+-
+regexp=\bFalse\b|\bDisabled\b
+colours=red
+-
+regexp=:[\t ]+(No)[\t ]*$
+colours=unchanged, red
+-
+# A quoted value takes the colour of what the line is about
+regexp='(?!(?:[~.]?[\\/]|[A-Za-z]:[\\/]|<|-|[?&]|[^'\n]*://|[^'\n]*\.[A-Za-z0-9]{1,12}'))([^'\n]*\w[^'\n]*)'(?![\t ]*-[\t ]*(?:modified|added|removed|renamed|deleted|changed)\b)(?=[\s.,;:!?)\]]|$)
+colours=unchanged, bright_yellow
+-
+regexp=(?i)\bplaylist\b.*'(?!(?:[~.]?[\\/]|[A-Za-z]:[\\/]|<|-|[?&]|[^'\n]*://|[^'\n]*\.[A-Za-z0-9]{1,12}'))([^'\n]*\w[^'\n]*)'(?![\t ]*-[\t ]*(?:modified|added|removed|renamed|deleted|changed)\b)(?=[\s.,;:!?)\]]|$)
+colours=unchanged, yellow
+-
+regexp=(?i)\busername\b.*'(?!(?:[~.]?[\\/]|[A-Za-z]:[\\/]|<|-|[?&]|[^'\n]*://|[^'\n]*\.[A-Za-z0-9]{1,12}'))([^'\n]*\w[^'\n]*)'(?![\t ]*-[\t ]*(?:modified|added|removed|renamed|deleted|changed)\b)(?=[\s.,;:!?)\]]|$)
+colours=unchanged, bright_cyan underline
+-
+regexp=^[\t ]*-[\t ]+'(?!(?:[~.]?[\\/]|[A-Za-z]:[\\/]|<|-|[?&]|[^'\n]*://|[^'\n]*\.[A-Za-z0-9]{1,12}'))([^'\n]*\w[^'\n]*)'(?![\t ]*-[\t ]*(?:modified|added|removed|renamed|deleted|changed)\b)(?=[\s.,;:!?)\]]|$)
+colours=unchanged, yellow
+-
+regexp=^[\t ]*-[\t ]+'.*'(?!(?:[~.]?[\\/]|[A-Za-z]:[\\/]|<|-|[?&]|[^'\n]*://|[^'\n]*\.[A-Za-z0-9]{1,12}'))([^'\n]*\w[^'\n]*)'(?![\t ]*-[\t ]*(?:modified|added|removed|renamed|deleted|changed)\b)[^'\n]*$
+colours=unchanged, yellow
+-
+# A quoted value right after the word it belongs to takes that word's colour, whichever
+# quote on the line it is
+regexp=(?i)\bplaylist\b[^'\n]*'(?!(?:[~.]?[\\/]|[A-Za-z]:[\\/]|<|-|[?&]|[^'\n]*://|[^'\n]*\.[A-Za-z0-9]{1,12}'))([^'\n]*\w[^'\n]*)'(?![\t ]*-[\t ]*(?:modified|added|removed|renamed|deleted|changed)\b)
+colours=unchanged, yellow
+-
+regexp=(?i)\bplaylist\b.*'(?!(?:[~.]?[\\/]|[A-Za-z]:[\\/]|<|-|[?&]|[^'\n]*://|[^'\n]*\.[A-Za-z0-9]{1,12}'))([^'\n]*\w[^'\n]*)'(?![\t ]*-[\t ]*(?:modified|added|removed|renamed|deleted|changed)\b)[^'\n]*$
+colours=unchanged, yellow
+-
+regexp=(?i)\busername\b[^'\n]*'(?!(?:[~.]?[\\/]|[A-Za-z]:[\\/]|<|-|[?&]|[^'\n]*://|[^'\n]*\.[A-Za-z0-9]{1,12}'))([^'\n]*\w[^'\n]*)'(?![\t ]*-[\t ]*(?:modified|added|removed|renamed|deleted|changed)\b)
+colours=unchanged, bright_cyan underline
+-
+regexp=(?i)\busername\b.*'(?!(?:[~.]?[\\/]|[A-Za-z]:[\\/]|<|-|[?&]|[^'\n]*://|[^'\n]*\.[A-Za-z0-9]{1,12}'))([^'\n]*\w[^'\n]*)'(?![\t ]*-[\t ]*(?:modified|added|removed|renamed|deleted|changed)\b)[^'\n]*$
+colours=unchanged, bright_cyan underline
+-
+regexp=(?i)\b(?:user|owner|username|owned by|added by|listened by|tracks of)[\t ]+'(?!(?:[~.]?[\\/]|[A-Za-z]:[\\/]|<|-|[?&]|[^'\n]*://|[^'\n]*\.[A-Za-z0-9]{1,12}'))([^'\n]*\w[^'\n]*)'(?![\t ]*-[\t ]*(?:modified|added|removed|renamed|deleted|changed)\b)
+colours=unchanged, bright_cyan underline
+-
+# Only the Spotify tools print "user ID", and that value is an identifier
+regexp=(?i)\buser[\t ]+ID[\t ]+'(?!(?:[~.]?[\\/]|[A-Za-z]:[\\/]|<|-|[?&]|[^'\n]*://|[^'\n]*\.[A-Za-z0-9]{1,12}'))([^'\n]*\w[^'\n]*)'(?![\t ]*-[\t ]*(?:modified|added|removed|renamed|deleted|changed)\b)
+colours=unchanged, bright_magenta
+-
+# A quoted value with the shape of a Spotify URI ID or a Steam64 ID names an account
+regexp=(?i)\buser(?:[\t ]+id)?[\t ]+'([A-Za-z0-9]{20,}|\d{17})'
+colours=unchanged, bright_magenta
+-
+# Listing rows that name one item and then its details in brackets
+regexp=^-[\t ]+([^\[\n:*]{1,80}?)[\t ]+\[[\t ]
+colours=unchanged, bright_yellow
+-
+regexp=^-[\t ]+[^|\n]+\|[\t ]*([^|\n]+?)[\t ]*\|[\t ]*([A-Z]+)[\t ]*\|[\t ]*(\S.*?)[\t ]*$
+colours=unchanged, bright_yellow, bright_green, bright_green
+-
+regexp=^-[\t ]+([^\[\n:*]{1,80}?)[\t ]+\[[\t ]*https?://
+colours=unchanged, bright_cyan underline
+-
+regexp=,[\t ]+([\w.-]+)[\t ]+\][\t ]*$
+colours=unchanged, bright_cyan underline
+-
+regexp=\[[\t ]*owner:[\t ]+([^\]\n]+?)[\t ]*\]
+colours=unchanged, bright_cyan underline
+-
+regexp=(https?://[^\s\]]+?)(?=[.,;:!?'")>]*(?:[\s\]]|$))
+colours=blue underline
+-
+regexp=(?<![\w:])~?(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:[\t ]*[AP]M)?(?![\w:])
+colours=magenta
+-
+regexp=(?i)\b(?:\w{3}[\t ]+)?\d{1,2}[\t ]+\w{3}(?:[\t ]+\d{2,4})?[\s,]*\d{2}:\d{2}(?::\d{2})?(?:[\t ]*[AP]M)?\b
+colours=magenta
+-
+regexp=(?i)\b\w{3}[\t ]+\d{1,2}[\t ]+\w{3}[\t ]+\d{2}:\d{2}(?:[\t ]*[AP]M)?[\t ]*-[\t ]*\d{2}:\d{2}(?:[\t ]*[AP]M)?\b
+colours=magenta
+-
+regexp=(?i)\b\d{2}:\d{2}(?:[\t ]*[AP]M)?[\t ]*-[\t ]*\d{2}:\d{2}(?:[\t ]*[AP]M)?\b
+colours=magenta
+-
+regexp=\((\d{1,3}%)
+colours=unchanged, green
+-
+regexp=(?i)~?\b\d{1,20}[\t ]{1,20}(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\b
+colours=green
+-
+regexp=\(\+\d+\)
+colours=green
+-
+regexp=\(-\d+\)
+colours=red
+-
+# A saved log cannot say which of the two numbers is larger, so both are painted as a rise
+regexp=(from[\t ]+)(\d+)([\t ]+to[\t ]+)(\d+)
+colours=unchanged, unchanged, green, unchanged, green
+
+-
+
+# ----------------------------------------------------------------------------
+# The monitored user, named in a sentence or in a key=value diagnostic field
+# ---------------------------------------------------------------------------
+
+regexp=(?i)\b(Last\.fm user|GitHub user|Instagram user|Xbox user|Xbox gamer tag|PSN user|PlayStation user|Steam user|LoL user|Monitoring(?:[\t ]+\w+)?[\t ]+user|for user|by user|of user|listened by|owned by|user[\t ]+with(?:[\t ]+\w+)?[\t ]+ID|user):?([\t ]+)((?!(?:with|id|agent|played|plays|playing|got|is|was|were|has|have|had|changed|started|stopped|paused|resumed|skipped|active|inactive|offline|online|away|snooze|to|from|and|the|not|no|yes|for|by|of|agreement|list|lists)\b)[\w.#-]+)
+colours=unchanged, unchanged, unchanged, bright_cyan underline
+-
+regexp=^\*[\t ]+Tracking[\t ]+([\w._-]+)
+colours=unchanged, bright_cyan underline
+-
+regexp=\b(user)(=)([\w.:#-]+)
+colours=unchanged, unchanged, unchanged, bright_cyan underline
+-
+regexp=(?<![?&])\b([a-z][a-z_]*_id)(=)([\w.:-]+)
+colours=unchanged, unchanged, unchanged, bright_magenta
+-
+regexp=\b(Spotify user(?:[\t ]+ID)?):?([\t ]+)((?![Ii][Dd]\b)(?=[\w.:-]*\d)[\w.:-]{4,})
+colours=unchanged, unchanged, unchanged, bright_magenta
+-
+regexp=(?<!://)\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b(?!:\d+/?)
+colours=bright_yellow
+-
+# A value with the shape of a Spotify URI ID or a Steam64 ID names an account, not a person
+regexp=(?i)\buser(?:[\t ]+with[\t ]+\w+)?(?:[\t ]+ID)?:?[\t ]+([A-Za-z0-9]{20,}|\d{17})\b
+colours=unchanged, bright_magenta
