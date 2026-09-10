@@ -591,7 +591,7 @@ Every Playwright channel is a Chromium build, so the browser source only works w
 | `chromium`, `chrome` | Chrome |
 | `msedge` | Edge |
 
-`HTTP_BACKEND` must be `curl_cffi`, since the stock `requests` transport cannot present a browser TLS fingerprint at all. `CURL_CFFI_IMPERSONATE = "auto"` follows `USER_AGENT` and is the simplest way to satisfy this. If you leave `USER_AGENT` empty the tool picks one from the matching family instead of at random. `--doctor` reports a mismatch and names the setting to change.
+`HTTP_BACKEND` must be `curl_cffi`, since the stock `requests` transport cannot present a browser TLS fingerprint at all. `CURL_CFFI_IMPERSONATE = "auto"` follows `USER_AGENT` and is the simplest way to satisfy this. If you leave `USER_AGENT` empty the tool picks one from the matching family instead of at random. `--doctor` reports a mismatch and names the setting to change, and the Web Dashboard refuses a settings change that would create one, so a running session cannot be switched into it either.
 
 What to expect:
 

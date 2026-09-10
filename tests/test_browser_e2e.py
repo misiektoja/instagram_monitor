@@ -99,15 +99,47 @@ def test_connection_settings_save_from_chromium(dashboard_server, im_module, mon
         playwright_sync.expect(page.locator("#impersonate-group")).to_be_visible()
         assert page.locator("#impersonate option").all_text_contents() == ["Auto (match the user agent)", "chrome", "firefox"]
         page.locator("#impersonate").select_option("firefox")
+        page.locator("#page-settings").get_by_role("button", name="Save Settings").click()
+        playwright_sync.expect(page.locator("#toast-message")).to_contain_text("Settings saved")
+
+        # The browser source drives a Chromium build, so it only saves alongside a Chromium target
+        page.locator("#impersonate").select_option("chrome")
         page.locator("#follow-list-source").select_option("browser")
         playwright_sync.expect(page.locator("#connection-note")).to_contain_text("experimental")
         page.locator("#page-settings").get_by_role("button", name="Save Settings").click()
         playwright_sync.expect(page.locator("#toast-message")).to_contain_text("Settings saved")
 
         assert im_module.HTTP_BACKEND == "curl_cffi"
-        assert im_module.CURL_CFFI_IMPERSONATE == "firefox"
+        assert im_module.CURL_CFFI_IMPERSONATE == "chrome"
         assert im_module.FOLLOW_LIST_SOURCE == "browser"
         assert page_errors == []
+        browser.close()
+
+
+# Verifies the dashboard cannot put a running session into the split identity monitoring refuses to start in
+@pytest.mark.e2e
+def test_a_split_identity_cannot_be_saved_in_chromium(dashboard_server, im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+    monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "auto")
+    monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "auto")
+    monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+    monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+    monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"chrome", "firefox"})
+    monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+    with playwright_sync.sync_playwright() as playwright:
+        browser = launch_chromium(playwright)
+        page = browser.new_page()
+        page.set_default_timeout(5000)
+        page.goto(dashboard_server, wait_until="domcontentloaded")
+        page.locator('[data-page="settings"]').click()
+
+        page.locator("#impersonate").select_option("firefox")
+        page.locator("#follow-list-source").select_option("browser")
+        page.locator("#page-settings").get_by_role("button", name="Save Settings").click()
+
+        playwright_sync.expect(page.locator("#toast-message")).to_contain_text("two different clients")
+        assert im_module.FOLLOW_LIST_SOURCE == "auto"
+        assert im_module.CURL_CFFI_IMPERSONATE == "auto"
         browser.close()
 
 

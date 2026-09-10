@@ -1976,8 +1976,8 @@ _CURL_CFFI_UNAVAILABLE_WARNED = False
 
 
 # Returns whether Instagram requests will actually go out through curl_cffi's browser impersonation
-def curl_cffi_backend_active() -> bool:
-    return str(HTTP_BACKEND).strip().lower() == "curl_cffi" and _CURL_CFFI_AVAILABLE
+def curl_cffi_backend_active(backend: Optional[str] = None) -> bool:
+    return str(HTTP_BACKEND if backend is None else backend).strip().lower() == "curl_cffi" and _CURL_CFFI_AVAILABLE
 
 
 # Returns the same answer and warns once when curl_cffi was selected but cannot be used
@@ -2021,8 +2021,8 @@ def curl_cffi_supported_impersonate_targets() -> set:
 
 
 # Returns the curl_cffi impersonation target, resolving "auto" from USER_AGENT so TLS matches the browser identity
-def _curl_cffi_impersonate_target() -> str:
-    target = str(CURL_CFFI_IMPERSONATE or "auto").strip().lower()
+def _curl_cffi_impersonate_target(impersonate: Optional[str] = None) -> str:
+    target = str((CURL_CFFI_IMPERSONATE if impersonate is None else impersonate) or "auto").strip().lower()
     if target in ("", "auto"):
         return _impersonate_target_from_ua(USER_AGENT)
     return target
@@ -3059,6 +3059,12 @@ def create_web_dashboard_app():
             impersonate_error = validate_impersonate_target(data['impersonate'])
             if impersonate_error is not None:
                 return False, [], f"'impersonate' {impersonate_error}", 400
+        # Each value can be valid on its own and still leave a running session reaching Instagram as two
+        # clients, which is the state monitoring refuses to start in
+        if str(data.get('follow_list_source', FOLLOW_LIST_SOURCE)).strip().lower() == 'browser':
+            mismatch = browser_identity_mismatch(data.get('http_backend', HTTP_BACKEND), data.get('impersonate', CURL_CFFI_IMPERSONATE))
+            if mismatch is not None:
+                return False, [], f"{mismatch[0]}. {mismatch[1]}", 400
 
         # The CSV path decides where the monitor appends rows, so the dashboard may name a file but never a location.
         # An unchanged value is accepted so a CSV path set from the config or CLI still round-trips through the form
@@ -11058,15 +11064,15 @@ def impersonate_family(target) -> str:
 
 
 # Reports why the browser source and the HTTP path would reach Instagram as different clients, or None when they agree
-def browser_identity_mismatch() -> Optional[Tuple[str, str]]:
+def browser_identity_mismatch(backend: Optional[str] = None, impersonate: Optional[str] = None) -> Optional[Tuple[str, str]]:
     channel = str(FOLLOW_LIST_BROWSER_CHANNEL or "chromium").strip().lower()
     family = browser_channel_family()
-    if not curl_cffi_backend_active():
+    if not curl_cffi_backend_active(backend):
         return (f"The browser source runs a {family} browser, but every other request uses the 'requests' backend, which cannot present a browser TLS fingerprint. One session would reach Instagram as two different clients", "Set HTTP_BACKEND to curl_cffi, or set FOLLOW_LIST_SOURCE back to auto")
     agent_family = _impersonate_target_from_ua(USER_AGENT)
     if agent_family != family:
         return (f"The browser source runs a {family} browser through the '{channel}' channel, but USER_AGENT claims {agent_family}, so it would announce itself as a browser it is not", f"Set USER_AGENT to a {family} browser, or set FOLLOW_LIST_BROWSER_CHANNEL to a channel that matches it")
-    target_family = impersonate_family(_curl_cffi_impersonate_target())
+    target_family = impersonate_family(_curl_cffi_impersonate_target(impersonate))
     if target_family != family:
         return (f"The browser source runs a {family} browser, but CURL_CFFI_IMPERSONATE pins {target_family} for every other request. One session would reach Instagram as two different clients", f"Set CURL_CFFI_IMPERSONATE to auto or to a {family} target")
     return None

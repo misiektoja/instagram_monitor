@@ -851,3 +851,69 @@ class TestDashboardEffectiveIdentity:
         assert data["http_backend"] == "curl_cffi"
         assert data["impersonate"] == "auto"
         assert data["follow_list_source"] == "browser"
+
+
+class TestDashboardIdentityValidation:
+    # A live session must not be switched into the split identity monitoring refuses to start in
+    def test_a_mismatched_impersonation_is_refused(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "auto")
+        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"chrome", "firefox"})
+
+        response = client.post("/api/settings", json={"follow_list_source": "browser", "impersonate": "firefox"})
+
+        assert response.status_code == 400
+        assert "two different clients" in response.get_json()["error"]
+        assert im_module.FOLLOW_LIST_SOURCE == "auto"
+
+    # The stock transport cannot present a browser fingerprint, so it cannot back the browser source either
+    def test_the_browser_source_is_refused_on_the_requests_backend(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "auto")
+
+        response = client.post("/api/settings", json={"follow_list_source": "browser", "http_backend": "requests"})
+
+        assert response.status_code == 400
+        assert "requests" in response.get_json()["error"]
+        assert im_module.FOLLOW_LIST_SOURCE == "auto"
+
+    # A matching combination is the point of the check, so it has to save
+    def test_a_matching_identity_saves(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "auto")
+        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"chrome", "firefox"})
+
+        response = client.post("/api/settings", json={"follow_list_source": "browser", "impersonate": "chrome"})
+
+        assert response.status_code == 200
+        assert im_module.FOLLOW_LIST_SOURCE == "browser"
+
+    # Changing the backend alone must still be checked against the source already in effect
+    def test_a_backend_change_is_checked_against_the_saved_source(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "browser")
+
+        response = client.post("/api/settings", json={"http_backend": "requests"})
+
+        assert response.status_code == 400
+        assert im_module.HTTP_BACKEND == "curl_cffi"
+
+    # The check only applies to the browser source, so the HTTP sources keep every transport choice
+    def test_the_other_sources_are_left_alone(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "rest")
+
+        assert client.post("/api/settings", json={"http_backend": "requests"}).status_code == 200
+        assert im_module.HTTP_BACKEND == "requests"

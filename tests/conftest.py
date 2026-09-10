@@ -85,6 +85,14 @@ def deterministic_globals(monkeypatch):
     # The real CLI path leaves these set, and every account-scoped helper keys off them
     monkeypatch.setattr(im, "SESSION_USERNAME", "", raising=False)
     monkeypatch.setattr(im, "SKIP_SESSION", False, raising=False)
+    # A run derives these from the configured identity and leaves them set, and the settings endpoint writes
+    # the rest straight onto the module, so a later test would inherit whichever identity ran before it
+    monkeypatch.setattr(im, "USER_AGENT", "", raising=False)
+    monkeypatch.setattr(im, "USER_AGENT_MOBILE", "", raising=False)
+    monkeypatch.setattr(im, "HTTP_BACKEND", "curl_cffi", raising=False)
+    monkeypatch.setattr(im, "CURL_CFFI_IMPERSONATE", "auto", raising=False)
+    monkeypatch.setattr(im, "FOLLOW_LIST_SOURCE", "auto", raising=False)
+    monkeypatch.setattr(im, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium", raising=False)
     # Drop any cached flag-probe verdict between tests
     with im.FLAGGED_PROBE_LOCK:
         im.FLAGGED_PROBE_CACHE["ts"] = 0.0
