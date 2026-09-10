@@ -1042,10 +1042,11 @@ def update_dotenv_file(destination, updates):
     values_by_key = dict(update_items)
     seen_keys = set()
     output_lines = []
-    assignment_pattern = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
+    assignment_pattern = re.compile(r"^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*)\s*=")
     for line in existing_lines:
         match = assignment_pattern.match(line)
-        key = match.group(1) if match else None
+        key = match.group(2) if match else None
+        written_prefix = match.group(1) if match else ""
         if key not in update_keys:
             output_lines.append(line)
             continue
@@ -1055,7 +1056,8 @@ def update_dotenv_file(destination, updates):
         # A secret cleared by its owner is removed rather than emptied, so a disabled value cannot linger here
         if not values_by_key[key]:
             continue
-        output_lines.append(f"{key}={_format_dotenv_value(values_by_key[key])}")
+        # An "export " the owner wrote is kept, since dropping it changes what a shell sourcing the file exports
+        output_lines.append(f"{written_prefix}{key}={_format_dotenv_value(values_by_key[key])}")
 
     for key, value in update_items:
         if key not in seen_keys and value:
