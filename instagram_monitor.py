@@ -10234,10 +10234,14 @@ def print_fix_hint(error_msg: str, tracker: Optional[RecoveryHintTracker] = None
 
 
 # Renders one classified failure as the shared summary and To fix block every surface prints
-def render_recovery_error(advice: RecoveryAdvice, summary: str = "", label: str = "Error") -> str:
-    lines = [f"* {label}: {sanitize_error_text(summary) if summary else advice.summary}"]
+def render_recovery_error(advice: RecoveryAdvice, summary: str = "", label: str = "Error", debug: Optional[bool] = None) -> str:
+    headline = sanitize_error_text(summary) if summary else advice.summary
+    lines = [f"* {label}: {headline}"]
     if advice.fix:
         lines.append(colorize("info", f"To fix: {advice.fix}"))
+    # A detail that only repeats a line already printed spends a line saying nothing
+    if (DEBUG_MODE if debug is None else debug) and advice.detail and advice.detail not in (headline, advice.summary):
+        lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
     return "\n".join(lines)
 
 
@@ -10253,6 +10257,8 @@ def print_recovery_fix(error: Any = None, context: str = "runtime", detail: str 
     advice = classify_recovery_error(error, context, detail)
     if advice.fix:
         print(colorize("info", f"To fix: {advice.fix}"))
+        if DEBUG_MODE and advice.detail and advice.detail != advice.summary:
+            print(f"Technical detail: {sanitize_error_text(advice.detail)}")
     return advice
 
 
