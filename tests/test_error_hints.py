@@ -37,7 +37,7 @@ def _problem_prints(im_module):
     source = inspect.getsource(im_module)
     lines = source.splitlines()
     problem = re.compile(r"(?i)\b(error|failed|failure|could not|cannot|unable|invalid|missing|not found|refused|denied|no such|warning)\b")
-    fixers = ("print_fix_hint", "error_fix_hint", "To fix", "print_recovery_error", "render_recovery_error", "print_recovery_fix")
+    fixers = ("print_fix_hint", "error_fix_hint", "To fix", "print_recovery_error", "print_recovery_advice", "render_recovery_error", "render_recovery_advice", "print_recovery_fix")
     found = []
     for node in ast.walk(ast.parse(source)):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "print"):
@@ -651,3 +651,63 @@ class TestLocalResourceLimits:
     def test_an_unrelated_failure_is_not_mistaken_for_the_limit(self, im_module):
         assert im_module.is_too_many_open_files(OSError(2, "No such file or directory")) is False
         assert im_module.is_too_many_open_files(None) is False
+
+
+class TestTheRecoveryPrinterContracts:
+    # One concept carried three names across this family, and this tool held the family name over the other
+    # contract: render_recovery_error(exc, ...) raised AttributeError here while it classified in five siblings
+    def test_the_recovery_printers_share_one_contract(self, im_module):
+        advice_first = ("advice", "debug", "retry_note", "with_fix", "label")
+        error_first = ("error", "context", "debug", "detail", "retry_note", "with_fix", "label")
+
+        assert tuple(inspect.signature(im_module.render_recovery_advice).parameters) == advice_first + ("summary",)
+        assert tuple(inspect.signature(im_module.render_recovery_error).parameters) == error_first + ("summary", "is_logged_in")
+        # This tool's own parameters follow the shared ones, so a call written for a sibling still means the same thing
+        assert tuple(inspect.signature(im_module.print_recovery_advice).parameters) == advice_first + ("summary",)
+        assert tuple(inspect.signature(im_module.print_recovery_error).parameters) == error_first + ("summary", "is_logged_in")
+
+    # The advice pair prints what the caller built, so a summary the classifier would never produce survives the trip
+    def test_the_advice_printer_does_not_reclassify(self, im_module, capsys):
+        im_module.DEBUG_MODE = False
+        advice = im_module.make_recovery_advice("network.unavailable", "a summary no rule produces", "a fix of its own", True)
+
+        returned = im_module.print_recovery_advice(advice)
+
+        assert capsys.readouterr().out == "* Error: a summary no rule produces\nTo fix: a fix of its own\n"
+        assert returned is advice
+
+    # The error pair classifies an exception the way every sibling does, rather than treating it as the headline
+    def test_the_error_printer_classifies_an_exception(self, im_module, capsys):
+        im_module.DEBUG_MODE = False
+
+        returned = im_module.print_recovery_error(ConnectionError("connection refused"), context="runtime")
+
+        assert capsys.readouterr().out.startswith(f"* Error: {returned.summary}\n")
+
+    # A caller that writes its own headline keeps it, which is why the summary slot exists at all
+    def test_a_caller_written_headline_survives_the_classifier(self, im_module, capsys):
+        im_module.DEBUG_MODE = False
+
+        im_module.print_recovery_error("Could not write the CSV entry to '/tmp/x.csv'", context="file_write")
+
+        printed = capsys.readouterr().out
+        assert printed.startswith("* Error: Could not write the CSV entry to '/tmp/x.csv'\n")
+        assert "To fix: " in printed
+
+    # Both front doors reach the same renderer, so the retry note, the label and a suppressed fix behave the same way
+    def test_both_front_doors_render_the_same_line(self, im_module):
+        im_module.DEBUG_MODE = False
+        error = ConnectionError("connection refused")
+        advice = im_module.classify_recovery_error(error, "runtime")
+
+        through_advice = im_module.render_recovery_advice(advice, retry_note="retrying in 5 minutes", with_fix=False, label="Warning")
+        through_error = im_module.render_recovery_error(error, "runtime", retry_note="retrying in 5 minutes", with_fix=False, label="Warning")
+
+        assert through_advice == through_error
+        assert through_advice == f"* Warning: {advice.summary} (retrying in 5 minutes)"
+
+    # A carried advice is the classifier's own answer, so re-reading its message text would be a second opinion
+    def test_a_carried_advice_is_not_reclassified_from_its_message(self, im_module):
+        advice = im_module.make_recovery_advice("instagram.rate_limited", "Instagram is rate limiting this session", "Wait it out", True)
+
+        assert im_module.classify_recovery_error(im_module.RecoveryError(advice)) is advice

@@ -242,7 +242,7 @@ class TestTechnicalDetail:
     def test_the_technical_detail_line_follows_debug_mode(self, im_module, debug, expected):
         advice = im_module.make_recovery_advice("network.unavailable", "The service could not be reached", "Check the connection", True, "ConnectionError: [Errno 61] Connection refused")
 
-        rendered = im_module.render_recovery_error(advice, debug=debug)
+        rendered = im_module.render_recovery_advice(advice, debug=debug)
 
         assert ("Technical detail: ConnectionError: [Errno 61] Connection refused" in rendered) is expected
 
@@ -250,7 +250,7 @@ class TestTechnicalDetail:
     def test_a_detail_repeating_the_summary_is_dropped(self, im_module):
         advice = im_module.make_recovery_advice("config.missing", "Config file 'x.conf' does not exist", "Correct the path", False, "Config file 'x.conf' does not exist")
 
-        assert "Technical detail:" not in im_module.render_recovery_error(advice, debug=True)
+        assert "Technical detail:" not in im_module.render_recovery_advice(advice, debug=True)
 
 
 class TestSecretReporting:
