@@ -303,20 +303,21 @@ class TestOutageReporting:
         assert second == ""
         assert third == first
 
-    # A lasting failure is reported once and then only once the liveness interval has passed
+    # A lasting failure is reported once and then only once the reminder interval has passed
     def test_the_outage_reporter_reports_once_then_on_the_cadence(self, im_module, monkeypatch):
         clock = [1000000.0]
         monkeypatch.setattr(im_module.time, "time", lambda: clock[0])
+        monkeypatch.setattr(im_module, "OUTAGE_REMINDER_SECONDS", 180)
         reporter = im_module.OutageReporter()
         advice = im_module.classify_recovery_error("ConnectionException: 429 Too Many Requests")
 
-        assert reporter.failed(advice, 180) == "full"
+        assert reporter.failed(advice) == "full"
         outcomes = []
         for _ in range(3):
             clock[0] += 60
-            outcomes.append(reporter.failed(advice, 180))
+            outcomes.append(reporter.failed(advice))
 
-        assert outcomes == ["", "", "degraded"]
+        assert outcomes == ["", "", "reminder"]
         assert reporter.recovered() is not None
         assert reporter.recovered() is None
 
@@ -330,10 +331,10 @@ class TestOutageReporting:
         second = im_module.classify_recovery_error(OSError(24, "Too many open files"), context="runtime")
         assert first.code != second.code
 
-        assert reporter.failed(first, 900) == "full"
+        assert reporter.failed(first) == "full"
         for index in range(60):
             clock[0] += 15
-            reporter.failed(second if index % 2 else first, 900)
+            reporter.failed(second if index % 2 else first)
 
         assert reporter.since == 1000000
         assert reporter.recovered() == 900
@@ -345,21 +346,70 @@ class TestOutageReporting:
         reporter = im_module.OutageReporter()
         advice = im_module.classify_recovery_error("ConnectionException: 429 Too Many Requests")
 
-        assert reporter.failed(advice, 900) == "full"
+        monkeypatch.setattr(im_module, "OUTAGE_REMINDER_SECONDS", 900)
+        assert reporter.failed(advice) == "full"
         outcomes = []
         for _ in range(60):
             clock[0] += 15
-            outcomes.append(reporter.failed(advice, 900))
+            outcomes.append(reporter.failed(advice))
 
-        assert outcomes.count("degraded") == 1
+        assert outcomes.count("reminder") == 1
 
-    # The summary keeps its every-check cadence when the liveness banner is switched off
-    def test_the_outage_reporter_keeps_repeating_without_a_liveness_banner(self, im_module):
+    # The reminder keeps its own clock when the liveness banner is switched off, so a lasting failure is neither
+    # silenced nor repeated every check
+    def test_the_outage_reporter_reminds_on_its_own_clock_without_a_liveness_banner(self, im_module, monkeypatch):
+        clock = [1000000.0]
+        monkeypatch.setattr(im_module.time, "time", lambda: clock[0])
+        monkeypatch.setattr(im_module, "LIVENESS_REMINDER_SECONDS", 0)
+        monkeypatch.setattr(im_module, "OUTAGE_REMINDER_SECONDS", 60)
         reporter = im_module.OutageReporter()
         advice = im_module.classify_recovery_error("ConnectionException: 429 Too Many Requests")
 
-        assert reporter.failed(advice, 0) == "full"
-        assert [reporter.failed(advice, 0) for _ in range(2)] == ["repeat", "repeat"]
+        assert reporter.failed(advice) == "full"
+        clock[0] += 59
+        assert reporter.failed(advice) == ""
+        clock[0] += 1
+        assert reporter.failed(advice) == "reminder"
+        assert reporter.failed(advice) == ""
+
+    # An internet outage classifies as a DNS failure on one check and as unreachable on the next, and it is one outage
+    def test_an_internet_outage_that_flaps_is_one_outage(self, im_module, monkeypatch):
+        clock = [1000000.0]
+        monkeypatch.setattr(im_module.time, "time", lambda: clock[0])
+        reporter = im_module.OutageReporter()
+        dns = im_module.classify_recovery_error("ConnectionException: Temporary failure in name resolution")
+        unreachable = im_module.classify_recovery_error("ConnectionException: HTTPSConnectionPool max retries exceeded")
+        assert (dns.code, unreachable.code) == ("network.dns", "network.unavailable")
+        assert im_module.outage_family(dns.code) == im_module.outage_family(unreachable.code) == "network"
+
+        assert reporter.failed(dns) == "full"
+        outcomes = []
+        for index in range(60):
+            clock[0] += 15
+            outcomes.append(reporter.failed(unreachable if index % 2 else dns))
+
+        assert set(outcomes) == {""}
+        assert reporter.recovered() == 900
+
+    # A reported outage that starts failing differently is still one outage, so the change is one line, not a second report
+    def test_a_changed_retryable_category_is_noted_in_one_line(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "UTC")
+        reporter = im_module.OutageReporter()
+        limited = im_module.classify_recovery_error("ConnectionException: 429 Too Many Requests")
+        unreachable = im_module.classify_recovery_error("ConnectionException: HTTPSConnectionPool max retries exceeded")
+        assert limited.retryable and unreachable.retryable
+
+        assert reporter.failed(limited) == "full"
+        assert reporter.failed(unreachable) == "changed"
+        assert reporter.failed(unreachable) == ""
+
+        im_module.print_outage_change("misiektoja", unreachable)
+        im_module.print_outage_liveness("misiektoja", unreachable, reporter.since, reporter.failures)
+
+        output = capsys.readouterr().out
+        assert f"* Monitoring failure changed for misiektoja. {unreachable.summary}\n" in output
+        assert f"* Monitoring degraded for misiektoja. {unreachable.summary} since " in output
+        assert ", 3 failed checks\n" in output
 
     # A failure category that changes is reported in full again rather than hidden by the previous one
     def test_a_changed_failure_category_is_reported_in_full(self, im_module, monkeypatch, capsys):
@@ -368,9 +418,10 @@ class TestOutageReporting:
         limited = im_module.classify_recovery_error("ConnectionException: 429 Too Many Requests")
         expired = im_module.classify_recovery_error("ConnectionException: Login required, redirected")
 
-        assert reporter.failed(limited, 5) == "full"
-        assert reporter.failed(limited, 5) == ""
-        assert reporter.failed(expired, 5) == "full"
+        assert reporter.failed(limited) == "full"
+        assert reporter.failed(limited) == ""
+        assert not expired.retryable
+        assert reporter.failed(expired) == "full", "a failure nothing can retry away is a new report rather than a note"
 
         im_module.print_outage_liveness("misiektoja", expired, int(im_module.time.time()) - 60)
         im_module.print_outage_recovery("misiektoja", 60)
@@ -420,7 +471,7 @@ class TestOutageReporting:
         source = module_source[start:module_source.index("\ndef ", start)]
 
         assert "fix_hint_printed = print_fix_hint(error_msg, recovery_hint_tracker)" in source
-        assert "if (not fix_hint_printed or advice.code == \"unknown\") and outage_outcome in (\"full\", \"repeat\") and (" in source
+        assert "if (not fix_hint_printed or advice.code == \"unknown\") and outage_outcome == \"full\" and (" in source
         assert source.count("session_recovery_command()") == 2
 
     # The liveness banner explains itself without --verbose, so a plain run never prints a bare timestamp
@@ -575,6 +626,7 @@ class TestEveryProblemIsReported:
         "The Web Dashboard may have disconnected due to this error.": "a consequence of the crash reported above it",
         "* Error: Python version ": "runs before the module is loaded, so it prints its action and page as literals",
         "* Error: Web Dashboard templates not found": "followed by the searched paths and a numbered list of the four ways to fix it",
+        "* Monitoring failure changed for {target}. {advice.summary}": "a one-line note on a classified outage that already had its full report",
     }
 
     def test_every_reported_problem_carries_an_action(self, im_module):
