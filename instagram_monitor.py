@@ -15582,6 +15582,11 @@ DOCTOR_STATUSES = ("PASS", "WARN", "FAIL", "SKIP")
 # The documented minimum polling interval, below which Instagram is far more likely to challenge the account
 DOCTOR_MIN_SAFE_CHECK_INTERVAL = 3600
 
+# The fixed section order the report renders in, chosen so each section depends only on the ones above it.
+# Two headers differ from the siblings on purpose: Session is the Instagram term for the saved login the
+# check reads, and Targets is plural because this tool monitors a list rather than one account
+DOCTOR_SECTIONS = ("Environment", "Configuration", "Session", "Connectivity", "Targets", "Notifications")
+
 # Delivery results are printed as they happen rather than inside a section, but they still count in the summary
 DOCTOR_DELIVERY_SECTION = "Optional delivery tests"
 
@@ -16324,7 +16329,7 @@ def render_doctor_sections(report: DoctorReport) -> None:
     # The install method is context rather than a check: it cannot fail, so it is stated once here
     # instead of taking a result row that no marker describes
     print(f"Detected install method: {colorize('username', _wizard_install_method())}\n")
-    for index, section in enumerate(("Environment", "Configuration", "Session", "Connectivity", "Targets", "Notifications")):
+    for index, section in enumerate(DOCTOR_SECTIONS):
         section_checks = [check for check in report.checks if check.section == section]
         if not section_checks:
             continue

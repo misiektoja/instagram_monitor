@@ -1027,6 +1027,23 @@ def test_the_action_lines_sit_indented_under_their_marker(im_module, capsys, mon
     assert rows[:5] == ["[WARN] a warning row", "  a detail worth keeping", "  To fix: do the thing", f"  Guide: {im_module.DOCTOR_GUIDE_URL}", "[PASS] a passing row"]
 
 
+# Verifies the report renders in the declared section order rather than the order the checks were collected
+def test_the_sections_render_in_the_declared_order(im_module, capsys, monkeypatch):
+    monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
+    checks = [im_module.make_doctor_check(section, "PASS", f"row for {section}") for section in reversed(im_module.DOCTOR_SECTIONS)]
+
+    im_module.render_doctor_sections(im_module.DoctorReport(checks=checks))
+
+    printed = [line for line in capsys.readouterr().out.splitlines() if line in im_module.DOCTOR_SECTIONS]
+    assert tuple(printed) == im_module.DOCTOR_SECTIONS
+
+
+# Verifies the two headers this tool names differently from its siblings stay in the shared slots. Session is
+# the Instagram term for the saved login the check reads, and Targets is plural because this tool monitors a list
+def test_the_two_headers_this_tool_names_its_own_way_keep_the_shared_slots(im_module):
+    assert im_module.DOCTOR_SECTIONS == ("Environment", "Configuration", "Session", "Connectivity", "Targets", "Notifications")
+
+
 # Verifies a link in a detail line takes the link colour while a styled action line keeps its own colour
 def test_a_link_in_a_detail_line_is_coloured_as_a_link(im_module, capsys, monkeypatch):
     monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
