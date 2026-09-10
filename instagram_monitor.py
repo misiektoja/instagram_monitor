@@ -14508,7 +14508,7 @@ def _build_help_epilog() -> str:
         import_comment = "Import an Instagram session from Firefox"
     groups = (
         ("Getting started", (
-            ("Guided setup (recommended for the first run)", f"{prefix} --setup"),
+            ("Guided setup, recommended for the first run", f"{prefix} --setup"),
             ("Check the setup before relying on it", f"{prefix} --doctor <target_insta_user>"),
             ("Start monitoring without login (new posts, bio and follower counts)", f"{prefix} <target_insta_user>"),
         )),
