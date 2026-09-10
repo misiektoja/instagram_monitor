@@ -265,6 +265,8 @@ def test_issue_templates_are_valid_issue_forms():
             assert element["id"] and element["attributes"]["label"], template.name
             if element["type"] == "dropdown":
                 assert len(element["attributes"]["options"]) >= 2, template.name
+        # A form whose every field is optional collects an empty report the maintainer has to chase
+        assert any(element.get("validations", {}).get("required") for element in form["body"]), template.name
 
 
 # Verifies the issue chooser routes vulnerabilities to private reporting instead of a public issue
@@ -277,6 +279,8 @@ def test_issue_chooser_routes_vulnerabilities_privately():
 
     bug_report = read_asset(".github/ISSUE_TEMPLATE/bug_report.yml")
     assert "SECURITY.md" in bug_report
+    # The form is where a user is most likely to paste a secret, so the instruction itself has to survive a rewording
+    assert "Never paste" in bug_report
 
 
 # Verifies the security policy names the private channel and the secrets a report must never carry
