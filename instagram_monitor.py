@@ -4649,14 +4649,13 @@ def webhook_notifications_enabled() -> bool:
     return bool(WEBHOOK_ENABLED and _startup_webhook_notification_categories())
 
 
-# One startup summary setting, routed independently to the concise view, the full view and the log file
+# One startup summary setting, routed to the concise view, the full view or both. The log keeps the full view
 @dataclass(frozen=True)
 class StartupSummaryRow:
     label: str
     value: str
     concise: bool = False
     full: bool = True
-    log: bool = True
 
 
 # Builds notification summary rows shared by concise, verbose and logged views
@@ -4705,7 +4704,7 @@ def emit_startup_summary(rows: Sequence["StartupSummaryRow"], show_full: bool, s
     destination: Any = sys.stdout if stream is None else stream
     for row in rows:
         line = _format_startup_summary_row(row)
-        if row.full and row.log and hasattr(destination, "log_only"):
+        if row.full and hasattr(destination, "log_only"):
             destination.log_only(line)
         if suppress_terminal or not (row.full if show_full else row.concise):
             continue
@@ -17710,7 +17709,7 @@ def run_main():
     summary_rows.extend(_startup_notification_summary_rows())
 
     output_state = FINAL_LOG_PATH if not DISABLE_LOGGING else "Terminal only (logging disabled)"
-    summary_rows.append(StartupSummaryRow("Output", str(output_state), concise=True, full=False, log=False))
+    summary_rows.append(StartupSummaryRow("Output", str(output_state), concise=True, full=False))
     summary_rows.append(StartupSummaryRow("Output logging", str(FINAL_LOG_PATH) if not DISABLE_LOGGING else "Disabled"))
     summary_rows.append(StartupSummaryRow("Config", str(cfg_path) if cfg_path else "None", concise=True))
     summary_rows.append(StartupSummaryRow("Dotenv", str(env_path) if env_path else "None", concise=True))
@@ -17816,7 +17815,7 @@ def run_main():
     summary_rows.append(StartupSummaryRow("Debug mode", str(DEBUG_MODE), concise=bool(DEBUG_MODE)))
 
     # Points at the two modes for a reader who does not know they exist, so the full view drops it
-    summary_rows.append(StartupSummaryRow("More details", "use --verbose or --debug", concise=True, full=False, log=False))
+    summary_rows.append(StartupSummaryRow("More details", "use --verbose or --debug", concise=True, full=False))
 
     # Full rows always go to the log; the terminal shows the full set under --verbose/--debug, otherwise the concise set (suppressed entirely while the terminal dashboard owns the screen)
     emit_startup_summary(summary_rows, show_full=bool(VERBOSE_MODE or DEBUG_MODE), suppress_terminal=bool(DASHBOARD_ENABLED and RICH_AVAILABLE))
