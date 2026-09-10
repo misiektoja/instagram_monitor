@@ -1767,6 +1767,7 @@ def wait_for_session_refresh(observed_generation, timeout=1.0):
         SESSION_REFRESH_CONDITION.wait_for(lambda: SESSION_REFRESH_GENERATION != observed_generation, timeout=timeout)
         return SESSION_REFRESH_GENERATION
 
+
 # Initialize manual check trigger event (thread-safe)
 MANUAL_CHECK_TRIGGERED: threading.Event = threading.Event()
 
@@ -4404,6 +4405,7 @@ def sanitize_terminal_data(value: TSanitizedTerminalData) -> TSanitizedTerminalD
         return cast(TSanitizedTerminalData, tuple(sanitize_terminal_data(item) for item in value))
     return value
 
+
 # Internal flag & style map for colour handling
 COLOR_ENABLED = False
 _COLOR_STYLES = {}
@@ -5246,6 +5248,7 @@ def signal_handler(sig, frame, message=None):
     else:
         # Background thread: use os._exit after cleanup to ensure process exits
         os._exit(0)
+
 
 # The last connectivity failure, so a quiet caller can classify it instead of the check printing it
 LAST_CONNECTIVITY_ERROR = None
@@ -9944,7 +9947,8 @@ def make_recovery_advice(code: str, summary: str, fix: str, retryable: bool = Fa
 
 
 # Adds a directly relevant documentation link on its own line
-def recovery_fix_with_guide(fix: str, guide_url: str) -> str: return f"{fix}\nGuide: {guide_url}"
+def recovery_fix_with_guide(fix: str, guide_url: str) -> str:
+    return f"{fix}\nGuide: {guide_url}"
 
 
 # Yields the exception and each cause or context up to max_depth, to walk an exception chain
@@ -9967,9 +9971,10 @@ def is_too_many_open_files(error: Any) -> bool:
             return True
     return False
 
-# Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
-def unknown_failure_fix(): return "Open an issue with this output if the failure continues" if DEBUG_MODE else "Re-run with --debug to see the technical cause"
 
+# Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
+def unknown_failure_fix():
+    return "Open an issue with this output if the failure continues" if DEBUG_MODE else "Re-run with --debug to see the technical cause"
 
 
 # Classifies one failure into code-carrying advice, so every surface explains the same problem the same way
@@ -9981,7 +9986,8 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
     safe_detail = sanitize_error_text(detail or error)
 
     # Builds one row of this table, attaching the page that covers it where one exists
-    def advice(code: str, summary: str, fix: str, retryable: bool = False, guide_url: str = "") -> RecoveryAdvice: return make_recovery_advice(code, summary, recovery_fix_with_guide(fix, guide_url) if guide_url else fix, retryable, safe_detail)
+    def advice(code: str, summary: str, fix: str, retryable: bool = False, guide_url: str = "") -> RecoveryAdvice:
+        return make_recovery_advice(code, summary, recovery_fix_with_guide(fix, guide_url) if guide_url else fix, retryable, safe_detail)
 
     # Checked ahead of every context, since a local descriptor limit is not a failure of whatever call hit it
     if error is not None and is_too_many_open_files(error):
@@ -10201,7 +10207,8 @@ def print_fix_hint(error_msg: str, tracker: Optional[RecoveryHintTracker] = None
 
 
 # Returns the headline a caller supplied as text, so a raw exception still falls back to the classified summary
-def caller_summary(error: Any) -> str: return sanitize_error_text(error) if isinstance(error, str) else ""
+def caller_summary(error: Any) -> str:
+    return sanitize_error_text(error) if isinstance(error, str) else ""
 
 
 # Renders one built advice as the shared Error, To fix and optional Technical detail block
@@ -10245,11 +10252,13 @@ def print_recovery_fix(error: Any = None, context: str = "runtime", detail: str 
 
 
 # Returns the advice an optional library that is missing carries, naming what the run loses and how to install it
-def missing_dependency_advice(package: str, effect: str, install_command: str, alternative: str = "") -> RecoveryAdvice: return make_recovery_advice("dependency.missing", f"{effect} because the optional '{package}' library is missing", recovery_fix_with_guide(f"Install it with: {install_command}" + (f". {alternative}" if alternative else ""), INSTALLATION_GUIDE_URL), False)
+def missing_dependency_advice(package: str, effect: str, install_command: str, alternative: str = "") -> RecoveryAdvice:
+    return make_recovery_advice("dependency.missing", f"{effect} because the optional '{package}' library is missing", recovery_fix_with_guide(f"Install it with: {install_command}" + (f". {alternative}" if alternative else ""), INSTALLATION_GUIDE_URL), False)
 
 
 # Returns the command that installs one package through the active Python environment
-def pip_install_command(requirement: str) -> str: return _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", requirement])
+def pip_install_command(requirement: str) -> str:
+    return _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", requirement])
 
 
 # Returns True when the formatted error indicates a profile could not be found (deleted/renamed target or a flagged session masking every profile)
@@ -11317,7 +11326,6 @@ def harvest_follow_list_dialog(page, scroll_delay: float, stall_limit: int = BRO
         if not page.evaluate(BROWSER_DIALOG_SCROLL_JS):
             return
         page.wait_for_timeout(max(0, int(float(scroll_delay) * 1000)))
-
 
 
 # The curl_cffi impersonation family each Playwright browser channel presents on the wire
@@ -14033,7 +14041,6 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     safe_profile_url = escape(f"https://www.instagram.com/{insta_username}/", quote=True)
                     m_body_html = f"Instagram user <b>{user}</b> has a new {last_source.lower()} after <b>{calculate_timespan(highestinsta_dt, highestinsta_dt_old)}</b> ({get_date_from_ts(highestinsta_dt_old)}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(highestinsta_dt)}</b><br>{last_source.capitalize()} URL: <a href=\"{safe_post_url}\">{safe_post_url}</a><br>Profile URL: <a href=\"{safe_profile_url}\">{safe_profile_url}</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {escape(str(tagged_users))}{location_mbody_html}{escape(str(location_mbody_str))}<br>Description:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{escape(likes_users_list)}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
-
                     emoji = "🎬" if last_source == "reel" else "📸"
                     webhook_fields = [
                         {"name": "Date", "value": f"**{get_date_from_ts(highestinsta_dt)}**", "inline": True},
@@ -14120,7 +14127,6 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 print_cur_ts()
             else:
                 verbose_notice(skip_notice)
-
 
         if in_allowed_hours:
             consecutive_main_errors = 0
@@ -14443,7 +14449,6 @@ def print_doctor_next_steps(targets=(), config_path=None, env_path=None, saved_t
     print(colorize("header", "\nNext steps\n"))
     _wizard_print_command("After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:", command)
     print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}")
-
 
 
 # Reads only the persisted targets from a config file, so a printed command can omit ones the config already supplies
@@ -15267,7 +15272,6 @@ def _wizard_collect_output_section(state: WizardSetupState) -> None:
     state.config_values["CSV_FILE"] = _wizard_normalize_csv_path(_wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or "")))
 
 
-
 # Browser profiles the wizard offers as pinned curl_cffi impersonation targets
 WIZARD_IMPERSONATE_CHOICES = ("chrome", "firefox", "safari", "safari_ios", "edge")
 
@@ -16085,7 +16089,8 @@ def doctor_secret_is_set(value) -> bool:
 
 
 # Returns the diagnostic fields describing one secret, reporting presence alone since no secret here has a provider-issued length
-def secret_fields(value) -> Dict[str, Any]: return {"value": "set" if doctor_secret_is_set(value) else "not set"}
+def secret_fields(value) -> Dict[str, Any]:
+    return {"value": "set" if doctor_secret_is_set(value) else "not set"}
 
 
 # Records where one secret resolved from and traces it, so a later layer overwrites the earlier answer instead of adding to it
