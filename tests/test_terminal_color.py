@@ -373,3 +373,15 @@ class TestTerminalConfigIdentity:
         plain = render_config_panel(im_module, im_module.get_dashboard_config_data())
 
         assert "Browser UA:" in plain and "Auto" in plain
+
+
+# Verifies the TLS row colours its state word, the one setting whose off state weakens a security property
+def test_the_tls_row_colours_its_state(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {"boolean_true": "\033[32m", "boolean_false": "\033[31m"})
+
+    on_row = im_module._colorize_line("* TLS verification:             On")
+    off_row = im_module._colorize_line("* TLS verification:             Off, server certificates are not checked")
+
+    assert on_row == f"* TLS verification:             \033[32mOn{im_module.ANSI_RESET}"
+    assert off_row == f"* TLS verification:             \033[31mOff{im_module.ANSI_RESET}, server certificates are not checked"

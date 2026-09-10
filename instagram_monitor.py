@@ -4504,6 +4504,9 @@ _ONLINE_WORD_RE = re.compile(r"(\b(?!stop\s+)(?:online|Yes)\b)", re.IGNORECASE)
 _OFFLINE_WORD_RE = re.compile(r"(\b(?:offline|No)\b)", re.IGNORECASE)
 _BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
 _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
+# The TLS row reports a word rather than a boolean, and its off state is the one setting that weakens
+# a security property, so the state word is coloured like a boolean
+_TLS_STATE_RE = re.compile(r"^(\* TLS verification:\s+)(On|Off)(.*)$")
 _NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
 _STORY_URL_RE = re.compile(r"(https?://\S+)")
 # A received signal is an event rather than a problem, so it gets its own whole-line colour
@@ -4781,6 +4784,12 @@ def _colorize_line(line):
     notification_match = _NOTIFICATION_SUMMARY_STATE_RE.match(line)
     if notification_match:
         prefix, state, suffix = notification_match.groups()
+        state_style = "boolean_true" if state == "On" else "boolean_false"
+        return f"{prefix}{colorize(state_style, state)}{suffix}"
+
+    tls_match = _TLS_STATE_RE.match(line)
+    if tls_match:
+        prefix, state, suffix = tls_match.groups()
         state_style = "boolean_true" if state == "On" else "boolean_false"
         return f"{prefix}{colorize(state_style, state)}{suffix}"
 
