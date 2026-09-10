@@ -9993,6 +9993,10 @@ def is_too_many_open_files(error: Any) -> bool:
             return True
     return False
 
+# Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
+def unknown_failure_fix(): return "Open an issue with this output if the failure continues" if DEBUG_MODE else "Re-run with --debug to see the technical cause"
+
+
 
 # Classifies one failure into code-carrying advice, so every surface explains the same problem the same way
 def classify_recovery_error(error: Any = None, context: str = "runtime", detail: str = "", is_logged_in: Optional[bool] = None) -> RecoveryAdvice:
@@ -10119,7 +10123,7 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
     if any(t in m for t in FAILURE_TERMS['schema_change']):
         return "instagram.empty_data", "Instagram returned empty data for this query", "Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version and report it at https://github.com/misiektoja/instagram_monitor/issues if you are already current)", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
 
-    return "unknown", "An unexpected error stopped the requested action", "Re-run with --debug to see the technical cause", DIAGNOSTICS_GUIDE_URL, True
+    return "unknown", "An unexpected error stopped the requested action", unknown_failure_fix(), DIAGNOSTICS_GUIDE_URL, True
 
 
 # Maps one SMTP failure to a stable summary plus the matching fix, keeping the technical text for the detail line

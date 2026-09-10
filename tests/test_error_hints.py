@@ -711,3 +711,23 @@ class TestTheRecoveryPrinterContracts:
         advice = im_module.make_recovery_advice("instagram.rate_limited", "Instagram is rate limiting this session", "Wait it out", True)
 
         assert im_module.classify_recovery_error(im_module.RecoveryError(advice)) is advice
+
+
+# A detail that only repeats the summary spends a line saying nothing, so the block drops it and keeps a real one
+def test_a_detail_repeating_the_summary_is_dropped(im_module):
+    repeated = im_module.make_recovery_advice("unknown", "the same sentence twice", "a fix", False, "the same sentence twice")
+    differing = im_module.make_recovery_advice("unknown", "the summary", "a fix", False, "the raw cause")
+
+    assert "Technical detail:" not in im_module.render_recovery_advice(repeated, debug=True)
+    assert "Technical detail: the raw cause" in im_module.render_recovery_advice(differing, debug=True)
+
+
+# A run that already prints the technical cause cannot be told to re-run for it
+def test_the_unrecognized_failure_fix_follows_the_diagnostic_mode(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "DEBUG_MODE", False)
+    plain = im_module.classify_recovery_error(Exception("a wholly unfamiliar failure"), "runtime").fix
+    monkeypatch.setattr(im_module, "DEBUG_MODE", True)
+    debugging = im_module.classify_recovery_error(Exception("a wholly unfamiliar failure"), "runtime").fix
+
+    assert "--debug" in plain
+    assert "--debug" not in debugging
