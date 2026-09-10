@@ -19,6 +19,23 @@ KNOWN_ERRORS = [
 ]
 
 
+# Returns every tuple the runtime rule table returns, which is where each Instagram failure is described
+def _rule_table_rows(im_module):
+    return [node.value for node in ast.walk(ast.parse(inspect.getsource(im_module.classify_error_parts))) if isinstance(node, ast.Return) and isinstance(node.value, ast.Tuple)]
+
+
+# Returns every advice() call the context table makes, skipping the runtime delegation that forwards its own guide
+def _context_advice_calls(im_module):
+    source = inspect.getsource(im_module.classify_recovery_error)
+    calls = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "advice" and len(node.args) == 5]
+    return [node for node in calls if not (isinstance(node.args[4], ast.Name) and node.args[4].id == "guide")]
+
+
+# Reports whether an argument is one of the documentation constants rather than an empty placeholder
+def _names_a_page(node):
+    return isinstance(node, ast.Name) and node.id.endswith("_GUIDE_URL")
+
+
 class TestErrorFixHint:
     @pytest.mark.parametrize("msg, needle", KNOWN_ERRORS)
     def test_known_errors_return_hint(self, im_module, msg, needle):
@@ -379,9 +396,15 @@ class TestRecoveryCodeSet:
             "instagram.rate_limited", "instagram.challenge", "instagram.empty_data",
             "session.missing", "session.expired",
             "target.not_found",
-            "config.impersonate_unsupported",
+            "config.missing", "config.invalid", "config.impersonate_unsupported",
+            "dependency.missing",
+            "secret.missing",
             "proxy.unresolved",
             "network.dns", "network.unavailable",
+            "smtp.invalid", "smtp.authentication", "smtp.connection",
+            "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
+            "file.unreadable", "file.unwritable", "file.exists",
+            "dashboard.unavailable",
             "unknown",
         })
 
@@ -389,46 +412,59 @@ class TestRecoveryCodeSet:
         with pytest.raises(ValueError, match="Unsupported recovery code"):
             im_module.make_recovery_advice("instagram.invented", "summary", "fix", False)
 
-    # A declared code nothing can produce is a dead branch, so every one is driven from a real failure message
+    # A declared code nothing can produce is a dead branch, so every one is driven from a real failure
     def test_every_declared_code_is_reachable(self, im_module):
-        messages = [
-            "ConnectionException: 429 Too Many Requests",
-            "JSONDecodeError: challenge_required",
-            "FileNotFoundError: Instagram session file for me not found",
-            "ConnectionException: Login required, redirected",
-            "ProfileNotExistsException: Profile xyz does not exist",
-            "RuntimeError: impersonate target chrome999 is not supported",
-            "ConnectionException: Could not resolve proxy: myproxy.local",
-            "ConnectionException: Could not resolve host: www.instagram.com",
-            "ConnectionException: HTTPSConnectionPool max retries exceeded",
-            "RuntimeError: Instagram returned empty data for posts",
-            "SomethingElse: totally unknown error",
+        failures = [
+            ("ConnectionException: 429 Too Many Requests", "runtime"),
+            ("JSONDecodeError: challenge_required", "runtime"),
+            ("FileNotFoundError: Instagram session file for me not found", "runtime"),
+            ("ConnectionException: Login required, redirected", "runtime"),
+            ("ProfileNotExistsException: Profile xyz does not exist", "runtime"),
+            ("RuntimeError: impersonate target chrome999 is not supported", "runtime"),
+            ("ConnectionException: Could not resolve proxy: myproxy.local", "runtime"),
+            ("ConnectionException: Could not resolve host: www.instagram.com", "runtime"),
+            ("ConnectionException: HTTPSConnectionPool max retries exceeded", "runtime"),
+            ("RuntimeError: Instagram returned empty data for posts", "runtime"),
+            ("SomethingElse: totally unknown error", "runtime"),
+            ("The 'rich' library is not installed", "dependency"),
+            ("PROXY_URL is not set", "config_missing"),
+            ("--identity-budget cannot be negative", "config"),
+            ("The dotenv file could not be written", "secret"),
+            ("Config file 'instagram_monitor.conf' already exists", "file_exists"),
+            ("No such file or directory", "file_read"),
+            ("Permission denied", "file_write"),
+            ("invalid port number in SMTP_PORT", "smtp_config"),
+            (smtplib.SMTPAuthenticationError(535, b"auth failed"), "email"),
+            (ValueError("SMTP settings are incorrect"), "email"),
+            (OSError("connection refused"), "email"),
+            ("WEBHOOK_PROVIDER must be discord or ntfy", "webhook_config"),
+            (RuntimeError("429 Too Many Requests"), "webhook"),
+            (RuntimeError("connection refused"), "webhook"),
+            (RuntimeError("500 Internal Server Error"), "webhook"),
+            (RuntimeError("Could not resolve proxy: myproxy.local"), "proxy"),
+            (RuntimeError("Firefox cookies were not found"), "session"),
+            (OSError("Port 7862 is in use"), "dashboard"),
         ]
-        produced = {im_module.classify_recovery_error(message).code for message in messages}
+        produced = {im_module.classify_recovery_error(failure, context=context).code for failure, context in failures}
 
         assert im_module.RECOVERY_CODES - produced == set()
 
     # Every branch of the rule table names the page that covers it, so no failure leaves the user without somewhere to read
     def test_every_failure_names_a_page(self, im_module):
-        guideless = []
-        for node in ast.walk(ast.parse(inspect.getsource(im_module.classify_error_parts))):
-            if not isinstance(node, ast.Return) or not isinstance(node.value, ast.Tuple):
-                continue
-            guide = node.value.elts[3]
-            if not (isinstance(guide, ast.Name) and guide.id.endswith("_GUIDE_URL")):
-                guideless.append(ast.unparse(node.value.elts[0]))
+        guideless = [ast.unparse(row.elts[0]) for row in _rule_table_rows(im_module) if not _names_a_page(row.elts[3])]
+        guideless += [ast.unparse(call.args[0]) for call in _context_advice_calls(im_module) if not _names_a_page(call.args[4])]
 
         assert guideless == []
 
-    # The guard above is only worth its name while it still finds the returns it inspects
-    def test_the_guide_guard_still_inspects_the_rule_table(self, im_module):
-        rows = []
-        for node in ast.walk(ast.parse(inspect.getsource(im_module.classify_error_parts))):
-            if isinstance(node, ast.Return) and isinstance(node.value, ast.Tuple):
-                rows.append(node.value)
+    # The guard above is only worth its name while it still finds the rows and the calls it inspects
+    def test_the_guide_guard_still_inspects_the_source(self, im_module):
+        rows = _rule_table_rows(im_module)
+        calls = _context_advice_calls(im_module)
 
-        assert len(rows) == len(im_module.RECOVERY_CODES)
+        assert len(rows) == 11, "the runtime rule table lost or gained a row"
         assert all(len(row.elts) == 5 for row in rows)
+        assert len(calls) >= 15, "the context table lost branches"
+        assert all(len(call.args) == 5 for call in calls)
 
     # Whether waiting can clear a failure decides what the tool says next, so it is carried rather than re-derived
     @pytest.mark.parametrize("msg, retryable", [

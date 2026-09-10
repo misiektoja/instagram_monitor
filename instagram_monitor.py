@@ -1482,6 +1482,7 @@ SECRETS_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#storing-secrets"
 DIAGNOSTICS_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#choosing-the-right-logging-level"
 MONITORING_GUIDE_URL = DOCUMENTATION_URL + "/usage/#monitoring-mode"
 WEB_DASHBOARD_GUIDE_URL = DOCUMENTATION_URL + "/view-modes/#web-dashboard"
+OUTPUT_GUIDE_URL = DOCUMENTATION_URL + "/usage/#output-directory"
 
 # The fix named when nothing is being monitored, shared by the startup gate and the Doctor target check
 NO_TARGET_FIX = "Pass a target on the command line, set TARGET_USERNAMES in the config or enable the Web Dashboard"
@@ -1610,6 +1611,8 @@ MINIMUM_PYTHON_VERSION_TEXT = ".".join(str(part) for part in MINIMUM_PYTHON_VERS
 
 if sys.version_info[:2] < MINIMUM_PYTHON_VERSION:
     print(f"* Error: Python version {MINIMUM_PYTHON_VERSION_TEXT} or higher required !")
+    print(f"To fix: Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer, then re-run the tool")
+    print(f"Guide: {INSTALLATION_GUIDE_URL}")
     sys.exit(1)
 
 import time
@@ -2027,7 +2030,7 @@ def _curl_cffi_backend_active() -> bool:
     global _CURL_CFFI_UNAVAILABLE_WARNED
     active = curl_cffi_backend_active()
     if not active and str(HTTP_BACKEND).strip().lower() == "curl_cffi" and not _CURL_CFFI_UNAVAILABLE_WARNED:
-        print("* Warning: HTTP_BACKEND is 'curl_cffi' but the 'curl_cffi' package is not installed, falling back to 'requests'")
+        print(render_recovery_error(missing_dependency_advice("curl_cffi", "HTTP_BACKEND is 'curl_cffi' but the 'requests' backend is used instead", pip_install_command("curl_cffi")), label="Warning"))
         _CURL_CFFI_UNAVAILABLE_WARNED = True
     return active
 
@@ -2457,7 +2460,7 @@ def run_flask_quietly(app, host, port, debug=False, use_reloader=False, threaded
 
             if is_port_error:
                 print("*" * HORIZONTAL_LINE)
-                print(f"* Error: Port {port} is in use by another program. Either identify and stop that program or start the server with a different port.\n")
+                print_recovery_error(f"Port {port} is in use by another program", context="dashboard")
                 print(f"* Web Dashboard will NOT be available!")
                 print("*" * HORIZONTAL_LINE)
             else:
@@ -2579,7 +2582,7 @@ def create_web_dashboard_app():
         candidate_dirs = [template_dir]  # For error message
         if not os.path.isdir(template_dir):
             print("\n" + "*" * HORIZONTAL_LINE)
-            print(f"* Error: Web Dashboard template directory not found: {template_dir}\n")
+            print_recovery_error(f"The Web Dashboard template directory was not found: {template_dir}", context="dashboard")
             print("Please check the WEB_DASHBOARD_TEMPLATE_DIR setting or --web-dashboard-template-dir flag")
             print("The directory must exist and contain index.html\n")
             print(f"* Web Dashboard will NOT be available!")
@@ -2630,11 +2633,12 @@ def create_web_dashboard_app():
         for candidate in candidate_dirs:
             print(f"- {candidate}")
         print()
-        print("To fix this, you can:")
+        print("To fix:")
         print("1. Ensure templates/ directory exists in the script directory")
         print("2. Set WEB_DASHBOARD_TEMPLATE_DIR in your config file")
         print("3. Use --web-dashboard-template-dir flag to specify the template directory")
-        print("4. If installed via pip, ensure the package includes the templates directory\n")
+        print("4. If installed via pip, ensure the package includes the templates directory")
+        print(f"Guide: {WEB_DASHBOARD_GUIDE_URL}\n")
         print(f"* Web Dashboard will NOT be available!")
         print("*" * HORIZONTAL_LINE)
         return None
@@ -2643,8 +2647,7 @@ def create_web_dashboard_app():
     index_path = os.path.join(template_dir, 'index.html')
     if not os.path.isfile(index_path):
         print("\n" + "*" * HORIZONTAL_LINE)
-        print(f"* Error: Template file 'index.html' not found in: {template_dir}\n")
-        print("The template directory exists but is missing the required index.html file\n")
+        print_recovery_error(f"The Web Dashboard template directory has no index.html file: {template_dir}", context="dashboard")
         print(f"* Web Dashboard will NOT be available!")
         print("*" * HORIZONTAL_LINE)
         return None
@@ -3134,36 +3137,36 @@ def create_web_dashboard_app():
                 note = ""
                 if key == 'webhook_url':
                     if processed_val and not validate_webhook_url(processed_val):
-                        print("* Error: Invalid webhook URL format. Must be a complete HTTPS URL without embedded credentials.")
+                        print_recovery_error("Invalid webhook URL format. It must be a complete HTTPS URL without embedded credentials", context="webhook_config")
                         return current_val
                 elif key == 'webhook_provider':
                     processed_val = normalized_webhook_provider(processed_val)
                     if not processed_val:
-                        print("* Error: Invalid webhook provider. Must be 'discord' or 'ntfy'.")
+                        print_recovery_error("Invalid webhook provider. It must be 'discord' or 'ntfy'", context="webhook_config")
                         return current_val
                 elif key == 'proxy_url':
                     if processed_val and not validate_proxy_url(processed_val):
-                        print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{mask_url_credentials(processed_val)}'")
+                        print_recovery_error(f"Invalid proxy URL format '{mask_url_credentials(processed_val)}'. It must be an HTTPS or HTTP URL", context="proxy")
                         return current_val
                 elif key == 'proxy_cert':
                     if processed_val:
                         try:
                             processed_val = resolve_existing_file_path(processed_val, "proxy certificate")
                         except ValueError:
-                            print(f"* Error: Proxy certificate file does not exist. '{processed_val}'")
+                            print_recovery_error(f"The proxy certificate file '{processed_val}' does not exist", context="proxy")
                             return current_val
                 elif key == 'follow_list_source':
                     processed_val = str(processed_val).strip().lower()
                     if processed_val not in FOLLOW_LIST_SOURCES:
-                        print(f"* Error: Invalid follow list source '{processed_val}'. Must be 'auto', 'rest', 'graphql' or 'browser'.")
+                        print_recovery_error(f"Invalid follow list source '{processed_val}'. It must be 'auto', 'rest', 'graphql' or 'browser'", context="config")
                         return current_val
                 elif key == 'http_backend':
                     processed_val = str(processed_val).strip().lower()
                     if processed_val not in ('curl_cffi', 'requests'):
-                        print(f"* Error: Invalid HTTP backend '{processed_val}'. Must be 'curl_cffi' or 'requests'.")
+                        print_recovery_error(f"Invalid HTTP backend '{processed_val}'. It must be 'curl_cffi' or 'requests'", context="config")
                         return current_val
                     if processed_val == 'curl_cffi' and not _CURL_CFFI_AVAILABLE:
-                        print("* Error: Cannot select 'curl_cffi' backend because the 'curl_cffi' package is not installed.")
+                        print(render_recovery_error(missing_dependency_advice("curl_cffi", "The curl_cffi backend cannot be selected", pip_install_command("curl_cffi"))))
                         return current_val
 
                 if key == "webhook_url":
@@ -3209,7 +3212,7 @@ def create_web_dashboard_app():
         PROXY_WEBHOOKS = bool(update_setting('proxy_webhooks', PROXY_WEBHOOKS, bool))
         requested_proxy_enabled = bool(update_setting('proxy_enabled', PROXY_ENABLED, bool))
         if requested_proxy_enabled and not (PROXY_URL and validate_proxy_url(PROXY_URL)):
-            print("* Error: Cannot enable proxy without a valid PROXY_URL. Keeping proxy disabled.")
+            print_recovery_error("Proxy support stays off because PROXY_URL is missing or invalid", context="proxy")
             PROXY_ENABLED = False
         else:
             PROXY_ENABLED = requested_proxy_enabled
@@ -3776,7 +3779,7 @@ def create_web_dashboard_app():
             print("* Email notification sent successfully")
             print_cur_ts(newline=True)
             return jsonify({'success': True})  # type: ignore
-        print("* Error: Failed to send test email")
+        print("* Error: Failed to send test email. Check the error message above.")
         print_cur_ts(newline=True)
         return jsonify({'success': False, 'error': 'Failed to send test email. Check console logs.'}), 500  # type: ignore
 
@@ -3796,7 +3799,7 @@ def create_web_dashboard_app():
         if res == 0:
             print_cur_ts(newline=True)
             return jsonify({'success': True})  # type: ignore
-        print("* Error: Test webhook notification failed")
+        print("* Error: Test webhook notification failed. Check the error message above.")
         print_cur_ts(newline=True)
         return jsonify({'success': False, 'error': 'Failed to send test webhook. Check console logs.'}), 500  # type: ignore
 
@@ -4092,7 +4095,8 @@ def start_web_dashboard_server():
             return False
     except Exception as e:
         # create_web_dashboard_app() already prints nice error messages, but catch any unexpected errors
-        print(f"\n* Error: Failed to create web dashboard application: {e}\n")
+        print()
+        print_recovery_error(f"The Web Dashboard application could not be created: {e}", e, context="dashboard")
         return False
 
     def run_server():
@@ -5018,7 +5022,7 @@ class Logger(object):
             try:
                 self.main_log = open(main_filename, "a", buffering=1, encoding="utf-8")
             except Exception as e:
-                print(f"* Error: Could not open main log file '{main_filename}': {e}", file=sys.stderr)
+                print(render_recovery_error(classify_recovery_error(e, "file_write"), f"Could not open main log file '{main_filename}': {e}"), file=sys.stderr)
 
     # Adds or replaces the lazy log destination for one target
     def add_target_log(self, target, filename):
@@ -5051,7 +5055,7 @@ class Logger(object):
                 self.target_logs[target] = handle
                 return handle
             except Exception as e:
-                print(f"* Error: Could not open log file '{filename}' for target '{target}': {e}", file=sys.stderr)
+                print(render_recovery_error(classify_recovery_error(e, "file_write"), f"Could not open log file '{filename}' for target '{target}': {e}"), file=sys.stderr)
         return None
 
     def _get_current_target(self):
@@ -5416,7 +5420,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         ipaddress.ip_address(str(SMTP_HOST))
     except ValueError:
         if not is_valid_fqdn(SMTP_HOST):
-            print("Error sending email - SMTP settings are incorrect (invalid IP address/FQDN in SMTP_HOST)")
+            print_recovery_error("Cannot send email because SMTP_HOST is not a valid IP address or hostname", context="smtp_config")
             return 1
 
     try:
@@ -5424,23 +5428,23 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         if not (1 <= port <= 65535):
             raise ValueError
     except ValueError:
-        print("Error sending email - SMTP settings are incorrect (invalid port number in SMTP_PORT)")
+        print_recovery_error("Cannot send email because SMTP_PORT is not a port number between 1 and 65535", context="smtp_config")
         return 1
 
     if not is_valid_email_address(SENDER_EMAIL) or not is_valid_email_address(RECEIVER_EMAIL):
-        print("Error sending email - SMTP settings are incorrect (invalid email in SENDER_EMAIL or RECEIVER_EMAIL)")
+        print_recovery_error("Cannot send email because SENDER_EMAIL or RECEIVER_EMAIL is not a valid address", context="smtp_config")
         return 1
 
     if not SMTP_USER or not isinstance(SMTP_USER, str) or SMTP_USER == "your_smtp_user" or not SMTP_PASSWORD or not isinstance(SMTP_PASSWORD, str) or SMTP_PASSWORD == "your_smtp_password":
-        print("Error sending email - SMTP settings are incorrect (check SMTP_USER & SMTP_PASSWORD variables)")
+        print_recovery_error("Cannot send email because SMTP_USER or SMTP_PASSWORD is unset or still a placeholder", context="smtp_config")
         return 1
 
     if not subject or not isinstance(subject, str):
-        print("Error sending email - SMTP settings are incorrect (subject is not a string or is empty)")
+        print_recovery_error("Cannot send email because the message has no subject")
         return 1
 
     if not body and not body_html:
-        print("Error sending email - SMTP settings are incorrect (body and body_html cannot be empty at the same time)")
+        print_recovery_error("Cannot send email because the message has no body")
         return 1
 
     try:
@@ -5475,9 +5479,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
         smtpObj.quit()
     except Exception as e:
-        print(f"Error sending email: {e}")
-        print(colorize("info", "To fix: Verify SMTP_HOST, SMTP_PORT and SMTP_SSL plus SMTP_USER / SMTP_PASSWORD. For Gmail and similar providers use an app password, not your normal login password. Test with --send-test-email"))
-        print(f"Guide: {SMTP_GUIDE_URL}")
+        print_recovery_error(f"Error sending email: {e}", e, context="email")
         return 1
     verbose_print(f"Email delivered to {RECEIVER_EMAIL}: {subject}")
     return 0
@@ -5675,7 +5677,7 @@ def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), f"Removed {change_type.capitalize()}", item, "")
                 except Exception as e:
-                    print(f"* Error: {e}")
+                    print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
             print()
 
         if added:
@@ -5693,7 +5695,7 @@ def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), f"Added {change_type.capitalize()}", "", item)
                 except Exception as e:
-                    print(f"* Error: {e}")
+                    print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
             print()
 
     return (added_list, removed_list, added_list_html, removed_list_html, added_list_webhook, removed_list_webhook, added_mbody, removed_mbody)
@@ -5950,16 +5952,16 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     description = apply_privacy_substitutions(description)
 
     if not validate_webhook_url(WEBHOOK_URL):
-        print("* Webhook error: WEBHOOK_URL must contain a complete HTTPS link without embedded credentials")
+        print_recovery_error("WEBHOOK_URL must contain a complete HTTPS link without embedded credentials", context="webhook_config")
         return 1
 
     provider = normalized_webhook_provider()
     if not provider:
-        print("* Webhook error: WEBHOOK_PROVIDER must be discord or ntfy")
+        print_recovery_error("WEBHOOK_PROVIDER must be discord or ntfy", context="webhook_config")
         return 1
     customization_error = validate_webhook_customization(provider)
     if customization_error is not None:
-        print(f"* Webhook error: {customization_error}")
+        print_recovery_error(str(customization_error), context="webhook_config")
         return 1
 
     # Event categories follow their configured switch. Operator-requested delivery tests are never gated,
@@ -6011,7 +6013,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         if isinstance(final_payload, dict):
             final_payload["allowed_mentions"] = {"parse": []}
     except Exception as exc:
-        print(f"* Webhook error: {sanitize_webhook_error_text(exc)}")
+        print_recovery_error(f"The webhook payload could not be built: {sanitize_webhook_error_text(exc)}", exc, context="webhook")
         return 1
 
     if PROXY_ENABLED and PROXY_WEBHOOKS:
@@ -6084,16 +6086,16 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                 time.sleep(WEBHOOK_FALLBACK_RETRY_SECONDS)
                 continue
             if attempt == WEBHOOK_MAX_ATTEMPTS - 1:
-                print(f"* Error sending webhook: {sanitize_webhook_error_text(exc)}")
+                print_recovery_error(f"Sending the webhook failed: {sanitize_webhook_error_text(exc)}", exc, context="webhook")
                 return 1
             debug_print("Webhook delivery", outcome="failed", retry_in=f"{WEBHOOK_FALLBACK_RETRY_SECONDS:g}s", error=sanitize_webhook_error_text(exc))
             time.sleep(WEBHOOK_FALLBACK_RETRY_SECONDS)
         except Exception as exc:
-            print(f"* Unexpected error sending webhook: {sanitize_webhook_error_text(exc)}")
+            print_recovery_error(f"Sending the webhook failed: {sanitize_webhook_error_text(exc)}", exc, context="webhook")
             return 1
 
     if last_error is not None:
-        print(f"* Error sending webhook: {sanitize_webhook_error_text(last_error)}")
+        print_recovery_error(f"Sending the webhook failed: {sanitize_webhook_error_text(last_error)}", last_error, context="webhook")
     return 1
 
 
@@ -6303,7 +6305,7 @@ def refresh_proxy_if_needed(bot, user):
             set_instaloader_proxies(bot)
         except Exception as e:
             error_msg = format_error_message(e)
-            print(f"* Error refreshing proxies for {user}: {error_msg}")
+            print_recovery_error(f"Error refreshing proxies for {user}: {error_msg}", e, context="proxy")
             log_activity(f"Proxy refresh failed: {error_msg}", user=user, level='error')
 
 
@@ -7005,7 +7007,7 @@ def compare_images(file1, file2):
                     return False
             return True
     except Exception as e:
-        print(f"* Error while comparing profile pictures: {e}")
+        print_recovery_error(f"Error while comparing profile pictures: {e}", e)
         return False
 
 
@@ -7052,7 +7054,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 if csv_file_name and not is_empty_profile_pic:
                     write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Created", "", convert_to_local_naive(profile_pic_mdate_dt))
             except Exception as e:
-                print(f"* Error: {e}")
+                print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
         else:
             print(f"* Error saving profile picture !{new_line}")
 
@@ -7132,7 +7134,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                         else:
                             write_csv_entry(csv_file_name, now_local_naive(), csv_text, convert_to_local_naive(profile_pic_mdate_dt), convert_to_local_naive(profile_pic_tmp_mdate_dt))
                 except Exception as e:
-                    print(f"* Error: {e}")
+                    print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
 
                 try:
                     if imgcat_exe and not is_empty_profile_pic_tmp and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
@@ -7149,7 +7151,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                         os.replace(profile_pic_file, profile_pic_file_old)
                     os.replace(profile_pic_file_tmp, profile_pic_file)
                 except Exception as e:
-                    print(f"* Error while replacing/copying files: {e}")
+                    print_recovery_error(f"Error while replacing/copying files: {e}", e, context="file_write")
 
                 if send_email_notification and m_subject and m_body:
                     print(f"* Sending email notification to {RECEIVER_EMAIL}")
@@ -7209,7 +7211,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     except Exception:
                         pass
         else:
-            print(f"* Error while checking if the profile picture has changed !")
+            print_recovery_error("Error while checking if the profile picture has changed !")
             if func_ver == 2:
                 print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts()
@@ -7454,7 +7456,7 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
             if save_pic_video(post["video_url"], video_filename, ts):
                 print(f"Collab {source} video saved for {user} to '{video_filename}'")
             else:
-                print(f"Error saving collab {source} video !")
+                print_recovery_error(f"Error saving collab {source} video !", context="file_write")
 
     pic_saved_html = ""
     if DOWNLOAD_THUMBNAILS and post.get("display_url"):
@@ -7489,7 +7491,7 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
         try:
             write_csv_entry(csv_file_name, convert_to_local_naive(post_dt), f"New Leaked Collab {source.capitalize()}", "", caption if caption != "(empty)" else post_url)
         except Exception as e:
-            print(f"* Error: {e}")
+            print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
 
     if is_new:
         webhook_fields = [
@@ -9970,14 +9972,14 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
     # Builds one row of this table, attaching the page that covers it where one exists
     def advice(code: str, summary: str, fix: str, retryable: bool = False, guide_url: str = "") -> RecoveryAdvice: return make_recovery_advice(code, summary, recovery_fix_with_guide(fix, guide_url) if guide_url else fix, retryable, safe_detail)
 
-    if context == "dependency":
-        return advice("dependency.missing", "An optional library this feature needs is not installed", "Install the named package, then re-run the tool", False, INSTALLATION_GUIDE_URL)
-
     if context == "config_missing":
         return advice("config.missing", "A required setting has no value", "Set it in the configuration file, in the environment or with its command-line flag, then re-run the tool", False, CONFIG_FILE_GUIDE_URL)
 
     if context == "config":
         return advice("config.invalid", "A configured value cannot be used", "Correct the value in the configuration file or on the command line, then re-run the tool", False, CONFIG_FILE_GUIDE_URL)
+
+    if context == "dotenv_missing":
+        return advice("secret.missing", "The named dotenv file does not exist", "Create it with --setup, point --env-file at the right path, or set the private values in the environment instead", False, SECRETS_GUIDE_URL)
 
     if context == "secret":
         return advice("secret.missing", "A private value could not be stored", "Check that the dotenv file is writable, or set the value in the environment instead", False, SECRETS_GUIDE_URL)
@@ -9986,10 +9988,13 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return advice("file.exists", "The destination file already exists", "Re-run with --force to replace it after a timestamped backup, or write to a different path", False, CONFIG_FILE_GUIDE_URL)
 
     if context == "file_read":
-        return advice("file.unreadable", "A file the tool reads could not be opened", "Check the path and its permissions, and that the file is readable UTF-8 text", False, CONFIG_FILE_GUIDE_URL)
+        return advice("file.unreadable", "A file the tool reads could not be opened", "Check the path and its permissions, and that the file is readable UTF-8 text", False, OUTPUT_GUIDE_URL)
 
     if context == "file_write":
-        return advice("file.unwritable", "A file the tool writes could not be opened", "Check that the directory exists and is writable, or choose another path", False, CONFIG_FILE_GUIDE_URL)
+        return advice("file.unwritable", "A file the tool writes could not be opened", "Check that the output directory exists and is writable, or choose another with --output-dir", False, OUTPUT_GUIDE_URL)
+
+    if context == "config_write":
+        return advice("file.unwritable", "The configuration file could not be written", "Check that the directory exists and is writable, or choose another path with --config-file", False, CONFIG_FILE_GUIDE_URL)
 
     if context == "smtp_config":
         return advice("smtp.invalid", "The SMTP configuration is incomplete or invalid", "Check SMTP_HOST, SMTP_PORT, SENDER_EMAIL and RECEIVER_EMAIL in the configuration file", False, SMTP_GUIDE_URL)
@@ -10012,9 +10017,6 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         if "resolve" in message:
             return advice("proxy.unresolved", "The configured proxy hostname could not be resolved", "Check PROXY_URL for a typo and confirm the proxy host is reachable from this machine", False, PROXY_GUIDE_URL)
         return advice("config.invalid", "The proxy settings cannot be used", "Check PROXY_URL and any proxy certificate path, then re-run the tool", False, PROXY_GUIDE_URL)
-
-    if context == "session":
-        return advice("session.missing", "The Instagram session could not be imported", f"Import it with '{session_recovery_command()}' after logging in via Firefox, or use another login method", False, SESSION_IMPORT_GUIDE_URL)
 
     if context == "dashboard":
         return advice("dashboard.unavailable", "The Web Dashboard could not start", "Free the configured port or start the server on a different one with --web-dashboard-port, then confirm the installation is complete", False, WEB_DASHBOARD_GUIDE_URL)
@@ -10194,6 +10196,37 @@ def print_fix_hint(error_msg: str, tracker: Optional[RecoveryHintTracker] = None
     if hint:
         print(colorize("info", hint))
     return bool(hint)
+
+
+# Renders one classified failure as the shared summary and To fix block every surface prints
+def render_recovery_error(advice: RecoveryAdvice, summary: str = "", label: str = "Error") -> str:
+    lines = [f"* {label}: {sanitize_error_text(summary) if summary else advice.summary}"]
+    if advice.fix:
+        lines.append(colorize("info", f"To fix: {advice.fix}"))
+    return "\n".join(lines)
+
+
+# Reports one failure through the recovery block, keeping the caller's own summary in front of the classified fix
+def print_recovery_error(summary: str = "", error: Any = None, context: str = "runtime", detail: str = "", label: str = "Error") -> RecoveryAdvice:
+    advice = classify_recovery_error(error, context, detail)
+    print(render_recovery_error(advice, summary, label))
+    return advice
+
+
+# Prints the action that clears one classified failure, for a surface that printed its own summary line
+def print_recovery_fix(error: Any = None, context: str = "runtime", detail: str = "") -> RecoveryAdvice:
+    advice = classify_recovery_error(error, context, detail)
+    if advice.fix:
+        print(colorize("info", f"To fix: {advice.fix}"))
+    return advice
+
+
+# Returns the advice an optional library that is missing carries, naming what the run loses and how to install it
+def missing_dependency_advice(package: str, effect: str, install_command: str, alternative: str = "") -> RecoveryAdvice: return make_recovery_advice("dependency.missing", f"{effect} because the optional '{package}' library is missing", recovery_fix_with_guide(f"Install it with: {install_command}" + (f". {alternative}" if alternative else ""), INSTALLATION_GUIDE_URL), False)
+
+
+# Returns the command that installs one package through the active Python environment
+def pip_install_command(requirement: str) -> str: return _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", requirement])
 
 
 # Returns True when the formatted error indicates a profile could not be found (deleted/renamed target or a flagged session masking every profile)
@@ -12048,7 +12081,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         if session_flagged:
             err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
             update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
-            print(f"* Error: {err_str}")
+            print_recovery_error(err_str, error_msg)
 
             # A flag is terminal for every target, so alert the operator immediately regardless of ERROR_FAILURE_THRESHOLD
             notify_session_flagged(user, err_str, error_msg)
@@ -12196,7 +12229,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             with open(insta_followers_file, 'r', encoding="utf-8") as f:
                 followers_read = json.load(f)
         except Exception as e:
-            print(f"* Cannot load followers list from '{insta_followers_file}' file: {e}")
+            print_recovery_error(f"Cannot load followers list from '{insta_followers_file}' file: {e}", e, context="file_read")
         if followers_read:
             followers_old_count = followers_read[0]
             followers_old = followers_read[1]
@@ -12232,7 +12265,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 if csv_file_name:
                     write_csv_entry(csv_file_name, now_local_naive(), "Followers Count", followers_old_count, followers_count)
             except Exception as e:
-                print(f"* Error: {e}")
+                print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
 
     if ((followers_count != followers_old_count) or (followers_count > 0 and not followers) or FOLLOWERS_CHURN_DETECTION) and not skip_session and not skip_followers and can_view:
         # Fetch followers if count changed, list is empty or detailed logging is enabled
@@ -12291,7 +12324,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 else:
                     print(f"* Followers ({followers_count}) actual ({len(followers)}) saved to file '{insta_followers_file}'")
             except Exception as e:
-                print(f"* Cannot save list of followers to '{insta_followers_file}' file: {e}")
+                print_recovery_error(f"Cannot save list of followers to '{insta_followers_file}' file: {e}", e, context="file_write")
 
     # Compare followers: either count changed OR detailed logging detected a difference
     should_compare_followers = is_complete_username_baseline(followers, followers_count) and followers_baseline_available and ((followers_count != followers_old_count) or (FOLLOWERS_CHURN_DETECTION and followers != followers_old))
@@ -12346,7 +12379,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             with open(insta_followings_file, 'r', encoding="utf-8") as f:
                 followings_read = json.load(f)
         except Exception as e:
-            print(f"* Cannot load followings list from '{insta_followings_file}' file: {e}")
+            print_recovery_error(f"Cannot load followings list from '{insta_followings_file}' file: {e}", e, context="file_read")
         if followings_read:
             followings_old_count = followings_read[0]
             followings_old = followings_read[1]
@@ -12381,7 +12414,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 if csv_file_name:
                     write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
             except Exception as e:
-                print(f"* Error: {e}")
+                print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
 
     if ((followings_count != followings_old_count) or (followings_count > 0 and not followings) or FOLLOWERS_CHURN_DETECTION) and not skip_session and not skip_followings and can_view:
         # Fetch followings if count changed, list is empty or detailed logging is enabled
@@ -12440,7 +12473,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 else:
                     print(f"* Followings ({followings_count}) actual ({len(followings)}) saved to file '{insta_followings_file}'")
             except Exception as e:
-                print(f"* Cannot save list of followings to '{insta_followings_file}' file: {e}")
+                print_recovery_error(f"Cannot save list of followings to '{insta_followings_file}' file: {e}", e, context="file_write")
 
     should_compare_followings = is_complete_username_baseline(followings, followings_count) and followings_baseline_available and ((followings_count != followings_old_count) or (FOLLOWERS_CHURN_DETECTION and followings != followings_old))
     if should_compare_followings and (followings != followings_old) and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
@@ -12515,7 +12548,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         try:
             detect_changed_profile_picture(user, profile_image_url, profile_pic_file, profile_pic_file_tmp, profile_pic_file_old, PROFILE_PIC_FILE_EMPTY, csv_file_name, r_sleep_time, False, 1)
         except Exception as e:
-            print(f"* Error while processing changed profile picture: {e}")
+            print_recovery_error(f"Error while processing changed profile picture: {e}", e)
 
     # Stories
 
@@ -12626,7 +12659,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             if csv_file_name:
                                 write_csv_entry(csv_file_name, convert_to_local_naive(local_dt), "New Story Item", "", story_type)
                         except Exception as e:
-                            print(f"* Error: {e}")
+                            print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
 
                         # Update last_story for dashboard (this loop runs from oldest to newest usually, so we update on each)
                         dashboard_media = get_dashboard_media_metadata(story_thumbnail_url, story_image_filename, story_video_filename)
@@ -12749,7 +12782,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
         except Exception as e:
             error_msg = format_error_message(e)
-            print(f"* Error while getting post's likes list / comments list: {error_msg}")
+            print_recovery_error(f"Error while getting post's likes list / comments list: {error_msg}", error_msg)
 
         post_url = f"https://www.instagram.com/{'reel' if last_source == 'reel' else 'p'}/{shortcode}/"
         print(f"* Newest {last_source.lower()} for user {user}:\n")
@@ -12787,7 +12820,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 if save_pic_video(video_url, video_filename, highestinsta_ts):
                     print(f"{last_source.capitalize()} video saved for {user} to '{video_filename}'")
                 else:
-                    print(f"Error saving {last_source.lower()} video !")
+                    print_recovery_error(f"Error saving {last_source.lower()} video !", context="file_write")
 
         if DOWNLOAD_THUMBNAILS and thumbnail_url:
             if highestinsta_dt:
@@ -13280,7 +13313,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             if csv_file_name:
                                 write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
                         except Exception as e:
-                            print(f"* Error: {e}")
+                            print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
 
                 added_followings_list = ""
                 removed_followings_list = ""
@@ -13337,7 +13370,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         close_pbar()
                         followings = followings_old
                         error_msg = format_error_message(e)
-                        print(f"* Error while processing followings: {error_msg}")
+                        print_recovery_error(f"Error while processing followings: {error_msg}", error_msg)
 
                     if not getattr(followings, 'complete', False) or (not followings and followings_count > 0):
                         followings = followings_old
@@ -13429,7 +13462,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             if csv_file_name:
                                 write_csv_entry(csv_file_name, now_local_naive(), "Followers Count", followers_old_count, followers_count)
                         except Exception as e:
-                            print(f"* Error: {e}")
+                            print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
 
                 added_followers_list = ""
                 removed_followers_list = ""
@@ -13486,7 +13519,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         close_pbar()
                         followers = followers_old
                         error_msg = format_error_message(e)
-                        print(f"* Error while processing followers: {error_msg}")
+                        print_recovery_error(f"Error while processing followers: {error_msg}", error_msg)
 
                     if not getattr(followers, 'complete', False) or (not followers and followers_count > 0):
                         followers = followers_old
@@ -13562,7 +13595,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 try:
                     detect_changed_profile_picture(user, profile_image_url, profile_pic_file, profile_pic_file_tmp, profile_pic_file_old, PROFILE_PIC_FILE_EMPTY, csv_file_name, r_sleep_time, STATUS_NOTIFICATION, 2)
                 except Exception as e:
-                    print(f"* Error while processing changed profile picture: {e}")
+                    print_recovery_error(f"Error while processing changed profile picture: {e}", e)
 
             if bio != bio_old:
                 print(f"* Bio changed for user {user} !\n")
@@ -13577,7 +13610,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "Bio Changed", bio_old, bio)
                 except Exception as e:
-                    print(f"* Error: {e}")
+                    print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
 
                 if STATUS_NOTIFICATION:
                     m_subject = f"Instagram user {user} bio has changed!"
@@ -13621,7 +13654,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "Profile Visibility", profile_visibility_old, profile_visibility)
                 except Exception as e:
-                    print(f"* Error: {e}")
+                    print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
 
                 if STATUS_NOTIFICATION:
                     m_subject = f"Instagram user {user} profile visibility has changed to {profile_visibility} !"
@@ -13658,7 +13691,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "Followed By Viewer", followed_by_viewer_old, followed_by_viewer)
                 except Exception as e:
-                    print(f"* Error: {e}")
+                    print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
 
                 if STATUS_NOTIFICATION:
                     m_subject = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user} !"
@@ -13691,7 +13724,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "New Story", "", "")
                 except Exception as e:
-                    print(f"* Error: {e}")
+                    print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
 
                 if STATUS_NOTIFICATION:
                     m_subject = f"Instagram user {user} has a new story!"
@@ -13826,7 +13859,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                                 if csv_file_name:
                                     write_csv_entry(csv_file_name, convert_to_local_naive(local_dt), "New Story Item", "", story_type)
                             except Exception as e:
-                                print(f"* Error: {e}")
+                                print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
 
                             send_story_item_notifications(user, story_type, local_ts, expire_ts, story_mentions, story_hashtags, story_caption, r_sleep_time, story_thumbnail_url, story_image_filename)
 
@@ -13857,7 +13890,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                 except Exception as e:
                     error_msg = format_error_message(e)
-                    print(f"* Error while processing story items: {error_msg}")
+                    print_recovery_error(f"Error while processing story items: {error_msg}", error_msg)
                     print_cur_ts(newline=True)
 
             new_post = False
@@ -13977,7 +14010,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                                 post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
                 except Exception as e:
                     error_msg = format_error_message(e)
-                    print(f"* Error while getting post's likes list / comments list: {error_msg}")
+                    print_recovery_error(f"Error while getting post's likes list / comments list: {error_msg}", error_msg)
 
                 video_filename = None
                 image_filename = None
@@ -14030,7 +14063,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             if save_pic_video(video_url, video_filename, highestinsta_ts):
                                 print(f"{last_source.capitalize()} video saved for {user} to '{video_filename}'")
                             else:
-                                print(f"Error saving {last_source.lower()} video !")
+                                print_recovery_error(f"Error saving {last_source.lower()} video !", context="file_write")
 
                     m_body_html_pic_saved_text = ""
                     if DOWNLOAD_THUMBNAILS:
@@ -14056,7 +14089,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         if csv_file_name:
                             write_csv_entry(csv_file_name, convert_to_local_naive(highestinsta_dt), f"New {last_source.capitalize()}", "", pcaption)
                     except Exception as e:
-                        print(f"* Error: {e}")
+                        print_recovery_error(f"Could not write the CSV entry to '{csv_file_name}': {e}", e, context="file_write")
 
                     if STATUS_NOTIFICATION:
                         m_subject = f"Instagram user {user} has a new {last_source.lower()} - {get_short_date_from_ts(highestinsta_dt)} (after {calculate_timespan(highestinsta_dt, highestinsta_dt_old, show_seconds=False)} - {get_short_date_from_ts(highestinsta_dt_old)})"
@@ -15550,6 +15583,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         config_path, env_path = _wizard_destinations(method, config_file, env_file)
     except ValueError as exc:
         print(colorize("error", f"Setup cannot start: {exc}."))
+        print_recovery_fix(exc, "setup")
         raise SystemExit(1) from None
 
     print(colorize("header", "Setup Wizard\n"))
@@ -15599,6 +15633,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         write_status = write_config_file(state.config_path, config_content)
     except Exception as exc:
         print(colorize("error", f"Could not write config file '{state.config_path}': {exc}"))
+        print_recovery_fix(exc, "config_write")
         raise SystemExit(1) from None
 
     # A dotenv with nothing in it is noise beside the config, so an empty one is never created
@@ -15607,6 +15642,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
             update_status = update_dotenv_file(state.env_path, state.secret_updates)
         except Exception as exc:
             print(colorize("error", f"Configuration was saved but secrets could not be written to '{state.env_path}': {exc}"))
+            print_recovery_fix(exc, "secret")
             print(colorize("warning", "Setup is incomplete and monitoring was not started."))
             raise SystemExit(1) from None
     else:
@@ -16540,11 +16576,10 @@ def run_main():
                 try:
                     backup_path, written = write_generated_config(output_file, config_content, force="--force" in sys.argv)
                 except FileExistsError as exc:
-                    print(f"* Error: {exc}")
-                    print("To fix: re-run with --force to replace it after a timestamped backup, or write to a different path with '--generate-config <new-file>'")
+                    print_recovery_error(str(exc), exc, context="file_exists")
                     sys.exit(1)
                 except (OSError, ValueError) as exc:
-                    print(f"* Error: Could not write config file '{output_file}': {type(exc).__name__}: {exc}")
+                    print_recovery_error(f"Could not write config file '{output_file}': {type(exc).__name__}: {exc}", exc, context="config_write")
                     sys.exit(1)
                 if not written:
                     print("Config was not replaced. The existing file is unchanged")
@@ -17241,7 +17276,7 @@ def run_main():
             if DOTENV_FILE:
                 env_path = DOTENV_FILE
                 if not os.path.isfile(env_path):
-                    print(f"* Warning: dotenv file '{env_path}' does not exist\n")
+                    print_recovery_error(f"dotenv file '{env_path}' does not exist", context="dotenv_missing", label="Warning")
                 else:
                     load_dotenv(env_path, override=False, interpolate=False)
             else:
@@ -17251,7 +17286,7 @@ def run_main():
         except ImportError:
             env_path = DOTENV_FILE if DOTENV_FILE else None
             if env_path:
-                print(f"* Warning: Cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n\nTo install it, run:\n    pip3 install python-dotenv\n\nOnce installed, re-run this tool\n")
+                print(render_recovery_error(missing_dependency_advice("python-dotenv", f"The dotenv file '{env_path}' cannot be loaded", pip_install_command("python-dotenv")), label="Warning"))
 
     # Environment variables are a documented alternative to a dotenv file, so they apply even when no file was loaded
     for secret in SECRET_KEYS:
@@ -17352,13 +17387,13 @@ def run_main():
 
     if args.identity_budget is not None:
         if args.identity_budget < 0:
-            print("* Error: --identity-budget cannot be negative")
+            print_recovery_error("--identity-budget cannot be negative", context="config")
             sys.exit(1)
         IDENTITY_BUDGET_PER_DAY = args.identity_budget
 
     impersonate_error = validate_impersonate_target(CURL_CFFI_IMPERSONATE)
     if impersonate_error is not None:
-        print(f"* Error: CURL_CFFI_IMPERSONATE {impersonate_error}")
+        print_recovery_error(f"CURL_CFFI_IMPERSONATE {impersonate_error}", context="config")
         sys.exit(1)
 
     if str(HTTP_BACKEND).strip().lower() == "curl_cffi" and not _CURL_CFFI_AVAILABLE:
@@ -17388,16 +17423,16 @@ def run_main():
 
     if PROXY_ENABLED:
         if not PROXY_URL:
-            print(f"* Error: Proxies are enabled but PROXY_URL is missing! Please set it in config file or via --proxy-url flag")
+            print_recovery_error("Proxies are enabled but PROXY_URL has no value", context="config_missing")
             sys.exit(1)
         if not validate_proxy_url(PROXY_URL):
-            print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{mask_url_credentials(PROXY_URL)}'")
+            print_recovery_error(f"Invalid proxy URL format '{mask_url_credentials(PROXY_URL)}'. It must be an HTTPS or HTTP URL", context="proxy")
             sys.exit(1)
         if PROXY_CERT_PATH:
             try:
                 PROXY_CERT_PATH = resolve_existing_file_path(PROXY_CERT_PATH, "proxy certificate")
             except ValueError:
-                print(f"* Error: Proxy certificate file does not exist. '{PROXY_CERT_PATH}'")
+                print_recovery_error(f"The proxy certificate file '{PROXY_CERT_PATH}' does not exist", context="proxy")
                 sys.exit(1)
 
     if not args.doctor and not args.analyze_follows and not args.set_smtp_password and not check_internet():
@@ -17407,13 +17442,13 @@ def run_main():
     if any([FOLLOWERS_PER_BATCH, FOLLOWER_LIMIT_TO_FETCH, FOLLOWER_DELAY_PER_BATCH]):
         ADVANCED_FOLLOWER_FETCH = bool((FOLLOWERS_PER_BATCH and FOLLOWER_DELAY_PER_BATCH) or (FOLLOWER_LIMIT_TO_FETCH and not FOLLOWERS_PER_BATCH and not FOLLOWER_DELAY_PER_BATCH))
         if not ADVANCED_FOLLOWER_FETCH:
-            print(f"* Error: Invalid configuration for advanced follower fetching: FOLLOWER_LIMIT_TO_FETCH: {FOLLOWER_LIMIT_TO_FETCH}, FOLLOWERS_PER_BATCH: {FOLLOWERS_PER_BATCH}, FOLLOWER_DELAY_PER_BATCH: {FOLLOWER_DELAY_PER_BATCH}")
+            print_recovery_error(f"Advanced follower fetching cannot use FOLLOWER_LIMIT_TO_FETCH: {FOLLOWER_LIMIT_TO_FETCH}, FOLLOWERS_PER_BATCH: {FOLLOWERS_PER_BATCH}, FOLLOWER_DELAY_PER_BATCH: {FOLLOWER_DELAY_PER_BATCH}", context="config")
             sys.exit(1)
 
     if any([FOLLOWEES_PER_BATCH, FOLLOWEE_LIMIT_TO_FETCH, FOLLOWEE_DELAY_PER_BATCH]):
         ADVANCED_FOLLOWEE_FETCH = bool((FOLLOWEES_PER_BATCH and FOLLOWEE_DELAY_PER_BATCH) or (FOLLOWEE_LIMIT_TO_FETCH and not FOLLOWEES_PER_BATCH and not FOLLOWEE_DELAY_PER_BATCH))
         if not ADVANCED_FOLLOWEE_FETCH:
-            print(f"* Error: Invalid configuration for advanced followee fetching: FOLLOWEE_LIMIT_TO_FETCH: {FOLLOWEE_LIMIT_TO_FETCH}, FOLLOWEES_PER_BATCH: {FOLLOWEES_PER_BATCH}, FOLLOWEE_DELAY_PER_BATCH: {FOLLOWEE_DELAY_PER_BATCH}")
+            print_recovery_error(f"Advanced followee fetching cannot use FOLLOWEE_LIMIT_TO_FETCH: {FOLLOWEE_LIMIT_TO_FETCH}, FOLLOWEES_PER_BATCH: {FOLLOWEES_PER_BATCH}, FOLLOWEE_DELAY_PER_BATCH: {FOLLOWEE_DELAY_PER_BATCH}", context="config")
             sys.exit(1)
 
     # Handle dashboard and webhook arguments
@@ -17432,7 +17467,7 @@ def run_main():
     # Webhook configuration
     if args.webhook_url:
         if not validate_webhook_url(args.webhook_url):
-            print("* Error: Invalid webhook URL format. Must be a complete HTTPS URL without embedded credentials.")
+            print_recovery_error("Invalid webhook URL format. It must be a complete HTTPS URL without embedded credentials", context="webhook_config")
             sys.exit(1)
         WEBHOOK_URL = str(args.webhook_url or "")
         SECRET_SOURCES["WEBHOOK_URL"] = "command line"
@@ -17545,7 +17580,7 @@ def run_main():
         try:
             u = normalize_instagram_username(u)
         except ValueError as e:
-            print(f"* Error: {e}: {u!r}")
+            print_recovery_error(f"{e}: {u!r}", context="config")
             sys.exit(1)
         if u not in seen:
             seen.add(u)
@@ -17620,7 +17655,7 @@ def run_main():
 
     if args.check_interval:
         if args.check_interval <= 0:
-            print("* Error: Check interval must be greater than 0")
+            print_recovery_error("The check interval must be greater than 0", context="config")
             sys.exit(1)
         INSTA_CHECK_INTERVAL = args.check_interval
 
@@ -17642,7 +17677,7 @@ def run_main():
 
     # Validate INSTA_CHECK_INTERVAL to prevent division by zero
     if INSTA_CHECK_INTERVAL <= 0:
-        print("* Error: INSTA_CHECK_INTERVAL must be greater than 0. Please set it in config file or via -c flag")
+        print_recovery_error("INSTA_CHECK_INTERVAL must be greater than 0", context="config")
         sys.exit(1)
 
     # Finalize liveness cadence after config/env/CLI have been applied
@@ -17765,7 +17800,7 @@ def run_main():
     try:
         ascii_log_separators_enabled()
     except ValueError as e:
-        print(f"* Error: {e}")
+        print_recovery_error(str(e), context="config")
         sys.exit(1)
 
     if args.disable_logging is True:
@@ -17968,16 +18003,14 @@ def run_main():
     if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
         if DASHBOARD_ENABLED and not RICH_AVAILABLE:
             print("\n" + "*" * HORIZONTAL_LINE)
-            print("* WARNING: Terminal Dashboard is enabled, but 'rich' library is missing!")
-            print("* To fix this, please run: pip install rich")
+            print(render_recovery_error(missing_dependency_advice("rich", "The Terminal Dashboard cannot start", pip_install_command("rich")), label="WARNING"))
             print("* Reverting to original text console...")
             print("*" * HORIZONTAL_LINE)
             DASHBOARD_ENABLED = False
 
         if WEB_DASHBOARD_ENABLED and not FLASK_AVAILABLE:
             print("\n" + "*" * HORIZONTAL_LINE)
-            print("* WARNING: Web Dashboard is enabled, but 'Flask' library is missing!")
-            print("* To fix this, please run: pip install flask")
+            print(render_recovery_error(missing_dependency_advice("Flask", "The Web Dashboard cannot start", pip_install_command("flask")), label="WARNING"))
             print("* Web Dashboard will NOT be available!")
             print("*" * HORIZONTAL_LINE)
 
@@ -18131,7 +18164,7 @@ def run_main():
             jitter = 0
 
         if stagger < 0 or jitter < 0:
-            print("* Error: --targets-stagger and --targets-stagger-jitter must be >= 0")
+            print_recovery_error("--targets-stagger and --targets-stagger-jitter cannot be negative", context="config")
             sys.exit(1)
 
         # Auto-spread across the base interval
@@ -18238,7 +18271,7 @@ def run_main():
             except Exception as e:
                 # Surface thread exceptions so the user sees them
                 error_msg = format_error_message(e)
-                print(f"* Error in target '{u}': {error_msg}")
+                print_recovery_error(f"Error in target '{u}': {error_msg}", error_msg)
                 traceback.print_exc()
                 # Still signal completion even on error, so next user can proceed
                 loading_events[idx + 1].set()
