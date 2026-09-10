@@ -142,6 +142,7 @@ NTFY_ACCESS_TOKEN = ""
 # ----------------------------
 
 # Number of consecutive errors required before triggering an alert
+# Each kind of failure then alerts once per enabled channel, a channel that failed to deliver is retried
 # Useful for avoiding repeated alerts during transient network problems
 # Can also be set via the --error-threshold flag
 ERROR_FAILURE_THRESHOLD = 2
@@ -5719,8 +5720,8 @@ def should_notify_follow_change(count_changed, added_list, removed_list, list_co
     return list_changed if list_comparison_complete else bool(count_changed or list_changed)
 
 
-# Helper function to send follower/following change webhooks
-def send_follower_change_webhook(user, change_type, old_count, new_count, added_list_webhook, removed_list_webhook):
+# Shapes the webhook embed of one follower or following change for send_notification_channels
+def follower_change_embed(user, change_type, old_count, new_count, added_list_webhook, removed_list_webhook):
     diff = new_count - old_count
     diff_str = f"+{diff}" if diff > 0 else str(diff)
 
@@ -5754,15 +5755,7 @@ def send_follower_change_webhook(user, change_type, old_count, new_count, added_
 
     title = f"{emoji} {user} {change_type.capitalize()} Changed"
     description = f"User **{user}** {change_type} changed from **{old_count}** to **{new_count}**"
-    notification_type = "followers" if change_type == "followers" else "status"
-
-    return send_webhook(
-        title,
-        description,
-        color=color,
-        fields=webhook_fields,
-        notification_type=notification_type
-    )
+    return {"webhook_title": title, "webhook_description": description, "webhook_color": color, "webhook_fields": webhook_fields}
 
 
 # Applies configured placeholders recursively to a webhook template
@@ -5956,7 +5949,31 @@ def encode_ntfy_header_text(message: str) -> str:
 
 
 # Sends one webhook notification through the selected provider
-def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status"):
+# Returns whether one configured webhook alert is enabled independently of email settings
+def webhook_event_enabled(notification_type):
+    settings = {"status": WEBHOOK_STATUS_NOTIFICATION, "followers": WEBHOOK_FOLLOWERS_NOTIFICATION, "error": WEBHOOK_ERROR_NOTIFICATION}
+    return bool(WEBHOOK_ENABLED and settings.get(notification_type, False))
+
+
+# Sends one alert through the enabled email and webhook channels, the webhook as the embed the caller shaped
+def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, email_image_file="", email_image_name="image1", webhook_title=None, webhook_description=None, webhook_color=0x7289DA, webhook_fields=None, image_url=None, local_image_file=None):
+    email_attempted = bool(email_enabled)
+    webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    email_delivered = False
+    webhook_delivered = False
+    if email_attempted:
+        print(f"Sending email notification to {RECEIVER_EMAIL}")
+        email_delivered = send_email(subject, body, body_html, SMTP_SSL, image_file=email_image_file, image_name=email_image_name) == 0
+        debug_print("Email channel", event=notification_type, outcome="OK" if email_delivered else "failed")
+    if webhook_attempted:
+        print("Sending webhook notification")
+        webhook_delivered = send_webhook(subject if webhook_title is None else webhook_title, body if webhook_description is None else webhook_description, color=webhook_color, fields=webhook_fields, image_url=image_url, local_image_file=local_image_file, notification_type=notification_type, force=True) == 0
+        debug_print("Webhook channel", event=notification_type, outcome="OK" if webhook_delivered else "failed")
+    # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
+    return email_delivered, webhook_delivered
+
+
+def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status", force=False):
     if not WEBHOOK_ENABLED or is_placeholder_setting(WEBHOOK_URL):
         return 1
 
@@ -5976,10 +5993,10 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         print_recovery_error(str(customization_error), context="webhook_config")
         return 1
 
-    # Event categories follow their configured switch. Operator-requested delivery tests are never gated,
-    # otherwise --send-test-webhook would report a failure without explaining that a switch suppressed it
-    event_switches = {"status": WEBHOOK_STATUS_NOTIFICATION, "followers": WEBHOOK_FOLLOWERS_NOTIFICATION, "error": WEBHOOK_ERROR_NOTIFICATION}
-    if notification_type in event_switches and not event_switches[notification_type]:
+    # Event categories follow their configured switch unless the caller already applied it. Operator-requested
+    # delivery tests are never gated, otherwise --send-test-webhook would report a failure without explaining
+    # that a switch suppressed it
+    if not force and notification_type in ("status", "followers", "error") and not webhook_event_enabled(notification_type):
         debug_print("Webhook delivery", event=notification_type, outcome="skipped", reason="its notification switch is disabled")
         return 1
 
@@ -7108,11 +7125,10 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     log_activity("Profile picture removed", user=user)
                     csv_text = "Profile Picture Removed"
 
-                    if send_email_notification:
-                        m_subject = f"Instagram user {user} has removed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
+                    m_subject = f"Instagram user {user} has removed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
 
-                        m_body = f"Instagram user {user} has removed profile picture added on {profile_pic_mdate} (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"Instagram user <b>{user}</b> has removed profile picture added on <b>{profile_pic_mdate}</b> (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                    m_body = f"Instagram user {user} has removed profile picture added on {profile_pic_mdate} (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body_html = f"Instagram user <b>{user}</b> has removed profile picture added on <b>{profile_pic_mdate}</b> (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
                 # User has set profile picture
                 elif is_empty_profile_pic and not is_empty_profile_pic_tmp:
@@ -7122,12 +7138,11 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago){new_line}")
                     csv_text = "Profile Picture Created"
 
-                    if send_email_notification:
-                        m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
-                        m_subject = f"Instagram user {user} has set profile picture ! ({get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)})"
+                    m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
+                    m_subject = f"Instagram user {user} has set profile picture ! ({get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)})"
 
-                        m_body = f"Instagram user {user} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"Instagram user <b>{user}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                    m_body = f"Instagram user {user} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body_html = f"Instagram user <b>{user}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
                 # User has changed profile picture
                 elif not is_empty_profile_pic_tmp and not is_empty_profile_pic:
@@ -7136,12 +7151,11 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago){new_line}")
                     csv_text = "Profile Picture Changed"
 
-                    if send_email_notification:
-                        m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
-                        m_subject = f"Instagram user {user} has changed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
+                    m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
+                    m_subject = f"Instagram user {user} has changed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
 
-                        m_body = f"Instagram user {user} has changed profile picture !\n\nPrevious one added on {profile_pic_mdate} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"Instagram user <b>{user}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{profile_pic_mdate}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                    m_body = f"Instagram user {user} has changed profile picture !\n\nPrevious one added on {profile_pic_mdate} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body_html = f"Instagram user <b>{user}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{profile_pic_mdate}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
                 try:
                     if csv_file_name:
@@ -7171,40 +7185,15 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 except Exception as e:
                     print_recovery_error(e, context="file_write", summary=f"Error while replacing/copying files: {e}")
 
-                if send_email_notification and m_subject and m_body:
-                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                    if not m_body_html:
-                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                # One alert through both channels, each carrying the saved picture when there is one
+                if m_subject and m_body:
+                    if csv_text == "Profile Picture Removed":
+                        webhook_title, webhook_description, webhook_color = f"🖼️ {user} Profile Picture Removed", f"User **{user}** has removed their profile picture (was set on {profile_pic_mdate})", 0xe74c3c
+                    elif csv_text == "Profile Picture Created":
+                        webhook_title, webhook_description, webhook_color = f"🖼️ {user} Profile Picture Set", f"User **{user}** has set a new profile picture", 0x2ecc71
                     else:
-                        if m_body_html_pic_saved_text:
-                            send_email(m_subject, m_body, m_body_html, SMTP_SSL, profile_pic_file, "profile_pic")
-                        else:
-                            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-
-                # Send webhook notification for profile picture changes
-                if csv_text == "Profile Picture Removed":
-                    send_webhook(
-                        f"🖼️ {user} Profile Picture Removed",
-                        f"User **{user}** has removed their profile picture (was set on {profile_pic_mdate})",
-                        color=0xe74c3c,  # Red
-                        notification_type="status"
-                    )
-                elif csv_text == "Profile Picture Created":
-                    send_webhook(
-                        f"🖼️ {user} Profile Picture Set",
-                        f"User **{user}** has set a new profile picture",
-                        color=0x2ecc71,  # Green
-                        local_image_file=profile_pic_file,
-                        notification_type="status"
-                    )
-                elif csv_text == "Profile Picture Changed":
-                    send_webhook(
-                        f"🖼️ {user} Profile Picture Changed",
-                        f"User **{user}** has changed their profile picture",
-                        color=0x3498db,  # Blue
-                        local_image_file=profile_pic_file,
-                        notification_type="status"
-                    )
+                        webhook_title, webhook_description, webhook_color = f"🖼️ {user} Profile Picture Changed", f"User **{user}** has changed their profile picture", 0x3498db
+                    send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=send_email_notification, email_image_file=profile_pic_file if m_body_html_pic_saved_text else "", email_image_name="profile_pic", webhook_title=webhook_title, webhook_description=webhook_description, webhook_color=webhook_color, local_image_file=None if csv_text == "Profile Picture Removed" else profile_pic_file)
 
                 if func_ver == 2:
                     print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
@@ -7491,20 +7480,6 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
                 except Exception:
                     pass
 
-    if is_new and STATUS_NOTIFICATION:
-        m_subject = f"Instagram private user {user} has a leaked collab {source} - {get_short_date_from_ts(post_dt)}"
-        m_body = f"Leaked collab {source} detected for private Instagram user {user} (revealed via a public collaborator)\n\nDate: {get_date_from_ts(post_dt)}\n{source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nOwner: https://www.instagram.com/{owner}/\nCollaborators: {collab_str}\nLikes: {likes}\nComments: {comments}\nDescription:\n\n{caption}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-        safe_post_url = escape(post_url, quote=True)
-        safe_profile_url = escape(f"https://www.instagram.com/{insta_username}/", quote=True)
-        safe_owner = escape(str(owner), quote=True)
-        safe_owner_url = escape(f"https://www.instagram.com/{owner}/", quote=True)
-        m_body_html = f"Leaked collab {source} detected for private Instagram user <b>{user}</b> (revealed via a public collaborator){pic_saved_html}<br><br>Date: <b>{get_date_from_ts(post_dt)}</b><br>{source.capitalize()} URL: <a href=\"{safe_post_url}\">{safe_post_url}</a><br>Profile URL: <a href=\"{safe_profile_url}\">{safe_profile_url}</a><br>Owner: <a href=\"{safe_owner_url}\">{safe_owner}</a><br>Collaborators: {escape(collab_str)}<br>Likes: {likes}<br>Comments: {comments}<br>Description:<br><br>{escape(str(caption))}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-        print(f"\n* Sending email notification to {RECEIVER_EMAIL}")
-        if pic_saved_html and image_filename and os.path.isfile(image_filename):
-            send_email(m_subject, m_body, m_body_html, SMTP_SSL, image_filename, "collab_pic")
-        else:
-            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-
     if is_new and csv_file_name:
         try:
             write_csv_entry(csv_file_name, convert_to_local_naive(post_dt), f"New Leaked Collab {source.capitalize()}", "", caption if caption != "(empty)" else post_url)
@@ -7512,6 +7487,13 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
             print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
     if is_new:
+        m_subject = f"Instagram private user {user} has a leaked collab {source} - {get_short_date_from_ts(post_dt)}"
+        m_body = f"Leaked collab {source} detected for private Instagram user {user} (revealed via a public collaborator)\n\nDate: {get_date_from_ts(post_dt)}\n{source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nOwner: https://www.instagram.com/{owner}/\nCollaborators: {collab_str}\nLikes: {likes}\nComments: {comments}\nDescription:\n\n{caption}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+        safe_post_url = escape(post_url, quote=True)
+        safe_profile_url = escape(f"https://www.instagram.com/{insta_username}/", quote=True)
+        safe_owner = escape(str(owner), quote=True)
+        safe_owner_url = escape(f"https://www.instagram.com/{owner}/", quote=True)
+        m_body_html = f"Leaked collab {source} detected for private Instagram user <b>{user}</b> (revealed via a public collaborator){pic_saved_html}<br><br>Date: <b>{get_date_from_ts(post_dt)}</b><br>{source.capitalize()} URL: <a href=\"{safe_post_url}\">{safe_post_url}</a><br>Profile URL: <a href=\"{safe_profile_url}\">{safe_profile_url}</a><br>Owner: <a href=\"{safe_owner_url}\">{safe_owner}</a><br>Collaborators: {escape(collab_str)}<br>Likes: {likes}<br>Comments: {comments}<br>Description:<br><br>{escape(str(caption))}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
         webhook_fields = [
             {"name": "Date", "value": f"**{get_date_from_ts(post_dt)}**", "inline": True},
             {"name": "Likes", "value": f"**{likes}**", "inline": True},
@@ -7525,15 +7507,7 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
             webhook_fields.append({"name": "Description", "value": (caption[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(caption) > WEBHOOK_FIELD_VALUE_LIMIT else caption})  # type: ignore
 
         has_local_image = bool(image_filename and os.path.isfile(image_filename))
-        send_webhook(
-            f"🕵️ {user} Leaked Collab {source.capitalize()}",
-            f"Private user **{user}** has a leaked collab **{source}** (revealed via a public collaborator)",
-            color=0x9b59b6,  # Purple
-            fields=webhook_fields,
-            local_image_file=image_filename if has_local_image else None,
-            image_url=post.get("display_url") if (post.get("display_url") and not has_local_image) else None,
-            notification_type="status"
-        )
+        send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, email_image_file=image_filename if pic_saved_html and has_local_image else "", email_image_name="collab_pic", webhook_title=f"🕵️ {user} Leaked Collab {source.capitalize()}", webhook_description=f"Private user **{user}** has a leaked collab **{source}** (revealed via a public collaborator)", webhook_color=0x9b59b6, webhook_fields=webhook_fields, local_image_file=image_filename if has_local_image else None, image_url=post.get("display_url") if (post.get("display_url") and not has_local_image) else None)
 
     dashboard_media = get_dashboard_media_metadata(post.get("display_url", ""), image_filename, video_filename)
 
@@ -7596,27 +7570,18 @@ def check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
     if posts_count != posts_count_old:
         print(f"* Posts number changed for user {user} from {posts_count_old} to {posts_count}\n")
 
-        if STATUS_NOTIFICATION:
-            m_subject = f"Instagram user {user} posts number has changed! ({posts_count_old} -> {posts_count})"
+        m_subject = f"Instagram user {user} posts number has changed! ({posts_count_old} -> {posts_count})"
 
-            m_body = f"Posts number changed for user {user} from {posts_count_old} to {posts_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-            print(f"* Sending email notification to {RECEIVER_EMAIL}")
-            m_body_html = f"Posts number changed for user <b>{user}</b> from <b>{posts_count_old}</b> to <b>{posts_count}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+        m_body = f"Posts number changed for user {user} from {posts_count_old} to {posts_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+        m_body_html = f"Posts number changed for user <b>{user}</b> from <b>{posts_count_old}</b> to <b>{posts_count}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
-        # Send webhook notification for posts count change
         if posts_count is not None and posts_count_old is not None:
             diff = posts_count - posts_count_old
             diff_str = f" ({'+' if diff > 0 else ''}{diff})"
         else:
             diff_str = ""
 
-        send_webhook(
-            f"📮 {user} Posts Count Changed",
-            f"User **{user}** posts count changed from **{posts_count_old}** to **{posts_count}**{diff_str}",
-            color=0x34495e,  # Dark Blue
-            notification_type="status"
-        )
+        send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"📮 {user} Posts Count Changed", webhook_description=f"User **{user}** posts count changed from **{posts_count_old}** to **{posts_count}**{diff_str}", webhook_color=0x34495e)
 
         log_activity(f"Posts changed: {posts_count_old} -> {posts_count}", user=user, level='update')
         print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
@@ -7632,23 +7597,14 @@ def check_reels_counts(user, reels_count, reels_count_old, r_sleep_time):
     if reels_count != reels_count_old:
         print(f"* Reels number changed for user {user} from {reels_count_old} to {reels_count}\n")
 
-        if STATUS_NOTIFICATION:
-            m_subject = f"Instagram user {user} reels number has changed! ({reels_count_old} -> {reels_count})"
+        m_subject = f"Instagram user {user} reels number has changed! ({reels_count_old} -> {reels_count})"
 
-            m_body = f"Reels number changed for user {user} from {reels_count_old} to {reels_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-            print(f"* Sending email notification to {RECEIVER_EMAIL}")
-            m_body_html = f"Reels number changed for user <b>{user}</b> from <b>{reels_count_old}</b> to <b>{reels_count}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+        m_body = f"Reels number changed for user {user} from {reels_count_old} to {reels_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+        m_body_html = f"Reels number changed for user <b>{user}</b> from <b>{reels_count_old}</b> to <b>{reels_count}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
-        # Send webhook notification for reels count change
         diff = reels_count - reels_count_old
         diff_str = f"+{diff}" if diff > 0 else str(diff)
-        send_webhook(
-            f"🎬 {user} Reels Count Changed",
-            f"User **{user}** reels count changed from **{reels_count_old}** to **{reels_count}** ({diff_str})",
-            color=0x34495e,  # Dark Blue
-            notification_type="status"
-        )
+        send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"🎬 {user} Reels Count Changed", webhook_description=f"User **{user}** reels count changed from **{reels_count_old}** to **{reels_count}** ({diff_str})", webhook_color=0x34495e)
 
         print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
         print_cur_ts()
@@ -10343,30 +10299,42 @@ def is_session_flagged(error_msg, bot):
     return False
 
 
-# Sends enabled email and webhook alerts exactly when a monitoring error streak reaches the configured threshold
-def notify_monitoring_error(user, error_msg, failure_count, check_interval):
-    if failure_count != ERROR_FAILURE_THRESHOLD:
+# Tracks the error alert of one monitored target: which channel has delivered it and for which failure category
+@dataclass
+class ErrorAlertState:
+    email_sent: bool = False
+    webhook_sent: bool = False
+    code: Optional[str] = None
+
+    # Forgets the delivered alert, so the next failure earns each channel a new one
+    def reset(self):
+        self.email_sent = False
+        self.webhook_sent = False
+        self.code = None
+
+
+# Alerts both channels once a failure streak reaches ERROR_FAILURE_THRESHOLD, once per failure category and per channel
+def notify_monitoring_error(user, advice, error_msg, failure_count, check_interval, alert_state):
+    # A failure that changes category is a different failure, so each channel earns a new alert for it
+    if advice.code != alert_state.code:
+        alert_state.reset()
+        alert_state.code = advice.code
+    if failure_count < ERROR_FAILURE_THRESHOLD:
         return False
-
-    notified = False
-    if ERROR_NOTIFICATION:
-        alert_subject = f"instagram_monitor: error for {user} (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD})"
-        alert_body = f"An error occurred for user {user} (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(check_interval)} ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-        alert_body_html = f"An error occurred for user <b>{user}</b> (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: <b>{display_time(check_interval)}</b> ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-        print(f"* Sending error notification to {RECEIVER_EMAIL} (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD})")
-        send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
-        notified = True
-
-    if WEBHOOK_ENABLED and WEBHOOK_ERROR_NOTIFICATION:
-        send_webhook(
-            title=f"Error for {user}",
-            description=f"{error_msg}\n(failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD})",
-            color=0xFF0000,
-            notification_type="error"
-        )
-        notified = True
-
-    return notified
+    # Attempted on every failing check rather than only at the threshold, so a channel that failed is tried again
+    email_pending = ERROR_NOTIFICATION and not alert_state.email_sent
+    webhook_pending = webhook_event_enabled("error") and not alert_state.webhook_sent
+    if not (email_pending or webhook_pending):
+        return False
+    streak = f"failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD}"
+    interval = f"{display_time(check_interval)} ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)})"
+    alert_subject = f"instagram_monitor: error for {user} ({streak})"
+    alert_body = f"{advice.summary} ({streak})\n{error_msg}\n\nTo fix: {advice.fix}\n\nCheck interval: {interval}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+    alert_body_html = f"{escape(str(advice.summary))} ({escape(streak)})<br><br><b>{escape(str(error_msg))}</b><br><br>To fix: {escape(str(advice.fix))}<br><br>Check interval: <b>{escape(interval)}</b>{get_cur_ts('<br>Timestamp: ')}"
+    email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=email_pending, webhook_enabled=webhook_pending, webhook_title=f"Error for {user}", webhook_description=f"{advice.summary}\n{error_msg}\n({streak})\nTo fix: {advice.fix}", webhook_color=0xFF0000)
+    alert_state.email_sent = alert_state.email_sent or email_delivered
+    alert_state.webhook_sent = alert_state.webhook_sent or webhook_delivered
+    return email_delivered or webhook_delivered
 
 
 # Describes the client identity behind an account-level alert, since a flag is worth little to diagnose without
@@ -10398,19 +10366,10 @@ def notify_session_flagged(user, err_str, error_msg):
     identity_text = "".join(f"\n{label}: {value}" for label, value in identity_rows)
     identity_html = "".join(f"<br>{label}: <b>{escape(str(value))}</b>" for label, value in identity_rows)
 
-    if ERROR_NOTIFICATION:
-        alert_subject = f"instagram_monitor: session account flagged (target: {user})"
-        alert_body = f"{err_str}\n\nTriggering error: {error_msg}\n{identity_text}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-        alert_body_html = f"{escape(str(err_str))}<br><br>Triggering error: <b>{escape(str(error_msg))}</b><br>{identity_html}{get_cur_ts('<br><br>Timestamp: ')}"
-        print(f"* Sending session flagged notification to {RECEIVER_EMAIL}")
-        send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
-
-    send_webhook(
-        title=f"🚩 Session account flagged (target: {user})",
-        description=f"{err_str}\n\nTriggering error: `{error_msg}`\n{identity_text}",
-        color=0xFF0000,
-        notification_type="error"
-    )
+    alert_subject = f"instagram_monitor: session account flagged (target: {user})"
+    alert_body = f"{err_str}\n\nTriggering error: {error_msg}\n{identity_text}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+    alert_body_html = f"{escape(str(err_str))}<br><br>Triggering error: <b>{escape(str(error_msg))}</b><br>{identity_html}{get_cur_ts('<br><br>Timestamp: ')}"
+    send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=ERROR_NOTIFICATION, webhook_title=f"🚩 Session account flagged (target: {user})", webhook_description=f"{err_str}\n\nTriggering error: `{error_msg}`\n{identity_text}", webhook_color=0xFF0000)
 
 
 # ---------------------------------------------------------------------------
@@ -11786,26 +11745,20 @@ def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, tota
     return results
 
 
-# Sends independent email and webhook notifications for one new story item
+# Sends one new story item alert through the enabled email and webhook channels
 def send_story_item_notifications(user, story_type, local_ts, expire_ts, story_mentions, story_hashtags, story_caption, r_sleep_time, story_thumbnail_url, story_image_filename=None):
     local_image_file = str(story_image_filename) if story_image_filename and os.path.isfile(story_image_filename) else ""
     has_local_image = bool(local_image_file)
     story_mentions_text = f"\nMentions: {story_mentions}" if story_mentions else ""
     story_hashtags_text = f"\nHashtags: {story_hashtags}" if story_hashtags else ""
     story_caption_text = f"\nDescription:\n\n{story_caption}" if story_caption else ""
-    if STATUS_NOTIFICATION:
-        m_subject = f"Instagram user {user} has a new story item ({get_short_date_from_ts(int(local_ts))})"
-        m_body = f"Instagram user {user} has a new story item\n\nDate: {get_date_from_ts(int(local_ts))}\nExpiry: {get_date_from_ts(int(expire_ts))}\nType: {story_type}{story_mentions_text}{story_hashtags_text}{story_caption_text}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-        mentions_html = f"<br>Mentions: {escape(str(story_mentions))}" if story_mentions else ""
-        hashtags_html = f"<br>Hashtags: {escape(str(story_hashtags))}" if story_hashtags else ""
-        caption_html = f"<br>Description:<br><br>{escape(str(story_caption)).replace(chr(10), '<br>')}" if story_caption else ""
-        image_html = '<br><br><img src="cid:story_pic" width="50%">' if has_local_image else ""
-        m_body_html = f"Instagram user <b>{user}</b> has a new story item{image_html}<br><br>Date: <b>{get_date_from_ts(int(local_ts))}</b><br>Expiry: {get_date_from_ts(int(expire_ts))}<br>Type: {story_type}{mentions_html}{hashtags_html}{caption_html}<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-        print(f"* Sending email notification to {RECEIVER_EMAIL}")
-        if has_local_image:
-            send_email(m_subject, m_body, m_body_html, SMTP_SSL, local_image_file, "story_pic")
-        else:
-            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+    m_subject = f"Instagram user {user} has a new story item ({get_short_date_from_ts(int(local_ts))})"
+    m_body = f"Instagram user {user} has a new story item\n\nDate: {get_date_from_ts(int(local_ts))}\nExpiry: {get_date_from_ts(int(expire_ts))}\nType: {story_type}{story_mentions_text}{story_hashtags_text}{story_caption_text}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+    mentions_html = f"<br>Mentions: {escape(str(story_mentions))}" if story_mentions else ""
+    hashtags_html = f"<br>Hashtags: {escape(str(story_hashtags))}" if story_hashtags else ""
+    caption_html = f"<br>Description:<br><br>{escape(str(story_caption)).replace(chr(10), '<br>')}" if story_caption else ""
+    image_html = '<br><br><img src="cid:story_pic" width="50%">' if has_local_image else ""
+    m_body_html = f"Instagram user <b>{user}</b> has a new story item{image_html}<br><br>Date: <b>{get_date_from_ts(int(local_ts))}</b><br>Expiry: {get_date_from_ts(int(expire_ts))}<br>Type: {story_type}{mentions_html}{hashtags_html}{caption_html}<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
     story_webhook_fields = [
         {"name": "Date", "value": get_date_from_ts(int(local_ts)), "inline": True},
@@ -11818,7 +11771,7 @@ def send_story_item_notifications(user, story_type, local_ts, expire_ts, story_m
         story_webhook_fields.append({"name": "Hashtags", "value": str(story_hashtags)})
     if story_caption:
         story_webhook_fields.append({"name": "Description", "value": (story_caption[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(story_caption) > WEBHOOK_FIELD_VALUE_LIMIT else story_caption})
-    return send_webhook(f"📖 {user} New Story Item", f"User **{user}** posted a new story item!", color=0xe91e63, fields=story_webhook_fields, local_image_file=local_image_file or None, image_url=story_thumbnail_url if story_thumbnail_url and not has_local_image else None, notification_type="status")
+    return send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, email_image_file=local_image_file, email_image_name="story_pic", webhook_title=f"📖 {user} New Story Item", webhook_description=f"User **{user}** posted a new story item!", webhook_color=0xe91e63, webhook_fields=story_webhook_fields, local_image_file=local_image_file or None, image_url=story_thumbnail_url if story_thumbnail_url and not has_local_image else None)
 
 
 # Carries the values one monitoring pass must hand to its replacement when live settings change
@@ -12392,8 +12345,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 user, "followers", followers_old, followers, csv_file_name
             )
 
-            # Send email notification for followers change detected at startup
-            if STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION and (added_followers_list or removed_followers_list):
+            # Alerts both channels about the followers change detected at startup
+            if added_followers_list or removed_followers_list:
                 followers_diff = followers_count - followers_old_count
                 if followers_diff > 0:
                     followers_diff_str = "+" + str(followers_diff)
@@ -12415,18 +12368,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     m_body_html_parts.append(f"<br><br><b>{added_followers_mbody.strip()}</b><br>{added_followers_list_html.strip().replace(chr(10), '<br>')}")
                 m_body_html_parts.append(f"<br><br><i>Note: Change detected at startup</i>{get_cur_ts('<br>Timestamp: ')}")
                 m_body_html = "".join(m_body_html_parts)
-
-                print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-
-            # Send webhook notification for followers change detected at startup
-            if added_followers_list_webhook or removed_followers_list_webhook:
-                webhook_result = send_follower_change_webhook(
-                    user, "followers", followers_old_count, followers_count,
-                    added_followers_list_webhook, removed_followers_list_webhook
-                )
-                if webhook_result != 0 and DEBUG_MODE:
-                    print(f"* Warning: Webhook notification for followers change failed")
+                send_notification_channels("followers", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION, **follower_change_embed(user, "followers", followers_old_count, followers_count, added_followers_list_webhook, removed_followers_list_webhook))
 
     # Establish baseline after first successful fetch if it wasn't available
     if is_complete_username_baseline(followers, followers_count) and not skip_follow_changes and not followers_baseline_available and not skip_session and not skip_followers and can_view:
@@ -12540,8 +12482,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 user, "followings", followings_old, followings, csv_file_name
             )
 
-            # Send email notification for followings change detected at startup
-            if STATUS_NOTIFICATION and (added_followings_list or removed_followings_list):
+            # Alerts both channels about the followings change detected at startup
+            if added_followings_list or removed_followings_list:
                 followings_diff = followings_count - followings_old_count
                 if followings_diff > 0:
                     followings_diff_str = "+" + str(followings_diff)
@@ -12563,18 +12505,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     m_body_html_parts.append(f"<br><br><b>{added_followings_mbody.strip()}</b><br>{added_followings_list_html.strip().replace(chr(10), '<br>')}")
                 m_body_html_parts.append(f"<br><br><i>Note: Change detected at startup</i>{get_cur_ts('<br>Timestamp: ')}")
                 m_body_html = "".join(m_body_html_parts)
-
-                print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-
-            # Send webhook notification for followings change detected at startup
-            if added_followings_list_webhook or removed_followings_list_webhook:
-                webhook_result = send_follower_change_webhook(
-                    user, "followings", followings_old_count, followings_count,
-                    added_followings_list_webhook, removed_followings_list_webhook
-                )
-                if webhook_result != 0 and DEBUG_MODE:
-                    print(f"* Warning: Webhook notification for followings change failed")
+                send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, **follower_change_embed(user, "followings", followings_old_count, followings_count, added_followings_list_webhook, removed_followings_list_webhook))
 
     # Establish baseline after first successful fetch if it wasn't available
     if is_complete_username_baseline(followings, followings_count) and not skip_follow_changes and not followings_baseline_available and not skip_session and not skip_followings and can_view:
@@ -13067,6 +12998,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
     # Primary loop
     consecutive_main_errors = 0
     consecutive_behuman_errors = 0
+    error_alert = ErrorAlertState()
+    behuman_alert = ErrorAlertState()
     recovery_hint_tracker = RecoveryHintTracker()
     outage = OutageReporter()
     debug_print("Entering primary loop")
@@ -13249,7 +13182,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 if not session_flagged:
                     if outage_outcome in ("full", "repeat"):
                         fix_hint_printed = print_fix_hint(error_msg, recovery_hint_tracker)
-                    notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
+                    notify_monitoring_error(user, advice, error_msg, consecutive_main_errors, r_sleep_time, error_alert)
 
                 # Handle session recovery for automated checks/challenge errors
                 if session_flagged:
@@ -13339,7 +13272,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 error_msg = f"HTTP redirect while checking {user}: {get_thread_output()}"
                 print(f"* Error: The saved Instagram session may no longer be valid (retrying in {display_time(r_sleep_time)})")
                 print(colorize("info", f"To fix: Re-import the session with '{session_recovery_command()}' or from the Web Dashboard Session page"))
-                notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
+                notify_monitoring_error(user, classify_recovery_error(error_msg, is_logged_in=bool(SESSION_USERNAME) and not skip_session), error_msg, consecutive_main_errors, r_sleep_time, error_alert)
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
                 r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
@@ -13452,7 +13385,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                 if not skip_follow_changes:
                     notify_followings_change = should_notify_follow_change(followings_count != followings_old_count, added_followings_list, removed_followings_list, followings_list_comparison_complete)
-                    if STATUS_NOTIFICATION and notify_followings_change:
+                    if notify_followings_change:
                         if followings_count != followings_old_count:
                             m_subject = f"Instagram user {user} followings number has changed! ({followings_diff_str}, {followings_old_count} -> {followings_count})"
                         else:
@@ -13466,7 +13399,6 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         else:
                             m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
 
-                        print(f"* Sending email notification to {RECEIVER_EMAIL}")
                         if not skip_session and not skip_followings and can_view:
                             if followings_count != followings_old_count:
                                 m_body_html_parts = [f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})"]
@@ -13481,16 +13413,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             m_body_html = "".join(m_body_html_parts)
                         else:
                             m_body_html = f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-
-                    # Send webhook notification for followings change (independent of email notifications) only if something changed
-                    if notify_followings_change:
-                        webhook_result = send_follower_change_webhook(
-                            user, "followings", followings_old_count, followings_count,
-                            added_followings_list_webhook, removed_followings_list_webhook
-                        )
-                        if webhook_result != 0 and DEBUG_MODE:
-                            print(f"* Warning: Webhook notification for followings change failed")
+                        send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, **follower_change_embed(user, "followings", followings_old_count, followings_count, added_followings_list_webhook, removed_followings_list_webhook))
 
                 followings_old_count = followings_count
 
@@ -13601,7 +13524,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                 if not skip_follow_changes:
                     notify_followers_change = should_notify_follow_change(followers_count != followers_old_count, added_followers_list, removed_followers_list, followers_list_comparison_complete)
-                    if STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION and notify_followers_change:
+                    if notify_followers_change:
                         if followers_count != followers_old_count:
                             m_subject = f"Instagram user {user} followers number has changed! ({followers_diff_str}, {followers_old_count} -> {followers_count})"
                         else:
@@ -13615,7 +13538,6 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         else:
                             m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
 
-                        print(f"* Sending email notification to {RECEIVER_EMAIL}")
                         if not skip_session and not skip_followers and can_view:
                             if followers_count != followers_old_count:
                                 m_body_html_parts = [f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})"]
@@ -13630,16 +13552,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             m_body_html = "".join(m_body_html_parts)
                         else:
                             m_body_html = f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-
-                    # Send webhook notification for followers change (independent of email notifications) only if something changed
-                    if notify_followers_change:
-                        webhook_result = send_follower_change_webhook(
-                            user, "followers", followers_old_count, followers_count,
-                            added_followers_list_webhook, removed_followers_list_webhook
-                        )
-                        if webhook_result != 0 and DEBUG_MODE:
-                            print(f"* Warning: Webhook notification for followers change failed")
+                        send_notification_channels("followers", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION, **follower_change_embed(user, "followers", followers_old_count, followers_count, added_followers_list_webhook, removed_followers_list_webhook))
 
                 followers_old_count = followers_count
 
@@ -13670,27 +13583,16 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 except Exception as e:
                     print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
-                if STATUS_NOTIFICATION:
-                    m_subject = f"Instagram user {user} bio has changed!"
+                m_subject = f"Instagram user {user} bio has changed!"
 
-                    m_body = f"Instagram user {user} bio has changed\n\nOld bio:\n\n{bio_old}\n\nNew bio:\n\n{bio}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"Instagram user <b>{user}</b> bio has changed<br><br><b>Old bio:</b><br><br>{escape(str(bio_old)).replace(chr(10), '<br>')}<br><br><b>New bio:</b><br><br>{escape(str(bio)).replace(chr(10), '<br>')}<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                m_body = f"Instagram user {user} bio has changed\n\nOld bio:\n\n{bio_old}\n\nNew bio:\n\n{bio}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                m_body_html = f"Instagram user <b>{user}</b> bio has changed<br><br><b>Old bio:</b><br><br>{escape(str(bio_old)).replace(chr(10), '<br>')}<br><br><b>New bio:</b><br><br>{escape(str(bio)).replace(chr(10), '<br>')}<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
-                # Send webhook notification for bio change
-                webhook_result = send_webhook(
-                    f"📝 {user} Bio Changed",
-                    f"User **{user}** has updated their bio",
-                    color=0x9b59b6,  # Purple
-                    fields=[
-                        {"name": "Old Bio", "value": (bio_old[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(bio_old) > WEBHOOK_FIELD_VALUE_LIMIT else bio_old or "(empty)"},
-                        {"name": "New Bio", "value": (bio[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(bio) > WEBHOOK_FIELD_VALUE_LIMIT else bio or "(empty)"},
-                    ],
-                    notification_type="status"
-                )
-                if webhook_result != 0 and DEBUG_MODE:
-                    print(f"* Warning: Webhook notification for bio change failed")
+                bio_webhook_fields = [
+                    {"name": "Old Bio", "value": (bio_old[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(bio_old) > WEBHOOK_FIELD_VALUE_LIMIT else bio_old or "(empty)"},
+                    {"name": "New Bio", "value": (bio[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(bio) > WEBHOOK_FIELD_VALUE_LIMIT else bio or "(empty)"},
+                ]
+                send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"📝 {user} Bio Changed", webhook_description=f"User **{user}** has updated their bio", webhook_color=0x9b59b6, webhook_fields=bio_webhook_fields)
 
                 bio_old = bio
                 print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
@@ -13714,28 +13616,17 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 except Exception as e:
                     print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
-                if STATUS_NOTIFICATION:
-                    m_subject = f"Instagram user {user} profile visibility has changed to {profile_visibility} !"
+                m_subject = f"Instagram user {user} profile visibility has changed to {profile_visibility} !"
 
-                    m_body = f"Instagram user {user} profile visibility has changed to {profile_visibility}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"Instagram user <b>{user}</b> profile visibility has changed to <b>{profile_visibility}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                m_body = f"Instagram user {user} profile visibility has changed to {profile_visibility}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                m_body_html = f"Instagram user <b>{user}</b> profile visibility has changed to <b>{profile_visibility}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
-                # Send webhook notification for visibility change
                 emoji = "🔒" if is_private else "🔓"
-                webhook_result = send_webhook(
-                    f"{emoji} {user} Profile Visibility Changed",
-                    f"User **{user}** profile is now **{profile_visibility}**",
-                    color=0xe67e22,  # Orange
-                    fields=[
-                        {"name": "Old", "value": f"**{profile_visibility_old}**", "inline": True},
-                        {"name": "New", "value": f"**{profile_visibility}**", "inline": True},
-                    ],
-                    notification_type="status"
-                )
-                if webhook_result != 0 and DEBUG_MODE:
-                    print(f"* Warning: Webhook notification for visibility change failed")
+                visibility_webhook_fields = [
+                    {"name": "Old", "value": f"**{profile_visibility_old}**", "inline": True},
+                    {"name": "New", "value": f"**{profile_visibility}**", "inline": True},
+                ]
+                send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"{emoji} {user} Profile Visibility Changed", webhook_description=f"User **{user}** profile is now **{profile_visibility}**", webhook_color=0xe67e22, webhook_fields=visibility_webhook_fields)
 
                 is_private_old = is_private
                 print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
@@ -13751,22 +13642,13 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 except Exception as e:
                     print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
-                if STATUS_NOTIFICATION:
-                    m_subject = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user} !"
+                m_subject = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user} !"
 
-                    m_body = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"Your account <b>{'started following' if followed_by_viewer else 'stopped following'}</b> the user <b>{user}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                m_body = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                m_body_html = f"Your account <b>{'started following' if followed_by_viewer else 'stopped following'}</b> the user <b>{user}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
-                # Send webhook notification for following status change
                 emoji = "✅" if followed_by_viewer else "❌"
-                send_webhook(
-                    f"{emoji} {user} Following Status Changed",
-                    f"Your account {'started following' if followed_by_viewer else 'stopped following'} **{user}**",
-                    color=0x95a5a6,  # Gray
-                    notification_type="status"
-                )
+                send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"{emoji} {user} Following Status Changed", webhook_description=f"Your account {'started following' if followed_by_viewer else 'stopped following'} **{user}**", webhook_color=0x95a5a6)
 
                 followed_by_viewer_old = followed_by_viewer
                 print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
@@ -13784,26 +13666,12 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 except Exception as e:
                     print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
-                if STATUS_NOTIFICATION:
-                    m_subject = f"Instagram user {user} has a new story!"
+                m_subject = f"Instagram user {user} has a new story!"
 
-                    m_body = f"Instagram user {user} has a new story\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"Instagram user <b>{user}</b> has a new story<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                m_body = f"Instagram user {user} has a new story\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                m_body_html = f"Instagram user <b>{user}</b> has a new story<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
-                # Send webhook notification for new story
-                webhook_result = send_webhook(
-                    f"📖 {user} New Story",
-                    f"User **{user}** has posted a new story!",
-                    color=0xe91e63,  # Pink
-                    fields=[
-                        {"name": "Profile URL", "value": f"https://www.instagram.com/{user}/", "inline": True},
-                    ],
-                    notification_type="status"
-                )
-                if webhook_result != 0 and DEBUG_MODE:
-                    print(f"* Warning: Webhook notification for new story failed")
+                send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"📖 {user} New Story", webhook_description=f"User **{user}** has posted a new story!", webhook_color=0xe91e63, webhook_fields=[{"name": "Profile URL", "value": f"https://www.instagram.com/{user}/", "inline": True}])
 
                 print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
                 print_cur_ts()
@@ -14046,7 +13914,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         print_fix_hint(error_msg, recovery_hint_tracker)
                     elif outage_outcome == "degraded":
                         print_outage_liveness(user, posts_advice, outage.since)
-                    notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
+                    notify_monitoring_error(user, posts_advice, error_msg, consecutive_main_errors, r_sleep_time, error_alert)
 
                     if outage_outcome in ("full", "repeat"):
                         print_cur_ts()
@@ -14149,21 +14017,14 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     except Exception as e:
                         print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
-                    if STATUS_NOTIFICATION:
-                        m_subject = f"Instagram user {user} has a new {last_source.lower()} - {get_short_date_from_ts(highestinsta_dt)} (after {calculate_timespan(highestinsta_dt, highestinsta_dt_old, show_seconds=False)} - {get_short_date_from_ts(highestinsta_dt_old)})"
+                    m_subject = f"Instagram user {user} has a new {last_source.lower()} - {get_short_date_from_ts(highestinsta_dt)} (after {calculate_timespan(highestinsta_dt, highestinsta_dt_old, show_seconds=False)} - {get_short_date_from_ts(highestinsta_dt_old)})"
 
-                        m_body = f"Instagram user {user} has a new {last_source.lower()} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n\nDate: {get_date_from_ts(highestinsta_dt)}\n{last_source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nLikes: {likes}\nComments: {comments}\nTagged: {tagged_users}{location_mbody}{location_mbody_str}\nDescription:\n\n{caption}\n{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{post_comments_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        safe_post_url = escape(post_url, quote=True)
-                        safe_profile_url = escape(f"https://www.instagram.com/{insta_username}/", quote=True)
-                        m_body_html = f"Instagram user <b>{user}</b> has a new {last_source.lower()} after <b>{calculate_timespan(highestinsta_dt, highestinsta_dt_old)}</b> ({get_date_from_ts(highestinsta_dt_old)}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(highestinsta_dt)}</b><br>{last_source.capitalize()} URL: <a href=\"{safe_post_url}\">{safe_post_url}</a><br>Profile URL: <a href=\"{safe_profile_url}\">{safe_profile_url}</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {escape(str(tagged_users))}{location_mbody_html}{escape(str(location_mbody_str))}<br>Description:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{escape(likes_users_list)}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                    m_body = f"Instagram user {user} has a new {last_source.lower()} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n\nDate: {get_date_from_ts(highestinsta_dt)}\n{last_source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nLikes: {likes}\nComments: {comments}\nTagged: {tagged_users}{location_mbody}{location_mbody_str}\nDescription:\n\n{caption}\n{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{post_comments_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    safe_post_url = escape(post_url, quote=True)
+                    safe_profile_url = escape(f"https://www.instagram.com/{insta_username}/", quote=True)
+                    m_body_html = f"Instagram user <b>{user}</b> has a new {last_source.lower()} after <b>{calculate_timespan(highestinsta_dt, highestinsta_dt_old)}</b> ({get_date_from_ts(highestinsta_dt_old)}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(highestinsta_dt)}</b><br>{last_source.capitalize()} URL: <a href=\"{safe_post_url}\">{safe_post_url}</a><br>Profile URL: <a href=\"{safe_profile_url}\">{safe_profile_url}</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {escape(str(tagged_users))}{location_mbody_html}{escape(str(location_mbody_str))}<br>Description:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{escape(likes_users_list)}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
 
-                        print(f"\n* Sending email notification to {RECEIVER_EMAIL}")
-                        if m_body_html_pic_saved_text:
-                            send_email(m_subject, m_body, m_body_html, SMTP_SSL, image_filename, f"{last_source.lower()}_pic")
-                        else:
-                            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
-                    # Send webhook notification for new post/reel
                     emoji = "🎬" if last_source == "reel" else "📸"
                     webhook_fields = [
                         {"name": "Date", "value": f"**{get_date_from_ts(highestinsta_dt)}**", "inline": True},
@@ -14178,17 +14039,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if caption:
                         webhook_fields.append({"name": "Description", "value": (caption[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(caption) > WEBHOOK_FIELD_VALUE_LIMIT else caption})
 
-                    webhook_result = send_webhook(
-                        f"{emoji} {user} New {last_source.capitalize()}",
-                        f"User **{user}** posted a new **{last_source.lower()}**!",
-                        color=0x1da1f2 if last_source == "post" else 0xff6b6b,  # Blue for post, coral for reel
-                        fields=webhook_fields,
-                        local_image_file=image_filename if image_filename and os.path.isfile(image_filename) else None,
-                        image_url=thumbnail_url if thumbnail_url and not (image_filename and os.path.isfile(image_filename)) else None,
-                        notification_type="status"
-                    )
-                    if webhook_result != 0 and DEBUG_MODE:
-                        print(f"* Warning: Webhook notification for new {last_source} failed")
+                    has_local_image = bool(image_filename and os.path.isfile(image_filename))
+                    send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, email_image_file=(image_filename or "") if m_body_html_pic_saved_text else "", email_image_name=f"{last_source.lower()}_pic", webhook_title=f"{emoji} {user} New {last_source.capitalize()}", webhook_description=f"User **{user}** posted a new **{last_source.lower()}**!", webhook_color=0x1da1f2 if last_source == "post" else 0xff6b6b, webhook_fields=webhook_fields, local_image_file=image_filename if has_local_image else None, image_url=thumbnail_url if thumbnail_url and not has_local_image else None)
 
                     # Update web dashboard with the new post
                     if WEB_DASHBOARD_ENABLED:
@@ -14263,6 +14115,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
         if in_allowed_hours:
             consecutive_main_errors = 0
+            error_alert.reset()
             recovery_hint_tracker.reset()
             outage_lasted = outage.recovered()
             if outage_lasted is not None:
@@ -14304,26 +14157,21 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             if BE_HUMAN and in_allowed_hours:
                 simulate_human_actions(bot, target_sleep_time)
                 consecutive_behuman_errors = 0
+                behuman_alert.reset()
         except Exception as e:
 
             consecutive_behuman_errors += 1
             print(f"* Warning: It is not easy to be a human, our simulation failed: {e}")
-            if ERROR_NOTIFICATION and consecutive_behuman_errors == ERROR_FAILURE_THRESHOLD:
+            if consecutive_behuman_errors >= ERROR_FAILURE_THRESHOLD:
                 error_msg = format_error_message(e)
-                alert_subject = f"instagram_monitor: BeHuman mode error for {user} (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD})"
-                alert_body = f"A BeHuman simulation error occurred for user {user} (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                alert_body_html = f"A BeHuman simulation error occurred for user <b>{user}</b> (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-
-                print(f"* Sending BeHuman error notification to {RECEIVER_EMAIL} (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD})")
-                send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
-
-                if WEBHOOK_ENABLED and WEBHOOK_ERROR_NOTIFICATION:
-                    send_webhook(
-                        title=f"BeHuman Error for {user}",
-                        description=f"{error_msg}\n(failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD})",
-                        color=0xFF0000,
-                        notification_type="error"
-                    )
+                streak = f"failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD}"
+                alert_subject = f"instagram_monitor: BeHuman mode error for {user} ({streak})"
+                alert_body = f"A BeHuman simulation error occurred for user {user} ({streak}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                alert_body_html = f"A BeHuman simulation error occurred for user <b>{escape(str(user))}</b> ({escape(streak)}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                # Attempted on every failing simulation past the threshold, so a channel that failed is tried again
+                email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=ERROR_NOTIFICATION and not behuman_alert.email_sent, webhook_enabled=webhook_event_enabled("error") and not behuman_alert.webhook_sent, webhook_title=f"BeHuman Error for {user}", webhook_description=f"{error_msg}\n({streak})", webhook_color=0xFF0000)
+                behuman_alert.email_sent = behuman_alert.email_sent or email_delivered
+                behuman_alert.webhook_sent = behuman_alert.webhook_sent or webhook_delivered
             print_cur_ts(newline=True)
 
         if HOURS_VERBOSE or DEBUG_MODE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE):
