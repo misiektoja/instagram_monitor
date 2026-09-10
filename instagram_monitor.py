@@ -9914,6 +9914,7 @@ RECOVERY_CODES = frozenset({
     "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
     "file.unreadable", "file.unwritable", "file.exists",
     "dashboard.unavailable",
+    "resource.exhausted",
     "unknown",
 })
 
@@ -9963,6 +9964,27 @@ def make_recovery_advice(code: str, summary: str, fix: str, retryable: bool = Fa
 def recovery_fix_with_guide(fix: str, guide_url: str) -> str: return f"{fix}\nGuide: {guide_url}"
 
 
+# Yields the exception and each cause or context up to max_depth, to walk an exception chain
+def iter_exc_chain(error: Any, max_depth: int = 8):
+    current = error
+    for _ in range(max_depth):
+        if current is None:
+            return
+        yield current
+        current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
+
+
+# Reports whether any exception in the chain is the local file descriptor limit rather than a remote failure
+def is_too_many_open_files(error: Any) -> bool:
+    for current in iter_exc_chain(error):
+        if isinstance(current, OSError) and getattr(current, "errno", None) == 24:
+            return True
+        message = str(current).lower()
+        if "too many open files" in message or "errno 24" in message:
+            return True
+    return False
+
+
 # Classifies one failure into code-carrying advice, so every surface explains the same problem the same way
 def classify_recovery_error(error: Any = None, context: str = "runtime", detail: str = "", is_logged_in: Optional[bool] = None) -> RecoveryAdvice:
     # Both parts are read, since a call site that adds context must not hide the text the rules match on
@@ -9971,6 +9993,10 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
 
     # Builds one row of this table, attaching the page that covers it where one exists
     def advice(code: str, summary: str, fix: str, retryable: bool = False, guide_url: str = "") -> RecoveryAdvice: return make_recovery_advice(code, summary, recovery_fix_with_guide(fix, guide_url) if guide_url else fix, retryable, safe_detail)
+
+    # Checked ahead of every context, since a local descriptor limit is not a failure of whatever call hit it
+    if error is not None and is_too_many_open_files(error):
+        return advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not an Instagram problem", "Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", False, DIAGNOSTICS_GUIDE_URL)
 
     if context == "config_missing":
         return advice("config.missing", "A required setting has no value", "Set it in the configuration file, in the environment or with its command-line flag, then re-run the tool", False, CONFIG_FILE_GUIDE_URL)
