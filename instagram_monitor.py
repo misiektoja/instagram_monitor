@@ -942,6 +942,36 @@ def generate_config_with_current_values(values=None) -> str:
     return rendered
 
 
+# Copies an existing file to a timestamped owner-only .bak beside it, returning the backup path or None when there was nothing to copy
+def create_timestamped_backup(destination, attempts=100):
+    destination_path = Path(destination).expanduser()
+    if not destination_path.is_file():
+        return None
+    existing_bytes = destination_path.read_bytes()
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    for attempt in range(attempts):
+        suffix = f".{stamp}.bak" if attempt == 0 else f".{stamp}-{attempt}.bak"
+        backup_path = destination_path.with_name(destination_path.name + suffix)
+        try:
+            # O_EXCL so a backup can never overwrite an earlier one, even under a concurrent run
+            descriptor = os.open(str(backup_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            continue
+        try:
+            with os.fdopen(descriptor, "wb") as backup_file:
+                backup_file.write(existing_bytes)
+                backup_file.flush()
+                os.fsync(backup_file.fileno())
+        except Exception:
+            try:
+                os.unlink(str(backup_path))
+            except OSError:
+                pass
+            raise
+        return str(backup_path)
+    raise OSError(f"Could not create a unique backup for '{destination_path}' after {attempts} attempts")
+
+
 # Writes validated config content atomically and backs up an existing destination
 def write_config_file(destination, content: str):
     destination_path = Path(destination).expanduser()
@@ -958,30 +988,7 @@ def write_config_file(destination, content: str):
             os.fsync(temporary_file.fileno())
 
         if destination_path.exists():
-            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            for collision_index in range(1000):
-                collision_suffix = "" if collision_index == 0 else f"-{collision_index:02d}"
-                candidate = destination_path.with_name(f"{destination_path.name}.{timestamp}{collision_suffix}.bak")
-                try:
-                    # Created owner-only up front so a configuration kept private is never briefly world-readable
-                    backup_descriptor = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                    with destination_path.open("rb") as source_file, os.fdopen(backup_descriptor, "wb") as backup_file:
-                        shutil.copyfileobj(source_file, backup_file)
-                        backup_file.flush()
-                        os.fsync(backup_file.fileno())
-                    if os.name == "posix":
-                        source_owner_mode = destination_path.stat().st_mode & 0o600
-                        os.chmod(candidate, source_owner_mode)
-                    backup_path = candidate
-                    break
-                except FileExistsError:
-                    continue
-                except Exception:
-                    if candidate.exists():
-                        candidate.unlink()
-                    raise
-            if backup_path is None:
-                raise FileExistsError(f"Could not create a unique backup for '{destination_path}'")
+            backup_path = create_timestamped_backup(destination_path)
 
         os.replace(temporary_path, destination_path)
         temporary_path = None
@@ -15783,7 +15790,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
 
 
 # Prints a short welcome with the most common commands and offers to launch the setup wizard
-def _wizard_welcome(parser) -> None:
+def print_welcome_screen(parser) -> None:
     method = _wizard_install_method()
     prefix = _wizard_cmd_prefix(method)
     web_prefix = _wizard_cmd_prefix(method, web_dashboard=True)
@@ -17387,7 +17394,7 @@ def run_main():
         WEBHOOK_URL = ""
 
     if _wizard_should_offer_first_run(sys.argv, TARGET_USERNAMES, WEB_DASHBOARD_ENABLED):
-        _wizard_welcome(parser)
+        print_welcome_screen(parser)
         sys.exit(0 if sys.stdin.isatty() else 1)
 
     if args.import_firefox_session or args.import_browser_session:
