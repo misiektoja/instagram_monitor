@@ -187,8 +187,8 @@ def test_the_requirements_file_matches_the_packaged_dependencies():
 
     declared = re.search(r"^dependencies = \[(.*?)^\]", pyproject, re.S | re.M)
     assert declared is not None
-    packaged = {re.split(r"[<>=!;\[ ]", entry, maxsplit=1)[0].casefold() for entry in re.findall(r'"([^"]+)"', declared.group(1))}
-    listed = {re.split(r"[<>=!;\[ ]", line, maxsplit=1)[0].casefold() for line in requirements.splitlines() if line.strip() and not line.startswith("#")}
+    packaged = {name.casefold().replace("_", "-") for name in re.findall(r'"([A-Za-z0-9_.-]+)', declared.group(1))}
+    listed = {match.group(0).casefold().replace("_", "-") for line in requirements.splitlines() if line.strip() and not line.lstrip().startswith("#") if (match := re.match(r"[A-Za-z0-9_.-]+", line))}
 
     assert listed == packaged
     # The marker is what keeps a Linux or macOS install from pulling a library that only changes the classic Command Prompt
