@@ -1434,6 +1434,7 @@ WEBHOOK_GUIDE_URL = DOCUMENTATION_URL + "/usage/#webhook-notifications"
 PROXY_GUIDE_URL = DOCUMENTATION_URL + "/usage/#routing-traffic-through-a-proxy"
 TLS_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#tls-verification"
 FOLLOW_LIST_SOURCE_GUIDE_URL = DOCUMENTATION_URL + "/usage/#follower-list-source"
+HTTP_BACKEND_GUIDE_URL = DOCUMENTATION_URL + "/usage/#http-transport-backend"
 ANTI_DETECTION_INTERVAL_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#keep-the-polling-interval-reasonable"
 ANTI_DETECTION_SESSION_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#sign-in-using-session-mode-with-browser-cookies"
 CONNECTION_ERRORS_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#connection-errors-during-monitoring"
@@ -1974,17 +1975,19 @@ _CURL_CFFI_BACKEND_INSTALLED = False
 _CURL_CFFI_UNAVAILABLE_WARNED = False
 
 
-# Returns True when the curl_cffi transport should handle requests right now (reads the live config)
+# Returns whether Instagram requests will actually go out through curl_cffi's browser impersonation
+def curl_cffi_backend_active() -> bool:
+    return str(HTTP_BACKEND).strip().lower() == "curl_cffi" and _CURL_CFFI_AVAILABLE
+
+
+# Returns the same answer and warns once when curl_cffi was selected but cannot be used
 def _curl_cffi_backend_active() -> bool:
     global _CURL_CFFI_UNAVAILABLE_WARNED
-    if str(HTTP_BACKEND).strip().lower() != "curl_cffi":
-        return False
-    if not _CURL_CFFI_AVAILABLE:
-        if not _CURL_CFFI_UNAVAILABLE_WARNED:
-            print("* Warning: HTTP_BACKEND is 'curl_cffi' but the 'curl_cffi' package is not installed, falling back to 'requests'")
-            _CURL_CFFI_UNAVAILABLE_WARNED = True
-        return False
-    return True
+    active = curl_cffi_backend_active()
+    if not active and str(HTTP_BACKEND).strip().lower() == "curl_cffi" and not _CURL_CFFI_UNAVAILABLE_WARNED:
+        print("* Warning: HTTP_BACKEND is 'curl_cffi' but the 'curl_cffi' package is not installed, falling back to 'requests'")
+        _CURL_CFFI_UNAVAILABLE_WARNED = True
+    return active
 
 
 # Maps a browser user agent string to the matching curl_cffi impersonation family, defaulting to chrome
@@ -8117,11 +8120,6 @@ EDGE_AGENT_BUILDS = {99: ("99.0.4844.51", "99.0.1150.30"), 101: ("101.0.4951.64"
 CURL_CFFI_AGENT_PLATFORMS = {'chrome': f"Macintosh; Intel Mac OS X {USER_AGENT_MAC_OS}", 'edge': "Windows NT 10.0; Win64; x64"}
 
 
-# Returns whether Instagram requests will actually go out through curl_cffi's browser impersonation
-def curl_cffi_backend_active() -> bool:
-    return str(HTTP_BACKEND).strip().lower() == "curl_cffi" and _CURL_CFFI_AVAILABLE
-
-
 # Returns the major version the bare curl_cffi alias for a family impersonates, or None when it cannot be read
 def curl_cffi_alias_version(family: str) -> Optional[int]:
     # curl_cffi's unversioned alias points at its newest numbered target for that family, and only the
@@ -11066,6 +11064,24 @@ def browser_identity_mismatch() -> Optional[Tuple[str, str]]:
         return (f"The browser source runs a {family} browser, but CURL_CFFI_IMPERSONATE pins {target_family} for every other request. One session would reach Instagram as two different clients", f"Set CURL_CFFI_IMPERSONATE to auto or to a {family} target")
     return None
 
+
+BROWSER_PROBE_TIMEOUT = 60
+BROWSER_PROBE_SCRIPT = "from playwright.sync_api import sync_playwright\nwith sync_playwright() as driver:\n    print(driver.chromium.executable_path)\n"
+
+
+# Returns the bundled Chromium path and an error string, probing in a child process because stopping the
+# Playwright driver logs asyncio shutdown noise into whatever process started it
+def browser_chromium_executable() -> Tuple[str, str]:
+    try:
+        probe = subprocess.run([sys.executable, "-c", BROWSER_PROBE_SCRIPT], capture_output=True, text=True, timeout=BROWSER_PROBE_TIMEOUT)
+    except Exception as probe_error:
+        return "", format_error_message(probe_error)
+    if probe.returncode != 0:
+        reported = (probe.stderr or "").strip().splitlines()
+        return "", reported[-1] if reported else f"the probe exited with code {probe.returncode}"
+    return probe.stdout.strip(), ""
+
+
 # Returns whether the browser provider can run here, plus a detail line and the action that fixes it
 def browser_follow_list_readiness() -> Tuple[bool, str, str]:
     if not playwright_available():
@@ -11076,12 +11092,9 @@ def browser_follow_list_readiness() -> Tuple[bool, str, str]:
     if channel != "chromium":
         return True, f"{detail}. A '{channel}' installation on this machine is used, which is only checked when a scan runs", ""
 
-    try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as driver:
-            executable = driver.chromium.executable_path
-    except Exception as probe_error:
-        return False, f"Playwright could not be started: {format_error_message(probe_error)}", "Reinstall it with: pip install --upgrade playwright"
+    executable, probe_error = browser_chromium_executable()
+    if probe_error:
+        return False, f"Playwright could not be started: {probe_error}", "Reinstall it with: pip install --upgrade playwright"
 
     if not executable or not os.path.isfile(executable):
         return False, "Playwright is installed but its Chromium build is missing", "Download it with: playwright install chromium"
@@ -15982,6 +15995,12 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
     numeric_errors = runtime_configuration_errors()
     if numeric_errors:
         checks.append(make_doctor_check("Configuration", "FAIL", "One or more numeric settings are invalid", "Invalid numeric settings: " + "; ".join(numeric_errors), "Correct the reported settings in the configuration file", CONFIG_FILE_GUIDE_URL))
+
+    agents = ". ".join(f"{label}: {agent}" for label, agent in (("Browser agent", USER_AGENT), ("Mobile agent", USER_AGENT_MOBILE)) if agent)
+    if _curl_cffi_backend_active():
+        checks.append(make_doctor_check("Configuration", "PASS", f"Requests reach Instagram as {_curl_cffi_impersonate_target()}", f"Backend: curl_cffi, impersonating {_curl_cffi_impersonate_display()}. {agents}".strip()))
+    else:
+        checks.append(make_doctor_check("Configuration", "WARN", "Requests reach Instagram as a Python client", f"Backend: requests, which presents this machine's own TLS fingerprint whatever USER_AGENT claims. {agents}".strip(), "Set HTTP_BACKEND to curl_cffi to present a real browser handshake", HTTP_BACKEND_GUIDE_URL))
 
     follow_source = active_follow_list_source()
     if follow_source != 'browser':

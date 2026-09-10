@@ -472,3 +472,107 @@ class TestBrowserIdentityGates:
 
         assert im_module._impersonate_target_from_ua(im_module.USER_AGENT) == "edge"
         assert im_module.browser_identity_mismatch() is None
+
+
+class TestEffectiveIdentityReport:
+    # The report has to name the target and the agents, not only flag a mismatch
+    def test_doctor_states_the_impersonated_identity(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "auto")
+        monkeypatch.setattr(im_module, "USER_AGENT", CHROME_AGENT)
+        monkeypatch.setattr(im_module, "USER_AGENT_MOBILE", "Instagram 445.0.0.1.100 (iPhone17,1; iOS 26_0)")
+
+        rows = [check for check in im_module.doctor_check_configuration(["target.user"]) if "Requests reach Instagram" in check.label]
+
+        assert len(rows) == 1
+        assert rows[0].status == "PASS"
+        assert rows[0].label.endswith("chrome")
+        assert "auto -> chrome" in rows[0].detail
+        assert CHROME_AGENT in rows[0].detail
+        assert "iPhone17,1" in rows[0].detail
+
+    # A pinned target must be reported as itself rather than as a resolved Auto
+    def test_doctor_reports_a_pinned_target_without_the_auto_arrow(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "safari")
+        monkeypatch.setattr(im_module, "USER_AGENT", SAFARI_AGENT)
+
+        row = next(check for check in im_module.doctor_check_configuration(["target.user"]) if "Requests reach Instagram" in check.label)
+
+        assert "auto ->" not in row.detail
+        assert "impersonating safari" in row.detail
+
+    # The stock transport cannot present a browser handshake, so the report has to say so and name the fix
+    def test_doctor_warns_that_the_requests_backend_is_not_a_browser(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "requests")
+        monkeypatch.setattr(im_module, "USER_AGENT", CHROME_AGENT)
+
+        row = next(check for check in im_module.doctor_check_configuration(["target.user"]) if "Requests reach Instagram" in check.label)
+
+        assert row.status == "WARN"
+        assert "curl_cffi" in row.fix
+        assert row.guide == im_module.HTTP_BACKEND_GUIDE_URL
+
+    # An empty agent must not leave a dangling label in the detail line
+    def test_doctor_omits_an_agent_that_is_not_set_yet(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "USER_AGENT", CHROME_AGENT)
+        monkeypatch.setattr(im_module, "USER_AGENT_MOBILE", "")
+
+        row = next(check for check in im_module.doctor_check_configuration(["target.user"]) if "Requests reach Instagram" in check.label)
+
+        assert "Mobile agent" not in row.detail
+        assert row.detail.endswith(CHROME_AGENT)
+
+
+class TestChromiumProbeIsolation:
+    # Stopping the Playwright driver logs asyncio noise, so the probe must not run in this process
+    def test_the_probe_runs_in_a_child_process(self, im_module, monkeypatch):
+        calls = []
+
+        def fake_run(command, **kwargs):
+            calls.append((command, kwargs))
+            return SimpleNamespace(returncode=0, stdout="/tmp/chromium\n", stderr="noise\n")
+
+        monkeypatch.setattr(im_module.subprocess, "run", fake_run)
+
+        assert im_module.browser_chromium_executable() == ("/tmp/chromium", "")
+        assert calls[0][0][0] == im_module.sys.executable
+        assert "sync_playwright" in calls[0][0][2]
+        assert calls[0][1]["capture_output"] is True
+
+    # A failing probe has to surface the child's own last message, not a bare exit code
+    def test_a_failed_probe_reports_the_last_stderr_line(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module.subprocess, "run", lambda command, **kwargs: SimpleNamespace(returncode=1, stdout="", stderr="Traceback\nModuleNotFoundError: playwright\n"))
+
+        assert im_module.browser_chromium_executable() == ("", "ModuleNotFoundError: playwright")
+
+    # A silent non-zero exit still needs a readable reason
+    def test_a_silent_failure_reports_the_exit_code(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module.subprocess, "run", lambda command, **kwargs: SimpleNamespace(returncode=3, stdout="", stderr=""))
+
+        assert im_module.browser_chromium_executable() == ("", "the probe exited with code 3")
+
+    # A probe that never returns must not hang the doctor run
+    def test_a_probe_that_raises_is_reported_as_an_error(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module.subprocess, "run", Mock(side_effect=OSError("no such executable")))
+
+        executable, error = im_module.browser_chromium_executable()
+
+        assert executable == ""
+        assert "no such executable" in error
+
+    # Readiness reports the probe's failure rather than claiming the browser source can run
+    def test_readiness_fails_when_the_probe_fails(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "playwright_available", lambda: True)
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+        monkeypatch.setattr(im_module, "browser_chromium_executable", lambda: ("", "driver crashed"))
+
+        ready, detail, fix = im_module.browser_follow_list_readiness()
+
+        assert ready is False
+        assert "driver crashed" in detail
+        assert fix
