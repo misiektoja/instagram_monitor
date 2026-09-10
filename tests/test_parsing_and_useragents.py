@@ -110,14 +110,44 @@ class TestGetRandomUserAgent:
         for _ in range(20):
             assert re.search(r"Chrome/\d+\.0\.0\.0(?: |$)", im_module.get_random_user_agent(family))
 
-    # A version older than the configured floor means the pool went stale and now names a retired release
-    @pytest.mark.parametrize("family, pattern, floor", [("chrome", r"Chrome/(\d+)\.", "USER_AGENT_CHROME_VERSIONS"), ("edge", r"Edg/(\d+)\.", "USER_AGENT_CHROME_VERSIONS"), ("firefox", r"Firefox/(\d+)\.", "USER_AGENT_FIREFOX_VERSIONS"), ("safari", r"Version/(\d+)\.", "USER_AGENT_SAFARI_VERSIONS")])
+    # An advertised version the transport does not impersonate is the mismatch this pairing exists to avoid
+    @pytest.mark.parametrize("family, pattern", [("chrome", r"Chrome/(\d+)\."), ("edge", r"Edg/(\d+)\.")])
+    def test_the_chromium_version_matches_what_curl_cffi_impersonates(self, im_module, monkeypatch, family, pattern):
+        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {f"{family}131_android", f"{family}142", f"{family}146", family})
+
+        for _ in range(20):
+            found = re.search(pattern, im_module.get_random_user_agent(family))
+            assert found and int(found.group(1)) == 146
+
+    # Without curl_cffi there is no impersonated version to match, so the fallback range applies
+    @pytest.mark.parametrize("family, pattern", [("chrome", r"Chrome/(\d+)\."), ("edge", r"Edg/(\d+)\.")])
+    def test_the_fallback_range_applies_without_curl_cffi(self, im_module, monkeypatch, family, pattern):
+        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: set())
+        low, high = im_module.USER_AGENT_CHROME_VERSIONS
+
+        for _ in range(40):
+            found = re.search(pattern, im_module.get_random_user_agent(family))
+            assert found and low <= int(found.group(1)) <= high
+
+    # Only the plain numbered target names a desktop version, so the android and lettered ones are ignored
+    def test_only_plain_numbered_targets_set_the_version(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"chrome131_android", "chrome133a", "chrome124", "chrome_android", "chrome"})
+
+        assert im_module.curl_cffi_alias_version("chrome") == 124
+
+    # Firefox and Safari versions are not derived, so their pools have to stay current on their own
+    @pytest.mark.parametrize("family, pattern, floor", [("firefox", r"Firefox/(\d+)\.", "USER_AGENT_FIREFOX_VERSIONS"), ("safari", r"Version/(\d+)\.", "USER_AGENT_SAFARI_VERSIONS")])
     def test_no_agent_falls_below_the_configured_floor(self, im_module, family, pattern, floor):
         low, high = getattr(im_module, floor)
         assert low <= high
         for _ in range(40):
             found = re.search(pattern, im_module.get_random_user_agent(family))
             assert found and low <= int(found.group(1)) <= high
+
+    # curl_cffi cannot present a current Edge, so an unpinned run must not pick that identity by chance
+    def test_edge_is_never_chosen_at_random(self, im_module):
+        assert "edge" not in {im_module._impersonate_target_from_ua(im_module.get_random_user_agent()) for _ in range(300)}
+        assert im_module._impersonate_target_from_ua(im_module.get_random_user_agent("edge")) == "edge"
 
 
 class TestGetRandomMobileUserAgent:

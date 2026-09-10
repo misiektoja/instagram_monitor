@@ -8096,9 +8096,9 @@ def resolve_executable(path):
     raise FileNotFoundError(f"Could not find executable '{path}'")
 
 
-# Browser versions the random desktop agents advertise, taken from the curl_cffi impersonation targets
-# and the Playwright Chromium build in September 2026. Refresh them when they fall behind: an agent
-# claiming a version that was retired years ago is itself a signal
+# Browser versions the random desktop agents advertise when the impersonated version cannot be read
+# from curl_cffi, current as of September 2026. Refresh them when they fall behind: an agent claiming
+# a version that was retired years ago is itself a signal
 USER_AGENT_CHROME_VERSIONS = (140, 151)
 USER_AGENT_FIREFOX_VERSIONS = (140, 147)
 USER_AGENT_SAFARI_VERSIONS = (18, 26)
@@ -8109,14 +8109,29 @@ USER_AGENT_MAC_OS = "10_15_7"
 USER_AGENT_MAC_OS_FIREFOX = "10.15"
 
 
+# Returns the major version the bare curl_cffi alias for a family impersonates, or None when it cannot be read
+def curl_cffi_alias_version(family: str) -> Optional[int]:
+    # curl_cffi's unversioned alias points at its newest numbered target for that family, and only the
+    # plain name is considered so chrome131_android and chrome133a cannot be mistaken for desktop Chrome
+    versions = [int(found.group(1)) for target in curl_cffi_supported_impersonate_targets() if (found := re.fullmatch(rf"{family}(\d+)", target))]
+    return max(versions) if versions else None
+
+
+# Returns the Chromium major version to advertise, matching the handshake curl_cffi would present
+def chromium_agent_version(family: str = "chrome") -> int:
+    return curl_cffi_alias_version(family) or random.randint(*USER_AGENT_CHROME_VERSIONS)
+
+
 # Returns one random desktop user agent, optionally pinned to chrome, firefox, edge or safari
 def get_random_user_agent(family: Optional[str] = None) -> str:
     requested = str(family or "").strip().lower()
-    browser = requested if requested in ('chrome', 'firefox', 'edge', 'safari') else random.choice(['chrome', 'firefox', 'edge', 'safari'])
+    # Edge is offered only when asked for. curl_cffi's newest Edge target is years behind its Chrome one,
+    # so an Edge agent has to advertise that old version to stay consistent with the handshake it presents
+    browser = requested if requested in ('chrome', 'firefox', 'edge', 'safari') else random.choice(['chrome', 'firefox', 'safari'])
 
     if browser == 'chrome':
         # Chrome has reported a zeroed build and patch since it reduced user agent granularity
-        version = f"{random.randint(*USER_AGENT_CHROME_VERSIONS)}.0.0.0"
+        version = f"{chromium_agent_version()}.0.0.0"
         platform_part = f"Macintosh; Intel Mac OS X {USER_AGENT_MAC_OS}" if random.choice([True, False]) else "Windows NT 10.0; Win64; x64"
         return f"Mozilla/5.0 ({platform_part}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36"
 
@@ -8127,7 +8142,7 @@ def get_random_user_agent(family: Optional[str] = None) -> str:
 
     if browser == 'edge':
         # Edge is Chromium on every platform, so it reports the Chrome engine and appends its own build
-        version = f"{random.randint(*USER_AGENT_CHROME_VERSIONS)}.0.0.0"
+        version = f"{chromium_agent_version('edge')}.0.0.0"
         platform_part = f"Macintosh; Intel Mac OS X {USER_AGENT_MAC_OS}" if random.choice([True, False]) else "Windows NT 10.0; Win64; x64"
         return f"Mozilla/5.0 ({platform_part}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36 Edg/{version}"
 
