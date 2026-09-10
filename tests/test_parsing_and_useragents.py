@@ -105,14 +105,50 @@ class TestGetRandomUserAgent:
                 assert f"Intel Mac OS X {im_module.USER_AGENT_MAC_OS})" in agent or f"Intel Mac OS X {im_module.USER_AGENT_MAC_OS};" in agent
 
     # Chrome has reported a zeroed build and patch since it reduced user agent granularity
-    @pytest.mark.parametrize("family", ["chrome", "edge"])
-    def test_chrome_reports_a_zeroed_build(self, im_module, family):
+    def test_chrome_reports_a_zeroed_build(self, im_module):
         for _ in range(20):
-            assert re.search(r"Chrome/\d+\.0\.0\.0(?: |$)", im_module.get_random_user_agent(family))
+            assert re.search(r"Chrome/\d+\.0\.0\.0(?: |$)", im_module.get_random_user_agent("chrome"))
+
+    # The Edge targets curl_cffi ships predate that convention, so their real build numbers are sent instead
+    def test_a_pre_zeroing_edge_reports_its_real_builds(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"edge99", "edge101", "edge"})
+
+        agent = im_module.get_random_user_agent("edge")
+        chrome_build, edge_build = im_module.EDGE_AGENT_BUILDS[101]
+        assert agent == f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{chrome_build} Safari/537.36 Edg/{edge_build}"
+
+    # An Edge new enough to zero its builds has no recorded pair, so the zeroed form is used
+    def test_a_post_zeroing_edge_reports_a_zeroed_build(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"edge140", "edge"})
+
+        assert "Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0" in im_module.get_random_user_agent("edge")
+
+    # curl_cffi pins sec-ch-ua-platform per family and a User-Agent override does not change it, so the
+    # agent has to name the platform that header already claims
+    @pytest.mark.parametrize("family, platform", [("chrome", "Macintosh"), ("edge", "Windows NT 10.0")])
+    def test_the_platform_follows_the_pinned_client_hint(self, im_module, monkeypatch, family, platform):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+
+        for _ in range(40):
+            assert platform in im_module.get_random_user_agent(family)
+
+    # The stock transport sends no client hints, so there is nothing for the platform to contradict
+    def test_the_platform_still_varies_without_curl_cffi(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "requests")
+
+        platforms = {"Macintosh" in im_module.get_random_user_agent("chrome") for _ in range(200)}
+        assert platforms == {True, False}
 
     # An advertised version the transport does not impersonate is the mismatch this pairing exists to avoid
     @pytest.mark.parametrize("family, pattern", [("chrome", r"Chrome/(\d+)\."), ("edge", r"Edg/(\d+)\.")])
     def test_the_chromium_version_matches_what_curl_cffi_impersonates(self, im_module, monkeypatch, family, pattern):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
         monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {f"{family}131_android", f"{family}142", f"{family}146", family})
 
         for _ in range(20):
@@ -122,6 +158,7 @@ class TestGetRandomUserAgent:
     # Without curl_cffi there is no impersonated version to match, so the fallback range applies
     @pytest.mark.parametrize("family, pattern", [("chrome", r"Chrome/(\d+)\."), ("edge", r"Edg/(\d+)\.")])
     def test_the_fallback_range_applies_without_curl_cffi(self, im_module, monkeypatch, family, pattern):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "requests")
         monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: set())
         low, high = im_module.USER_AGENT_CHROME_VERSIONS
 

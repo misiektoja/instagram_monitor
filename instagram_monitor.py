@@ -8108,6 +8108,19 @@ USER_AGENT_SAFARI_VERSIONS = (18, 26)
 USER_AGENT_MAC_OS = "10_15_7"
 USER_AGENT_MAC_OS_FIREFOX = "10.15"
 
+# Exact Chromium and Edge builds curl_cffi sends for each Edge target it ships, read from the requests
+# it actually makes. Edge targets predate the zeroed build convention, so the real numbers are needed
+EDGE_AGENT_BUILDS = {99: ("99.0.4844.51", "99.0.1150.30"), 101: ("101.0.4951.64", "101.0.1210.47")}
+
+# Platform curl_cffi pins in sec-ch-ua-platform for each Chromium family. A User-Agent override does
+# not change that header, so naming a different platform in the agent contradicts it on every request
+CURL_CFFI_AGENT_PLATFORMS = {'chrome': f"Macintosh; Intel Mac OS X {USER_AGENT_MAC_OS}", 'edge': "Windows NT 10.0; Win64; x64"}
+
+
+# Returns whether Instagram requests will actually go out through curl_cffi's browser impersonation
+def curl_cffi_backend_active() -> bool:
+    return str(HTTP_BACKEND).strip().lower() == "curl_cffi" and _CURL_CFFI_AVAILABLE
+
 
 # Returns the major version the bare curl_cffi alias for a family impersonates, or None when it cannot be read
 def curl_cffi_alias_version(family: str) -> Optional[int]:
@@ -8117,9 +8130,14 @@ def curl_cffi_alias_version(family: str) -> Optional[int]:
     return max(versions) if versions else None
 
 
-# Returns the Chromium major version to advertise, matching the handshake curl_cffi would present
-def chromium_agent_version(family: str = "chrome") -> int:
-    return curl_cffi_alias_version(family) or random.randint(*USER_AGENT_CHROME_VERSIONS)
+# Returns the Chromium version and platform to advertise, matching what curl_cffi would present
+def chromium_agent_identity(family: str) -> Tuple[str, str]:
+    impersonated = curl_cffi_alias_version(family) if curl_cffi_backend_active() else None
+    random_platform = f"Macintosh; Intel Mac OS X {USER_AGENT_MAC_OS}" if random.choice([True, False]) else "Windows NT 10.0; Win64; x64"
+    if impersonated is None:
+        return f"{random.randint(*USER_AGENT_CHROME_VERSIONS)}.0.0.0", random_platform
+    builds = EDGE_AGENT_BUILDS.get(impersonated) if family == 'edge' else None
+    return (builds[0] if builds else f"{impersonated}.0.0.0"), CURL_CFFI_AGENT_PLATFORMS[family]
 
 
 # Returns one random desktop user agent, optionally pinned to chrome, firefox, edge or safari
@@ -8131,8 +8149,7 @@ def get_random_user_agent(family: Optional[str] = None) -> str:
 
     if browser == 'chrome':
         # Chrome has reported a zeroed build and patch since it reduced user agent granularity
-        version = f"{chromium_agent_version()}.0.0.0"
-        platform_part = f"Macintosh; Intel Mac OS X {USER_AGENT_MAC_OS}" if random.choice([True, False]) else "Windows NT 10.0; Win64; x64"
+        version, platform_part = chromium_agent_identity('chrome')
         return f"Mozilla/5.0 ({platform_part}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36"
 
     if browser == 'firefox':
@@ -8141,10 +8158,12 @@ def get_random_user_agent(family: Optional[str] = None) -> str:
         return f"Mozilla/5.0 ({platform_part}; rv:{version}.0) Gecko/20100101 Firefox/{version}.0"
 
     if browser == 'edge':
-        # Edge is Chromium on every platform, so it reports the Chrome engine and appends its own build
-        version = f"{chromium_agent_version('edge')}.0.0.0"
-        platform_part = f"Macintosh; Intel Mac OS X {USER_AGENT_MAC_OS}" if random.choice([True, False]) else "Windows NT 10.0; Win64; x64"
-        return f"Mozilla/5.0 ({platform_part}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36 Edg/{version}"
+        # Edge is Chromium on every platform, so it reports the Chrome engine and appends its own build,
+        # which carries a different number from the Chrome one it is built on
+        version, platform_part = chromium_agent_identity('edge')
+        builds = EDGE_AGENT_BUILDS.get(int(version.split(".")[0]))
+        edge_version = builds[1] if builds else version
+        return f"Mozilla/5.0 ({platform_part}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36 Edg/{edge_version}"
 
     if browser == 'safari':
         version = f"{random.randint(*USER_AGENT_SAFARI_VERSIONS)}.{random.randint(0, 2)}"
@@ -11037,7 +11056,7 @@ def impersonate_family(target) -> str:
 def browser_identity_mismatch() -> Optional[Tuple[str, str]]:
     channel = str(FOLLOW_LIST_BROWSER_CHANNEL or "chromium").strip().lower()
     family = browser_channel_family()
-    if str(HTTP_BACKEND).strip().lower() != "curl_cffi" or not _CURL_CFFI_AVAILABLE:
+    if not curl_cffi_backend_active():
         return (f"The browser source runs a {family} browser, but every other request uses the 'requests' backend, which cannot present a browser TLS fingerprint. One session would reach Instagram as two different clients", "Set HTTP_BACKEND to curl_cffi, or set FOLLOW_LIST_SOURCE back to auto")
     agent_family = _impersonate_target_from_ua(USER_AGENT)
     if agent_family != family:
