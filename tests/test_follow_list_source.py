@@ -394,6 +394,40 @@ class TestProgressAndSummary:
     def test_malformed_rest_shape_yields_no_names(self, im_module, payload):
         assert im_module.extract_usernames_safely(payload) == []
 
+    # A value that names no source is reported next to the fallback rather than replaced in silence
+    def test_an_unknown_setting_is_named_in_the_summary(self, im_module, monkeypatch, capsys, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--no-color", "--disable-logging"])
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "selenium")
+        monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+        monkeypatch.setattr(im_module, "DASHBOARD_ENABLED", False)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", False)
+        monkeypatch.setattr(im_module, "find_config_file", lambda path=None: None)
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "check_internet", lambda: True)
+        monkeypatch.setattr(im_module, "start_dashboard_input_handler", Mock(side_effect=SystemExit(0)))
+
+        with pytest.raises(SystemExit):
+            im_module.run_main()
+
+        rows = [line for line in capsys.readouterr().out.splitlines() if line.startswith("* Follow list source:")]
+        assert rows == ["* Follow list source:           auto (REST, GraphQL on failure) (FOLLOW_LIST_SOURCE 'selenium' is not a known source)"]
+
+    def test_an_unknown_setting_is_a_doctor_warning(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "selenium")
+
+        assert im_module.unrecognised_follow_list_source() == "selenium"
+        check = next(check for check in im_module.doctor_check_configuration([]) if check.label == "FOLLOW_LIST_SOURCE names no known source")
+        assert check.status == "WARN"
+        assert check.detail == "'selenium' is ignored and follower lists are read over auto (REST, GraphQL on failure)"
+        assert "Set FOLLOW_LIST_SOURCE to auto, rest, graphql or browser" in check.advice.fix
+
+    def test_a_known_setting_raises_no_warning(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", " REST ")
+
+        assert im_module.unrecognised_follow_list_source() is None
+        assert not any(check.label == "FOLLOW_LIST_SOURCE names no known source" for check in im_module.doctor_check_configuration([]))
+
     # The startup summary names the surface in use
     @pytest.mark.parametrize("configured,expected", [("auto", "auto (REST, GraphQL on failure)"), ("rest", "REST"), ("graphql", "GraphQL")])
     def test_summary_names_the_surface(self, im_module, monkeypatch, configured, expected):

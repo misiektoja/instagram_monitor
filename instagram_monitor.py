@@ -9867,11 +9867,19 @@ FAILURE_GROUP_LABELS = {
 }
 
 
+# Reports whether one match term occurs in a lowercased error message, reading a bare status code as a whole number so
+# the 403 inside a user id such as api/v1/friendships/4030/ or the 401 in a username cannot classify the error
+def failure_term_matches(term: str, message: str) -> bool:
+    if term.isdigit():
+        return re.search(rf"(?<![\w/]){term}(?!\w)", message) is not None
+    return term in message
+
+
 # Returns the stable failure class for one error message, or 'unknown' when nothing matches
 def classify_failure_class(error_msg: str) -> str:
     m = (error_msg or "").lower()
     for name in FAILURE_CLASS_ORDER:
-        if any(t in m for t in FAILURE_TERMS[name]):
+        if any(failure_term_matches(t, m) for t in FAILURE_TERMS[name]):
             return name
     return 'unknown'
 
@@ -10654,23 +10662,26 @@ def clear_circuit_breaker() -> Optional[Dict[str, Any]]:
     account = exposure_account_name()
     try:
         previous = _update_exposure(mutate)
-    except ExposureLedgerError:
+    except ExposureLedgerError as ledger_error:
         data = {'version': EXPOSURE_STATE_VERSION, 'accounts': {}}
         record = _exposure_record(data, account)
         record['breaker'] = None
         _write_exposure_file(data)
-        previous = _account_breaker_memory_state()
+        # The unusable file is what stopped the account, so clearing reports it as the state that was removed
+        previous = _account_breaker_memory_state() or {'tripped_ts': int(time.time()), 'failure_class': 'ledger_unavailable', 'target': '', 'error': str(ledger_error)}
+        previous['ledger_reset'] = str(ledger_error)
     with ACCOUNT_BREAKER_MEMORY_LOCK:
         ACCOUNT_BREAKER_MEMORY.pop(account, None)
     return previous
 
 
-# Records one classified failure against the session account and trips the circuit breaker on account-level actions
-def record_failure_event(failure_class: str, user: str = "", error_msg: str = "") -> None:
+# Records one classified failure against the session account and trips the circuit breaker on account-level actions,
+# unless the caller could not confirm that the account itself was acted on
+def record_failure_event(failure_class: str, user: str = "", error_msg: str = "", confirmed: bool = True) -> None:
     if not failure_class:
         return
 
-    account_failure = is_account_level_failure(failure_class)
+    account_failure = is_account_level_failure(failure_class) and confirmed
     if account_failure:
         trip_circuit_breaker(failure_class, user, error_msg)
 
@@ -10688,10 +10699,33 @@ def record_failure_event(failure_class: str, user: str = "", error_msg: str = ""
         return
 
 
-# Classifies one error message, records it against the session account and returns its failure class
-def note_instagram_failure(error_msg: str, user: str = "") -> str:
+# Checks whether the session still answers, since 401, 403 and redirect wording also appears on transient and
+# target-level errors. Returns True when the probe confirms the session is gone, False when it still works and
+# None when the probe itself failed for a reason that says nothing about the account
+def confirm_session_expired(bot) -> Optional[bool]:
+    try:
+        profile_from_username_resilient(bot, FLAGGED_PROBE_USERNAME)
+    except Exception as probe_error:
+        probe_class = classify_failure_class(format_error_message(probe_error))
+        debug_print("Session probe", account=FLAGGED_PROBE_USERNAME, outcome="failed", failure_class=probe_class)
+        return True if is_account_level_failure(probe_class) else None
+    debug_print("Session probe", account=FLAGGED_PROBE_USERNAME, outcome="ok")
+    return False
+
+
+# Classifies one error message, records it against the session account and returns its failure class. An expired
+# session read from the message alone is confirmed against Instagram first when a client is available, so one
+# mislabelled request cannot stop every target
+def note_instagram_failure(error_msg: str, user: str = "", bot=None) -> str:
     failure_class = classify_failure_class(error_msg)
-    record_failure_event(failure_class, user, error_msg)
+    confirmed = True
+    if failure_class == 'auth_expired' and bot is not None and CIRCUIT_BREAKER:
+        verdict = confirm_session_expired(bot)
+        confirmed = verdict is True
+        if not confirmed:
+            reason = "still signs in" if verdict is False else "check did not complete"
+            print(f"* Instagram rejected a request for {user or 'the target'} as not logged in, but the session {reason}, so the circuit breaker stays armed")
+    record_failure_event(failure_class, user, error_msg, confirmed=confirmed)
     return failure_class
 
 
@@ -10990,6 +11024,9 @@ def build_follow_string(enabled, limit, batch, delay, alt_format=False):
 # Sources FOLLOW_LIST_SOURCE accepts
 FOLLOW_LIST_SOURCES = ('auto', 'rest', 'graphql', 'browser')
 
+# Names banked per ledger write on sources that hand back one profile at a time, matching the REST page size
+IDENTITY_LEDGER_GROUP_SIZE = 25
+
 # Accounts asked for per REST page, matching what the web app requests while a follower list is scrolled
 FOLLOW_LIST_REST_PAGE_SIZE = 25
 
@@ -11145,11 +11182,37 @@ def iter_rest_follow_list(bot, profile, kind: str, record_exposure: bool = False
             pass
 
 
-# Records each identity yielded by a source that cannot expose its raw response pages
+# Records the identities yielded by a source that cannot expose its raw response pages. Names are banked in the
+# ledger in groups the size of a REST page rather than one durable write per name, and a group shrinks to what
+# the daily budget still allows so the ledger is exact at the point the budget runs out
 def _iter_accounted_follow_list(candidates):
-    for candidate in candidates:
-        record_identities_returned(1)
-        yield candidate
+    budget = int(IDENTITY_BUDGET_PER_DAY) if IDENTITY_BUDGET_PER_DAY and IDENTITY_BUDGET_PER_DAY > 0 else 0
+
+    # Returns how many names may be yielded before the next ledger write
+    def group_size(total_recorded):
+        return max(1, min(IDENTITY_LEDGER_GROUP_SIZE, budget - total_recorded)) if budget else IDENTITY_LEDGER_GROUP_SIZE
+
+    limit = group_size(int(exposure_snapshot().get('identities', 0)))
+    pending = 0
+    try:
+        for candidate in candidates:
+            pending += 1
+            if pending >= limit:
+                count, pending = pending, 0
+                limit = group_size(record_identities_returned(count))
+            yield candidate
+    except BaseException:
+        # Names already returned still cost the account, and a ledger that dies here must not replace the
+        # Instagram error the caller needs to see
+        if pending:
+            try:
+                record_identities_returned(pending)
+            except ExposureLedgerError as safety_error:
+                _mark_account_safety_unavailable(safety_error)
+        raise
+    else:
+        if pending:
+            record_identities_returned(pending)
 
 
 # Returns instaloader's own GraphQL follower or following iterator for one target
@@ -11510,6 +11573,12 @@ def active_follow_list_source() -> str:
     return source if source in FOLLOW_LIST_SOURCES else 'auto'
 
 
+# Returns the configured FOLLOW_LIST_SOURCE value when it names no known source, so the fallback to auto is reported rather than silent
+def unrecognised_follow_list_source() -> Optional[str]:
+    source = str(FOLLOW_LIST_SOURCE).strip().lower()
+    return None if source in FOLLOW_LIST_SOURCES else str(FOLLOW_LIST_SOURCE)
+
+
 # Describes the follow list source for the startup summary
 def follow_list_source_display() -> str:
     source = active_follow_list_source()
@@ -11700,7 +11769,7 @@ def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, tota
                     record_identities_returned(len(batch))
                 except ExposureLedgerError as safety_error:
                     _mark_account_safety_unavailable(safety_error)
-            note_instagram_failure(format_error_message(fetch_error), user)
+            note_instagram_failure(format_error_message(fetch_error), user, bot)
             raise
 
         if not batch:
@@ -16249,7 +16318,11 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
         checks.append(make_doctor_check("Configuration", "WARN", advice.summary, f"Backend: requests, which presents this machine's own TLS fingerprint whatever USER_AGENT claims. {agents}".strip(), advice))
 
     follow_source = active_follow_list_source()
-    if follow_source != 'browser':
+    unknown_source = unrecognised_follow_list_source()
+    if unknown_source is not None:
+        advice = make_recovery_advice("config.invalid", "FOLLOW_LIST_SOURCE names no known source", recovery_fix_with_guide(f"Set FOLLOW_LIST_SOURCE to {join_setting_names(list(FOLLOW_LIST_SOURCES), 'or')}", FOLLOW_LIST_SOURCE_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "WARN", advice.summary, f"{unknown_source!r} is ignored and follower lists are read over {follow_list_source_display()}", advice))
+    elif follow_source != 'browser':
         checks.append(make_doctor_check("Configuration", "PASS", f"Follower lists are read over {follow_list_source_display()}"))
     else:
         browser_ready, browser_detail, browser_fix = browser_follow_list_readiness()
@@ -17485,6 +17558,8 @@ def run_main():
             print("* To fix: Restore write access to that file and the directory holding it, or delete the file to start a new ledger")
             sys.exit(1)
         if cleared:
+            if cleared.get('ledger_reset'):
+                print(f"* The account safety ledger at {exposure_state_path()} could not be used ({cleared['ledger_reset']}) and was replaced with a fresh one")
             print(f"* Circuit breaker cleared for {exposure_account_name()}")
             print(f"* It was tripped at {get_date_from_ts(int(cleared.get('tripped_ts', 0)))} by: {cleared.get('failure_class', 'unknown')}")
             print("* Monitoring will resume on the next run. Raise your check interval or lower --identity-budget if it trips again")
@@ -17497,6 +17572,13 @@ def run_main():
         print("─" * HORIZONTAL_LINE)
         for line in exposure_summary_lines():
             print(line)
+        # The pasteable block omits the path, so the reason the ledger is unusable is reported under it
+        try:
+            exposure_snapshot()
+        except ExposureLedgerError as ledger_error:
+            print(f"\n* Error: {ledger_error}")
+            print(f"* Path: {exposure_state_path()}")
+            print("To fix: Fix the file's contents or permissions, or move it aside, then run --clear-breaker to start a fresh ledger")
         sys.exit(0)
 
     if args.set_smtp_password:
@@ -17902,7 +17984,10 @@ def run_main():
     summary_rows.append(StartupSummaryRow("Advanced follower fetching", follower_str, concise=bool(ADVANCED_FOLLOWER_FETCH)))
     summary_rows.append(StartupSummaryRow("Advanced followee fetching", followee_str, concise=bool(ADVANCED_FOLLOWEE_FETCH)))
 
-    summary_rows.append(StartupSummaryRow("Follow list source", follow_list_source_display(), concise=True))
+    follow_source_value = follow_list_source_display()
+    if unrecognised_follow_list_source() is not None:
+        follow_source_value += f" (FOLLOW_LIST_SOURCE {unrecognised_follow_list_source()!r} is not a known source)"
+    summary_rows.append(StartupSummaryRow("Follow list source", follow_source_value, concise=True))
 
     identity_budget_str = f"{IDENTITY_BUDGET_PER_DAY} names/day" if IDENTITY_BUDGET_PER_DAY else "Disabled (counted but not capped)"
     summary_rows.append(StartupSummaryRow("Identity budget", identity_budget_str, concise=bool(IDENTITY_BUDGET_PER_DAY)))

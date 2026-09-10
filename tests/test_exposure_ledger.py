@@ -49,6 +49,20 @@ def test_failure_classes_map_to_reliability_groups(message, expected_class, expe
     assert im.failure_class_group(im.classify_failure_class(message)) == expected_group
 
 
+# A status code is a whole number, so the 403 inside a user id or the 401 in a username must not classify the error
+@pytest.mark.parametrize(("message", "expected_class"), [
+    ("ConnectionException: JSON Query to api/v1/friendships/4030/following/: HTTP error code 500.", "network"),
+    ("JSON Query to api/v1/friendships/4030/following/: HTTP error code 500.", "unknown"),
+    ("JSON Query to api/v1/friendships/12340312/followers/: 404 Not Found", "target_unavailable"),
+    ("Profile 401club does not exist", "target_unavailable"),
+    ("JSON Query to api/v1/friendships/403/followers/: 429 Too Many Requests", "rate_limit"),
+    ("JSON Query to api/v1/friendships/4030/followers/: 403 Forbidden", "auth_expired"),
+    ("HTTP error code 401.", "auth_expired"),
+])
+def test_a_status_code_inside_a_number_does_not_classify(message, expected_class):
+    assert im.classify_failure_class(message) == expected_class
+
+
 def test_only_account_level_failures_are_group_c():
     assert im.is_account_level_failure("challenge") is True
     assert im.is_account_level_failure("auth_expired") is True
@@ -177,6 +191,58 @@ def test_persisted_breaker_blocks_monitor_before_client_creation(ledger, monkeyp
     assert client_created is False
 
 
+# A 401 or 403 read from one request is confirmed against Instagram before every target is stopped
+class TestExpiredSessionConfirmation:
+    # Stands in for the probe fetch of the public account: it returns, or raises what the session answered
+    @pytest.fixture
+    def probe(self, monkeypatch):
+        outcome = {"raise": None, "calls": 0}
+
+        def fetch(bot, username):
+            outcome["calls"] += 1
+            if outcome["raise"] is not None:
+                raise outcome["raise"]
+            return object()
+
+        monkeypatch.setattr(im, "profile_from_username_resilient", fetch, raising=False)
+        return outcome
+
+    def test_a_session_that_still_signs_in_keeps_the_breaker_armed(self, ledger, probe, capsys):
+        im.note_instagram_failure("JSON Query to graphql/query: 403 Forbidden", "target", bot=object())
+
+        assert probe["calls"] == 1
+        assert im.circuit_breaker_tripped() is False
+        assert im.exposure_snapshot()["failures"] == {"auth_expired": 1}
+        assert "still signs in, so the circuit breaker stays armed" in capsys.readouterr().out
+
+    def test_a_probe_that_is_also_rejected_trips_the_breaker(self, ledger, probe):
+        probe["raise"] = RuntimeError("JSON Query to api/v1/users/web_profile_info/: 401 Unauthorized - login_required")
+        im.note_instagram_failure("JSON Query to graphql/query: 403 Forbidden", "target", bot=object())
+
+        assert im.circuit_breaker_tripped() is True
+
+    def test_a_probe_that_cannot_reach_instagram_does_not_trip_the_breaker(self, ledger, probe, capsys):
+        probe["raise"] = RuntimeError("ConnectionException: Max retries exceeded, connection timed out")
+        im.note_instagram_failure("JSON Query to graphql/query: 403 Forbidden", "target", bot=object())
+
+        assert im.circuit_breaker_tripped() is False
+        assert "check did not complete, so the circuit breaker stays armed" in capsys.readouterr().out
+
+    # Without a client there is nothing to probe with, so the classification stands as it did before
+    def test_without_a_client_the_classification_is_trusted(self, ledger, probe):
+        im.note_instagram_failure("JSON Query to graphql/query: 403 Forbidden", "target")
+
+        assert probe["calls"] == 0
+        assert im.circuit_breaker_tripped() is True
+
+    # A challenge is never a false positive of a transient request, so it is not probed
+    def test_a_challenge_is_not_probed(self, ledger, probe):
+        im.note_instagram_failure("checkpoint_required", "target", bot=object())
+
+        assert probe["calls"] == 0
+        assert im.circuit_breaker_tripped() is True
+
+
 def test_transport_and_schema_failures_do_not_trip_the_breaker(ledger):
     im.note_instagram_failure("429 Too Many Requests", "target")
     im.note_instagram_failure("TypeError: 'NoneType' object is not subscriptable", "target")
@@ -234,6 +300,73 @@ def test_mid_fetch_failure_banks_returned_names_before_propagating(ledger):
     # The two names Instagram already returned still cost the account
     assert im.exposure_snapshot()["identities"] == 2
     assert im.circuit_breaker_tripped() is True
+
+
+# Counts durable ledger writes so a per-name source can be shown to bank names in groups
+@pytest.fixture
+def ledger_writes(monkeypatch):
+    writes = []
+    real_write = im._write_exposure_file
+    monkeypatch.setattr(im, "_write_exposure_file", lambda data: (writes.append(1), real_write(data)), raising=False)
+    return writes
+
+
+class TestGraphqlNamesAreBankedInGroups:
+    def test_a_full_list_costs_one_write_per_group_and_is_counted_exactly(self, ledger, ledger_writes):
+        names = list(im._iter_accounted_follow_list(_names(60)))
+
+        assert len(names) == 60
+        assert im.exposure_snapshot()["identities"] == 60
+        assert len(ledger_writes) == 3
+
+    def test_a_partial_group_is_banked_when_the_source_ends(self, ledger, ledger_writes):
+        list(im._iter_accounted_follow_list(_names(7)))
+
+        assert im.exposure_snapshot()["identities"] == 7
+        assert len(ledger_writes) == 1
+
+    def test_names_before_a_failure_are_banked_before_it_propagates(self, ledger):
+        def exploding():
+            yield _FakeUser("a")
+            yield _FakeUser("b")
+            raise RuntimeError("HTTP error code 500.")
+
+        with pytest.raises(RuntimeError):
+            list(im._iter_accounted_follow_list(exploding()))
+
+        assert im.exposure_snapshot()["identities"] == 2
+
+    def test_an_abandoned_source_banks_what_it_yielded(self, ledger):
+        source = im._iter_accounted_follow_list(_names(40))
+        for _ in range(30):
+            next(source)
+        source.close()
+
+        assert im.exposure_snapshot()["identities"] == 30
+
+    # The group shrinks to the remaining budget, so the fetch loop reads an exact total at the moment it stops
+    def test_the_budget_is_exact_where_the_fetch_stops(self, ledger, monkeypatch):
+        monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 30, raising=False)
+        result = im.fetch_usernames_paginated(None, lambda: im._iter_accounted_follow_list(_names(100)), 0, 0, 0, False, 100, "target", identities_counted_at_source=True)
+
+        assert len(result) == 30
+        assert result.complete is False
+        assert im.exposure_snapshot()["identities"] == 30
+
+    def test_a_ledger_that_dies_mid_group_stops_the_account_without_hiding_the_instagram_error(self, ledger, monkeypatch):
+        def exploding():
+            yield _FakeUser("a")
+            raise RuntimeError("HTTP error code 500.")
+
+        source = im._iter_accounted_follow_list(exploding())
+        next(source)
+        monkeypatch.setattr(im, "_write_exposure_file", lambda data: (_ for _ in ()).throw(im.ExposureLedgerError("write rejected")), raising=False)
+
+        with pytest.raises(RuntimeError):
+            next(source)
+        memory_state = im._account_breaker_memory_state()
+
+        assert memory_state is not None and memory_state["failure_class"] == "ledger_unavailable"
 
 
 def test_ledger_survives_a_restart(ledger):
@@ -420,6 +553,44 @@ def test_clear_breaker_recovers_a_corrupt_ledger(ledger, tmp_path):
     assert cleared is not None and cleared["failure_class"] == "ledger_unavailable"
     assert im.circuit_breaker_tripped() is False
     assert im.exposure_snapshot()["identities"] == 0
+
+
+# A corrupt file found by --clear-breaker itself is still reported as the state that was removed, never as nothing to clear
+def test_clear_breaker_names_a_corrupt_ledger_it_replaced(ledger, tmp_path, monkeypatch, capsys):
+    (tmp_path / "instagram_monitor_exposure.json").write_text("{ not json", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(im.sys, "argv", ["instagram_monitor.py", "--clear-breaker", "--no-color"])
+    monkeypatch.setattr(im, "CLI_CONFIG_PATH", None, raising=False)
+    monkeypatch.setattr(im, "find_config_file", lambda path=None: None, raising=False)
+    monkeypatch.setattr(im, "clear_screen", lambda *args, **kwargs: None, raising=False)
+
+    with pytest.raises(SystemExit) as raised:
+        im.run_main()
+    output = capsys.readouterr().out
+
+    assert raised.value.code == 0
+    assert "could not be used (The account safety ledger cannot be read: JSONDecodeError) and was replaced with a fresh one" in output
+    assert "nothing to clear" not in output
+    assert im.exposure_snapshot()["identities"] == 0
+
+
+# The pasteable report keeps the path out, so the reason the ledger is unusable is printed under it
+def test_exposure_report_says_why_the_ledger_is_unusable(ledger, tmp_path, monkeypatch, capsys):
+    (tmp_path / "instagram_monitor_exposure.json").write_text("[1, 2]", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(im.sys, "argv", ["instagram_monitor.py", "--exposure", "--no-color"])
+    monkeypatch.setattr(im, "CLI_CONFIG_PATH", None, raising=False)
+    monkeypatch.setattr(im, "find_config_file", lambda path=None: None, raising=False)
+    monkeypatch.setattr(im, "clear_screen", lambda *args, **kwargs: None, raising=False)
+
+    with pytest.raises(SystemExit):
+        im.run_main()
+    output = capsys.readouterr().out
+
+    assert "Account safety ledger:" in output
+    assert "* Error: The account safety ledger has an invalid structure" in output
+    assert f"* Path: {tmp_path / 'instagram_monitor_exposure.json'}" in output
+    assert "To fix: Fix the file's contents or permissions" in output
 
 
 # A report pasted into an issue has to say whether impersonation actually ran, not only which backend was set

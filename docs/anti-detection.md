@@ -53,7 +53,7 @@ IDENTITY_BUDGET_PER_DAY = 750
 
 Once the budget is spent, name fetching stops until the next day. Counts, posts, reels, stories and profile changes keep being monitored normally, so you still see that the follower number moved, just not who moved.
 
-REST pages are counted when Instagram returns them, before the tool consumes individual names. The last response can therefore put the recorded total above the configured limit if Instagram returns more accounts than requested. This records the actual exposure and stops another request.
+REST pages are counted when Instagram returns them, before the tool consumes individual names. The last response can therefore put the recorded total above the configured limit if Instagram returns more accounts than requested. This records the actual exposure and stops another request. GraphQL names are banked in groups of 25 with the last group cut to what the budget still allows, so the recorded total is exact where the fetch stops.
 
 The budget is disabled by default. Names are always counted whether or not you set one, so you can watch your own usage first with `--exposure` and pick a number from that. If you have been challenged before, somewhere around 500 to 1000 is a reasonable starting point.
 
@@ -78,7 +78,7 @@ The second line of that message names the fix for the failure it recorded: clear
 instagram_monitor --clear-breaker
 ```
 
-Rate limits, network errors and Instagram API changes do not trip the breaker. Only responses that act against the account do.
+Rate limits, network errors and Instagram API changes do not trip the breaker. Only responses that act against the account do. A rejected or redirected request that reads like an expired session is confirmed with one public profile fetch first, so a single mislabelled request cannot stop every target. If the session still signs in, the run says so and the breaker stays armed.
 
 The email and webhook alert for a flagged account also carries the client identity behind it: the transport in effect, the browser `curl_cffi` impersonated and the browser user agent. That is usually what you need to decide whether the transport caused the flag. It means those values reach your notification service, so leave account-level alerts off if that matters for your webhook destination. Routine per-target error alerts carry no identity.
 
