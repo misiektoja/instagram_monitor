@@ -510,7 +510,7 @@ def test_a_delivered_webhook_is_reported_in_verbose(im_module, monkeypatch, caps
 
     assert im_module.send_webhook("Profile picture changed", "desc", notification_type="status") == 0
 
-    assert "* Webhook delivered through discord: Profile picture changed" in capsys.readouterr().out
+    assert "* Webhook delivered through Discord: Profile picture changed" in capsys.readouterr().out
 
 
 # Verifies the delivery line follows the flag rather than printing on every alert, so an ordinary run stays

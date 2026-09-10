@@ -6098,7 +6098,7 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                     response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers=final_headers, json=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS)
 
             if 200 <= response.status_code <= 299:
-                verbose_print(f"Webhook delivered through {provider}: {payload['title']}")
+                verbose_print(f"Webhook delivered through {webhook_provider_display_name(provider)}: {payload['title']}")
                 return 0
             last_error = response
             if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
