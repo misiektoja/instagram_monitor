@@ -107,6 +107,79 @@ def test_budget_caps_the_fetch_and_leaves_it_incomplete(ledger, monkeypatch):
     assert im.is_complete_username_baseline(result, 100) is False
 
 
+# Instaloader's NodeIterator fetches its first page while it is being constructed, so names reach this process
+# before anything can count or cap them. A plain generator produces one name per next() and hides that entirely
+class EagerPageSource:
+    # Takes the pages the endpoint would serve and fetches the first one immediately, as the real iterator does
+    def __init__(self, pages):
+        self.remaining = [list(page) for page in pages]
+        self.served = []
+        self.buffer = self._fetch_page()
+
+    def _fetch_page(self):
+        page = self.remaining.pop(0) if self.remaining else []
+        self.served.extend(page)
+        return page
+
+    def __iter__(self):
+        while True:
+            while self.buffer:
+                yield _FakeUser(self.buffer.pop(0))
+            if not self.remaining:
+                return
+            self.buffer = self._fetch_page()
+
+
+def test_the_budget_caps_what_a_page_source_returns(ledger, monkeypatch):
+    monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 10, raising=False)
+    source = EagerPageSource([[f"p1-{index}" for index in range(50)], [f"p2-{index}" for index in range(50)]])
+
+    result = im.fetch_usernames_paginated(None, lambda: im._iter_accounted_follow_list(iter(source)), 0, 0, 0, False, 100, "target", identities_counted_at_source=True)
+
+    assert len(result) == 10
+    assert result.complete is False
+    assert im.exposure_snapshot()["identities"] == 10
+
+
+# Instagram served a whole page before the budget could stop it, so the ledger is short of the real exposure by the
+# rest of that page. The REST source has no such gap: it caps the page size it asks for and records the page it got
+def test_a_page_source_serves_more_than_the_ledger_records(ledger, monkeypatch):
+    monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 10, raising=False)
+    source = EagerPageSource([[f"p1-{index}" for index in range(50)], [f"p2-{index}" for index in range(50)]])
+
+    im.fetch_usernames_paginated(None, lambda: im._iter_accounted_follow_list(iter(source)), 0, 0, 0, False, 100, "target", identities_counted_at_source=True)
+
+    assert len(source.served) == 50, "the first page arrived before anything could count it"
+    assert im.exposure_snapshot()["identities"] == 10
+    assert len(source.served) > im.exposure_snapshot()["identities"], "the ledger under-counts a page source by the unread rest of its page"
+
+
+# Only one page is ever fetched ahead, so the under-count is bounded by the page size rather than the whole list
+def test_the_under_count_is_bounded_by_one_page(ledger, monkeypatch):
+    monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 10, raising=False)
+    source = EagerPageSource([[f"p{page}-{index}" for index in range(20)] for page in range(5)])
+
+    im.fetch_usernames_paginated(None, lambda: im._iter_accounted_follow_list(iter(source)), 0, 0, 0, False, 100, "target", identities_counted_at_source=True)
+
+    assert len(source.served) == 20, "the later pages were never requested"
+
+
+# A spent budget never reaches the source at all, so no page is fetched and nothing is served
+def test_a_spent_budget_never_constructs_the_page_source(ledger, monkeypatch):
+    monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 10, raising=False)
+    im.fetch_usernames_paginated(None, lambda: _names(10), 0, 0, 0, False, 10, "target")
+    constructed = []
+
+    def build():
+        constructed.append(True)
+        return im._iter_accounted_follow_list(iter(EagerPageSource([[f"p1-{index}" for index in range(50)]])))
+
+    result = im.fetch_usernames_paginated(None, build, 0, 0, 0, False, 50, "target", identities_counted_at_source=True)
+
+    assert len(result) == 0
+    assert constructed == [], "a spent budget must not fetch a page it may not use"
+
+
 def test_concurrent_fetches_share_one_atomic_budget(ledger, monkeypatch):
     monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 10, raising=False)
     start = threading.Barrier(3)

@@ -172,6 +172,35 @@ class TestBrowserProvider:
 
         assert len(list(im_module.iter_browser_follow_list(fake_bot(), fake_profile(followers=100), "followers"))) == 95
 
+    # The tolerated shortfall is only safe because a later guard refuses to shrink a saved list with it. Checking
+    # the generator alone says nothing about that, so this runs both halves of the decision
+    def test_a_tolerated_shortfall_still_cannot_replace_a_larger_saved_list(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "browser_follow_list_batches", lambda *args, **kwargs: iter([[f"user{index}" for index in range(95)]]))
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        saved = [f"user{index}" for index in range(100)]
+
+        returned = im_module.PaginatedUsernameResult(entry.username for entry in im_module.iter_browser_follow_list(fake_bot(), fake_profile(followers=100), "followers"))
+        returned.complete = True
+        im_module.reject_shrinking_username_baseline(returned, 100, saved, "followers", "target")
+
+        assert len(returned) == 95, "the names are still returned, so the run can report the change"
+        assert returned.complete is False, "but they must not replace the larger saved list"
+        assert im_module.is_complete_username_baseline(returned, 100) is False
+        assert "so the saved list is kept" in capsys.readouterr().out
+
+    # A real unfollow moves the reported count with it, so the smaller list is still allowed to save
+    def test_a_shortfall_the_reported_count_agrees_with_still_saves(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "browser_follow_list_batches", lambda *args, **kwargs: iter([[f"user{index}" for index in range(95)]]))
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        saved = [f"user{index}" for index in range(100)]
+
+        returned = im_module.PaginatedUsernameResult(entry.username for entry in im_module.iter_browser_follow_list(fake_bot(), fake_profile(followers=95), "followers"))
+        returned.complete = True
+        im_module.reject_shrinking_username_baseline(returned, 95, saved, "followers", "target")
+
+        assert returned.complete is True
+        assert capsys.readouterr().out == ""
+
     # An anonymous session is reported as a login problem instead of starting a browser
     def test_an_anonymous_session_is_rejected(self, im_module):
         with pytest.raises(instaloader.exceptions.LoginRequiredException):

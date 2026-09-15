@@ -4,6 +4,8 @@ import ast
 import inspect
 import re
 import smtplib
+import threading
+from unittest.mock import Mock
 
 import pytest
 
@@ -431,31 +433,6 @@ class TestOutageReporting:
         assert "Liveness check, timestamp:" in output
         assert "* Monitoring recovered for misiektoja after 1 minute" in output
 
-    # Every loop failure path, the redirect one included, routes through the outage reporter, so the error alert
-    # delay counts from the first failing check whichever path failed first
-    def test_the_loop_routes_its_failures_through_the_outage_reporter(self, im_module):
-        module_source = inspect.getsource(im_module)
-        start = module_source.index("def _run_instagram_monitor_pass(")
-        source = module_source[start:module_source.index("\ndef ", start)]
-
-        assert source.count("outage.failed(") == 3
-        assert source.count("notify_monitoring_error(user, ") == 3
-        assert source.count(", outage.since, consecutive_main_errors, ") == 3
-        assert source.count("print_outage_liveness(user, ") == 2
-        assert "print_outage_recovery(user, outage_lasted)" in source
-        assert source.count("print_fix_hint(error_msg, recovery_hint_tracker)") == 2
-
-    # Every reported loop failure uses the line shape shared with the sibling monitors
-    def test_reported_failures_use_the_shared_line_shape(self, im_module):
-        module_source = inspect.getsource(im_module)
-        start = module_source.index("def _run_instagram_monitor_pass(")
-        source = module_source[start:module_source.index("\ndef ", start)]
-
-        assert source.count('print(f"* Error: {error_msg} (retrying in {display_time(r_sleep_time)})")') == 2
-        assert "* Error, retrying in " not in source, "the report line must carry its retry note in parentheses"
-        assert 'print(f"Retrying in ' not in source, "the retry note belongs on the report line, not on one of its own"
-        assert "* Session might not be valid anymore" not in source, "advice belongs on a To fix line, not on a second starred line"
-
     # A fix hint reports whether it printed, so a second piece of advice cannot repeat what is already on screen
     def test_a_printed_fix_hint_reports_itself(self, im_module, monkeypatch, capsys):
         monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
@@ -466,16 +443,6 @@ class TestOutageReporting:
         assert im_module.print_fix_hint("SomethingElse: totally unknown error") is True
 
         assert capsys.readouterr().out.count("To fix: ") == 2
-
-    # The session hint is suppressed when the classifier already printed a fix for the same failure
-    def test_the_session_hint_gives_way_to_a_classified_fix(self, im_module):
-        module_source = inspect.getsource(im_module)
-        start = module_source.index("def _run_instagram_monitor_pass(")
-        source = module_source[start:module_source.index("\ndef ", start)]
-
-        assert "fix_hint_printed = print_fix_hint(error_msg, recovery_hint_tracker)" in source
-        assert "if (not fix_hint_printed or advice.code == \"unknown\") and outage_outcome == \"full\" and (" in source
-        assert source.count("session_recovery_command()") == 2
 
     # The liveness banner explains itself without --verbose, so a plain run never prints a bare timestamp
     def test_the_liveness_banner_explains_itself_without_diagnostics(self, im_module, monkeypatch, capsys):
@@ -488,15 +455,116 @@ class TestOutageReporting:
         assert lines[0] == "* Monitoring healthy for misiektoja. No tracked change since the last check"
         assert lines[1].startswith("Liveness check, timestamp:")
 
-    # The monitoring loop reports its healthy banner through the shared helper
-    def test_the_loop_reports_its_healthy_banner_unconditionally(self, im_module):
-        module_source = inspect.getsource(im_module)
-        start = module_source.index("def _run_instagram_monitor_pass(")
-        source = module_source[start:module_source.index("\ndef ", start)]
 
-        assert 'print_liveness_banner(f"Monitoring healthy for {user}.' in source
-        assert 'verbose_print(f"Monitoring healthy' not in source, "the healthy banner is no longer verbose-only"
-        assert "int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS" in source, "the healthy banner is timed rather than counted"
+# The three loop failure paths each report their own way, so a check that only reads the source cannot tell whether
+# they still meet at the outage reporter. These run the pass instead
+class TestTheLoopFailurePaths:
+    # Runs one monitoring pass, letting the startup fetch succeed and failing the given number of loop checks
+    @staticmethod
+    def _drive(im_module, monkeypatch, thread_output=(), profile_error=None, posts_error=None, checks=1, recovers=False):
+        reporter_calls = []
+        alerts = []
+        stop_event = threading.Event()
+        seen = {"profile": 0, "posts": 0, "checks": 0}
+        real_failed = im_module.OutageReporter.failed
+
+        def failed(self, advice):
+            outcome = real_failed(self, advice)
+            reporter_calls.append({"code": advice.code, "since": self.since, "failures": self.failures, "outcome": outcome})
+            return outcome
+
+        def alert(user, advice, error_msg, since, count, sleep_time, state):
+            alerts.append({"code": advice.code, "since": since, "count": count, "error": error_msg})
+
+        # The startup pass runs before the loop and a failure there ends the process, so only loop checks fail
+        def profile(bot, user):
+            seen["profile"] += 1
+            if seen["profile"] > 1:
+                seen["checks"] += 1
+                if seen["checks"] >= checks + int(recovers):
+                    stop_event.set()
+                if profile_error is not None and not (recovers and seen["checks"] > checks):
+                    raise profile_error
+            return Mock(followers=1, followees=1, biography="", is_private=False, followed_by_viewer=False, mediacount=seen["profile"], has_public_story=False, userid=1)
+
+        def posts(user, bot):
+            seen["posts"] += 1
+            if posts_error is not None and seen["posts"] > 1:
+                raise posts_error
+            return None
+
+        def thread_lines():
+            return list(thread_output) if seen["profile"] > 1 else []
+
+        bot = Mock()
+        bot.context.is_logged_in = False
+        # The loop re-reads these from the module every iteration, so the positional arguments alone do not hold
+        for name, value in (("INSTA_CHECK_INTERVAL", 1), ("RANDOM_SLEEP_DIFF_LOW", 0), ("RANDOM_SLEEP_DIFF_HIGH", 0), ("NEXT_OPERATION_DELAY", 0), ("WEB_DASHBOARD_ENABLED", False), ("SESSION_USERNAME", ""), ("SKIP_SESSION", True), ("SKIP_FOLLOWERS", True), ("SKIP_FOLLOWINGS", True), ("SKIP_FOLLOW_CHANGES", True), ("SKIP_GETTING_STORY_DETAILS", True), ("SKIP_GETTING_POSTS_DETAILS", posts_error is None), ("GET_MORE_POST_DETAILS", False), ("DETECT_COLLAB_POSTS", False), ("LIVENESS_REMINDER_SECONDS", 0)):
+            monkeypatch.setattr(im_module, name, value, raising=False)
+        monkeypatch.setattr(im_module.OutageReporter, "failed", failed)
+        monkeypatch.setattr(im_module, "notify_monitoring_error", alert)
+        monkeypatch.setattr(im_module, "get_thread_output", thread_lines)
+        monkeypatch.setattr(im_module, "instaloader_client", lambda **kwargs: bot)
+        monkeypatch.setattr(im_module, "profile_from_username_resilient", profile)
+        monkeypatch.setattr(im_module, "latest_post_mobile", posts)
+        # Reports the stop the harness asked for rather than always interrupting, so more than one check can run
+        monkeypatch.setattr(im_module, "interruptible_sleep", lambda seconds, event=None: stop_event.is_set())
+
+        im_module._run_instagram_monitor_pass("target", "", True, True, True, True, posts_error is None, False, stop_event=stop_event)
+        return reporter_calls, alerts
+
+    # The alert delay counts from the first failing check, which only holds if every path reports the same outage
+    @pytest.mark.parametrize("path,kwargs", [("main", {"profile_error": RuntimeError("500 Server Error")}), ("redirect", {"thread_output": ["HTTP redirect from https://instagram.com/x"]}), ("posts", {"posts_error": RuntimeError("503 Service Unavailable")})])
+    def test_every_failure_path_reports_one_outage_and_alerts_from_its_start(self, im_module, monkeypatch, capsys, path, kwargs):
+        reporter_calls, alerts = self._drive(im_module, monkeypatch, **kwargs)
+        capsys.readouterr()
+
+        assert len(reporter_calls) == 1, f"the {path} path did not reach the outage reporter"
+        assert len(alerts) == 1
+        assert alerts[0]["since"] == reporter_calls[0]["since"] > 0, "the alert must carry the outage start, not its own clock reading"
+        assert alerts[0]["count"] == 1
+
+    # A second failing check keeps the first outage rather than restarting the clock the alert delay counts against
+    def test_a_second_failing_check_keeps_the_first_outage_start(self, im_module, monkeypatch, capsys):
+        reporter_calls, alerts = self._drive(im_module, monkeypatch, profile_error=RuntimeError("500 Server Error"), checks=2)
+        capsys.readouterr()
+
+        assert [call["failures"] for call in reporter_calls] == [1, 2]
+        assert reporter_calls[0]["since"] == reporter_calls[1]["since"]
+        assert [alert["since"] for alert in alerts] == [reporter_calls[0]["since"]] * 2
+        assert [alert["count"] for alert in alerts] == [1, 2]
+
+    # The retry note belongs in parentheses on the report line, not on a line of its own or a second starred line
+    def test_the_report_line_carries_its_retry_note_in_parentheses(self, im_module, monkeypatch, capsys):
+        self._drive(im_module, monkeypatch, profile_error=RuntimeError("500 Server Error"))
+
+        printed = capsys.readouterr().out
+        reported = [line for line in printed.splitlines() if line.startswith("* Error: ")]
+        assert reported, "the failure was never reported"
+        assert re.search(r"^\* Error: .+ \(retrying in .+\)$", reported[0]), reported[0]
+        assert "* Error, retrying in " not in printed
+        assert not re.search(r"^Retrying in ", printed, re.MULTILINE)
+        assert "* Session might not be valid anymore" not in printed
+
+    # A reported outage is closed on screen once a check succeeds, so it is never left open
+    def test_a_check_that_succeeds_after_a_failure_announces_the_recovery(self, im_module, monkeypatch, capsys):
+        recoveries = []
+        monkeypatch.setattr(im_module, "print_outage_recovery", lambda user, lasted: recoveries.append(user))
+
+        self._drive(im_module, monkeypatch, profile_error=RuntimeError("500 Server Error"), recovers=True)
+        capsys.readouterr()
+
+        assert recoveries == ["target"]
+
+    # A run that never recovers must not claim it did
+    def test_a_run_that_only_fails_announces_no_recovery(self, im_module, monkeypatch, capsys):
+        recoveries = []
+        monkeypatch.setattr(im_module, "print_outage_recovery", lambda user, lasted: recoveries.append(user))
+
+        self._drive(im_module, monkeypatch, profile_error=RuntimeError("500 Server Error"), checks=2)
+        capsys.readouterr()
+
+        assert recoveries == []
 
 
 # Every failure the user can see is built from one closed set of codes, so a message stays testable and deduplicable
