@@ -27,6 +27,11 @@ def summary_values(**overrides):
     return {row.label: row.value for row in monitor._startup_notification_summary_rows() + monitor._startup_environment_rows(None)}
 
 
+# Returns those same rows rendered as the lines the summary prints, keyed by label
+def summary_lines(**overrides):
+    return {row.label: monitor._format_startup_summary_row(row) for row in monitor._startup_notification_summary_rows() + monitor._startup_environment_rows(None)}
+
+
 # Returns the labels of the channel and environment rows, in order
 def summary_labels(**overrides):
     return [row.label for row in monitor._startup_notification_summary_rows() + monitor._startup_environment_rows(None)]
@@ -34,10 +39,10 @@ def summary_labels(**overrides):
 
 # Verifies the webhook row names the service alerts reach, since the categories alone do not say Discord or ntfy
 @pytest.mark.parametrize("provider,url,expected", [
-    ("discord", "https://discord.com/api/webhooks/1/abc", "Discord (discord.com)"),
-    ("ntfy", "https://ntfy.sh/private-topic", "ntfy (ntfy.sh, access token set)"),
+    ("discord", "https://discord.com/api/webhooks/1/abc", "Discord (enabled)"),
+    ("ntfy", "https://ntfy.sh/private-topic", "ntfy (enabled)"),
 ])
-def test_the_webhook_provider_row_names_the_service_and_its_host(monkeypatch, provider, url, expected):
+def test_the_webhook_provider_row_names_the_service(monkeypatch, provider, url, expected):
     monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", provider)
     monkeypatch.setattr(monitor, "WEBHOOK_URL", url)
 
@@ -55,9 +60,16 @@ def test_the_webhook_provider_row_prints_no_part_of_the_url_path(monkeypatch):
     assert "tk_secret" not in value
 
 
+# Verifies a switched-off channel still names the service it holds a destination for, which the rollup cannot say
+def test_the_webhook_provider_row_names_the_service_of_a_switched_off_channel(monkeypatch):
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", False)
+
+    assert summary_values()["Webhook provider"] == "Discord (disabled)"
+
+
 # Verifies a run with no webhook destination says so rather than naming a provider it would never post to
 def test_the_webhook_provider_row_reports_an_unconfigured_channel(monkeypatch):
-    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", False)
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "")
 
     assert summary_values()["Webhook provider"] == "Not configured"
 
@@ -112,6 +124,16 @@ def test_the_runtime_rows_report_the_process_and_the_interpreter():
     assert values["Process id"] == str(os.getpid())
     assert values["Python version"] == platform.python_version()
     assert values["Operating system"] == f"{platform.platform(terse=True)} ({platform.machine()})"
+
+
+# Verifies each channel's detail rows are indented under it while their values stay in the shared column
+def test_the_channel_detail_rows_are_indented_under_their_channel():
+    lines = summary_lines()
+
+    assert lines["Notifications (webhook)"].startswith("* Notifications (webhook):")
+    for label in ("Email transport", "Email recipient", "Webhook provider"):
+        assert lines[label].startswith(f"*   {label}:")
+        assert lines[label][32] != " "
 
 
 # Verifies every row added for the verbose views stays out of the short one, which is the screen a default run gets

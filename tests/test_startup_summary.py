@@ -11,7 +11,7 @@ import pytest
 # The rows shared with the sibling monitors, in the order every one of them prints
 SHARED_ROW_ORDER = ("Targets", "Polling interval", "Notifications (email)", "Email transport", "Email recipient", "Notifications (webhook)", "Webhook provider", "Delivery confirmations", "Output logging", "Config", "Dotenv", "Liveness output", "CSV output", "Process id", "Python version", "Operating system", "Local timezone", "Install method", "Secrets from dotenv", "Secrets from environment", "Secrets from config file", "Secrets from command line", "TLS verification", "ASCII log separators", "Coloured output", "Verbose mode", "Debug mode")
 
-SUMMARY_LINE_RE = re.compile(r"^\* (?P<label>[^:]+): +\S")
+SUMMARY_LINE_RE = re.compile(r"^\* *(?P<label>[^:]+): +\S")
 
 # The banner draws a camera inside a box 18 columns wide and starts both wordmarks in the column beside it
 BOX_WIDTH = 18

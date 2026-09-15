@@ -4705,14 +4705,6 @@ class StartupSummaryRow:
 
 
 
-# Returns the webhook destination's host alone, so a row can name it without exposing the private path
-def webhook_destination_host() -> str:
-    try:
-        return urlsplit(str(WEBHOOK_URL or "").strip()).hostname or ""
-    except ValueError:
-        return ""
-
-
 # Hides the middle of an address's local part, so a log can be shared while the reader can still spot a typo
 def mask_email_address(address) -> str:
     text = str(address or "").strip()
@@ -4734,14 +4726,10 @@ def _startup_email_detail_rows() -> List["StartupSummaryRow"]:
 
 # Reports the webhook service alerts would reach and whether the delivery lines are printed at all
 def _startup_webhook_detail_rows() -> List["StartupSummaryRow"]:
-    if not WEBHOOK_ENABLED or not str(WEBHOOK_URL or "").strip():
+    if not normalized_webhook_provider() or not str(WEBHOOK_URL or "").strip():
         provider = "Not configured"
     else:
-        host = webhook_destination_host()
-        details = [host] if host else []
-        if normalized_webhook_provider() == "ntfy":
-            details.append("access token set" if NTFY_ACCESS_TOKEN else "no access token")
-        provider = webhook_provider_display_name() + (f" ({', '.join(details)})" if details else "")
+        provider = f"{webhook_provider_display_name()} ({'enabled' if WEBHOOK_ENABLED else 'disabled'})"
     return [StartupSummaryRow("Webhook provider", provider), StartupSummaryRow("Delivery confirmations", str(DELIVERY_CONFIRMATIONS))]
 
 
@@ -4781,9 +4769,14 @@ def _startup_environment_rows(env_path) -> List["StartupSummaryRow"]:
     ]
 
 
+# Rows that detail the channel named right above them, indented so the block reads as one setting with its details
+_STARTUP_SUMMARY_NESTED_LABELS = ("Email transport", "Email recipient", "Email images", "Webhook provider", "ntfy images")
+
+
 # Formats one startup summary row with aligned plain ASCII columns
 def _format_startup_summary_row(row: "StartupSummaryRow") -> str:
-    prefix = f"* {(row.label + ':'):<30}"
+    indent = "  " if row.label in _STARTUP_SUMMARY_NESTED_LABELS else ""
+    prefix = f"* {indent}{(row.label + ':'):<{30 - len(indent)}}"
     if row.label in ("Notifications (email)", "Notifications (webhook)"):
         return textwrap.fill(str(row.value), width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False) + "\n"
     return f"{prefix}{row.value}\n"
