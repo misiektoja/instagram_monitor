@@ -1,6 +1,7 @@
 import ast
 import argparse
 import re
+import threading
 from io import StringIO
 from pathlib import Path
 
@@ -549,3 +550,62 @@ def test_no_setup_screen_prints_a_plain_link(im_module):
             plain.append(f"{owner}:{node.lineno}")
 
     assert plain == []
+
+
+class TestTheWidthCapAppliesToTheScreenOnly:
+    """The saved copy used to be derived from the line already cut to the terminal width.
+
+    `truncate_string_per_line` and `Logger.write` were each correct on their own, so the unit tests above
+    never saw it: setting a width silently shortened the log file too, against what the documentation
+    promises. These drive the real Logger and read the file it wrote.
+    """
+
+    # Writes one long line through the real Logger and returns what the screen and the log file received
+    @staticmethod
+    def _write(im_module, monkeypatch, tmp_path, line, target=None):
+        pytest.importorskip("wcwidth")
+        monkeypatch.setattr(im_module, "TRUNCATE_CHARS", 40)
+        monkeypatch.setattr(im_module, "DASHBOARD_ENABLED", False)
+        monkeypatch.setattr(im_module, "pbar", None)
+        log_path = tmp_path / "monitor.log"
+        logger = im_module.Logger(str(log_path))
+        screen = StringIO()
+        logger.terminal = screen
+        if target:
+            target_path = tmp_path / f"{target}.log"
+            logger.add_target_log(target, str(target_path))
+            thread = threading.Thread(target=logger.write, args=(line,), name=f"instagram_monitor:{target}")
+            thread.start()
+            thread.join()
+            return screen.getvalue(), log_path.read_text(encoding="utf-8"), target_path.read_text(encoding="utf-8")
+        logger.write(line)
+        return screen.getvalue(), log_path.read_text(encoding="utf-8"), ""
+
+    # The documentation promises the log file always keeps the full line, whatever the screen was given
+    def test_a_line_cut_for_the_screen_is_saved_in_full(self, im_module, monkeypatch, tmp_path):
+        line = "* Biography: " + "b" * 300 + "\n"
+
+        screen, saved, _ = self._write(im_module, monkeypatch, tmp_path, line)
+
+        assert len(screen.rstrip("\n")) == 40
+        assert saved == line
+
+    # A target log is the copy most runs actually read, so it earns the same promise as the main log
+    def test_a_target_log_keeps_the_full_line_too(self, im_module, monkeypatch, tmp_path):
+        line = "* Biography: " + "b" * 300 + "\n"
+
+        screen, saved, target_saved = self._write(im_module, monkeypatch, tmp_path, line, target="target.user")
+
+        assert len(screen.rstrip("\n")) == 40
+        assert saved == target_saved == line
+
+    # The saved copy still arrives plain and with tabs expanded, which is what the width cap must not change
+    def test_the_saved_copy_stays_plain_with_its_tabs_expanded(self, im_module, monkeypatch, tmp_path):
+        monkeypatch.setattr(im_module, "COLORED_OUTPUT", True)
+        line = "Followers:\t" + "9" * 300 + "\n"
+
+        _, saved, _ = self._write(im_module, monkeypatch, tmp_path, line)
+
+        assert "\x1b" not in saved
+        assert "\t" not in saved
+        assert saved.strip().endswith("9" * 300)

@@ -5177,8 +5177,9 @@ class Logger(object):
                     self.terminal.write(colorized_message)
                     self.terminal.flush()
 
-            # Expand tabs for file output and ensure ANSI codes are stripped
-            clean_message = normalize_log_separators(ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8))
+            # Expand tabs for file output and ensure ANSI codes are stripped. Taken from the full message rather than
+            # from the terminal copy, so TRUNCATE_CHARS narrows the screen while the log file keeps the whole line
+            clean_message = normalize_log_separators(ANSI_ESCAPE_RE.sub("", message).expandtabs(8))
 
             # Always log to main log if available
             if self.main_log:
