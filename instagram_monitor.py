@@ -15018,7 +15018,7 @@ def _build_help_epilog() -> str:
             ("Then monitor with that session", f"{prefix} -u <your_insta_user> <target_insta_user>"),
         )),
         ("Notifications", (
-            ("Save a Discord or ntfy webhook URL through a hidden prompt", f"{prefix} --set-webhook-url"),
+            ("Email on new posts, stories and profile changes", f"{prefix} <target_insta_user> -s"),
             ("Send one test email", f"{prefix} --send-test-email"),
             ("Send one test webhook", f"{prefix} --send-test-webhook"),
         )),
