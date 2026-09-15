@@ -64,6 +64,7 @@ installed copy of the package.
 | `test_concurrency_and_caches.py` | Shared cache eviction and probe deduplication |
 | `test_monitor_restart.py` | The monitoring restart loop used when live settings change |
 | `test_follow_list_source.py` | The follower and following list sources: the web REST endpoints and the GraphQL fallback |
+| `test_request_backoff.py` | The jitter back-off giving up with the real cause, so a rate limit or a challenge is never read as a missing endpoint |
 | `test_follow_list_browser.py` | The experimental browser follower list source, with no browser started |
 | `test_follow_analysis.py` | The offline follow relationship analysis behind `--analyze-follows` |
 | `test_imgcat_display.py` | Terminal image display argument handling |

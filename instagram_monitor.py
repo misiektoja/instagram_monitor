@@ -9691,15 +9691,19 @@ def instagram_wrap_request(orig_request):
                 _update_progress_bar(resp)
 
                 # Back-off on any 429 (Too Many Requests) or 400 with "checkpoint"
-                if resp.status_code == 429 or (resp.status_code == 400 and "checkpoint" in resp.text):
+                checkpointed = resp.status_code == 400 and "checkpoint" in resp.text
+                if resp.status_code == 429 or checkpointed:
                     attempt += 1
                     if attempt > 3:
                         thread_pbar = getattr(_thread_local, 'pbar', None)
                         if thread_pbar is not None:
                             close_pbar()
-                        raise instaloader.exceptions.QueryReturnedNotFoundException(
-                            "Giving up after multiple 429/checkpoint"
-                        )
+                        # A spent back-off budget is still a rate limit or a challenge, never a missing endpoint.
+                        # Reporting it as one sends every reader down the path for an Instagram API change, which
+                        # for the follow list means retrying the whole scan on the other surface
+                        if checkpointed:
+                            raise instaloader.exceptions.AbortDownloadException(f"400 checkpoint_required after {attempt - 1} back-offs")
+                        raise instaloader.exceptions.TooManyRequestsException(f"Giving up after {attempt - 1} back-offs on HTTP 429")
                     wait = backoff + random.uniform(0, 30)
                     if JITTER_VERBOSE or DEBUG_MODE:
                         thread_pbar = getattr(_thread_local, 'pbar', None)
