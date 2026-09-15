@@ -1315,7 +1315,7 @@ def test_set_smtp_password_declined_replacement_is_non_destructive(im_module, mo
         assert env_path.read_text(encoding="utf-8") == 'SMTP_PASSWORD="original"\n'
 
 
-# The sign-in reaches the configured mail server and gives back the password it borrowed
+# The sign-in reaches the configured mail server without disturbing the configured password
 def test_smtp_sign_in_uses_the_configured_mail_server(im_module, monkeypatch):
     session = Mock()
     connect = Mock(return_value=session)
@@ -1329,6 +1329,95 @@ def test_smtp_sign_in_uses_the_configured_mail_server(im_module, monkeypatch):
     session.login.assert_called_once_with("monitor@example.test", "entered")
     session.quit.assert_called_once()
     assert im_module.SMTP_PASSWORD == "saved"
+
+
+# A rejection reply that quotes the credentials back is the normal shape for several providers, so every surface
+# that prints one has to be checked with a password no global holds while the failure is being rendered
+class TestAProviderErrorThatEchoesThePassword:
+    SECRET = "hunter2-private-value"
+
+    # Builds a mail server class whose sign-in fails with a reply repeating the password it was given
+    @staticmethod
+    def _echoing_server():
+        import smtplib
+
+        class EchoingSMTP:
+            def __init__(self, host, port, timeout=5): pass
+            def starttls(self, context=None): pass
+            def login(self, user, password): raise smtplib.SMTPAuthenticationError(535, f"5.7.8 Not accepted. Sent: user={user} pass={password}".encode())
+            def quit(self): pass
+
+        return EchoingSMTP
+
+    # Points the module at a configured mail server that always echoes the password back
+    def _install(self, im_module, monkeypatch, saved_password=""):
+        for name, value in (("SMTP_HOST", "smtp.example.test"), ("SMTP_PORT", 587), ("SMTP_SSL", True), ("SMTP_USER", "monitor@example.test"), ("SMTP_PASSWORD", saved_password), ("SENDER_EMAIL", "monitor@example.test"), ("RECEIVER_EMAIL", "alerts@example.test")):
+            monkeypatch.setattr(im_module, name, value)
+        monkeypatch.setattr(im_module.smtplib, "SMTP", self._echoing_server())
+
+    # The password command holds the only copy of the value being checked, so it has to hand it to the renderer
+    def test_the_password_command_does_not_print_what_was_typed(self, im_module, monkeypatch):
+        self._install(im_module, monkeypatch)
+        with make_test_directory() as directory_name:
+            env_path = Path(directory_name) / ".env"
+
+            with pytest.raises(im_module.SmtpConfigurationError) as raised:
+                im_module.run_set_smtp_password(env_file=env_path, interactive=True, input_func=lambda prompt: "y", getpass_func=lambda prompt: self.SECRET, config_path="none")
+
+            assert self.SECRET not in str(raised.value)
+            assert "[private value]" in str(raised.value)
+            assert "did not accept the password" in str(raised.value)
+            assert not env_path.exists()
+
+    # Setup renders the same reply through its own detail line, which the wizard prints under the summary
+    def test_the_wizard_check_does_not_return_what_was_typed(self, im_module, monkeypatch, real_smtp_sign_in):
+        self._install(im_module, monkeypatch)
+        values = {"SMTP_HOST": "smtp.example.test", "SMTP_PORT": 587, "SMTP_SSL": True, "SMTP_USER": "monitor@example.test", "SENDER_EMAIL": "monitor@example.test", "RECEIVER_EMAIL": "alerts@example.test"}
+
+        summary, detail, fix, retryable = im_module._wizard_verify_smtp(values, self.SECRET)
+
+        assert self.SECRET not in detail
+        assert "[private value]" in detail
+        assert summary == "The SMTP server rejected the sign-in"
+        assert retryable is False
+
+    # Doctor reads the configured password, so the classification and the detail both have to survive redaction
+    def test_the_doctor_report_does_not_print_the_configured_password(self, im_module, monkeypatch):
+        self._install(im_module, monkeypatch, saved_password=self.SECRET)
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
+        report = im_module.DoctorReport()
+
+        checks = im_module.doctor_check_notifications(report)
+
+        failed = [check for check in checks if check.status == "FAIL" and check.section == "Notifications"]
+        assert failed, "the rejected sign-in was not reported"
+        rendered = " ".join(f"{check.label} {check.detail}" for check in failed)
+        assert self.SECRET not in rendered
+        assert "[private value]" in rendered
+        assert "The SMTP server rejected the sign-in" in rendered
+
+    # The sign-in used to publish the candidate as SMTP_PASSWORD and restore it before the caller rendered the
+    # failure, which left the caller redacting a value that was no longer there
+    def test_the_sign_in_never_publishes_the_password_it_is_checking(self, im_module, monkeypatch):
+        seen = []
+        self._install(im_module, monkeypatch, saved_password="saved-private-value")
+        monkeypatch.setattr(im_module, "smtp_ssl_context", lambda: seen.append(im_module.SMTP_PASSWORD))
+
+        with pytest.raises(im_module.smtplib.SMTPAuthenticationError):
+            im_module.smtp_sign_in(self.SECRET)
+
+        assert seen == ["saved-private-value"]
+        assert im_module.SMTP_PASSWORD == "saved-private-value"
+
+
+# A value being checked before it is saved is held by the caller and by no global, so the renderer takes it directly
+def test_error_text_redaction_covers_a_value_no_global_holds(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "SMTP_PASSWORD", "")
+
+    assert im_module.sanitize_error_text("reply quoting candidate-private-value") == "reply quoting candidate-private-value"
+    assert im_module.sanitize_error_text("reply quoting candidate-private-value", "candidate-private-value") == "reply quoting [private value]"
+    assert im_module.sanitize_error_text("reply quoting abc", "abc") == "reply quoting abc"
+    assert im_module.format_error_message(ValueError("reply quoting candidate-private-value"), "candidate-private-value") == "ValueError: reply quoting [private value]"
 
 
 # An unconfigured mail server is named instead of surfacing as a bare connection failure

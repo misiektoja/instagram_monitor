@@ -1200,17 +1200,15 @@ def mail_sign_in_settings_missing():
 
 # Signs in to the configured mail server with one entered password, so nothing is saved that cannot deliver
 def smtp_sign_in(password, timeout=5):
-    global SMTP_PASSWORD
-
     candidate = str(password or "")
     if not candidate or candidate == "your_smtp_password":
         raise SmtpConfigurationError("No SMTP password was entered. The private settings file was not changed.")
     missing = mail_sign_in_settings_missing()
     if missing:
         raise SmtpConfigurationError(f"The mail server settings are incomplete. Set {join_setting_names(missing, 'and')} first, or run --setup.")
-    previous_password = SMTP_PASSWORD
-    SMTP_PASSWORD = candidate
     smtp = None
+    # The sign-in reads the candidate directly and never publishes it as SMTP_PASSWORD, so a failure cannot escape
+    # into a caller that has already had the previous value restored underneath it
     try:
         smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=timeout)
         if SMTP_SSL:
@@ -1222,7 +1220,6 @@ def smtp_sign_in(password, timeout=5):
                 smtp.quit()
             except Exception:
                 pass
-        SMTP_PASSWORD = previous_password
     return str(SMTP_USER)
 
 
@@ -1265,7 +1262,9 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     except SmtpConfigurationError:
         raise
     except Exception as exc:
-        raise SmtpConfigurationError(f"The mail server did not accept the password: {format_error_message(exc)}. The private settings file was not changed.") from None
+        # The sign-in restores the previous password before the failure reaches here, so the value that was tried
+        # is passed explicitly rather than left to the global the redaction would otherwise read
+        raise SmtpConfigurationError(f"The mail server did not accept the password: {format_error_message(exc, smtp_password)}. The private settings file was not changed.") from None
     try:
         update_dotenv_file(destination, {"SMTP_PASSWORD": smtp_password})
     except Exception:
@@ -10017,7 +10016,7 @@ def strip_curl_noise(error_str: str) -> str:
 
 
 # Formats error messages to be more informative, especially for Instagram detection/challenge errors
-def format_error_message(e: Exception) -> str:
+def format_error_message(e: Exception, *private_candidates: str) -> str:
     error_str = str(e)
     error_type = type(e).__name__
 
@@ -10025,7 +10024,9 @@ def format_error_message(e: Exception) -> str:
     if error_type == "KeyError" and ("'data'" in error_str or '"data"' in error_str or error_str == "data"):
         return "Instagram may have detected automated checks and requires a challenge or re-login (if session is used) or has temporarily shadow banned the IP. The API response is missing expected data."
 
-    return f"{error_type}: {strip_curl_noise(error_str)}"
+    # Redacted here rather than at each caller, since this is the text every surface prints and a provider reply
+    # can quote back the credential it rejected. A candidate no global holds yet is passed in by the caller
+    return sanitize_error_text(f"{error_type}: {strip_curl_noise(error_str)}", *private_candidates)
 
 
 # Returns the dotenv path this run was given when a file was named and discovery is on, otherwise None
@@ -10127,10 +10128,10 @@ SECRET_ASSIGNMENT_RE = re.compile(r"(?im)(\b(?:" + "|".join(SECRET_KEYS) + r")\b
 
 
 # Removes private values and secret assignments from error text before it reaches the console, a log or an alert
-def sanitize_error_text(text: Any) -> str:
+def sanitize_error_text(text: Any, *extra_private_values: str) -> str:
     sanitized = apply_privacy_substitutions(str(text or ""))
-    for name in SECRET_KEYS:
-        private_value = globals().get(name)
+    # A value being checked before it is saved is held by the caller and by no global, so it is passed in instead
+    for private_value in [globals().get(name) for name in SECRET_KEYS] + list(extra_private_values):
         # A short value would match unrelated words, and no real secret this tool stores is that short
         if isinstance(private_value, str) and len(private_value) > 4:
             sanitized = sanitized.replace(private_value, "[private value]")
@@ -15615,7 +15616,7 @@ def _wizard_verify_smtp(values: dict, password: str) -> Optional[Tuple[str, str,
         summary, fix = classify_smtp_error(exc)
         # A rejected sign-in cannot start working on its own, unlike an unreachable server
         retryable = not isinstance(exc, smtplib.SMTPAuthenticationError)
-        return summary, format_error_message(exc), fix, retryable
+        return summary, format_error_message(exc, password), fix, retryable
     finally:
         if smtp is not None:
             try:
