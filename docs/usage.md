@@ -674,7 +674,7 @@ instagram_monitor --identity-budget 750        # set the budget for this run
 instagram_monitor --clear-breaker              # resume after fixing what tripped it
 ```
 
-Everything is stored locally in `instagram_monitor_exposure.json` next to your output directory. Nothing is transmitted anywhere. The file holds one record per session account, so both commands act on the account the run resolved. Add `-u <account>` to pick one when you run more than one account from the same directory. The `--exposure` report omits account names, target names, stored error text and local paths so it can be pasted into a support issue.
+Everything is stored locally in `instagram_monitor_exposure.json` next to your output directory. Nothing is transmitted anywhere. The file holds one record per session account, so both commands act on the account the run resolved. Add `-u <account>` to pick one when you run more than one account from the same directory. Both read and repair local state only, so they still work while the connection is down. The `--exposure` report omits account names, target names, stored error text and local paths so it can be pasted into a support issue.
 
 See [Set an Identity Budget](anti-detection.md#set-an-identity-budget) for how to choose a value and why names rather than requests are the unit that matters.
 

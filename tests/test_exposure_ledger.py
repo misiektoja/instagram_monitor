@@ -707,7 +707,7 @@ class TestAnAccountScopedCommandActsOnTheAccountTheUserNamed:
 
     # Trips the breaker for one account, then runs one one-shot command through the real command line
     @staticmethod
-    def _run(monkeypatch, capsys, action, argv=(), account="chosen.account"):
+    def _run(monkeypatch, capsys, action, argv=(), account="chosen.account", connected=True):
         monkeypatch.setattr(im, "SESSION_USERNAME", account, raising=False)
         monkeypatch.setattr(im, "SKIP_SESSION", False, raising=False)
         monkeypatch.setattr(im, "CIRCUIT_BREAKER", True, raising=False)
@@ -715,7 +715,7 @@ class TestAnAccountScopedCommandActsOnTheAccountTheUserNamed:
         im.record_failure_event("challenge", "target", "400 checkpoint_required")
         assert im.circuit_breaker_tripped() is True
         monkeypatch.setattr(im, "SESSION_USERNAME", "", raising=False)
-        monkeypatch.setattr(im, "check_internet", lambda *args, **kwargs: True, raising=False)
+        monkeypatch.setattr(im, "check_internet", lambda *args, **kwargs: connected, raising=False)
         monkeypatch.setattr(im, "clear_screen", lambda *args, **kwargs: None, raising=False)
         monkeypatch.setattr(im.sys, "argv", ["instagram_monitor.py", "--config-file", "none", "--env-file", "none", "--no-color", action, *argv])
         capsys.readouterr()
@@ -758,3 +758,18 @@ class TestAnAccountScopedCommandActsOnTheAccountTheUserNamed:
         assert code == 0
         assert "Session mode:" in output and "anonymous" in output
         assert "TRIPPED" not in output
+
+    # The account is stopped and the connection is down, which is exactly when the reset is reached for
+    def test_clear_breaker_works_with_no_connection(self, monkeypatch, capsys):
+        code, output = self._run(monkeypatch, capsys, "--clear-breaker", ("--session-username", "chosen.account"), connected=False)
+
+        assert code == 0
+        assert "Circuit breaker cleared for chosen.account" in output
+        assert im.circuit_breaker_tripped() is False
+
+    # The report reads local state only, so an outage is no reason to refuse to print it
+    def test_the_exposure_report_works_with_no_connection(self, monkeypatch, capsys):
+        code, output = self._run(monkeypatch, capsys, "--exposure", ("--session-username", "chosen.account"), connected=False)
+
+        assert code == 0
+        assert "TRIPPED" in output

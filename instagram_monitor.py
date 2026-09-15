@@ -17814,6 +17814,40 @@ def run_main():
                 print_recovery_error(f"The proxy certificate file '{PROXY_CERT_PATH}' does not exist", context="proxy")
                 sys.exit(1)
 
+    # Dispatched before the connectivity check, since both only read or repair the local safety record and an
+    # internet outage is exactly when a user reaches for them
+    if args.clear_breaker:
+        try:
+            cleared = clear_circuit_breaker()
+        except ExposureLedgerError as ledger_error:
+            print(f"* Error: {ledger_error}")
+            print(f"* The account stop stays in place until the ledger can be saved: {exposure_state_path()}")
+            print("* To fix: Restore write access to that file and the directory holding it, or delete the file to start a new ledger")
+            sys.exit(1)
+        if cleared:
+            if cleared.get('ledger_reset'):
+                print(f"* The account safety ledger at {exposure_state_path()} could not be used ({cleared['ledger_reset']}) and was replaced with a fresh one")
+            print(f"* Circuit breaker cleared for {exposure_account_name()}")
+            print(f"* It was tripped at {get_date_from_ts(int(cleared.get('tripped_ts', 0)))} by: {cleared.get('failure_class', 'unknown')}")
+            print("* Monitoring will resume on the next run. Raise your check interval or lower --identity-budget if it trips again")
+        else:
+            print(f"* Circuit breaker is not tripped for {exposure_account_name()}, nothing to clear")
+        sys.exit(0)
+
+    if args.show_exposure:
+        print("\nExposure report (account names and local paths omitted)")
+        print("─" * HORIZONTAL_LINE)
+        for line in exposure_summary_lines():
+            print(line)
+        # The pasteable block omits the path, so the reason the ledger is unusable is reported under it
+        try:
+            exposure_snapshot()
+        except ExposureLedgerError as ledger_error:
+            print(f"\n* Error: {ledger_error}")
+            print(f"* Path: {exposure_state_path()}")
+            print("To fix: Fix the file's contents or permissions, or move it aside, then run --clear-breaker to start a fresh ledger")
+        sys.exit(0)
+
     if not args.doctor and not args.analyze_follows and not args.set_smtp_password and not check_internet():
         sys.exit(1)
 
@@ -17871,38 +17905,6 @@ def run_main():
     if args.webhook_errors is True:
         WEBHOOK_ERROR_NOTIFICATION = True
         WEBHOOK_ENABLED = True
-
-    if args.clear_breaker:
-        try:
-            cleared = clear_circuit_breaker()
-        except ExposureLedgerError as ledger_error:
-            print(f"* Error: {ledger_error}")
-            print(f"* The account stop stays in place until the ledger can be saved: {exposure_state_path()}")
-            print("* To fix: Restore write access to that file and the directory holding it, or delete the file to start a new ledger")
-            sys.exit(1)
-        if cleared:
-            if cleared.get('ledger_reset'):
-                print(f"* The account safety ledger at {exposure_state_path()} could not be used ({cleared['ledger_reset']}) and was replaced with a fresh one")
-            print(f"* Circuit breaker cleared for {exposure_account_name()}")
-            print(f"* It was tripped at {get_date_from_ts(int(cleared.get('tripped_ts', 0)))} by: {cleared.get('failure_class', 'unknown')}")
-            print("* Monitoring will resume on the next run. Raise your check interval or lower --identity-budget if it trips again")
-        else:
-            print(f"* Circuit breaker is not tripped for {exposure_account_name()}, nothing to clear")
-        sys.exit(0)
-
-    if args.show_exposure:
-        print("\nExposure report (account names and local paths omitted)")
-        print("─" * HORIZONTAL_LINE)
-        for line in exposure_summary_lines():
-            print(line)
-        # The pasteable block omits the path, so the reason the ledger is unusable is reported under it
-        try:
-            exposure_snapshot()
-        except ExposureLedgerError as ledger_error:
-            print(f"\n* Error: {ledger_error}")
-            print(f"* Path: {exposure_state_path()}")
-            print("To fix: Fix the file's contents or permissions, or move it aside, then run --clear-breaker to start a fresh ledger")
-        sys.exit(0)
 
     if args.set_smtp_password:
         try:
