@@ -139,6 +139,8 @@ These files provide a baseline for the next run. The tool compares the new lists
 
 Only a complete list download can replace this baseline. A configured maximum, stop request or interrupted download leaves the last complete file unchanged so a partial result cannot appear as a large follower or following removal.
 
+A download that finishes but comes back short of the count Instagram reports is also refused when it would shrink the saved list. Both the count and the saved file say those accounts are still there, so the likely explanation is a list that stopped early rather than people who left. The tool says which counts it compared and keeps the saved file. When people really do unfollow, the reported count drops with them and the smaller list is saved as usual.
+
 When the tool downloads follower or following lists, a terminal progress bar shows request counts, elapsed time and estimated time remaining. Intermediate progress is not written to the log. The final result is.
 
 With several targets, only one progress bar is drawn at a time because they share one terminal line. A target whose download starts while another bar is active fetches without a bar rather than waiting for it. The final result is logged either way.
@@ -603,7 +605,7 @@ What to expect:
 - The logged-in session cookies are handed to the browser. It never signs in, and it never asks for your password.
 - Your configured proxy is used if you have one.
 - A challenge, a suspended or disabled account, or a page that is not signed in stops the fetch and is reported. It is not clicked through.
-- If the dialog stops growing well short of the follower count Instagram reports, the fetch fails rather than saving a short list over a complete baseline.
+- If the dialog stops growing well short of the follower count Instagram reports, the fetch fails rather than saving a short list over a complete baseline. A smaller gap is returned, but it still cannot shrink a saved list that agrees with the reported count.
 
 There is no fallback to or from this source. `browser` reads over the browser or reports the error.
 

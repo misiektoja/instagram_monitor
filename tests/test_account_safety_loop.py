@@ -5,6 +5,7 @@ never called the one that records a failure, so the circuit breaker only ever ar
 fetch. These drive instagram_monitor_user itself and assert on the ledger it leaves behind.
 """
 
+import json
 import threading
 import uuid
 from pathlib import Path
@@ -41,6 +42,7 @@ def monitored_account(monkeypatch, tmp_path):
         "CHECK_POSTS_IN_HOURS_RANGE": False, "WEB_DASHBOARD_ENABLED": False, "DASHBOARD_ENABLED": False,
         "RICH_AVAILABLE": False, "PROXY_ENABLED": False, "DISABLE_LOGGING": True, "COLORED_OUTPUT": False,
         "ERROR_NOTIFICATION": False, "WEBHOOK_ENABLED": False, "BE_HUMAN": False, "NEXT_OPERATION_DELAY": 0,
+        "FOLLOWERS_CHURN_DETECTION": False, "ADVANCED_FOLLOWER_FETCH": False,
         "INSTA_CHECK_INTERVAL": 1, "RANDOM_SLEEP_DIFF_LOW": 0, "RANDOM_SLEEP_DIFF_HIGH": 0,
     }
     for name, value in settings.items():
@@ -118,3 +120,55 @@ class TestTheLoopStopsAnAccountItKeepsFailingAgainst:
         assert im.circuit_breaker_state() is None
         assert len(target_lookups) > 2
         assert threading.current_thread() is threading.main_thread()
+
+
+class TestATruncatedListDoesNotReplaceASavedBaseline:
+    """A browser dialog that stops rendering returns a short list with nothing to say it stopped early.
+
+    The shortfall tolerance lets a small gap through as a finished list, so a saved baseline of 100 was
+    replaced by the 90 that rendered and the ten missing accounts were reported as removals.
+    """
+
+    # Drives the real startup pass against a saved baseline and a follow list that comes back short
+    @staticmethod
+    def _run(monkeypatch, tmp_path, saved, fetched, reported_count):
+        baseline = tmp_path / "target" / "json" / "instagram_target_followers.json"
+        baseline.parent.mkdir(parents=True, exist_ok=True)
+        baseline.write_text(json.dumps([len(saved), saved]), encoding="utf-8")
+        monkeypatch.setattr(im, "SKIP_FOLLOWERS", False, raising=False)
+        monkeypatch.setattr(im, "SKIP_FOLLOW_CHANGES", False, raising=False)
+        removals = []
+        monkeypatch.setattr(im, "compare_and_log_follower_changes", lambda user, kind, old, new, csv_file: (removals.append((kind, sorted(set(old) - set(new)))), ("", "", "", "", "", "", "", ""))[1], raising=False)
+
+        def fetch(*args, **kwargs):
+            result = im.PaginatedUsernameResult(fetched)
+            result.complete = True
+            return result
+
+        monkeypatch.setattr(im, "fetch_usernames_paginated", fetch, raising=False)
+        bot = SimpleNamespace(context=SimpleNamespace(_session=SimpleNamespace(), is_logged_in=True, iphone_headers={}), load_session_from_file=lambda *args: None)
+        profile = _profile()
+        profile.followers = reported_count
+        monkeypatch.setattr(im, "instaloader_client", lambda **kwargs: bot, raising=False)
+        monkeypatch.setattr(im, "profile_from_username_resilient", lambda _bot, username: profile, raising=False)
+        monkeypatch.setattr(im, "interruptible_sleep", lambda *args, **kwargs: True, raising=False)
+        im.instagram_monitor_user("target", str(tmp_path / "events.csv"), False, False, True, True, True, False, skip_follow_changes=False)
+        return json.loads(baseline.read_text(encoding="utf-8")), removals
+
+    # One new follower makes the tool refetch. The dialog stalls at 91 of the 101 Instagram reports, a
+    # shortfall inside the tolerance, so the list reads as finished and would drop ten saved accounts
+    def test_a_render_short_of_the_count_keeps_the_saved_list(self, monitored_account, tmp_path, capsys):
+        saved = [f"user{index}" for index in range(100)]
+        stored, removals = self._run(monitored_account, tmp_path, saved, saved[:91], 101)
+
+        assert stored == [100, saved]
+        assert removals == []
+        assert "came back with 91 of about 101 while 100 were already saved" in capsys.readouterr().out
+
+    # Accounts that really unfollowed move the count too, so the smaller list replaces the saved one
+    def test_a_real_unfollow_replaces_the_saved_list(self, monitored_account, tmp_path):
+        saved = [f"user{index}" for index in range(100)]
+        stored, removals = self._run(monitored_account, tmp_path, saved, saved[:80], 80)
+
+        assert stored == [80, saved[:80]]
+        assert removals == [("followers", sorted(saved[80:]))]

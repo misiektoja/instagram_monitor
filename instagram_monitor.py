@@ -11945,6 +11945,21 @@ def is_complete_username_baseline(result, reported_count):
     return bool(getattr(result, 'complete', False) and (result or reported_count == 0))
 
 
+# Marks a freshly fetched list unusable as a baseline when it came in short of Instagram's own count and would
+# also shrink the saved list. A browser dialog that stops rendering looks exactly like a finished one, so the
+# reported count and the saved baseline are the two witnesses that tell a stalled render apart from accounts
+# that really went away. Clearing the complete flag is what already stops a truncated list being saved or compared
+def reject_shrinking_username_baseline(result, reported_count, previous, kind: str, user: str = "") -> None:
+    if not getattr(result, 'complete', False) or not previous:
+        return
+    if int(reported_count or 0) <= len(result) or len(previous) <= len(result):
+        return
+    result.complete = False
+    msg = f"The {kind} list came back with {len(result)} of about {reported_count} while {len(previous)} were already saved, so the saved list is kept"
+    print(f"* {msg}")
+    log_activity(msg, user=user, level='system')
+
+
 # Atomically replaces a complete follower or following baseline file
 def save_username_baseline(filename, reported_count, usernames):
     destination = os.path.abspath(filename)
@@ -12686,6 +12701,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             duration_dl = end_time_dl - start_time_dl
             log_activity(f"Finished downloading followers: {len(followers)}, fetched in {display_time(duration_dl)}", user=user)
             followers_count = profile.followers
+            reject_shrinking_username_baseline(followers, followers_count, followers_old, "followers", user)
         except Exception as e:
             close_pbar()
             error_msg = format_error_message(e)
@@ -12824,6 +12840,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             duration_dl = end_time_dl - start_time_dl
             log_activity(f"Finished downloading followings: {len(followings)}, fetched in {display_time(duration_dl)}", user=user)
             followings_count = profile.followees
+            reject_shrinking_username_baseline(followings, followings_count, followings_old, "followings", user)
         except Exception as e:
             close_pbar()
             error_msg = format_error_message(e)
@@ -13673,6 +13690,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         # Refresh profile to get current reported counts for comparison
                         profile = profile_from_username_resilient(bot, user)
                         followings_count = profile.followees
+                        reject_shrinking_username_baseline(followings, followings_count, followings_old, "followings", user)
                         followers_count_reported = profile.followers
                         if not FOLLOWERS_CHURN_DETECTION:
                             show_follow_info(followers_count_reported, len(followers), followings_count, len(followings))
@@ -13818,6 +13836,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         # Refresh profile to get current reported counts for comparison
                         profile = profile_from_username_resilient(bot, user)
                         followers_count = profile.followers
+                        reject_shrinking_username_baseline(followers, followers_count, followers_old, "followers", user)
                         followings_count_reported = profile.followees
                         if not FOLLOWERS_CHURN_DETECTION:
                             show_follow_info(followers_count, len(followers), followings_count_reported, len(followings))
