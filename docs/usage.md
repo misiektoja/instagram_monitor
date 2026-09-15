@@ -295,7 +295,7 @@ Error emails are enabled by default when email is configured. Disable them in on
 instagram_monitor <target_insta_user> -e
 ```
 
-An error alert goes out once the same failure has lasted **5 minutes**, so one lost request reaches nobody, while a failure that cannot clear on its own, such as an expired session, is alerted at once. The webhook gets the same alert when `WEBHOOK_ERROR_NOTIFICATION` is on. Each kind of failure alerts once per channel. A channel that could not deliver is tried again on a later failing check, after **5 minutes** at first and then after twice the previous wait, up to an hour. A run that recovered alerts again when it fails later.
+An error alert goes out once the same failure has lasted **5 minutes**, so one lost request reaches nobody, while a failure that cannot clear on its own, such as an expired session, is alerted at once. The webhook gets the same alert when `WEBHOOK_ERROR_NOTIFICATION` is on. Each kind of failure alerts once per channel, and an outage that keeps failing differently is one kind: a lost connection that reads as a timeout on one check and as an unresolved host on the next alerts once, the same way it is reported on screen. A channel that could not deliver is tried again on a later failing check, after **5 minutes** at first and then after twice the previous wait, up to an hour. A run that recovered alerts again when it fails later.
 
 Email requires [SMTP settings](configuration.md#smtp-settings). Run `instagram_monitor --send-test-email` before a long monitoring session.
 

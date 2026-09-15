@@ -241,6 +241,57 @@ class TestNotifyMonitoringError:
         assert len(calls["webhook"]) == 2
 
 
+class TestOneOutageIsOneAlertWhateverItsSubtype:
+    """The console groups every network failure of one outage through outage_family, the alert did not.
+
+    Comparing the exact code meant an internet outage alternating between an unresolved host and a timeout
+    earned a fresh alert on every check and cleared the hold of a channel that was failing to deliver, so a
+    broken mail server was dialled again on each one. The console reported a single outage throughout.
+    """
+
+    # Drives the console reporter and the alert over one run of failures, sharing a clock and an alert state
+    @staticmethod
+    def _run(im_module, monkeypatch, errors, delivered=True):
+        clock = {"now": 1_000_000}
+        sent = []
+        monkeypatch.setattr(im_module.time, "time", lambda: clock["now"])
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "ERROR_ALERT_AFTER_SECONDS", 0)
+        monkeypatch.setattr(im_module, "ERROR_ALERT_RETRY_SECONDS", 300)
+        monkeypatch.setattr(im_module, "webhook_event_enabled", lambda event: False)
+        monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: sent.append(args[0]) or (0 if delivered else 1))
+        reporter, state = im_module.OutageReporter(), im_module.ErrorAlertState()
+        reports = []
+        for error in errors:
+            advice = im_module.classify_recovery_error(error, is_logged_in=True)
+            reports.append(reporter.failed(advice))
+            im_module.notify_monitoring_error("targetuser", advice, error, reporter.since, reporter.failures, 60, state)
+            clock["now"] += 360
+        return reports, sent, state
+
+    # The console says one outage, so the operator must not receive an alert for each subtype it flaps through
+    def test_a_flapping_outage_alerts_once(self, im_module, monkeypatch):
+        reports, sent, _ = self._run(im_module, monkeypatch, ["Temporary failure in name resolution", "The read operation timed out"] * 2)
+
+        assert reports == ["full", "", "", ""]
+        assert len(sent) == 1
+
+    # The hold has to survive the subtype changing, or the growing wait never applies to a flapping outage
+    def test_a_flapping_outage_holds_a_failing_channel_like_a_steady_one(self, im_module, monkeypatch):
+        _, flapping_sent, flapping_state = self._run(im_module, monkeypatch, ["Temporary failure in name resolution", "The read operation timed out"] * 3, delivered=False)
+        _, steady_sent, steady_state = self._run(im_module, monkeypatch, ["Temporary failure in name resolution"] * 6, delivered=False)
+
+        assert len(flapping_sent) == len(steady_sent)
+        assert flapping_state.email_failures == steady_state.email_failures > 1
+
+    # A failure from another family is a different problem, so it still earns each channel its own alert
+    def test_a_failure_from_another_family_still_alerts(self, im_module, monkeypatch):
+        reports, sent, _ = self._run(im_module, monkeypatch, ["Temporary failure in name resolution", "The read operation timed out", "429 Too Many Requests"])
+
+        assert reports == ["full", "", "changed"]
+        assert len(sent) == 2
+
+
 class TestNotifySessionFlagged:
     """A flag is terminal and operator-actionable, so the alert must fire on detection regardless of the error alert delay."""
 

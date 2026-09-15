@@ -10603,8 +10603,10 @@ class ErrorAlertState:
 
 # Alerts both channels once a failure has lasted ERROR_ALERT_AFTER_SECONDS or at once when it cannot clear on its own, once per failure category and per channel
 def notify_monitoring_error(user, advice, error_msg, failed_since, failure_count, check_interval, alert_state):
-    # A failure that changes category is a different failure, so each channel earns a new alert for it
-    if advice.code != alert_state.code:
+    # A failure that changes family is a different failure, so each channel earns a new alert for it, while an internet
+    # outage flapping between a timeout and an unresolved host stays one failure. Keyed on the family the console
+    # reporter groups by, or one outage would alert on every subtype and clear the hold of a channel that is failing
+    if outage_family(advice.code) != outage_family(alert_state.code):
         alert_state.reset()
         alert_state.code = advice.code
     # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
