@@ -15563,8 +15563,8 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
     state.want_webhook = True
     state.config_values["WEBHOOK_ENABLED"] = True
     preset = _wizard_ask_choice("Which webhook alerts should be sent?", [
-        ("Status and errors, recommended", "New posts, reels, stories, bio and picture changes, plus monitoring errors."),
-        ("Every supported alert", "Also alerts on follower and following changes."),
+        ("Status and errors, recommended", "New posts, reels, stories, followings, bio and picture changes, plus monitoring errors."),
+        ("Every supported alert", "Also alerts when someone follows or unfollows the target."),
         ("Custom", "Choose each webhook alert separately."),
     ])
     if preset == 0:
@@ -15574,8 +15574,8 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
     else:
         print()
         questions = (
-            ("WEBHOOK_STATUS_NOTIFICATION", "Send a webhook alert on new posts, reels, stories and profile changes?"),
-            ("WEBHOOK_FOLLOWERS_NOTIFICATION", "Send a webhook alert when followers or followings change?"),
+            ("WEBHOOK_STATUS_NOTIFICATION", "Send a webhook alert on new posts, reels, stories, followings, bio and picture changes?"),
+            ("WEBHOOK_FOLLOWERS_NOTIFICATION", "Send a webhook alert when someone follows or unfollows the target?"),
             ("WEBHOOK_ERROR_NOTIFICATION", "Send a webhook alert on monitoring errors?"),
         )
         selected = {name: _wizard_ask_yes_no(question, default=False) for name, question in questions}
@@ -15684,8 +15684,8 @@ def _wizard_collect_email_section(state: WizardSetupState) -> None:
         if outcome:
             break
     preset = _wizard_ask_choice("Which email notifications should be enabled?", [
-        ("Status and errors, recommended", "New posts, reels, stories, bio and picture changes, plus monitoring errors."),
-        ("Every supported event", "Also emails on follower and following changes."),
+        ("Status and errors, recommended", "New posts, reels, stories, followings, bio and picture changes, plus monitoring errors."),
+        ("Every supported event", "Also emails when someone follows or unfollows the target."),
         ("Custom", "Choose each notification type separately."),
     ])
     if preset == 0:
@@ -15695,8 +15695,8 @@ def _wizard_collect_email_section(state: WizardSetupState) -> None:
     else:
         print()
         questions = (
-            ("STATUS_NOTIFICATION", "Email on new posts, reels, stories and profile changes?"),
-            ("FOLLOWERS_NOTIFICATION", "Email when followers or followings change?"),
+            ("STATUS_NOTIFICATION", "Email on new posts, reels, stories, followings, bio and picture changes?"),
+            ("FOLLOWERS_NOTIFICATION", "Also email when someone follows or unfollows the target?"),
             ("ERROR_NOTIFICATION", "Email on monitoring errors?"),
         )
         selected = {name: _wizard_ask_yes_no(question, default=False) for name, question in questions}
@@ -17616,7 +17616,7 @@ def run_main():
         dest="verbose_mode",
         action="store_true",
         default=None,
-        help="Enable verbose mode (shows timing details, next check schedule and interval info)"
+        help="Enable verbose mode (shows operational events such as follow counts and where each alert was delivered)"
     )
     opts.add_argument(
         "--debug",
