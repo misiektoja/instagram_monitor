@@ -16910,6 +16910,21 @@ def apply_diagnostic_cli_overrides(args: argparse.Namespace) -> None:
         VERBOSE_MODE = args.verbose_mode
 
 
+# Applies the command line's session account and mode over the configured ones, early enough that every action
+# reporting on or clearing state held per account acts on the account the user named rather than the configured one
+def apply_session_identity_cli_overrides(args: argparse.Namespace) -> None:
+    global SESSION_USERNAME, SESSION_PASSWORD, SKIP_SESSION
+    if args.session_username:
+        SESSION_USERNAME = args.session_username
+    if args.session_password:
+        SESSION_PASSWORD = args.session_password
+        record_secret_source("SESSION_PASSWORD", "command line")
+    if args.skip_session is True:
+        SKIP_SESSION = True
+    if not SESSION_USERNAME:
+        SKIP_SESSION = True
+
+
 # Parses configuration and command-line options then starts the selected operation
 def run_main():
     global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_REMINDER_SECONDS, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE, IDENTITY_BUDGET_PER_DAY, CIRCUIT_BREAKER, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
@@ -17661,6 +17676,10 @@ def run_main():
     if is_placeholder_setting(WEBHOOK_URL):
         WEBHOOK_URL = ""
 
+    # Resolved here rather than with the rest of the flags below, because --clear-breaker and --exposure act on one
+    # account's safety record and exit before that point, and would otherwise read the configured account or none
+    apply_session_identity_cli_overrides(args)
+
     if _wizard_should_offer_first_run(sys.argv, TARGET_USERNAMES, WEB_DASHBOARD_ENABLED):
         print_welcome_screen(parser)
         sys.exit(0 if sys.stdin.isatty() else 1)
@@ -17992,9 +18011,6 @@ def run_main():
         print(f"Guide: {QUICK_START_GUIDE_URL}")
         sys.exit(1)
 
-    if args.skip_session is True:
-        SKIP_SESSION = True
-
     if args.skip_followers is True:
         SKIP_FOLLOWERS = True
 
@@ -18031,17 +18047,7 @@ def run_main():
     if args.check_interval_random_diff_high:
         RANDOM_SLEEP_DIFF_HIGH = args.check_interval_random_diff_high
 
-    if args.session_username:
-        SESSION_USERNAME = args.session_username
-
-    if args.session_password:
-        SESSION_PASSWORD = args.session_password
-        record_secret_source("SESSION_PASSWORD", "command line")
-
     trace_unresolved_secrets()
-
-    if not SESSION_USERNAME:
-        SKIP_SESSION = True
 
     # Validate INSTA_CHECK_INTERVAL to prevent division by zero
     if INSTA_CHECK_INTERVAL <= 0:

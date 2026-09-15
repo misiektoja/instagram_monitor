@@ -695,3 +695,66 @@ class TestEveryAuthenticatedFailureReachesTheBreaker:
     def test_every_flag_trigger_is_classified_as_an_account_failure(self, ledger, trigger):
         assert im.is_session_flagged(trigger, object()) is True
         assert im.is_account_level_failure(im.classify_failure_class(trigger)) is True
+
+
+class TestAnAccountScopedCommandActsOnTheAccountTheUserNamed:
+    """--clear-breaker and --exposure exit before the command line's session account has been applied.
+
+    Both read the safety record of whatever the configuration named, or of the anonymous key when no
+    configuration was loaded, so a run told the user nothing was tripped while the named account stayed
+    stopped. The ledger itself was always correct, and so was every helper it went through.
+    """
+
+    # Trips the breaker for one account, then runs one one-shot command through the real command line
+    @staticmethod
+    def _run(monkeypatch, capsys, action, argv=(), account="chosen.account"):
+        monkeypatch.setattr(im, "SESSION_USERNAME", account, raising=False)
+        monkeypatch.setattr(im, "SKIP_SESSION", False, raising=False)
+        monkeypatch.setattr(im, "CIRCUIT_BREAKER", True, raising=False)
+        monkeypatch.setattr(im, "log_activity", lambda *args, **kwargs: None, raising=False)
+        im.record_failure_event("challenge", "target", "400 checkpoint_required")
+        assert im.circuit_breaker_tripped() is True
+        monkeypatch.setattr(im, "SESSION_USERNAME", "", raising=False)
+        monkeypatch.setattr(im, "check_internet", lambda *args, **kwargs: True, raising=False)
+        monkeypatch.setattr(im, "clear_screen", lambda *args, **kwargs: None, raising=False)
+        monkeypatch.setattr(im.sys, "argv", ["instagram_monitor.py", "--config-file", "none", "--env-file", "none", "--no-color", action, *argv])
+        capsys.readouterr()
+        with pytest.raises(SystemExit) as exit_call:
+            im.run_main()
+        monkeypatch.setattr(im, "SESSION_USERNAME", account, raising=False)
+        monkeypatch.setattr(im, "SKIP_SESSION", False, raising=False)
+        return exit_call.value.code, capsys.readouterr().out
+
+    # Naming the account on the command line has to reach the record the command clears
+    def test_clear_breaker_clears_the_account_named_on_the_command_line(self, monkeypatch, capsys):
+        code, output = self._run(monkeypatch, capsys, "--clear-breaker", ("--session-username", "chosen.account"))
+
+        assert code == 0
+        assert "Circuit breaker cleared for chosen.account" in output
+        assert im.circuit_breaker_tripped() is False
+
+    # Without the account there is nothing to act on, so the stop stays in place rather than being cleared blindly
+    def test_clear_breaker_without_an_account_leaves_the_record_alone(self, monkeypatch, capsys):
+        code, output = self._run(monkeypatch, capsys, "--clear-breaker")
+
+        assert code == 0
+        assert "not tripped for <anonymous>" in output
+        assert im.circuit_breaker_tripped() is True
+
+    # The report is the other half of the same promise, so it has to describe the same account
+    def test_the_exposure_report_describes_the_account_named_on_the_command_line(self, monkeypatch, capsys):
+        code, output = self._run(monkeypatch, capsys, "--exposure", ("--session-username", "chosen.account"))
+
+        assert code == 0
+        assert "TRIPPED" in output
+        assert "challenge" in output
+        # The report omits account names on purpose, so the mode is what says an account was resolved at all
+        assert "authenticated" in output
+
+    # An account asked to run without a session is anonymous, whatever the configuration named
+    def test_skipping_the_session_reports_the_anonymous_record(self, monkeypatch, capsys):
+        code, output = self._run(monkeypatch, capsys, "--exposure", ("--session-username", "chosen.account", "--skip-session"))
+
+        assert code == 0
+        assert "Session mode:" in output and "anonymous" in output
+        assert "TRIPPED" not in output
