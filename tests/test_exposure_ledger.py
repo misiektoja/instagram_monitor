@@ -1,5 +1,6 @@
 """Offline tests for the identity exposure ledger, the daily budget and the account circuit breaker."""
 
+import json
 import threading
 
 import pytest
@@ -695,6 +696,100 @@ class TestEveryAuthenticatedFailureReachesTheBreaker:
     def test_every_flag_trigger_is_classified_as_an_account_failure(self, ledger, trigger):
         assert im.is_session_flagged(trigger, object()) is True
         assert im.is_account_level_failure(im.classify_failure_class(trigger)) is True
+
+
+# A ledger edited by hand or left half written by a full disk holds values no reader can trust. Every one of
+# them has to stop the account rather than grant it budget, and none may escape as an error the caller does not expect
+class TestAStoredLedgerValueNoReaderCanTrust:
+    # Writes one hand-edited ledger payload for the test account and returns nothing
+    @staticmethod
+    def _write(tmp_path, record, extra=None):
+        payload = {'version': im.EXPOSURE_STATE_VERSION, 'accounts': {'testacct': record}}
+        payload.update(extra or {})
+        (tmp_path / "instagram_monitor_exposure.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    # Returns a record that every reader accepts, so each test changes exactly one field
+    @staticmethod
+    def _healthy():
+        return {'date': im._exposure_today(), 'identities': 3, 'failures': {'rate_limit': 1}, 'breaker': None}
+
+    @pytest.mark.parametrize(("field", "value", "expected"), [
+        ('identities', -50, "identities"),
+        ('identities', "unknown", "identities"),
+        ('identities', 2.5, "identities"),
+        ('identities', True, "identities"),
+        ('failures', ["challenge"], "failures"),
+        ('failures', {'challenge': "many"}, "failures.challenge"),
+        ('failures', {'challenge': -1}, "failures.challenge"),
+        ('breaker', "tripped", "breaker"),
+        ('breaker', {'failure_class': "challenge"}, "breaker.tripped_ts"),
+        ('breaker', {'tripped_ts': 0, 'failure_class': "challenge"}, "breaker.tripped_ts"),
+        ('date', 20990101, "date"),
+        ('last_account_failure', "yesterday", "last_account_failure"),
+    ])
+    def test_the_error_names_the_field_and_the_repair(self, ledger, tmp_path, field, value, expected):
+        record = self._healthy()
+        record[field] = value
+        self._write(tmp_path, record)
+
+        with pytest.raises(im.ExposureLedgerError) as raised:
+            im.exposure_snapshot()
+
+        assert f"'{expected}' field" in str(raised.value)
+        assert "fresh ledger" in str(raised.value)
+
+    # A count below zero used to buy budget back, reporting more names left than the daily limit allows
+    def test_a_negative_count_stops_the_account_instead_of_granting_budget(self, ledger, tmp_path, monkeypatch):
+        monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 10, raising=False)
+        record = self._healthy()
+        record['identities'] = -50
+        self._write(tmp_path, record)
+
+        result = im.fetch_usernames_paginated(None, lambda: _names(4), 0, 0, 0, False, 4, "target")
+        memory_state = im._account_breaker_memory_state()
+
+        assert result == []
+        assert memory_state is not None and memory_state["failure_class"] == "ledger_unavailable"
+
+    # A breaker stored as anything but a stop record read as untripped, so a stopped account resumed on its own
+    def test_a_breaker_that_is_not_a_stop_record_keeps_the_account_stopped(self, ledger, tmp_path):
+        record = self._healthy()
+        record['breaker'] = "tripped"
+        self._write(tmp_path, record)
+
+        assert im.circuit_breaker_tripped() is True
+
+    # The report documents a recovery path for an unusable ledger, so it must take it rather than raise
+    def test_the_report_recovers_instead_of_raising(self, ledger, tmp_path):
+        record = self._healthy()
+        record['identities'] = "unknown"
+        self._write(tmp_path, record)
+
+        text = "\n".join(im.exposure_summary_lines())
+
+        assert "Account safety ledger:" in text
+        assert "unavailable" in text
+        assert "Identities returned today" not in text
+
+    # A record for another account is part of the same file, and one run rewrites all of them
+    def test_another_account_with_a_bad_record_is_not_written_back(self, ledger, tmp_path):
+        self._write(tmp_path, self._healthy(), extra={'accounts': {'testacct': self._healthy(), 'otheracct': {'identities': -1}}})
+
+        with pytest.raises(im.ExposureLedgerError):
+            im.exposure_snapshot()
+
+    # Validation must reject what readers rely on without turning the file into a closed schema
+    def test_fields_this_version_does_not_know_survive_a_write(self, ledger, tmp_path):
+        record = self._healthy()
+        record['future_field'] = {'kept': True}
+        self._write(tmp_path, record, extra={'future_top': 7})
+
+        im.record_identities_returned(2)
+        written = json.loads((tmp_path / "instagram_monitor_exposure.json").read_text(encoding="utf-8"))
+
+        assert written['accounts']['testacct']['future_field'] == {'kept': True}
+        assert written['future_top'] == 7
+        assert written['accounts']['testacct']['identities'] == 5
 
 
 class TestAnAccountScopedCommandActsOnTheAccountTheUserNamed:

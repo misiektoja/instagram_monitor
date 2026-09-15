@@ -82,7 +82,7 @@ Rate limits, network errors and Instagram API changes do not trip the breaker. O
 
 The email and webhook alert for a flagged account also carries the client identity behind it: the transport in effect, the browser `curl_cffi` impersonated and the browser user agent. That is usually what you need to decide whether the transport caused the flag. It means those values reach your notification service, so leave account-level alerts off if that matters for your webhook destination. Routine per-target error alerts carry no identity.
 
-The safety ledger also fails closed. If `instagram_monitor_exposure.json` cannot be read or saved, authenticated monitoring stops before another identity scan. Fix its contents or permissions then run `--clear-breaker` to reset unusable state.
+The safety ledger also fails closed. If `instagram_monitor_exposure.json` cannot be read or saved, authenticated monitoring stops before another identity scan. That includes a file that parses but holds a value no reader can trust, such as a negative name count or a stop record that is not one. The error names the field, so fix that field or move the file aside, then run `--clear-breaker` to reset unusable state. Fields the tool does not recognize are left alone.
 
 <a id="check-your-exposure"></a>
 ## Check Your Exposure

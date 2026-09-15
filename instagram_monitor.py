@@ -10775,12 +10775,53 @@ def _exposure_today() -> str:
         return datetime.now().strftime("%Y-%m-%d")
 
 
+# Builds the error for a stored ledger value no reader can trust, naming the field and the repair
+def _exposure_field_error(field: str, detail: str) -> ExposureLedgerError:
+    return ExposureLedgerError(f"The account safety ledger has an invalid '{field}' field ({detail}). Repair that field or move the file aside to start a fresh ledger")
+
+
+# Rejects a stored counter that is not a whole number of events, since a negative or non-numeric one silently grants budget
+def _validate_exposure_count(field: str, value: Any) -> None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise _exposure_field_error(field, f"expected a whole number, found {type(value).__name__}")
+    if value < 0:
+        raise _exposure_field_error(field, f"expected a count of zero or more, found {value}")
+
+
+# Checks one stored account record against what every reader assumes, leaving fields this version does not know in place
+def _validate_exposure_record(record: Any) -> None:
+    if not isinstance(record, dict):
+        raise _exposure_field_error("accounts", f"expected one object per account, found {type(record).__name__}")
+    if not isinstance(record.get('date', ""), str):
+        raise _exposure_field_error("date", f"expected a date string, found {type(record['date']).__name__}")
+    _validate_exposure_count("identities", record.get('identities', 0))
+    failures = record.get('failures', {})
+    if not isinstance(failures, dict):
+        raise _exposure_field_error("failures", f"expected one count per failure class, found {type(failures).__name__}")
+    for failure_class, count in failures.items():
+        _validate_exposure_count(f"failures.{failure_class}", count)
+    breaker = record.get('breaker')
+    if breaker is not None:
+        if not isinstance(breaker, dict):
+            raise _exposure_field_error("breaker", f"expected a stop record or null, found {type(breaker).__name__}")
+        _validate_exposure_count("breaker.tripped_ts", breaker.get('tripped_ts'))
+        if not breaker.get('tripped_ts'):
+            raise _exposure_field_error("breaker.tripped_ts", "expected the time the account was stopped, found zero")
+    last_failure = record.get('last_account_failure')
+    if last_failure is not None and not isinstance(last_failure, dict):
+        raise _exposure_field_error("last_account_failure", f"expected a failure record or null, found {type(last_failure).__name__}")
+
+
 # Reads the ledger from disk and rejects state that cannot be trusted
 def _load_exposure_file() -> Dict[str, Any]:
     try:
         with open(exposure_state_path(), 'r', encoding="utf-8") as handle:
             data = json.load(handle)
         if isinstance(data, dict) and isinstance(data.get('accounts'), dict):
+            # Validated here rather than at each reader, so a stored value no reader can trust stops the account
+            # once instead of granting budget in one place and raising an unhandled error in another
+            for record in data['accounts'].values():
+                _validate_exposure_record(record)
             return data
         raise ExposureLedgerError("The account safety ledger has an invalid structure")
     except FileNotFoundError:

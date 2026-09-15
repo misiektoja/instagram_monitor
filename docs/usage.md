@@ -664,7 +664,7 @@ CIRCUIT_BREAKER = True
 
 The budget is shared by every target and resets at local midnight. Identity scans run one at a time so workers cannot spend the same remaining allowance. REST responses are counted as soon as a page arrives, including names the caller does not consume. When the budget is spent, name fetching stops for the day while counts, posts, reels, stories and profile changes carry on. Names are counted even with no budget set, so you can measure first and choose a number afterwards.
 
-The circuit breaker stops every target at once when Instagram returns a challenge, a checkpoint or an expired session and stays stopped across restarts. A stored breaker is checked before an Instagram client or session is created. If the safety ledger cannot be read or saved, authenticated monitoring also stops instead of continuing with unknown state. Rate limits, network errors and Instagram API changes do not trip it.
+The circuit breaker stops every target at once when Instagram returns a challenge, a checkpoint or an expired session and stays stopped across restarts. A stored breaker is checked before an Instagram client or session is created. If the safety ledger cannot be read or saved, or holds a value no reader can trust, authenticated monitoring also stops instead of continuing with unknown state. Rate limits, network errors and Instagram API changes do not trip it.
 
 Three commands:
 
