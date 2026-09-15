@@ -79,8 +79,8 @@ colours=unchanged, cyan
 count=stop
 -
 # Any "<something> URL:" row carries a link, checked before the label table so "Album URL:"
-# is not read as "Album:"
-regexp=URL:[\t ]+(https?://[^\s\]]+?)(?=[.,;:!?'")>]*(?:[\s\]]|$))
+# is not read as "Album:". A proxy row is the exception, since it names the proxy rather than a page
+regexp=(?<!Proxy )URL:[\t ]+(https?://[^\s\]]+?)(?=[.,;:!?'")>]*(?:[\s\]]|$))
 colours=unchanged, blue underline
 count=stop
 -
@@ -142,8 +142,13 @@ regexp=^[\t ]*(?:[-*][\t ]+)?(?:Last track duration|Match duration|Match finishe
 colours=unchanged, green
 count=stop
 -
-regexp=^[\t ]*(?:[-*][\t ]+)?(?:Current game|Title name|User is currently in-game|In-game|Game|Commit message|IP Address):[\t ]+(\S.*?)(?:[\t ]*\((PS[A-Z0-9_]*|MOBILE_APP)\))?[\t ]*$
+regexp=^[\t ]*(?:[-*][\t ]+)?(?:Current game|Title name|User is currently in-game|In-game|Game|Commit message|IP Address|Proxy IP Address|Proxy URL|Proxy Certificate|Proxy for Webhooks):[\t ]+(\S.*?)(?:[\t ]*\((PS[A-Z0-9_]*|MOBILE_APP)\))?[\t ]*$
 colours=unchanged, bright_yellow, blue
+count=stop
+-
+# A proxy line the tools paint whole rather than reading a label out of it
+regexp=^[\t ]*\*[\t ]+Proxy\b.*$
+colours=bright_yellow
 count=stop
 -
 regexp=^[\t ]*(?:[-*][\t ]+)?Platform:[\t ]+(\S.*?)[\t ]*$
@@ -423,7 +428,7 @@ colours=unchanged, unchanged, green, unchanged, green
 # The monitored user, named in a sentence or in a key=value diagnostic field
 # ---------------------------------------------------------------------------
 
-regexp=(?i)\b(Last\.fm user|GitHub user|Instagram user|Xbox user|Xbox gamer tag|PSN user|PlayStation user|Steam user|LoL user|Monitoring(?:[\t ]+\w+)?[\t ]+user|for user|by user|of user|listened by|owned by|user[\t ]+with(?:[\t ]+\w+)?[\t ]+ID|user):?([\t ]+)((?!(?:with|id|agent|played|plays|playing|got|is|was|were|has|have|had|changed|started|stopped|paused|resumed|skipped|active|inactive|offline|online|away|snooze|to|from|and|the|not|no|yes|for|by|of|agreement|list|lists)\b)[\w.#-]+)
+regexp=(?i)\b(Last\.fm user|GitHub user|Instagram user|Xbox user|Xbox gamer tag|PSN user|PlayStation user|Steam user|LoL user|Monitoring(?:[\t ]+\w+)?[\t ]+user|for user|by user|of user|listened by|owned by|user[\t ]+with(?:[\t ]+\w+)?[\t ]+ID|user):?([\t ]+)((?!(?:with|id|agent|played|plays|playing|got|is|was|were|has|have|had|changed|started|stopped|paused|resumed|skipped|active|inactive|offline|online|away|snooze|to|from|and|the|not|no|yes|for|by|of|agreement|list|lists|last|profile)\b)[\w.#-]+)
 colours=unchanged, unchanged, unchanged, bright_cyan underline
 -
 regexp=^\*[\t ]+Tracking[\t ]+([\w._-]+)
@@ -438,7 +443,13 @@ colours=unchanged, unchanged, unchanged, bright_magenta
 regexp=\b(Spotify user(?:[\t ]+ID)?):?([\t ]+)((?![Ii][Dd]\b)(?=[\w.:-]*\d)[\w.:-]{4,})
 colours=unchanged, unchanged, unchanged, bright_magenta
 -
-regexp=(?<!://)\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b(?!:\d+/?)
+# Each octet is checked and a fifth part rules the value out, so an application version such as
+# 282.0.7.727 or 219.0.0.12.117 in a user agent row is not read as an address
+regexp=(?<!://)(?<![.\d])\b(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(?:\.(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}\b(?![.\d]|:\d+/?)
+colours=bright_yellow
+-
+# The tools paint the whole phrase, not only the address in it
+regexp=(?i)proxy[\t ]+IP[\t ]+address[\t ]+of[\t ]+[\d.]+
 colours=bright_yellow
 -
 # A value with the shape of a Spotify URI ID or a Steam64 ID names an account, not a person

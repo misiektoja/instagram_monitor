@@ -4560,7 +4560,9 @@ _STATUS_CHANGE_SUBJECTS = ("status", "mode", "bio", "followers", "followings", "
 _ACTIVITY_HEADER_PHRASES = ("story for user", "newest post", "followers number changed", "followings number changed", "bio changed for", "new post for user", "number changed", "number of", "followings changed", "followers changed", "name changed to", "has changed for user", "has been updated for user", "changed profile picture", "removed profile picture", "set profile picture", "update date changed", "has new story item", "story items:", "disappeared")
 _STORY_ITEM_ACTIVITY_RE = re.compile(r"\bhas[ \t]+\d{1,20}[ \t]+story[ \t]+items?\b", re.IGNORECASE)
 _PROXY_IP_RE = re.compile(r"proxy IP address of [\d.]+", re.IGNORECASE)
-_IP_ADDRESS_RE = re.compile(r"(?<!://)\b(\d{1,3}\.){3}\d{1,3}\b(?!:\d+/?)")
+# Every octet is checked and a fifth part rules the value out, so an application version such as
+# 282.0.7.727 or 219.0.0.12.117 is not read as an address
+_IP_ADDRESS_RE = re.compile(r"(?<!://)(?<![.\d])\b(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(?:\.(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}\b(?![.\d]|:\d+/?)")
 _ACCOUNT_LIMIT_RE = re.compile(r"(\d{1,20})[ \t]+(accounts?)\b", re.IGNORECASE)
 
 
@@ -4979,7 +4981,9 @@ def _colorize_line(line):
 
     # Highlight proxy information
     line = _PROXY_IP_RE.sub(lambda mo: colorize('proxy_ip', mo.group(0)), line)
-    line = _IP_ADDRESS_RE.sub(lambda mo: colorize('ip_address', mo.group(0)), line)
+    # A user agent row reports versions rather than addresses, so it keeps its own plain value
+    if not is_summary_line:
+        line = _IP_ADDRESS_RE.sub(lambda mo: colorize('ip_address', mo.group(0)), line)
 
     # Highlight advanced fetch settings for follower/followee
     line = _ACCOUNT_LIMIT_RE.sub(lambda mo: f"{colorize('count_up', mo.group(1))} {colorize('count_up', mo.group(2))}", line)

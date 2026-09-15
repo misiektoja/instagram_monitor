@@ -496,3 +496,22 @@ def test_a_closed_or_uncut_colour_gains_no_extra_reset(im_module):
     assert im_module.truncate_string_per_line("\x1b[31m0123\x1b[0m456789ABCDEF", 10) == "\x1b[31m0123\x1b[0m456789"
     assert im_module.truncate_string_per_line("\x1b[31m0123\x1b[0m", 10) == "\x1b[31m0123\x1b[0m"
     assert im_module.truncate_string_per_line("0123456789ABCDEF", 10) == "0123456789"
+
+
+# Verifies an application version in a user agent row is not read as an address
+@pytest.mark.parametrize("value", ["Instagram 282.0.7.727 (iPhone12,5; iOS 12_1)", "Instagram 219.0.0.12.117 Android (30/11; 420dpi)"])
+def test_a_user_agent_version_is_not_coloured_as_an_address(im_module, monkeypatch, value):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {"ip_address": "\033[93m"})
+
+    line = f"* Mobile user agent:            {value}"
+
+    assert im_module._colorize_line(line) == line
+
+
+# Verifies a real address still carries the address colour
+def test_an_address_keeps_its_colour(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {"ip_address": "\033[93m"})
+
+    assert im_module._colorize_line("Connected through 10.0.0.5") == f"Connected through \033[93m10.0.0.5{im_module.ANSI_RESET}"
