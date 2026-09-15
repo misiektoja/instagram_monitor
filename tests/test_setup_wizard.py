@@ -42,6 +42,47 @@ def make_setup_state(im_module, directory: Path):
     return im_module.WizardSetupState(directory / "instagram_monitor.conf", directory / ".env", baseline, dict(baseline), {}, ["target.user"], True, False, "no-login", "", None, None, False, False, False, False)
 
 
+# Setup writes the switch its question named, so a question promising more than its switch delivers is the drift
+# this catches. A followings change is a status event and no follower switch gates it
+class TestTheFollowQuestionsNameTheSwitchTheyWrite:
+    # Runs one real notification section through its custom preset and returns the question asked per switch
+    @staticmethod
+    def _questions(im_module, section, choice_answer):
+        asked = []
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            with pytest.MonkeyPatch.context() as patcher:
+                patcher.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: asked.append(question) or True)
+                patcher.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: "https://ntfy.sh/example" if "URL" in question else "answer@example.test")
+                patcher.setattr(im_module, "_wizard_ask_positive_int", lambda question, default, maximum=None: 587)
+                patcher.setattr(im_module, "_wizard_ask_secret", lambda question: "private-value")
+                patcher.setattr(im_module, "_wizard_verify_smtp", lambda values, password: None)
+                patcher.setattr(im_module, "_wizard_ask_choice", lambda question, options, **kwargs: choice_answer(question, options))
+                section(state)
+        return asked
+
+    @pytest.mark.parametrize("section_name,choice_index", [("_wizard_collect_email_section", 2), ("_wizard_collect_webhook_section", 2)])
+    def test_the_follower_question_does_not_promise_followings(self, im_module, section_name, choice_index):
+        presets = []
+
+        # Every choice but the notification one takes its first option, so the run reaches the per-switch questions
+        def answer(question, options):
+            if "notification" in question or "alert" in question:
+                presets.append(options)
+                return choice_index
+            return 0
+
+        asked = self._questions(im_module, getattr(im_module, section_name), answer)
+        status_question = next(item for item in asked if "posts" in item)
+        follower_question = next(item for item in asked if "follows or unfollows" in item)
+
+        assert "followings" in status_question
+        assert "following" not in follower_question
+        assert "Also" in presets[-1][1][1]
+        assert "following" not in presets[-1][1][1]
+        assert "followings" in presets[-1][0][1]
+
+
 # Verifies duration input accepts bare seconds plus single, decimal and compound unit forms
 def test_duration_helper_accepts_supported_units(im_module, monkeypatch):
     for value, expected in (("120", 120), ("120s", 120), ("2m", 120), ("2 mins", 120), ("1h", 3600), ("1.5h", 5400), ("1h 30m", 5400), ("1 day", 86400)):

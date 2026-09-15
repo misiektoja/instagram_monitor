@@ -1093,7 +1093,7 @@ def test_doctor_details_keep_to_the_agreed_shapes(im_module):
         if isinstance(node, ast.Constant):
             return node.value if isinstance(node.value, str) else None
         if isinstance(node, ast.JoinedStr):
-            return "".join(part.value if isinstance(part, ast.Constant) else "{}" for part in node.values)
+            return "".join(part.value if isinstance(part, ast.Constant) and isinstance(part.value, str) else "{}" for part in node.values)
         return None
 
     offenders = []

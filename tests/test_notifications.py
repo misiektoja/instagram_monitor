@@ -194,6 +194,40 @@ class TestFollowerChangeEmbed:
         assert calls[0][1]["notification_type"] == "followers"
 
 
+# A followings change is delivered on the status channel, so the follower switches never gate it. Setup used to
+# offer them as one answer, which promised control the switch does not have
+class TestWhichSwitchGatesAFollowChange:
+    # Runs the real dispatcher for one change and reports which channels it reached
+    @staticmethod
+    def _delivered(im_module, monkeypatch, channel, email_enabled):
+        sent = []
+        monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: sent.append("email") or 0)
+        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: sent.append("webhook") or 0)
+        im_module.send_notification_channels(channel, "subject", "body", "", email_enabled=email_enabled)
+        return sorted(sent)
+
+    # The switch each caller passes is the contract: followers is ANDed with status, followings is status alone
+    @pytest.mark.parametrize("status,followers,expected_followers,expected_followings", [(True, True, ["email"], ["email"]), (True, False, [], ["email"]), (False, True, [], []), (False, False, [], [])])
+    def test_only_the_follower_email_needs_both_switches(self, im_module, monkeypatch, status, followers, expected_followers, expected_followings):
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", False)
+        monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", status)
+        monkeypatch.setattr(im_module, "FOLLOWERS_NOTIFICATION", followers)
+
+        assert self._delivered(im_module, monkeypatch, "followers", status and followers) == expected_followers
+        assert self._delivered(im_module, monkeypatch, "status", status) == expected_followings
+
+    # The webhook follower switch stands on its own, so a followings alert follows the status one instead
+    @pytest.mark.parametrize("webhook_status,webhook_followers,expected_followers,expected_followings", [(True, True, ["webhook"], ["webhook"]), (False, True, ["webhook"], []), (True, False, [], ["webhook"]), (False, False, [], [])])
+    def test_the_webhook_follower_switch_is_independent(self, im_module, monkeypatch, webhook_status, webhook_followers, expected_followers, expected_followings):
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.sh/example")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", webhook_status)
+        monkeypatch.setattr(im_module, "WEBHOOK_FOLLOWERS_NOTIFICATION", webhook_followers)
+
+        assert self._delivered(im_module, monkeypatch, "followers", False) == expected_followers
+        assert self._delivered(im_module, monkeypatch, "status", False) == expected_followings
+
+
 # Verifies both test commands carry the subject, title and body shared with the sibling monitors
 def test_the_test_messages_use_the_shared_wording(im_module, monkeypatch):
     email = Mock(return_value=0)
