@@ -4,6 +4,7 @@ The flag probe normally resolves a canonical public account over the network.
 Here profile_from_username_resilient is stubbed so the logic runs fully offline.
 """
 
+import threading
 import time
 
 
@@ -49,6 +50,12 @@ class TestIsSessionFlagged:
 
     def test_unrelated_error_is_not_flagged(self, im_module):
         assert im_module.is_session_flagged("ConnectionError: timeout", _FakeBot()) is False
+
+    # Instaloader stops on three account-level replies, so each one is a flag whichever endpoint returned it
+    def test_every_instaloader_abort_reply_is_a_flag_trigger(self, im_module):
+        for message in ("feedback_required", "checkpoint_required", "challenge_required"):
+            error = f'AbortDownloadException: 400 Bad Request - "fail" status, message "{message}" when accessing https://i.instagram.com/api/v1/feed/reels_media/?reel_ids=123'
+            assert im_module.is_session_flagged(error, _FakeBot()) is True
 
     def test_profile_not_found_probes_and_reports_flagged(self, im_module, monkeypatch):
         # Probe of the canonical account also fails -> session is genuinely flagged
@@ -291,3 +298,63 @@ class TestProbeSessionFlagged:
         assert first is True and second is True
         # Cached after the first probe, so the resolver runs only once within the TTL
         assert calls["n"] == 1
+
+
+class TestHandleFlaggedSession:
+    _STORY_CHALLENGE = 'AbortDownloadException: 400 Bad Request - "fail" status, message "challenge_required" when accessing https://i.instagram.com/api/v1/feed/reels_media/?reel_ids=123'
+
+    # Keeps the flagged flow offline and quiet: no alert delivery, no dashboard writes and no process exit
+    def _quiet(self, im_module, monkeypatch):
+        calls = {"notify": [], "exit": [], "reload": []}
+        monkeypatch.setattr(im_module, "notify_session_flagged", lambda user, err_str, error_msg: calls["notify"].append((user, error_msg)))
+        monkeypatch.setattr(im_module, "signal_handler", lambda sig, frame, message=None: calls["exit"].append(message))
+        monkeypatch.setattr(im_module, "reload_session_after_refresh", lambda bot, user: calls["reload"].append(user))
+        monkeypatch.setattr(im_module, "update_ui_data", lambda *a, **k: None)
+        monkeypatch.setattr(im_module, "update_check_times", lambda *a, **k: None)
+        monkeypatch.setattr(im_module, "log_activity", lambda *a, **k: None)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_STOP_EVENTS", {})
+        monkeypatch.setattr(im_module, "DASHBOARD_ENABLED", False)
+        return calls
+
+    # Without the Web Dashboard a flag alerts once and ends the process, so the caller stops its target
+    def test_without_the_web_dashboard_it_alerts_and_exits(self, im_module, monkeypatch, capsys):
+        calls = self._quiet(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", False)
+
+        assert im_module.handle_flagged_session("targetuser", self._STORY_CHALLENGE, _FakeBot(), None, 0) is False
+        assert calls["notify"] == [("targetuser", self._STORY_CHALLENGE)]
+        assert calls["exit"] == [""]
+        assert calls["reload"] == []
+        out = capsys.readouterr().out
+        assert "has been flagged" in out
+        assert "To fix:" in out
+
+    # With the Web Dashboard a target that is stopped while it waits does not resume
+    def test_a_stop_while_waiting_ends_the_target(self, im_module, monkeypatch):
+        calls = self._quiet(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", True)
+        stop_event = threading.Event()
+        stop_event.set()
+
+        assert im_module.handle_flagged_session("targetuser", "checkpoint_required", _FakeBot(), stop_event, 0) is False
+        assert calls["exit"] == []
+        assert calls["reload"] == []
+
+    # A session re-imported from the Web Dashboard is reloaded into the bot and the target resumes
+    def test_a_session_refresh_reloads_and_resumes(self, im_module, monkeypatch):
+        calls = self._quiet(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", True)
+        monkeypatch.setattr(im_module, "wait_for_session_refresh", lambda observed, timeout=1.0: observed + 1)
+
+        assert im_module.handle_flagged_session("targetuser", "checkpoint_required", _FakeBot(), threading.Event(), 0) is True
+        assert calls["reload"] == ["targetuser"]
+        assert calls["exit"] == []
+
+    # A caller that restarts its pass after the refresh skips the in-place reload
+    def test_a_restarting_caller_skips_the_reload(self, im_module, monkeypatch):
+        calls = self._quiet(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", True)
+        monkeypatch.setattr(im_module, "wait_for_session_refresh", lambda observed, timeout=1.0: observed + 1)
+
+        assert im_module.handle_flagged_session("targetuser", "checkpoint_required", _FakeBot(), threading.Event(), 0, reload_session=False) is True
+        assert calls["reload"] == []

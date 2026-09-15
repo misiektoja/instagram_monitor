@@ -1442,7 +1442,7 @@ EXPORTED_SECRET_KEYS: frozenset = frozenset()
 SENSITIVE_CONFIG_KEYS = frozenset((*SECRET_KEYS, "WEBHOOK_HEADERS"))
 
 # List of error substrings that unambiguously indicate the session account or IP has been flagged (challenge/checkpoint/shadowban)
-FLAGGED_TRIGGERS = ("detected automated checks", "checkpoint_required")
+FLAGGED_TRIGGERS = ("detected automated checks", "checkpoint_required", "challenge_required", "feedback_required")
 
 # Error substrings meaning a profile could not be found, which is ambiguous between a deleted/renamed target and a flagged session
 PROFILE_NOT_FOUND_TRIGGERS = ("ProfileNotExistsException",)
@@ -10651,6 +10651,66 @@ def notify_session_flagged(user, err_str, error_msg):
     send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=ERROR_NOTIFICATION, webhook_title=f"🚩 Session account flagged (target: {user})", webhook_description=f"{err_str}\n\nTriggering error: `{error_msg}`\n{identity_text}", webhook_color=0xFF0000)
 
 
+# Reloads the session file into the bot after a Web Dashboard session or mode change, or clears it in No-login mode
+def reload_session_after_refresh(bot, user):
+    with SESSION_FILE_LOCK:
+        try:
+            if SKIP_SESSION:
+                bot.context._session.cookies.clear()
+                with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                    WEB_DASHBOARD_DATA['session']['active'] = False
+                log_activity("Session cleared for No-login mode", user=user)
+            else:
+                bot.load_session_from_file(SESSION_USERNAME)
+                with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                    WEB_DASHBOARD_DATA['session']['active'] = True
+                log_activity("Session reloaded successfully", user=user)
+        except Exception as se:
+            log_activity(f"Error updating session state: {se}", user=user)
+
+
+# Runs the flagged-session flow shared by every surface of a check: alerts the operator, pauses the other targets, then
+# exits without the Web Dashboard or waits for a session refresh with it, returning True when this target may resume
+def handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation, reload_session=True):
+    global NEXT_CHECK_TIME, NEXT_CHECK_DISPLAY
+    err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
+    update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
+    print_recovery_error(error_msg, summary=err_str)
+
+    # A flag is terminal for every target, so alert the operator immediately regardless of the error alert delay
+    notify_session_flagged(user, err_str, error_msg)
+
+    # Pause all other threads once the session account is flagged
+    if WEB_DASHBOARD_ENABLED or DASHBOARD_ENABLED:
+        for other_user in list(WEB_DASHBOARD_STOP_EVENTS.keys()):
+            if other_user != user:
+                log_activity(err_str, user=other_user)
+                update_check_times(next_time="Paused", user=other_user, increment_count=False)
+                stop_monitoring_for_target(other_user)
+                update_ui_data(targets={other_user: {'status': f'Paused: {err_str}'}})
+        NEXT_CHECK_TIME = None
+        NEXT_CHECK_DISPLAY = "Paused"
+        update_check_times(next_time="Paused", user=user, increment_count=False)
+        log_activity("Stopping monitoring", user=user)
+    print_cur_ts(newline=True)
+
+    # Without the Web Dashboard there is no in-place session recovery so exit since the flagged session is dead for every target
+    if not WEB_DASHBOARD_ENABLED:
+        signal_handler(signal.SIGINT, None, message='')
+        return False
+
+    # The Web Dashboard can re-import a session and resume, so wait for that or a stop event
+    while not (stop_event and stop_event.is_set()):
+        if wait_for_session_refresh(session_refresh_generation, timeout=1.0) != session_refresh_generation:
+            log_activity("Session/Mode change detected, resuming monitoring...", user=user)
+            print(f"* Session/Mode change detected for {user}, resuming...")
+            print_cur_ts(newline=True)
+            if reload_session:
+                reload_session_after_refresh(bot, user)
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Identity exposure ledger and account circuit breaker
 #
@@ -12429,54 +12489,10 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
         # Handle session recovery for automated checks/challenge errors
         if session_flagged:
-            err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
-            update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
-            print_recovery_error(error_msg, summary=err_str)
-
-            # A flag is terminal for every target, so alert the operator immediately regardless of the error alert delay
-            notify_session_flagged(user, err_str, error_msg)
-
-            # Pause all other threads once the session account is flagged.
-            if WEB_DASHBOARD_ENABLED or DASHBOARD_ENABLED:
-                for other_user in list(WEB_DASHBOARD_STOP_EVENTS.keys()):
-                    if other_user != user:
-                        log_activity(err_str, user=other_user)
-                        update_check_times(next_time="Paused", user=other_user, increment_count=False)
-                        stop_monitoring_for_target(other_user)
-                        update_ui_data(targets={other_user: {'status': f'Paused: {err_str}'}})
-                # Update next_check status for this thread
-                NEXT_CHECK_TIME = None
-                NEXT_CHECK_DISPLAY = "Paused"
-                update_check_times(next_time="Paused", user=user, increment_count=False)
-                log_activity("Stopping monitoring", user=user)
-            print_cur_ts(newline=True)
-
-            # Without the Web Dashboard there is no in-place session recovery so exit since the flagged session is dead for every target
-            if not WEB_DASHBOARD_ENABLED:
-                signal_handler(signal.SIGINT, None, message='')
-
-            # Web Dashboard can re-import a session and resume, so wait for that or a stop event
-            if WEB_DASHBOARD_ENABLED:
-                while not (stop_event and stop_event.is_set()):
-                    if wait_for_session_refresh(session_refresh_generation, timeout=1.0) != session_refresh_generation:
-                        # Session refreshed! Reload and retry
-                        log_activity("Session/Mode change detected, resuming monitoring...", user=user)
-                        print(f"* Session/Mode change detected for {user}, resuming...")
-                        print_cur_ts(newline=True)
-
-                        # Refresh configuration from global settings
-                        skip_session = SKIP_SESSION
-                        skip_followers = SKIP_FOLLOWERS
-                        skip_followings = SKIP_FOLLOWINGS
-                        skip_getting_story_details = SKIP_GETTING_STORY_DETAILS
-                        skip_getting_posts_details = SKIP_GETTING_POSTS_DETAILS
-                        get_more_post_details = GET_MORE_POST_DETAILS
-
-                        # Re-run the function from the beginning to reset state with new settings
-                        return _MonitorRestart(csv_file_name, manual_recheck)
-
-                if stop_event and stop_event.is_set():
-                    return
+            # A refreshed session starts a fresh pass, so it is not reloaded in place here
+            if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation, reload_session=False):
+                return
+            return _MonitorRestart(csv_file_name, manual_recheck)
         else:
             print_cur_ts(newline=True)
 
@@ -13016,8 +13032,13 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
             except Exception as e:
                 error_msg = format_error_message(e)
-                print(f"* Error while processing story items: {error_msg}")
-                print_fix_hint(error_msg)
+                session_flagged = is_session_flagged(error_msg, bot)
+                print_recovery_error(error_msg, summary=f"Error while processing story items: {error_msg}", with_fix=not session_flagged)
+                # A challenge can arrive on any endpoint, so a flag here alerts and pauses like one on the profile lookup
+                if session_flagged:
+                    if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation, reload_session=False):
+                        return
+                    return _MonitorRestart(csv_file_name, manual_recheck)
                 update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
                 if threading.current_thread() is threading.main_thread():
                     sys.exit(1)
@@ -13089,8 +13110,13 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
         except Exception as e:
             error_msg = format_error_message(e)
-            print(f"* Error while processing posts/reels: {error_msg}")
-            print_fix_hint(error_msg)
+            session_flagged = is_session_flagged(error_msg, bot)
+            print_recovery_error(error_msg, summary=f"Error while processing posts/reels: {error_msg}", with_fix=not session_flagged)
+            # A challenge can arrive on any endpoint, so a flag here alerts and pauses like one on the profile lookup
+            if session_flagged:
+                if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation, reload_session=False):
+                    return
+                return _MonitorRestart(csv_file_name, manual_recheck)
             update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
             if threading.current_thread() is threading.main_thread():
                 sys.exit(1)
@@ -13528,68 +13554,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                 # Handle session recovery for automated checks/challenge errors
                 if session_flagged:
-                    err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
-                    update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
-                    print(f"* Error: {err_str}")
-
-                    # A flag is terminal for every target, so alert the operator immediately regardless of the error alert delay
-                    notify_session_flagged(user, err_str, error_msg)
-
-                    # Pause all other threads once the session account is flagged.
-                    if WEB_DASHBOARD_ENABLED or DASHBOARD_ENABLED:
-                        for other_user in list(WEB_DASHBOARD_STOP_EVENTS.keys()):
-                            if other_user != user:
-                                log_activity(err_str, user=other_user)
-                                update_check_times(next_time="Paused", user=other_user, increment_count=False)
-                                stop_monitoring_for_target(other_user)
-                                update_ui_data(targets={other_user: {'status': f'Paused: {err_str}'}})
-                        # Update next_check status for this thread
-                        NEXT_CHECK_TIME = None
-                        NEXT_CHECK_DISPLAY = "Paused"
-                        update_check_times(next_time="Paused", user=user, increment_count=False)
-                        log_activity("Stopping monitoring", user=user)
-                    print_cur_ts(newline=True)
-
-                    # Without the Web Dashboard there is no in-place session recovery so exit since the flagged session is dead for every target
-                    if not WEB_DASHBOARD_ENABLED:
-                        signal_handler(signal.SIGINT, None, message='')
-
-                    # Web Dashboard can re-import a session and resume, so wait for that or a stop event
-                    while not (stop_event and stop_event.is_set()):
-                        if wait_for_session_refresh(session_refresh_generation, timeout=1.0) != session_refresh_generation:
-                            # Session refreshed!
-                            log_activity("Session/Mode change detected, resuming monitoring...", user=user)
-                            print(f"* Session/Mode change detected for {user}, resuming...")
-                            print_cur_ts(newline=True)
-
-                            # Refresh configuration from global settings
-                            skip_session = SKIP_SESSION
-                            skip_followers = SKIP_FOLLOWERS
-                            skip_followings = SKIP_FOLLOWINGS
-                            skip_getting_story_details = SKIP_GETTING_STORY_DETAILS
-                            skip_getting_posts_details = SKIP_GETTING_POSTS_DETAILS
-                            get_more_post_details = GET_MORE_POST_DETAILS
-
-                            # Reload session into bot context or clear in No-login mode
-                            with SESSION_FILE_LOCK:
-                                try:
-                                    if skip_session:
-                                        # Clear session context for No-login mode
-                                        bot.context._session.cookies.clear()
-                                        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-                                            WEB_DASHBOARD_DATA['session']['active'] = False
-                                        log_activity("Session cleared for No-login mode", user=user)
-                                    else:
-                                        bot.load_session_from_file(SESSION_USERNAME)
-                                        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-                                            WEB_DASHBOARD_DATA['session']['active'] = True
-                                        log_activity("Session reloaded successfully", user=user)
-                                except Exception as se:
-                                    log_activity(f"Error updating session state: {se}", user=user)
-                            # Break inner loop to retry profile fetch
-                            break
-
-                    if stop_event and stop_event.is_set():
+                    if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation):
                         return
                     continue  # Retry the main loop
 
@@ -13705,7 +13670,13 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         close_pbar()
                         followings = followings_old
                         error_msg = format_error_message(e)
-                        print_recovery_error(error_msg, summary=f"Error while processing followings: {error_msg}")
+                        session_flagged = is_session_flagged(error_msg, bot)
+                        print_recovery_error(error_msg, summary=f"Error while processing followings: {error_msg}", with_fix=not session_flagged)
+                        # A challenge can arrive on any endpoint, so a flag here pauses or exits like one on the profile lookup
+                        if session_flagged:
+                            if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation):
+                                return
+                            continue
 
                     if not getattr(followings, 'complete', False) or (not followings and followings_count > 0):
                         followings = followings_old
@@ -13844,7 +13815,13 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         close_pbar()
                         followers = followers_old
                         error_msg = format_error_message(e)
-                        print_recovery_error(error_msg, summary=f"Error while processing followers: {error_msg}")
+                        session_flagged = is_session_flagged(error_msg, bot)
+                        print_recovery_error(error_msg, summary=f"Error while processing followers: {error_msg}", with_fix=not session_flagged)
+                        # A challenge can arrive on any endpoint, so a flag here pauses or exits like one on the profile lookup
+                        if session_flagged:
+                            if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation):
+                                return
+                            continue
 
                     if not getattr(followers, 'complete', False) or (not followers and followers_count > 0):
                         followers = followers_old
@@ -14160,8 +14137,14 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                 except Exception as e:
                     error_msg = format_error_message(e)
-                    print_recovery_error(error_msg, summary=f"Error while processing story items: {error_msg}")
+                    session_flagged = is_session_flagged(error_msg, bot)
+                    print_recovery_error(error_msg, summary=f"Error while processing story items: {error_msg}", with_fix=not session_flagged)
                     print_cur_ts(newline=True)
+                    # A challenge can arrive on any endpoint, so a flag here pauses or exits like one on the profile lookup
+                    if session_flagged:
+                        if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation):
+                            return
+                        continue
 
             new_post = False
 
@@ -14249,6 +14232,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
                     error_msg = format_error_message(e)
                     consecutive_main_errors += 1
+                    # A flag is terminal and operator-actionable, so it replaces the generic outage report and alert
+                    if is_session_flagged(error_msg, bot):
+                        if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation):
+                            return
+                        continue
                     posts_advice = classify_recovery_error(error_msg, is_logged_in=bool(SESSION_USERNAME) and not skip_session)
 
                     # A failure that has not changed is left to the liveness cadence rather than repeated every check
@@ -14282,7 +14270,13 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                                 post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
                 except Exception as e:
                     error_msg = format_error_message(e)
-                    print_recovery_error(error_msg, summary=f"Error while getting post's likes list / comments list: {error_msg}")
+                    session_flagged = is_session_flagged(error_msg, bot)
+                    print_recovery_error(error_msg, summary=f"Error while getting post's likes list / comments list: {error_msg}", with_fix=not session_flagged)
+                    # A challenge can arrive on any endpoint, so a flag here pauses or exits like one on the profile lookup
+                    if session_flagged:
+                        if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation):
+                            return
+                        continue
 
                 video_filename = None
                 image_filename = None

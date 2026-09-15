@@ -773,6 +773,8 @@ Instagram may block a session or IP address in a way that makes every profile lo
 
 When a target lookup fails for an unclear reason, the tool also checks a known public account. The default is `instagram`. If both lookups fail, it treats the session or IP address as the likely cause and does not report that the target disappeared. It waits when recovery is possible. Otherwise it exits.
 
+A reply that names a challenge, a checkpoint or a feedback requirement is treated as a flagged session at once, without the probe. Both checks cover every request made for a target: the profile lookup, stories, posts and follower and following lists.
+
 This check runs automatically. Advanced users can change these settings:
 
 ```ini
