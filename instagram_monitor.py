@@ -5038,6 +5038,11 @@ def colorize_links(text):
     return _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), text)
 
 
+# Colours one line of a fix block the way the output stream colours it, keeping its guide line a link
+def colorize_fix_line(line):
+    return colorize_links(line) if line.lstrip().startswith("Guide: ") else colorize("info", line)
+
+
 # Reports whether separator-only log lines should use ASCII on this system
 def ascii_log_separators_enabled():
     mode = str(ASCII_LOG_SEPARATORS).strip().lower()
@@ -10460,7 +10465,7 @@ def render_recovery_advice(advice: RecoveryAdvice, debug: Optional[bool] = None,
     headline = sanitize_error_text(summary) if summary else advice.summary
     lines = [f"* {label}: {headline}" + (f" ({retry_note})" if retry_note else "")]
     if with_fix and advice.fix:
-        lines.append(colorize("info", f"To fix: {advice.fix}"))
+        lines.extend(colorize_fix_line(fix_line) for fix_line in f"To fix: {advice.fix}".splitlines())
     # A detail that only repeats a line already printed spends a line saying nothing
     if with_fix and (DEBUG_MODE if debug is None else debug) and advice.detail and advice.detail not in (headline, advice.summary):
         lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
@@ -16149,7 +16154,7 @@ def _doctor_line(status: str, label: str, detail: str = "") -> None:
     print(f"{colorize(DOCTOR_MARK_STYLES[status], f'[{status}]')} {label}")
     if detail:
         # The report is printed before the colour stream is installed, so the link colour every other line gets from it is applied here
-        print(f"  {_sub_outside_color(_URL_RE, lambda mo: colorize('link', mo.group(0)), detail)}")
+        print(f"  {colorize_links(detail)}")
 
 
 # Prints one plain value row for a report that states findings rather than check results
@@ -16912,7 +16917,7 @@ def render_doctor_sections(report: DoctorReport) -> None:
             if check.status != "PASS" and check.advice is not None:
                 # The fix carries its own guide line, so each line is indented and styled on its own
                 for advice_line in f"To fix: {check.advice.fix}".splitlines():
-                    print(f"  {colorize('info', advice_line)}")
+                    print(f"  {colorize_fix_line(advice_line)}")
 
 
 # Prints the closing summary for one rendered report
@@ -16924,7 +16929,7 @@ def render_doctor_summary(fails: int, warns: int) -> None:
         print(colorize("warning", f"  All critical checks passed with {warns} warning(s). Review the warnings above."))
     else:
         print(colorize("boolean_true", "  All checks passed. You are good to go!"))
-    print("\n" + colorize("info", f"Guide: {DOCTOR_GUIDE_URL}"))
+    print("\n" + colorize_links(f"Guide: {DOCTOR_GUIDE_URL}"))
 
 
 # Runs doctor preflight plus approved delivery tests and returns the number of failed checks

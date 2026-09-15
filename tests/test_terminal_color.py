@@ -609,3 +609,15 @@ class TestTheWidthCapAppliesToTheScreenOnly:
         assert "\x1b" not in saved
         assert "\t" not in saved
         assert saved.strip().endswith("9" * 300)
+
+
+# Verifies a fix block keeps its guide line a link while the rest of the block stays informational
+def test_a_fix_block_guide_line_is_a_link(im_module, monkeypatch):
+    link = im_module._build_ansi_sequence(im_module.DEFAULT_COLOR_THEME["link"])
+    info = im_module._build_ansi_sequence(im_module.DEFAULT_COLOR_THEME["info"])
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {"link": link, "info": info})
+
+    assert im_module.colorize_fix_line("To fix: Set the key then re-run") == f"{info}To fix: Set the key then re-run{im_module.ANSI_RESET}"
+    assert im_module.colorize_fix_line("Guide: https://example.test/page") == f"Guide: {link}https://example.test/page{im_module.ANSI_RESET}"
+    assert 'colorize("info", f"Guide:' not in Path(im_module.__file__).read_text(encoding="utf-8")
