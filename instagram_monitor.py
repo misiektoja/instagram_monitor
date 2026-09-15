@@ -138,6 +138,51 @@ WEBHOOK_HEADERS = {}
 NTFY_ACCESS_TOKEN = ""
 
 # ----------------------------
+# Advanced Webhook Settings
+# ----------------------------
+
+# Discord-format webhook request payload template
+# Applies only when WEBHOOK_PROVIDER is "discord". The "ntfy" provider needs no template and ignores this
+# value: it sends the alert body as a native ntfy message with the subject as its title. Use WEBHOOK_HEADERS
+# to add ntfy options such as priority or tags
+# Supported placeholders include title, description, version, image_url, fields, fields_str, color, timestamp,
+# username and avatar_url
+#
+# A dictionary or list is sent as JSON while a string is sent as the raw request body
+# Dictionary payloads always disable Discord mentions even if the template requests them
+WEBHOOK_TEMPLATE = {
+    "username": "Instagram Monitor",
+    "allowed_mentions": {
+        "parse": []
+    },
+    "embeds": [{
+        "title": "{title}",
+        "description": "{description}",
+        "color": "{color}",
+        "fields": "{fields}",
+        "timestamp": "{timestamp}",
+        "footer": {
+            "text": "Instagram Monitor v{version}"
+        },
+        "image": {
+            "url": "{image_url}"
+        }
+    }]
+}
+
+# Optional string transformations applied before WEBHOOK_TEMPLATE and WEBHOOK_HEADERS are rendered
+# Tuple format: (field_to_target, method_name, *optional_arguments)
+# Invalid transforms stop delivery before a webhook request is attempted
+#
+# Examples:
+#   [
+#       ("title", "upper"),                       # Make title all uppercase
+#       ("description", "replace", "**", ""),     # Remove bold markdown in description
+#       ("description", "strip")                  # Remove leading/trailing whitespace
+#   ]
+WEBHOOK_TRANSFORMS = []
+
+# ----------------------------
 # Monitoring Settings
 # ----------------------------
 
@@ -483,6 +528,79 @@ MAX_H2 = 23
 NEXT_OPERATION_DELAY = 0.7
 
 # ----------------------------
+# Multi-target Monitoring
+# ----------------------------
+
+# Pass multiple targets on the command line to monitor them in one process
+# You can also define default targets here:
+#
+# TARGET_USERNAMES = ["user1", "user2"]
+#
+# CLI targets take precedence over TARGET_USERNAMES
+TARGET_USERNAMES = []
+
+# Delay between starting each target loop in seconds
+#
+# - Set to 0 to auto-spread targets evenly across INSTA_CHECK_INTERVAL
+# - Can also be set via the --targets-stagger flag
+MULTI_TARGET_STAGGER = 0
+
+# Random jitter added to each target start time in seconds
+MULTI_TARGET_STAGGER_JITTER = 5
+
+# Whether to serialize all HTTP calls across targets
+# Recommended for multi-target mode
+MULTI_TARGET_SERIALIZE_HTTP = True
+
+# ----------------------------
+# Terminal Dashboard
+# ----------------------------
+
+# Whether to enable the live terminal dashboard
+# When disabled the tool uses traditional text output
+# Can also be enabled via the --dashboard flag
+DASHBOARD_ENABLED = False
+
+# ----------------------------
+# Web Dashboard
+# ----------------------------
+
+# Whether to enable the web dashboard
+# Can also be enabled via the --web-dashboard flag
+WEB_DASHBOARD_ENABLED = False
+
+# Port for the web dashboard server
+WEB_DASHBOARD_PORT = 8000
+
+# Host for the web dashboard server (use '0.0.0.0' to allow external access, it is not recommended!)
+WEB_DASHBOARD_HOST = '127.0.0.1'
+
+# Extra host names the dashboard accepts in the HTTP Host header
+#
+# The dashboard has no login, so it answers only requests addressed to loopback names or to
+# WEB_DASHBOARD_HOST. This blocks DNS rebinding, where a web page you visit resolves its own
+# domain to 127.0.0.1 to reach the dashboard from the browser
+#
+# Add a host name here only when you deliberately reach the dashboard under another name,
+# for example "monitor.lan" or "192.168.1.10"
+# The single entry "*" accepts any Host header and removes this protection
+WEB_DASHBOARD_ALLOWED_HOSTS = []
+
+# Template directory for web dashboard
+# If empty, the tool will auto-detect the templates directory in this order:
+#   1. Current working directory
+#   2. Script/Package directory (pip-installed location)
+# Can also be set via --web-dashboard-template-dir flag
+WEB_DASHBOARD_TEMPLATE_DIR = ""
+
+# ----------------------------
+# Shared Dashboard Settings
+# ----------------------------
+
+# Whether to show seconds in dashboard Last Check and Next Check fields
+DASHBOARD_SHOW_CHECK_SECONDS = True
+
+# ----------------------------
 # Files and Storage
 # ----------------------------
 
@@ -570,156 +688,6 @@ HORIZONTAL_LINE = 113
 # Whether to clear the terminal screen after starting the tool
 CLEAR_SCREEN = True
 
-# Amount added to or removed from INSTA_CHECK_INTERVAL by signal handlers in seconds
-INSTA_CHECK_SIGNAL_VALUE = 300  # 5 minutes
-
-# Whether to enable verbose operational output
-# Shows calculated sleep durations, next check timestamps and liveness confirmations
-# Independent of DEBUG_MODE, so enable both to see everything
-# Can also be enabled via the --verbose flag, which turns it on regardless of this setting
-VERBOSE_MODE = False
-
-# Whether to enable debug output
-# Shows every API request and internal state changes
-# Independent of VERBOSE_MODE, so enable both to see everything
-# Can also be enabled via the --debug flag, which turns it on regardless of this setting
-DEBUG_MODE = False
-
-# Whether verbose output confirms each delivered email and webhook alert
-# Applies only when VERBOSE_MODE is enabled
-DELIVERY_CONFIRMATIONS = True
-
-# ----------------------------
-# Multi-target Monitoring
-# ----------------------------
-
-# Pass multiple targets on the command line to monitor them in one process
-# You can also define default targets here:
-#
-# TARGET_USERNAMES = ["user1", "user2"]
-#
-# CLI targets take precedence over TARGET_USERNAMES
-TARGET_USERNAMES = []
-
-# Delay between starting each target loop in seconds
-#
-# - Set to 0 to auto-spread targets evenly across INSTA_CHECK_INTERVAL
-# - Can also be set via the --targets-stagger flag
-MULTI_TARGET_STAGGER = 0
-
-# Random jitter added to each target start time in seconds
-MULTI_TARGET_STAGGER_JITTER = 5
-
-# Whether to serialize all HTTP calls across targets
-# Recommended for multi-target mode
-MULTI_TARGET_SERIALIZE_HTTP = True
-
-# ----------------------------
-# Terminal Dashboard
-# ----------------------------
-
-# Whether to enable the live terminal dashboard
-# When disabled the tool uses traditional text output
-# Can also be enabled via the --dashboard flag
-DASHBOARD_ENABLED = False
-
-# ----------------------------
-# Web Dashboard
-# ----------------------------
-
-# Whether to enable the web dashboard
-# Can also be enabled via the --web-dashboard flag
-WEB_DASHBOARD_ENABLED = False
-
-# Port for the web dashboard server
-WEB_DASHBOARD_PORT = 8000
-
-# Host for the web dashboard server (use '0.0.0.0' to allow external access, it is not recommended!)
-WEB_DASHBOARD_HOST = '127.0.0.1'
-
-# Extra host names the dashboard accepts in the HTTP Host header
-#
-# The dashboard has no login, so it answers only requests addressed to loopback names or to
-# WEB_DASHBOARD_HOST. This blocks DNS rebinding, where a web page you visit resolves its own
-# domain to 127.0.0.1 to reach the dashboard from the browser
-#
-# Add a host name here only when you deliberately reach the dashboard under another name,
-# for example "monitor.lan" or "192.168.1.10"
-# The single entry "*" accepts any Host header and removes this protection
-WEB_DASHBOARD_ALLOWED_HOSTS = []
-
-# Template directory for web dashboard
-# If empty, the tool will auto-detect the templates directory in this order:
-#   1. Current working directory
-#   2. Script/Package directory (pip-installed location)
-# Can also be set via --web-dashboard-template-dir flag
-WEB_DASHBOARD_TEMPLATE_DIR = ""
-
-# ----------------------------
-# Shared Dashboard Settings
-# ----------------------------
-
-# Whether to show seconds in dashboard Last Check and Next Check fields
-DASHBOARD_SHOW_CHECK_SECONDS = True
-
-# ----------------------------
-# Advanced Webhook Settings
-# ----------------------------
-
-# Discord-format webhook request payload template
-# Applies only when WEBHOOK_PROVIDER is "discord". The "ntfy" provider needs no template and ignores this
-# value: it sends the alert body as a native ntfy message with the subject as its title. Use WEBHOOK_HEADERS
-# to add ntfy options such as priority or tags
-# Supported placeholders include title, description, version, image_url, fields, fields_str, color, timestamp,
-# username and avatar_url
-#
-# A dictionary or list is sent as JSON while a string is sent as the raw request body
-# Dictionary payloads always disable Discord mentions even if the template requests them
-WEBHOOK_TEMPLATE = {
-    "username": "Instagram Monitor",
-    "allowed_mentions": {
-        "parse": []
-    },
-    "embeds": [{
-        "title": "{title}",
-        "description": "{description}",
-        "color": "{color}",
-        "fields": "{fields}",
-        "timestamp": "{timestamp}",
-        "footer": {
-            "text": "Instagram Monitor v{version}"
-        },
-        "image": {
-            "url": "{image_url}"
-        }
-    }]
-}
-
-# Optional string transformations applied before WEBHOOK_TEMPLATE and WEBHOOK_HEADERS are rendered
-# Tuple format: (field_to_target, method_name, *optional_arguments)
-# Invalid transforms stop delivery before a webhook request is attempted
-#
-# Examples:
-#   [
-#       ("title", "upper"),                       # Make title all uppercase
-#       ("description", "replace", "**", ""),     # Remove bold markdown in description
-#       ("description", "strip")                  # Remove leading/trailing whitespace
-#   ]
-WEBHOOK_TRANSFORMS = []
-
-# Discord and ntfy payload limits used for validation
-# Change these only if the provider limits change
-WEBHOOK_FIELD_VALUE_LIMIT = 1024
-WEBHOOK_FIELD_NAME_LIMIT = 256
-WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
-WEBHOOK_EMBED_TITLE_LIMIT = 256
-WEBHOOK_MAX_FIELDS = 25
-NTFY_MESSAGE_LIMIT_BYTES = 4095
-
-# ----------------------------
-# Terminal Appearance
-# ----------------------------
-
 # Whether to use coloured output in the terminal (auto-disabled if the terminal
 # does not appear to support colours or when output is redirected to a file)
 # Can also be disabled via the --no-color flag
@@ -783,6 +751,34 @@ COLORED_OUTPUT = True
 #     "help_comment": "bright_black",
 #     "help_default": "bright_black",
 # }
+
+# Whether to enable verbose operational output
+# Shows calculated sleep durations, next check timestamps and liveness confirmations
+# Independent of DEBUG_MODE, so enable both to see everything
+# Can also be enabled via the --verbose flag, which turns it on regardless of this setting
+VERBOSE_MODE = False
+
+# Whether to enable debug output
+# Shows every API request and internal state changes
+# Independent of VERBOSE_MODE, so enable both to see everything
+# Can also be enabled via the --debug flag, which turns it on regardless of this setting
+DEBUG_MODE = False
+
+# Whether verbose output confirms each delivered email and webhook alert
+# Applies only when VERBOSE_MODE is enabled
+DELIVERY_CONFIRMATIONS = True
+
+# Amount added to or removed from INSTA_CHECK_INTERVAL by signal handlers in seconds
+INSTA_CHECK_SIGNAL_VALUE = 300  # 5 minutes
+
+# Discord and ntfy payload limits used for validation
+# Change these only if the provider limits change
+WEBHOOK_FIELD_VALUE_LIMIT = 1024
+WEBHOOK_FIELD_NAME_LIMIT = 256
+WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
+WEBHOOK_EMBED_TITLE_LIMIT = 256
+WEBHOOK_MAX_FIELDS = 25
+NTFY_MESSAGE_LIMIT_BYTES = 4095
 """
 
 # -------------------------
@@ -1300,13 +1296,28 @@ RECEIVER_EMAIL: str = ""
 STATUS_NOTIFICATION = False
 FOLLOWERS_NOTIFICATION = False
 ERROR_NOTIFICATION = False
+WEBHOOK_ENABLED = False
+WEBHOOK_PROVIDER = "discord"
+WEBHOOK_URL = ""
+WEBHOOK_USERNAME = "Instagram Monitor"
+
+# How LOCAL_TIMEZONE was arrived at, which decides the row doctor prints for it
+LOCAL_TIMEZONE_STATE = "config"
+WEBHOOK_AVATAR_URL = ""
+WEBHOOK_STATUS_NOTIFICATION = True
+WEBHOOK_FOLLOWERS_NOTIFICATION = True
+WEBHOOK_ERROR_NOTIFICATION = False
+WEBHOOK_HEADERS = {}
+NTFY_ACCESS_TOKEN = ""
+WEBHOOK_TEMPLATE = {}
+WEBHOOK_TRANSFORMS = []
+FOLLOWERS_CHURN_AUTODISABLED = False
+FOLLOWERS_CHURN_AUTODISABLED_REASON = ""
 INSTA_CHECK_INTERVAL = 0
 RANDOM_SLEEP_DIFF_LOW = 0
 RANDOM_SLEEP_DIFF_HIGH = 0
 LOCAL_TIMEZONE = ""
-
-# How LOCAL_TIMEZONE was arrived at, which decides the row doctor prints for it
-LOCAL_TIMEZONE_STATE = "config"
+TIME_FORMAT_12H = False
 DETECT_CHANGED_PROFILE_PIC = False
 DOWNLOAD_THUMBNAILS = False
 PROFILE_PIC_FILE_EMPTY = ""
@@ -1314,17 +1325,12 @@ IMGCAT_PATH = ""
 SKIP_SESSION = False
 SKIP_FOLLOWERS = False
 SKIP_FOLLOWINGS = False
-SKIP_FOLLOW_CHANGES = False
-FOLLOWERS_CHURN_AUTODISABLED = False
-FOLLOWERS_CHURN_AUTODISABLED_REASON = ""
 SKIP_GETTING_STORY_DETAILS = False
 SKIP_GETTING_POSTS_DETAILS = False
 GET_MORE_POST_DETAILS = False
 DETECT_COLLAB_POSTS = True
-USER_AGENT = ""
-USER_AGENT_MOBILE = ""
-HTTP_BACKEND = "curl_cffi"
-CURL_CFFI_IMPERSONATE = "auto"
+FOLLOWERS_CHURN_DETECTION = False
+SKIP_FOLLOW_CHANGES = False
 BE_HUMAN = False
 DAILY_HUMAN_HITS = 0
 MY_HASHTAGS = []
@@ -1335,8 +1341,10 @@ SKIP_WRAP_MESSAGES = False
 FOLLOWERS_PER_BATCH = 0
 FOLLOWEES_PER_BATCH = 0
 FOLLOWER_LIMIT_TO_FETCH = 0
-FOLLOWEE_LIMIT_TO_FETCH = 0
 FOLLOWER_DELAY_PER_BATCH = 0
+ADVANCED_FOLLOWER_FETCH = False
+ADVANCED_FOLLOWEE_FETCH = False
+FOLLOWEE_LIMIT_TO_FETCH = 0
 FOLLOWEE_DELAY_PER_BATCH = 0
 FOLLOW_LIST_SOURCE = "auto"
 FOLLOW_LIST_BROWSER_CHANNEL = "chromium"
@@ -1346,8 +1354,24 @@ FOLLOW_LIST_BROWSER_SCROLL_DELAY = 1.5
 FOLLOW_LIST_BROWSER_TIMEOUT = 30
 IDENTITY_BUDGET_PER_DAY = 0
 CIRCUIT_BREAKER = True
-ADVANCED_FOLLOWER_FETCH = False
-ADVANCED_FOLLOWEE_FETCH = False
+PRIVACY_SUBSTITUTIONS = []
+PROXY_ENABLED = False
+PROXY_URL = ""
+PROXY_CERT_PATH = ""
+VERIFY_SSL = True
+PROXY_WEBHOOKS = False
+CONTAINER_FIREFOX_HOSTS = {
+    "macos": ("macOS", '"${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"'),
+    "linux": ("Linux with a standard Firefox package", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "linux-snap": ("Linux with Firefox from Snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "linux-flatpak": ("Linux with Firefox from Flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "windows-powershell": ("Windows PowerShell", '"$env:APPDATA\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "windows-cmd": ("Windows Command Prompt", '"%APPDATA%\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'),
+}
+USER_AGENT = ""
+USER_AGENT_MOBILE = ""
+HTTP_BACKEND = "curl_cffi"
+CURL_CFFI_IMPERSONATE = "auto"
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
@@ -1359,56 +1383,10 @@ MAX_H1 = 0
 MIN_H2 = 0
 MAX_H2 = 0
 NEXT_OPERATION_DELAY = 0
-CSV_FILE = ""
-DOTENV_FILE = ""
-FIREFOX_MACOS_COOKIE = ""
-FIREFOX_WINDOWS_COOKIE = ""
-FIREFOX_LINUX_COOKIE = ""
-CONTAINER_FIREFOX_HOSTS = {
-    "macos": ("macOS", '"${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"'),
-    "linux": ("Linux with a standard Firefox package", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
-    "linux-snap": ("Linux with Firefox from Snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
-    "linux-flatpak": ("Linux with Firefox from Flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
-    "windows-powershell": ("Windows PowerShell", '"$env:APPDATA\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'),
-    "windows-cmd": ("Windows Command Prompt", '"%APPDATA%\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'),
-}
-INSTA_LOGFILE = ""
-OUTPUT_DIR = ""
-DISABLE_LOGGING = False
-ASCII_LOG_SEPARATORS = "Auto"
-TRUNCATE_CHARS = 0
-HORIZONTAL_LINE = 0
-CLEAR_SCREEN = False
-INSTA_CHECK_SIGNAL_VALUE = 0
 TARGET_USERNAMES = []
 MULTI_TARGET_STAGGER = 0
 MULTI_TARGET_STAGGER_JITTER = 0
 MULTI_TARGET_SERIALIZE_HTTP = False
-WEBHOOK_ENABLED = False
-WEBHOOK_URL = ""
-WEBHOOK_PROVIDER = "discord"
-WEBHOOK_FIELD_VALUE_LIMIT = 1024
-WEBHOOK_EMBED_TITLE_LIMIT = 256
-NTFY_MESSAGE_LIMIT_BYTES = 4095
-WEBHOOK_USERNAME = "Instagram Monitor"
-WEBHOOK_AVATAR_URL = ""
-WEBHOOK_HEADERS = {}
-WEBHOOK_TEMPLATE = {}
-WEBHOOK_TRANSFORMS = []
-NTFY_ACCESS_TOKEN = ""
-WEBHOOK_STATUS_NOTIFICATION = True
-WEBHOOK_FOLLOWERS_NOTIFICATION = True
-WEBHOOK_ERROR_NOTIFICATION = False
-PROXY_ENABLED = False
-PROXY_URL = ""
-PROXY_CERT_PATH = ""
-PROXY_WEBHOOKS = False
-VERIFY_SSL = True
-COLORED_OUTPUT = False
-COLOR_THEME = {}
-DEBUG_MODE = False
-DELIVERY_CONFIRMATIONS = True
-VERBOSE_MODE = False
 DASHBOARD_ENABLED = False
 WEB_DASHBOARD_ENABLED = False
 WEB_DASHBOARD_PORT = 8000
@@ -1416,10 +1394,28 @@ WEB_DASHBOARD_HOST = '127.0.0.1'
 WEB_DASHBOARD_ALLOWED_HOSTS = []
 WEB_DASHBOARD_TEMPLATE_DIR = ""
 DASHBOARD_SHOW_CHECK_SECONDS = True
+CSV_FILE = ""
+DOTENV_FILE = ""
+FIREFOX_MACOS_COOKIE = ""
+FIREFOX_WINDOWS_COOKIE = ""
+FIREFOX_LINUX_COOKIE = ""
+INSTA_LOGFILE = ""
+OUTPUT_DIR = ""
+DISABLE_LOGGING = False
+ASCII_LOG_SEPARATORS = "Auto"
+TRUNCATE_CHARS = 0
+HORIZONTAL_LINE = 0
+CLEAR_SCREEN = False
+COLORED_OUTPUT = False
+COLOR_THEME = {}
+VERBOSE_MODE = False
+DEBUG_MODE = False
+DELIVERY_CONFIRMATIONS = True
+INSTA_CHECK_SIGNAL_VALUE = 0
 THUMBNAILS_FORCED_BY_WEB = False
-FOLLOWERS_CHURN_DETECTION = False
-TIME_FORMAT_12H = False
-PRIVACY_SUBSTITUTIONS = []
+WEBHOOK_FIELD_VALUE_LIMIT = 1024
+WEBHOOK_EMBED_TITLE_LIMIT = 256
+NTFY_MESSAGE_LIMIT_BYTES = 4095
 mode_of_the_tool = "Unknown"
 
 exec(CONFIG_BLOCK, globals())

@@ -403,3 +403,37 @@ def test_a_second_backup_in_the_same_second_keeps_the_first(tmp_path, im_module)
 # Verifies a destination that is not there yet earns no backup, since there is nothing to copy
 def test_a_missing_destination_earns_no_backup(tmp_path, im_module):
     assert im_module.create_timestamped_backup(tmp_path / "absent.conf") is None
+
+
+# The part of the configuration template every sibling monitor shares, in the order they all use
+SHARED_SETTING_ORDER = ("WEBHOOK_HEADERS", "NTFY_ACCESS_TOKEN", "WEBHOOK_TEMPLATE", "WEBHOOK_TRANSFORMS", "DISABLE_LOGGING", "ASCII_LOG_SEPARATORS", "TRUNCATE_CHARS", "CLEAR_SCREEN", "COLORED_OUTPUT", "COLOR_THEME", "VERBOSE_MODE", "DEBUG_MODE", "DELIVERY_CONFIRMATIONS")
+
+
+# Returns every setting the built-in template declares, in template order, including the commented theme block
+def template_setting_order(module):
+    order = []
+    for line in module.CONFIG_BLOCK.split("\n"):
+        match = re.match(r"^([A-Z][A-Z0-9_]*)\s*[:=]", line) or re.match(r"^# ([A-Z][A-Z0-9_]*)\s*=", line)
+        if match and match.group(1) not in order:
+            order.append(match.group(1))
+    return order
+
+
+# Verifies the template keeps the order shared with the sibling monitors, so one tool's config reads like the next
+def test_the_template_keeps_the_shared_setting_order(im_module):
+    order = template_setting_order(im_module)
+
+    assert set(SHARED_SETTING_ORDER) <= set(order), f"the template no longer declares {sorted(set(SHARED_SETTING_ORDER) - set(order))}"
+    assert [name for name in order if name in SHARED_SETTING_ORDER] == list(SHARED_SETTING_ORDER)
+
+
+# Verifies the linter defaults below the template repeat it in the same order, so a setting cannot drift or be filed twice
+def test_the_linter_defaults_follow_the_template_order(im_module):
+    source = Path(im_module.__file__).read_text(encoding="utf-8").split("\n")
+    start = next(index for index, line in enumerate(source) if line.startswith("# Do not change values below")) + 1
+    end = next(index for index, line in enumerate(source) if line.startswith("exec(CONFIG_BLOCK"))
+    order = template_setting_order(im_module)
+    mirrored = [match.group(1) for match in (re.match(r"^([A-Z][A-Z0-9_]*)\s*[:=]", line) for line in source[start:end]) if match and match.group(1) in set(order)]
+
+    assert len(mirrored) == len(set(mirrored)), "a setting is repeated in the linter defaults"
+    assert mirrored == [name for name in order if name in set(mirrored)]
