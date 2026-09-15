@@ -990,6 +990,84 @@ def test_a_command_line_secret_is_reported_as_such(im_module, monkeypatch):
 
 
 
+# A setting holding the wrong type raises at the comparison or the format string that reads it, which is nowhere
+# near where the value was set. Doctor is the command asked to explain that setup, so it has to survive one
+class TestASettingOfTheWrongType:
+    # Runs one command line and returns its exit code and output, letting anything but SystemExit escape
+    @staticmethod
+    def _run(im_module, monkeypatch, capsys, argv_tail):
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", *argv_tail, "--config-file", "none", "--env-file", "none", "--no-color"])
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        with pytest.raises(SystemExit) as exit_call:
+            im_module.run_main()
+        return exit_call.value.code, capsys.readouterr().out
+
+    # The comparison guarding against a zero interval used to raise on a value it could not compare at all
+    def test_the_doctor_reports_it_instead_of_raising(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", "3600", raising=False)
+
+        code, output = self._run(im_module, monkeypatch, capsys, ["--doctor"])
+
+        assert code == 1
+        assert "INSTA_CHECK_INTERVAL must be a number greater than zero, not '3600'" in output
+        # The rest of the report has to follow, or the row is just a crash with better wording
+        assert "Next steps" in output
+
+    # An interval out of range stopped the doctor at the startup gate, so the report it was asked for never arrived
+    def test_a_zero_interval_is_a_row_rather_than_an_early_exit(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", 0, raising=False)
+
+        code, output = self._run(im_module, monkeypatch, capsys, ["--doctor"])
+
+        assert code == 1
+        assert "INSTA_CHECK_INTERVAL must be a number greater than zero, not 0" in output
+        assert "Next steps" in output
+
+    # A monitoring run has no report to put it in, so it says which setting and what it needs, then stops
+    def test_a_monitoring_run_names_the_setting_and_stops(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "SMTP_PORT", "587", raising=False)
+        monkeypatch.setattr(im_module, "check_internet", lambda: (_ for _ in ()).throw(AssertionError("stopped before the connectivity check")))
+
+        code, output = self._run(im_module, monkeypatch, capsys, ["target.user"])
+
+        assert code == 1
+        assert "SMTP_PORT must be an integer from 1 through 65535, not '587'" in output
+        assert "Correct the reported settings in the configuration file" in output
+
+    # A row that reads the broken setting would raise, so it is left out while the checks around it still run
+    def test_the_rows_that_read_the_setting_are_skipped(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
+        monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", "3600", raising=False)
+
+        checks = im_module.doctor_check_configuration([])
+        labels = [item.label for item in checks]
+
+        assert "One or more numeric settings are invalid" in labels
+        assert "Check intervals are short" not in labels
+        assert "TLS certificate verification is on" in labels
+
+    # Every setting is named in one row whatever its type, so one fix pass clears them all
+    def test_every_broken_setting_is_named_at_once(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "DISABLE_LOGGING", True, raising=False)
+        monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", "3600", raising=False)
+        monkeypatch.setattr(im_module, "MIN_H1", 99, raising=False)
+        monkeypatch.setattr(im_module, "FOLLOWERS_PER_BATCH", -1, raising=False)
+
+        row = next(item for item in im_module.doctor_check_configuration([]) if item.label == "One or more numeric settings are invalid")
+
+        assert row.status == "FAIL"
+        assert "INSTA_CHECK_INTERVAL must be a number greater than zero, not '3600'" in row.detail
+        assert "MIN_H1 must be an integer from 0 through 23, not 99" in row.detail
+        assert "FOLLOWERS_PER_BATCH must be an integer zero or greater, not -1" in row.detail
+
+    # Validation that rejects the shipped configuration would stop every run, so the defaults are pinned
+    def test_the_shipped_defaults_have_no_numeric_problems(self, im_module):
+        assert im_module.runtime_configuration_problems() == {}
+        assert im_module.runtime_configuration_errors() == []
+
+
 class TestPythonRow:
     # The row states the minimum it was judged against, whichever way the judgement went
     def test_the_python_row_names_the_minimum_supported_version(self, im_module):

@@ -16579,9 +16579,9 @@ def doctor_label_from_error(summary) -> str:
     return label[len("Error:"):].strip() if label.startswith("Error:") else label
 
 
-# Returns all type and range errors in settings that control runtime timing or counts
-def runtime_configuration_errors() -> List[str]:
-    errors: List[str] = []
+# Names every setting controlling runtime timing or counts whose value breaks what its consumers require
+def runtime_configuration_problems() -> Dict[str, str]:
+    problems: Dict[str, str] = {}
     positive_numbers = (("INSTA_CHECK_INTERVAL", INSTA_CHECK_INTERVAL), ("CHECK_INTERNET_TIMEOUT", CHECK_INTERNET_TIMEOUT), ("FOLLOW_LIST_BROWSER_TIMEOUT", FOLLOW_LIST_BROWSER_TIMEOUT))
     nonnegative_numbers = (("RANDOM_SLEEP_DIFF_LOW", RANDOM_SLEEP_DIFF_LOW), ("RANDOM_SLEEP_DIFF_HIGH", RANDOM_SLEEP_DIFF_HIGH), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL), ("NEXT_OPERATION_DELAY", NEXT_OPERATION_DELAY), ("FOLLOWER_DELAY_PER_BATCH", FOLLOWER_DELAY_PER_BATCH), ("FOLLOWEE_DELAY_PER_BATCH", FOLLOWEE_DELAY_PER_BATCH), ("FOLLOW_LIST_BROWSER_SCROLL_DELAY", FOLLOW_LIST_BROWSER_SCROLL_DELAY), ("MULTI_TARGET_STAGGER", MULTI_TARGET_STAGGER), ("MULTI_TARGET_STAGGER_JITTER", MULTI_TARGET_STAGGER_JITTER))
     nonnegative_integers = (("DAILY_HUMAN_HITS", DAILY_HUMAN_HITS), ("FOLLOWERS_PER_BATCH", FOLLOWERS_PER_BATCH), ("FOLLOWEES_PER_BATCH", FOLLOWEES_PER_BATCH), ("FOLLOWER_LIMIT_TO_FETCH", FOLLOWER_LIMIT_TO_FETCH), ("FOLLOWEE_LIMIT_TO_FETCH", FOLLOWEE_LIMIT_TO_FETCH), ("IDENTITY_BUDGET_PER_DAY", IDENTITY_BUDGET_PER_DAY))
@@ -16589,20 +16589,25 @@ def runtime_configuration_errors() -> List[str]:
     ports = (("SMTP_PORT", SMTP_PORT), ("WEB_DASHBOARD_PORT", WEB_DASHBOARD_PORT))
     for name, value in positive_numbers:
         if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
-            errors.append(f"{name} must be a number greater than zero, not {value!r}")
+            problems[name] = f"must be a number greater than zero, not {value!r}"
     for name, value in nonnegative_numbers:
         if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
-            errors.append(f"{name} must be a number zero or greater, not {value!r}")
+            problems[name] = f"must be a number zero or greater, not {value!r}"
     for name, value in nonnegative_integers:
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-            errors.append(f"{name} must be an integer zero or greater, not {value!r}")
+            problems[name] = f"must be an integer zero or greater, not {value!r}"
     for name, value in hours:
         if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 23:
-            errors.append(f"{name} must be an integer from 0 through 23, not {value!r}")
+            problems[name] = f"must be an integer from 0 through 23, not {value!r}"
     for name, value in ports:
         if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 65535:
-            errors.append(f"{name} must be an integer from 1 through 65535, not {value!r}")
-    return errors
+            problems[name] = f"must be an integer from 1 through 65535, not {value!r}"
+    return problems
+
+
+# Returns all type and range errors in settings that control runtime timing or counts, one message per setting
+def runtime_configuration_errors() -> List[str]:
+    return [f"{name} {requirement}" for name, requirement in runtime_configuration_problems().items()]
 
 
 # Names every on/off setting holding something other than True or False, since a string such as "false" would count as on
@@ -16642,25 +16647,28 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
     else:
         checks.append(make_doctor_check("Configuration", "PASS", timezone_label, f"Time zone: {LOCAL_TIMEZONE}"))
 
-    intervals = f"{display_time(INSTA_CHECK_INTERVAL)} between checks"
-    if INSTA_CHECK_INTERVAL < DOCTOR_MIN_SAFE_CHECK_INTERVAL:
-        advice = make_recovery_advice("instagram.rate_limited", "Check intervals are short", recovery_fix_with_guide(f"Raise INSTA_CHECK_INTERVAL to at least {DOCTOR_MIN_SAFE_CHECK_INTERVAL} seconds", ANTI_DETECTION_INTERVAL_GUIDE_URL), True)
-        checks.append(make_doctor_check("Configuration", "WARN", advice.summary, intervals, advice))
+    # Reported before the rows that read one of these settings, since formatting or comparing a value of the wrong
+    # type raises out of the one command whose job is to explain a broken configuration
+    numeric_problems = runtime_configuration_problems()
+    if numeric_problems:
+        advice = make_recovery_advice("config.invalid", "One or more numeric settings are invalid", recovery_fix_with_guide("Correct the reported settings in the configuration file", CONFIG_FILE_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, "Invalid numeric settings: " + "; ".join(f"{name} {requirement}" for name, requirement in numeric_problems.items()), advice))
+    boolean_errors = runtime_boolean_errors()
+    if boolean_errors:
+        advice = make_recovery_advice("config.invalid", "One or more on/off settings are invalid", recovery_fix_with_guide("Set the reported settings to True or False in the configuration file", CONFIG_FILE_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, "Invalid on/off settings: " + "; ".join(boolean_errors), advice))
+
+    if 'INSTA_CHECK_INTERVAL' not in numeric_problems:
+        intervals = f"{display_time(INSTA_CHECK_INTERVAL)} between checks"
+        if INSTA_CHECK_INTERVAL < DOCTOR_MIN_SAFE_CHECK_INTERVAL:
+            advice = make_recovery_advice("instagram.rate_limited", "Check intervals are short", recovery_fix_with_guide(f"Raise INSTA_CHECK_INTERVAL to at least {DOCTOR_MIN_SAFE_CHECK_INTERVAL} seconds", ANTI_DETECTION_INTERVAL_GUIDE_URL), True)
+            checks.append(make_doctor_check("Configuration", "WARN", advice.summary, intervals, advice))
 
     if VERIFY_SSL:
         checks.append(make_doctor_check("Configuration", "PASS", "TLS certificate verification is on", "Every outbound request checks the server certificate"))
     else:
         advice = make_recovery_advice("config.insecure", "TLS certificate verification is off", recovery_fix_with_guide("Set VERIFY_SSL back to True unless this network intercepts TLS with its own certificate authority", TLS_GUIDE_URL), False)
         checks.append(make_doctor_check("Configuration", "WARN", advice.summary, "VERIFY_SSL is False, so an intercepted connection cannot be told apart from the real service", advice))
-
-    numeric_errors = runtime_configuration_errors()
-    if numeric_errors:
-        advice = make_recovery_advice("config.invalid", "One or more numeric settings are invalid", recovery_fix_with_guide("Correct the reported settings in the configuration file", CONFIG_FILE_GUIDE_URL), False)
-        checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, "Invalid numeric settings: " + "; ".join(numeric_errors), advice))
-    boolean_errors = runtime_boolean_errors()
-    if boolean_errors:
-        advice = make_recovery_advice("config.invalid", "One or more on/off settings are invalid", recovery_fix_with_guide("Set the reported settings to True or False in the configuration file", CONFIG_FILE_GUIDE_URL), False)
-        checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, "Invalid on/off settings: " + "; ".join(boolean_errors), advice))
 
     agents = ". ".join(f"{label}: {agent}" for label, agent in (("Browser agent", USER_AGENT), ("Mobile agent", USER_AGENT_MOBILE)) if agent)
     if _curl_cffi_backend_active():
@@ -16954,6 +16962,21 @@ def apply_diagnostic_cli_overrides(args: argparse.Namespace) -> None:
         DEBUG_MODE = args.debug_mode
     if args.verbose_mode is not None:
         VERBOSE_MODE = args.verbose_mode
+
+
+# Applies the command line's timing settings over the configured ones, early enough that the checks and combinations
+# reading them judge the values the run will actually use
+def apply_timing_cli_overrides(args: argparse.Namespace) -> None:
+    global INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
+    if args.check_interval:
+        if args.check_interval <= 0:
+            print_recovery_error("The check interval must be greater than 0", context="config")
+            sys.exit(1)
+        INSTA_CHECK_INTERVAL = args.check_interval
+    if args.check_interval_random_diff_low:
+        RANDOM_SLEEP_DIFF_LOW = args.check_interval_random_diff_low
+    if args.check_interval_random_diff_high:
+        RANDOM_SLEEP_DIFF_HIGH = args.check_interval_random_diff_high
 
 
 # Applies the command line's session account and mode over the configured ones, early enough that every action
@@ -17894,21 +17917,38 @@ def run_main():
             print("To fix: Fix the file's contents or permissions, or move it aside, then run --clear-breaker to start a fresh ledger")
         sys.exit(0)
 
+    apply_timing_cli_overrides(args)
+
+    # Checked here because the settings below are the first to read one, and a value of the wrong type raises or
+    # decides wrongly where it is consumed rather than where it was set. Doctor mode reports them as rows instead,
+    # so the one command meant to explain a broken configuration still runs on one
+    numeric_problems = runtime_configuration_problems()
+    if numeric_problems and not doctor_mode:
+        print("* Error: One or more numeric settings are invalid")
+        for name, requirement in numeric_problems.items():
+            print(f"  - {name} {requirement}")
+        print(colorize("info", "To fix: Correct the reported settings in the configuration file"))
+        print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
+        sys.exit(1)
+
     if not args.doctor and not args.analyze_follows and not args.set_smtp_password and not check_internet():
         sys.exit(1)
 
-    # Advanced Follower/Followee Fetching Settings
-    if any([FOLLOWERS_PER_BATCH, FOLLOWER_LIMIT_TO_FETCH, FOLLOWER_DELAY_PER_BATCH]):
-        ADVANCED_FOLLOWER_FETCH = bool((FOLLOWERS_PER_BATCH and FOLLOWER_DELAY_PER_BATCH) or (FOLLOWER_LIMIT_TO_FETCH and not FOLLOWERS_PER_BATCH and not FOLLOWER_DELAY_PER_BATCH))
-        if not ADVANCED_FOLLOWER_FETCH:
-            print_recovery_error(f"Advanced follower fetching cannot use FOLLOWER_LIMIT_TO_FETCH: {FOLLOWER_LIMIT_TO_FETCH}, FOLLOWERS_PER_BATCH: {FOLLOWERS_PER_BATCH}, FOLLOWER_DELAY_PER_BATCH: {FOLLOWER_DELAY_PER_BATCH}", context="config")
-            sys.exit(1)
+    # Both combinations below are read from settings the check above may have rejected, and only doctor mode gets
+    # here with one. A combination judged from a value that is not a number would stop the report about to name it
+    if not numeric_problems:
+        # Advanced Follower/Followee Fetching Settings
+        if any([FOLLOWERS_PER_BATCH, FOLLOWER_LIMIT_TO_FETCH, FOLLOWER_DELAY_PER_BATCH]):
+            ADVANCED_FOLLOWER_FETCH = bool((FOLLOWERS_PER_BATCH and FOLLOWER_DELAY_PER_BATCH) or (FOLLOWER_LIMIT_TO_FETCH and not FOLLOWERS_PER_BATCH and not FOLLOWER_DELAY_PER_BATCH))
+            if not ADVANCED_FOLLOWER_FETCH:
+                print_recovery_error(f"Advanced follower fetching cannot use FOLLOWER_LIMIT_TO_FETCH: {FOLLOWER_LIMIT_TO_FETCH}, FOLLOWERS_PER_BATCH: {FOLLOWERS_PER_BATCH}, FOLLOWER_DELAY_PER_BATCH: {FOLLOWER_DELAY_PER_BATCH}", context="config")
+                sys.exit(1)
 
-    if any([FOLLOWEES_PER_BATCH, FOLLOWEE_LIMIT_TO_FETCH, FOLLOWEE_DELAY_PER_BATCH]):
-        ADVANCED_FOLLOWEE_FETCH = bool((FOLLOWEES_PER_BATCH and FOLLOWEE_DELAY_PER_BATCH) or (FOLLOWEE_LIMIT_TO_FETCH and not FOLLOWEES_PER_BATCH and not FOLLOWEE_DELAY_PER_BATCH))
-        if not ADVANCED_FOLLOWEE_FETCH:
-            print_recovery_error(f"Advanced followee fetching cannot use FOLLOWEE_LIMIT_TO_FETCH: {FOLLOWEE_LIMIT_TO_FETCH}, FOLLOWEES_PER_BATCH: {FOLLOWEES_PER_BATCH}, FOLLOWEE_DELAY_PER_BATCH: {FOLLOWEE_DELAY_PER_BATCH}", context="config")
-            sys.exit(1)
+        if any([FOLLOWEES_PER_BATCH, FOLLOWEE_LIMIT_TO_FETCH, FOLLOWEE_DELAY_PER_BATCH]):
+            ADVANCED_FOLLOWEE_FETCH = bool((FOLLOWEES_PER_BATCH and FOLLOWEE_DELAY_PER_BATCH) or (FOLLOWEE_LIMIT_TO_FETCH and not FOLLOWEES_PER_BATCH and not FOLLOWEE_DELAY_PER_BATCH))
+            if not ADVANCED_FOLLOWEE_FETCH:
+                print_recovery_error(f"Advanced followee fetching cannot use FOLLOWEE_LIMIT_TO_FETCH: {FOLLOWEE_LIMIT_TO_FETCH}, FOLLOWEES_PER_BATCH: {FOLLOWEES_PER_BATCH}, FOLLOWEE_DELAY_PER_BATCH: {FOLLOWEE_DELAY_PER_BATCH}", context="config")
+                sys.exit(1)
 
     # Handle dashboard and webhook arguments
     if args.followers_churn is True:
@@ -18083,27 +18123,12 @@ def run_main():
     if args.enable_jitter is True:
         ENABLE_JITTER = True
 
-    if args.check_interval:
-        if args.check_interval <= 0:
-            print_recovery_error("The check interval must be greater than 0", context="config")
-            sys.exit(1)
-        INSTA_CHECK_INTERVAL = args.check_interval
-
-    if args.check_interval_random_diff_low:
-        RANDOM_SLEEP_DIFF_LOW = args.check_interval_random_diff_low
-
-    if args.check_interval_random_diff_high:
-        RANDOM_SLEEP_DIFF_HIGH = args.check_interval_random_diff_high
-
     trace_unresolved_secrets()
 
-    # Validate INSTA_CHECK_INTERVAL to prevent division by zero
-    if INSTA_CHECK_INTERVAL <= 0:
-        print_recovery_error("INSTA_CHECK_INTERVAL must be greater than 0", context="config")
-        sys.exit(1)
-
-    # Finalize liveness cadence after config/env/CLI have been applied
-    recompute_liveness_reminder()
+    # Finalize liveness cadence after config/env/CLI have been applied, unless a setting it reads is one the
+    # doctor is about to report, since only doctor mode gets this far with an unusable value
+    if 'INSTA_CHECK_INTERVAL' not in numeric_problems and 'LIVENESS_CHECK_INTERVAL' not in numeric_problems:
+        recompute_liveness_reminder()
 
     if SKIP_SESSION is True:
         SKIP_FOLLOWERS = True
