@@ -4702,7 +4702,6 @@ class StartupSummaryRow:
     full: bool = True
 
 
-
 # Hides the middle of an address's local part, so a log can be shared while the reader can still spot a typo
 def mask_email_address(address) -> str:
     text = str(address or "").strip()
