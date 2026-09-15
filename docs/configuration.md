@@ -298,7 +298,7 @@ The mail server password has its own command:
 instagram_monitor --set-smtp-password
 ```
 
-Type the password at the hidden prompt. Instagram Monitor signs in to the mail server with it and saves `SMTP_PASSWORD` in `.env` only once the server accepts it. No email is sent. The other SMTP settings have to be in place first, so run this after `--setup` or after filling in `SMTP_HOST`, `SMTP_USER`, `SENDER_EMAIL` and `RECEIVER_EMAIL`. The command checks those settings before it asks for anything and names the ones that are still missing, so you never type a password that cannot be checked.
+Type the password at the hidden prompt. Instagram Monitor signs in to the mail server with it and saves `SMTP_PASSWORD` in `.env` only once the server accepts it. No email is sent. The other SMTP settings have to be in place first, so run this after `--setup` or after filling in `SMTP_HOST`, `SMTP_USER`, `SENDER_EMAIL` and `RECEIVER_EMAIL`. The command checks those settings before it asks for anything and names the ones that are still missing, so you never type a password that cannot be checked. An exported `SMTP_PASSWORD` wins over the saved one at startup, so the command says so after saving rather than leaving you with a value the next run will not read.
 
 You can use operating system environment variables instead of a file. Set them with `export` on Linux, Unix, macOS or WSL:
 

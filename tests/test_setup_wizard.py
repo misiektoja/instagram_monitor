@@ -1114,7 +1114,8 @@ class TestMailServerSignIn:
                 seen["quit"] = True
         monkeypatch.setattr(im_module.smtplib, "SMTP", RecordingSMTP)
 
-        assert im_module._wizard_verify_smtp({"SMTP_HOST": "smtp.example.test", "SMTP_PORT": 587, "SMTP_SSL": True, "SMTP_USER": "monitor@example.test", "SENDER_EMAIL": "monitor@example.test", "RECEIVER_EMAIL": "alerts@example.test"}, "") is None
+        # The caller resolves the password the next run would use, so the check signs in with exactly what it is given
+        assert im_module._wizard_verify_smtp({"SMTP_HOST": "smtp.example.test", "SMTP_PORT": 587, "SMTP_SSL": True, "SMTP_USER": "monitor@example.test", "SENDER_EMAIL": "monitor@example.test", "RECEIVER_EMAIL": "alerts@example.test"}, "old-password") is None
 
         assert seen["host"] == "smtp.example.test"
         assert seen["port"] == 587
@@ -1122,6 +1123,100 @@ class TestMailServerSignIn:
         assert seen["login"] == ("monitor@example.test", "old-password")
         assert seen["quit"] is True
         assert im_module.SMTP_HOST == "old.example.test"
+
+
+# Setup reports the sign-in succeeded and then writes the files a restart reads. A check that proves one password
+# while a different one is what gets read leaves the user with a setup that was announced as working and is not
+class TestTheCheckedSecretIsTheOneTheNextRunUses:
+    # Runs one complete email section over a dotenv file that already holds a password and returns what was signed in with
+    @staticmethod
+    def _run(im_module, monkeypatch, directory, typed, replace_saved, exported=None):
+        env_path = Path(directory) / ".env"
+        env_path.write_text('SMTP_PASSWORD="saved-in-file"\n', encoding="utf-8")
+        state = make_setup_state(im_module, Path(directory))
+        state.env_path = env_path
+        texts = iter(["smtp.example.test", "587", "monitor@example.test", "monitor@example.test", "alerts@example.test"])
+        answers = iter([True, True, replace_saved, True, True, True])
+        attempts = []
+        monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+        if exported is not None:
+            monkeypatch.setenv("SMTP_PASSWORD", exported)
+        monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: next(texts))
+        monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: next(answers))
+        monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: typed)
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: 0)
+        monkeypatch.setattr(im_module, "_wizard_verify_smtp", lambda values, password: attempts.append(password) or None)
+        im_module._wizard_collect_email_section(state)
+        return attempts, state.secret_updates.get("SMTP_PASSWORD")
+
+    # Keeping the saved password used to check the one just typed, which is the one thrown away
+    def test_a_declined_replacement_checks_the_password_that_is_kept(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            attempts, queued = self._run(im_module, monkeypatch, directory_name, "typed-new", False)
+
+            assert attempts == ["saved-in-file"]
+            assert queued is None
+
+    # An export wins at startup, so a saved replacement is not what the next run reads
+    def test_an_exported_value_is_what_gets_checked(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            attempts, queued = self._run(im_module, monkeypatch, directory_name, "typed-new", True, exported="exported-elsewhere")
+
+            assert attempts == ["exported-elsewhere"]
+            assert queued == "typed-new"
+            output = capsys.readouterr().out
+            assert "SMTP_PASSWORD is exported in this environment" in output
+            assert "exported-elsewhere" not in output
+
+    # The ordinary path must stay as it was: an accepted replacement is both checked and saved
+    def test_an_accepted_replacement_is_checked_and_saved(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            attempts, queued = self._run(im_module, monkeypatch, directory_name, "typed-new", True)
+
+            assert attempts == ["typed-new"]
+            assert queued == "typed-new"
+
+    # The resolver answers for the run that follows setup, so the startup order is what it has to follow
+    def test_the_resolver_follows_the_startup_precedence(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            env_path = Path(directory_name) / ".env"
+            env_path.write_text('SMTP_PASSWORD="saved-in-file"\n', encoding="utf-8")
+            monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+            monkeypatch.setattr(im_module, "SMTP_PASSWORD", "from-config-file", raising=False)
+
+            assert im_module.effective_secret_after_setup("SMTP_PASSWORD", env_path, {}) == ("saved-in-file", False)
+            assert im_module.effective_secret_after_setup("SMTP_PASSWORD", env_path, {"SMTP_PASSWORD": "accepted"}) == ("accepted", False)
+            monkeypatch.setenv("SMTP_PASSWORD", "exported")
+            assert im_module.effective_secret_after_setup("SMTP_PASSWORD", env_path, {"SMTP_PASSWORD": "accepted"}) == ("exported", True)
+            monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+            assert im_module.effective_secret_after_setup("SMTP_PASSWORD", Path(directory_name) / "absent.env", {}) == ("from-config-file", False)
+
+    # The command saves to the dotenv file, which an export overrides, so the run it promises would still fail
+    def test_the_password_command_says_when_an_export_shadows_the_saved_one(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            env_path = Path(directory_name) / ".env"
+            configure_mail(im_module, monkeypatch)
+            monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
+            monkeypatch.setenv("SMTP_PASSWORD", "exported-elsewhere")
+
+            im_module.run_set_smtp_password(env_file=env_path, interactive=True, getpass_func=lambda prompt: "app-password-value", sign_in=Mock(return_value="monitor@example.test"))
+
+            output = capsys.readouterr().out
+            assert "SMTP_PASSWORD is exported in this environment" in output
+            assert "Unset the exported SMTP_PASSWORD" in output
+            assert "exported-elsewhere" not in output
+
+    # A run with no export must not be told about one, or the warning becomes noise that is ignored when it matters
+    def test_the_password_command_stays_quiet_without_an_export(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            env_path = Path(directory_name) / ".env"
+            configure_mail(im_module, monkeypatch)
+            monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
+            monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+
+            im_module.run_set_smtp_password(env_file=env_path, interactive=True, getpass_func=lambda prompt: "app-password-value", sign_in=Mock(return_value="monitor@example.test"))
+
+            assert "is exported in this environment" not in capsys.readouterr().out
 
 
 # Sets the mail settings a sign-in needs, so a test reaches the prompts rather than the completeness guard

@@ -1276,6 +1276,11 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     doctor_command = _wizard_action_command(method, "--doctor", selected_config, destination)
     print(f"* The mail server accepted the password for {signed_in_user}")
     print(f"* Updated private settings file: {destination}")
+    # Startup loads the dotenv file without overriding the environment, so a saved replacement that an export
+    # shadows would never be read, and the run would keep failing with the password that was just proven good
+    if os.environ.get("SMTP_PASSWORD"):
+        print("* SMTP_PASSWORD is exported in this environment and an export wins at startup, so the next run uses that value rather than the one just saved")
+        print(colorize("info", "To fix: Unset the exported SMTP_PASSWORD to use the saved one"))
     print()
     _wizard_print_command("Send a test email:", test_command)
     _wizard_print_command("Check setup again:", doctor_command)
@@ -15198,6 +15203,21 @@ def _wizard_secret_value(key: str, env_path: Path) -> Optional[str]:
     return value if isinstance(value, str) else None
 
 
+# Returns the secret the next run would resolve and whether an exported variable is what supplies it. Startup loads
+# the dotenv file without overriding the environment, so an export wins over a saved value and over a new one
+def effective_secret_after_setup(key: str, env_path: Path, secret_updates: Dict[str, str]) -> Tuple[str, bool]:
+    exported = os.environ.get(key)
+    if exported:
+        return exported, True
+    if key in secret_updates:
+        return str(secret_updates[key] or ""), False
+    saved = _wizard_secret_value(key, env_path)
+    if saved:
+        return saved, False
+    # Nothing private holds it, so the configuration file is what a restart would read
+    return str(globals().get(key) or ""), False
+
+
 # Puts the values setup just saved into effect, so doctor checks the written files instead of the earlier state.
 # Each secret records where it came from, so the report names the source a restart would name
 def _wizard_apply_saved_values(state):
@@ -15584,8 +15604,8 @@ def _wizard_verify_smtp(values: dict, password: str) -> Optional[Tuple[str, str,
     smtp = None
     try:
         globals().update(values)
-        # A blank answer keeps the password already stored, which is the one the sign-in must then prove
-        globals()["SMTP_PASSWORD"] = password or previous["SMTP_PASSWORD"]
+        # Exactly what the caller resolved, since that is the value the next run will use
+        globals()["SMTP_PASSWORD"] = password
         smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=WIZARD_SMTP_TIMEOUT)
         if SMTP_SSL:
             smtp.starttls(context=smtp_ssl_context())
@@ -15632,7 +15652,6 @@ def _wizard_collect_email_section(state: WizardSetupState) -> None:
     if not _wizard_ask_yes_no("Configure email notifications?", default=state.want_email):
         _wizard_disable_email(state)
         return
-    saved_password = _wizard_secret_value("SMTP_PASSWORD", state.env_path) or ""
     while True:
         state.config_values["SMTP_HOST"] = _wizard_ask_text("SMTP host", default=_wizard_default(state.config_values.get("SMTP_HOST")), required=True)
         if _wizard_email_answer_missing(state, state.config_values["SMTP_HOST"]):
@@ -15651,7 +15670,13 @@ def _wizard_collect_email_section(state: WizardSetupState) -> None:
         password = _wizard_ask_secret("SMTP password")
         if password:
             _wizard_queue_secret(state.secret_updates, state.env_path, "SMTP_PASSWORD", password)
-        outcome = _wizard_smtp_sign_in_accepted({name: state.config_values[name] for name in WIZARD_SMTP_CONFIG_KEYS}, password or saved_password)
+        # The sign-in has to prove the value the next run resolves rather than the one just typed. A declined
+        # replacement and an exported variable both leave setup reporting success for a password nothing will use
+        effective_password, supplied_by_export = effective_secret_after_setup("SMTP_PASSWORD", state.env_path, state.secret_updates)
+        if supplied_by_export and password:
+            print("  SMTP_PASSWORD is exported in this environment and an export wins at startup, so the next run uses that value rather than the one just entered.")
+            print("  The check below signs in with the exported value. Unset it to use the one saved here.")
+        outcome = _wizard_smtp_sign_in_accepted({name: state.config_values[name] for name in WIZARD_SMTP_CONFIG_KEYS}, effective_password)
         if outcome is None:
             _wizard_disable_email(state)
             return
