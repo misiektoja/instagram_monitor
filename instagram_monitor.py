@@ -7747,8 +7747,13 @@ def get_total_reels_count(user: str, bot: instaloader.Instaloader, skip_session=
     if not skip_session:
         try:
             return get_reels_count_mobile(user, bot)
-        except Exception:
-            pass
+        except Exception as mobile_error:
+            # A challenge or an expired session is about the account rather than this endpoint. Falling back
+            # would send another request while Instagram is already refusing the session, so it is reported
+            mobile_error_msg = format_error_message(mobile_error)
+            if is_account_level_failure(classify_failure_class(mobile_error_msg)):
+                raise
+            debug_print("Reels count over the mobile API failed", user=user, error=mobile_error_msg)
 
     # Anonymous fallback: count every reel in the feed, might be API intensive
     try:
@@ -10022,7 +10027,7 @@ def session_recovery_command() -> str:
 # Ordered match terms for every recognized failure, shared by the message and the failure-class lookups so the two cannot drift
 FAILURE_TERMS = {
     'rate_limit': ("429", "too many requests", "wait a few minutes", "rate limit", "please wait"),
-    'challenge': ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data"),
+    'challenge': ("challenge", "checkpoint", "automated", "feedback_required", "shadow ban", "shadowban", "missing expected data"),
     'session_missing': ("session file",),
     'auth_expired': ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required"),
     'target_unavailable': ("profilenotexists", "does not exist", "not found", "404"),
@@ -11032,6 +11037,18 @@ def note_instagram_failure(error_msg: str, user: str = "", bot=None) -> str:
             print(f"* Instagram rejected a request for {user or 'the target'} as not logged in, but the session {reason}, so the circuit breaker stays armed")
     record_failure_event(failure_class, user, error_msg, confirmed=confirmed)
     return failure_class
+
+
+# Records one failed authenticated request against the session account and returns True when Instagram acted against
+# the session itself rather than against one target. Every authenticated failure path goes through here, so an
+# account-level failure arms the circuit breaker wherever it surfaces instead of only inside the follow list fetch
+def note_authenticated_failure(error_msg: str, user: str = "", bot=None) -> bool:
+    if is_session_flagged(error_msg, bot):
+        # The caller hands a flag to handle_flagged_session, which records it through notify_session_flagged
+        # under the class the probe established. Recording it here as well would count one challenge twice
+        return True
+    note_instagram_failure(error_msg, user, bot)
+    return False
 
 
 # Formats one report row so its value starts in the shared column whatever the label length
@@ -12480,7 +12497,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         error_msg = format_error_message(e)
         print(f"* Error: {error_msg}")
         # Detect a flagged session/IP up front so the specific flagged guidance below replaces the generic fix hint
-        session_flagged = is_session_flagged(error_msg, bot)
+        session_flagged = note_authenticated_failure(error_msg, user, bot)
         if not session_flagged:
             print_fix_hint(error_msg)
         print_cur_ts(newline=True)
@@ -13031,7 +13048,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
             except Exception as e:
                 error_msg = format_error_message(e)
-                session_flagged = is_session_flagged(error_msg, bot)
+                session_flagged = note_authenticated_failure(error_msg, user, bot)
                 print_recovery_error(error_msg, summary=f"Error while processing story items: {error_msg}", with_fix=not session_flagged)
                 # A challenge can arrive on any endpoint, so a flag here alerts and pauses like one on the profile lookup
                 if session_flagged:
@@ -13109,7 +13126,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
         except Exception as e:
             error_msg = format_error_message(e)
-            session_flagged = is_session_flagged(error_msg, bot)
+            session_flagged = note_authenticated_failure(error_msg, user, bot)
             print_recovery_error(error_msg, summary=f"Error while processing posts/reels: {error_msg}", with_fix=not session_flagged)
             # A challenge can arrive on any endpoint, so a flag here alerts and pauses like one on the profile lookup
             if session_flagged:
@@ -13544,7 +13561,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 fix_hint_printed = False
 
                 # A flagged session/IP is terminal and operator-actionable, so detect it up front to alert immediately and skip the generic threshold alert below
-                session_flagged = is_session_flagged(error_msg, bot)
+                session_flagged = note_authenticated_failure(error_msg, user, bot)
 
                 if not session_flagged:
                     if outage_outcome == "full":
@@ -13669,7 +13686,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         close_pbar()
                         followings = followings_old
                         error_msg = format_error_message(e)
-                        session_flagged = is_session_flagged(error_msg, bot)
+                        session_flagged = note_authenticated_failure(error_msg, user, bot)
                         print_recovery_error(error_msg, summary=f"Error while processing followings: {error_msg}", with_fix=not session_flagged)
                         # A challenge can arrive on any endpoint, so a flag here pauses or exits like one on the profile lookup
                         if session_flagged:
@@ -13814,7 +13831,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         close_pbar()
                         followers = followers_old
                         error_msg = format_error_message(e)
-                        session_flagged = is_session_flagged(error_msg, bot)
+                        session_flagged = note_authenticated_failure(error_msg, user, bot)
                         print_recovery_error(error_msg, summary=f"Error while processing followers: {error_msg}", with_fix=not session_flagged)
                         # A challenge can arrive on any endpoint, so a flag here pauses or exits like one on the profile lookup
                         if session_flagged:
@@ -14136,7 +14153,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                 except Exception as e:
                     error_msg = format_error_message(e)
-                    session_flagged = is_session_flagged(error_msg, bot)
+                    session_flagged = note_authenticated_failure(error_msg, user, bot)
                     print_recovery_error(error_msg, summary=f"Error while processing story items: {error_msg}", with_fix=not session_flagged)
                     print_cur_ts(newline=True)
                     # A challenge can arrive on any endpoint, so a flag here pauses or exits like one on the profile lookup
@@ -14232,7 +14249,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     error_msg = format_error_message(e)
                     consecutive_main_errors += 1
                     # A flag is terminal and operator-actionable, so it replaces the generic outage report and alert
-                    if is_session_flagged(error_msg, bot):
+                    if note_authenticated_failure(error_msg, user, bot):
                         if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation):
                             return
                         continue
@@ -14269,7 +14286,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                                 post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
                 except Exception as e:
                     error_msg = format_error_message(e)
-                    session_flagged = is_session_flagged(error_msg, bot)
+                    session_flagged = note_authenticated_failure(error_msg, user, bot)
                     print_recovery_error(error_msg, summary=f"Error while getting post's likes list / comments list: {error_msg}", with_fix=not session_flagged)
                     # A challenge can arrive on any endpoint, so a flag here pauses or exits like one on the profile lookup
                     if session_flagged:

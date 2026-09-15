@@ -7,6 +7,23 @@ Here profile_from_username_resilient is stubbed so the logic runs fully offline.
 import threading
 import time
 
+import pytest
+
+
+class _Bot:
+    """Stand-in for an instaloader bot exposing only the mobile JSON call."""
+
+    def __init__(self, iphone_json):
+        self.context = type("Context", (), {"get_iphone_json": staticmethod(iphone_json)})()
+
+
+class _Profile:
+    """Stand-in for an instaloader profile exposing only what the reels count needs."""
+
+    def __init__(self, get_reels):
+        self.userid = 123
+        self.get_reels = get_reels
+
 
 class _FakeBot:
     """Stand-in for an instaloader bot; only its identity matters to the code under test."""
@@ -358,3 +375,51 @@ class TestHandleFlaggedSession:
 
         assert im_module.handle_flagged_session("targetuser", "checkpoint_required", _FakeBot(), threading.Event(), 0, reload_session=False) is True
         assert calls["reload"] == []
+
+
+class TestAChallengeOnALowerEndpointIsNotSwallowed:
+    """The mobile reels helper falls back to an anonymous scan when its own endpoint fails.
+
+    A challenge is about the account, so falling back would send a second request while Instagram
+    is already refusing the session, and the caller would never see the challenge at all.
+    """
+
+    # Builds a bot whose mobile endpoint fails with the given message and records every call made
+    @staticmethod
+    def _bot(im_module, monkeypatch, message, calls):
+        def iphone_json(*args, **kwargs):
+            calls.append("mobile")
+            raise im_module.instaloader.exceptions.AbortDownloadException(message)
+
+        def reels():
+            calls.append("fallback")
+            return iter([])
+
+        monkeypatch.setattr(im_module, "profile_from_username_resilient", lambda bot, username: _Profile(reels))
+        return _Bot(iphone_json)
+
+    def test_a_challenge_reaches_the_caller_instead_of_a_second_request(self, im_module, monkeypatch):
+        calls = []
+        bot = self._bot(im_module, monkeypatch, "400 checkpoint_required", calls)
+
+        with pytest.raises(im_module.instaloader.exceptions.AbortDownloadException):
+            im_module.get_total_reels_count("target", bot, False)
+
+        assert calls == ["mobile"]
+
+    def test_an_expired_session_reaches_the_caller_too(self, im_module, monkeypatch):
+        calls = []
+        bot = self._bot(im_module, monkeypatch, "401 Unauthorized", calls)
+
+        with pytest.raises(im_module.instaloader.exceptions.AbortDownloadException):
+            im_module.get_total_reels_count("target", bot, False)
+
+        assert calls == ["mobile"]
+
+    # An endpoint that simply did not answer says nothing about the account, so the fallback still runs
+    def test_an_endpoint_failure_still_falls_back(self, im_module, monkeypatch):
+        calls = []
+        bot = self._bot(im_module, monkeypatch, "404 Not Found", calls)
+
+        assert im_module.get_total_reels_count("target", bot, False) == 0
+        assert calls == ["mobile", "fallback"]

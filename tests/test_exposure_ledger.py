@@ -15,6 +15,14 @@ class _FakeUser:
         self.username = username
 
 
+# Returns a resolver stub that always fails, standing in for a probe of the canonical public account
+def _raises(message):
+    def _resolve(bot, username):
+        raise Exception(message)
+
+    return _resolve
+
+
 # Returns a generator of fake instaloader profiles, standing in for get_followers()
 def _names(count):
     return (_FakeUser(f"user{index}") for index in range(count))
@@ -629,3 +637,61 @@ def test_exposure_summary_resolves_the_impersonation_target(ledger, monkeypatch)
 # Returns the HTTP backend row of the exposure report
 def _backend_line() -> str:
     return next(line for line in im.exposure_summary_lines() if line.startswith("HTTP backend")).expandtabs(40).strip()
+
+
+class TestEveryAuthenticatedFailureReachesTheBreaker:
+    # The flag check is the entry point every monitoring path already used, so recording has to happen there
+    # rather than only inside the follow list fetch, which is the one place that called the classifier
+    def test_an_expired_session_outside_the_list_fetch_arms_the_breaker(self, ledger, monkeypatch):
+        monkeypatch.setattr(im, "profile_from_username_resilient", _raises("LoginRequiredException: login_required"), raising=False)
+
+        flagged = im.note_authenticated_failure("LoginRequiredException: login_required", "target", object())
+
+        assert flagged is False
+        assert im.circuit_breaker_tripped() is True
+        assert im.exposure_snapshot()["failures"] == {"auth_expired": 1}
+
+    # A session that still signs in means one mislabelled request, so the run continues and nothing is stopped
+    def test_an_expired_session_the_probe_disproves_leaves_the_breaker_armed(self, ledger, monkeypatch):
+        monkeypatch.setattr(im, "profile_from_username_resilient", lambda bot, username: object(), raising=False)
+
+        assert im.note_authenticated_failure("LoginRequiredException: login_required", "target", object()) is False
+        assert im.circuit_breaker_tripped() is False
+
+    # A challenge is reported as a flag, and left to the flagged session handler to record, so one challenge
+    # arriving on one request is not counted twice in the ledger
+    def test_a_challenge_is_reported_as_flagged_and_recorded_once(self, ledger):
+        assert im.note_authenticated_failure("400 Bad Request - checkpoint_required", "target", object()) is True
+        assert im.exposure_snapshot()["failures"] == {}
+
+        im.notify_session_flagged("target", "flagged", "400 Bad Request - checkpoint_required")
+
+        assert im.exposure_snapshot()["failures"] == {"challenge": 1}
+        assert im.circuit_breaker_tripped() is True
+
+    # A target that only looks gone because the session is flagged reads as a flag, not as a missing target
+    def test_a_target_missing_only_because_the_session_is_flagged_is_reported_as_flagged(self, ledger, monkeypatch):
+        monkeypatch.setattr(im, "profile_from_username_resilient", _raises("ProfileNotExistsException: instagram missing"), raising=False)
+
+        assert im.note_authenticated_failure("ProfileNotExistsException: target gone", "target", object()) is True
+        assert im.exposure_snapshot()["failures"] == {}
+
+    # A target that is genuinely gone says nothing about the account, so monitoring the others continues
+    def test_a_genuinely_missing_target_leaves_the_account_alone(self, ledger, monkeypatch):
+        monkeypatch.setattr(im, "profile_from_username_resilient", lambda bot, username: object(), raising=False)
+
+        assert im.note_authenticated_failure("ProfileNotExistsException: target gone", "target", object()) is False
+        assert im.circuit_breaker_tripped() is False
+        assert im.exposure_snapshot()["failures"] == {"target_unavailable": 1}
+
+    # A transient fault is counted for the report but never stops the account
+    def test_a_network_fault_is_counted_without_stopping_the_account(self, ledger):
+        assert im.note_authenticated_failure("ConnectionError: timed out", "target", object()) is False
+        assert im.circuit_breaker_tripped() is False
+        assert im.exposure_snapshot()["failures"] == {"network": 1}
+
+    # The flag triggers and the failure classifier are two tables naming one condition, so they have to agree
+    @pytest.mark.parametrize("trigger", ["detected automated checks", "checkpoint_required", "challenge_required", "feedback_required"])
+    def test_every_flag_trigger_is_classified_as_an_account_failure(self, ledger, trigger):
+        assert im.is_session_flagged(trigger, object()) is True
+        assert im.is_account_level_failure(im.classify_failure_class(trigger)) is True
