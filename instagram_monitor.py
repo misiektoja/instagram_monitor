@@ -5033,6 +5033,11 @@ def apply_color_to_text(text):
     return "".join(parts)
 
 
+# Colours every link in a line, for the screens printed before the output stream colouriser is installed
+def colorize_links(text):
+    return _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), text)
+
+
 # Reports whether separator-only log lines should use ASCII on this system
 def ascii_log_separators_enabled():
     mode = str(ASCII_LOG_SEPARATORS).strip().lower()
@@ -15862,7 +15867,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     if not sys.stdin.isatty():
         print("The setup wizard needs an interactive terminal (TTY).")
         print("Run --setup from an interactive shell or use --generate-config and edit the files manually.")
-        print(f"Guide: {QUICK_START_GUIDE_URL}")
+        print(colorize_links(f"Guide: {QUICK_START_GUIDE_URL}"))
         raise SystemExit(1)
 
     method = _wizard_install_method()
@@ -15879,7 +15884,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     print("Secrets go to the dotenv file. Non-secret settings go to the config file.")
     print("No-login mode is simplest. Firefox session import is recommended for full monitoring.\n")
     print("Use a dedicated Instagram account for session login mode and follow the anti-detection guidance.")
-    print(f"Session login guide: {SESSION_IMPORT_GUIDE_URL}\n")
+    print(colorize_links(f"Session login guide: {SESSION_IMPORT_GUIDE_URL}\n"))
     print(f"Detected install method: {colorize('username', method)}")
     print(f"Configuration:          {config_path}")
     print(f"Dotenv:                 {env_path}")
@@ -15971,7 +15976,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     if container_browser_import_pending:
         selected_host = cast(str, state.container_host)
         host_label = CONTAINER_FIREFOX_HOSTS[selected_host][0]
-        print("Before import, open https://www.instagram.com/ in Firefox on the host and sign in to the Instagram account used for monitoring.\n")
+        print(colorize_links("Before import, open https://www.instagram.com/ in Firefox on the host and sign in to the Instagram account used for monitoring.\n"))
         _wizard_print_command(f"Import Instagram login from Firefox on {host_label}:", _firefox_import_cmd(method, state.env_path, host_os=selected_host, config_path=state.config_path, targets=command_targets))
     _wizard_print_command("After the import succeeds, check setup:" if container_browser_import_pending else "Check setup again:", doctor_command)
     _wizard_print_command("After Doctor passes, start monitoring:" if container_browser_import_pending or local_browser_import_pending else "Start monitoring:", run_command)
