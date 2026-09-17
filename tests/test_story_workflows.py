@@ -78,7 +78,7 @@ class TestStoryWorkflows:
         monkeypatch.setattr(im_module.instaloader, "Instaloader", lambda *args, **kwargs: fake_bot)
         monkeypatch.setattr(im_module.instaloader.Profile, "own_profile", lambda ctx: SimpleNamespace(username="session_user"))
         monkeypatch.setattr(im_module, "profile_from_username_resilient", lambda bot, username: fake_profile)
-        monkeypatch.setattr(im_module, "get_total_reels_count", lambda user, bot, skip_session=False: 0)
+        monkeypatch.setattr(im_module, "get_total_reels_count", lambda user, bot, skip_session=False, posts_count=None: 0)
         monkeypatch.setattr(im_module, "update_ui_data", lambda *args, **kwargs: updates.append((args, kwargs)))
 
         im_module.instagram_monitor_user("target", str(csv_path), skip_session=False, skip_followers=True, skip_followings=True, skip_getting_story_details=False, skip_getting_posts_details=True, get_more_post_details=False, stop_event=stop_event, user_root_path=str(artifact_dir), skip_follow_changes=True)

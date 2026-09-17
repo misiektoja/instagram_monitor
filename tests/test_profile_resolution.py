@@ -133,3 +133,55 @@ class TestARetiredEndpointDoesNotStopTheAccount:
 
         assert advice.code == "instagram.endpoint_retired"
         assert "not blocked" in advice.fix
+
+
+class TestTheReelsCountIsReused:
+    # Instagram stopped answering the endpoint that reports the count, so the fallback walks the whole reel list.
+    # A posts count that has not moved means that walk would arrive at the number already on hand
+    def test_an_unchanged_posts_count_reuses_the_count(self, im_module, monkeypatch):
+        walks = []
+        monkeypatch.setattr(im_module, "_count_total_reels", lambda user, bot, skip_session: walks.append(user) or 7)
+
+        first = im_module.get_total_reels_count("target", None, False, 20)
+        second = im_module.get_total_reels_count("target", None, False, 20)
+
+        assert (first, second) == (7, 7)
+        assert walks == ["target"]
+
+    # A posts count that moved means a reel may have been added or removed, so the number is established again
+    def test_a_changed_posts_count_counts_again(self, im_module, monkeypatch):
+        counts = iter([7, 8])
+        monkeypatch.setattr(im_module, "_count_total_reels", lambda user, bot, skip_session: next(counts))
+
+        assert im_module.get_total_reels_count("target", None, False, 20) == 7
+        assert im_module.get_total_reels_count("target", None, False, 21) == 8
+
+    # Targets are counted in their own threads, so one target's count must never answer for another's
+    def test_each_target_keeps_its_own_count(self, im_module, monkeypatch):
+        counts = {"one": 3, "two": 9}
+        monkeypatch.setattr(im_module, "_count_total_reels", lambda user, bot, skip_session: counts[user])
+
+        assert im_module.get_total_reels_count("one", None, False, 20) == 3
+        assert im_module.get_total_reels_count("two", None, False, 20) == 9
+        assert im_module.get_total_reels_count("one", None, False, 20) == 3
+
+    # A reel added in the same interval a post is removed leaves the posts count where it was, so a count that has
+    # been reused for long enough is established again rather than trusted until that number moves
+    def test_a_count_is_not_reused_forever(self, im_module, monkeypatch):
+        walks = []
+        monkeypatch.setattr(im_module, "_count_total_reels", lambda user, bot, skip_session: walks.append(user) or 7)
+
+        for _ in range(im_module.REELS_COUNT_MAX_REUSE + 2):
+            im_module.get_total_reels_count("target", None, False, 20)
+
+        assert len(walks) == 2
+
+    # A caller with no posts count to compare has nothing to reuse against, so it always counts
+    def test_a_missing_posts_count_always_counts(self, im_module, monkeypatch):
+        walks = []
+        monkeypatch.setattr(im_module, "_count_total_reels", lambda user, bot, skip_session: walks.append(user) or 7)
+
+        im_module.get_total_reels_count("target", None, False, None)
+        im_module.get_total_reels_count("target", None, False, None)
+
+        assert len(walks) == 2

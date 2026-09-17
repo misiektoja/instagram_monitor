@@ -51,7 +51,7 @@ def monitored_account(monkeypatch, tmp_path):
         monkeypatch.setattr(im, name, lambda *args, **kwargs: None, raising=False)
     monkeypatch.setattr(im.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(im.instaloader.Profile, "own_profile", lambda ctx: SimpleNamespace(username="loop.account"))
-    monkeypatch.setattr(im, "get_total_reels_count", lambda user, bot, skip_session=False: 0)
+    monkeypatch.setattr(im, "get_total_reels_count", lambda user, bot, skip_session=False, posts_count=None: 0)
     monkeypatch.setattr(im, "get_dashboard_config_data", lambda *args, **kwargs: {"ready": True})
     return monkeypatch
 

@@ -115,6 +115,8 @@ def deterministic_globals(monkeypatch):
     im.PROXY_STARTUP_ERRORS.clear()
     # Resolved user ids are reused for the whole run, so one test's target must not answer for another's
     im.USER_ID_CACHE.clear()
+    # A reels count established for one test's posts count must not answer for another's
+    im.REELS_COUNT_CACHE.clear()
     # Set by the first startup notice a test prints, and read by the Doctor notice to decide its leading blank line
     im.CONSOLE_OUTPUT_PRINTED = False
     # Drop any cached flag-probe verdict between tests

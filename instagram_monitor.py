@@ -8294,8 +8294,51 @@ def get_reels_count_mobile(user: str, bot: instaloader.Instaloader):
     return reels_count
 
 
-# Return the total number of reels (clips) for the user (two methods)
-def get_total_reels_count(user: str, bot: instaloader.Instaloader, skip_session=False):
+# Reels counts already established, keyed by target, each holding the posts count it was established at and how
+# many cycles have reused it since. Instagram stopped answering the endpoint that reports the count directly, so the
+# fallback walks the whole reel list, which is far more requests than a number that cannot have changed is worth
+REELS_COUNT_CACHE: Dict[str, Tuple[int, int, int]] = {}
+REELS_COUNT_CACHE_LOCK = threading.Lock()
+
+# How many cycles in a row may reuse one reels count. A reel added in the same interval a post is removed leaves the
+# posts count where it was, so a count is re-established from time to time rather than trusted until that number moves
+REELS_COUNT_MAX_REUSE = 10
+
+
+# Returns a reels count already established for this posts count, or None when it has to be counted again
+def cached_reels_count(user: str, posts_count: Optional[int]) -> Optional[int]:
+    if posts_count is None:
+        return None
+    with REELS_COUNT_CACHE_LOCK:
+        entry = REELS_COUNT_CACHE.get(user)
+        if entry is None or entry[0] != int(posts_count) or entry[2] >= REELS_COUNT_MAX_REUSE:
+            return None
+        REELS_COUNT_CACHE[user] = (entry[0], entry[1], entry[2] + 1)
+        return entry[1]
+
+
+# Remembers one reels count against the posts count it was established at
+def remember_reels_count(user: str, posts_count: Optional[int], reels_count: Optional[int]) -> None:
+    if posts_count is None or reels_count is None:
+        return
+    with REELS_COUNT_CACHE_LOCK:
+        REELS_COUNT_CACHE[user] = (int(posts_count), int(reels_count), 0)
+
+
+# Return the total number of reels (clips) for the user, reusing a count already established for this posts count
+def get_total_reels_count(user: str, bot: instaloader.Instaloader, skip_session=False, posts_count: Optional[int] = None):
+    reused = cached_reels_count(user, posts_count)
+    if reused is not None:
+        debug_print("Reels count reused", user=user, value=reused, posts=posts_count)
+        return reused
+
+    counted = _count_total_reels(user, bot, skip_session)
+    remember_reels_count(user, posts_count, counted)
+    return counted
+
+
+# Counts the user's reels (two methods)
+def _count_total_reels(user: str, bot: instaloader.Instaloader, skip_session=False):
 
     # Try iPhone mobile API path if sessions are allowed
     if not skip_session:
@@ -13601,7 +13644,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             update_ui_data(targets={user: {'status': 'Fetching Reels'}})
             _thread_local.in_partial_line = True
             print("- fetching reels count...", end=" ", flush=True)
-            reels_count = get_total_reels_count(user, bot, skip_session)
+            reels_count = get_total_reels_count(user, bot, skip_session, posts_count)
 
             print("              OK")
             _thread_local.in_partial_line = False
@@ -14634,7 +14677,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 debug_print("Profile loaded", followers=followers_count, following=followings_count, posts=posts_count)
                 debug_print("Previous load", followers=followers_old_count, following=followings_old_count, posts=posts_count_old)
                 if not skip_session and can_view:
-                    reels_count = get_total_reels_count(user, bot, skip_session)
+                    reels_count = get_total_reels_count(user, bot, skip_session, posts_count)
                     debug_print("Reels count", value=reels_count)
 
                 if not is_private:

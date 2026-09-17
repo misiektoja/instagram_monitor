@@ -106,6 +106,8 @@ A signed-in run now resolves the target's user id through Instagram's search and
 
 Search does not list every account, so the retired endpoint is still tried for a target search cannot find. That failure is reported as `endpoint_retired` rather than `action_block`: it does not stop the account and it does not trip the circuit breaker. When you see it, check that the target name is spelled correctly and that the profile still exists.
 
+The endpoint that reports a target's reels count directly, `api/v1/users/<id>/info/`, stopped answering around the same time. The count is now worked out by reading the target's reel list, which is many requests, so a count is reused while the target's posts count stays where it was and is established again when that number moves. A reel added in the same interval a post is removed leaves the posts count unchanged, so a reels count is also re-established every ten cycles whatever the posts count did. A reels change can therefore be reported one cycle late.
+
 <a id="container-dashboard-does-not-open"></a>
 ## Container Dashboard Does Not Open
 
