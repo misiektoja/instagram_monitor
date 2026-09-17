@@ -2125,3 +2125,89 @@ class TestBrowserImportRetry:
 
         assert completed is False
         assert not [question for question in asked if "import again?" in question]
+
+
+# Stubs the profile listings so the login menu describes a known set of browsers
+def stub_browser_profiles(im_module, monkeypatch, firefox, chromium):
+    monkeypatch.setattr(im_module, "list_firefox_profiles", lambda: [{"dir": f"x.{name}", "name": name, "path": f"/f/{name}", "install": ""} for name in firefox])
+    monkeypatch.setattr(im_module, "list_chromium_profiles", lambda browser: [{"dir": name, "name": name, "cookie_file": f"/c/{browser}/{name}"} for name in chromium.get(browser, [])])
+    monkeypatch.setattr(im_module, "cookie_file_has_instagram_session", lambda cookie_file, firefox=False: str(cookie_file).endswith("signed"))
+    monkeypatch.setattr(im_module, "_wizard_chromium_dependency_available", lambda: True)
+    im_module._WIZARD_BROWSER_SESSION_COUNTS.clear()
+
+
+# Drives the login menu and returns the option descriptions it offered for each question
+def collect_login_menus(im_module, monkeypatch, directory: Path, method: str, answers):
+    state = make_setup_state(im_module, directory)
+    menus = {}
+    scripted = iter(answers)
+
+    def ask(question, options, default_index=0):
+        key = "login" if "access Instagram" in question else "chromium"
+        menus[key] = {"options": dict(options), "labels": [label for label, _ in options], "default": default_index}
+        return next(scripted)
+
+    monkeypatch.setattr(im_module, "_wizard_ask_choice", ask)
+    monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: "login.user")
+    im_module._wizard_collect_login_section(state, method)
+    return menus, state
+
+
+class TestLoginMenuReportsBrowserSessions:
+    # Verifies the browser choice reports which browsers actually hold a session, rather than being made blind
+    def test_the_menu_names_the_browsers_holding_a_session(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            stub_browser_profiles(im_module, monkeypatch, ["a-signed", "b", "c"], {"chrome": ["Default-signed"], "brave": ["Default"], "chromium": []})
+            menus, _ = collect_login_menus(im_module, monkeypatch, Path(directory_name), "manual", [2, 0])
+
+        assert "1 of 3 profiles here are signed in to Instagram." in menus["login"]["options"]["Import from Firefox, recommended"]
+        assert "Signed in here: Chrome." in menus["login"]["options"]["Import from Chrome, Brave or Chromium"]
+
+    # Verifies a machine with no signed-in Chromium profile is told so before pycookiecheat is even needed
+    def test_no_chromium_session_is_reported_on_the_group_option(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            stub_browser_profiles(im_module, monkeypatch, ["a-signed"], {"chrome": ["Default"], "brave": [], "chromium": []})
+            menus, _ = collect_login_menus(im_module, monkeypatch, Path(directory_name), "manual", [2, 0])
+
+        assert "None of them has a signed-in profile on this machine." in menus["login"]["options"]["Import from Chrome, Brave or Chromium"]
+
+    # Verifies the Chromium sub-menu leads with the browser the import can actually succeed with
+    def test_the_chromium_submenu_defaults_to_the_signed_in_browser(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            stub_browser_profiles(im_module, monkeypatch, [], {"chrome": ["Default"], "brave": ["Default-signed"], "chromium": []})
+            menus, state = collect_login_menus(im_module, monkeypatch, Path(directory_name), "manual", [2, 1])
+
+        assert menus["chromium"]["labels"] == ["Chrome", "Brave", "Chromium"]
+        assert menus["chromium"]["default"] == 1
+        assert state.import_browser == "brave"
+
+    # Verifies a browser with no profiles is named as absent instead of described as one you can import from
+    def test_a_browser_without_profiles_is_named_as_absent(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            stub_browser_profiles(im_module, monkeypatch, [], {"chrome": ["Default-signed"], "brave": [], "chromium": []})
+            menus, _ = collect_login_menus(im_module, monkeypatch, Path(directory_name), "manual", [2, 0])
+
+        assert menus["chromium"]["options"]["Brave"] == "No Brave profiles were found on this machine."
+        assert "Import from the signed-in Brave profile" not in menus["chromium"]["options"]["Brave"]
+        assert menus["login"]["options"]["Import from Firefox, recommended"].endswith("No Firefox profiles were found on this machine.")
+
+    # Verifies a container describes nothing local, since the host profiles it imports are not mounted yet
+    def test_a_container_setup_describes_no_local_profiles(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            stub_browser_profiles(im_module, monkeypatch, ["a-signed"], {})
+            monkeypatch.setattr(im_module, "_wizard_select_container_firefox_host", lambda: "macos")
+            menus, _ = collect_login_menus(im_module, monkeypatch, Path(directory_name), "docker", [1])
+
+        firefox_option = menus["login"]["options"]["Import from Firefox after setup, recommended"]
+        assert "signed in to Instagram" not in firefox_option
+        assert "were found on this machine" not in firefox_option
+
+    # Verifies an unreadable profile listing leaves the menu silent rather than claiming a browser is unusable
+    def test_an_unreadable_listing_says_nothing(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            stub_browser_profiles(im_module, monkeypatch, [], {})
+            monkeypatch.setattr(im_module, "list_firefox_profiles", lambda: (_ for _ in ()).throw(OSError("permission denied")))
+            im_module._WIZARD_BROWSER_SESSION_COUNTS.clear()
+            menus, _ = collect_login_menus(im_module, monkeypatch, Path(directory_name), "manual", [1])
+
+        assert menus["login"]["options"]["Import from Firefox, recommended"] == "Reuses your Firefox session with no additional package."

@@ -40,6 +40,15 @@ def im_module():
 
 
 _REAL_WIZARD_VERIFY_SMTP = im._wizard_verify_smtp
+_REAL_LIST_FIREFOX_PROFILES = im.list_firefox_profiles
+_REAL_LIST_CHROMIUM_PROFILES = im.list_chromium_profiles
+
+
+# Restores the real profile enumeration for the tests that exercise it directly against a stubbed filesystem
+@pytest.fixture
+def real_browser_profiles(monkeypatch, deterministic_globals):
+    monkeypatch.setattr(im, "list_firefox_profiles", _REAL_LIST_FIREFOX_PROFILES)
+    monkeypatch.setattr(im, "list_chromium_profiles", _REAL_LIST_CHROMIUM_PROFILES)
 
 
 @pytest.fixture(autouse=True)
@@ -96,6 +105,11 @@ def deterministic_globals(monkeypatch):
     # Setup and the dashboard both write these, and the wizard snapshots the module to build its baseline
     monkeypatch.setattr(im, "SKIP_FOLLOWERS", False, raising=False)
     monkeypatch.setattr(im, "SKIP_FOLLOWINGS", False, raising=False)
+    # Setup and the profile pickers enumerate the real browsers of whoever runs the suite, and reading their
+    # cookie databases makes a test depend on that machine's browsers and wait on the ones that are running
+    monkeypatch.setattr(im, "list_firefox_profiles", lambda: [], raising=False)
+    monkeypatch.setattr(im, "list_chromium_profiles", lambda browser: [], raising=False)
+    im._WIZARD_BROWSER_SESSION_COUNTS.clear()
     # Drop any cached flag-probe verdict between tests
     with im.FLAGGED_PROBE_LOCK:
         im.FLAGGED_PROBE_CACHE["ts"] = 0.0

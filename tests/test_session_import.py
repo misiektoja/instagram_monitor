@@ -519,3 +519,47 @@ class TestDashboardChromiumImport:
 
         assert accepted.get_json()["success"]
         assert imported == ["Default"], "the display name is resolved to the directory the importer expects"
+
+
+class TestCookieDatabaseOpenCost:
+    # A running browser holds its database locked, and the read-only open that sees the log waits out the busy
+    # timeout before failing. Attempting it on every profile made listing them stall for seconds per profile
+    def test_a_database_without_a_log_skips_the_read_only_attempt(self, im_module, monkeypatch):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            cookie_path = Path(directory_name) / "cookies.sqlite"
+            with sqlite3.connect(cookie_path) as connection:
+                connection.execute("CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT)")
+                connection.execute("INSERT INTO moz_cookies VALUES ('instagram.com', 'sessionid', 'x')")
+            attempted = []
+            monkeypatch.setattr(im_module, "sqlite_readonly_uri", lambda path: attempted.append(path) or "file:/nonexistent?mode=ro")
+
+            assert im_module.get_firefox_cookie_dict(str(cookie_path)) == {"sessionid": "x"}
+            assert attempted == [], "with no write-ahead log the immutable open already sees everything"
+
+    # Verifies the read-only attempt is still made when a log is present, since that is the only way to see it
+    def test_a_database_with_a_log_attempts_the_read_only_open(self, im_module, monkeypatch):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            cookie_path = Path(directory_name) / "cookies.sqlite"
+            writer = sqlite3.connect(cookie_path)
+            writer.execute("PRAGMA journal_mode=WAL")
+            writer.execute("CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT)")
+            writer.commit()
+            writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            writer.execute("INSERT INTO moz_cookies VALUES ('instagram.com', 'sessionid', 'in_log')")
+            writer.commit()
+            try:
+                assert Path(str(cookie_path) + "-wal").exists()
+                attempted = []
+                real_uri = im_module.sqlite_readonly_uri
+                monkeypatch.setattr(im_module, "sqlite_readonly_uri", lambda path: attempted.append(path) or real_uri(path))
+
+                assert im_module.get_firefox_cookie_dict(str(cookie_path)) == {"sessionid": "in_log"}
+                assert attempted, "a log can only be read through the plain read-only open"
+            finally:
+                writer.close()
+
+    # Verifies the wait on a locked database is bounded, so listing many profiles cannot stall for seconds each
+    def test_the_lock_wait_is_bounded(self, im_module):
+        assert 0 < im_module.COOKIE_DATABASE_BUSY_TIMEOUT <= 1

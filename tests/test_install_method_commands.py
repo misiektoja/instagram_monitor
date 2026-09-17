@@ -166,7 +166,7 @@ class TestFirefoxImportCmd:
 
 class TestFirefoxProfileDiscovery:
     # Verifies native, Snap and Flatpak Firefox profiles are discovered without duplicate cookie paths
-    def test_linux_discovers_package_variants(self, im_module, monkeypatch):
+    def test_linux_discovers_package_variants(self, im_module, monkeypatch, real_browser_profiles):
         monkeypatch.setattr(im_module, "system", lambda: "Linux")
         monkeypatch.setattr(im_module, "FIREFOX_LINUX_COOKIE", "/native/*/cookies.sqlite")
         matches = {"/native/*/cookies.sqlite": ["/native/a.default-release/cookies.sqlite"], "/home/test/snap/firefox/common/.mozilla/firefox/*/cookies.sqlite": ["/snap/b.default/cookies.sqlite"], "/home/test/.var/app/org.mozilla.firefox/.mozilla/firefox/*/cookies.sqlite": ["/flatpak/c.work/cookies.sqlite", "/native/a.default-release/cookies.sqlite"]}
