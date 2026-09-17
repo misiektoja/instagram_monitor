@@ -127,8 +127,10 @@ class TestFormatPayload:
     def test_string_substitution(self, im_module):
         assert im_module.format_payload("{title}", {"title": "Hello"}) == "Hello"
 
-    def test_missing_key_returns_template(self, im_module):
-        assert im_module.format_payload("{missing}", {"title": "Hello"}) == "{missing}"
+    # Reports an unknown field instead of sending an unexpanded template
+    def test_missing_key_names_the_template_error(self, im_module):
+        with pytest.raises(ValueError, match="missing"):
+            im_module.format_payload("{missing}", {"title": "Hello"})
 
     def test_fields_placeholder_returns_list(self, im_module):
         fields = [{"name": "n", "value": "v"}]

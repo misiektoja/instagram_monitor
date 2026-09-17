@@ -6216,8 +6216,6 @@ def format_payload(template, payload):
             return payload.get("color", 0x7289DA)
         try:
             return template.format(**payload)
-        except KeyError:
-            return template
         # A placeholder the payload cannot fill, such as {title[9]} or the positional {0}, is a setting
         # to correct rather than a delivery failure, so it names the template text that could not render
         except Exception as exc:
@@ -6232,7 +6230,9 @@ def render_discord_template(template, values):
             template = json.loads(template)
         except json.JSONDecodeError:
             try:
-                template = json.loads(str(format_payload(template, values)))
+                # Legacy templates doubled JSON braces for str.format, while quoted values remain templates
+                unescaped = re.sub(r'("(?:\\.|[^"\\])*")|(\{\{|\}\})', lambda match: match.group(1) if match.group(1) is not None else match.group(2)[0], template)
+                template = json.loads(unescaped)
             except json.JSONDecodeError as exc:
                 raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string") from exc
     if not isinstance(template, dict):
@@ -17067,7 +17067,7 @@ def runtime_boolean_errors() -> List[str]:
 
 # The values this file defines for the settings checked below, so a configuration file that makes one
 # unusable can be reported and then ignored instead of stopping the commands that exist to correct it
-BUILT_IN_SHAPE_SETTINGS = {name: globals()[name] for name in ('INSTA_LOGFILE', 'CSV_FILE', 'DOTENV_FILE', 'COLOR_THEME') if name in globals()}
+BUILT_IN_SHAPE_SETTINGS = {name: globals()[name] for name in ('INSTA_LOGFILE', 'CSV_FILE', 'DOTENV_FILE', 'COLOR_THEME', 'TRUNCATE_CHARS', 'OUTPUT_DIR', 'WEB_DASHBOARD_TEMPLATE_DIR', 'PROFILE_PIC_FILE_EMPTY') if name in globals()}
 
 # Shape errors whose settings were replaced with the built-in values, so doctor still names them
 DISCARDED_SETTING_ERRORS = []
@@ -17083,11 +17083,15 @@ def command_reports_configuration(args=None):
 # Validates effective path settings before startup expands or opens them
 def prepare_configured_paths(args):
     overrides = {'DOTENV_FILE': 'env_file', 'CSV_FILE': 'csv_file'}
+    overrides.update({'OUTPUT_DIR': 'output_dir', 'WEB_DASHBOARD_TEMPLATE_DIR': 'web_dashboard_template_dir'})
     settings = globals().copy()
     for name, argument in overrides.items():
         value = getattr(args, argument, None)
         if value:
             settings[name] = value
+    if getattr(args, "truncate", None) is not None:
+        settings["TRUNCATE_CHARS"] = args.truncate
+        globals()["TRUNCATE_CHARS"] = args.truncate
     errors = configuration_shape_errors(settings)
     if not errors:
         # Cleared here so a run that starts with usable settings cannot inherit an earlier run's report
@@ -17114,9 +17118,12 @@ def prepare_configured_paths(args):
 def configuration_shape_errors(settings=None):
     errors = list(DISCARDED_SETTING_ERRORS) if settings is None else []
     settings = globals() if settings is None else settings
-    for name in ('INSTA_LOGFILE', 'CSV_FILE', 'DOTENV_FILE'):
+    for name in ('INSTA_LOGFILE', 'CSV_FILE', 'DOTENV_FILE', 'OUTPUT_DIR', 'WEB_DASHBOARD_TEMPLATE_DIR', 'PROFILE_PIC_FILE_EMPTY'):
         if name in settings and not isinstance(settings[name], (str, os.PathLike)):
             errors.append(f"{name} must be a path string")
+    width = settings.get("TRUNCATE_CHARS", 0)
+    if not isinstance(width, int) or isinstance(width, bool) or width < 0:
+        errors.append("TRUNCATE_CHARS must be an integer zero or greater")
     theme = settings.get("COLOR_THEME", {})
     if not isinstance(theme, dict):
         errors.append("COLOR_THEME must be a dictionary of style strings")
