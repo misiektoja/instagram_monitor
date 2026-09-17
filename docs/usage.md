@@ -970,6 +970,8 @@ Supported signals:
 | ABRT | Decrease the activity check interval by 5 minutes |
 | HUP | Reload private values from the `.env` file |
 
+`SIGHUP` keeps command-line credentials and nonempty environment values exported before startup. Change those values and restart to replace them.
+
 Send a signal with `kill` or `pkill`. For example:
 
 ```sh

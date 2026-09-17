@@ -13,6 +13,9 @@ def isolated_runtime(monkeypatch, tmp_path):
             monkeypatch.setattr(monitor, name, copy.copy(value) if isinstance(value, (dict, list, set)) else value)
     if hasattr(monitor, "SECRET_SOURCES"):
         monkeypatch.setattr(monitor, "SECRET_SOURCES", {})
+    for name in ("DOTENV_RELOAD_STATE", "DOTENV_BASE_VALUES"):
+        if hasattr(monitor, name):
+            monkeypatch.setattr(monitor, name, {})
     for key in monitor.SECRET_KEYS:
         monkeypatch.delenv(key, raising=False)
     monkeypatch.chdir(tmp_path)

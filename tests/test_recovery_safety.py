@@ -56,7 +56,7 @@ def test_deleted_file_secret_is_reconciled(monitor, monkeypatch, tmp_path, fallb
 
 
 @pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="SIGHUP is POSIX-only")
-# Preserves each monitor's documented exported-value precedence across both reload directions
+# Preserves startup exports across both reload directions
 def test_exported_secret_reload_precedence(monitor, monkeypatch, tmp_path):
     path = tmp_path / "private.env"
     path.write_text("NTFY_ACCESS_TOKEN=synthetic-file-token\n", encoding="utf-8")
@@ -67,7 +67,7 @@ def test_exported_secret_reload_precedence(monitor, monkeypatch, tmp_path):
     load_file(monitor, path)
     assert monitor.NTFY_ACCESS_TOKEN == "synthetic-export-token"
     monitor.reload_secrets_signal_handler(signal.SIGHUP, None)
-    expected = "synthetic-export-token" if monitor.__name__ in {"steam_monitor", "lol_monitor"} else "synthetic-file-token"
+    expected = "synthetic-export-token"
     assert monitor.NTFY_ACCESS_TOKEN == expected
     path.write_text("# Removed\n", encoding="utf-8")
     monitor.reload_secrets_signal_handler(signal.SIGHUP, None)

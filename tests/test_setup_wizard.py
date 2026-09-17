@@ -1689,7 +1689,7 @@ class TestSecretReplacePrompt:
 
         assert 'state.secret_updates["SMTP_PASSWORD"] =' not in source
         assert source.count('_wizard_queue_secret(state.secret_updates, state.env_path, "SMTP_PASSWORD"') == 1
-        assert source.count('_wizard_existing_secret("SESSION_PASSWORD", state.env_path)') == 1
+        assert source.count('_wizard_existing_secret("SESSION_PASSWORD", state.env_path, secret_updates=state.secret_updates)') == 1
         assert source.count('state.secret_updates["SESSION_PASSWORD"] =') == 1
         assert '_wizard_queue_secret(state.secret_updates, state.env_path, "SESSION_PASSWORD"' not in source
 
@@ -1913,3 +1913,9 @@ def test_a_rejected_duration_keeps_the_default(im_module, monkeypatch, capsys):
     assert "Keeping 60s - 1m." in capsys.readouterr().out
     # The hint the question carries belongs in the prompt, not in the offer that repeats it
     assert any("Try entering the Instagram polling interval again? [Y/n]: " in prompt for prompt in prompts), prompts
+
+
+@pytest.fixture(autouse=True)
+# Starts each setup scenario without file ownership left by another test
+def isolated_dotenv_ownership(monkeypatch, im_module):
+    monkeypatch.setattr(im_module, "DOTENV_RELOAD_STATE", {})
