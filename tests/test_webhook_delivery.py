@@ -645,7 +645,7 @@ class TestSendNotificationChannels:
         im_module.send_notification_channels("error", "subject", "body", webhook_title="Error for user", webhook_description="what happened", webhook_color=0xFF0000, webhook_fields=fields, image_url="https://example.test/pic.jpg", local_image_file="pic.jpg")
 
         assert sent["args"] == ("Error for user", "what happened")
-        assert sent["kwargs"] == {"color": 0xFF0000, "fields": fields, "image_url": "https://example.test/pic.jpg", "local_image_file": "pic.jpg", "notification_type": "error", "force": True}
+        assert sent["kwargs"] == {"color": 0xFF0000, "fields": fields, "image_url": "https://example.test/pic.jpg", "local_image_file": "pic.jpg", "notification_type": "error", "force": True, "discord_description": ""}
 
     # Without an embed of its own the webhook carries the subject and body, the way the family's plain alerts do
     def test_the_subject_and_body_stand_in_for_a_missing_embed(self, im_module, monkeypatch):

@@ -2435,7 +2435,7 @@ _install_http_backend()
 _install_copy_session_proxy_patch()
 
 from instaloader.exceptions import PrivateProfileNotFollowedException
-from html import escape
+from html import escape, unescape
 from itertools import islice
 from typing import Optional, Sequence, Tuple, Any, Callable, Dict, List, TypeVar, cast
 from glob import glob
@@ -6336,6 +6336,18 @@ def truncate_utf8_bytes(text: str, max_bytes: int, suffix: str = "") -> str:
     return encoded[:max_bytes - len(encoded_suffix)].decode("utf-8", errors="ignore") + suffix
 
 
+# Converts one HTML email body to the Discord markdown subset, so a Discord alert reads like the email
+def html_body_to_discord_markdown(body_html):
+    text = re.sub(r"(?is)</?(?:html|head|body)\s*>", "", str(body_html or ""))
+    text = re.sub(r"(?is)<a\s[^>]*?href=[\"']([^\"']*)[\"'][^>]*>(.*?)</a>", lambda m: f"[{m.group(2)}]({m.group(1)})", text)
+    text = re.sub(r"(?is)<b\s*>(.*?)</b\s*>", lambda m: f"**{m.group(1)}**" if m.group(1).strip() else m.group(1), text)
+    text = re.sub(r"(?is)<i\s*>(.*?)</i\s*>", lambda m: f"*{m.group(1)}*" if m.group(1).strip() else m.group(1), text)
+    text = re.sub(r"(?is)<br\s*/?>", "\n", text)
+    # Anything still tag-shaped is layout the markdown body has no use for, such as a stray paragraph or list wrapper
+    text = re.sub(r"(?s)<[^>]+>", "", text)
+    return unescape(text).strip()
+
+
 # Builds one bounded ntfy title and message pair from the shared webhook content
 def build_ntfy_webhook_message(title: str, description: str, fields=None, image_url: str = "") -> tuple[str, str]:
     safe_title = str(title)[:WEBHOOK_EMBED_TITLE_LIMIT] or "Instagram Monitor"
@@ -6476,7 +6488,7 @@ def send_notification_channels(notification_type, subject, body, body_html="", e
         debug_print("Email channel", event=notification_type, outcome="OK" if email_delivered else "failed")
     if webhook_attempted:
         print(f"Sending webhook notification via {webhook_provider_display_name()}")
-        webhook_delivered = send_webhook(subject if webhook_title is None else webhook_title, body if webhook_description is None else webhook_description, color=webhook_color, fields=webhook_fields, image_url=image_url, local_image_file=local_image_file, notification_type=notification_type, force=True) == 0
+        webhook_delivered = send_webhook(subject if webhook_title is None else webhook_title, body if webhook_description is None else webhook_description, color=webhook_color, fields=webhook_fields, image_url=image_url, local_image_file=local_image_file, notification_type=notification_type, force=True, discord_description="" if webhook_description is not None else html_body_to_discord_markdown(body_html)) == 0
         debug_print("Webhook channel", event=notification_type, outcome="OK" if webhook_delivered else "failed")
     # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
     return email_delivered, webhook_delivered
@@ -6512,7 +6524,7 @@ def _retain_webhook_secrets(deliver):
 
 @_retain_webhook_secrets
 # Sends a notification with bounded retries and a fixed destination for each delivery
-def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status", force=False, report_delivery=True):
+def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status", force=False, report_delivery=True, discord_description=""):
     if not WEBHOOK_ENABLED or is_placeholder_setting(WEBHOOK_URL):
         return 1
 
@@ -6532,6 +6544,10 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     if customization_error is not None:
         print_recovery_error(str(customization_error), context="webhook_config")
         return 1
+
+    # Discord renders markdown, so it gets the email's formatting while ntfy keeps the plain body it can display
+    if provider == "discord" and discord_description:
+        description = discord_description
 
     # Event categories follow their configured switch unless the caller already applied it. Operator-requested
     # delivery tests are never gated, otherwise --send-test-webhook would report a failure without explaining
