@@ -870,10 +870,19 @@ def config_template_defaults() -> dict:
     return defaults
 
 
+# Returns the parsed value with a legacy numeric on/off setting read as the boolean it stands for
+def _normalized_config_value(name: str, value, defaults: dict):
+    # 0 and 1 were accepted for these settings before the values were checked, so they still mean off and on
+    if isinstance(value, int) and not isinstance(value, bool) and value in (0, 1) and isinstance(defaults.get(name), bool):
+        return bool(value)
+    return value
+
+
 # Reads allowlisted literal assignments from config content without executing any of it
 def parse_config_content(content: str, filename: str = "<config>", retired_out=None) -> dict:
     import ast
     allowed_names = config_allowed_names()
+    template_defaults = config_template_defaults()
     parsed_values = {}
     for statement in ast.parse(content, filename, "exec").body:
         if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
@@ -886,7 +895,7 @@ def parse_config_content(content: str, filename: str = "<config>", retired_out=N
         if name not in allowed_names:
             raise ValueError(f"line {statement.lineno}: '{name}' is not a recognized setting")
         try:
-            parsed_values[name] = ast.literal_eval(statement.value)
+            parsed_values[name] = _normalized_config_value(name, ast.literal_eval(statement.value), template_defaults)
         except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as exc:
             raise ValueError(f"line {statement.lineno}: '{name}' must be a plain value such as text, a number, True, False, a list or a dictionary") from exc
     return parsed_values

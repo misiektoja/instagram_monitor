@@ -139,6 +139,14 @@ class TestDoctorChecks:
         assert "SMTP_SSL must be True or False, not 1" in rows[0].detail
         assert rows[0].advice.fix.startswith("Set the reported settings to True or False")
 
+    # An on/off setting written as 0 or 1 was accepted before the values were checked, so it still reads as off and on
+    def test_a_numeric_on_off_setting_is_read_as_a_boolean(self, im_module):
+        parsed = im_module.parse_config_content("VERIFY_SSL = 0\nDISABLE_LOGGING = 1\n")
+
+        assert parsed == {"VERIFY_SSL": False, "DISABLE_LOGGING": True}
+        assert all(isinstance(value, bool) for value in parsed.values())
+
+
     # The shipped defaults are all real booleans, so a run with nothing overridden never sees the on/off row
     def test_the_shipped_defaults_pass_the_boolean_check(self, im_module):
         assert im_module.runtime_boolean_errors() == []
