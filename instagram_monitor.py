@@ -5536,7 +5536,9 @@ class ColorStream(object):
 # finished help screen rather than to the pieces argparse assembles and the layout stays identical
 _HELP_USAGE_LABEL = "usage:"
 _HELP_HEADING_RE = re.compile(r"^\S.*:$")
-_HELP_OPTION_ROW_RE = re.compile(r"^( {2,})(-{1,2}[^\s,]+(?:, *--?[^\s,]+)*)(.*)$")
+# The character after the leading dashes excludes a dash itself, so the dash count and the name that follows
+# cannot both claim the same character. Without that the repeated alternative backtracks exponentially
+_HELP_OPTION_ROW_RE = re.compile(r"^( {2,})(-{1,2}[^\s,-][^\s,]*(?:, *-{1,2}[^\s,-][^\s,]*)*)(.*)$")
 _HELP_POSITIONAL_ROW_RE = re.compile(r"^( {2,})([A-Z][A-Z0-9_]*)( {2,}.*)$")
 _HELP_COLUMN_GAP_RE = re.compile(r" {2,}")
 # A value placeholder is an upper-case metavar, a choice list or an angle-bracket name, including a
