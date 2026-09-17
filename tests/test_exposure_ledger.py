@@ -99,7 +99,8 @@ def test_identities_are_counted(ledger):
 def test_budget_caps_the_fetch_and_leaves_it_incomplete(ledger, monkeypatch):
     monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 40, raising=False)
     im.fetch_usernames_paginated(None, lambda: _names(30), 0, 0, 0, False, 30, "target")
-    result = im.fetch_usernames_paginated(None, lambda: _names(100), 0, 0, 0, False, 100, "target")
+    # The count Instagram reported fits what is left, but the list grew since it was read
+    result = im.fetch_usernames_paginated(None, lambda: _names(100), 0, 0, 0, False, 10, "target")
     assert len(result) == 10
     assert result.complete is False
     assert im.identity_budget_remaining() == 0
@@ -134,7 +135,7 @@ def test_the_budget_caps_what_a_page_source_returns(ledger, monkeypatch):
     monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 10, raising=False)
     source = EagerPageSource([[f"p1-{index}" for index in range(50)], [f"p2-{index}" for index in range(50)]])
 
-    result = im.fetch_usernames_paginated(None, lambda: im._iter_accounted_follow_list(iter(source)), 0, 0, 0, False, 100, "target", identities_counted_at_source=True)
+    result = im.fetch_usernames_paginated(None, lambda: im._iter_accounted_follow_list(iter(source)), 0, 0, 0, False, 10, "target", identities_counted_at_source=True)
 
     assert len(result) == 10
     assert result.complete is False
@@ -147,7 +148,7 @@ def test_a_page_source_serves_more_than_the_ledger_records(ledger, monkeypatch):
     monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 10, raising=False)
     source = EagerPageSource([[f"p1-{index}" for index in range(50)], [f"p2-{index}" for index in range(50)]])
 
-    im.fetch_usernames_paginated(None, lambda: im._iter_accounted_follow_list(iter(source)), 0, 0, 0, False, 100, "target", identities_counted_at_source=True)
+    im.fetch_usernames_paginated(None, lambda: im._iter_accounted_follow_list(iter(source)), 0, 0, 0, False, 10, "target", identities_counted_at_source=True)
 
     assert len(source.served) == 50, "the first page arrived before anything could count it"
     assert im.exposure_snapshot()["identities"] == 10
@@ -159,7 +160,7 @@ def test_the_under_count_is_bounded_by_one_page(ledger, monkeypatch):
     monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 10, raising=False)
     source = EagerPageSource([[f"p{page}-{index}" for index in range(20)] for page in range(5)])
 
-    im.fetch_usernames_paginated(None, lambda: im._iter_accounted_follow_list(iter(source)), 0, 0, 0, False, 100, "target", identities_counted_at_source=True)
+    im.fetch_usernames_paginated(None, lambda: im._iter_accounted_follow_list(iter(source)), 0, 0, 0, False, 10, "target", identities_counted_at_source=True)
 
     assert len(source.served) == 20, "the later pages were never requested"
 
@@ -431,7 +432,7 @@ class TestGraphqlNamesAreBankedInGroups:
     # The group shrinks to the remaining budget, so the fetch loop reads an exact total at the moment it stops
     def test_the_budget_is_exact_where_the_fetch_stops(self, ledger, monkeypatch):
         monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 30, raising=False)
-        result = im.fetch_usernames_paginated(None, lambda: im._iter_accounted_follow_list(_names(100)), 0, 0, 0, False, 100, "target", identities_counted_at_source=True)
+        result = im.fetch_usernames_paginated(None, lambda: im._iter_accounted_follow_list(_names(100)), 0, 0, 0, False, 30, "target", identities_counted_at_source=True)
 
         assert len(result) == 30
         assert result.complete is False
@@ -561,10 +562,10 @@ def test_an_unwritable_ledger_blocks_identity_fetching(ledger, monkeypatch):
 def test_a_ledger_that_dies_mid_scan_stops_the_account(ledger, monkeypatch):
     reads = {'count': 0}
 
-    # Answers the first two budget reads then fails, standing in for a ledger that dies during a scan
+    # Answers the first few budget reads then fails, standing in for a ledger that dies during a scan
     def failing_remaining():
         reads['count'] += 1
-        if reads['count'] > 2:
+        if reads['count'] > 3:
             raise im.ExposureLedgerError("read rejected")
         return 100
 
@@ -960,3 +961,63 @@ def test_iterator_construction_failure_is_recorded_once(ledger):
     with pytest.raises(im.instaloader.exceptions.TooManyRequestsException):
         im.fetch_usernames_paginated(None, construct, 0, 0, 0, False, 1, "target")
     assert im.exposure_snapshot()["failures"] == {"rate_limit": 1}
+
+
+# A scan that cannot finish would spend the whole remaining budget on a list that is discarded as
+# incomplete, and would repeat that every day, so the reported count has to gate whether it starts
+def test_a_scan_that_cannot_finish_is_never_started(ledger, monkeypatch, capsys):
+    monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 100, raising=False)
+
+    result = im.fetch_usernames_paginated(None, lambda: _names(500), 0, 0, 0, False, 500, "target")
+
+    assert len(result) == 0
+    assert result.complete is False
+    assert im.exposure_snapshot()["identities"] == 0, "no identity may be spent on a scan that cannot complete"
+    assert "500 names are needed but only 100" in capsys.readouterr().out
+
+
+# The guard measures what is left today, not the configured total, so an earlier scan narrows it
+def test_the_guard_uses_the_remaining_budget_not_the_total(ledger, monkeypatch):
+    monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 100, raising=False)
+    im.fetch_usernames_paginated(None, lambda: _names(60), 0, 0, 0, False, 60, "target")
+
+    result = im.fetch_usernames_paginated(None, lambda: _names(50), 0, 0, 0, False, 50, "target")
+
+    assert len(result) == 0
+    assert im.exposure_snapshot()["identities"] == 60
+
+
+# A scan that fits has to run untouched, which is the whole point of picking a budget above normal use
+def test_a_scan_that_fits_runs_in_full(ledger, monkeypatch):
+    monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 2000, raising=False)
+
+    result = im.fetch_usernames_paginated(None, lambda: _names(807), 0, 0, 0, False, 807, "target")
+
+    assert len(result) == 807
+    assert result.complete is True
+    assert im.is_complete_username_baseline(result, 807) is True
+
+
+# An unknown count cannot be checked ahead of time, so the scan still runs and the mid-scan cap covers it
+def test_an_unknown_count_still_runs(ledger, monkeypatch):
+    monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 40, raising=False)
+
+    result = im.fetch_usernames_paginated(None, lambda: _names(100), 0, 0, 0, False, 0, "target")
+
+    assert len(result) == 40
+    assert result.complete is False
+
+
+# The budget is off by configuration, so no scan may be gated on it
+def test_no_budget_never_blocks_a_scan(ledger, monkeypatch):
+    monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 0, raising=False)
+
+    result = im.fetch_usernames_paginated(None, lambda: _names(5000), 0, 0, 0, False, 5000, "target")
+
+    assert len(result) == 5000
+    assert result.complete is True
+
+
+# The shipped default has to clear one full scan of a normal account rather than stop it
+def test_the_default_budget_clears_a_typical_account():
+    assert im.IDENTITY_BUDGET_PER_DAY >= 1600, "the default must clear followers and followings of a typical account"

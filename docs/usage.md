@@ -560,13 +560,13 @@ Follower and following names are the most expensive thing the tool asks Instagra
 
 ```ini
 # Maximum follower and following names to fetch per day for the logged-in account (0 = no budget)
-IDENTITY_BUDGET_PER_DAY = 0
+IDENTITY_BUDGET_PER_DAY = 2000
 
 # Stop all Instagram requests for the account after Instagram challenges it
 CIRCUIT_BREAKER = True
 ```
 
-The budget is shared by every target and resets at local midnight. Identity scans run one at a time so workers cannot spend the same remaining allowance. REST responses are counted as soon as a page arrives, including names the caller does not consume. When the budget is spent, name fetching stops for the day while counts, posts, reels, stories and profile changes carry on. Names are counted even with no budget set, so you can measure first and choose a number afterwards.
+The budget is shared by every target and resets at local midnight. Identity scans run one at a time so workers cannot spend the same remaining allowance. REST responses are counted as soon as a page arrives, including names the caller does not consume. When the budget is spent, name fetching stops for the day while counts, posts, reels, stories and profile changes carry on. Names are counted even with no budget set, so you can measure first and choose a number afterwards. A scan needing more names than the budget still allows is skipped in full rather than started, because a truncated list is discarded instead of saved and starting it would spend the rest of the day's allowance for nothing.
 
 The circuit breaker stops every target using the account after a confirmed challenge, checkpoint, temporary limit or expired session. Fix the account issue and restart with your usual command. Before target workers start, a stopped account gets one login check with a 30-second timeout and no automatic retries or redirects. Success resumes monitoring without clearing anything manually. Failure leaves the account paused with a recovery action. Re-importing a session uses its successful login check to recover after saving. The Web Dashboard also resumes targets paused by the account stop after a successful import or refresh.
 

@@ -396,10 +396,13 @@ FOLLOW_LIST_BROWSER_TIMEOUT = 30
 # If the local safety ledger cannot be read or saved, authenticated collection stops rather than
 # continuing with an unknown budget or breaker state
 #
-# 0 disables the budget (default). Around 500 to 1000 is a reasonable starting point if you have been
-# challenged before. Today's total is always counted and shown, whether or not a budget is set
+# 0 disables the budget. The default clears one full follower and following scan for a typical account
+# with room to repeat it, while stopping a runaway loop. Around 500 to 1000 is a better figure if you
+# have been challenged before. A scan needing more names than the budget still allows is skipped whole,
+# since a truncated list is discarded rather than saved
+# Today's total is always counted and shown, whether or not a budget is set
 # Can also be set using the --identity-budget flag
-IDENTITY_BUDGET_PER_DAY = 0
+IDENTITY_BUDGET_PER_DAY = 2000
 
 # Whether to stop all Instagram requests for the logged-in account after Instagram acts against it
 #
@@ -12708,6 +12711,7 @@ def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, tota
     try:
         verify_exposure_ledger_writable()
         budget_spent = identity_budget_exhausted()
+        budget_available = identity_budget_remaining()
     except ExposureLedgerError as error:
         _mark_account_safety_unavailable(error)
         msg = "Skipping name fetch: account safety ledger cannot be read and saved, so identity collection is blocked"
@@ -12717,6 +12721,15 @@ def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, tota
 
     if budget_spent:
         msg = f"Skipping name fetch: daily identity budget of {IDENTITY_BUDGET_PER_DAY} is spent for {exposure_account_name()}. Counts and posts keep being monitored"
+        print(f"* {msg}")
+        log_activity(msg, user=user, level='system')
+        return results
+
+    # A scan that cannot finish inside the remaining budget would spend it on a list that is then discarded
+    # as incomplete, and would repeat that every day without ever saving a baseline, so it is never started
+    needed = int(estimated_limit or 0)
+    if budget_available is not None and needed and budget_available < needed:
+        msg = f"Skipping name fetch: {needed} names are needed but only {budget_available} of the daily identity budget of {IDENTITY_BUDGET_PER_DAY} is left, and a partial list is never saved. Counts and posts keep being monitored"
         print(f"* {msg}")
         log_activity(msg, user=user, level='system')
         return results

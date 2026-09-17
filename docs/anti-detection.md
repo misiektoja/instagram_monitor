@@ -65,14 +65,16 @@ That means fetching follower and following names is far more expensive than chec
 `IDENTITY_BUDGET_PER_DAY` caps that total for the logged-in account. It is shared by every monitored target and every worker in the process and it resets at local midnight. Identity scans run one at a time so two targets cannot spend the same remaining allowance.
 
 ```
-IDENTITY_BUDGET_PER_DAY = 750
+IDENTITY_BUDGET_PER_DAY = 2000
 ```
 
 Once the budget is spent, name fetching stops until the next day. Counts, posts, reels, stories and profile changes keep being monitored normally, so you still see that the follower number moved, just not who moved.
 
 REST pages are counted when Instagram returns them, before the tool consumes individual names. The last response can therefore put the recorded total above the configured limit if Instagram returns more accounts than requested. This records the actual exposure and stops another request. GraphQL names are banked in groups of 25 with the last group cut to what the budget still allows, so the recorded total is exact where the fetch stops.
 
-The budget is disabled by default. Names are always counted whether or not you set one, so you can watch your own usage first with `--exposure` and pick a number from that. If you have been challenged before, somewhere around 500 to 1000 is a reasonable starting point.
+The default is 2000, which clears one full follower and following scan for a typical account with room to repeat it, while stopping a loop that would otherwise read a list many times a day. Names are always counted whether or not you set one, so you can watch your own usage with `--exposure` and adjust. If you have been challenged before, somewhere around 500 to 1000 is a better figure.
+
+Set the budget above the largest list you monitor. A scan needing more names than the budget still allows is skipped in full and says so, because a truncated list is discarded rather than saved, so starting it would spend the rest of the day's allowance and still leave you without a baseline.
 
 You can also set it for one run with `--identity-budget 750`.
 
