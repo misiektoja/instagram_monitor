@@ -119,7 +119,7 @@ The safety ledger also fails closed. If `instagram_monitor_exposure.json` cannot
 instagram_monitor --exposure
 ```
 
-It shows the Instagram Monitor version, operating system, Python version, HTTP backend, follower-list source, session mode, identity total, sanitized failure counts and circuit-breaker state. The backend and list source are the ones in effect, so the report names the browser `curl_cffi` impersonated and says when a `curl_cffi` setting fell back to `requests` because the package is missing. It omits the account name, target names, stored error text and local file paths. Failures are grouped so you can tell the three problems apart:
+It shows the Instagram Monitor version, operating system, Python version, HTTP backend, follower-list source, session mode, ledger state, identity total, sanitized failure counts and circuit-breaker state. The backend and list source are the ones in effect, so the report names the browser `curl_cffi` impersonated and says when a `curl_cffi` setting fell back to `requests` because the package is missing. It omits the account name, target names, stored error text and local file paths. Failures are grouped so you can tell the three problems apart:
 
 | Group | Meaning | What helps |
 |---|---|---|
@@ -127,7 +127,17 @@ It shows the Instagram Monitor version, operating system, Python version, HTTP b
 | B | Instagram changed an API, so a query stopped returning data | Update to the latest version |
 | C | Instagram acted against the account | Lower the identity budget, raise the interval, monitor fewer targets |
 
-The ledger remains local. It is never transmitted anywhere and nothing reads it but the tool. It lives next to your output directory as `instagram_monitor_exposure.json`, but the pasteable report does not print that path.
+A few rows describe the ledger itself rather than today's activity:
+
+- **Account safety ledger** says whether the file exists yet and whether this run could save it. A ledger you can read but not write reads as `NOT writable`, because monitoring stops the account the first time it cannot record a scan
+- **Other accounts in this ledger** counts the other accounts sharing the file and how many of them are stopped, without naming any of them
+- **Identities returned today** says how much of the budget is left and that it resets at local midnight
+- **Circuit breaker** says `disabled` when `CIRCUIT_BREAKER` is off, even when an earlier run recorded a stop, since that stop is kept but no longer enforced
+- **Monitored targets** appears only when the breaker is tripped, because every target using the account is paused with it
+
+The command exits with status `1` when the ledger cannot be read or cannot be saved, so a script can tell a broken ledger from a clean report. A tripped breaker is normal reporting and still exits `0`.
+
+The ledger remains local and is never transmitted anywhere. It lives next to your output directory as `instagram_monitor_exposure.json`, beside an empty `instagram_monitor_exposure.json.lock` the monitors coordinate through. The pasteable report does not print that path, but the command prints it below the report so you know which file it read. Monitors sharing an output directory share the file, and every change to it is made under a lock the operating system holds, so two running monitors cannot lose each other's counts.
 
 <a id="use-the-jitter-mode"></a>
 ## Use the Jitter Mode

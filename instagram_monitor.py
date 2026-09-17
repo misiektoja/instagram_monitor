@@ -1195,6 +1195,14 @@ import ipaddress
 from itertools import zip_longest
 import subprocess
 import threading
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # type: ignore
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None  # type: ignore
 import hashlib
 import heapq
 
@@ -11410,8 +11418,9 @@ def handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_gen
 # reliability group of every failure so an account-level action stops all work
 # instead of being retried into a suspension.
 #
-# Everything here is local. The ledger is a file on this machine, it is never
-# transmitted anywhere and nothing reads it but this process.
+# Everything here is local. The ledger is a file on this machine and it is
+# never transmitted anywhere. Monitors sharing an output directory share the
+# file, so every change to it is made under a lock the operating system holds.
 # ---------------------------------------------------------------------------
 
 EXPOSURE_LOCK = threading.Lock()
@@ -11423,6 +11432,7 @@ ACCOUNT_RECOVERY_ATTEMPTED: set[str] = set()
 ACCOUNT_PAUSED_TARGETS: Dict[str, set[str]] = {}
 EXPOSURE_STATE_FILENAME = "instagram_monitor_exposure.json"
 EXPOSURE_STATE_VERSION = 1
+EXPOSURE_FILE_LOCK_TIMEOUT = 10.0
 
 
 # Raised when the account safety ledger cannot be read or persisted
@@ -11449,52 +11459,54 @@ def _exposure_today() -> str:
         return datetime.now().strftime("%Y-%m-%d")
 
 
-# Builds the error for a stored ledger value no reader can trust, naming the field and the repair
-def _exposure_field_error(field: str, detail: str) -> ExposureLedgerError:
-    return ExposureLedgerError(f"The account safety ledger has an invalid '{field}' field ({detail}). Repair that field or move the file aside to start a fresh ledger")
+# Builds the error for a stored ledger value no reader can trust, naming the account, the field and the repair. One
+# bad record stops every account in the file, so the reader has to be told which of them to repair
+def _exposure_field_error(field: str, detail: str, account: str = "") -> ExposureLedgerError:
+    owner = f" for account '{account}'" if account else ""
+    return ExposureLedgerError(f"The account safety ledger has an invalid '{field}' field{owner} ({detail}). Repair that field or move the file aside to start a fresh ledger")
 
 
 # Rejects a stored counter that is not a whole number of events, since a negative or non-numeric one silently grants budget
-def _validate_exposure_count(field: str, value: Any) -> None:
+def _validate_exposure_count(field: str, value: Any, account: str = "") -> None:
     if not isinstance(value, int) or isinstance(value, bool):
-        raise _exposure_field_error(field, f"expected a whole number, found {type(value).__name__}")
+        raise _exposure_field_error(field, f"expected a whole number, found {type(value).__name__}", account)
     if value < 0:
-        raise _exposure_field_error(field, f"expected a count of zero or more, found {value}")
+        raise _exposure_field_error(field, f"expected a count of zero or more, found {value}", account)
 
 
 # Rejects timestamps that the exposure report cannot render
-def _validate_exposure_timestamp(field: str, value: Any) -> None:
-    _validate_exposure_count(field, value)
+def _validate_exposure_timestamp(field: str, value: Any, account: str = "") -> None:
+    _validate_exposure_count(field, value, account)
     try:
         datetime.fromtimestamp(value, local_timezone())
     except (OverflowError, OSError, ValueError):
-        raise _exposure_field_error(field, "expected a timestamp within the supported date range") from None
+        raise _exposure_field_error(field, "expected a timestamp within the supported date range", account) from None
 
 
 # Checks one stored account record against what every reader assumes, leaving fields this version does not know in place
-def _validate_exposure_record(record: Any) -> None:
+def _validate_exposure_record(record: Any, account: str = "") -> None:
     if not isinstance(record, dict):
-        raise _exposure_field_error("accounts", f"expected one object per account, found {type(record).__name__}")
+        raise _exposure_field_error("accounts", f"expected one object per account, found {type(record).__name__}", account)
     if not isinstance(record.get('date', ""), str):
-        raise _exposure_field_error("date", f"expected a date string, found {type(record['date']).__name__}")
-    _validate_exposure_count("identities", record.get('identities', 0))
+        raise _exposure_field_error("date", f"expected a date string, found {type(record['date']).__name__}", account)
+    _validate_exposure_count("identities", record.get('identities', 0), account)
     failures = record.get('failures', {})
     if not isinstance(failures, dict):
-        raise _exposure_field_error("failures", f"expected one count per failure class, found {type(failures).__name__}")
+        raise _exposure_field_error("failures", f"expected one count per failure class, found {type(failures).__name__}", account)
     for failure_class, count in failures.items():
-        _validate_exposure_count(f"failures.{failure_class}", count)
+        _validate_exposure_count(f"failures.{failure_class}", count, account)
     breaker = record.get('breaker')
     if breaker is not None:
         if not isinstance(breaker, dict):
-            raise _exposure_field_error("breaker", f"expected a stop record or null, found {type(breaker).__name__}")
-        _validate_exposure_timestamp("breaker.tripped_ts", breaker.get('tripped_ts'))
+            raise _exposure_field_error("breaker", f"expected a stop record or null, found {type(breaker).__name__}", account)
+        _validate_exposure_timestamp("breaker.tripped_ts", breaker.get('tripped_ts'), account)
         if not breaker.get('tripped_ts'):
-            raise _exposure_field_error("breaker.tripped_ts", "expected the time the account was stopped, found zero")
+            raise _exposure_field_error("breaker.tripped_ts", "expected the time the account was stopped, found zero", account)
     last_failure = record.get('last_account_failure')
     if last_failure is not None and not isinstance(last_failure, dict):
-        raise _exposure_field_error("last_account_failure", f"expected a failure record or null, found {type(last_failure).__name__}")
+        raise _exposure_field_error("last_account_failure", f"expected a failure record or null, found {type(last_failure).__name__}", account)
     if isinstance(last_failure, dict) and last_failure.get('ts') is not None:
-        _validate_exposure_timestamp("last_account_failure.ts", last_failure['ts'])
+        _validate_exposure_timestamp("last_account_failure.ts", last_failure['ts'], account)
 
 
 # Reads the ledger from disk and rejects state that cannot be trusted
@@ -11505,8 +11517,8 @@ def _load_exposure_file() -> Dict[str, Any]:
         if isinstance(data, dict) and isinstance(data.get('accounts'), dict):
             # Validated here rather than at each reader, so a stored value no reader can trust stops the account
             # once instead of granting budget in one place and raising an unhandled error in another
-            for record in data['accounts'].values():
-                _validate_exposure_record(record)
+            for name, record in data['accounts'].items():
+                _validate_exposure_record(record, str(name))
             return data
         raise ExposureLedgerError("The account safety ledger has an invalid structure")
     except FileNotFoundError:
@@ -11554,21 +11566,108 @@ def _exposure_record(data: Dict[str, Any], account: str) -> Dict[str, Any]:
     return record
 
 
-# Applies a mutation to the current account's ledger record under the ledger lock and persists the result
-def _update_exposure(mutate: Callable[[Dict[str, Any]], Any]) -> Any:
+# Returns the path of the lock file guarding the ledger, kept beside it so both live in the output directory
+def exposure_lock_path() -> str:
+    return exposure_state_path() + ".lock"
+
+
+# Takes the operating system lock guarding the ledger and returns the open file to release, or None when this machine
+# cannot provide one. Monitors sharing an output directory otherwise each read the same daily total and write back a
+# count that lost the other's identities, so a budget meant to cap the day is silently doubled
+def _acquire_exposure_file_lock(timeout: float = EXPOSURE_FILE_LOCK_TIMEOUT):
+    if fcntl is None and msvcrt is None:
+        return None
+    try:
+        os.makedirs(os.path.dirname(exposure_lock_path()), exist_ok=True)
+        handle = open(exposure_lock_path(), 'a+b')
+    except OSError:
+        # A lock that cannot be created must not stop the write, since the write itself reports an unusable directory
+        return None
+    deadline = time.time() + max(0.0, timeout)
+    while True:
+        try:
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            else:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
+            return handle
+        except OSError:
+            if time.time() >= deadline:
+                # Waiting forever would hang monitoring on a stale lock, so the cycle proceeds as it did before locking
+                handle.close()
+                return None
+            time.sleep(0.05)
+
+
+# Releases the operating system lock guarding the ledger
+def _release_exposure_file_lock(handle) -> None:
+    if handle is None:
+        return
+    try:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        else:
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
+    except OSError:
+        pass
+    finally:
+        handle.close()
+
+
+# Applies a mutation to one account's ledger record under the ledger locks and persists the result
+def _update_exposure(mutate: Callable[[Dict[str, Any]], Any], account: str = "") -> Any:
     with EXPOSURE_LOCK:
-        data = _load_exposure_file()
-        record = _exposure_record(data, exposure_account_name())
-        outcome = mutate(record)
-        _write_exposure_file(data)
-        return outcome
+        handle = _acquire_exposure_file_lock()
+        try:
+            data = _load_exposure_file()
+            record = _exposure_record(data, account or exposure_account_name())
+            outcome = mutate(record)
+            _write_exposure_file(data)
+            return outcome
+        finally:
+            _release_exposure_file_lock(handle)
 
 
 # Returns a read-only copy of the current account's ledger record
 def exposure_snapshot() -> Dict[str, Any]:
+    # Reads take no operating system lock. Every write replaces the file in one step, so a reader sees either the
+    # previous ledger or the next one, and locking here would queue the report behind a running monitor
     with EXPOSURE_LOCK:
         data = _load_exposure_file()
         return dict(_exposure_record(data, exposure_account_name()))
+
+
+# Returns how many other accounts this ledger tracks and how many of them are stopped, without naming any of them
+def exposure_other_account_counts() -> Tuple[int, int]:
+    try:
+        data = _load_exposure_file()
+    except ExposureLedgerError:
+        return (0, 0)
+    current = exposure_account_name()
+    others = [record for name, record in data.get('accounts', {}).items() if name != current and isinstance(record, dict)]
+    return (len(others), sum(1 for record in others if isinstance(record.get('breaker'), dict) and record['breaker'].get('tripped_ts')))
+
+
+# Returns whether this run could save the ledger. The file is replaced through a temporary file in its own directory,
+# so a writable file inside a directory this user cannot write to still cannot be saved
+def exposure_ledger_is_writable() -> bool:
+    path = exposure_state_path()
+    if os.path.exists(path) and not os.access(path, os.W_OK):
+        return False
+    directory = os.path.dirname(path) or "."
+    if os.path.isdir(directory):
+        return os.access(directory, os.W_OK | os.X_OK)
+    return output_destination_is_writable(path)
+
+
+# Describes whether the ledger exists yet and whether this run could save it, since a report built by reading a file
+# this user cannot write otherwise looks healthy while monitoring stops the account on its first identity scan
+def exposure_ledger_status() -> str:
+    path = exposure_state_path()
+    found = "in use" if os.path.isfile(path) else "not created yet (nothing recorded)"
+    return f"{found}, writable" if exposure_ledger_is_writable() else f"{found}, NOT writable (monitoring stops this account when it cannot be saved)"
 
 
 # Verifies that the current account safety state can be read and durably written
@@ -11675,11 +11774,15 @@ def finish_account_recovery(account: str, expected_state: Optional[Dict[str, Any
         if ACCOUNT_BREAKER_MEMORY.get(account) is not expected_state:
             return False
         with EXPOSURE_LOCK:
-            data = _load_exposure_file()
-            record = _exposure_record(data, account)
-            if record.get('breaker') is not None or expected_state is not None:
-                record['breaker'] = None
-                _write_exposure_file(data)
+            handle = _acquire_exposure_file_lock()
+            try:
+                data = _load_exposure_file()
+                record = _exposure_record(data, account)
+                if record.get('breaker') is not None or expected_state is not None:
+                    record['breaker'] = None
+                    _write_exposure_file(data)
+            finally:
+                _release_exposure_file_lock(handle)
         ACCOUNT_BREAKER_MEMORY.pop(account, None)
     with FLAGGED_PROBE_LOCK:
         FLAGGED_PROBE_CACHE['ts'] = 0.0
@@ -11854,10 +11957,15 @@ def clear_circuit_breaker() -> Optional[Dict[str, Any]]:
     try:
         previous = _update_exposure(mutate)
     except ExposureLedgerError as ledger_error:
-        data = {'version': EXPOSURE_STATE_VERSION, 'accounts': {}}
-        record = _exposure_record(data, account)
-        record['breaker'] = None
-        _write_exposure_file(data)
+        with EXPOSURE_LOCK:
+            handle = _acquire_exposure_file_lock()
+            try:
+                data = {'version': EXPOSURE_STATE_VERSION, 'accounts': {}}
+                record = _exposure_record(data, account)
+                record['breaker'] = None
+                _write_exposure_file(data)
+            finally:
+                _release_exposure_file_lock(handle)
         # The unusable file is what stopped the account, so clearing reports it as the state that was removed
         previous = _account_breaker_memory_state() or {'tripped_ts': int(time.time()), 'failure_class': 'ledger_unavailable', 'target': '', 'error': str(ledger_error)}
         previous['ledger_reset'] = str(ledger_error)
@@ -11938,6 +12046,23 @@ def _exposure_row(label: str, value: str, column: int = 40) -> str:
     return prefix + ("\t" * max(1, column // 8 - len(prefix) // 8)) + str(value)
 
 
+# Formats the circuit breaker rows of the exposure report. A stop stored by an earlier run outlives the setting that
+# made it, so it is reported as kept rather than as enforced once the breaker is off
+def _exposure_breaker_lines(state) -> List[str]:
+    tripped = state.get('tripped_ts') if isinstance(state, dict) else None
+    if not CIRCUIT_BREAKER:
+        return [_exposure_row("Circuit breaker", "disabled (a stop recorded earlier is kept but not enforced)" if tripped else "disabled")]
+    if not tripped:
+        return [_exposure_row("Circuit breaker", "armed")]
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        paused = len(ACCOUNT_PAUSED_TARGETS.get(exposure_account_name(), ()))
+    return [
+        _exposure_row("Circuit breaker", f"TRIPPED at {get_date_from_ts(int(tripped))} ({state.get('failure_class', 'unknown')})"),
+        _exposure_row("Monitored targets", f"{paused} paused" if paused else "every target using this account is paused"),
+        _exposure_row("Resume with", "Restart or re-import the session after resolving the account issue"),
+    ]
+
+
 # Returns a redacted support report describing today's local account exposure
 def exposure_summary_lines() -> List[str]:
     session_mode = "authenticated (account redacted)" if exposure_account_name() != "<anonymous>" else "anonymous"
@@ -11952,12 +12077,18 @@ def exposure_summary_lines() -> List[str]:
         record = exposure_snapshot()
     except ExposureLedgerError:
         lines.append(_exposure_row("Account safety ledger", "unavailable (authenticated identity scans blocked)"))
-        lines.append(_exposure_row("Circuit breaker", f"TRIPPED ({breaker.get('failure_class', 'unknown')})" if breaker else "armed"))
+        lines.extend(_exposure_breaker_lines(breaker))
         return lines
 
+    lines.append(_exposure_row("Account safety ledger", exposure_ledger_status()))
+    others, others_stopped = exposure_other_account_counts()
+    lines.append(_exposure_row("Other accounts in this ledger", f"{others} ({others_stopped} stopped)" if others else "none"))
+
     identities = int(record.get('identities', 0))
-    budget = f"{identities} of {IDENTITY_BUDGET_PER_DAY}" if IDENTITY_BUDGET_PER_DAY else f"{identities} (no budget set)"
-    lines.extend([_exposure_row("Date", record.get('date', _exposure_today())), _exposure_row("Identities returned today", budget)])
+    # The number spent is what a budget decision needs, and the reset time is what makes a full budget readable as a
+    # wait rather than a fault
+    budget = f"{identities} of {IDENTITY_BUDGET_PER_DAY} ({max(0, IDENTITY_BUDGET_PER_DAY - identities)} left)" if IDENTITY_BUDGET_PER_DAY else f"{identities} (no budget set)"
+    lines.extend([_exposure_row("Date", record.get('date', _exposure_today())), _exposure_row("Identities returned today", f"{budget}, resets at local midnight")])
 
     failures = record.get('failures') or {}
     if failures:
@@ -11968,12 +12099,7 @@ def exposure_summary_lines() -> List[str]:
     else:
         lines.append(_exposure_row("Failures today", "none"))
 
-    breaker = breaker or record.get('breaker')
-    if isinstance(breaker, dict) and breaker.get('tripped_ts'):
-        lines.append(_exposure_row("Circuit breaker", f"TRIPPED at {get_date_from_ts(int(breaker['tripped_ts']))} ({breaker.get('failure_class', 'unknown')})"))
-        lines.append(_exposure_row("Resume with", "Restart or re-import the session after resolving the account issue"))
-    else:
-        lines.append(_exposure_row("Circuit breaker", "armed" if CIRCUIT_BREAKER else "disabled"))
+    lines.extend(_exposure_breaker_lines(breaker or record.get('breaker')))
     last_failure = record.get('last_account_failure')
     if isinstance(last_failure, dict) and last_failure.get('ts'):
         lines.append(_exposure_row("Last account failure", f"{get_date_from_ts(int(last_failure['ts']))} ({last_failure.get('failure_class', 'unknown')})"))
@@ -19240,13 +19366,20 @@ def run_main():
         print("─" * HORIZONTAL_LINE)
         for line in exposure_summary_lines():
             print(line)
-        # The pasteable block omits the path, so the reason the ledger is unusable is reported under it
+        # The pasteable block omits local paths, so the ledger path and anything that would stop monitoring from
+        # maintaining it are reported under the block, and reported as a failing command rather than a clean report
+        ledger_path = exposure_state_path()
+        print(f"\n* Ledger path: {ledger_path}")
         try:
             exposure_snapshot()
         except ExposureLedgerError as ledger_error:
-            print(f"\n* Error: {ledger_error}")
-            print(f"* Path: {exposure_state_path()}")
+            print(f"* Error: {ledger_error}")
             print("To fix: Repair the file or restore access, then restart. Use --clear-breaker only to reset unusable state")
+            sys.exit(1)
+        if not exposure_ledger_is_writable():
+            print("* Error: The account safety ledger cannot be saved, so monitoring stops this account on its first identity scan")
+            print("To fix: Restore write access to that path, or choose a writable location with --output-dir")
+            sys.exit(1)
         sys.exit(0)
 
     apply_timing_cli_overrides(args)

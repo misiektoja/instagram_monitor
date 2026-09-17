@@ -674,7 +674,7 @@ def test_exposure_report_says_why_the_ledger_is_unusable(ledger, tmp_path, monke
 
     assert "Account safety ledger:" in output
     assert "* Error: The account safety ledger has an invalid structure" in output
-    assert f"* Path: {tmp_path / 'instagram_monitor_exposure.json'}" in output
+    assert f"* Ledger path: {tmp_path / 'instagram_monitor_exposure.json'}" in output
     assert "To fix: Repair the file or restore access, then restart" in output
 
 
@@ -1021,3 +1021,220 @@ def test_no_budget_never_blocks_a_scan(ledger, monkeypatch):
 # The shipped default has to clear one full scan of a normal account rather than stop it
 def test_the_default_budget_clears_a_typical_account():
     assert im.IDENTITY_BUDGET_PER_DAY >= 1600, "the default must clear followers and followings of a typical account"
+
+
+# Returns one labelled row of the exposure report with its padding removed
+def _report_row(label: str) -> str:
+    return next(line for line in im.exposure_summary_lines() if line.startswith(f"{label}:")).expandtabs(40).split(":", 1)[1].strip()
+
+
+# Runs --exposure the way the command line does and returns its exit code with the printed report
+def _run_exposure_command(monkeypatch, capsys, directory):
+    monkeypatch.chdir(directory)
+    monkeypatch.setattr(im.sys, "argv", ["instagram_monitor.py", "--exposure", "--no-color"])
+    monkeypatch.setattr(im, "CLI_CONFIG_PATH", None, raising=False)
+    monkeypatch.setattr(im, "find_config_file", lambda path=None: None, raising=False)
+    monkeypatch.setattr(im, "clear_screen", lambda *args, **kwargs: None, raising=False)
+    with pytest.raises(SystemExit) as raised:
+        im.run_main()
+    return raised.value.code, capsys.readouterr().out
+
+
+class TestExposureLedgerWritability:
+    # The report reads the ledger while monitoring writes it, so a file this user cannot save reads as healthy
+    def test_an_unwritable_ledger_is_not_reported_as_healthy(self, ledger, tmp_path, monkeypatch):
+        path = tmp_path / "instagram_monitor_exposure.json"
+        path.write_text(json.dumps({'version': 1, 'accounts': {}}), encoding="utf-8")
+        monkeypatch.setattr(im.os, "access", lambda target, mode: False if str(target) == str(path) else True)
+
+        assert "NOT writable" in _report_row("Account safety ledger")
+
+    # The file is replaced through a temporary file in its own directory, so the directory decides, not the file
+    def test_a_writable_file_in_an_unwritable_directory_cannot_be_saved(self, ledger, tmp_path, monkeypatch):
+        path = tmp_path / "instagram_monitor_exposure.json"
+        path.write_text(json.dumps({'version': 1, 'accounts': {}}), encoding="utf-8")
+        monkeypatch.setattr(im.os, "access", lambda target, mode: str(target) != str(tmp_path))
+
+        assert im.exposure_ledger_is_writable() is False
+        assert "NOT writable" in _report_row("Account safety ledger")
+
+    # A report that cannot be acted on is not a successful command
+    def test_the_command_fails_when_the_ledger_cannot_be_saved(self, ledger, tmp_path, monkeypatch, capsys):
+        (tmp_path / "instagram_monitor_exposure.json").write_text(json.dumps({'version': 1, 'accounts': {}}), encoding="utf-8")
+        monkeypatch.setattr(im, "exposure_ledger_is_writable", lambda: False, raising=False)
+
+        code, output = _run_exposure_command(monkeypatch, capsys, tmp_path)
+
+        assert code == 1
+        assert "* Error: The account safety ledger cannot be saved" in output
+        assert "To fix: Restore write access to that path" in output
+
+
+class TestExposureLedgerPresence:
+    # Nothing recorded and a healthy day print the same counters, so the report has to say which it is
+    def test_a_missing_ledger_is_reported_as_not_created_yet(self, ledger):
+        assert _report_row("Account safety ledger").startswith("not created yet")
+
+    def test_an_existing_ledger_is_reported_as_in_use(self, ledger, tmp_path):
+        (tmp_path / "instagram_monitor_exposure.json").write_text(json.dumps({'version': 1, 'accounts': {}}), encoding="utf-8")
+
+        assert _report_row("Account safety ledger").startswith("in use")
+
+    # The path was printed only on failure, so a healthy report never said which file it had read
+    def test_the_ledger_path_is_printed_when_nothing_is_wrong(self, ledger, tmp_path, monkeypatch, capsys):
+        code, output = _run_exposure_command(monkeypatch, capsys, tmp_path)
+
+        assert code == 0
+        assert f"* Ledger path: {tmp_path / 'instagram_monitor_exposure.json'}" in output
+        assert "* Error:" not in output
+
+
+class TestExposureBreakerSetting:
+    # A stop outlives the setting that made it, so reporting the stored record verbatim contradicts the setting
+    def test_a_stored_stop_is_not_reported_as_enforced_when_the_breaker_is_off(self, ledger, tmp_path, monkeypatch):
+        monkeypatch.setattr(im, "CIRCUIT_BREAKER", False, raising=False)
+        record = {'date': im._exposure_today(), 'identities': 0, 'failures': {}, 'breaker': {'tripped_ts': 1758000000, 'failure_class': 'action_block'}}
+        (tmp_path / "instagram_monitor_exposure.json").write_text(json.dumps({'version': 1, 'accounts': {'testacct': record}}), encoding="utf-8")
+
+        row = _report_row("Circuit breaker")
+
+        assert row.startswith("disabled")
+        assert "TRIPPED" not in row
+        assert "kept but not enforced" in row
+
+    def test_a_disabled_breaker_with_no_stop_reads_as_disabled(self, ledger, monkeypatch):
+        monkeypatch.setattr(im, "CIRCUIT_BREAKER", False, raising=False)
+
+        assert _report_row("Circuit breaker") == "disabled"
+
+    # Every target sharing the account stops with it, and the report never said so
+    def test_a_tripped_breaker_says_the_targets_are_paused(self, ledger, tmp_path):
+        record = {'date': im._exposure_today(), 'identities': 0, 'failures': {}, 'breaker': {'tripped_ts': 1758000000, 'failure_class': 'action_block'}}
+        (tmp_path / "instagram_monitor_exposure.json").write_text(json.dumps({'version': 1, 'accounts': {'testacct': record}}), encoding="utf-8")
+
+        assert _report_row("Monitored targets") == "every target using this account is paused"
+
+    def test_the_paused_target_count_is_reported_when_it_is_known(self, ledger, tmp_path, monkeypatch):
+        monkeypatch.setattr(im, "ACCOUNT_PAUSED_TARGETS", {"testacct": {"one", "two"}}, raising=False)
+        record = {'date': im._exposure_today(), 'identities': 0, 'failures': {}, 'breaker': {'tripped_ts': 1758000000, 'failure_class': 'action_block'}}
+        (tmp_path / "instagram_monitor_exposure.json").write_text(json.dumps({'version': 1, 'accounts': {'testacct': record}}), encoding="utf-8")
+
+        assert _report_row("Monitored targets") == "2 paused"
+
+
+class TestExposureOtherAccounts:
+    # One ledger holds every account that shares the output directory, and a stop on any of them is worth knowing
+    def test_other_accounts_are_counted_without_being_named(self, ledger, tmp_path):
+        today = im._exposure_today()
+        accounts = {
+            'testacct': {'date': today, 'identities': 0, 'failures': {}, 'breaker': None},
+            'other_one': {'date': today, 'identities': 4, 'failures': {}, 'breaker': {'tripped_ts': 1758000000, 'failure_class': 'challenge'}},
+            'other_two': {'date': today, 'identities': 2, 'failures': {}, 'breaker': None},
+        }
+        (tmp_path / "instagram_monitor_exposure.json").write_text(json.dumps({'version': 1, 'accounts': accounts}), encoding="utf-8")
+
+        row = _report_row("Other accounts in this ledger")
+
+        assert row == "2 (1 stopped)"
+        assert "other_one" not in "\n".join(im.exposure_summary_lines())
+
+    def test_a_ledger_with_only_this_account_reports_none(self, ledger, tmp_path):
+        record = {'date': im._exposure_today(), 'identities': 0, 'failures': {}, 'breaker': None}
+        (tmp_path / "instagram_monitor_exposure.json").write_text(json.dumps({'version': 1, 'accounts': {'testacct': record}}), encoding="utf-8")
+
+        assert _report_row("Other accounts in this ledger") == "none"
+
+
+class TestExposureRecordErrors:
+    # One bad record stops every account in the file, so the reader has to be told which one to repair
+    def test_an_invalid_record_names_the_account_it_belongs_to(self, ledger, tmp_path):
+        today = im._exposure_today()
+        accounts = {
+            'testacct': {'date': today, 'identities': 0, 'failures': {}, 'breaker': None},
+            'other_one': {'date': today, 'identities': -5, 'failures': {}, 'breaker': None},
+        }
+        (tmp_path / "instagram_monitor_exposure.json").write_text(json.dumps({'version': 1, 'accounts': accounts}), encoding="utf-8")
+
+        with pytest.raises(im.ExposureLedgerError) as raised:
+            im.exposure_snapshot()
+
+        assert "'identities' field for account 'other_one'" in str(raised.value)
+
+
+class TestExposureBudgetRow:
+    # A raw count answers neither how much is left nor how long the wait is
+    def test_the_budget_row_says_how_much_is_left_and_when_it_resets(self, ledger, monkeypatch):
+        monkeypatch.setattr(im, "IDENTITY_BUDGET_PER_DAY", 2000, raising=False)
+        im.record_identities_returned(150)
+
+        assert _report_row("Identities returned today") == "150 of 2000 (1850 left), resets at local midnight"
+
+    def test_no_budget_still_says_when_the_count_resets(self, ledger):
+        im.record_identities_returned(10)
+
+        assert _report_row("Identities returned today") == "10 (no budget set), resets at local midnight"
+
+
+class TestExposureCrossProcessLock:
+    # Two monitors sharing an output directory each read the same daily total and write back a count that lost the
+    # other's identities, so a budget meant to cap the day is silently doubled
+    def test_two_processes_do_not_lose_each_others_identities(self, tmp_path):
+        import subprocess
+        import sys
+
+        root = im.os.path.dirname(im.__file__)
+        worker = tmp_path / "worker.py"
+        worker.write_text(
+            "import sys\n"
+            "root, directory = sys.argv[1], sys.argv[2]\n"
+            "sys.path.insert(0, root)\n"
+            "sys.argv = ['instagram_monitor.py']\n"
+            "import instagram_monitor as im\n"
+            "im.SESSION_USERNAME = 'testacct'\n"
+            "im.SKIP_SESSION = False\n"
+            "im.OUTPUT_DIR = directory\n"
+            "for _ in range(4):\n"
+            "    im.record_identities_returned(25)\n",
+            encoding="utf-8",
+        )
+        workers = [subprocess.Popen([sys.executable, str(worker), root, str(tmp_path)]) for _ in range(3)]
+        for process in workers:
+            assert process.wait() == 0
+
+        stored = json.loads((tmp_path / "instagram_monitor_exposure.json").read_text(encoding="utf-8"))
+
+        assert stored['accounts']['testacct']['identities'] == 300
+
+    # A machine that cannot provide a lock must still record, since the lock is protection and not a precondition
+    def test_a_lock_that_cannot_be_taken_does_not_stop_the_write(self, ledger, monkeypatch):
+        monkeypatch.setattr(im, "_acquire_exposure_file_lock", lambda timeout=0.0: None, raising=False)
+
+        im.record_identities_returned(5)
+
+        assert im.exposure_snapshot()["identities"] == 5
+
+    # The lock is only taken while a cycle is in progress, so a second cycle in the same run must not block
+    def test_the_lock_is_released_after_every_cycle(self, ledger):
+        for _ in range(3):
+            im.record_identities_returned(1)
+
+        assert im.exposure_snapshot()["identities"] == 3
+
+
+class TestExposureCommandExitCode:
+    # An unusable ledger printed an error and still reported success, so a script could not tell the two apart
+    def test_an_unusable_ledger_fails_the_command(self, ledger, tmp_path, monkeypatch, capsys):
+        (tmp_path / "instagram_monitor_exposure.json").write_text("[1, 2]", encoding="utf-8")
+
+        code, output = _run_exposure_command(monkeypatch, capsys, tmp_path)
+
+        assert code == 1
+        assert "* Error: The account safety ledger has an invalid structure" in output
+
+    def test_a_healthy_ledger_succeeds(self, ledger, tmp_path, monkeypatch, capsys):
+        (tmp_path / "instagram_monitor_exposure.json").write_text(json.dumps({'version': 1, 'accounts': {}}), encoding="utf-8")
+
+        code, output = _run_exposure_command(monkeypatch, capsys, tmp_path)
+
+        assert code == 0
+        assert "* Error:" not in output
