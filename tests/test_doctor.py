@@ -146,7 +146,6 @@ class TestDoctorChecks:
         assert parsed == {"VERIFY_SSL": False, "DISABLE_LOGGING": True}
         assert all(isinstance(value, bool) for value in parsed.values())
 
-
     # The shipped defaults are all real booleans, so a run with nothing overridden never sees the on/off row
     def test_the_shipped_defaults_pass_the_boolean_check(self, im_module):
         assert im_module.runtime_boolean_errors() == []
@@ -384,7 +383,6 @@ class TestDoctorChecks:
         checks = im_module.doctor_check_configuration([], errors, ())
         assert not any(check.advice is not None and check.advice.fix.startswith("To fix:") for check in checks)
 
-
     # The renderer owns the 'To fix:' prefix, so a missing config file must record the bare action
     def test_missing_config_file_action_does_not_repeat_the_prefix(self, im_module, monkeypatch, tmp_path):
         recorded = {}
@@ -499,7 +497,6 @@ class TestRunDoctor:
 
         assert im_module.NTFY_ACCESS_TOKEN == "tk_from_environment"
         assert im_module.SECRET_SOURCES["NTFY_ACCESS_TOKEN"] == "environment"
-
 
     # An empty export is a shell-profile leftover rather than a value, so it neither blocks nor blanks the dotenv value
     def test_an_empty_export_does_not_shadow_the_dotenv_value(self, im_module, monkeypatch, tmp_path):
@@ -925,7 +922,6 @@ class TestDoctorDeliveryTests:
         assert f"Test webhook through {provider} was not sent" in output
         assert "You declined the real delivery test. Run doctor again and approve the webhook test when ready" in output
 
-
     # An empty delivery answer defaults safely to no
     def test_delivery_consent_defaults_to_no(self, im_module, monkeypatch):
         prompts = []
@@ -995,7 +991,6 @@ def test_a_command_line_secret_is_reported_as_such(im_module, monkeypatch):
 
     assert "Secrets loaded from the command line" in labels
     assert "Secrets loaded from the configuration file or command line" not in labels
-
 
 
 # A setting holding the wrong type raises at the comparison or the format string that reads it, which is nowhere
@@ -1199,6 +1194,7 @@ def test_a_link_in_a_detail_line_is_coloured_as_a_link(im_module, capsys, monkey
 
     assert f"  Endpoint: {im_module.colorize('link', 'https://www.instagram.com/')}" in rendered
     assert fix_line == f"  {im_module.colorize('info', 'To fix: Sign in again at https://www.instagram.com/')}"
+
 
 # Verifies the follow analysis states its findings as plain value rows rather than borrowing a doctor marker
 def test_the_follow_analysis_states_values_without_a_marker(im_module, capsys):

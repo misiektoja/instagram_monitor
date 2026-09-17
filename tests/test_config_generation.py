@@ -177,7 +177,6 @@ class TestConfigPersistence:
             assert destination.read_text(encoding="utf-8") == "ORIGINAL = True\n"
             assert list(destination.parent.glob("*.bak")) == []
 
-
     # An existing config is replaced only after the user agrees to it
     def test_generated_config_asks_before_replacing(self, im_module):
         with make_test_directory() as directory_name:

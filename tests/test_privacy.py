@@ -1,7 +1,6 @@
 """Tests for PRIVACY_SUBSTITUTIONS handling in apply_privacy_substitutions."""
 
 
-
 class TestApplyPrivacySubstitutions:
     def test_disabled_when_empty(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "PRIVACY_SUBSTITUTIONS", [])

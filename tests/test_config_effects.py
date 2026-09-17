@@ -304,14 +304,12 @@ class TestStartupScreenClearing:
 
         assert cleared == [expected]
 
-
-    # Verifies the one-shot commands keep whatever is already on the screen, so their output stays scrollable
     @pytest.mark.parametrize(("argv", "expected"), ((["instagram_monitor.py", "--doctor"], True), (["instagram_monitor.py", "--set-smtp-password"], True), (["instagram_monitor.py", "--send-test-email"], True), (["instagram_monitor.py", "--help"], True), (["instagram_monitor.py", "target.user"], False)))
+    # Verifies the one-shot commands keep whatever is already on the screen, so their output stays scrollable
     def test_one_shot_commands_keep_the_terminal_history(self, im_module, monkeypatch, argv, expected):
         monkeypatch.setattr(im_module.sys, "argv", argv)
 
         assert im_module.keep_terminal_history() is expected
-
 
     # Verifies a redirected stdout is never cleared, so no escape sequence or TERM warning reaches the captured output
     def test_a_redirected_stdout_is_never_cleared(self, im_module, monkeypatch):

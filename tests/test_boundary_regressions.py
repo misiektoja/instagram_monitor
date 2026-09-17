@@ -40,7 +40,6 @@ def reject_delivery(monkeypatch, token):
         response.url = request.url
         return response
 
-
     monkeypatch.setattr(HTTPAdapter, "send", requests_reply)
     return seen
 
@@ -105,7 +104,6 @@ def test_doctor_reports_invalid_path_types(tmp_path, monkeypatch, capsys, settin
     # Fails unexpected connectivity checks at the requests transport boundary
     def offline_requests(self, request, **kwargs):
         raise requests.ConnectionError("Offline boundary check")
-
 
     monkeypatch.setattr(HTTPAdapter, "send", offline_requests)
     with pytest.raises(SystemExit) as stopped:

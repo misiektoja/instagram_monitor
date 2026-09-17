@@ -18,7 +18,6 @@ def test_optional_network_work_stops_on_resource_exhaustion(monkeypatch, capsys)
         calls.append(str(request.url))
         raise requests.ConnectionError("Connection failed") from OSError(errno.EMFILE, "Too many open files")
 
-
     monkeypatch.setattr(HTTPAdapter, "send", exhausted_requests)
 
     with pytest.raises(SystemExit) as stopped:

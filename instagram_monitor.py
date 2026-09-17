@@ -5446,7 +5446,6 @@ class Logger(object):
     def isatty(self):
         return self.terminal.isatty()
 
-
     # Limits the terminal line across separate writes while leaving the log complete
     def _truncate_terminal(self, message):
         try:
@@ -9060,7 +9059,6 @@ def print_status_summary():
 
 
 # Update global tracking for last/next check times
-
 def update_check_times(last_time=None, next_time=None, user=None, increment_count=True):
     global LAST_CHECK_TIME, NEXT_CHECK_TIME, NEXT_CHECK_DISPLAY, CHECK_COUNT, DASHBOARD_DATA, WEB_DASHBOARD_DATA
 

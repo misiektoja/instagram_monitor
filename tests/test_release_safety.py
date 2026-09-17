@@ -80,6 +80,7 @@ def test_normal_startup_validates_before_network(monkeypatch, tmp_path, capsys):
     setting = "SPOTIFY_CHECK_INTERVAL" if hasattr(monitor, "runtime_numeric_errors") else "CHECK_INTERNET_TIMEOUT"
     config.write_text(setting + " = 1e309\n", encoding="utf-8")
     calls = []
+
     # Records attempts at the actual socket boundary without replacing a provider client
     def offline(sock, address):
         calls.append(address)
@@ -92,6 +93,7 @@ def test_normal_startup_validates_before_network(monkeypatch, tmp_path, capsys):
     assert not calls
     output = capsys.readouterr()
     assert setting in output.out + output.err
+
 
 @pytest.mark.parametrize("record", [{}, [], [1], [-1, []], ["2", []], [2, {}], [1, [None]]])
 # Invalid collection state cannot become a replacement comparison baseline
@@ -115,6 +117,7 @@ def test_partial_collection_with_extra_metadata(tmp_path):
 # A missing target is a local input error even when the machine is offline
 def test_missing_target_precedes_connectivity(monkeypatch, capsys):
     calls = []
+
     def offline(sock, address):
         calls.append(address)
         raise OSError("Network is unreachable")

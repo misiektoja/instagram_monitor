@@ -226,7 +226,6 @@ class TestEditableReview:
 
             assert offered == {"targets": "saved.review.user", "interval": 1234}
 
-
     def test_target_section_can_be_edited_before_save(self, im_module, monkeypatch, capsys):
         with make_test_directory() as directory_name:
             directory = Path(directory_name)
@@ -286,6 +285,7 @@ class TestBrowserOnboarding:
             state = make_setup_state(im_module, Path(directory_name))
             captured = []
             choices = iter([1, 0])
+
             # Selects Firefox then macOS while recording the displayed choices
             def choose(question, options, default_index=0):
                 captured.append((question, options))
@@ -339,6 +339,7 @@ class TestPromptWording:
         with make_test_directory() as directory_name:
             state = make_setup_state(im_module, Path(directory_name))
             questions = []
+
             # Captures the webhook question and declines setup
             def ask_yes_no(question, default=True):
                 questions.append(question)
@@ -355,10 +356,12 @@ class TestPromptWording:
             questions = []
             answers = iter([True, True])
             texts = iter(["smtp.example.test", "587", "smtp-user", "from@example.test", "to@example.test"])
+
             # Captures every yes or no question while returning scripted answers
             def ask_yes_no(question, default=True):
                 questions.append(question)
                 return next(answers)
+
             # Records the text prompts in the order the wizard asks them
             def ask_text(question, default="", required=False):
                 questions.append(question)
@@ -453,6 +456,7 @@ class TestWizardSafetyGates:
             monkeypatch.setattr(im_module, "_wizard_review_setup", lambda state, method: True)
             monkeypatch.setattr(im_module, "run_doctor", Mock(side_effect=AssertionError("doctor ran")))
             monkeypatch.setattr(im_module, "_wizard_launch_monitor", Mock(side_effect=AssertionError("monitor started")))
+
             # Captures the declined import and Doctor prompts while rejecting any unexpected start prompt
             def ask_yes_no(question, default=True):
                 questions.append(question)
@@ -555,6 +559,7 @@ class TestWizardSafetyGates:
             monkeypatch.setattr(im_module, "print_startup_banner", lambda: None)
             monkeypatch.setattr(im_module, "init_color_output", lambda *args, **kwargs: None)
             monkeypatch.setattr(im_module, "find_config_file", lambda path=None: str(config_path))
+
             # Records the effective values then stops before monitoring begins
             def capture_decision(arguments, configured_targets, web_dashboard_enabled):
                 captured.update({"arguments": arguments, "targets": configured_targets, "web": web_dashboard_enabled})
@@ -646,6 +651,7 @@ class TestWizardSafetyGates:
             monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
             monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: "target.user")
             monkeypatch.setattr(im_module, "_wizard_ask_duration", lambda question, default: default)
+
             # Captures every yes or no question to prove Start is never offered
             def ask_yes_no(question, default=True):
                 questions.append(question)
@@ -892,6 +898,7 @@ class TestRejectedAnswerEscape:
     @pytest.mark.parametrize("consequence, question, answer, expected", [("", "Try entering the webhook URL again?", "y", True), ("", "Try entering the webhook URL again?", "n", False), ("Webhook alerts stay off until one is set", "Continue without the webhook URL? Webhook alerts stay off until one is set", "y", False), ("Webhook alerts stay off until one is set", "Continue without the webhook URL? Webhook alerts stay off until one is set", "n", True)])
     def test_the_escape_wording_matches_the_kind_of_rejection(self, im_module, monkeypatch, consequence, question, answer, expected):
         questions = []
+
         # Records the escape question while answering it as the case requires
         def ask(prompt):
             questions.append(prompt)
@@ -967,6 +974,7 @@ class TestRejectedAnswerEscape:
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
             monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: 0)
             monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: entry)
+
             # Refuses the escape after recording which wording the wizard offered
             def offer_retry(label, consequence=""):
                 labels.append((label, consequence))
@@ -1017,6 +1025,7 @@ class TestRejectedAnswerEscape:
             monkeypatch.delenv("NTFY_ACCESS_TOKEN", raising=False)
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
             monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: "Bearer tk_secret")
+
             # Refuses the escape after recording the label the wizard offered
             def offer_retry(label, consequence=""):
                 labels.append(label)
@@ -1179,6 +1188,7 @@ class TestMailServerSignIn:
         seen = {}
         monkeypatch.setattr(im_module, "SMTP_HOST", "old.example.test", raising=False)
         monkeypatch.setattr(im_module, "SMTP_PASSWORD", "old-password", raising=False)
+
         # Records the settings the sign-in would use without opening a connection
         class RecordingSMTP:
             def __init__(self, host, port, timeout=None):
@@ -1424,10 +1434,21 @@ class TestAProviderErrorThatEchoesThePassword:
         import smtplib
 
         class EchoingSMTP:
-            def __init__(self, host, port, timeout=5): pass
-            def starttls(self, context=None): pass
-            def login(self, user, password): raise smtplib.SMTPAuthenticationError(535, f"5.7.8 Not accepted. Sent: user={user} pass={password}".encode())
-            def quit(self): pass
+            # Accepts connection arguments without opening a socket
+            def __init__(self, host, port, timeout=5):
+                pass
+
+            # Accepts TLS setup without opening a connection
+            def starttls(self, context=None):
+                pass
+
+            # Rejects authentication with a reply that echoes the supplied password
+            def login(self, user, password):
+                raise smtplib.SMTPAuthenticationError(535, f"5.7.8 Not accepted. Sent: user={user} pass={password}".encode())
+
+            # Closes the simulated SMTP connection
+            def quit(self):
+                pass
 
         return EchoingSMTP
 
@@ -1762,9 +1783,11 @@ def test_the_polling_question_starts_its_own_group(im_module, monkeypatch, capsy
         assert "\n\nPersist these targets in the generated config?" not in transcript
         assert "\n\nInstagram polling interval (seconds or use s/m/h/d)" in transcript
 
+
 # Verifies the guide link opens the setup page the sibling monitors link, with no section fragment
 def test_the_welcome_guide_link_opens_the_shared_setup_page(im_module):
     assert im_module.QUICK_START_GUIDE_URL.endswith("/setup-and-first-run/")
+
 
 # Verifies the doctor setup runs credits the dotenv file, not the fallback the empty source map produces
 def test_saved_secrets_are_credited_to_the_dotenv_file(im_module, monkeypatch, tmp_path):
@@ -1799,6 +1822,7 @@ def test_an_exported_secret_is_not_credited_to_the_dotenv_file(im_module, monkey
     assert im_module.SECRET_SOURCES["SESSION_PASSWORD"] == "environment"
 
     assert im_module.SESSION_PASSWORD == "synthetic-export"
+
 
 # Verifies a config destination switched off is refused, rather than writing settings to a file named 'none'
 def test_setup_refuses_a_config_destination_switched_off(tmp_path):

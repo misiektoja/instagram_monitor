@@ -324,7 +324,6 @@ class TestOutageReporting:
         assert reporter.recovered() is not None
         assert reporter.recovered() is None
 
-
     # Verifies a category change mid-outage keeps the outage start, so the alert delay and the reminder still elapse
     def test_an_outage_that_changes_category_keeps_its_start(self, im_module, monkeypatch):
         clock = [1000000.0]
@@ -510,6 +509,7 @@ class TestTheLoopFailurePaths:
         monkeypatch.setattr(im_module, "instaloader_client", lambda **kwargs: bot)
         monkeypatch.setattr(im_module, "profile_from_username_resilient", profile)
         monkeypatch.setattr(im_module, "latest_post_mobile", posts)
+
         # Reports the stop the harness asked for rather than always interrupting, so more than one check can run.
         # The wait also advances the clock, which is what makes a timed reminder deterministic here
         def wait(seconds, event=None):
@@ -781,7 +781,6 @@ class TestLocalResourceLimits:
         assert "not an Instagram problem" in advice.summary
         assert "ulimit -n" in advice.fix
         assert advice.retryable is False
-
 
     # Verifies the descriptor limit is matched as a whole errno, so errno 240 or 241 in a message is not mistaken for it
     def test_a_neighbouring_errno_is_not_a_file_descriptor_limit(self, im_module):

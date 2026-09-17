@@ -3,7 +3,6 @@
 from datetime import datetime, timezone
 
 
-
 class TestDisplayTime:
     def test_zero_seconds(self, im_module):
         assert im_module.display_time(0) == "0 seconds"

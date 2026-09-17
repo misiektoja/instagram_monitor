@@ -282,7 +282,6 @@ class TestPortableWizardCommands:
         assert im_module._wizard_launch_monitor(arguments) == 7
         run_mock.assert_called_once_with(arguments, check=False)
 
-
     # A Windows parent launch treats duplicate Ctrl+C delivery as clean child termination
     def test_windows_launch_handles_parent_keyboard_interrupt(self, im_module, monkeypatch):
         run_mock = Mock(side_effect=KeyboardInterrupt)
@@ -351,7 +350,6 @@ class TestHelpEpilog:
         epilog = im_module._build_help_epilog()
         assert "docker compose run --rm instagram_monitor --setup" in epilog
         assert self._web_dashboard_line(epilog).strip() == "docker compose run --rm --service-ports instagram_monitor --web-dashboard"
-
 
 
 class TestHiddenPromptPresentation:

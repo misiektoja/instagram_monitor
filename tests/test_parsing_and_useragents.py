@@ -6,7 +6,6 @@ import re
 import pytest
 
 
-
 def _followers_payload(usernames):
     return {"data": {"user": {"edge_followed_by": {"edges": [{"node": {"username": u}} for u in usernames]}}}}
 
