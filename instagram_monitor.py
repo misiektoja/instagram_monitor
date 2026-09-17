@@ -4734,8 +4734,8 @@ _SHORT_RANGE_DATE_RE = re.compile(r"\(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[
 _DATE_RANGE_RE = re.compile(r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
 _HOUR_RANGE_RE = re.compile(r"\b\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
 _URL_RE = re.compile(r"(https?://[^\s\]]+)")
-_ONLINE_WORD_RE = re.compile(r"(\b(?!stop\s+)(?:online|Yes)\b)", re.IGNORECASE)
-_OFFLINE_WORD_RE = re.compile(r"(\b(?:offline|No)\b)", re.IGNORECASE)
+# A Yes or No is an answer only as the whole value of a labelled row, never as the word inside a sentence
+_ANSWER_VALUE_RE = re.compile(r"(?<=:)([\t ]+)(Yes|No)[\t ]*$")
 _BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
 _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
 # The TLS row reports a word rather than a boolean, and its off state is the one setting that weakens
@@ -5192,9 +5192,8 @@ def _colorize_line(line):
     line = _BOOLEAN_TRUE_RE.sub(lambda mo: colorize("boolean_true", mo.group(0)), line)
     line = _BOOLEAN_FALSE_RE.sub(lambda mo: colorize("boolean_false", mo.group(0)), line)
 
-    # Highlight online/offline keywords
-    line = _ONLINE_WORD_RE.sub(lambda mo: colorize("status_online", mo.group(0)), line)
-    line = _OFFLINE_WORD_RE.sub(lambda mo: colorize("status_offline", mo.group(0)), line)
+    # Highlight a Yes or No answer, which colorize_status reads as a status value
+    line = _sub_outside_color(_ANSWER_VALUE_RE, lambda mo: f"{mo.group(1)}{colorize('status_online' if mo.group(2) == 'Yes' else 'status_offline', mo.group(2))}", line)
 
     # Highlight proxy information
     line = _PROXY_IP_RE.sub(lambda mo: colorize('proxy_ip', mo.group(0)), line)

@@ -157,6 +157,35 @@ def test_every_theme_part_is_used(im_module):
     assert not set(im_module.DEFAULT_COLOR_THEME) - looked_up
 
 
+# Verifies an ordinary English "no" inside a sentence stays plain, so a healthy report does not read as a failure
+@pytest.mark.parametrize("line", [
+    "* Monitoring healthy for misiektoja. No tracked change since the last check",
+    "* No .env file found, skipping env-var reload",
+    "* No target specified. Pass a TARGET_USERNAME or set TARGET_USERNAMES in the config.",
+    "  The mail server accepted the sign-in. No email was sent.",
+    "Running preflight checks. No files will be written.",
+    "* Error: The saved Instagram session may no longer be valid",
+])
+def test_an_english_no_in_a_sentence_is_not_painted(im_module, monkeypatch, line):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {"status_online": "<yes>", "status_offline": "<no>"})
+
+    colored = im_module._colorize_line(line)
+
+    assert "<yes>" not in colored and "<no>" not in colored
+
+
+# Verifies a Yes or No answer is coloured as the whole value of a labelled row
+@pytest.mark.parametrize(("answer", "style"), [("Yes", "status_online"), ("No", "status_offline")])
+def test_an_answer_row_keeps_its_status_colour(im_module, monkeypatch, answer, style):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {style: "<answer>"})
+
+    colored = im_module._colorize_line(f"Can view all contents:\t\t\t{answer}")
+
+    assert colored == f"Can view all contents:\t\t\t<answer>{answer}{im_module.ANSI_RESET}"
+
+
 # Verifies argparse never adds a palette of its own, which from Python 3.14 would survive --no-color
 def test_argparse_adds_no_palette_of_its_own(im_module):
     import sys

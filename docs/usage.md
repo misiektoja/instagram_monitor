@@ -994,7 +994,7 @@ Instagram Monitor can color live terminal output through `COLORED_OUTPUT` and `C
 
 On Windows, install the optional `colorama` package for colour in the classic Command Prompt. Windows Terminal needs nothing extra.
 
-Usernames are `bright_cyan underline`, the numeric user ID is `bright_magenta` and links are `blue underline`. Generated configuration files ship the `COLOR_THEME` block commented out, so these defaults apply and a later change to them reaches you. Overrides you added are written back as a real block when setup rebuilds the file, so they are not lost. A configuration file written by an earlier version sets every colour explicitly and therefore keeps the old ones: delete its `COLOR_THEME` block to follow the current defaults, or edit the values you want to keep. Such a file still loads unchanged.
+Usernames are `bright_cyan underline`, the numeric user ID is `bright_magenta` and links are `blue underline`. A `Yes` or `No` answer is coloured only as the whole value of a labelled row, so an ordinary `no` inside a sentence stays plain. Generated configuration files ship the `COLOR_THEME` block commented out, so these defaults apply and a later change to them reaches you. Overrides you added are written back as a real block when setup rebuilds the file, so they are not lost. A configuration file written by an earlier version sets every colour explicitly and therefore keeps the old ones: delete its `COLOR_THEME` block to follow the current defaults, or edit the values you want to keep. Such a file still loads unchanged.
 
 The bundled recipe follows the same colors as the live output. It also covers the other monitors in the family, so one copy in `~/.grc/` colors every tool's logs.
 
