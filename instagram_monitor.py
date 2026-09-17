@@ -5945,6 +5945,8 @@ def validate_webhook_url(url):
         return False
     try:
         parsed = urlsplit(url.strip())
+        if parsed.port is not None and not 1 <= parsed.port <= 65535:
+            return False
     except ValueError:
         return False
     return parsed.scheme.casefold() == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password and (parsed.path in ("", "/") or bool(parsed.path.strip("/")))
@@ -6440,7 +6442,12 @@ def _retain_webhook_secrets(deliver):
         values = [settings.get(name) for name in SECRET_KEYS]
         headers = settings.get("WEBHOOK_HEADERS")
         if isinstance(headers, dict):
-            values.extend(value for name, value in headers.items() if isinstance(name, str) and name.casefold() == "authorization")
+            for name, value in headers.items():
+                if isinstance(name, str) and name.casefold() == "authorization" and isinstance(value, str):
+                    values.append(value)
+                    parts = value.split(None, 1)
+                    if len(parts) == 2 and parts[0].casefold() in ("bearer", "basic"):
+                        values.append(parts[1])
         # The same minimum length every other redaction path applies, so a short secret cannot blank out ordinary words
         secrets = tuple(value for value in values if isinstance(value, str) and len(value) > 4 and not value.startswith("your_"))
         token = _DELIVERY_SECRET_VALUES.set(_DELIVERY_SECRET_VALUES.get() + secrets)
@@ -6686,6 +6693,9 @@ def get_ip_address(max_retries=3, timeout=10, retry_delay=5, long_retry=120, lon
         if not isinstance(long_retry_attempts, int) or long_retry_attempts < 1:
             raise ValueError("long_retry_attempts must be at least 1")
     except ValueError as exc:
+        if is_too_many_open_files(exc):
+            print_recovery_advice(classify_recovery_error(exc))
+            raise SystemExit(1)
         debug_print("get_ip_address configuration", outcome="failed", error=f"{type(exc).__name__}: {exc}")
         return f"(unavailable: {format_error_message(exc)})"
 
@@ -6704,6 +6714,9 @@ def get_ip_address(max_retries=3, timeout=10, retry_delay=5, long_retry=120, lon
                 ip_response.raise_for_status()
                 return _extract_ip_address_response(ip_response)
             except Exception as exc:
+                if is_too_many_open_files(exc):
+                    print_recovery_advice(classify_recovery_error(exc))
+                    raise SystemExit(1)
                 last_err = exc
                 debug_print("IP address lookup", url=mask_url_credentials(url), outcome="failed", error=format_error_message(exc))
 
@@ -8205,6 +8218,9 @@ def get_real_reel_code(bot: instaloader.Instaloader, username: str) -> Optional[
             return None
         return edges[0]["node"].get("shortcode")
     except Exception as e:
+        if is_too_many_open_files(e):
+            print_recovery_advice(classify_recovery_error(e))
+            raise SystemExit(1)
         debug_print("Reel code lookup", user=username, outcome="failed", error=f"{type(e).__name__}: {e}")
         return None
 
@@ -17032,13 +17048,28 @@ def runtime_boolean_errors() -> List[str]:
     return [f"{name} must be True or False, not {globals().get(name)!r}" for name in booleans if not isinstance(globals().get(name), bool)]
 
 
+# Validates effective path settings before startup expands or opens them
+def prepare_configured_paths(args):
+    overrides = {'DOTENV_FILE': 'env_file', 'CSV_FILE': 'csv_file'}
+    settings = globals().copy()
+    for name, argument in overrides.items():
+        value = getattr(args, argument, None)
+        if value:
+            settings[name] = value
+    errors = configuration_shape_errors(settings)
+    if errors:
+        print_recovery_advice(make_recovery_advice("config.invalid", "Invalid settings: " + ". ".join(errors), recovery_fix_with_guide("Correct the named settings in the configuration file or command line", CONFIG_FILE_GUIDE_URL), False))
+        raise SystemExit(1)
+
+
 # Names malformed path and color settings before diagnostics consume their values
-def configuration_shape_errors():
+def configuration_shape_errors(settings=None):
+    settings = globals() if settings is None else settings
     errors = []
     for name in ('INSTA_LOGFILE', 'CSV_FILE', 'DOTENV_FILE'):
-        if name in globals() and not isinstance(globals()[name], (str, os.PathLike)):
+        if name in settings and not isinstance(settings[name], (str, os.PathLike)):
             errors.append(f"{name} must be a path string")
-    theme = globals().get("COLOR_THEME", {})
+    theme = settings.get("COLOR_THEME", {})
     if not isinstance(theme, dict):
         errors.append("COLOR_THEME must be a dictionary of style strings")
     else:
@@ -18125,6 +18156,8 @@ def run_main():
 
     if args.output_dir:
         OUTPUT_DIR = os.path.expanduser(args.output_dir)
+
+    prepare_configured_paths(args)
 
     if args.env_file:
         DOTENV_FILE = os.path.expanduser(args.env_file)

@@ -268,6 +268,8 @@ python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 
 Set `TIME_FORMAT_12H = True` to display times in 12-hour format instead of the default 24-hour format.
 
+Path settings are validated before startup opens files. An invalid value names the setting to correct. Command-line path overrides still take precedence.
+
 <a id="smtp-settings"></a>
 ## SMTP Settings
 
