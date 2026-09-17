@@ -6122,6 +6122,18 @@ def escape_discord_markdown(text: str) -> str:
     return "".join(escape_map.get(ch, ch) for ch in text)
 
 
+# Removes the Discord markdown from alert text, since every ntfy client shows the markers instead of rendering them
+def strip_discord_markdown(text: str) -> str:
+    if not text:
+        return ""
+    # Emphasis and code spans go first, while the escapes from escape_discord_markdown still protect literal markers
+    plain = re.sub(r"(?s)\*\*(.+?)\*\*", r"\1", str(text))
+    plain = re.sub(r"`([^`]+)`", r"\1", plain)
+    # Discord suppresses a link preview for a bracketed URL, which ntfy would show as part of the address
+    plain = re.sub(r"<(https?://[^>\s]+)>", r"\1", plain)
+    return re.sub(r"\\([\\*_~`|])", r"\1", plain)
+
+
 # Helper function to compare follower/following lists and log changes
 def show_follow_info(followers_reported: int, followers_actual: int, followings_reported: int, followings_actual: int) -> None:
     if VERBOSE_MODE:
@@ -6338,10 +6350,10 @@ def truncate_utf8_bytes(text: str, max_bytes: int, suffix: str = "") -> str:
 
 # Builds one bounded ntfy title and message pair from the shared webhook content
 def build_ntfy_webhook_message(title: str, description: str, fields=None, image_url: str = "") -> tuple[str, str]:
-    safe_title = str(title)[:WEBHOOK_EMBED_TITLE_LIMIT] or "Instagram Monitor"
-    message_parts = [str(description)] if description else []
+    safe_title = strip_discord_markdown(str(title))[:WEBHOOK_EMBED_TITLE_LIMIT] or "Instagram Monitor"
+    message_parts = [strip_discord_markdown(str(description))] if description else []
     if fields:
-        message_parts.extend(f"{field['name']}: {field['value']}" for field in fields)
+        message_parts.extend(f"{strip_discord_markdown(str(field['name'])).rstrip(':')}: {strip_discord_markdown(str(field['value']))}" for field in fields)
     if image_url:
         message_parts.append(f"Image: {image_url}")
     safe_message = truncate_utf8_bytes("\n\n".join(message_parts), NTFY_MESSAGE_LIMIT_BYTES, NTFY_TRUNCATION_SUFFIX)

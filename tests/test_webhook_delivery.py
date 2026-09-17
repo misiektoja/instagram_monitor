@@ -372,6 +372,37 @@ class TestSendWebhook:
         assert len(message.encode("utf-8")) < 4096
         assert "\ufffd" not in message
 
+    # ntfy renders no markdown, so the emphasis, code spans and bracketed links the Discord embed carries are removed
+    def test_ntfy_receives_the_alert_text_without_markdown(self, im_module):
+        added = f"- {im_module.escape_discord_markdown('some_user*name')} (<https://www.instagram.com/some_user/>)\n"
+        embed = im_module.follower_change_embed("misiektoja", "followers", 10, 11, added, "")
+
+        title, message = im_module.build_ntfy_webhook_message(embed["webhook_title"], embed["webhook_description"], embed["webhook_fields"])
+
+        assert title == "\U0001f4c8 misiektoja Followers Changed"
+        assert "User misiektoja followers changed from 10 to 11" in message
+        # The escapes that keep a name literal on Discord would reach ntfy as visible backslashes
+        assert "Added followers: - some_user*name (https://www.instagram.com/some_user/)" in message
+        assert "**" not in message and "\\" not in message and "<https" not in message
+
+    # A code span marks the failing call on Discord and reads as stray backticks anywhere else
+    def test_ntfy_drops_the_code_span_around_an_error(self, im_module):
+        _, message = im_module.build_ntfy_webhook_message("Title", "Session flagged\n\nTriggering error: `401 Unauthorized`")
+
+        assert message == "Session flagged\n\nTriggering error: 401 Unauthorized"
+
+    # The Discord embed keeps its markdown, so removing it for ntfy must not reach the other provider
+    def test_the_discord_embed_keeps_its_markdown(self, im_module, monkeypatch):
+        calls = []
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append(kwargs) or _FakeResponse(200))
+
+        assert im_module.send_webhook("Title", "User **misiektoja** posts count changed from **10** to **11**") == 0
+        assert calls[0]["json"]["embeds"][0]["description"] == "User **misiektoja** posts count changed from **10** to **11**"
+
     # An unsupported provider fails before any webhook request is attempted
     def test_invalid_webhook_provider_is_rejected(self, im_module, monkeypatch):
         calls = []
