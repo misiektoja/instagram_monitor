@@ -84,7 +84,11 @@ def test_only_account_level_failures_are_group_c():
 def test_every_ordered_class_has_matching_terms(failure_class):
     assert im.FAILURE_TERMS[failure_class]
     sample = im.FAILURE_TERMS[failure_class][0]
+    # A retired endpoint is named by two terms together, since the endpoint alone says nothing about the failure
+    if failure_class == "endpoint_retired":
+        sample = f"{sample} {im.FAILURE_TERMS['action_block'][0]}"
     summary = im.classify_recovery_error(sample, is_logged_in=False).summary
+    assert im.classify_failure_class(sample) == failure_class
     assert summary
     assert summary != "An unexpected error stopped the requested action"
 

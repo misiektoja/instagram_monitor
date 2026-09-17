@@ -45,6 +45,7 @@ installed copy of the package.
 | `test_notifications.py` | Webhook URL validation, Discord markdown escaping, credential masking, payload templating |
 | `test_webhook_delivery.py` | `send_webhook` payload formatting, gates and retry behavior with fake HTTP |
 | `test_paginated_fetching.py` | `fetch_usernames_paginated` batching, limits, completion state and stop-event behavior |
+| `test_profile_resolution.py` | Resolving a target through search and GraphQL instead of the retired profile endpoint, id caching and the failure class that keeps the account running |
 | `test_dashboard_endpoints.py` | Web Dashboard status, strict atomic settings, private values, media access and isolation, target validation, monitor ownership, session signaling and test-notification endpoints |
 | `test_detection_workflows.py` | Posts/reels count change notifications, leaked-collab notification workflows and hostile email content |
 | `test_profile_picture_workflows.py` | Profile picture creation, removal, change notifications, CSV rows and file moves |

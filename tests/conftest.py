@@ -113,6 +113,8 @@ def deterministic_globals(monkeypatch):
     # A run that reported a broken proxy leaves the record on the module, and Doctor reads it in place of the
     # live settings, so a later test would inherit the earlier run's proxy problem
     im.PROXY_STARTUP_ERRORS.clear()
+    # Resolved user ids are reused for the whole run, so one test's target must not answer for another's
+    im.USER_ID_CACHE.clear()
     # Set by the first startup notice a test prints, and read by the Doctor notice to decide its leading blank line
     im.CONSOLE_OUTPUT_PRINTED = False
     # Drop any cached flag-probe verdict between tests

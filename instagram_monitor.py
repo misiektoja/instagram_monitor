@@ -952,6 +952,10 @@ SENSITIVE_CONFIG_KEYS = frozenset((*SECRET_KEYS, "WEBHOOK_HEADERS"))
 # List of error substrings that unambiguously indicate the session account or IP has been flagged (challenge/checkpoint/shadowban)
 FLAGGED_TRIGGERS = ("detected automated checks", "checkpoint_required", "challenge_required", "feedback_required")
 
+# Error substrings naming an endpoint Instagram retired. It answers feedback_required for every logged-in session,
+# so reading that reply as a flag would stop an account whose other endpoints all still work
+RETIRED_ENDPOINT_TERMS = ("web_profile_info",)
+
 # Error substrings meaning a profile could not be found, which is ambiguous between a deleted/renamed target and a flagged session
 PROFILE_NOT_FOUND_TRIGGERS = ("ProfileNotExistsException",)
 
@@ -1012,6 +1016,7 @@ ANTI_DETECTION_SESSION_GUIDE_URL = DOCS_BASE_URL + "/anti-detection/#sign-in-usi
 CONNECTION_ERRORS_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#connection-errors-during-monitoring"
 DOCTOR_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#doctor-preflight"
 ACTION_BLOCK_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#instagram-says-try-again-later"
+RETIRED_ENDPOINT_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#profile-lookups-report-a-retired-endpoint"
 SECRETS_GUIDE_URL = DOCS_BASE_URL + "/configuration/#storing-secrets"
 DIAGNOSTICS_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#choosing-the-right-logging-level"
 MONITORING_GUIDE_URL = DOCS_BASE_URL + "/usage/#monitoring-mode"
@@ -7946,15 +7951,64 @@ def _profile_from_web_profile_info(bot: instaloader.Instaloader, username: str) 
     return instaloader.Profile(bot.context, normalized)
 
 
-# Resolves a profile by username by trying web_profile_info first in anonymous mode then Instaloader
+# Numeric user ids already resolved in this run, so a monitored target is looked up once instead of once a cycle
+USER_ID_CACHE: Dict[str, str] = {}
+USER_ID_CACHE_LOCK = threading.Lock()
+
+
+# Returns the numeric user id Instagram's search reports for a username, or None when the search does not list that
+# exact account. Search answers with near matches too, so only the name that was asked for is accepted
+def user_id_from_search(ctx, username: str) -> Optional[str]:
+    data = ctx.get_json("web/search/topsearch/", {'context': 'blended', 'query': username, 'include_reel': False})
+    wanted = username.strip().lower()
+    for entry in (data.get('users') or []) if isinstance(data, dict) else []:
+        user = entry.get('user') if isinstance(entry, dict) else None
+        if not isinstance(user, dict) or str(user.get('username') or "").strip().lower() != wanted:
+            continue
+        identifier = user.get('pk') or user.get('id')
+        if identifier is not None and str(identifier).strip():
+            return str(identifier).strip()
+    return None
+
+
+# Returns the user id for a username, resolving it through search the first time and reusing it afterwards
+def resolve_user_id(ctx, username: str) -> Optional[str]:
+    key = username.strip().lower()
+    with USER_ID_CACHE_LOCK:
+        cached = USER_ID_CACHE.get(key)
+    if cached:
+        return cached
+
+    resolved = user_id_from_search(ctx, key)
+    if resolved:
+        with USER_ID_CACHE_LOCK:
+            USER_ID_CACHE[key] = resolved
+        debug_print("Resolved Instagram user id", username=key, source="search")
+    return resolved
+
+
+# Resolves a profile by username. Instagram retired web_profile_info for accounts that are signed in, answering
+# feedback_required however healthy the account is, so a signed-in run resolves the id through search and reads the
+# profile with the GraphQL query Instaloader already uses. Anonymous runs keep the mobile endpoint, which still works
 def profile_from_username_resilient(bot: instaloader.Instaloader, username: str) -> instaloader.Profile:
     ctx = bot.context
     if not ctx.is_logged_in:
         fallback_profile = _profile_from_web_profile_info(bot, username)
         if fallback_profile is not None:
             return fallback_profile
+        return instaloader.Profile.from_username(ctx, username)
 
-    return instaloader.Profile.from_username(ctx, username)
+    user_id = resolve_user_id(ctx, username)
+    if user_id is None:
+        # Search does not list every account, so the retired endpoint stays as the last resort. Its refusal is
+        # classified as an endpoint failure, which is why reaching it cannot stop the session account
+        return instaloader.Profile.from_username(ctx, username)
+
+    profile = instaloader.Profile(ctx, {'username': username, 'id': user_id})
+    # Read now rather than on first attribute access, so a refused lookup is reported where the profile is resolved
+    # and the flag probe keeps making a request it can fail on
+    profile._obtain_metadata()
+    return profile
 
 
 # Return the most recent post and/or reel for the user (GraphQL helper when logged in)
@@ -10735,6 +10789,7 @@ def session_recovery_browser_hint() -> str:
 # Ordered match terms for every recognized failure, shared by the message and the failure-class lookups so the two cannot drift
 FAILURE_TERMS = {
     'rate_limit': ("429", "too many requests", "wait a few minutes", "rate limit", "please wait"),
+    'endpoint_retired': RETIRED_ENDPOINT_TERMS,
     'action_block': ("feedback_required",),
     'challenge': ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data"),
     'session_missing': ("session file",),
@@ -10748,12 +10803,13 @@ FAILURE_TERMS = {
 }
 
 # Evaluation order of FAILURE_TERMS, matching the branch order in classify_error_parts
-FAILURE_CLASS_ORDER = ('rate_limit', 'action_block', 'challenge', 'session_missing', 'auth_expired', 'target_unavailable', 'impersonate_unsupported', 'proxy_unresolved', 'dns_failure', 'network', 'schema_change')
+FAILURE_CLASS_ORDER = ('rate_limit', 'endpoint_retired', 'action_block', 'challenge', 'session_missing', 'auth_expired', 'target_unavailable', 'impersonate_unsupported', 'proxy_unresolved', 'dns_failure', 'network', 'schema_change')
 
 # Reliability group each failure class belongs to: A blocks the transport, B breaks on an Instagram API change, C acts against the session account
 FAILURE_CLASS_GROUPS = {
     'rate_limit': 'A',
     'schema_change': 'B',
+    'endpoint_retired': 'B',
     'action_block': 'C',
     'challenge': 'C',
     'auth_expired': 'C',
@@ -10775,10 +10831,24 @@ def failure_term_matches(term: str, message: str) -> bool:
     return term in message
 
 
+# Returns True when a failure came from an endpoint Instagram retired, which reports the endpoint rather than
+# anything about the session account. Both halves are required, because the retired endpoint answers
+# feedback_required however healthy the account is while a 401 or a timeout on that same path still means what it
+# usually means
+def is_retired_endpoint_error(error_msg) -> bool:
+    m = (error_msg or "").lower()
+    return any(term in m for term in RETIRED_ENDPOINT_TERMS) and any(term in m for term in FAILURE_TERMS['action_block'])
+
+
 # Returns the stable failure class for one error message, or 'unknown' when nothing matches
 def classify_failure_class(error_msg: str) -> str:
     m = (error_msg or "").lower()
     for name in FAILURE_CLASS_ORDER:
+        # The retired endpoint is the one class a single term cannot name, since its terms have to occur together
+        if name == 'endpoint_retired':
+            if is_retired_endpoint_error(m):
+                return name
+            continue
         if any(failure_term_matches(t, m) for t in FAILURE_TERMS[name]):
             return name
     return 'unknown'
@@ -10796,7 +10866,7 @@ def is_account_level_failure(failure_class: str) -> bool:
 
 # Every recovery category the tool can report, kept closed so a message is testable, deduplicable and translatable later
 RECOVERY_CODES = frozenset({
-    "instagram.rate_limited", "instagram.action_blocked", "instagram.challenge", "instagram.empty_data",
+    "instagram.rate_limited", "instagram.endpoint_retired", "instagram.action_blocked", "instagram.challenge", "instagram.empty_data",
     "session.missing", "session.expired",
     "target.missing", "target.not_found",
     "config.missing", "config.invalid", "config.insecure", "config.impersonate_unsupported",
@@ -10974,6 +11044,11 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
     # Rate limiting or TLS-fingerprint blocks
     if any(t in m for t in FAILURE_TERMS['rate_limit']):
         return "instagram.rate_limited", "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
+
+    # An endpoint Instagram retired answers feedback_required whatever the account is doing, so its reply describes
+    # the endpoint. Reading it as an account block would stop a session every other endpoint still answers
+    if is_retired_endpoint_error(m):
+        return "instagram.endpoint_retired", "Instagram no longer answers the profile endpoint this lookup used", "Instagram retired 'api/v1/users/web_profile_info/' for accounts that are signed in. Your account is not blocked and there is nothing to clear. Profiles are read over GraphQL instead, and this endpoint is tried only for a target the search does not list, so check that the target name is spelled correctly and still exists", RETIRED_ENDPOINT_GUIDE_URL, False
 
     # A temporary limit, which Instagram reports as feedback_required with a "Try Again Later" notice. Only time
     # clears it, so the checkpoint advice would send the reader to clear something that is not there
@@ -11240,6 +11315,8 @@ def _run_flagged_probe(bot):
         return False
     except Exception as probe_err:
         probe_msg = format_error_message(probe_err)
+        if is_retired_endpoint_error(probe_msg):
+            return False
         return is_profile_not_found_error(probe_msg) or any(t in probe_msg for t in FLAGGED_TRIGGERS)
 
 
@@ -11277,6 +11354,8 @@ def probe_session_flagged(bot):
 
 # Returns True when an error indicates the session account or IP itself is flagged rather than a single target being gone
 def is_session_flagged(error_msg, bot):
+    if is_retired_endpoint_error(error_msg):
+        return False
     if any(t in error_msg for t in FLAGGED_TRIGGERS):
         return True
     if is_profile_not_found_error(error_msg):

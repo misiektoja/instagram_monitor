@@ -95,6 +95,17 @@ A `400 Bad Request` naming `feedback_required` means Instagram is limiting what 
 
 Make no requests from that account and that network for several hours, then run `instagram_monitor --doctor` again. If the same session works from another network, such as a mobile connection, the limit is on your IP address rather than the account. Once it passes, raise `INSTA_CHECK_INTERVAL`, monitor fewer users and follow the [anti-detection guidance](anti-detection.md). A limit that returns soon after monitoring resumes means the account is still being watched, so wait longer before the next attempt.
 
+One `feedback_required` does not mean this, and the tool tells the two apart. See [Profile Lookups Report a Retired Endpoint](#profile-lookups-report-a-retired-endpoint) below.
+
+<a id="profile-lookups-report-a-retired-endpoint"></a>
+## Profile Lookups Report a Retired Endpoint
+
+In September 2026 Instagram retired `api/v1/users/web_profile_info/` for accounts that are signed in. It answers `400 feedback_required` no matter how healthy the account is, while GraphQL, search and the profile page keep working for the same session in the same second. Runs without a login are unaffected, because they read profiles from `i.instagram.com` instead.
+
+A signed-in run now resolves the target's user id through Instagram's search and reads the profile over GraphQL, so it does not use the retired endpoint at all. Each id is resolved once and reused for the rest of the run.
+
+Search does not list every account, so the retired endpoint is still tried for a target search cannot find. That failure is reported as `endpoint_retired` rather than `action_block`: it does not stop the account and it does not trip the circuit breaker. When you see it, check that the target name is spelled correctly and that the profile still exists.
+
 <a id="container-dashboard-does-not-open"></a>
 ## Container Dashboard Does Not Open
 

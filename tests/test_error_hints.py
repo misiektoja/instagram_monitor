@@ -233,7 +233,7 @@ class TestErrorSummary:
     @pytest.mark.parametrize("msg, summary", [
         ("ConnectionException: 429 Too Many Requests", "Instagram is rate-limiting this account or IP"),
         ("JSONDecodeError: challenge_required", "Instagram is asking this session or IP to pass a challenge"),
-        ('AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required" when accessing https://www.instagram.com/api/v1/users/web_profile_info/?username=x', "Instagram is temporarily limiting this account or IP"),
+        ('AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required" when accessing https://www.instagram.com/api/v1/users/web_profile_info/?username=x', "Instagram no longer answers the profile endpoint this lookup used"),
         ("FileNotFoundError: Instagram session file for me not found", "No saved Instagram session was found"),
         ("ConnectionException: Login required, redirected", "The saved Instagram session is invalid or expired"),
         ("ProfileNotExistsException: Profile xyz does not exist", "Instagram could not find the requested profile"),
@@ -610,7 +610,7 @@ class TestTheLoopFailurePaths:
 class TestRecoveryCodeSet:
     def test_recovery_codes_are_stable(self, im_module):
         assert im_module.RECOVERY_CODES == frozenset({
-            "instagram.rate_limited", "instagram.action_blocked", "instagram.challenge", "instagram.empty_data",
+            "instagram.rate_limited", "instagram.endpoint_retired", "instagram.action_blocked", "instagram.challenge", "instagram.empty_data",
             "session.missing", "session.expired",
             "target.missing", "target.not_found",
             "config.missing", "config.invalid", "config.insecure", "config.impersonate_unsupported",
@@ -636,6 +636,7 @@ class TestRecoveryCodeSet:
             ("ConnectionException: 429 Too Many Requests", "runtime"),
             ("JSONDecodeError: challenge_required", "runtime"),
             ('AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required"', "runtime"),
+            ('AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required" when accessing https://www.instagram.com/api/v1/users/web_profile_info/?username=x', "runtime"),
             ("FileNotFoundError: Instagram session file for me not found", "runtime"),
             ("ConnectionException: Login required, redirected", "runtime"),
             ("ProfileNotExistsException: Profile xyz does not exist", "runtime"),
@@ -683,7 +684,7 @@ class TestRecoveryCodeSet:
         rows = _rule_table_rows(im_module)
         calls = _context_advice_calls(im_module)
 
-        assert len(rows) == 12, "the runtime rule table lost or gained a row"
+        assert len(rows) == 13, "the runtime rule table lost or gained a row"
         assert all(len(row.elts) == 5 for row in rows)
         assert len(calls) >= 15, "the context table lost branches"
         assert all(len(call.args) == 5 for call in calls)
