@@ -1,8 +1,10 @@
-"""Checks retained file credentials after editing a setup destination."""
+"""Checks retained file credentials after editing a setup destination, and unreadable dotenv reporting."""
 
 import os
 import builtins
 import re
+import socket
+import sys
 
 import pytest
 
@@ -64,3 +66,52 @@ def test_kept_file_credential_moves_with_setup(tmp_path, monkeypatch, capsys):
     assert dotenv_values(new, interpolate=False)[key] == "retained-private-value"
     assert dotenv_values(old, interpolate=False)[key] == "retained-private-value"
     assert "retained-private-value" not in "".join(transcript)
+
+
+# Refuses DNS at the network boundary so Doctor runs offline without replacing its implementation
+@pytest.fixture
+def offline(monkeypatch):
+    def refuse(*_args, **_kwargs):
+        raise socket.gaierror("offline")
+    monkeypatch.setattr(socket, "getaddrinfo", refuse)
+
+
+# Writes a dotenv file whose bytes are not valid UTF-8
+def unreadable_dotenv(tmp_path):
+    env = tmp_path / "broken.env"
+    env.write_bytes(b'UNRELATED_SETTING="bad-encoding-\xff"\n')
+    return env
+
+
+# Proves Doctor reports the failed load as a row instead of stopping on the file it exists to describe
+def test_doctor_reports_unreadable_dotenv(tmp_path, monkeypatch, capsys, offline):
+    config = tmp_path / "monitor.conf"
+    config.write_text("CLEAR_SCREEN=False\n", encoding="utf-8")
+    env = unreadable_dotenv(tmp_path)
+    monkeypatch.setattr(monitor, "COLORED_OUTPUT", False)
+    monkeypatch.setattr(sys, "argv", [monitor.__file__, "--doctor", "--config-file", str(config), "--env-file", str(env)])
+
+    with pytest.raises(SystemExit):
+        monitor.run_main()
+
+    output = capsys.readouterr().out
+    assert "Dotenv file could not be loaded" in output
+    assert "could not be read as UTF-8" in output
+    assert "Dotenv file loaded" not in output
+
+
+# Proves an ordinary run names the file and stops instead of raising out of the dotenv load
+def test_startup_reports_unreadable_dotenv(tmp_path, monkeypatch, capsys, offline):
+    config = tmp_path / "monitor.conf"
+    config.write_text("CLEAR_SCREEN=False\n", encoding="utf-8")
+    env = unreadable_dotenv(tmp_path)
+    monkeypatch.setattr(monitor, "COLORED_OUTPUT", False)
+    monkeypatch.setattr(sys, "argv", [monitor.__file__, "review.test", "--config-file", str(config), "--env-file", str(env)])
+
+    with pytest.raises(SystemExit) as stopped:
+        monitor.run_main()
+
+    assert stopped.value.code == 1
+    output = capsys.readouterr().out
+    assert str(env) in output
+    assert "Save the dotenv file as UTF-8 and check its read permissions" in output

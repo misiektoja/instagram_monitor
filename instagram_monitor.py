@@ -17077,6 +17077,8 @@ BUILT_IN_SHAPE_SETTINGS = {name: globals()[name] for name in ('INSTA_LOGFILE', '
 # Shape errors whose settings were replaced with the built-in values, so doctor still names them
 DISCARDED_SETTING_ERRORS = []
 
+DOTENV_STARTUP_ERRORS = {}
+
 
 # True when the selected command exists to correct the configuration, so a malformed setting is reported
 # there instead of stopping the one run that could repair it
@@ -17164,7 +17166,11 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
         advice = make_recovery_advice("config.invalid", "Config file contains removed settings", recovery_fix_with_guide("Delete the reported settings or regenerate the file with --generate-config", CONFIG_FILE_GUIDE_URL), False)
         checks.append(make_doctor_check("Configuration", "WARN", advice.summary, describe_retired_settings(retired_settings, cfg), advice))
 
-    if env_path and os.path.isfile(str(env_path)):
+    if env_path and str(env_path) in DOTENV_STARTUP_ERRORS:
+        detail = DOTENV_STARTUP_ERRORS[str(env_path)]
+        advice = make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide("Save the dotenv file as UTF-8 and check its read permissions, then run Doctor again", CONFIG_FILE_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "FAIL", "Dotenv file could not be loaded", detail, advice))
+    elif env_path and os.path.isfile(str(env_path)):
         checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
     elif env_path:
         advice = make_recovery_advice("config.missing", "The requested dotenv file was not found", recovery_fix_with_guide("Create the file or select an existing path with --env-file", SECRETS_GUIDE_URL), False)
@@ -18149,6 +18155,8 @@ def run_main():
 
     # Terminal dashboard options
     args = parser.parse_args()
+    DOTENV_STARTUP_ERRORS.clear()
+    env_path = None
 
     apply_diagnostic_cli_overrides(args)
 
@@ -18267,6 +18275,13 @@ def run_main():
             env_path = DOTENV_FILE if DOTENV_FILE else None
             if env_path:
                 print(render_recovery_advice(missing_dependency_advice("python-dotenv", f"The dotenv file '{env_path}' cannot be loaded", pip_install_command("python-dotenv")), label="Warning"))
+        except (OSError, UnicodeError, ValueError):
+            detail = f"Dotenv file '{env_path}' could not be read as UTF-8"
+            DOTENV_STARTUP_ERRORS[str(env_path)] = detail
+            if not args.doctor:
+                print_recovery_advice(make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide("Save the dotenv file as UTF-8 and check its read permissions", CONFIG_FILE_GUIDE_URL), False))
+                if not command_reports_configuration(args):
+                    sys.exit(1)
 
     # Environment variables are a documented alternative to a dotenv file, so they apply even when no file was loaded
     for secret in SECRET_KEYS:
