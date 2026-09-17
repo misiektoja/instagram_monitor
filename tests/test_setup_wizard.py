@@ -1775,6 +1775,8 @@ def test_saved_secrets_are_credited_to_the_dotenv_file(im_module, monkeypatch, t
     state = make_setup_state(im_module, tmp_path)
     state.env_path = env_path
 
+    state.config_path = tmp_path / "saved-settings.conf"
+    state.config_path.write_text("\n".join(f"{name} = {value!r}" for name, value in state.config_values.items() if name in im_module.config_template_defaults()) + "\n", encoding="utf-8")
     im_module._wizard_apply_saved_values(state)
 
     assert im_module.SECRET_SOURCES["SESSION_PASSWORD"] == "dotenv file"
@@ -1790,6 +1792,8 @@ def test_an_exported_secret_is_not_credited_to_the_dotenv_file(im_module, monkey
     state = make_setup_state(im_module, tmp_path)
     state.env_path = env_path
 
+    state.config_path = tmp_path / "saved-settings.conf"
+    state.config_path.write_text("\n".join(f"{name} = {value!r}" for name, value in state.config_values.items() if name in im_module.config_template_defaults()) + "\n", encoding="utf-8")
     im_module._wizard_apply_saved_values(state)
 
     assert im_module.SECRET_SOURCES["SESSION_PASSWORD"] == "environment"

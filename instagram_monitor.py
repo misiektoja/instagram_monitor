@@ -994,6 +994,55 @@ def generate_config_with_current_values(values=None) -> str:
     return rendered
 
 
+# Reads a saved follow baseline before monitoring compares or replaces it
+def read_follow_record(path):
+    with open(path, "r", encoding="utf-8") as source:
+        record = json.load(source)
+    if not isinstance(record, list) or len(record) < 2:
+        raise ValueError("expected a follow list containing a count and usernames")
+    if not isinstance(record[0], int) or isinstance(record[0], bool) or record[0] < 0:
+        raise ValueError("the saved follow count must be a nonnegative integer")
+    if not isinstance(record[1], list) or any(not isinstance(value, str) or not value.strip() for value in record[1]):
+        raise ValueError("saved usernames must be a list of nonempty strings")
+    return record
+
+
+# Accepts finite numeric values without overflowing on unusually large integers
+def finite_number(value):
+    import math
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+# Preserves inline credentials privately before setup replaces their only saved source
+def preserve_inline_config_secrets(config_path, env_path):
+    from dotenv import dotenv_values
+    source = Path(config_path).expanduser()
+    if not source.is_file():
+        return None
+    original = {}
+    if not load_config_file(source, namespace=original, report_errors=False):
+        raise ValueError("Existing configuration could not be read before preserving its inline secrets")
+    defaults = config_template_defaults()
+    destination = Path(env_path).expanduser()
+    saved = dotenv_values(str(destination), interpolate=False) if destination.exists() else {}
+    updates = {}
+    for key in SECRET_KEYS:
+        value = original.get(key)
+        if isinstance(value, str) and value and value != defaults.get(key) and saved.get(key) is None:
+            updates[key] = value
+    if not updates:
+        return None
+    try:
+        return update_dotenv_file(destination, updates)
+    except Exception as exc:
+        raise OSError(f"Could not preserve inline secrets in '{destination}'. The original configuration was not replaced") from exc
+
+
 # Removes inline secret assignments from a setup backup while preserving other configuration text
 def redact_config_backup(content):
     import ast
@@ -8537,7 +8586,7 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
                 pass
         details = []
         if exc.lineno:
-            details.append(f"Line {exc.lineno}: {(exc.text or '').rstrip()}")
+            details.append(f"Line {exc.lineno}")
         details.append(f"Parser: {exc.msg}")
         return reject(f"* Error loading config file '{config_path}':", details, "Check that line. Text values need matching quotes and Windows paths need forward slashes (/) or doubled backslashes (\\\\). You can also regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'")
     except ValueError as exc:
@@ -12885,10 +12934,10 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
     if os.path.isfile(insta_followers_file):
         try:
-            with open(insta_followers_file, 'r', encoding="utf-8") as f:
-                followers_read = json.load(f)
+            followers_read = read_follow_record(insta_followers_file)
         except Exception as e:
-            print_recovery_error(e, context="file_read", summary=f"Cannot load followers list from '{insta_followers_file}' file: {e}")
+            print_recovery_error(e, context="file_read", summary=f"Cannot load followers list from '{insta_followers_file}': {e}. Correct the file or move it aside to start a new baseline")
+            raise SystemExit(1) from None
         if followers_read:
             followers_old_count = followers_read[0]
             followers_old = followers_read[1]
@@ -13027,10 +13076,10 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
     if os.path.isfile(insta_followings_file):
         try:
-            with open(insta_followings_file, 'r', encoding="utf-8") as f:
-                followings_read = json.load(f)
+            followings_read = read_follow_record(insta_followings_file)
         except Exception as e:
-            print_recovery_error(e, context="file_read", summary=f"Cannot load followings list from '{insta_followings_file}' file: {e}")
+            print_recovery_error(e, context="file_read", summary=f"Cannot load followings list from '{insta_followings_file}': {e}. Correct the file or move it aside to start a new baseline")
+            raise SystemExit(1) from None
         if followings_read:
             followings_old_count = followings_read[0]
             followings_old = followings_read[1]
@@ -15442,14 +15491,17 @@ def _wizard_apply_saved_values(state):
     except (OSError, UnicodeError, ValueError) as exc:
         print_recovery_error(exc, "secret")
         raise SystemExit(1) from None
-    globals().update(state.config_values)
+    saved_config = config_template_defaults()
+    if not load_config_file(state.config_path, namespace=saved_config):
+        raise SystemExit(1)
+    globals().update(saved_config)
     for key in SECRET_KEYS:
         if exported.get(key):
             value, source = exported[key], "environment"
         elif saved.get(key) is not None:
             value, source = saved[key], "dotenv file"
         else:
-            value, source = state.config_values.get(key), "configuration file or command line"
+            value, source = saved_config.get(key), "configuration file or command line"
         globals()[key] = value
         record_secret_source(key, source)
     return resolve_local_timezone()
@@ -16243,6 +16295,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     state.config_values.update({"TARGET_USERNAMES": list(state.targets) if state.persist_targets else [], "SESSION_USERNAME": state.session_username, "SKIP_SESSION": not state.logged_in, "DOTENV_FILE": str(state.env_path)})
     config_content = generate_config_with_current_values(state.config_values)
     try:
+        preserve_inline_config_secrets(state.config_path, state.env_path)
         write_status = write_config_file(state.config_path, config_content, redact_secrets=True)
     except Exception as exc:
         print(colorize("error", f"Could not write config file '{state.config_path}': {exc}"))
@@ -16863,10 +16916,10 @@ def runtime_configuration_problems() -> Dict[str, str]:
     hours = (("MIN_H1", MIN_H1), ("MAX_H1", MAX_H1), ("MIN_H2", MIN_H2), ("MAX_H2", MAX_H2))
     ports = (("SMTP_PORT", SMTP_PORT), ("WEB_DASHBOARD_PORT", WEB_DASHBOARD_PORT))
     for name, value in positive_numbers:
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+        if not finite_number(value) or value <= 0:
             problems[name] = f"must be a number greater than zero, not {value!r}"
     for name, value in nonnegative_numbers:
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+        if not finite_number(value) or value < 0:
             problems[name] = f"must be a number zero or greater, not {value!r}"
     for name, value in nonnegative_integers:
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
@@ -18206,9 +18259,6 @@ def run_main():
         print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
         sys.exit(1)
 
-    if not args.doctor and not args.analyze_follows and not args.set_smtp_password and not check_internet():
-        sys.exit(1)
-
     # Both combinations below are read from settings the check above may have rejected, and only doctor mode gets
     # here with one. A combination judged from a value that is not a number would stop the report about to name it
     if not numeric_problems:
@@ -18429,6 +18479,14 @@ def run_main():
         next_env_path = "none" if DOTENV_FILE and str(DOTENV_FILE).casefold() == "none" else env_path
         print_doctor_next_steps([] if not args.usernames else targets, cfg_path or active_config_path(), next_env_path, TARGET_USERNAMES, doctor_failures)
         sys.exit(1 if doctor_failures else 0)
+
+    boolean_errors = runtime_boolean_errors()
+    if boolean_errors:
+        print_recovery_error(context="config", summary="Invalid settings: " + ". ".join(boolean_errors))
+        sys.exit(1)
+
+    if not args.analyze_follows and not check_internet():
+        sys.exit(1)
 
     # Offline follow relationship analysis: read the already-saved lists, print the result and exit (no network requests, no monitoring loop)
     if getattr(args, "analyze_follows", False):
