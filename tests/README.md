@@ -82,6 +82,7 @@ installed copy of the package.
 | `test_documentation.py` | Semantic documentation contracts for commands, concepts and platform variants plus repository metadata: governance files, citation, funding, line endings, the declared editor style, the pinned linter and release integrity |
 | `test_packaging.py` | Wheel contents, installed console help/version and config generation |
 | `test_browser_e2e.py` | Real Chromium rendering, navigation and target creation against the local dashboard |
+| `test_moved_private_settings.py` | Kept credentials across dotenv destination changes and startup error handling |
 
 ## Conventions
 

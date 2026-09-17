@@ -16194,11 +16194,16 @@ def _wizard_collect_destination_section(state: WizardSetupState, method: str) ->
     state.config_values["DOTENV_FILE"] = str(selected_env)
     if selected_env == state.env_path:
         return
+    retained_private = dict((binding.key, binding.value) for binding in _dotenv_bindings(state.env_path.read_text(encoding="utf-8")) if binding.key is not None) if state.env_path.exists() else {}
+    destination_private = dict((binding.key, binding.value) for binding in _dotenv_bindings(selected_env.read_text(encoding="utf-8")) if binding.key is not None) if selected_env.exists() else {}
     state.env_path = selected_env
-    print(colorize("info", "  The dotenv destination changed. Re-enter login and notification settings that may contain secrets."))
+    print(colorize("info", "  The dotenv destination changed. Existing private settings will be kept in the new file when you save. Review login and notification settings."))
     _wizard_collect_login_section(state, method)
     _wizard_collect_email_section(state)
     _wizard_collect_webhook_section(state)
+    for key, value in retained_private.items():
+        if key in SECRET_KEYS and isinstance(value, str) and key not in state.secret_updates and destination_private.get(key) is None:
+            state.secret_updates[key] = value
 
 
 # Prints the current editable setup answers without exposing secrets
