@@ -756,7 +756,7 @@ def test_the_connection_section_records_the_list_surface_only(im_module, monkeyp
         state = make_setup_state(im_module, Path(directory_name))
         state.logged_in = True
         state.baseline_values.update({"HTTP_BACKEND": "requests", "CURL_CFFI_IMPERSONATE": "safari"})
-        scripted_connection_choices(im_module, monkeypatch, {"source": 2})
+        scripted_connection_choices(im_module, monkeypatch, {"collect": 2, "source": 2})
 
         im_module._wizard_collect_connection_section(state)
 
@@ -771,7 +771,7 @@ def test_login_setup_is_offered_the_browser_source(im_module, monkeypatch):
         state = make_setup_state(im_module, Path(directory_name))
         state.logged_in = True
         monkeypatch.setattr(im_module, "playwright_available", lambda: True)
-        asked = scripted_connection_choices(im_module, monkeypatch, {"source": 3})
+        asked = scripted_connection_choices(im_module, monkeypatch, {"collect": 2, "source": 3})
 
         im_module._wizard_collect_connection_section(state)
 
@@ -788,7 +788,7 @@ def test_the_browser_source_moves_the_stock_transport_to_curl_cffi(im_module, mo
         state.logged_in = True
         state.baseline_values["HTTP_BACKEND"] = "requests"
         monkeypatch.setattr(im_module, "playwright_available", lambda: True)
-        scripted_connection_choices(im_module, monkeypatch, {"source": 3})
+        scripted_connection_choices(im_module, monkeypatch, {"collect": 2, "source": 3})
 
         im_module._wizard_collect_connection_section(state)
 
@@ -804,7 +804,7 @@ def test_the_browser_source_unpins_an_impersonation_from_another_family(im_modul
         state.logged_in = True
         state.baseline_values["CURL_CFFI_IMPERSONATE"] = "firefox"
         monkeypatch.setattr(im_module, "playwright_available", lambda: True)
-        scripted_connection_choices(im_module, monkeypatch, {"source": 3})
+        scripted_connection_choices(im_module, monkeypatch, {"collect": 2, "source": 3})
 
         im_module._wizard_collect_connection_section(state)
 
@@ -829,7 +829,8 @@ def test_a_missing_playwright_is_named_on_the_browser_source(im_module, monkeypa
         def ask(question, options, default_index=0):
             if "follower and following lists" in question:
                 described.update(dict(options))
-            return default_index
+                return default_index
+            return 2
 
         monkeypatch.setattr(im_module, "_wizard_ask_choice", ask)
 
@@ -1905,7 +1906,7 @@ def isolated_dotenv_ownership(monkeypatch, im_module):
     monkeypatch.setattr(im_module, "DOTENV_RELOAD_STATE", {})
 
 
-# Verifies names are opt-out in setup, so the expensive question is asked before the one about how
+# Verifies names are opt-in in setup, so pressing Enter through the wizard never requests one
 def test_setup_asks_what_to_collect_before_how(im_module, monkeypatch):
     with make_test_directory() as directory_name:
         state = make_setup_state(im_module, Path(directory_name))
@@ -1914,11 +1915,67 @@ def test_setup_asks_what_to_collect_before_how(im_module, monkeypatch):
 
         im_module._wizard_collect_connection_section(state)
 
-        assert asked["collect"]["default"] == 0
-        assert asked["collect"]["options"] == ["Followers and following", "Followers only", "Counts only, no names"]
+        assert asked["collect"]["options"] == ["Counts only, no names", "Followers only", "Followers and following"]
+        assert asked["collect"]["default"] == 0, "the option that never requests a name is the default"
+        assert state.config_values["SKIP_FOLLOWERS"] is True
+        assert state.config_values["SKIP_FOLLOWINGS"] is True
+
+
+# Verifies choosing both lists records the answer and goes on to ask where to read them from
+def test_setup_can_collect_both_lists(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        asked = scripted_connection_choices(im_module, monkeypatch, {"collect": 2})
+
+        im_module._wizard_collect_connection_section(state)
+
         assert state.config_values["SKIP_FOLLOWERS"] is False
         assert state.config_values["SKIP_FOLLOWINGS"] is False
+        assert "source" in asked
         assert state.config_values["FOLLOW_LIST_SOURCE"] == "auto"
+
+
+# Verifies the expensive answers name the daily cap and its value, not only the setting that holds it
+def test_the_collection_options_name_the_identity_budget(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        monkeypatch.setattr(im_module, "IDENTITY_BUDGET_PER_DAY", 2000)
+        described = {}
+
+        def ask(question, options, default_index=0):
+            if "should be collected" in question:
+                described.update(dict(options))
+            return 0
+
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", ask)
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert "IDENTITY_BUDGET_PER_DAY, 2000 names a day" in described["Followers only"]
+        assert "IDENTITY_BUDGET_PER_DAY" not in described["Counts only, no names"], "the option that requests no names is not capped by a name budget"
+
+
+# Verifies a disabled budget is described as disabled instead of showing a cap of zero names a day
+def test_the_collection_options_say_when_no_budget_is_set(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        monkeypatch.setattr(im_module, "IDENTITY_BUDGET_PER_DAY", 0)
+        described = {}
+
+        def ask(question, options, default_index=0):
+            if "should be collected" in question:
+                described.update(dict(options))
+            return 0
+
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", ask)
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert "nothing caps how many are collected" in described["Followers only"]
+        assert "0 names a day" not in described["Followers only"]
 
 
 # Verifies choosing followers only leaves the following list alone while still reading followers
@@ -1940,7 +1997,7 @@ def test_setup_skips_the_source_question_when_no_names_are_collected(im_module, 
     with make_test_directory() as directory_name:
         state = make_setup_state(im_module, Path(directory_name))
         state.logged_in = True
-        asked = scripted_connection_choices(im_module, monkeypatch, {"collect": 2})
+        asked = scripted_connection_choices(im_module, monkeypatch, {"collect": 0})
 
         im_module._wizard_collect_connection_section(state)
 

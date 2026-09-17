@@ -16396,12 +16396,14 @@ def _wizard_collect_connection_section(state: WizardSetupState) -> None:
     # No API surface lists followers without a session, so the question is only worth asking in login mode
     if state.logged_in:
         # Names are the most expensive thing the tool asks Instagram for and the operation Instagram acts
-        # against, so the first question is whether to collect them at all rather than how
-        collect_options = [("Followers and following", "Read both lists when a count changes, so you see who joined and who left.\nNames are what Instagram scores hardest, so this is capped by IDENTITY_BUDGET_PER_DAY."), ("Followers only", "Report who followed and unfollowed while collecting about half as many names per check."), ("Counts only, no names", "Follower and following numbers, posts, reels, stories and profile changes are still monitored.\nNothing that returns user names is ever requested, which is the safest choice for the account.")]
+        # against, so the first question is whether to collect them at all rather than how, and the
+        # option that never requests a name is the default
+        budget_note = f"Instagram counts every name it hands back, so name collection is capped by IDENTITY_BUDGET_PER_DAY, {IDENTITY_BUDGET_PER_DAY} names a day here." if IDENTITY_BUDGET_PER_DAY else "Instagram counts every name it hands back and IDENTITY_BUDGET_PER_DAY is 0 here, so nothing caps how many are collected."
+        collect_options = [("Counts only, no names", "Follower and following numbers, posts, reels, stories and profile changes are still monitored.\nNothing that returns user names is ever requested, which is the safest choice for the account."), ("Followers only", f"Report who followed and unfollowed while collecting about half as many names per check.\n{budget_note}"), ("Followers and following", "Read both lists when a count changes, so you see who joined and who left.\nThis collects the most names and is the likeliest to reach the daily cap.")]
         collect = _wizard_ask_choice("Which follower lists should be collected?", collect_options, default_index=0)
-        state.config_values["SKIP_FOLLOWERS"] = collect == 2
-        state.config_values["SKIP_FOLLOWINGS"] = collect >= 1
-        if collect == 2:
+        state.config_values["SKIP_FOLLOWERS"] = collect == 0
+        state.config_values["SKIP_FOLLOWINGS"] = collect <= 1
+        if collect == 0:
             return
 
         browser_note = "Needs the playwright package and a downloaded browser, is much slower and risks the logged-in account."

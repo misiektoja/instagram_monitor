@@ -430,7 +430,7 @@ The same analysis is available in the **Web Dashboard**. Use the **Follow analys
 <a id="follower-list-source"></a>
 ## Follower List Source
 
-Instagram serves follower and following lists on two surfaces: the REST endpoints its own web app calls, and an older set of GraphQL queries. Both use the same logged-in session, return the same accounts and cost the same number of names. When one of them is retired or starts answering differently, the other usually keeps working, so the source is selectable.
+Instagram serves follower and following lists on two surfaces: the REST endpoints its own web app calls, and an older set of GraphQL queries. Both use the same logged-in session, return the same accounts and cost the same number of names. REST returns 25 accounts per request against 12 over GraphQL, so it reads a list in under half as many requests. When one of them is retired or starts answering differently, the other usually keeps working, so the source is selectable.
 
 ```ini
 FOLLOW_LIST_SOURCE = "auto"
