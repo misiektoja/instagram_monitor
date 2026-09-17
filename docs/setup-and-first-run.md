@@ -1,24 +1,18 @@
 # Setup & First Run
 
-Moving the dotenv destination reviews the private settings again. Kept file credentials are saved to the new destination when you choose Save. An existing value at that destination, including an empty value, takes precedence unless you explicitly replace it. The old file is left intact.
-
-Printed commands use short names. Activate the tool's virtual environment before running them. For a downloaded script, run them from the script directory. Recovery commands retain selected configuration and dotenv paths.
-
-Before replacing a configuration, setup copies retained inline credentials to the selected private dotenv file when that file has no value for the same key. An existing dotenv value, including an explicit empty value, keeps precedence. If preservation fails, the original configuration stays in place. Setup backups omit inline credentials.
-
 <a id="new-here-run-the-setup-wizard"></a>
-When rebuilding an existing configuration, setup keeps its saved `DOTENV_FILE` unless you pass `--env-file PATH`. A nonempty exported secret takes precedence over the dotenv file. An explicit empty value in that file still overrides the configuration, both after saving and on the next run. Quoted dotenv keys receive the same replacement confirmation as unquoted keys.
-
 
 ## Run the setup wizard
 
 This page assumes Instagram Monitor is already installed (see [Installation](installation.md)). It walks through the interactive setup wizard then your first monitoring run. If you opened this page first, choose [PyPI](installation.md#install-from-pypi), the [manual Python script](installation.md#manual-python-based-installation), the [Docker image](installation.md#install-from-docker-hub) or [Docker Compose](installation.md#docker-compose), finish that method's steps then return here.
 
-Then use the interactive setup wizard. It asks which Instagram accounts to monitor, whether to use a saved login, how requests reach Instagram, how often to poll, which interface to start, which alerts to enable and where output goes. The output questions ask whether to write the per-target log file and whether to write a CSV file, and the CSV path is asked for only after you say yes, so answering no clears a saved one. A CSV path with no extension is saved with `.csv` added. The connection questions cover the [HTTP backend](usage.md#http-transport-backend), the browser curl_cffi impersonates and, in login mode, the [follower list source](usage.md#follower-list-source). Choosing `curl_cffi` on a machine without the package is still saved, and both the question and the review summary say that requests is used until you install it. Their defaults suit most setups, so pressing Enter through them is a reasonable answer. Leave the targets question empty if you want to start with only the Web Dashboard then add accounts in your browser. Terminal Dashboard and plain-text setups ask for at least one target before saving. The polling interval accepts seconds directly, decimal units such as `1.5h` or compound durations such as `1h 30m`. Supported units are `s`, `m`, `h` and `d`. You can review and change your answers before saving. Regular settings go in `instagram_monitor.conf`. Private values such as passwords and webhook URLs go in `.env`, which is created only when there is a private value to store. A private value already in `.env` is never replaced without asking, and keeping it leaves the stored value untouched. The question comes before the hidden prompt, so a saved Instagram password is never retyped only to be discarded.
+The wizard asks for targets, a saved login, connection settings, polling interval, interface, alerts and output files. The defaults for the [HTTP backend](usage.md#http-transport-backend) and [follower list source](usage.md#follower-list-source) suit most setups. If `curl_cffi` is missing, requests is used until you install it.
 
-Every answer setup cannot use offers a way out, so one value you cannot produce right now does not cost you the answers already given. A blank answer asks whether to continue without it and names what stops working, and a rejected one offers to enter it again. Declining switches the part that needed it off, so half a mail server, a webhook with no destination or a login with no password is never written. A rebuilt file starts from the settings already in place with your answers applied over them. A section you decline is cleared rather than carried over, so declining email leaves no mail server behind. Email setup signs in to the mail server before saving, so a wrong password or an unreachable host is caught during setup instead of at the first alert. No email is sent. A refused sign-in offers the mail server questions again, and if the server was only unreachable the answers are kept so `--doctor` can check them later.
+You can leave targets empty for the Web Dashboard and add accounts in your browser later. Terminal Dashboard and plain-text mode need at least one target. Polling accepts seconds or durations such as `1.5h` and `1h 30m`.
 
-The configuration and dotenv destinations are checked before the first question, so an unwritable path or a directory given by mistake is reported straight away rather than after you have answered everything.
+Review or change your answers before saving. Settings go to `instagram_monitor.conf` and private values go to `.env`. Setup asks before replacing a saved secret. See [Storing Secrets](configuration.md#storing-secrets) for backup details.
+
+A rerun uses saved settings as defaults. Declining a section disables it. Setup explains invalid answers and lets you retry. Email setup checks sign-in without sending a message. If the mail server is unreachable, check the saved settings later with `--doctor`.
 
 After saving, the wizard offers the Doctor checks. For a local install it then offers to start monitoring once those checks passed. In a container, it prints the next Docker or Docker Compose commands to run.
 
@@ -79,7 +73,7 @@ In this documentation, a **target** is an Instagram account you want to monitor.
 
 The wizard recommends importing a saved Firefox login. On macOS and Linux it can also import from Chrome, Brave or Chromium. Those three browsers require the optional `pycookiecheat` package. If it is missing, the wizard can install it in a local Python installation.
 
-The wizard detects PyPI, a downloaded script, Docker or Docker Compose and prints matching commands. It also formats file paths for the current operating system.
+Activate your virtual environment before running local commands. For a downloaded script, run them from the script directory.
 
 Container setup destinations must stay inside `/data`. That directory is the current host directory mounted into the temporary setup container, so files written there survive `--rm`. The wizard rejects paths such as `/tmp/instagram_monitor.conf` instead of printing a command for a different file.
 
@@ -87,9 +81,9 @@ Container setup destinations must stay inside `/data`. That directory is the cur
 
 For Docker or Docker Compose, choose **Import from Firefox after setup**. The wizard asks whether Docker runs on macOS, standard Linux, Linux with Snap, Linux with Flatpak, Windows PowerShell or Windows Command Prompt. It then prints the matching command to mount the signed-in host profile read-only once and save the imported login in the persistent `instagram_monitor_session` volume. Windows commands use the Firefox profile under `%APPDATA%\Mozilla\Firefox`.
 
-Firefox import works in every local installation without an extra package. Chrome, Brave and Chromium import works on macOS and Linux with the optional browser dependency. Container setup uses Firefox because Chromium cookie decryption needs a password service from the host that is not available inside the container. See [Session Login Using Browser Cookies](configuration.md#option-3-session-login-using-browser-cookies-recommended).
+Firefox import works on macOS, Linux and Windows without an extra package. Containers use Firefox. Chrome, Brave and Chromium import needs the optional browser dependency and works only on macOS and Linux. See [Session Login Using Browser Cookies](configuration.md#option-3-session-login-using-browser-cookies-recommended).
 
-If no targets or Web Dashboard setting have been saved, running the tool with no arguments opens the wizard in an interactive terminal. Leave its targets question empty then select **Web dashboard** to save an empty browser control panel. If `TARGET_USERNAMES` contains saved targets, the same command starts monitoring them. If only the Web Dashboard is enabled, it starts an empty browser control panel where you can add targets. A run with no target and no Web Dashboard reports the missing target with a `To fix:` action and a `Guide:` link rather than printing the whole help screen.
+Running without arguments starts the targets saved in `TARGET_USERNAMES`. With only the Web Dashboard enabled, it opens an empty control panel where you can add targets. If neither is saved, an interactive run opens the setup wizard.
 
 <a id="not-sure-which-mode-you-want"></a>
 ## Not sure which command you need?

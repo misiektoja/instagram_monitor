@@ -19,7 +19,7 @@ For example, the PyPI command `instagram_monitor target1 --doctor` becomes `dock
 
 In Windows Command Prompt replace `${PWD}` with `%cd%`. If your runtime reports that `:z` is invalid, remove only that suffix. A direct Docker run of the Web Dashboard also needs `-p 127.0.0.1:8000:8000` before the image name. The current host directory appears as `/data` inside the container, so container paths to its files must start with `/data`.
 
-The manual-script examples assume the current directory contains `instagram_monitor.py`. Commands printed by setup, Doctor and recovery messages use the running interpreter and the full script path. Packaged installations use the running interpreter with `-m instagram_monitor`.
+Activate the tool's virtual environment before running these commands. For a downloaded script, run them from the directory containing `instagram_monitor.py`.
 
 <a id="monitoring-mode"></a>
 ## Monitoring Mode
@@ -109,7 +109,6 @@ docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v insta
 Then open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) on the same computer. Inside the container the server listens on `0.0.0.0:8000` so Docker can forward traffic. `0.0.0.0` is a server bind address, not an address to enter in a browser. Dockerfile `EXPOSE 8000` metadata also does not publish the port by itself.
 
 The configuration file search order and setting precedence are documented under [Configuration File](configuration.md#configuration-file). To select another file explicitly, use `--config-file`:
-
 
 ```sh
 instagram_monitor <target_insta_user> --config-file /path/instagram_monitor_new.conf
@@ -297,7 +296,7 @@ Error emails are enabled by default when email is configured. Disable them in on
 instagram_monitor <target_insta_user> -e
 ```
 
-An error alert goes out once the same failure has lasted **5 minutes**, so one lost request reaches nobody, while a failure that cannot clear on its own, such as an expired session, is alerted at once. The webhook gets the same alert when `WEBHOOK_ERROR_NOTIFICATION` is on. Each kind of failure alerts once per channel, and an outage that keeps failing differently is one kind: a lost connection that reads as a timeout on one check and as an unresolved host on the next alerts once, the same way it is reported on screen. A channel that could not deliver is tried again on a later failing check, after **5 minutes** at first and then after twice the previous wait, up to an hour. A run that recovered alerts again when it fails later.
+Error alerts are sent after **5 minutes** of a continuing failure. Problems that need your action, such as an expired session, alert immediately. Webhooks follow the same rule when `WEBHOOK_ERROR_NOTIFICATION` is enabled. Each kind of failure alerts once per channel. Changing network errors during one outage do not trigger repeated alerts. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour. Alerts can fire again after monitoring recovers.
 
 Email requires [SMTP settings](configuration.md#smtp-settings). Run `instagram_monitor --send-test-email` before a long monitoring session.
 
@@ -856,7 +855,7 @@ The directory layout depends on the number of targets:
 
 Summary messages and errors that apply to the whole process are written to every active target log.
 
-Images and videos are streamed to a temporary file beside the destination with a 100 MiB limit. The monitor accepts only a complete HTTP 200 response with a recognized image or video signature then replaces the destination atomically. A truncated response, an HTML error page or another invalid response leaves an existing saved file untouched.
+Media downloads are limited to 100 MiB. Failed or invalid downloads leave any previously saved file intact.
 
 <a id="detection-of-changed-profile-pictures"></a>
 ## Detection of Changed Profile Pictures

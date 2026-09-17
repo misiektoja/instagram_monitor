@@ -7,7 +7,7 @@ Examples on this page use the PyPI command `instagram_monitor`. If you chose ano
 
 You can pass most settings as command-line options or save them in a configuration file for later runs.
 
-The easiest method is `instagram_monitor --setup`. The setup wizard checks the settings before saving them. If you allow it to replace an existing configuration, it first creates a backup whose name includes the current date and time. Replacement builds a fresh configuration from defaults, so settings that are not shown by the wizard are reset unless you restore them from the backup.
+Use `instagram_monitor --setup` for guided configuration. It starts from your saved settings, checks your answers and asks before replacing the configuration. A timestamped backup is kept.
 
 If you want to edit the file manually, generate a default config template and save it to a file named `instagram_monitor.conf`:
 
@@ -302,7 +302,7 @@ The mail server password has its own command:
 instagram_monitor --set-smtp-password
 ```
 
-Type the password at the hidden prompt. Instagram Monitor signs in to the mail server with it and saves `SMTP_PASSWORD` in `.env` only once the server accepts it. No email is sent. The other SMTP settings have to be in place first, so run this after `--setup` or after filling in `SMTP_HOST`, `SMTP_USER`, `SENDER_EMAIL` and `RECEIVER_EMAIL`. The command checks those settings before it asks for anything and names the ones that are still missing, so you never type a password that cannot be checked. An exported `SMTP_PASSWORD` wins over the saved one at startup, so the command says so after saving rather than leaving you with a value the next run will not read.
+Enter the password at the hidden prompt after configuring `SMTP_HOST`, `SMTP_USER`, `SENDER_EMAIL` and `RECEIVER_EMAIL`. The command checks mail sign-in before saving `SMTP_PASSWORD` to `.env`. No email is sent. An exported `SMTP_PASSWORD` overrides the saved value at startup.
 
 You can use operating system environment variables instead of a file. Set them with `export` on Linux, Unix, macOS or WSL:
 
@@ -355,8 +355,7 @@ A forgotten `export` can shadow the dotenv file invisibly, so `--debug` names ev
 
 A secret still holding its `your_...` placeholder counts as unset and is left out, and a run with no secret anywhere says so on one line.
 
-When a `--set-*` command or the setup wizard replaces a secret, it rewrites that one assignment in place and leaves every other line alone. A line you wrote as `export NAME=...` keeps its `export`, so a dotenv file you also source in a shell still exports it. A value you clear has its line removed rather than left empty.
-
+Secret commands update the selected value without changing other dotenv settings. Clearing a value removes its assignment.
 
 ### Reloading secrets and backup contents
 
@@ -365,7 +364,6 @@ assignment restores its independently configured fallback or clears the value wh
 A read or parsing failure keeps the last usable credentials and reports how to correct the file.
 An explicit reload can override a startup export with a value present in the file.
 
+Setup keeps the saved `DOTENV_FILE` unless you choose another path with `--env-file`. When you move it, review the private settings before saving. Kept credentials are copied to the new destination and the old file stays intact. Values already in the new dotenv file take precedence unless you replace them. At startup, a nonempty exported secret overrides the dotenv file. A dotenv value, including an empty one, overrides the configuration.
 
-Setup's configuration backup blanks inline secret assignments from older configurations while retaining
-other settings and comments. General `--generate-config` backups remain exact copies and can contain
-inline credentials. The dotenv file is not backed up during secret replacement.
+Setup moves retained credentials from older configuration files into the selected dotenv file unless that file already defines the same key. It leaves the original configuration in place if it cannot preserve those credentials. Setup creates a timestamped configuration backup with inline secrets removed. General `--generate-config` backups can contain inline credentials. Replaced dotenv secrets are not backed up.
