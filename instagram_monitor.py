@@ -6336,10 +6336,22 @@ def truncate_utf8_bytes(text: str, max_bytes: int, suffix: str = "") -> str:
     return encoded[:max_bytes - len(encoded_suffix)].decode("utf-8", errors="ignore") + suffix
 
 
+# Converts one HTML anchor to Discord markdown, leaving a self-labeled link bare so Discord turns it into a link itself
+def anchor_to_discord_markdown(url, inner_html):
+    target = unescape(str(url or "")).strip()
+    # An image has no markdown equivalent in a Discord embed body, so its alt text stands in as the link label
+    inner = re.sub(r"(?is)<img\s[^>]*?alt=[\"']([^\"']*)[\"'][^>]*>", r"\1", str(inner_html or ""))
+    label = " ".join(unescape(re.sub(r"(?s)<[^>]+>", "", inner)).split())
+    # Discord prints a masked link as plain text when its label repeats the destination, while a bare URL always links
+    if not target or not label or label == target:
+        return target or label
+    return f"[{inner}]({target})"
+
+
 # Converts one HTML email body to the Discord markdown subset, so a Discord alert reads like the email
 def html_body_to_discord_markdown(body_html):
     text = re.sub(r"(?is)</?(?:html|head|body)\s*>", "", str(body_html or ""))
-    text = re.sub(r"(?is)<a\s[^>]*?href=[\"']([^\"']*)[\"'][^>]*>(.*?)</a>", lambda m: f"[{m.group(2)}]({m.group(1)})", text)
+    text = re.sub(r"(?is)<a\s[^>]*?href=[\"']([^\"']*)[\"'][^>]*>(.*?)</a>", lambda m: anchor_to_discord_markdown(m.group(1), m.group(2)), text)
     text = re.sub(r"(?is)<b\s*>(.*?)</b\s*>", lambda m: f"**{m.group(1)}**" if m.group(1).strip() else m.group(1), text)
     text = re.sub(r"(?is)<i\s*>(.*?)</i\s*>", lambda m: f"*{m.group(1)}*" if m.group(1).strip() else m.group(1), text)
     text = re.sub(r"(?is)<br\s*/?>", "\n", text)
