@@ -210,7 +210,7 @@ Use the same `instagram_monitor_session` volume during browser import and every 
 
 Finish the setup wizard first. It asks which host environment runs Docker then prints the matching one-time import command. Run Doctor only after that import succeeds.
 
-On Windows, use Docker Desktop or another Docker-compatible runtime in Linux container mode. PowerShell reads the Firefox profile root from `$env:APPDATA\Mozilla\Firefox`. Command Prompt uses `%APPDATA%\Mozilla\Firefox`.
+On Windows, use Docker Desktop or another Docker-compatible runtime in Linux container mode. PowerShell reads the Firefox profiles from `$env:APPDATA\Mozilla\Firefox\Profiles`. Command Prompt uses `%APPDATA%\Mozilla\Firefox\Profiles`.
 
 Use the direct Docker command that matches the Firefox profile layout on the host:
 
@@ -219,10 +219,10 @@ Use the direct Docker command that matches the Firefox profile layout on the hos
 docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
 
 # Windows PowerShell
-docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$env:APPDATA\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
+docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$env:APPDATA\Mozilla\Firefox\Profiles:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
 
 # Windows Command Prompt
-docker run --rm -it --init -v "%cd%:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "%APPDATA%\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
+docker run --rm -it --init -v "%cd%:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "%APPDATA%\Mozilla\Firefox\Profiles:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
 
 # Linux with a standard Firefox package
 docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
@@ -241,10 +241,10 @@ The equivalent Docker Compose commands are:
 docker compose run --rm -v "${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
 
 # Windows PowerShell
-docker compose run --rm -v "$env:APPDATA\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
+docker compose run --rm -v "$env:APPDATA\Mozilla\Firefox\Profiles:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
 
 # Windows Command Prompt
-docker compose run --rm -v "%APPDATA%\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
+docker compose run --rm -v "%APPDATA%\Mozilla\Firefox\Profiles:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
 
 # Linux with a standard Firefox package
 docker compose run --rm -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env

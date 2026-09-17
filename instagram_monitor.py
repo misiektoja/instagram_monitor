@@ -871,8 +871,8 @@ CONTAINER_FIREFOX_HOSTS = {
     "linux": ("Linux with a standard Firefox package", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
     "linux-snap": ("Linux with Firefox from Snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
     "linux-flatpak": ("Linux with Firefox from Flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
-    "windows-powershell": ("Windows PowerShell", '"$env:APPDATA\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'),
-    "windows-cmd": ("Windows Command Prompt", '"%APPDATA%\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "windows-powershell": ("Windows PowerShell", '"$env:APPDATA\\Mozilla\\Firefox\\Profiles:/home/instagram/.mozilla/firefox:ro"'),
+    "windows-cmd": ("Windows Command Prompt", '"%APPDATA%\\Mozilla\\Firefox\\Profiles:/home/instagram/.mozilla/firefox:ro"'),
 }
 USER_AGENT = ""
 USER_AGENT_MOBILE = ""
@@ -8318,7 +8318,9 @@ def firefox_cookie_patterns():
     configured_pattern = {"Windows": FIREFOX_WINDOWS_COOKIE, "Darwin": FIREFOX_MACOS_COOKIE}.get(selected_system, FIREFOX_LINUX_COOKIE)
     patterns = [configured_pattern]
     if selected_system == "Linux":
-        patterns.extend(("~/snap/firefox/common/.mozilla/firefox/*/cookies.sqlite", "~/.var/app/org.mozilla.firefox/.mozilla/firefox/*/cookies.sqlite"))
+        # The last pattern covers a container given the Windows Firefox root, where the profiles sit one level
+        # deeper in a Profiles folder. It matches nothing on an ordinary Linux host
+        patterns.extend(("~/snap/firefox/common/.mozilla/firefox/*/cookies.sqlite", "~/.var/app/org.mozilla.firefox/.mozilla/firefox/*/cookies.sqlite", "~/.mozilla/firefox/Profiles/*/cookies.sqlite"))
     return tuple(dict.fromkeys(patterns))
 
 
@@ -16178,8 +16180,8 @@ def _wizard_select_container_firefox_host() -> Optional[str]:
         ("Linux with a standard Firefox package", "Use the profiles under ~/.mozilla/firefox."),
         ("Linux with Firefox from Snap", "Use the profiles under ~/snap/firefox."),
         ("Linux with Firefox from Flatpak", "Use the profiles under ~/.var/app/org.mozilla.firefox."),
-        ("Windows PowerShell", "Use the Firefox profiles under $env:APPDATA."),
-        ("Windows Command Prompt", "Use the Firefox profiles under %APPDATA%."),
+        ("Windows PowerShell", "Use the profiles under $env:APPDATA\\Mozilla\\Firefox\\Profiles."),
+        ("Windows Command Prompt", "Use the profiles under %APPDATA%\\Mozilla\\Firefox\\Profiles."),
         ("Another system", "Firefox import after Docker setup is not currently available for this host."),
     ]
     selected = _wizard_ask_choice("Which host environment runs Docker?", options)

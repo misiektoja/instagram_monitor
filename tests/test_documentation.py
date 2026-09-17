@@ -168,7 +168,9 @@ def test_firefox_docs_cover_container_host_layouts():
     usage = read_asset("docs/usage.md")
     compose = read_asset("docker-compose.yml")
     firefox_section = markdown_section(usage, 3, "Import", "Firefox", "Container")
-    mounts = ('-v "${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$env:APPDATA\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"', '-v "%APPDATA%\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"')
+    # Taken from the wizard's own table rather than repeated here, so a corrected mount cannot pass a stale guard
+    mounts = [f"-v {source}" for _label, source in monitor.CONTAINER_FIREFOX_HOSTS.values()]
+    assert len(mounts) == 6
     for mount in mounts:
         assert firefox_section.count(mount) == 2
         assert mount in compose

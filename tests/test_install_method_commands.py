@@ -147,7 +147,7 @@ class TestFirefoxImportCmd:
     def test_non_container_has_no_mount(self, im_module):
         assert im_module._firefox_import_cmd("pip") == runtime_command("instagram_monitor --import-browser-session --browser firefox")
 
-    @pytest.mark.parametrize("host_os,source", [("macos", '"${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"'), ("linux", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("windows-powershell", '"$env:APPDATA\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'), ("windows-cmd", '"%APPDATA%\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"')])
+    @pytest.mark.parametrize("host_os,source", [("macos", '"${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"'), ("linux", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("windows-powershell", '"$env:APPDATA\\Mozilla\\Firefox\\Profiles:/home/instagram/.mozilla/firefox:ro"'), ("windows-cmd", '"%APPDATA%\\Mozilla\\Firefox\\Profiles:/home/instagram/.mozilla/firefox:ro"')])
     def test_container_commands_mount_selected_host_profile(self, im_module, host_os, source):
         docker = im_module._firefox_import_cmd("docker", host_os=host_os)
         compose = im_module._firefox_import_cmd("compose", host_os=host_os)
@@ -407,3 +407,45 @@ def test_the_session_recovery_command_carries_the_config_sentinel(im_module, mon
     monkeypatch.setattr(im_module, "DOTENV_FILE", "")
 
     assert im_module.session_recovery_command() == runtime_command("python3 instagram_monitor.py --import-browser-session --browser firefox --config-file none")
+
+
+class TestContainerFirefoxMounts:
+    # The container globs its own ~/.mozilla/firefox/*/cookies.sqlite, so every host mount has to present the
+    # profile directories themselves. Windows keeps them one level deeper, under a Profiles folder
+    @pytest.mark.parametrize("host_os", sorted(("macos", "linux", "linux-snap", "linux-flatpak", "windows-powershell", "windows-cmd")))
+    def test_every_host_mounts_the_profile_directories(self, im_module, host_os):
+        source = im_module.CONTAINER_FIREFOX_HOSTS[host_os][1].strip('"').rsplit(":/home/instagram", 1)[0]
+
+        if host_os.startswith("windows"):
+            assert source.endswith("\\Mozilla\\Firefox\\Profiles"), "the Windows profile root holds the profiles in a Profiles folder"
+        elif host_os == "macos":
+            assert source.endswith("/Firefox/Profiles")
+        else:
+            assert source.endswith("/.mozilla/firefox")
+
+    # Verifies the generated command carries the corrected Windows source
+    @pytest.mark.parametrize("host_os,expected", [("windows-powershell", "$env:APPDATA\\Mozilla\\Firefox\\Profiles"), ("windows-cmd", "%APPDATA%\\Mozilla\\Firefox\\Profiles")])
+    def test_the_windows_import_command_mounts_the_profiles_folder(self, im_module, host_os, expected):
+        command = im_module._firefox_import_cmd("docker", host_os=host_os)
+
+        assert f'-v "{expected}:/home/instagram/.mozilla/firefox:ro"' in command
+
+    # A container handed the Windows profile root by an older command still finds the profiles one level down
+    def test_a_container_accepts_the_nested_windows_layout(self, im_module, monkeypatch, real_browser_profiles, tmp_path):
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
+        nested = tmp_path / "firefox" / "Profiles" / "abc.default-release"
+        nested.mkdir(parents=True)
+        (nested / "cookies.sqlite").write_text("", encoding="utf-8")
+        monkeypatch.setattr(im_module, "FIREFOX_LINUX_COOKIE", str(tmp_path / "firefox") + "/*/cookies.sqlite")
+        monkeypatch.setattr(im_module, "expanduser", lambda value: value.replace("~/.mozilla/firefox", str(tmp_path / "firefox"), 1))
+
+        assert [profile["name"] for profile in im_module.list_firefox_profiles()] == ["default-release"]
+
+    # The nested pattern must not turn an ordinary Linux host into a duplicate listing
+    def test_an_ordinary_linux_host_is_unaffected(self, im_module, monkeypatch, real_browser_profiles):
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
+        monkeypatch.setattr(im_module, "FIREFOX_LINUX_COOKIE", "/native/*/cookies.sqlite")
+        monkeypatch.setattr(im_module, "expanduser", lambda value: value.replace("~", "/home/test", 1))
+        monkeypatch.setattr(im_module, "glob", lambda pattern: ["/native/a.default-release/cookies.sqlite"] if pattern == "/native/*/cookies.sqlite" else [])
+
+        assert [profile["path"] for profile in im_module.list_firefox_profiles()] == ["/native/a.default-release/cookies.sqlite"]

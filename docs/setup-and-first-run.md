@@ -79,7 +79,7 @@ Container setup destinations must stay inside `/data`. That directory is the cur
 
 `--setup` needs somewhere to put both files, so it refuses `--config-file none` and `--env-file none`.
 
-For Docker or Docker Compose, choose **Import from Firefox after setup**. The wizard asks whether Docker runs on macOS, standard Linux, Linux with Snap, Linux with Flatpak, Windows PowerShell or Windows Command Prompt. It then prints the matching command to mount the signed-in host profile read-only once and save the imported login in the persistent `instagram_monitor_session` volume. Windows commands use the Firefox profile under `%APPDATA%\Mozilla\Firefox`.
+For Docker or Docker Compose, choose **Import from Firefox after setup**. The wizard asks whether Docker runs on macOS, standard Linux, Linux with Snap, Linux with Flatpak, Windows PowerShell or Windows Command Prompt. It then prints the matching command to mount the signed-in host profile read-only once and save the imported login in the persistent `instagram_monitor_session` volume. Windows commands use the Firefox profiles under `%APPDATA%\Mozilla\Firefox\Profiles`.
 
 Firefox import works on macOS, Linux and Windows without an extra package. Containers use Firefox. Chrome, Brave and Chromium import needs the optional browser dependency and works only on macOS and Linux. See [Session Login Using Browser Cookies](configuration.md#option-3-session-login-using-browser-cookies-recommended).
 
