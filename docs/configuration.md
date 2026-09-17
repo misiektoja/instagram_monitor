@@ -1,15 +1,15 @@
 # Configuration
 
-Examples on this page use the PyPI command `instagram_monitor`. If you chose another installation, replace that command with the matching [command prefix](usage.md#command-format). Keep all options after the prefix. A container can see host files only through its mounts, so paths to files in the current directory must start with `/data`.
+Examples on this page use the PyPI command `instagram_monitor`. If you chose another installation, replace that command with the matching [command prefix](usage.md#command-format-by-installation-method). Keep all options after the prefix. A container can see host files only through its mounts, so paths to files in the current directory must start with `/data`.
 
 <a id="configuration-file"></a>
 ## Configuration File
 
 You can pass most settings as command-line options or save them in a configuration file for later runs.
 
-Use `instagram_monitor --setup` for guided configuration. It starts from your saved settings, checks your answers and asks before replacing the configuration. A timestamped backup is kept.
+The easiest way to create this file is `instagram_monitor --setup`.
 
-If you want to edit the file manually, generate a default config template and save it to a file named `instagram_monitor.conf`:
+To edit every available setting yourself, generate a default configuration file:
 
 ```sh
 # On macOS, Linux or Windows Command Prompt (cmd.exe)
@@ -19,21 +19,13 @@ instagram_monitor --generate-config > instagram_monitor.conf
 instagram_monitor --generate-config instagram_monitor.conf
 ```
 
-> **IMPORTANT**: In Windows PowerShell, do not use `>` for this command. Some PowerShell versions write redirected text as UTF-16, which makes Instagram Monitor report a "null bytes" error. Pass the filename to `--generate-config` so Instagram Monitor writes a UTF-8 file itself.
+> **Windows PowerShell:** Pass the filename directly to `--generate-config`. PowerShell redirection can write UTF-16, which the tool rejects with a "null bytes" error. With a filename, the tool writes the file as UTF-8.
 
-When you include the filename, Instagram Monitor writes the template directly as UTF-8. This avoids PowerShell changing the file encoding during redirection.
+When the named file already exists, `--generate-config` asks before replacing it and keeps a timestamped `.bak` backup next to it. Add `--force` to replace it without the question.
 
-If that file already exists, Instagram Monitor asks before replacing it and keeps a backup whose name includes the current date and time. Add `--force` to replace it without the question, which is what you want in a script. Without a terminal to ask on, the command refuses and leaves the file alone. Redirecting with `>` still bypasses all of this, because the shell truncates the file before Instagram Monitor runs.
+The file contains a short explanation above each setting.
 
-Open `instagram_monitor.conf` in a text editor and change the settings you need. The file contains a short explanation above each setting.
-
-Without `--config-file`, Instagram Monitor uses the first configuration it finds in this order:
-
-1. `instagram_monitor.conf` in the current directory
-2. `~/.instagram_monitor.conf` in the home directory
-3. `instagram_monitor.conf` next to the script
-
-An explicit `--config-file PATH` is always used and the command stops with an error if that file does not exist. `--config-file none` switches automatic config discovery off for one run. The startup summary reports `Discovery disabled` when it is in effect.
+By default the tool looks for a configuration file named `instagram_monitor.conf` in the current directory, the home directory (`~`) and the script directory. Use `--config-file` to name another location, or `--config-file none` to disable automatic config discovery for one run.
 
 <a id="what-a-configuration-file-may-contain"></a>
 ### What a Configuration File May Contain
@@ -88,11 +80,11 @@ Usernames written directly after the command and usernames passed through `--tar
 instagram_monitor --config-file instagram_monitor.conf
 ```
 
-You can also change most settings and generate a config file through the [Web Dashboard](view-modes.md#web-dashboard-mode). Targets you add or remove in the browser are saved into `TARGET_USERNAMES` when you press **Generate Config**, so the next start monitors the same list.
+You can also change most settings and generate a config file through the [Web Dashboard](view-modes.md#web-dashboard). Targets you add or remove in the browser are saved into `TARGET_USERNAMES` when you press **Generate Config**, so the next start monitors the same list.
 
 Target and session usernames may contain 1 to 30 letters, digits, periods or underscores. A leading `@` is accepted and removed. Other characters are rejected before monitoring starts so usernames cannot be interpreted as file paths.
 
-<a id="no-login-mode-without-session-login"></a>
+<a id="no-login-mode-no-session-login"></a>
 ## No-Login Mode (No Session Login)
 
 This mode does not sign in to Instagram. It can monitor new or deleted regular posts, bio changes and follower or following counts for public accounts. Follower and following notifications report count changes without usernames because complete list comparison is unavailable. It cannot monitor reels or stories. It also cannot tell you which specific accounts followed or unfollowed the target.
@@ -153,7 +145,7 @@ instagram_monitor --import-browser-session --browser firefox
 
 `--browser` accepts `firefox` (default), `chrome`, `brave` or `chromium`. The older `--import-firefox-session` flag still works as an alias for `--browser firefox`.
 
-You can also import through the [Web Dashboard](view-modes.md#web-dashboard-mode). Open the **Session** page, select the browser and click **Import**. If the browser has several profiles, select the profile that contains the Instagram login you want to use.
+You can also import through the [Web Dashboard](view-modes.md#web-dashboard). Open the **Session** page, select the browser and click **Import**. If the browser has several profiles, select the profile that contains the Instagram login you want to use.
 
 The tool reads the cookies from the selected browser profile and saves a session in Instaloader's format. It does not change the browser profile.
 
@@ -217,7 +209,7 @@ Every supported browser can have several profiles with separate cookies. Use one
     ```
 
 - **Let it prompt you.** If you do not pass `--browser-profile` and several profiles exist, the tool lists them so you can choose.
-- **On the [Web Dashboard](view-modes.md#web-dashboard-mode)**, pick the browser, click **Import** and select a profile if prompted. The dashboard imports only from the profiles it detected, so it cannot be pointed at another file on your computer. Use `--cookie-file PATH` on the command line when you deliberately want a database from somewhere else.
+- **On the [Web Dashboard](view-modes.md#web-dashboard)**, pick the browser, click **Import** and select a profile if prompted. The dashboard imports only from the profiles it detected, so it cannot be pointed at another file on your computer. Use `--cookie-file PATH` on the command line when you deliberately want a database from somewhere else.
 - **Advanced:** point `--cookie-file` at a specific cookie database (Firefox `cookies.sqlite` or a Chromium `Cookies` file). This overrides `--browser-profile`.
 
 For Chromium-based browsers, the tool finds the cookie database inside the selected profile. It supports both `<profile>/Cookies` and `<profile>/Network/Cookies` layouts.
@@ -233,7 +225,7 @@ A user agent is text that identifies the browser and operating system making a r
 
 - in Firefox, type `about:support` in the address bar and copy the `User Agent` value under the `Application Basics` section
 - in Chrome, Brave or Chromium, open `chrome://version` and copy the `User Agent` value
-- set this value through `USER_AGENT`, the `--user-agent` option or the [Web Dashboard](view-modes.md#web-dashboard-mode)
+- set this value through `USER_AGENT`, the `--user-agent` option or the [Web Dashboard](view-modes.md#web-dashboard)
 
 If you created the session with Instaloader instead (Option 2 above), match Instaloader's user agent rather than a browser's. Instaloader logs in with a Chrome user agent, so set `USER_AGENT` to a matching Chrome string to keep the same device consistency. You can print the exact value Instaloader uses with:
 
@@ -242,6 +234,31 @@ python3 -c "from instaloader.instaloadercontext import default_user_agent; print
 ```
 
 With the default `auto` setting under [HTTP Transport Backend](usage.md#http-transport-backend), `curl_cffi` selects a matching browser network profile. For example, a Chrome user agent selects a Chrome profile.
+
+<a id="monitored-target"></a>
+## Monitored Target
+
+The Instagram usernames are positional arguments. At least one is required to start monitoring:
+
+```sh
+instagram_monitor <target_insta_user>
+```
+
+Several usernames can follow the command. `--targets` takes the same list in one comma-separated value, and both forms are combined.
+
+To stop repeating them, save the list in the configuration file:
+
+```ini
+TARGET_USERNAMES = ["target_user_1", "target_user_2"]
+```
+
+Then `instagram_monitor` alone starts monitoring those accounts. A username on the command line still wins and replaces the whole saved list, so you can watch someone else for one run without editing the file:
+
+```sh
+instagram_monitor other_user
+```
+
+[`--setup`](setup-and-first-run.md#run-the-setup-wizard) asks whether to save the targets. Targets you add or remove in the [Web Dashboard](view-modes.md#web-dashboard) are written into `TARGET_USERNAMES` when you press **Generate Config**.
 
 ## TLS Verification
 
@@ -268,20 +285,134 @@ python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 
 Set `TIME_FORMAT_12H = True` to display times in 12-hour format instead of the default 24-hour format.
 
-Path settings are validated before startup opens files. A monitoring run stops and names the setting to correct. `--doctor`, `--setup` and the `--set-...` commands report the same setting and continue on the built-in value, so it can still be repaired. Command-line path overrides still take precedence. `TRUNCATE_CHARS` must be an integer zero or greater. Use `0` to keep full lines or `999` to detect terminal width. A `--truncate` override also applies to Doctor.
-
 <a id="smtp-settings"></a>
 ## SMTP Settings
 
-Private password entry preserves leading and trailing spaces. The exact value checked with the mail server is saved.
-
-Email notifications need the SMTP server details for the email account that sends the messages. Add them to `instagram_monitor.conf` or use the setup wizard. Keep the password out of the config file and save it with [`--set-smtp-password`](#storing-secrets).
+Email notifications need SMTP server details for the sending account. Add them to `instagram_monitor.conf` or use the setup wizard. Setup checks the login without sending an email. To replace only the password, run `instagram_monitor --set-smtp-password`. Password entry is hidden and preserves spaces.
 
 Send one test message to verify the settings:
 
 ```sh
 instagram_monitor --send-test-email
 ```
+
+<a id="webhook-settings"></a>
+## Webhook Settings
+
+Instagram Monitor can send event notifications to **Discord** or **ntfy**. A webhook is a URL that accepts a message from another application. Webhook settings do not affect email settings.
+
+`WEBHOOK_PROVIDER` tells Instagram Monitor which message format the URL expects. The default is `"discord"`. Standard Discord and public `ntfy.sh` URLs automatically select the matching format if this configured value is stale. Self-hosted ntfy and compatible endpoints still use the configured provider. An explicit `--webhook-provider` override always wins.
+
+<p align="center">
+   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_discord.png" alt="instagram_monitor_discord_screenshot" width="80%"/>
+</p>
+
+<a id="ntfy"></a>
+### ntfy
+
+For ntfy.sh or a self-hosted ntfy server:
+
+1. Choose a hard-to-guess topic such as `instagram-monitor-long-random-value`.
+2. In the setup wizard, enter either an ntfy.sh topic name or a complete topic URL such as `https://ntfy.sh/instagram-monitor-long-random-value`. The wizard expands a bare topic name to an ntfy.sh URL. For a self-hosted server, the Web Dashboard or manual configuration, enter the complete HTTPS topic URL.
+3. Public `ntfy.sh` URLs are recognized automatically. Set `WEBHOOK_PROVIDER = "ntfy"` in `instagram_monitor.conf` for a self-hosted ntfy server.
+
+Instagram Monitor sends the alert subject as the ntfy title. The alert text and event details become the message. Existing query parameters in the topic URL are preserved, including the ntfy [`auth` query parameter](https://docs.ntfy.sh/publish/#authentication). Long ntfy messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments.
+
+The title and message are sent as request headers or as the request body, never as query parameters. Alert text can contain follower names, captions and biographies, and servers and proxies commonly record full URLs in their access logs. Webhook requests also do not follow redirects, so a moved destination cannot receive headers meant for the address you configured.
+
+For a protected topic, the setup wizard asks for the ntfy access token in a hidden prompt and stores it in `.env`. For manual setup, add:
+
+```ini
+NTFY_ACCESS_TOKEN="tk_your_ntfy_access_token"
+```
+
+The tool sends the token as `Authorization: Bearer <token>`. It replaces any `Authorization` value in `WEBHOOK_HEADERS`.
+
+Advanced integrations can set fixed HTTP headers:
+
+```python
+WEBHOOK_HEADERS = {
+    "Authorization": "Basic your_base64_credentials",
+}
+```
+
+Header values support the same placeholders as `WEBHOOK_TEMPLATE`. Instagram Monitor validates headers before and after placeholder expansion so formatted values cannot introduce invalid names, non-string values or line breaks. For ntfy, Instagram Monitor sets the required plain-text `Content-Type`. Store Bearer tokens in `NTFY_ACCESS_TOKEN` inside `.env`. A token in the regular config is easier to expose or commit accidentally.
+
+When an alert includes a downloaded local image, Instagram Monitor uploads it as a native ntfy attachment up to 5 MiB. If image preparation or upload fails, it sends the alert as text so an image problem cannot suppress the notification. Existing remote image URLs remain links in the message.
+
+Anyone who knows an unprotected ntfy.sh topic name can read or publish to it. Reserve and protect the topic through an ntfy account when possible. Otherwise use a long random name, keep it private and do not copy the example name above.
+
+<a id="discord"></a>
+### Discord
+
+To create a Discord Webhook URL:
+
+1.  **Create a Server**: Click the **+** (Plus) icon on the left sidebar ("Add a Server") -> **Create My Own** -> **For me and my friends**.
+2.  **Create/Edit a Channel**: In your new server, find the **#general** channel (or create a new one). Click the **Edit Channel** icon (⚙️ gear) next to the channel name.
+3.  **Create Webhook**: Go to **Integrations** in the left menu -> **Webhooks** -> **New Webhook**.
+4.  **Copy URL**: Click on the new webhook (often named "Spidey Bot", you can rename it) and click **Copy Webhook URL**.
+
+Keep `WEBHOOK_PROVIDER = "discord"` in `instagram_monitor.conf`. Standard Discord webhook URLs are also recognized automatically.
+
+<a id="saving-the-webhook-url"></a>
+### Saving the Webhook URL
+
+Choose one method:
+
+- set `WEBHOOK_ENABLED = True`, select `WEBHOOK_PROVIDER` and put `WEBHOOK_URL` in `.env`
+- use an [environment variable](#storing-secrets) for `WEBHOOK_URL`
+- save it through the hidden `--set-webhook-url` prompt
+- pass `--webhook-url` for one run. If the URL is already saved, pass `--webhook`
+- enable it through the **Settings** page in the Web Dashboard
+
+```sh
+# Save a private destination without displaying it
+instagram_monitor --set-webhook-url
+
+# Enable Discord with URL
+instagram_monitor <target_insta_user> --webhook-provider discord --webhook-url "https://discord.com/api/webhooks/..."
+
+# Enable ntfy with a topic URL
+instagram_monitor <target_insta_user> --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-private-topic"
+
+# Enable or disable a URL that is already saved
+instagram_monitor <target_insta_user> --webhook
+instagram_monitor <target_insta_user> --no-webhook
+```
+
+Webhook and avatar URLs must be complete HTTPS links with a hostname and no embedded credentials. Root endpoints work with or without a trailing slash. Known Discord and `ntfy.sh` destinations correct a stale configured provider at runtime. A URL passed through `--webhook-url` may remain visible in shell history or process listings, so prefer `--set-webhook-url` for normal setup. A `WEBHOOK_URL` left unset, or left at its `your_webhook_url` placeholder, switches webhook alerts off at startup instead of failing at the first alert, and `--verbose` reports why.
+
+<a id="advanced-discord-format-customization"></a>
+### Advanced Discord-format customization
+
+`WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` customize Discord-format messages. `WEBHOOK_TEMPLATE` supports `title`, `description`, `version`, `image_url`, `fields`, `fields_str`, `color`, `timestamp`, `username` and `avatar_url` placeholders. Use a dictionary or a JSON string encoding an object. Lists, non-JSON strings and unknown placeholders are rejected before delivery. Legacy JSON strings with doubled object braces still work and quotes or braces in alert text remain literal. Every payload sets `allowed_mentions` to `{"parse": []}` so alert text cannot trigger Discord mentions. Retries retain the original destination and credentials when settings are reloaded.
+
+`WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` apply only to Discord and are ignored when `WEBHOOK_PROVIDER` is `"ntfy"`. The ntfy provider needs no template: it sends the alert body as a native ntfy message with the subject as its title. Customize ntfy delivery through `WEBHOOK_HEADERS` (for example `X-Priority` or `X-Tags`).
+
+`WEBHOOK_TRANSFORMS` applies configured string methods before the template and headers are rendered. Invalid templates, avatar URLs, transforms or expanded headers fail before any request is attempted. Dictionary payloads always replace `allowed_mentions` with `{"parse": []}` so notification text cannot trigger `@everyone`, `@here` or user mentions.
+
+Webhook delivery uses an isolated session with a 10-second timeout and at most two attempts. It accepts every HTTP 2xx response, retries HTTP 429 according to a server delay capped at 5 seconds and retries HTTP 5xx once. Other HTTP 4xx responses fail immediately.
+
+<a id="follower-churn-detection"></a>
+
+<a id="terminal-colours"></a>
+## Terminal Colours
+
+`COLORED_OUTPUT` controls whether live terminal output is coloured. It defaults to `True`. `--no-color` disables colour for one run. Colour also switches itself off when output is redirected or piped, when `TERM` is unset or `dumb` and when the standard [`NO_COLOR`](https://no-color.org/) environment variable is set. Log files are always written with the escape sequences stripped.
+
+Usernames are `bright_cyan underline`, the numeric user ID is `bright_magenta` and links are `blue underline`. A `Yes` or `No` answer is coloured only as the whole value of a labelled row, so an ordinary `no` inside a sentence stays plain. Generated configuration files ship the `COLOR_THEME` block commented out, so these defaults apply and a later change to them reaches you. Overrides you added are written back as a real block when setup rebuilds the file, so they are not lost. A configuration file written by an earlier version sets every colour explicitly and therefore keeps the old ones: delete its `COLOR_THEME` block to follow the current defaults, or edit the values you want to keep. Such a file still loads unchanged.
+
+`COLOR_THEME` overrides individual colours. It is merged over the built-in theme, so name only the parts you want to change:
+
+```ini
+COLOR_THEME = { "header": "bright_cyan" }
+```
+
+The `--help` screen is coloured too. Group headings, option names, the values those options take, the example commands and the comments above them each get their own colour, so the screen can be scanned instead of read.
+
+On Windows, install the optional `colorama` package for colour in the classic Command Prompt. Windows Terminal needs nothing extra.
+
+To colour saved log files when you view them later, see [Coloring Log Output with GRC](usage.md#coloring-log-output-with-grc).
 
 <a id="storing-secrets"></a>
 ## Storing Secrets
@@ -359,10 +490,3 @@ A secret still holding its `your_...` placeholder counts as unset and is left ou
 
 Secret commands update the selected value without changing other dotenv settings. Clearing a value removes its assignment.
 
-### Reloading secrets and backup contents
-
-On macOS, Linux and Unix, `SIGHUP` reloads file-supplied secrets. Command-line values take priority, followed by nonempty environment values exported before startup, dotenv entries and configuration fallbacks. Change an argument or export and restart to replace those values. Removing a file entry uses the next available source or clears the secret. An unreadable or invalid file leaves working credentials unchanged. Empty exports are ignored. An empty dotenv entry overrides the configuration.
-
-Setup keeps the saved `DOTENV_FILE` unless you pass `--env-file PATH`. If you change files, setup asks you to review credentials again. Existing values in the new file, including empty values, stay unless you replace them. Retained credentials fill missing entries when you save. The old file stays intact.
-
-Setup moves retained credentials from older configuration files into the selected dotenv file unless that file already defines the same key. It leaves the original configuration in place if it cannot preserve those credentials. Setup creates a timestamped configuration backup with inline secrets removed. General `--generate-config` backups can contain inline credentials. Replaced dotenv secrets are not backed up.

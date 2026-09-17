@@ -16,12 +16,12 @@ Powerful, real-time OSINT suite for tracking every activity on Instagram - from 
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="100%"/>
 </p>
 
-<a id="-quick-install-run"></a>
+<a id="quick-install-run"></a>
 ### 🚀 Quick Install & Run
 
 #### Python from PyPI
 
-New to Python or unsure what is installed? Follow the [Python install walkthrough](https://misiektoja.github.io/instagram_monitor/installation/#new-to-python-install-everything) first.
+New to Python or unsure what is installed? Follow the [Python install walkthrough](https://misiektoja.github.io/instagram_monitor/installation/#new-to-python-check-and-install) first.
 
 ```sh
 pip install instagram_monitor
@@ -32,6 +32,8 @@ Run setup wizard:
 ```sh
 instagram_monitor --setup
 ```
+
+The wizard asks for the targets, the Instagram login, the interface and optional notifications. Review the settings before saving them. See [Setup & First Run](https://misiektoja.github.io/instagram_monitor/setup-and-first-run/) for the Instagram login options and the first monitoring run.
 
 #### Docker image - fastest container setup
 
@@ -76,7 +78,7 @@ Run setup wizard:
 docker compose run --rm --pull=always instagram_monitor --setup
 ```
 
-For the manual single-file method, optional browser support and upgrade commands for every installation method, see [Installation](https://misiektoja.github.io/instagram_monitor/installation/).
+For the manual single-file method, optional extras and upgrade commands, see [Installation](https://misiektoja.github.io/instagram_monitor/installation/).
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_demo.gif" alt="instagram_monitor demo: install, setup wizard and run" width="100%"/>

@@ -90,7 +90,7 @@ It also has to agree with the rest of the session. The browser runs Chromium, so
 <a id="let-the-circuit-breaker-stop-the-account"></a>
 ## Let the Circuit Breaker Stop the Account
 
-When Instagram returns a confirmed challenge, checkpoint or expired session, monitoring pauses for the account.
+When Instagram returns a confirmed challenge, checkpoint, temporary limit or expired session, monitoring pauses for the account.
 
 `CIRCUIT_BREAKER` is enabled by default. An account-level failure stops all targets using that account for the rest of the run. Restarting checks the saved session once before starting any target workers. The check allows one request with a 30-second timeout and no automatic retries or redirects. Success resumes monitoring. Failure leaves the account paused and explains what to fix.
 
@@ -98,7 +98,7 @@ When Instagram returns a confirmed challenge, checkpoint or expired session, mon
 * Circuit breaker: Instagram acted against session account your_account (challenge). Stopping all Instagram requests for this account
 ```
 
-The second line names the required action. Complete account verification in a browser or re-import an expired session, then start the tool with your usual command. No separate clearing command is needed. Importing a session reuses its login check and releases the stop only after the session is saved. In the Web Dashboard, importing or successfully refreshing the session also resumes targets paused by the account stop. Targets you stopped manually remain stopped.
+The second line names the required action. Complete account verification in a browser or re-import an expired session, then start the tool with your usual command. A temporary limit, reported as `feedback_required`, has nothing to clear: make no requests from the account and the network for several hours before restarting. See [Instagram Says Try Again Later](troubleshooting.md#instagram-says-try-again-later). No separate clearing command is needed. Importing a session reuses its login check and releases the stop only after the session is saved. In the Web Dashboard, importing or successfully refreshing the session also resumes targets paused by the account stop. Targets you stopped manually remain stopped.
 
 Each process restart can make another check. Configure a restart delay if a service manager restarts failed runs automatically.
 

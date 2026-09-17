@@ -1,6 +1,6 @@
 # Usage
 
-<a id="command-format"></a>
+<a id="command-format-by-installation-method"></a>
 ## Command Format by Installation Method
 
 Most examples on this page use the PyPI command `instagram_monitor`. If you chose another installation, replace only that command with the prefix in this table. Keep the targets and options that follow it.
@@ -26,7 +26,7 @@ Activate the tool's virtual environment before running these commands. For a dow
 
 A **target** is an Instagram account you want to monitor. Put one or more target usernames directly after the command, pass a comma-separated list through `--targets` or save a list in `TARGET_USERNAMES`. If the command contains targets, they replace the saved list for that run.
 
-To monitor one public account in [No-Login Mode](configuration.md#no-login-mode-without-session-login), pass its username:
+To monitor one public account in [No-Login Mode](configuration.md#no-login-mode-no-session-login), pass its username:
 
 ```sh
 instagram_monitor <target_insta_user>
@@ -81,7 +81,7 @@ For a direct image on Linux:
 docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest <target_insta_user>
 ```
 
-Launch the [Web Dashboard](view-modes.md#web-dashboard-mode) with targets or by itself as a browser control panel:
+Launch the [Web Dashboard](view-modes.md#web-dashboard) with targets or by itself as a browser control panel:
 
 ```sh
 instagram_monitor <target_insta_user> --web-dashboard
@@ -158,13 +158,12 @@ Downloaded story media use these names:
 - `instagram_<username>_story_YYYYmmdd_HHMMSS.jpg`
 - `instagram_<username>_story_YYYYmmdd_HHMMSS.mp4`
 
-<a id="docker-usage-recommended"></a>
 <a id="container-operation"></a>
 ## Container Operation
 
-See [Docker installation](installation.md#docker-compose) for installation, Linux file ownership, local image builds, upgrades and old volume repair. This section covers everyday use after setup.
+See [Docker installation](installation.md#install-with-docker-compose) for installation, Linux file ownership, local image builds, upgrades and old volume repair. This section covers everyday use after setup.
 
-<a id="docker-compose-easiest"></a>
+<a id="docker-compose"></a>
 ### Docker Compose
 
 Compose makes the current host directory available as `/data` inside the container. The wizard creates or updates `instagram_monitor.conf` and `.env` in that host directory. Logs, JSON files, CSV files and downloaded media are also written there. The Docker volume named `instagram_monitor_session` stores the saved Instagram login separately.
@@ -194,7 +193,7 @@ When the Web Dashboard is enabled, open [http://127.0.0.1:8000/](http://127.0.0.
 
 Compose makes `instagram_monitor.conf` available as `/data/instagram_monitor.conf`. Instagram Monitor also loads `/data/.env` when setup selected it. Do not replace a wizard-created `.env` with `.env.example` because `.env` may contain private login or notification values.
 
-<a id="common-run-scenarios"></a>
+<a id="direct-docker"></a>
 ### Direct Docker
 
 In direct Docker commands, refer to files from the current host directory through `/data`:
@@ -309,107 +308,7 @@ Example email:
 <a id="webhook-notifications"></a>
 ## Webhook Notifications
 
-Instagram Monitor can send event notifications to **Discord** or **ntfy**. A webhook is a URL that accepts a message from another application. Webhook settings do not affect email settings.
-
-`WEBHOOK_PROVIDER` tells Instagram Monitor which message format the URL expects. The default is `"discord"`. Standard Discord and public `ntfy.sh` URLs automatically select the matching format if this configured value is stale. Self-hosted ntfy and compatible endpoints still use the configured provider. An explicit `--webhook-provider` override always wins.
-
-<p align="center">
-   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_discord.png" alt="instagram_monitor_discord_screenshot" width="80%"/>
-</p>
-
-<a id="1-configure-discord-webhook"></a>
-### 1. Choose a Provider
-
-#### Discord
-
-To create a Discord Webhook URL:
-
-1.  **Create a Server**: Click the **+** (Plus) icon on the left sidebar ("Add a Server") -> **Create My Own** -> **For me and my friends**.
-2.  **Create/Edit a Channel**: In your new server, find the **#general** channel (or create a new one). Click the **Edit Channel** icon (⚙️ gear) next to the channel name.
-3.  **Create Webhook**: Go to **Integrations** in the left menu -> **Webhooks** -> **New Webhook**.
-4.  **Copy URL**: Click on the new webhook (often named "Spidey Bot", you can rename it) and click **Copy Webhook URL**.
-
-Keep `WEBHOOK_PROVIDER = "discord"` in `instagram_monitor.conf`. Standard Discord webhook URLs are also recognized automatically.
-
-#### ntfy
-
-For ntfy.sh or a self-hosted ntfy server:
-
-1. Choose a hard-to-guess topic such as `instagram-monitor-long-random-value`.
-2. In the setup wizard, enter either an ntfy.sh topic name or a complete topic URL such as `https://ntfy.sh/instagram-monitor-long-random-value`. The wizard expands a bare topic name to an ntfy.sh URL. For a self-hosted server, the Web Dashboard or manual configuration, enter the complete HTTPS topic URL.
-3. Public `ntfy.sh` URLs are recognized automatically. Set `WEBHOOK_PROVIDER = "ntfy"` in `instagram_monitor.conf` for a self-hosted ntfy server.
-
-Instagram Monitor sends the alert subject as the ntfy title. The alert text and event details become the message. Existing query parameters in the topic URL are preserved, including the ntfy [`auth` query parameter](https://docs.ntfy.sh/publish/#authentication). Long ntfy messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments.
-
-The title and message are sent as request headers or as the request body, never as query parameters. Alert text can contain follower names, captions and biographies, and servers and proxies commonly record full URLs in their access logs. Webhook requests also do not follow redirects, so a moved destination cannot receive headers meant for the address you configured.
-
-For a protected topic, the setup wizard asks for the ntfy access token in a hidden prompt and stores it in `.env`. For manual setup, add:
-
-```ini
-NTFY_ACCESS_TOKEN="tk_your_ntfy_access_token"
-```
-
-The tool sends the token as `Authorization: Bearer <token>`. It replaces any `Authorization` value in `WEBHOOK_HEADERS`.
-
-Advanced integrations can set fixed HTTP headers:
-
-```python
-WEBHOOK_HEADERS = {
-    "Authorization": "Basic your_base64_credentials",
-}
-```
-
-Header values support the same placeholders as `WEBHOOK_TEMPLATE`. Instagram Monitor validates headers before and after placeholder expansion so formatted values cannot introduce invalid names, non-string values or line breaks. For ntfy, Instagram Monitor sets the required plain-text `Content-Type`. Store Bearer tokens in `NTFY_ACCESS_TOKEN` inside `.env`. A token in the regular config is easier to expose or commit accidentally.
-
-When an alert includes a downloaded local image, Instagram Monitor uploads it as a native ntfy attachment up to 5 MiB. If image preparation or upload fails, it sends the alert as text so an image problem cannot suppress the notification. Existing remote image URLs remain links in the message.
-
-Anyone who knows an unprotected ntfy.sh topic name can read or publish to it. Reserve and protect the topic through an ntfy account when possible. Otherwise use a long random name, keep it private and do not copy the example name above.
-
-<a id="2-enable-in-the-tool"></a>
-### 2. Enable in the Tool
-
-Choose one method:
-
-- set `WEBHOOK_ENABLED = True`, select `WEBHOOK_PROVIDER` and put `WEBHOOK_URL` in `.env`
-- use an [environment variable](configuration.md#storing-secrets) for `WEBHOOK_URL`
-- save it through the hidden `--set-webhook-url` prompt
-- pass `--webhook-url` for one run. If the URL is already saved, pass `--webhook`
-- enable it through the **Settings** page in the Web Dashboard
-
-```sh
-# Save a private destination without displaying it
-instagram_monitor --set-webhook-url
-
-# Enable Discord with URL
-instagram_monitor <target_insta_user> --webhook-provider discord --webhook-url "https://discord.com/api/webhooks/..."
-
-# Enable ntfy with a topic URL
-instagram_monitor <target_insta_user> --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-private-topic"
-
-# Enable or disable a URL that is already saved
-instagram_monitor <target_insta_user> --webhook
-instagram_monitor <target_insta_user> --no-webhook
-```
-
-Webhook and avatar URLs must be complete HTTPS links with a hostname and no embedded credentials. Root endpoints work with or without a trailing slash. Known Discord and `ntfy.sh` destinations correct a stale configured provider at runtime. A URL passed through `--webhook-url` may remain visible in shell history or process listings, so prefer `--set-webhook-url` for normal setup. A `WEBHOOK_URL` left unset, or left at its `your_webhook_url` placeholder, switches webhook alerts off at startup instead of failing at the first alert, and `--verbose` reports why.
-
-<a id="3-test-your-settings"></a>
-### 3. Test Your Settings
-
-Send a test notification before starting monitoring:
-
-```sh
-# Verify settings from configuration file
-instagram_monitor --send-test-webhook
-
-# Verify a specific provider and URL from command line
-instagram_monitor --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-private-topic" --send-test-webhook
-```
-
-A test notification is always delivered when the URL and provider are valid. It does not require the event switches below, so you can confirm delivery before deciding which notifications to enable.
-
-<a id="4-advanced-configuration"></a>
-### 4. Advanced Configuration
+Webhook event choices mirror the email controls while remaining independent. For Discord, ntfy, private URL setup and advanced request customization, see [Webhook Settings](configuration.md#webhook-settings).
 
 By default, all webhook notification types (status, followers, errors) are **disabled**. You must explicitly enable what you want the tool to send. Enabling an event flag also enables the webhook master switch:
 
@@ -435,13 +334,17 @@ WEBHOOK_FOLLOWERS_NOTIFICATION = False
 WEBHOOK_ERROR_NOTIFICATION = False
 ```
 
-`WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` customize Discord-format messages. `WEBHOOK_TEMPLATE` supports `title`, `description`, `version`, `image_url`, `fields`, `fields_str`, `color`, `timestamp`, `username` and `avatar_url` placeholders. Use a dictionary or a JSON string encoding an object. Lists, non-JSON strings and unknown placeholders are rejected before delivery. Legacy JSON strings with doubled object braces still work and quotes or braces in alert text remain literal. Every payload sets `allowed_mentions` to `{"parse": []}` so alert text cannot trigger Discord mentions. Retries retain the original destination and credentials when settings are reloaded.
+Send a test notification before starting monitoring:
 
-`WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` apply only to Discord and are ignored when `WEBHOOK_PROVIDER` is `"ntfy"`. The ntfy provider needs no template: it sends the alert body as a native ntfy message with the subject as its title. Customize ntfy delivery through `WEBHOOK_HEADERS` (for example `X-Priority` or `X-Tags`).
+```sh
+# Verify settings from configuration file
+instagram_monitor --send-test-webhook
 
-`WEBHOOK_TRANSFORMS` applies configured string methods before the template and headers are rendered. Invalid templates, avatar URLs, transforms or expanded headers fail before any request is attempted. Dictionary payloads always replace `allowed_mentions` with `{"parse": []}` so notification text cannot trigger `@everyone`, `@here` or user mentions.
+# Verify a specific provider and URL from command line
+instagram_monitor --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-private-topic" --send-test-webhook
+```
 
-Webhook delivery uses an isolated session with a 10-second timeout and at most two attempts. It accepts every HTTP 2xx response, retries HTTP 429 according to a server delay capped at 5 seconds and retries HTTP 5xx once. Other HTTP 4xx responses fail immediately.
+A test notification is always delivered when the URL and provider are valid. It does not require the event switches above, so you can confirm delivery before deciding which notifications to enable.
 
 <a id="follower-churn-detection"></a>
 ## Follower Churn Detection
@@ -665,7 +568,7 @@ CIRCUIT_BREAKER = True
 
 The budget is shared by every target and resets at local midnight. Identity scans run one at a time so workers cannot spend the same remaining allowance. REST responses are counted as soon as a page arrives, including names the caller does not consume. When the budget is spent, name fetching stops for the day while counts, posts, reels, stories and profile changes carry on. Names are counted even with no budget set, so you can measure first and choose a number afterwards.
 
-The circuit breaker stops every target using the account after a confirmed challenge, checkpoint or expired session. Fix the account issue and restart with your usual command. Before target workers start, a stopped account gets one login check with a 30-second timeout and no automatic retries or redirects. Success resumes monitoring without clearing anything manually. Failure leaves the account paused with a recovery action. Re-importing a session uses its successful login check to recover after saving. The Web Dashboard also resumes targets paused by the account stop after a successful import or refresh.
+The circuit breaker stops every target using the account after a confirmed challenge, checkpoint, temporary limit or expired session. Fix the account issue and restart with your usual command. Before target workers start, a stopped account gets one login check with a 30-second timeout and no automatic retries or redirects. Success resumes monitoring without clearing anything manually. Failure leaves the account paused with a recovery action. Re-importing a session uses its successful login check to recover after saving. The Web Dashboard also resumes targets paused by the account stop after a successful import or refresh.
 
 If the safety ledger cannot be read or saved, or holds a value no reader can trust, authenticated monitoring stays stopped until the file is repaired. Recovery preserves daily counts. Rate limits, network errors and Instagram API changes do not trip the breaker. During a recovery check, any unsuccessful result keeps the existing stop in place.
 
@@ -746,7 +649,7 @@ See the [curl_cffi documentation](https://github.com/lexiforest/curl_cffi) for t
 
 The target is checked against that list at startup and when saved from the Web Dashboard. An unrecognized value stops the tool with a message naming supported targets, rather than letting every Instagram request fail later as a connection error.
 
-`--setup` asks for the backend and the impersonated browser, offering only the targets the installed curl_cffi accepts. The Web Dashboard changes both under **Settings** in the **Instagram Connection** card, where curl_cffi is not selectable when the package is missing.
+`--setup` does not ask about the backend or the impersonated browser, since the defaults suit almost every setup. Change them in the configuration file or in the Web Dashboard under **Settings** in the **Instagram Connection** card, where curl_cffi is not selectable when the package is missing.
 
 <a id="privacy-substitutions"></a>
 ## Privacy Substitutions
@@ -760,6 +663,40 @@ PRIVACY_SUBSTITUTIONS = [ ("a.username", "Sarah"), ("some.other.user", "XXX") ]
 ```
 
 The replacement happens before output is displayed, logged or sent. Internal keys and file paths do not change, so the tool still uses the original usernames to find data. Invalid entries are ignored with a warning.
+
+<a id="terminal-output"></a>
+## Terminal Output
+
+Use `--help` for examples grouped by task and matched to your installation.
+
+Monitoring mode prints the settings that are actually in effect before the first check.
+
+Optional features appear once you switch them on.
+
+Use `--verbose` or `--debug` for the full startup summary, including output paths, notification settings, secret sources and runtime information.
+
+Use `--truncate N` or `TRUNCATE_CHARS` to limit screen line width. Set it to `999` to detect the terminal width automatically. Truncation does not change log files and is ignored when logging is disabled with `-d`.
+
+The tool clears the terminal when monitoring starts. Set `CLEAR_SCREEN` to `False` to keep whatever is already on the screen.
+
+The screen is never cleared when output is redirected to a file or a pipe, in debug mode, or for a command that prints a result and exits, such as `--doctor`, `--help` and the test senders.
+
+Two settings add detail to what a run prints. `VERBOSE_MODE` adds the decisions the run made and `DEBUG_MODE` adds timestamped technical traces. Both are off by default, both are independent of each other and both have a flag that wins over the file, `--verbose` and `--debug`. `DELIVERY_CONFIRMATIONS` is on by default and controls whether verbose mode confirms each delivered email and webhook alert. See [Verbose and Debug Output](troubleshooting.md#verbose-and-debug-output).
+
+<a id="coloured-terminal-output"></a>
+### Coloured Terminal Output
+
+Instagram Monitor colours live terminal output and help by default. Saved log files stay plain text.
+
+Turn colour off for one run with `--no-color` or permanently with `COLORED_OUTPUT = False`. Colour is also disabled for redirected output, `NO_COLOR` or an unsupported terminal. See [Terminal Colours](configuration.md#terminal-colours) for details and Windows support.
+
+Override individual colours with `COLOR_THEME`. It is merged over the built-in theme, so you only name the parts you want to change:
+
+```ini
+COLOR_THEME = { "post": "bright_magenta bold", "username": "green" }
+```
+
+See [Terminal Colours](configuration.md#terminal-colours) for the shipped defaults and how an older configuration file behaves.
 
 <a id="terminal-safe-output"></a>
 ## Terminal-Safe Output
@@ -904,7 +841,7 @@ This feature is enabled by default. To disable it, either:
 - set the `DETECT_COLLAB_POSTS` to `False`
 - or use the `--no-detect-collab-posts` flag
 
-<a id="collab-posts---how-it-works"></a>
+<a id="collab-posts-how-it-works"></a>
 ### Collab Posts - How It Works
 
 The check runs only when the session cannot normally view a target's posts, such as a private account that the session account does not follow.
@@ -929,7 +866,7 @@ The published Docker image does not include `imgcat`. Use a local installation o
 <a id="check-intervals"></a>
 ## Check Intervals
 
-The polling interval is the number of seconds between scheduled checks. Set it through `INSTA_CHECK_INTERVAL` or `-c`:
+If you want to customize the polling interval, use the `-c` flag (or the `INSTA_CHECK_INTERVAL` configuration option):
 
 ```sh
 instagram_monitor <target_insta_user> -c 3600
@@ -955,12 +892,26 @@ The console and email notifications show the wait selected for the current cycle
 
 To restrict checks to selected times of day, set `CHECK_POSTS_IN_HOURS_RANGE = True` and configure `MIN_H1`, `MAX_H1`, `MIN_H2` and `MAX_H2`. See [Use Hour-Range Checking](anti-detection.md#use-hour-range-checking).
 
+<a id="liveness-reminder"></a>
+### Liveness Reminder
+
+While nothing changes, the tool prints one reminder that it is still running:
+
+```
+* Monitoring healthy for <target_insta_user>. No tracked change since the last check
+Liveness check, timestamp:	Mon 08 Sep 2026, 09:15:05
+```
+
+Set `LIVENESS_CHECK_INTERVAL` to change it (default: 86400, i.e. 24 hours), or to 0 to switch it off.
+
+Anything the tool prints about the target restarts the countdown, so a busy run stays quiet.
+
 <a id="signal-controls-macoslinuxunix"></a>
 ## Signal Controls (macOS/Linux/Unix)
 
-On macOS, Linux and Unix, operating system signals can change a running process without restarting it.
+The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new configuration options / flags.
 
-Supported signals:
+List of supported signals:
 
 | Signal | Description |
 | ----------- | ----------- |
@@ -972,7 +923,7 @@ Supported signals:
 
 `SIGHUP` keeps command-line credentials and nonempty environment values exported before startup. Change those values and restart to replace them.
 
-Send a signal with `kill` or `pkill`. For example:
+Send signals with `kill` or `pkill`, e.g.:
 
 ```sh
 pkill -USR1 -f "instagram_monitor <target_insta_user>"
@@ -991,11 +942,7 @@ A local Windows process supports only a limited signal set. Linux containers can
 <a id="coloring-log-output-with-grc"></a>
 ## Coloring Log Output with GRC
 
-Instagram Monitor can color live terminal output through `COLORED_OUTPUT` and `COLOR_THEME`. The `--help` screen is colored too: group headings, option names, the values those options take, the example commands and the comments above them each get their own color. To color saved log files when viewing them later, you can use [GRC](https://github.com/garabik/grc).
-
-On Windows, install the optional `colorama` package for colour in the classic Command Prompt. Windows Terminal needs nothing extra.
-
-Usernames are `bright_cyan underline`, the numeric user ID is `bright_magenta` and links are `blue underline`. A `Yes` or `No` answer is coloured only as the whole value of a labelled row, so an ordinary `no` inside a sentence stays plain. Generated configuration files ship the `COLOR_THEME` block commented out, so these defaults apply and a later change to them reaches you. Overrides you added are written back as a real block when setup rebuilds the file, so they are not lost. A configuration file written by an earlier version sets every colour explicitly and therefore keeps the old ones: delete its `COLOR_THEME` block to follow the current defaults, or edit the values you want to keep. Such a file still loads unchanged.
+Live terminal output is coloured through `COLORED_OUTPUT` and `COLOR_THEME`, described under [Terminal Colours](configuration.md#terminal-colours). To colour saved log files when viewing them later, you can use [GRC](https://github.com/garabik/grc).
 
 The bundled recipe follows the same colors as the live output. It also covers the other monitors in the family, so one copy in `~/.grc/` colors every tool's logs.
 

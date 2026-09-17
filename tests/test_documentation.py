@@ -182,7 +182,7 @@ def test_firefox_docs_cover_container_host_layouts():
 # Verifies manual quick-start commands link both authentication modes
 def test_quick_start_links_both_authentication_modes():
     quick_start = read_asset("docs/setup-and-first-run.md")
-    assert "(configuration.md#no-login-mode-without-session-login)" in quick_start
+    assert "(configuration.md#no-login-mode-no-session-login)" in quick_start
     assert "(configuration.md#logged-in-mode-with-session-login)" in quick_start
 
 
@@ -205,7 +205,7 @@ def test_compose_defaults_load_dotenv_and_suppress_attached_prefixes():
 # Verifies historical feature links target their current documentation sections
 def test_release_notes_use_current_documentation_links():
     release_notes = read_asset("RELEASE_NOTES.md")
-    for fragment in ("view-modes/#terminal-dashboard-mode", "view-modes/#web-dashboard-mode", "usage/#webhook-notifications", "usage/#follower-churn-detection", "usage/#output-directory", "usage/#skipping-follow-changes", "anti-detection/#use-the-human-mode", "anti-detection/#use-the-jitter-mode", "configuration/#user-agent"):
+    for fragment in ("view-modes/#terminal-dashboard", "view-modes/#web-dashboard", "usage/#webhook-notifications", "usage/#follower-churn-detection", "usage/#output-directory", "usage/#skipping-follow-changes", "anti-detection/#use-the-human-mode", "anti-detection/#use-the-jitter-mode", "configuration/#user-agent"):
         assert f"https://misiektoja.github.io/instagram_monitor/{fragment}" in release_notes
     assert "https://github.com/misiektoja/instagram_monitor#" not in release_notes
 

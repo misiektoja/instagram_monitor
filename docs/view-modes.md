@@ -1,6 +1,6 @@
 # View Modes
 
-Examples on this page use the PyPI command `instagram_monitor`. If you chose another installation, replace that command with the matching [command prefix](usage.md#command-format). Keep all targets and options after the prefix.
+Examples on this page use the PyPI command `instagram_monitor`. If you chose another installation, replace that command with the matching [command prefix](usage.md#command-format-by-installation-method). Keep all targets and options after the prefix.
 
 Choose one of three ways to view monitoring activity:
 
@@ -21,7 +21,7 @@ Text mode is the default. It works in any terminal and is well suited to backgro
 
 ---
 
-<a id="terminal-dashboard-mode"></a>
+<a id="terminal-dashboard"></a>
 ## Terminal Dashboard
 
 The Terminal Dashboard updates status, statistics and recent events in one terminal screen. It requires the `rich` library, which is included in normal installations.
@@ -55,14 +55,14 @@ instagram_monitor target1 target2 --dashboard
 
 ---
 
-<a id="web-dashboard-mode"></a>
+<a id="web-dashboard"></a>
 ## Web Dashboard
 
 The Web Dashboard runs a small web server on your computer. By default, open `http://127.0.0.1:8000/` in a browser on the same computer. The `127.0.0.1` address is local, so other devices cannot connect unless you change the server and Docker settings.
 
 The dashboard has no login screen. Keep the host port bound to `127.0.0.1` and do not expose it through a public reverse proxy. Thumbnails use downloaded images only. Missing downloads show a placeholder. Saved webhook and proxy URLs are hidden. Enter a new URL only to replace the saved value.
 
-<a id="dashboard-request-protection"></a>
+<a id="request-protection"></a>
 ### Request Protection
 
 If a dashboard request is rejected, check these requirements:

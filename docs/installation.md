@@ -2,7 +2,7 @@
 
 Choose one installation method. You do not need both Python and Docker.
 
-PyPI is usually the easiest local option. If you are new to Python or unsure whether Python is ready, follow [New to Python: check and install](#new-to-python-install-everything).
+PyPI is usually the easiest local option. If you are new to Python or unsure whether Python is ready, follow [New to Python: check and install](#new-to-python-check-and-install).
 
 The direct Docker image is the fastest container option. Docker Compose takes one extra download but gives you shorter commands for later runs.
 
@@ -42,7 +42,7 @@ Tested on:
 
 It should work on other versions of macOS, Linux, Unix and Windows as well.
 
-<a id="new-to-python-install-everything"></a>
+<a id="new-to-python-check-and-install"></a>
 ## New to Python: check and install
 
 Use this section if you are new to Python or do not know what is already installed. The platform sections only prepare Python and `pip`. Everyone then uses the same Instagram Monitor installation and setup commands. Instagram Monitor requires Python 3.9 or newer and is currently tested through Python 3.14.
@@ -64,7 +64,7 @@ Check Python and `pip`:
     python --version
     pip --version
 
-If both commands work and Python reports version 3.9 or newer, skip to [Install Instagram Monitor](#install-instagram-monitor-after-python-check).
+If both commands work and Python reports version 3.9 or newer, skip to [Install Instagram Monitor](#install-instagram-monitor).
 
 If either command fails:
 
@@ -92,7 +92,7 @@ Check Python and `pip`:
     python3 --version
     pip --version
 
-If both commands work and Python reports version 3.9 or newer, skip to [Install Instagram Monitor](#install-instagram-monitor-after-python-check).
+If both commands work and Python reports version 3.9 or newer, skip to [Install Instagram Monitor](#install-instagram-monitor).
 
 If either command fails:
 
@@ -118,7 +118,7 @@ Open Terminal then check Python and `pip`:
     python3 --version
     pip --version
 
-If both commands work and Python reports version 3.9 or newer, skip to [Install Instagram Monitor](#install-instagram-monitor-after-python-check).
+If both commands work and Python reports version 3.9 or newer, skip to [Install Instagram Monitor](#install-instagram-monitor).
 
 If either command fails, install the missing packages:
 
@@ -134,7 +134,7 @@ Check both commands again:
 
 If Python reports a version older than 3.9, follow your distribution's instructions to install a supported Python version before continuing. For another Linux distribution, install Python 3.9 or newer plus `pip` through its package manager.
 
-<a id="install-instagram-monitor-after-python-check"></a>
+<a id="install-instagram-monitor"></a>
 ### Install Instagram Monitor
 
 Every operating system uses the same command:
@@ -162,7 +162,7 @@ Every operating system uses the same command:
 
 The setup wizard can import a signed-in Firefox session, save the accounts to monitor and configure the polling interval, interface and alerts. Continue to [Setup & First Run](setup-and-first-run.md) for a walkthrough of its questions.
 
-<a id="installation"></a>
+<a id="choose-an-installation-method"></a>
 ## Choose an Installation Method
 
 | Method | Best for | Command used in later examples |
@@ -204,7 +204,7 @@ playwright install chromium
 
 Read [Browser Source](usage.md#browser-source-experimental) before turning it on. It can cost you the logged-in account.
 
-<a id="manual-python-based-installation"></a>
+<a id="install-the-manual-script"></a>
 ### Install the Manual Script
 
 Download the script and dependency list into the same directory:
@@ -253,7 +253,7 @@ No separate image download is required. Its first-run command uses `docker run -
 docker run --rm --pull=always -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest --setup
 ```
 
-On a native Linux container engine, add `--user "$(id -u):$(id -g)"` immediately after `--init`. [Setup & First Run](setup-and-first-run.md#new-here-run-the-setup-wizard) shows the exact command for macOS shells, Windows PowerShell and native Linux engines then explains what the wizard asks.
+On a native Linux container engine, add `--user "$(id -u):$(id -g)"` immediately after `--init`. [Setup & First Run](setup-and-first-run.md#run-the-setup-wizard) shows the exact command for macOS shells, Windows PowerShell and native Linux engines then explains what the wizard asks.
 
 Normal monitoring commands reuse the installed image and do not check for a newer release. The [upgrade instructions](#upgrade-a-direct-docker-installation) pull explicitly when you choose to upgrade.
 
@@ -267,7 +267,7 @@ The `:z` suffix lets Docker relabel the mounted directory on hosts that use SELi
 
 The published image includes all core dependencies but not the optional Chromium browser extra. Firefox works inside a container because its cookie database can be mounted as a read-only file. Chrome, Brave and Chromium need the host password service to decrypt cookies. A container cannot use that service.
 
-<a id="docker-compose"></a>
+<a id="install-with-docker-compose"></a>
 ### Install with Docker Compose
 
 Compose adds a reusable project file and shorter commands for later runs. Create or choose a directory for Instagram Monitor and download the Compose file there:
@@ -300,9 +300,9 @@ Compose makes the current host directory available as `/data` inside the contain
 docker compose run --rm --pull=always instagram_monitor --setup
 ```
 
-The `--pull=always` flag pulls the current image first, so no separate pull command is needed during onboarding. On a native Linux container engine, export the UID and GID shown above in the same terminal before you run setup. See [Setup & First Run](setup-and-first-run.md#new-here-run-the-setup-wizard) for the wizard walkthrough.
+The `--pull=always` flag pulls the current image first, so no separate pull command is needed during onboarding. On a native Linux container engine, export the UID and GID shown above in the same terminal before you run setup. See [Setup & First Run](setup-and-first-run.md#run-the-setup-wizard) for the wizard walkthrough.
 
-<a id="build-image-locally"></a>
+<a id="build-the-docker-image-locally"></a>
 ### Build the Docker Image Locally
 
 From a cloned repository:

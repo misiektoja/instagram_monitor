@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Examples on this page use the PyPI command `instagram_monitor`. If you chose another installation, replace that command with the matching [command prefix](usage.md#command-format). The setup wizard and `--help` also print commands for the detected installation.
+Examples on this page use the PyPI command `instagram_monitor`. If you chose another installation, replace that command with the matching [command prefix](usage.md#command-format-by-installation-method). The setup wizard and `--help` also print commands for the detected installation.
 
 If a dotenv file cannot be opened or is not UTF-8, monitoring stops with the file path and the repair step for that cause. Doctor reports the failed load and continues the remaining checks.
 
@@ -21,11 +21,11 @@ A configuration file Instagram Monitor cannot accept is reported by Doctor as a 
 
 Configuration checks include [TLS verification](configuration.md#tls-verification), [HTTP backend](usage.md#http-transport-backend), browser identity, polling limits, check hours, timezone and output files. A `requests` backend warning means its TLS fingerprint does not match a browser. Invalid settings are named with the expected format.
 
-The Notifications section signs in to the configured SMTP server and checks webhook settings without sending a message, and each ready row lists the alert categories that channel would deliver.
+The Notifications section signs in to the configured SMTP server and checks webhook settings without sending a message. Each ready row lists the alert categories that channel would deliver.
 
 In an interactive terminal, Doctor offers one real test message per ready notification channel. Each prompt defaults to No and requires separate approval. Disabled or incomplete channels have no delivery test. Ctrl+C ends the report. Noninteractive runs send no test messages.
 
-Each failure and warning includes a `To fix:` action, and a `Guide:` link to the relevant documentation page where one applies. The command returns a nonzero exit status if a check or approved delivery test fails, so scripts can detect the failure. Doctor accepts normal login, target and file options. Use them to check the saved setup or one exact combination:
+Each failure and warning includes a `To fix:` action and a `Guide:` link to the relevant documentation page where one applies. The command returns a nonzero exit status if a check or approved delivery test fails, so scripts can detect the failure. Doctor accepts normal login, target and file options. Use them to check the saved setup or one exact combination:
 
 ```sh
 instagram_monitor --doctor
@@ -42,6 +42,25 @@ Doctor exits after the report and does not start monitoring or the Web Dashboard
 
 For more detail, add `--debug` to Doctor or a normal run. Debug output includes HTTP details and internal decisions. It may also contain private data. Remove cookies, passwords, tokens and webhook URLs before sharing it.
 
+<a id="common-problems"></a>
+## Common Problems
+
+Every failure is reported in the same three-part shape: what went wrong, a `To fix:` action and a `Guide:` link to the page that covers it. The fix command matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is. `--debug` appends a `Technical detail:` line for bug reports. Secrets are redacted from all three.
+
+| Symptom | Likely cause | Where to look |
+| --- | --- | --- |
+| Instagram answers `Try Again Later` | A temporary limit on the account or address | [Instagram Says Try Again Later](#instagram-says-try-again-later) |
+| Stories, reels or follower details are missing | The run has no logged in session | [Logged-In Mode](configuration.md#logged-in-mode-with-session-login) |
+| Follower and following lists stop working | The session was invalidated or rate limited | [Follower and Following Lists Stop Working](#follower-and-following-lists-stop-working) |
+| The dashboard does not open in a container | The port is not published | [Container Dashboard Does Not Open](#container-dashboard-does-not-open) |
+| The run stops naming a file and a line number | A configuration line is not a plain `SETTING = value` assignment | [Configuration File](configuration.md#configuration-file) |
+| Emails never arrive | Incomplete SMTP settings | [SMTP Settings](configuration.md#smtp-settings) then run `instagram_monitor --send-test-email` |
+| Webhook alerts never arrive | Provider mismatch or a stale destination | [Webhook Settings](configuration.md#webhook-settings) then run `instagram_monitor --send-test-webhook` |
+| `instagram_monitor` is not found after installation | The shell has not picked up the new command | [Installation and Command Problems](#installation-and-command-problems) |
+| Escape sequences such as `[36m` printed as text, or no colour at all | The terminal cannot display ANSI colour, or colour was switched off | [Terminal Colours Look Wrong](#terminal-colours-look-wrong) |
+
+A continuing outage produces a `* Monitoring degraded` reminder once an hour, even when the [liveness reminder](usage.md#liveness-reminder) is switched off, and `* Monitoring recovered` marks recovery. Use `--verbose` to see the first failed check.
+
 <a id="connection-errors-during-monitoring"></a>
 ## Connection Errors During Monitoring
 
@@ -51,13 +70,11 @@ Every other problem reads the same way. A setting the tool cannot use, a file it
 
 A failure the tool could not place still names an action: it asks you to re-run with `--debug` and links the page explaining the output modes.
 
-During quiet monitoring, `* Monitoring healthy for <instagram_user>` confirms the tool is still running. `LIVENESS_CHECK_INTERVAL` defaults to 86400 seconds (24 hours). Set it to `0` to disable this reminder.
-
-Failures show an error and a `To fix:` action. A continuing outage produces a `* Monitoring degraded` reminder once an hour, even when liveness reminders are disabled. `* Monitoring recovered` marks recovery. Follow any new instructions if the failure changes.
+Failures show an error and a `To fix:` action. A continuing outage produces a `* Monitoring degraded` reminder once an hour, even when the [liveness reminder](usage.md#liveness-reminder) is switched off. `* Monitoring recovered` marks recovery. Follow any new instructions if the failure changes.
 
 A redirect or a rejected request usually means the saved session. When the failure was not recognized well enough to suggest anything else, the `To fix:` line names the session and the exact re-import command instead.
 
-A message naming `Could not resolve host` means the machine could not look up Instagram's address. This is a DNS problem on your side rather than an Instagram block, and it is common on devices that start monitoring before the network is fully up, such as a Raspberry Pi booting from cold. Check that name lookups work:
+A message naming `Could not resolve host` means the machine could not look up Instagram's address. This is a DNS problem on your side rather than an Instagram block. It is common on devices that start monitoring before the network is fully up, such as a Raspberry Pi booting from cold. Check that name lookups work:
 
 ```sh
 ping www.instagram.com
@@ -68,6 +85,13 @@ If that fails too, fix DNS first. When you use a VPN or a proxy, confirm it is r
 Other connection errors point elsewhere. `Max retries exceeded` or a timeout usually means the connection dropped or a proxy is unreachable, see [routing traffic through a proxy](usage.md#routing-traffic-through-a-proxy). `429` or `Too Many Requests` means Instagram is rate-limiting you, see [keep the polling interval reasonable](anti-detection.md#keep-the-polling-interval-reasonable). A `429` on the very first request of a run is usually a blocked TLS fingerprint rather than a rate limit, see [use a browser transport fingerprint](anti-detection.md#use-a-browser-transport-fingerprint). A message about a redirect, a login or wrong credentials means the saved session expired, see [session import](configuration.md).
 
 For the underlying transport detail behind any of these, add `--debug`. Normal output omits it because it names internal HTTP library errors rather than anything you can act on.
+
+<a id="instagram-says-try-again-later"></a>
+## Instagram Says Try Again Later
+
+A `400 Bad Request` naming `feedback_required` means Instagram is limiting what the logged-in account or your IP address may do for a while. Instagram shows this as a "Try Again Later" notice. It is not a checkpoint: Instagram in your browser may keep working, there is nothing to clear there and re-importing the session does not lift it. The circuit breaker stops the account so no further request is made and `--exposure` counts it as `action_block`.
+
+Make no requests from that account and that network for several hours, then run `instagram_monitor --doctor` again. If the same session works from another network, such as a mobile connection, the limit is on your IP address rather than the account. Once it passes, raise `INSTA_CHECK_INTERVAL`, monitor fewer users and follow the [anti-detection guidance](anti-detection.md). A limit that returns soon after monitoring resumes means the account is still being watched, so wait longer before the next attempt.
 
 <a id="container-dashboard-does-not-open"></a>
 ## Container Dashboard Does Not Open
@@ -97,7 +121,7 @@ docker ps
 <a id="dashboard-returns-403-or-415"></a>
 ## Dashboard Returns 403 or 415
 
-The dashboard has no login, so it verifies how a request reached it. See [Request Protection](view-modes.md#dashboard-request-protection) for what the two rules cover.
+The dashboard has no login, so it verifies how a request reached it. See [Request Protection](view-modes.md#request-protection) for what the two rules cover.
 
 **HTTP 403 with "unrecognized Host header"** means the browser addressed the server under a name it does not answer to. Open it at [http://127.0.0.1:8000/](http://127.0.0.1:8000/). If you deliberately reach it under another name, such as a machine name on your own network or a reverse proxy, list that name:
 
@@ -130,26 +154,69 @@ There is a third, experimental source that reads the lists out of a real browser
 
 Common browser source errors:
 
-- **The browser source runs a chrome browser, but ...**: the browser channel and the rest of the session name different browsers. Set `HTTP_BACKEND` to `curl_cffi`, `CURL_CFFI_IMPERSONATE` to `auto` and `USER_AGENT` to a browser from the channel's family, or leave `USER_AGENT` empty. See [Browser Source](usage.md#browser-source-experimental).
-- **The browser could not start**: Playwright is installed but the browser is not. Run `playwright install chromium`, or set `FOLLOW_LIST_BROWSER_CHANNEL` to a browser already installed here, such as `chrome`.
+- **The browser source runs a chrome browser, but ...**: the browser channel and the rest of the session name different browsers. Set `HTTP_BACKEND` to `curl_cffi`, `CURL_CFFI_IMPERSONATE` to `auto` and `USER_AGENT` to a browser from the channel's family or leave `USER_AGENT` empty. See [Browser Source](usage.md#browser-source-experimental).
+- **The browser could not start**: Playwright is installed but the browser is not. Run `playwright install chromium` or set `FOLLOW_LIST_BROWSER_CHANNEL` to a browser already installed here, such as `chrome`.
 - **The login page, so this session is not logged in**: the cookies handed to the browser are no longer valid. Refresh the session and try again.
 - **A challenge page**: complete account verification in an ordinary browser, then restart or re-import the session. The circuit breaker checks recovery without requiring a separate clearing command.
 - **Rendered only N of about M**: the dialog stopped growing early, usually from a slow connection. Raise `FOLLOW_LIST_BROWSER_SCROLL_DELAY` and `FOLLOW_LIST_BROWSER_TIMEOUT`. The short list is discarded, not saved over your baseline.
 
 Run `instagram_monitor --doctor` to confirm Playwright and the browser are installed before a real run.
 
+<a id="terminal-colours-look-wrong"></a>
+## Terminal Colours Look Wrong
+
+If escape sequences such as `[36m` appear as literal text, the terminal does not understand ANSI colour. Start the tool with `--no-color` or set `COLORED_OUTPUT = False` in the configuration file. On Windows, `pip install colorama` fixes the classic Command Prompt.
+
+If colour is missing where you expect it, check in this order: `--no-color` on the command line, `COLORED_OUTPUT` in the configuration file, a `NO_COLOR` environment variable and whether output is redirected or piped. Colour is switched off in all of those cases and also when `TERM` is unset or set to `dumb`.
+
+Log files never contain colour by design. To colour a saved log while reading it, see [Coloring Log Output with GRC](usage.md#coloring-log-output-with-grc).
+
+To change which colours are used, see [Terminal Colours](configuration.md#terminal-colours).
+
 <a id="choosing-the-right-logging-level"></a>
 ## Choosing the Right Logging Level
 
-- **Default mode** reports changes, warnings and errors.
-- **Verbose mode (`--verbose`)** adds the full startup summary, operational changes and alert delivery confirmations. Set `DELIVERY_CONFIRMATIONS = False` to hide those confirmations.
-- **Debug mode (`--debug`)** adds request details, polling activity and technical diagnostics. It also keeps existing terminal output on screen. Use it to check whether a background process is still polling.
+- **Default mode** reports activity changes and important errors
+- **Verbose mode (`--verbose`)** adds occasional state changes, a line naming where each delivered alert went and a complete startup summary without private values. Set `DELIVERY_CONFIRMATIONS = False` to keep verbose mode without those delivery lines
+- **Debug mode (`--debug`)** adds sanitized request flow, scheduling details and internal diagnostics
 
-Delivery confirmations name the email recipient or webhook provider without repeating the subject or message body. `DELIVERY_CONFIRMATIONS = False` hides those optional success receipts. Event output, send attempts and errors remain visible. Explicit notification tests report their result once. Generated email subjects and webhook titles use readable service names without a program-name prefix.
+Delivery confirmations name the recipient or webhook provider. `DELIVERY_CONFIRMATIONS = False` hides these optional success messages. Monitoring events, send attempts and errors remain visible.
 
-Either mode also expands the startup summary with the detected install method and the names of the secrets that came from the dotenv file, the environment or the configuration file. Secret values never appear. The same view names the webhook service alerts go to and whether that channel is switched on, plus the mail server that sends them with the recipient address masked. Each channel's own settings are indented under it. It also reports whether the delivery confirmations are printed and the process id, Python version and operating system the run is on.
+Both `--verbose` and `--debug` show the complete startup summary, including notification settings and credential sources. Use it to check which configuration is active without displaying private values.
+
+Start with `--doctor`. If the suggested fix does not resolve the issue, retry with `--debug` and include only sanitized output when opening a GitHub issue.
 
 You can also change Verbose and Debug modes through the **Settings** page in the Web Dashboard.
+
+<a id="verbose-and-debug-output"></a>
+## Verbose and Debug Output
+
+`--verbose` adds the decisions a run made, in the same `*` lines as the rest of the output:
+
+```sh
+instagram_monitor <target_insta_user> --verbose
+```
+
+`--debug` traces what the tool is doing in timestamped `[DEBUG HH:MM:SS]` lines:
+
+```sh
+instagram_monitor <target_insta_user> --debug
+```
+
+Lines with details read `Operation: key=value, key=value`. Fields depend on the operation. Some results report `outcome=OK`, `failed` or `skipped`. Lines printed while a target is monitored carry its username in square brackets after the timestamp.
+
+<a id="installation-and-command-problems"></a>
+## Installation and Command Problems
+
+If Python or `pip` is missing, use the [Python install walkthrough](installation.md#new-to-python-check-and-install).
+
+If `instagram_monitor` is not found after installation, close the terminal and open it again. On Windows with Python Install Manager, run `py install --refresh` to refresh command aliases. For a pipx installation, run `pipx ensurepath` then reopen the terminal. If you downloaded the script, use the [manual command](usage.md#command-format-by-installation-method) from its directory.
+
+If `pip` reports an externally managed environment, follow the pipx steps in [Installation](installation.md#install-instagram-monitor). Use `pipx upgrade instagram_monitor` for later upgrades.
+
+If the tool cannot import a dependency, install the dependencies with the same Python interpreter that runs the script. On macOS or Linux use `python3 -m pip install -r requirements.txt`. On Windows use `python -m pip install -r requirements.txt`. Match the requirements file to your downloaded script.
+
+If a new terminal cannot find your saved settings, return to the directory used during setup or pass both `--config-file` and `--env-file` explicitly. Run `instagram_monitor --doctor` to see which settings are loaded.
 
 ## Invalid saved settings and state
 
