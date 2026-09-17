@@ -15927,7 +15927,7 @@ WIZARD_INTERFACE_CONFIG_KEYS = ("WEB_DASHBOARD_ENABLED", "DASHBOARD_ENABLED", "W
 WIZARD_WEBHOOK_CONFIG_KEYS = ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_FOLLOWERS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
 WIZARD_EMAIL_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL", "STATUS_NOTIFICATION", "FOLLOWERS_NOTIFICATION", "ERROR_NOTIFICATION")
 WIZARD_OUTPUT_CONFIG_KEYS = ("DISABLE_LOGGING", "CSV_FILE")
-WIZARD_CONNECTION_CONFIG_KEYS = ("HTTP_BACKEND", "CURL_CFFI_IMPERSONATE", "FOLLOW_LIST_SOURCE")
+WIZARD_CONNECTION_CONFIG_KEYS = ("HTTP_BACKEND", "CURL_CFFI_IMPERSONATE", "FOLLOW_LIST_SOURCE", "SKIP_FOLLOWERS", "SKIP_FOLLOWINGS")
 
 
 # The mail server settings the wizard collects, and how long its sign-in check waits for the server
@@ -16395,6 +16395,15 @@ def _wizard_collect_connection_section(state: WizardSetupState) -> None:
     _wizard_reset_section(state, WIZARD_CONNECTION_CONFIG_KEYS, ())
     # No API surface lists followers without a session, so the question is only worth asking in login mode
     if state.logged_in:
+        # Names are the most expensive thing the tool asks Instagram for and the operation Instagram acts
+        # against, so the first question is whether to collect them at all rather than how
+        collect_options = [("Followers and following", "Read both lists when a count changes, so you see who joined and who left.\nNames are what Instagram scores hardest, so this is capped by IDENTITY_BUDGET_PER_DAY."), ("Followers only", "Report who followed and unfollowed while collecting about half as many names per check."), ("Counts only, no names", "Follower and following numbers, posts, reels, stories and profile changes are still monitored.\nNothing that returns user names is ever requested, which is the safest choice for the account.")]
+        collect = _wizard_ask_choice("Which follower lists should be collected?", collect_options, default_index=0)
+        state.config_values["SKIP_FOLLOWERS"] = collect == 2
+        state.config_values["SKIP_FOLLOWINGS"] = collect >= 1
+        if collect == 2:
+            return
+
         browser_note = "Needs the playwright package and a downloaded browser, is much slower and risks the logged-in account."
         if not playwright_available():
             browser_note = "The playwright package is not installed here, so install it before monitoring starts: pip install playwright, then playwright install chromium."
@@ -16515,7 +16524,10 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
     if state.container_host:
         rows.append(("Docker host", CONTAINER_FIREFOX_HOSTS[state.container_host][0]))
     if state.logged_in:
-        rows.append(("Follower list source", str(state.config_values.get("FOLLOW_LIST_SOURCE") or "auto")))
+        collects_names = not state.config_values.get("SKIP_FOLLOWERS")
+        rows.append(("Follower lists", ("followers only" if state.config_values.get("SKIP_FOLLOWINGS") else "followers and following") if collects_names else "counts only, no names"))
+        if collects_names:
+            rows.append(("Follower list source", str(state.config_values.get("FOLLOW_LIST_SOURCE") or "auto")))
     rows.extend([
         ("Interface", interface),
         ("Email", "enabled" if state.want_email else "disabled"),

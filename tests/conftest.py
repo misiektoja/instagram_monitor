@@ -93,6 +93,9 @@ def deterministic_globals(monkeypatch):
     monkeypatch.setattr(im, "CURL_CFFI_IMPERSONATE", "auto", raising=False)
     monkeypatch.setattr(im, "FOLLOW_LIST_SOURCE", "auto", raising=False)
     monkeypatch.setattr(im, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium", raising=False)
+    # Setup and the dashboard both write these, and the wizard snapshots the module to build its baseline
+    monkeypatch.setattr(im, "SKIP_FOLLOWERS", False, raising=False)
+    monkeypatch.setattr(im, "SKIP_FOLLOWINGS", False, raising=False)
     # Drop any cached flag-probe verdict between tests
     with im.FLAGGED_PROBE_LOCK:
         im.FLAGGED_PROBE_CACHE["ts"] = 0.0

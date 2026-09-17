@@ -741,9 +741,10 @@ def scripted_connection_choices(im_module, monkeypatch, answers):
     asked = {}
 
     def ask(question, options, default_index=0):
-        assert "follower and following lists" in question, f"unexpected wizard question: {question}"
-        asked["source"] = {"options": [label for label, _ in options], "default": default_index}
-        return answers.get("source", default_index)
+        key = "collect" if "should be collected" in question else "source"
+        assert key == "collect" or "follower and following lists" in question, f"unexpected wizard question: {question}"
+        asked[key] = {"options": [label for label, _ in options], "default": default_index}
+        return answers.get(key, default_index)
 
     monkeypatch.setattr(im_module, "_wizard_ask_choice", ask)
     return asked
@@ -1902,3 +1903,74 @@ def test_a_rejected_duration_keeps_the_default(im_module, monkeypatch, capsys):
 # Starts each setup scenario without file ownership left by another test
 def isolated_dotenv_ownership(monkeypatch, im_module):
     monkeypatch.setattr(im_module, "DOTENV_RELOAD_STATE", {})
+
+
+# Verifies names are opt-out in setup, so the expensive question is asked before the one about how
+def test_setup_asks_what_to_collect_before_how(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        asked = scripted_connection_choices(im_module, monkeypatch, {})
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert asked["collect"]["default"] == 0
+        assert asked["collect"]["options"] == ["Followers and following", "Followers only", "Counts only, no names"]
+        assert state.config_values["SKIP_FOLLOWERS"] is False
+        assert state.config_values["SKIP_FOLLOWINGS"] is False
+        assert state.config_values["FOLLOW_LIST_SOURCE"] == "auto"
+
+
+# Verifies choosing followers only leaves the following list alone while still reading followers
+def test_setup_can_collect_followers_only(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        scripted_connection_choices(im_module, monkeypatch, {"collect": 1})
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert state.config_values["SKIP_FOLLOWERS"] is False
+        assert state.config_values["SKIP_FOLLOWINGS"] is True
+        assert state.config_values["FOLLOW_LIST_SOURCE"] == "auto"
+
+
+# Verifies a setup that collects no names is never asked where to read them from
+def test_setup_skips_the_source_question_when_no_names_are_collected(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        asked = scripted_connection_choices(im_module, monkeypatch, {"collect": 2})
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert state.config_values["SKIP_FOLLOWERS"] is True
+        assert state.config_values["SKIP_FOLLOWINGS"] is True
+        assert "source" not in asked, "a setup that collects no names has nothing to choose a surface for"
+        assert state.config_values["FOLLOW_LIST_SOURCE"] == state.baseline_values["FOLLOW_LIST_SOURCE"], "the saved surface is left as it was rather than rewritten"
+
+
+# Verifies no-login setup is asked neither question, since no surface lists names without a session
+def test_no_login_setup_is_asked_nothing_about_names(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = False
+        asked = scripted_connection_choices(im_module, monkeypatch, {})
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert asked == {}
+
+
+# Verifies the review summary reports what will be collected, not only where it comes from
+def test_the_summary_reports_what_is_collected(im_module, capsys):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        state.config_values.update({"SKIP_FOLLOWERS": True, "SKIP_FOLLOWINGS": True})
+
+        im_module._wizard_print_setup_summary(state, "manual")
+
+        summary = capsys.readouterr().out
+        assert "Follower lists:" in summary and "counts only, no names" in summary
+        assert "Follower list source:" not in summary, "a setup that collects no names has no surface to report"
