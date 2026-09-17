@@ -30,7 +30,8 @@ def restored_settings(im_module):
 # Runs the startup path far enough to print the summary and returns what the terminal was shown
 def rendered_summary(im_module, monkeypatch, capsys, tmp_path, *extra_args):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--no-color", "--disable-logging", *extra_args])
+    # The startup path searches for a dotenv from the module's own directory, so a real one would decide these rows
+    monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--env-file", "none", "--no-color", "--disable-logging", *extra_args])
     monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
     monkeypatch.setattr(im_module, "DASHBOARD_ENABLED", False)
     monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", False)

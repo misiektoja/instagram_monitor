@@ -231,6 +231,8 @@ class TestSendWebhook:
         calls = []
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+        # Only a provider the configuration actually sets is worth warning about, so the warning needs it named here
+        monkeypatch.setattr(im_module, "CONFIGURED_SETTING_NAMES", {"WEBHOOK_PROVIDER"})
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.sh/private-topic")
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse(200))
