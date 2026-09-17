@@ -8347,19 +8347,8 @@ def get_firefox_cookiefile():
     if len(profiles) == 1:
         return profiles[0]["path"]
 
-    print()
-    print("Multiple Firefox profiles found:")
-
-    for idx, p in enumerate(profiles, start=1):
-        print(f"  {idx}) {p['name']}  -  {p['path']}")
-
-    try:
-        choice = int(input("Select profile number (0 to exit): "))
-        if choice == 0:
-            raise SystemExit("No profile selected, aborting ...")
-        return profiles[choice - 1]["path"]
-    except (ValueError, IndexError):
-        raise SystemExit("Invalid profile selection !")
+    choices = [{"label": f"{p['name']}  -  {p['path']}", "signed_in": cookie_file_has_instagram_session(p["path"], firefox=True), "value": p["path"]} for p in profiles]
+    return select_profile_interactively("Multiple Firefox profiles found:", choices)
 
 
 # Resolves a Firefox profile name (directory or friendly name) to its cookies.sqlite path
@@ -8399,6 +8388,55 @@ def sqlite_immutable_uri(database_path) -> str:
     return "file:" + quote(PurePosixPath(Path(database_path).as_posix()).as_posix()) + "?immutable=1"
 
 
+# Cookie host keys an Instagram session is stored under, matched exactly so a lookalike domain such as
+# evilinstagram.com can never satisfy the check
+INSTAGRAM_COOKIE_HOSTS = ("instagram.com", ".instagram.com", "www.instagram.com", ".www.instagram.com")
+INSTAGRAM_SESSION_COOKIE = "sessionid"
+
+
+# Reports whether a cookie database holds an Instagram session cookie, returning None when it cannot be read.
+# Only the cookie name and host are read, so a Chromium database answers this without being decrypted
+def cookie_file_has_instagram_session(cookie_file, firefox: bool = False) -> Optional[bool]:
+    if not cookie_file or not os.path.isfile(os.path.expanduser(str(cookie_file))):
+        return None
+    table, column = ("moz_cookies", "host") if firefox else ("cookies", "host_key")
+    placeholders = ", ".join("?" * len(INSTAGRAM_COOKIE_HOSTS))
+    try:
+        conn = connect(sqlite_immutable_uri(os.path.expanduser(str(cookie_file))), uri=True)
+    except sqlite3.DatabaseError:
+        return None
+    try:
+        return conn.execute(f"SELECT 1 FROM {table} WHERE name = ? AND {column} IN ({placeholders}) LIMIT 1", (INSTAGRAM_SESSION_COOKIE, *INSTAGRAM_COOKIE_HOSTS)).fetchone() is not None
+    except sqlite3.DatabaseError:
+        return None
+    finally:
+        conn.close()
+
+
+# Prompts for one profile, re-asking on invalid input instead of aborting and defaulting to the only one signed in
+def select_profile_interactively(heading: str, choices: List[Dict[str, Any]]):
+    signed_in = [index for index, choice in enumerate(choices) if choice["signed_in"]]
+    default_index = signed_in[0] if len(signed_in) == 1 else None
+    print()
+    print(heading)
+    for index, choice in enumerate(choices, start=1):
+        state = choice["signed_in"]
+        note = "" if state is None else ("  [signed in to Instagram]" if state else "  [not signed in to Instagram]")
+        marker = "  (default)" if index - 1 == default_index else ""
+        print(f"  {index}) {choice['label']}{note}{marker}")
+    prompt = f"Select profile number (0 to exit){', Enter for the default' if default_index is not None else ''}: "
+    while True:
+        raw = input(prompt).strip()
+        if not raw and default_index is not None:
+            return choices[default_index]["value"]
+        if raw == "0":
+            raise SystemExit("No profile selected, aborting ...")
+        # isdigit also rejects a negative number, which would otherwise index backwards and silently pick another profile
+        if raw.isdigit() and 1 <= int(raw) <= len(choices):
+            return choices[int(raw) - 1]["value"]
+        print(f"  Enter a number between 1 and {len(choices)}, or 0 to exit.")
+
+
 # Returns the cookie database for one enumerated Firefox profile, refusing paths the tool did not offer
 def resolve_offered_firefox_cookiefile(requested_path):
     requested = str(requested_path or "").strip()
@@ -8431,11 +8469,27 @@ def get_firefox_cookie_dict(cookiefile):
             cookie_iter = conn.execute(
                 "SELECT name, value FROM moz_cookies WHERE host = 'instagram.com' OR host LIKE '%.instagram.com'"
             )
-        return dict(cookie_iter)
+        cookie_dict = dict(cookie_iter)
     except sqlite3.DatabaseError:
         raise CookieImportError(f"'{cookiefile}' is not a valid Firefox cookies.sqlite file")
     finally:
         conn.close()
+    # Reported here rather than after a login attempt, so choosing a profile that is not signed in costs no
+    # Instagram request, which is what the Chromium reader already does
+    if not cookie_dict:
+        raise CookieImportError(f"No Instagram cookies found in the Firefox profile at '{cookiefile}'{firefox_profile_alternatives(cookiefile)} - are you logged in to Instagram in Firefox?")
+    return cookie_dict
+
+
+# Names the other enumerated Firefox profiles, so a failure says where else the session might be.
+# Paths are compared as real paths, since the reader resolves the one it was given
+def firefox_profile_alternatives(cookiefile) -> str:
+    try:
+        used = os.path.realpath(os.path.expanduser(str(cookiefile)))
+        others = [p["name"] for p in list_firefox_profiles() if os.path.realpath(os.path.expanduser(p["path"])) != used]
+    except Exception:
+        return ""
+    return f" (other profiles: {', '.join(others)})" if others else ""
 
 
 # Reads Instagram session cookies from a Chromium-based browser via pycookiecheat and returns them as a name to value dict
@@ -8552,7 +8606,9 @@ def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
 
     if not cookie_dict:
         where = f" (profile '{profile}')" if profile else ""
-        raise CookieImportError(f"No Instagram cookies found in {label}{where} - are you logged in to Instagram in {label}?")
+        others = [p["dir"] for p in list_chromium_profiles(browser) if p["dir"] != profile]
+        alternatives = f" (other profiles: {', '.join(others)})" if others else ""
+        raise CookieImportError(f"No Instagram cookies found in {label}{where}{alternatives} - are you logged in to Instagram in {label}?")
 
     return cookie_dict
 
@@ -8577,18 +8633,8 @@ def select_chromium_profile_cli(browser, explicit_profile):
     if len(profiles) == 1:
         return profiles[0]["dir"]
 
-    print()
-    print(f"Multiple {browser_label(browser)} profiles found:")
-    for idx, p in enumerate(profiles, start=1):
-        print(f"  {idx}) {p['dir']}  -  {p['name']}")
-
-    try:
-        choice = int(input("Select profile number (0 to exit): "))
-        if choice == 0:
-            raise SystemExit("No profile selected, aborting ...")
-        return profiles[choice - 1]["dir"]
-    except (ValueError, IndexError):
-        raise SystemExit("Invalid profile selection !")
+    choices = [{"label": f"{p['dir']}  -  {p['name']}", "signed_in": cookie_file_has_instagram_session(p.get("cookie_file")), "value": p["dir"]} for p in profiles]
+    return select_profile_interactively(f"Multiple {browser_label(browser)} profiles found:", choices)
 
 
 # Imports a browser session for the web dashboard, saves it via Instaloader and returns the logged-in username
@@ -16398,9 +16444,10 @@ def _wizard_collect_connection_section(state: WizardSetupState) -> None:
         # Names are the most expensive thing the tool asks Instagram for and the operation Instagram acts
         # against, so the first question is whether to collect them at all rather than how, and the
         # option that never requests a name is the default
-        budget_note = f"Instagram counts every name it hands back, so name collection is capped by IDENTITY_BUDGET_PER_DAY, {IDENTITY_BUDGET_PER_DAY} names a day here." if IDENTITY_BUDGET_PER_DAY else "Instagram counts every name it hands back and IDENTITY_BUDGET_PER_DAY is 0 here, so nothing caps how many are collected."
-        collect_options = [("Counts only, no names", "Follower and following numbers, posts, reels, stories and profile changes are still monitored.\nNothing that returns user names is ever requested, which is the safest choice for the account."), ("Followers only", f"Report who followed and unfollowed while collecting about half as many names per check.\n{budget_note}"), ("Followers and following", "Read both lists when a count changes, so you see who joined and who left.\nThis collects the most names and is the likeliest to reach the daily cap.")]
-        collect = _wizard_ask_choice("Which follower lists should be collected?", collect_options, default_index=0)
+        # The cap governs both name options, so it belongs with the question rather than inside one answer
+        budget_note = f"Instagram counts every name it returns, so name collection is capped by IDENTITY_BUDGET_PER_DAY, {IDENTITY_BUDGET_PER_DAY} names a day here." if IDENTITY_BUDGET_PER_DAY else "Instagram counts every name it returns and IDENTITY_BUDGET_PER_DAY is 0 here, so nothing caps how many are collected."
+        collect_options = [("Counts only, no names", "Follower and following numbers are still tracked, just never the names behind them.\nThe safest choice for the account, since names are what Instagram acts against."), ("Followers only", "See who followed and unfollowed, at about half the names per check that both lists cost."), ("Followers and following", "See who followed and unfollowed, and who the account started and stopped following.\nCosts the most names and is the likeliest to reach the daily cap.")]
+        collect = _wizard_ask_choice(f"Which follower and following lists should be collected?\n{budget_note}", collect_options, default_index=0)
         state.config_values["SKIP_FOLLOWERS"] = collect == 0
         state.config_values["SKIP_FOLLOWINGS"] = collect <= 1
         if collect == 0:
@@ -16589,38 +16636,51 @@ def _wizard_review_setup(state: WizardSetupState, method: str) -> bool:
         print(colorize("info", "  Setup answers retained."))
 
 
+# Names the command that imports a browser session outside setup, shown as a retry hint and in the next steps
+def _wizard_browser_import_command(state: WizardSetupState, method: str) -> str:
+    return f"{_wizard_cmd_prefix(method, host_os=state.container_host)} --import-browser-session --browser {state.import_browser} --env-file {_wizard_quote_argument(str(state.env_path))}"
+
+
 # Completes a confirmed browser import before the final config is rendered
 def _wizard_finish_browser_import(state: WizardSetupState, method: str) -> bool:
     if not state.import_browser:
         return True
     label = browser_label(state.import_browser)
-    retry_hint = f"{_wizard_cmd_prefix(method, host_os=state.container_host)} --import-browser-session --browser {state.import_browser} --env-file {_wizard_quote_argument(str(state.env_path))}"
+    retry_hint = _wizard_browser_import_command(state, method)
     if method in ("docker", "compose"):
         state.config_values["SESSION_USERNAME"] = state.session_username
         return False
     import_completed = False
     if _wizard_ask_yes_no(f"Import the {label} session now? (log in to Instagram in {label} first)", default=True):
-        try:
-            imported_username = None
-            if state.import_browser == "firefox":
-                cookie_path = os.path.expanduser(get_firefox_cookiefile())
-                if not os.path.isfile(cookie_path):
-                    print(colorize("warning", f"Could not find Firefox cookies at '{cookie_path}'. You can import later with: {retry_hint}"))
+        # A wrong profile or a browser not signed in yet is the common failure and both are fixable on the
+        # spot, so the attempt is repeatable instead of dropping the user into setup with no session
+        while True:
+            try:
+                imported_username = None
+                if state.import_browser == "firefox":
+                    cookie_path = os.path.expanduser(get_firefox_cookiefile())
+                    if not os.path.isfile(cookie_path):
+                        print(colorize("warning", f"Could not find Firefox cookies at '{cookie_path}'."))
+                    else:
+                        imported_username = import_session("firefox", cookie_path, None)
                 else:
-                    imported_username = import_session("firefox", cookie_path, None)
-            else:
-                profile = select_chromium_profile_cli(state.import_browser, None)
-                imported_username = import_session(state.import_browser, None, None, profile=profile)
-            if imported_username:
-                if state.session_username and imported_username != state.session_username:
-                    print(colorize("warning", f"Imported session belongs to '{imported_username}', updating SESSION_USERNAME in the generated config."))
-                elif not state.session_username:
-                    print(colorize("info", f"Detected username '{imported_username}' from the imported session."))
-                state.session_username = imported_username
-                import_completed = True
-        except (SystemExit, Exception) as exc:
-            print(colorize("warning", f"{label} import failed: {exc}"))
-            print(f"You can retry later with: {retry_hint}")
+                    profile = select_chromium_profile_cli(state.import_browser, None)
+                    imported_username = import_session(state.import_browser, None, None, profile=profile)
+                if imported_username:
+                    if state.session_username and imported_username != state.session_username:
+                        print(colorize("warning", f"Imported session belongs to '{imported_username}', updating SESSION_USERNAME in the generated config."))
+                    elif not state.session_username:
+                        print(colorize("info", f"Detected username '{imported_username}' from the imported session."))
+                    state.session_username = imported_username
+                    import_completed = True
+            except (SystemExit, Exception) as exc:
+                print(colorize("warning", f"{label} import failed: {exc}"))
+            if import_completed:
+                break
+            print()
+            if not _wizard_ask_yes_no(f"Try the {label} import again? (pick another profile, or sign in to Instagram in {label} first)", default=True):
+                print(colorize("info", f"You can import later with: {retry_hint}"))
+                break
     else:
         print(colorize("info", f"You can import later with: {retry_hint}"))
     if not state.session_username:
@@ -16775,7 +16835,11 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         host_label = CONTAINER_FIREFOX_HOSTS[selected_host][0]
         print(colorize_links("Before import, open https://www.instagram.com/ in Firefox on the host and sign in to the Instagram account used for monitoring.\n"))
         _wizard_print_command(f"Import Instagram login from Firefox on {host_label}:", _firefox_import_cmd(method, state.env_path, host_os=selected_host, config_path=state.config_path, targets=command_targets))
-    _wizard_print_command("After the import succeeds, check setup:" if container_browser_import_pending else "Check setup again:", doctor_command)
+    if local_browser_import_pending:
+        # The configuration says login mode either way, so the missing session is stated rather than left to doctor
+        print(colorize("warning", f"The configuration was saved for login mode, but the {browser_label(cast(str, state.import_browser))} session was not imported, so no session file exists yet.\n"))
+        _wizard_print_command(f"Import the {browser_label(cast(str, state.import_browser))} session:", _wizard_browser_import_command(state, method))
+    _wizard_print_command("After the import succeeds, check setup:" if container_browser_import_pending or local_browser_import_pending else "Check setup again:", doctor_command)
     _wizard_print_command("After Doctor passes, start monitoring:" if container_browser_import_pending or local_browser_import_pending else "Start monitoring:", run_command)
     if state.want_web:
         print(f"Then open {colorize('link', 'http://127.0.0.1:8000/')} in your browser.\n")

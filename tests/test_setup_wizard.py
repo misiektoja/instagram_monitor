@@ -827,10 +827,10 @@ def test_a_missing_playwright_is_named_on_the_browser_source(im_module, monkeypa
         described = {}
 
         def ask(question, options, default_index=0):
-            if "follower and following lists" in question:
-                described.update(dict(options))
-                return default_index
-            return 2
+            if "should be collected" in question:
+                return 2
+            described.update(dict(options))
+            return default_index
 
         monkeypatch.setattr(im_module, "_wizard_ask_choice", ask)
 
@@ -1943,9 +1943,11 @@ def test_the_collection_options_name_the_identity_budget(im_module, monkeypatch)
         state.logged_in = True
         monkeypatch.setattr(im_module, "IDENTITY_BUDGET_PER_DAY", 2000)
         described = {}
+        asked_question = []
 
         def ask(question, options, default_index=0):
             if "should be collected" in question:
+                asked_question.append(question)
                 described.update(dict(options))
             return 0
 
@@ -1953,8 +1955,8 @@ def test_the_collection_options_name_the_identity_budget(im_module, monkeypatch)
 
         im_module._wizard_collect_connection_section(state)
 
-        assert "IDENTITY_BUDGET_PER_DAY, 2000 names a day" in described["Followers only"]
-        assert "IDENTITY_BUDGET_PER_DAY" not in described["Counts only, no names"], "the option that requests no names is not capped by a name budget"
+        assert "IDENTITY_BUDGET_PER_DAY, 2000 names a day" in asked_question[0]
+        assert not [label for label, desc in described.items() if "IDENTITY_BUDGET_PER_DAY" in desc], "the cap governs both name options, so it is stated once on the question"
 
 
 # Verifies a disabled budget is described as disabled instead of showing a cap of zero names a day
@@ -1964,9 +1966,11 @@ def test_the_collection_options_say_when_no_budget_is_set(im_module, monkeypatch
         state.logged_in = True
         monkeypatch.setattr(im_module, "IDENTITY_BUDGET_PER_DAY", 0)
         described = {}
+        asked_question = []
 
         def ask(question, options, default_index=0):
             if "should be collected" in question:
+                asked_question.append(question)
                 described.update(dict(options))
             return 0
 
@@ -1974,8 +1978,8 @@ def test_the_collection_options_say_when_no_budget_is_set(im_module, monkeypatch
 
         im_module._wizard_collect_connection_section(state)
 
-        assert "nothing caps how many are collected" in described["Followers only"]
-        assert "0 names a day" not in described["Followers only"]
+        assert "nothing caps how many are collected" in asked_question[0]
+        assert "0 names a day" not in asked_question[0]
 
 
 # Verifies choosing followers only leaves the following list alone while still reading followers
@@ -2031,3 +2035,89 @@ def test_the_summary_reports_what_is_collected(im_module, capsys):
         summary = capsys.readouterr().out
         assert "Follower lists:" in summary and "counts only, no names" in summary
         assert "Follower list source:" not in summary, "a setup that collects no names has no surface to report"
+
+
+# Drives the browser import step with scripted yes/no answers and returns the questions it asked
+def run_browser_import(im_module, monkeypatch, directory: Path, browser: str, import_results, answers):
+    state = make_setup_state(im_module, directory)
+    state.logged_in = True
+    state.login_method = browser
+    state.import_browser = browser
+    asked = []
+    attempts = iter(import_results)
+
+    def attempt(*args, **kwargs):
+        outcome = next(attempts)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    scripted = iter(answers)
+    monkeypatch.setattr(im_module, "import_session", attempt)
+    monkeypatch.setattr(im_module, "select_chromium_profile_cli", lambda browser_name, explicit: "Default")
+    monkeypatch.setattr(im_module, "get_firefox_cookiefile", lambda: str(directory / "cookies.sqlite"))
+    monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: (asked.append(question), next(scripted))[1])
+    monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: "typed.user")
+    completed = im_module._wizard_finish_browser_import(state, "manual")
+    return completed, asked, state
+
+
+class TestBrowserImportRetry:
+    # Verifies a failed import offers another attempt rather than dropping setup through to the username prompt
+    def test_a_failed_import_can_be_retried_on_the_spot(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            (directory / "cookies.sqlite").write_text("", encoding="utf-8")
+            failure = im_module.CookieImportError("No Instagram cookies found in Chrome (profile 'Default')")
+            completed, asked, state = run_browser_import(im_module, monkeypatch, directory, "chrome", [failure, "login.user"], [True, True])
+
+        assert completed is True
+        assert state.session_username == "login.user"
+        assert any("Try the Chrome import again?" in question for question in asked)
+        assert "Chrome import failed" in capsys.readouterr().out
+
+    # Verifies declining the retry stops asking and leaves the import marked incomplete
+    def test_declining_the_retry_stops_asking(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            (directory / "cookies.sqlite").write_text("", encoding="utf-8")
+            failure = im_module.CookieImportError("No Instagram cookies found in Chrome (profile 'Default')")
+            completed, asked, state = run_browser_import(im_module, monkeypatch, directory, "chrome", [failure], [True, False])
+
+        assert completed is False
+        assert len([question for question in asked if "import again?" in question]) == 1
+        assert "--import-browser-session" in capsys.readouterr().out
+
+    # Verifies an aborted profile picker is treated as a failed attempt rather than ending setup
+    def test_an_aborted_profile_picker_is_retryable(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            (directory / "cookies.sqlite").write_text("", encoding="utf-8")
+            state = make_setup_state(im_module, directory)
+            state.logged_in = True
+            state.import_browser = "chrome"
+            asked = []
+            picks = iter([SystemExit("No profile selected, aborting ..."), "Profile 1"])
+
+            def pick(browser_name, explicit):
+                outcome = next(picks)
+                if isinstance(outcome, BaseException):
+                    raise outcome
+                return outcome
+
+            scripted = iter([True, True])
+            monkeypatch.setattr(im_module, "select_chromium_profile_cli", pick)
+            monkeypatch.setattr(im_module, "import_session", lambda *args, **kwargs: "login.user")
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: (asked.append(question), next(scripted))[1])
+
+            assert im_module._wizard_finish_browser_import(state, "manual") is True
+            assert state.session_username == "login.user"
+
+    # Verifies declining the import outright is still one question, with no retry offered for an attempt never made
+    def test_declining_the_import_offers_no_retry(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            completed, asked, state = run_browser_import(im_module, monkeypatch, directory, "chrome", [], [False])
+
+        assert completed is False
+        assert not [question for question in asked if "import again?" in question]

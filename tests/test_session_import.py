@@ -91,3 +91,130 @@ class TestSqliteImmutableUri:
     def test_missing_cookie_file_is_reported(self, im_module, tmp_path):
         with pytest.raises(im_module.CookieImportError, match="not found"):
             im_module.get_firefox_cookie_dict(str(tmp_path / "absent.sqlite"))
+
+
+class TestInstagramSessionProbe:
+    # Verifies a Chromium database answers the sign-in question from the cookie name alone, without decryption
+    def test_a_chromium_profile_with_a_session_cookie_reads_as_signed_in(self, im_module):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            cookie_path = Path(directory_name) / "Cookies"
+            with sqlite3.connect(cookie_path) as connection:
+                connection.execute("CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB)")
+                connection.execute("INSERT INTO cookies VALUES (?, ?, ?, ?)", (".instagram.com", "sessionid", "", b"v10encrypted"))
+
+            assert im_module.cookie_file_has_instagram_session(str(cookie_path)) is True
+
+    # Verifies a profile that only visited Instagram while logged out is reported as not signed in
+    def test_a_profile_without_a_session_cookie_reads_as_signed_out(self, im_module):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            cookie_path = Path(directory_name) / "Cookies"
+            with sqlite3.connect(cookie_path) as connection:
+                connection.execute("CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT)")
+                connection.executemany("INSERT INTO cookies VALUES (?, ?, ?)", [(".instagram.com", "csrftoken", "x"), (".instagram.com", "mid", "y")])
+
+            assert im_module.cookie_file_has_instagram_session(str(cookie_path)) is False
+
+    # Verifies a lookalike domain cannot make a profile look signed in, matching the Firefox reader's own guard
+    def test_a_lookalike_domain_does_not_read_as_signed_in(self, im_module):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            cookie_path = Path(directory_name) / "Cookies"
+            with sqlite3.connect(cookie_path) as connection:
+                connection.execute("CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT)")
+                connection.executemany("INSERT INTO cookies VALUES (?, ?, ?)", [("evilinstagram.com", "sessionid", "x"), ("instagram.com.evil.example", "sessionid", "y")])
+
+            assert im_module.cookie_file_has_instagram_session(str(cookie_path)) is False
+
+    # Verifies the Firefox schema is read through its own table and column names
+    def test_a_firefox_profile_is_read_through_the_firefox_schema(self, im_module):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            cookie_path = Path(directory_name) / "cookies.sqlite"
+            with sqlite3.connect(cookie_path) as connection:
+                connection.execute("CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT)")
+                connection.execute("INSERT INTO moz_cookies VALUES (?, ?, ?)", ("instagram.com", "sessionid", "x"))
+
+            assert im_module.cookie_file_has_instagram_session(str(cookie_path), firefox=True) is True
+            assert im_module.cookie_file_has_instagram_session(str(cookie_path)) is None, "the Chromium schema is absent, so the state is unknown rather than a guess"
+
+    # Verifies an unreadable or missing database says nothing instead of claiming the profile is signed out
+    @pytest.mark.parametrize("content", [None, b"not a database"])
+    def test_an_unreadable_database_reports_an_unknown_state(self, im_module, content):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            cookie_path = Path(directory_name) / "Cookies"
+            if content is not None:
+                cookie_path.write_bytes(content)
+
+            assert im_module.cookie_file_has_instagram_session(str(cookie_path)) is None
+
+    # Verifies an empty Firefox profile fails before a login attempt, so a wrong choice costs no Instagram request
+    def test_an_empty_firefox_profile_fails_before_any_request(self, im_module, monkeypatch):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            cookie_path = Path(directory_name) / "cookies.sqlite"
+            with sqlite3.connect(cookie_path) as connection:
+                connection.execute("CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT)")
+            monkeypatch.setattr(im_module, "list_firefox_profiles", lambda: [{"dir": "a.default", "name": "default", "path": str(cookie_path)}, {"dir": "b.work", "name": "work", "path": "/tmp/other"}])
+
+            with pytest.raises(im_module.CookieImportError) as failure:
+                im_module.get_firefox_cookie_dict(str(cookie_path))
+
+        assert "No Instagram cookies found" in str(failure.value)
+        assert "other profiles: work" in str(failure.value), "the failure names where else the session might be"
+
+
+class TestProfileSelection:
+    # Verifies an out-of-range, negative or unparsable answer is re-asked instead of ending the command
+    @pytest.mark.parametrize("bad", ["-1", "0x", "9", "", "two"])
+    def test_an_invalid_answer_is_re_asked(self, im_module, monkeypatch, capsys, bad):
+        answers = iter([bad, "2"])
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+        choices = [{"label": "Default", "signed_in": False, "value": "Default"}, {"label": "Profile 1", "signed_in": False, "value": "Profile 1"}]
+
+        assert im_module.select_profile_interactively("Profiles:", choices) == "Profile 1"
+        assert "Enter a number between 1 and 2" in capsys.readouterr().out
+
+    # Verifies a negative number can never index backwards into the list and silently pick another profile
+    def test_a_negative_answer_never_selects_a_profile(self, im_module, monkeypatch):
+        answers = iter(["-1", "1"])
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+        choices = [{"label": "Default", "signed_in": False, "value": "Default"}, {"label": "Profile 1", "signed_in": False, "value": "Profile 1"}]
+
+        assert im_module.select_profile_interactively("Profiles:", choices) == "Default"
+
+    # Verifies zero still exits, since that is the documented way out of the picker
+    def test_zero_exits_the_picker(self, im_module, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda prompt="": "0")
+        choices = [{"label": "Default", "signed_in": True, "value": "Default"}]
+
+        with pytest.raises(SystemExit):
+            im_module.select_profile_interactively("Profiles:", choices)
+
+    # Verifies the list says which profile holds an Instagram session, so the choice is not made blind
+    def test_the_list_marks_which_profile_is_signed_in(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr("builtins.input", lambda prompt="": "1")
+        choices = [{"label": "Default", "signed_in": False, "value": "Default"}, {"label": "Profile 1", "signed_in": True, "value": "Profile 1"}, {"label": "Profile 2", "signed_in": None, "value": "Profile 2"}]
+
+        im_module.select_profile_interactively("Profiles:", choices)
+
+        listing = capsys.readouterr().out
+        assert "1) Default  [not signed in to Instagram]" in listing
+        assert "2) Profile 1  [signed in to Instagram]" in listing
+        assert "3) Profile 2\n" in listing, "an unreadable database is left unlabelled rather than guessed at"
+
+    # Verifies Enter takes the only signed-in profile, and is re-asked when the answer would be a guess
+    def test_enter_takes_the_only_signed_in_profile(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr("builtins.input", lambda prompt="": "")
+        one_signed_in = [{"label": "Default", "signed_in": False, "value": "Default"}, {"label": "Profile 1", "signed_in": True, "value": "Profile 1"}]
+
+        assert im_module.select_profile_interactively("Profiles:", one_signed_in) == "Profile 1"
+        assert "(default)" in capsys.readouterr().out
+
+        answers = iter(["", "1"])
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+        both_signed_in = [{"label": "Default", "signed_in": True, "value": "Default"}, {"label": "Profile 1", "signed_in": True, "value": "Profile 1"}]
+
+        assert im_module.select_profile_interactively("Profiles:", both_signed_in) == "Default"
