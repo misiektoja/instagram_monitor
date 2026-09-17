@@ -74,7 +74,7 @@ Save one or more monitoring targets through setup or set `TARGET_USERNAMES` your
 TARGET_USERNAMES = ["target_user_1", "target_user_2"]
 ```
 
-Usernames written directly after the command and usernames passed through `--targets` are combined. If the command contains any targets, that combined list replaces `TARGET_USERNAMES` for that run. To use only the saved targets, run:
+Each target may be a username or a complete profile URL such as `https://www.instagram.com/target_user_1/`, which is stored as the username. Usernames written directly after the command and usernames passed through `--targets` are combined. If the command contains any targets, that combined list replaces `TARGET_USERNAMES` for that run. To use only the saved targets, run:
 
 ```sh
 instagram_monitor --config-file instagram_monitor.conf

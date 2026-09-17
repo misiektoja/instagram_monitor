@@ -253,7 +253,7 @@ def test_destination_email_review_uses_selected_password(monitor, tmp_path, monk
             return str(config)
         if "Dotenv file destination" in shown:
             return str(new)
-        if "already contains SMTP_PASSWORD" in shown:
+        if "already contains SMTP_PASSWORD" in shown or "Replace the SMTP password already configured" in shown:
             replacements.append(shown)
             return "y" if replace else "n"
         if "Configure email notifications" in shown:

@@ -74,7 +74,7 @@ A failure the tool could not place still names an action: it asks you to re-run 
 
 Failures show an error and a `To fix:` action. A continuing outage produces a `* Monitoring degraded` reminder once an hour, even when the [liveness reminder](usage.md#liveness-reminder) is switched off. `* Monitoring recovered` marks recovery. Follow any new instructions if the failure changes.
 
-A redirect or a rejected request usually means the saved session. When the failure was not recognized well enough to suggest anything else, the `To fix:` line names the session and the exact re-import command instead.
+A redirect or a rejected request usually means the saved session. When the failure was not recognized well enough to suggest anything else, the `To fix:` line names the session and the exact re-import command instead. That command shows the Firefox import because nothing records which browser your session came from, and it names the other supported browsers next to it. Replace `--browser firefox` with `chrome`, `brave` or `chromium` when your session lives in one of those.
 
 A message naming `Could not resolve host` means the machine could not look up Instagram's address. This is a DNS problem on your side rather than an Instagram block. It is common on devices that start monitoring before the network is fully up, such as a Raspberry Pi booting from cold. Check that name lookups work:
 

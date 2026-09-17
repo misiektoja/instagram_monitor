@@ -449,3 +449,37 @@ class TestContainerFirefoxMounts:
         monkeypatch.setattr(im_module, "glob", lambda pattern: ["/native/a.default-release/cookies.sqlite"] if pattern == "/native/*/cookies.sqlite" else [])
 
         assert [profile["path"] for profile in im_module.list_firefox_profiles()] == ["/native/a.default-release/cookies.sqlite"]
+
+
+class TestRecoveryNamesEveryImportBrowser:
+    # Nothing records which browser a session came from, so the Firefox command has to name the alternatives rather
+    # than sending a Chrome, Brave or Chromium user to a browser they do not use
+    def test_the_hint_names_every_other_supported_browser(self, im_module):
+        hint = im_module.session_recovery_browser_hint()
+
+        for browser in im_module.IMPORT_BROWSERS:
+            assert (browser in hint) is (browser != "firefox")
+        assert "--browser" in hint
+
+    @pytest.mark.parametrize("error,code", [("challenge_required", "instagram.challenge"), ("session file not found", "session.missing"), ("login_required", "session.expired")])
+    def test_every_session_advice_carries_the_hint(self, im_module, error, code):
+        built = im_module.classify_recovery_error(error, is_logged_in=True)
+
+        assert built.code == code
+        assert im_module.session_recovery_browser_hint() in built.fix
+
+    # The prose told every reader to log in through Firefox, whatever browser holds their session
+    def test_no_session_advice_sends_the_reader_to_firefox_in_prose(self, im_module):
+        source = Path(im_module.__file__).read_text(encoding="utf-8")
+
+        assert "logging in via Firefox" not in source
+
+    # Every message built around the import command has to name the alternatives, or the ones that do not become
+    # the messages that quietly send a Chrome user to Firefox
+    def test_every_use_of_the_recovery_command_names_the_alternatives(self, im_module):
+        source = Path(im_module.__file__).read_text(encoding="utf-8")
+        uses = [line for line in source.splitlines() if "{session_recovery_command()}" in line]
+
+        assert len(uses) >= 7
+        for line in uses:
+            assert "{session_recovery_browser_hint()}" in line, line

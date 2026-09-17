@@ -1905,15 +1905,23 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     return str(destination)
 
 
-# Normalizes and validates an Instagram username before it enters paths or HTML
+# Returns the profile name from an Instagram profile URL, or the value unchanged when it is not one. A post, reel or
+# story URL carries more than one path segment and is left alone, so it fails the username check rather than reading
+# as the account name
+def strip_instagram_profile_url(value: str) -> str:
+    match = re.fullmatch(r"(?:https?://)?(?:[a-z0-9-]+\.)*instagram\.com/([^/?#]+)/?(?:[?#].*)?", value.strip(), re.IGNORECASE)
+    return match.group(1) if match else value
+
+
+# Normalizes and validates an Instagram username before it enters paths or HTML, accepting a profile URL as well
 def normalize_instagram_username(value):
     if not isinstance(value, str):
         raise ValueError("Instagram username must be text")
-    username = value.strip().lower()
+    username = strip_instagram_profile_url(value).strip().lower()
     if username.startswith('@'):
         username = username[1:]
     if not re.fullmatch(r"[a-z0-9._]{1,30}", username):
-        raise ValueError("Instagram username must be 1-30 letters, digits, periods or underscores")
+        raise ValueError("Instagram username must be 1-30 letters, digits, periods or underscores, or a profile URL")
     return username
 
 
@@ -5883,10 +5891,17 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
 def is_valid_email_address(value) -> bool:
     if not isinstance(value, str):
         return False
-    separator = value.rfind("@")
+    # A display name may carry spaces, but the mailbox itself may not, since the server would read it as two
+    # arguments. The mailbox is therefore taken out of the 'display name <mailbox>' form and judged on its own
+    mailbox = value.strip()
+    if mailbox.endswith(">") and "<" in mailbox:
+        mailbox = mailbox[mailbox.rindex("<") + 1:-1]
+    if not mailbox or any(character.isspace() for character in mailbox):
+        return False
+    separator = mailbox.rfind("@")
     if separator <= 0:
         return False
-    domain = value[separator + 1:]
+    domain = mailbox[separator + 1:]
     dot = domain.find(".")
     return dot > 0 and dot < len(domain) - 1
 
@@ -10710,6 +10725,13 @@ def session_recovery_command() -> str:
     return _firefox_import_cmd(_wizard_install_method(), active_dotenv_path(), config_path=active_config_path())
 
 
+# Names the other browsers the import accepts. Nothing records which browser a session came from, so a message built
+# around the Firefox command names the alternatives rather than sending a Chrome or Brave user to Firefox
+def session_recovery_browser_hint() -> str:
+    others = [browser for browser in IMPORT_BROWSERS if browser != "firefox"]
+    return f" (use --browser {', '.join(others[:-1])} or {others[-1]} to import from one of those instead)" if len(others) > 1 else ""
+
+
 # Ordered match terms for every recognized failure, shared by the message and the failure-class lookups so the two cannot drift
 FAILURE_TERMS = {
     'rate_limit': ("429", "too many requests", "wait a few minutes", "rate limit", "please wait"),
@@ -10960,15 +10982,15 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
 
     # Challenge, checkpoint or shadowban
     if any(t in m for t in FAILURE_TERMS['challenge']):
-        return "instagram.challenge", "Instagram is asking this session or IP to pass a challenge", f"Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'. Also raise the check interval", ANTI_DETECTION_SESSION_GUIDE_URL, False
+        return "instagram.challenge", "Instagram is asking this session or IP to pass a challenge", f"Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'{session_recovery_browser_hint()}. Also raise the check interval", ANTI_DETECTION_SESSION_GUIDE_URL, False
 
     # Missing session file
     if any(t in m for t in FAILURE_TERMS['session_missing']):
-        return "session.missing", "No saved Instagram session was found", f"No saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can import from the Session page", SESSION_IMPORT_GUIDE_URL, False
+        return "session.missing", "No saved Instagram session was found", f"No saved session was found for this account. Create one with '{session_recovery_command()}'{session_recovery_browser_hint()} after signing in to Instagram in that browser, or with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can import from the Session page", SESSION_IMPORT_GUIDE_URL, False
 
     # Invalid or expired session
     if any(t in m for t in FAILURE_TERMS['auth_expired']):
-        return "session.expired", "The saved Instagram session is invalid or expired", f"Your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can re-import from the Session page", SESSION_IMPORT_GUIDE_URL, False
+        return "session.expired", "The saved Instagram session is invalid or expired", f"Your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}'{session_recovery_browser_hint()} after signing in to Instagram in that browser, or recreate it with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can re-import from the Session page", SESSION_IMPORT_GUIDE_URL, False
 
     # Profile not found
     if any(t in m for t in FAILURE_TERMS['target_unavailable']):
@@ -11744,7 +11766,7 @@ def identity_budget_exhausted() -> bool:
 # Maps a tripped breaker to the one action that resolves its failure class, so every surface gives the same remedy
 def breaker_recovery_hint(failure_class: str) -> str:
     if failure_class == 'auth_expired':
-        return f"Log in to Instagram again and re-import the session with '{session_recovery_command()}', or restart after replacing the saved session"
+        return f"Log in to Instagram again and re-import the session with '{session_recovery_command()}'{session_recovery_browser_hint()}, or restart after replacing the saved session"
     if failure_class == 'ledger_unavailable':
         return f"Repair the account safety ledger at {exposure_state_path()} and restore read and write access, then restart"
     if failure_class == 'action_block':
@@ -14620,7 +14642,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 # A redirect or a rejected request usually means the session, so name it when the classifier had no fix of its own
                 # A generic fix is not an answer for a failure whose text points at the session, so the specific advice still follows it
                 if (not fix_hint_printed or advice.code == "unknown") and outage_outcome == "full" and ('Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e)):
-                    print(colorize("info", f"To fix: The saved session may no longer be valid. Re-import it with '{session_recovery_command()}' or from the Web Dashboard Session page"))
+                    print(colorize("info", f"To fix: The saved session may no longer be valid. Re-import it with '{session_recovery_command()}'{session_recovery_browser_hint()} or from the Web Dashboard Session page"))
 
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
@@ -14639,7 +14661,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 redirect_advice = classify_recovery_error(error_msg, is_logged_in=bool(SESSION_USERNAME) and not skip_session)
                 outage.failed(redirect_advice)
                 print(f"* Error: The saved Instagram session may no longer be valid (retrying in {display_time(r_sleep_time)})")
-                print(colorize("info", f"To fix: Re-import the session with '{session_recovery_command()}' or from the Web Dashboard Session page"))
+                print(colorize("info", f"To fix: Re-import the session with '{session_recovery_command()}'{session_recovery_browser_hint()} or from the Web Dashboard Session page"))
                 notify_monitoring_error(user, redirect_advice, error_msg, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
@@ -15700,7 +15722,8 @@ def _wizard_install_method() -> str:
     if _running_in_container():
         return "compose" if os.environ.get("INSTAGRAM_MONITOR_COMPOSE") else "docker"
     prog = os.path.basename(sys.argv[0] or "")
-    if prog.endswith(".py"):
+    # 'python -m instagram_monitor' runs the installed package's __main__.py, which is not a downloaded script
+    if prog.endswith(".py") and prog != "__main__.py":
         return "manual"
     return "pip"
 
@@ -16260,17 +16283,6 @@ def _wizard_apply_saved_values(state):
     return resolve_local_timezone()
 
 
-# Queues one secret for the save step, asking first when the dotenv file already assigns it
-def _wizard_queue_secret(secret_updates: dict, env_path: Path, key: str, value: str) -> bool:
-    if not value:
-        return False
-    if _dotenv_contains_key(env_path, key) and not _wizard_ask_yes_no(f"The dotenv file already contains {key}. Replace that value?", default=False):
-        print(f"  Existing {key} will be retained without being displayed or rewritten.")
-        return False
-    secret_updates[key] = value
-    return True
-
-
 # Reports whether setup will retain a usable credential from the selected file or pending answers
 def _wizard_existing_secret(key: str, env_path: Path, placeholders=(), secret_updates=None) -> bool:
     value = _wizard_exported_secrets().get(key)
@@ -16437,6 +16449,21 @@ def _wizard_choose_config_destination(config_path: Path, method: str) -> Path:
     return selected
 
 
+# Splits one setup answer into target names, applying the rule the next run applies. A target setup accepts and
+# monitoring refuses turns a finished setup into a command that stops before it starts
+def _wizard_parse_targets(answer: str) -> Tuple[List[str], str]:
+    names: List[str] = []
+    for part in str(answer).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            names.append(normalize_instagram_username(part))
+        except ValueError as exc:
+            return [], f"'{part}' cannot be monitored: {exc}"
+    return list(dict.fromkeys(names)), ""
+
+
 # Collects monitored targets and allows an empty list only for Web Dashboard setup
 def _wizard_collect_target_section(state: WizardSetupState, allow_empty: bool = False) -> None:
     default_targets = ", ".join(state.targets)
@@ -16445,10 +16472,18 @@ def _wizard_collect_target_section(state: WizardSetupState, allow_empty: bool = 
         question += " (leave empty to add them in the Web Dashboard)"
     while True:
         targets_raw = _wizard_ask_text(question, default=default_targets, required=not allow_empty)
-        targets = [target.strip().lstrip("@") for target in targets_raw.split(",") if target.strip()]
+        targets, problem = _wizard_parse_targets(targets_raw)
+        if problem:
+            print(f"  {problem}.")
+            # Declining leaves the list empty, which the section below reports, rather than looping on a bad answer
+            if not _wizard_offer_retry("Instagram target", "Nothing can be monitored until one is added"):
+                targets = []
+                break
+            default_targets = ""
+            continue
         if targets or allow_empty:
             break
-        print("  Enter one or more Instagram usernames separated by commas.")
+        print("  Enter one or more Instagram usernames or profile URLs separated by commas.")
         # Leaving the list empty has to be a decision rather than a loop the user can only leave with Ctrl+C
         if not _wizard_offer_retry("Instagram target", "Nothing can be monitored until one is added"):
             break
@@ -16470,13 +16505,32 @@ def _wizard_collect_polling_section(state: WizardSetupState) -> None:
     state.config_values["INSTA_CHECK_INTERVAL"] = _wizard_ask_duration("Instagram polling interval (seconds or use s/m/h/d)", current_interval)
 
 
+# Asks for the account to sign in with until the answer is one the tool accepts, returning None when the prompt was
+# abandoned. A name monitoring refuses is otherwise saved and fails at the first Instagram request instead of here
+def _wizard_ask_session_username(question: str, required: bool) -> Optional[str]:
+    while True:
+        answer = _wizard_ask_text(question, required=required).strip()
+        if not answer:
+            return ""
+        try:
+            return normalize_instagram_username(answer)
+        except ValueError as exc:
+            print(f"  {exc}.")
+        if not _wizard_offer_retry("Instagram username"):
+            return None
+
+
 # Confirms an Instaloader session file exists for the chosen account, since setup does not create one for this login
 # method and a missing file otherwise surfaces only when monitoring first tries to sign in
 def _wizard_confirm_existing_session(state: WizardSetupState) -> bool:
     try:
         candidates = get_session_file_candidates(state.session_username)
-    except ValueError:
-        return True
+    except ValueError as exc:
+        # Reached only when a username skipped the prompt's own check, and a name no session file can exist for
+        # must not be reported as a session that was found
+        print()
+        print(colorize("warning", f"'{state.session_username}' cannot be used as an Instagram username: {exc}."))
+        return False
     if any(os.path.isfile(candidate) for candidate in candidates):
         return True
     print()
@@ -16542,12 +16596,13 @@ def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
         print()
         can_detect_username = state.import_browser is not None and method not in ("docker", "compose")
         if can_detect_username:
-            state.session_username = _wizard_ask_text(f"Your Instagram username (leave empty to detect it from {browser_label(state.import_browser)} import)").lstrip("@")
+            collected = _wizard_ask_session_username(f"Your Instagram username (leave empty to detect it from {browser_label(state.import_browser)} import)", required=False)
         else:
-            state.session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
-            if not state.session_username:
-                _wizard_fall_back_to_no_login(state, "Sign-in stays off until the username is given.")
-                return
+            collected = _wizard_ask_session_username("Your Instagram username (the account you log in WITH)", required=True)
+        if collected is None or (not collected and not can_detect_username):
+            _wizard_fall_back_to_no_login(state, "Sign-in stays off until the username is given.")
+            return
+        state.session_username = collected
         # The session file this method relies on is created by Instaloader, not by setup, so a missing one is
         # caught here instead of at the first monitoring run
         if action == "existing" and not _wizard_confirm_existing_session(state):
@@ -16725,6 +16780,22 @@ def _wizard_smtp_sign_in_accepted(values: dict, password: str) -> Optional[bool]
     return None
 
 
+# Asks one required mail server answer until it is one the sender itself would accept. A value only this prompt
+# collects is otherwise saved, reported as a working setup by the sign-in check and refused by the first alert
+def _wizard_ask_mail_value(state: WizardSetupState, label: str, key: str, accepts, requirement: str) -> bool:
+    while True:
+        answer = _wizard_ask_text(label, default=_wizard_default(state.config_values.get(key)), required=True)
+        if _wizard_email_answer_missing(state, answer):
+            return False
+        if accepts(answer):
+            state.config_values[key] = answer
+            return True
+        print(f"  {requirement}")
+        if not _wizard_offer_retry(label):
+            _wizard_disable_email(state)
+            return False
+
+
 # Collects email settings, the hidden SMTP password and the alerts email should send
 def _wizard_collect_email_section(state: WizardSetupState) -> None:
     _wizard_reset_section(state, WIZARD_EMAIL_CONFIG_KEYS, ("SMTP_PASSWORD",))
@@ -16733,23 +16804,25 @@ def _wizard_collect_email_section(state: WizardSetupState) -> None:
         _wizard_disable_email(state)
         return
     while True:
-        state.config_values["SMTP_HOST"] = _wizard_ask_text("SMTP host", default=_wizard_default(state.config_values.get("SMTP_HOST")), required=True)
-        if _wizard_email_answer_missing(state, state.config_values["SMTP_HOST"]):
+        if not _wizard_ask_mail_value(state, "SMTP host", "SMTP_HOST", smtp_host_is_usable, "Enter a hostname such as smtp.example.com, or an IP address."):
             return
         state.config_values["SMTP_PORT"] = _wizard_ask_positive_int("SMTP port", int(state.config_values.get("SMTP_PORT") or 587), maximum=65535)
         state.config_values["SMTP_SSL"] = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(state.config_values.get("SMTP_SSL")))
         state.config_values["SMTP_USER"] = _wizard_ask_text("SMTP username", default=_wizard_default(state.config_values.get("SMTP_USER")), required=True)
         if _wizard_email_answer_missing(state, state.config_values["SMTP_USER"]):
             return
-        state.config_values["SENDER_EMAIL"] = _wizard_ask_text("Sender email", default=_wizard_default(state.config_values.get("SENDER_EMAIL")), required=True)
-        if _wizard_email_answer_missing(state, state.config_values["SENDER_EMAIL"]):
+        if not _wizard_ask_mail_value(state, "Sender email", "SENDER_EMAIL", is_valid_email_address, "Enter a complete address such as name@example.com."):
             return
-        state.config_values["RECEIVER_EMAIL"] = _wizard_ask_text("Receiver email", default=_wizard_default(state.config_values.get("RECEIVER_EMAIL")), required=True)
-        if _wizard_email_answer_missing(state, state.config_values["RECEIVER_EMAIL"]):
+        if not _wizard_ask_mail_value(state, "Receiver email", "RECEIVER_EMAIL", is_valid_email_address, "Enter a complete address such as name@example.com."):
             return
-        password = _wizard_ask_secret("SMTP password")
-        if password:
-            _wizard_queue_secret(state.secret_updates, state.env_path, "SMTP_PASSWORD", password)
+        # Asked before the hidden prompt, so a password that is already saved is never retyped only to be discarded
+        password = ""
+        if not _wizard_existing_secret("SMTP_PASSWORD", state.env_path, secret_updates=state.secret_updates) or _wizard_ask_yes_no("Replace the SMTP password already configured?", default=False):
+            password = _wizard_ask_secret("SMTP password")
+            if password:
+                state.secret_updates["SMTP_PASSWORD"] = password
+        else:
+            print("  Existing SMTP_PASSWORD will be retained without being displayed or rewritten.")
         # The sign-in has to prove the value the next run resolves rather than the one just typed. A declined
         # replacement and an exported variable both leave setup reporting success for a password nothing will use
         effective_password, supplied_by_export = effective_secret_after_setup("SMTP_PASSWORD", state.env_path, state.secret_updates)
@@ -16808,7 +16881,10 @@ def _wizard_collect_output_section(state: WizardSetupState) -> None:
 # saved values: their defaults suit almost everyone and the configuration file explains them for the few who care
 def _wizard_collect_connection_section(state: WizardSetupState) -> None:
     _wizard_reset_section(state, WIZARD_CONNECTION_CONFIG_KEYS, ())
-    # No API surface lists followers without a session, so the question is only worth asking in login mode
+    # No API surface lists followers without a session, so the question is only worth asking in login mode, and a
+    # setup that turned the session off records what will happen rather than the answers it collected with one
+    if not state.logged_in:
+        state.config_values.update({"SKIP_FOLLOWERS": True, "SKIP_FOLLOWINGS": True})
     if state.logged_in:
         # Names are the most expensive thing the tool asks Instagram for and the operation Instagram acts
         # against, so the first question is whether to collect them at all rather than how, and the
@@ -16972,7 +17048,12 @@ def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
         print()
         _wizard_collect_polling_section(state)
     elif section == 2:
+        was_logged_in = state.logged_in
         _wizard_collect_login_section(state, method)
+        # The list questions are their own section here, so a session enabled from this menu would otherwise write
+        # the shipped defaults, which collect every name, without the question that exists to prevent that
+        if state.logged_in != was_logged_in:
+            _wizard_collect_connection_section(state)
     elif section == 3:
         _wizard_collect_connection_section(state)
     elif section == 4:
@@ -17007,7 +17088,9 @@ def _wizard_review_setup(state: WizardSetupState, method: str) -> bool:
 
 # Names the command that imports a browser session outside setup, shown as a retry hint and in the next steps
 def _wizard_browser_import_command(state: WizardSetupState, method: str) -> str:
-    return f"{_wizard_cmd_prefix(method, host_os=state.container_host)} --import-browser-session --browser {state.import_browser} --env-file {_wizard_quote_argument(str(state.env_path))}"
+    # The config is carried like the Firefox command carries it, since the import prints the next steps for the
+    # configuration it was given and finds the wrong one, or none, when setup wrote to a destination of its own
+    return f"{_wizard_cmd_prefix(method, host_os=state.container_host)} --import-browser-session --browser {state.import_browser} --config-file {_wizard_quote_argument(str(state.config_path))} --env-file {_wizard_quote_argument(str(state.env_path))}"
 
 
 # Offers the other browsers setup can import from, so a failed import is not a dead end when the session lives in
@@ -17090,7 +17173,7 @@ def _wizard_finish_browser_import(state: WizardSetupState, method: str) -> bool:
         print(colorize("info", f"You can import later with: {retry_hint}"))
     if not state.session_username:
         print(colorize("warning", "No username was detected from the browser session."))
-        state.session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
+        state.session_username = _wizard_ask_session_username("Your Instagram username (the account you log in WITH)", required=True) or ""
         if not state.session_username:
             _wizard_fall_back_to_no_login(state, "Sign-in stays off until the username is given.")
             return import_completed
@@ -17116,6 +17199,12 @@ def _wizard_launch_monitor(arguments) -> int:
             return 0
     os.execv(command[0], command)
     return 0
+
+
+# Returns the address the Web Dashboard is reachable at on this machine, which is the configured port rather than
+# the default whenever WEB_DASHBOARD_PORT was changed
+def web_dashboard_local_url() -> str:
+    return f"http://127.0.0.1:{WEB_DASHBOARD_PORT}/"
 
 
 # Runs the interactive first-run setup with staged answers and safe persistence
@@ -17247,7 +17336,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     _wizard_print_command("After the import succeeds, check setup:" if container_browser_import_pending or local_browser_import_pending else "Check setup again:", doctor_command)
     _wizard_print_command("After Doctor passes, start monitoring:" if container_browser_import_pending or local_browser_import_pending else "Start monitoring:", run_command)
     if state.want_web:
-        print(f"Then open {colorize('link', 'http://127.0.0.1:8000/')} in your browser.\n")
+        print(f"Then open {colorize('link', web_dashboard_local_url())} in your browser.\n")
     if state.want_email:
         _wizard_print_command("Send a test email:", _wizard_action_command(method, "--send-test-email", state.config_path, env_argument, host_os=state.container_host))
     if state.want_webhook:
@@ -17286,7 +17375,7 @@ def print_welcome_screen(parser) -> None:
     _wizard_print_command("Quickest start (no setup, no login):", f"{prefix} <target_insta_user>")
     setup_suffix = "   (or just answer Y below)" if interactive else ""
     _wizard_print_command("Easiest start (guided setup wizard):", f"{prefix} --setup", setup_suffix)
-    _wizard_print_command("Point-and-click (no command line):", f"{web_prefix} --web-dashboard", "      then open http://127.0.0.1:8000")
+    _wizard_print_command("Point-and-click (no command line):", f"{web_prefix} --web-dashboard", f"      then open {web_dashboard_local_url()}")
     _wizard_print_command("Check setup before monitoring:", f"{prefix} --doctor <target_insta_user>")
     print(f"Full options: {colorize('section', prefix + ' --help')}")
     print(f"\nGuide:        {colorize('link', QUICK_START_GUIDE_URL)}\n")
@@ -18179,7 +18268,7 @@ def doctor_check_session(report: DoctorReport, progress: Optional[Callable[[str]
         if who and str(who).casefold() != str(SESSION_USERNAME).casefold():
             # Monitoring refuses to resume an account whose saved session signs in as somebody else, so a pass here
             # would promise something the next run will not do
-            advice = make_recovery_advice("session.expired", f"The saved session signs in as {who}, not {SESSION_USERNAME}", recovery_fix_with_guide(f"Set SESSION_USERNAME to {who}, or re-import the session for {SESSION_USERNAME} with '{session_recovery_command()}'", SESSION_IMPORT_GUIDE_URL), False)
+            advice = make_recovery_advice("session.expired", f"The saved session signs in as {who}, not {SESSION_USERNAME}", recovery_fix_with_guide(f"Set SESSION_USERNAME to {who}, or re-import the session for {SESSION_USERNAME} with '{session_recovery_command()}'{session_recovery_browser_hint()}", SESSION_IMPORT_GUIDE_URL), False)
             checks = [make_doctor_check("Session", "FAIL", advice.summary, "Monitoring stops an account whose saved session belongs to another account", advice)]
         elif who:
             checks = [make_doctor_check("Session", "PASS", f"Session valid for {who}")]

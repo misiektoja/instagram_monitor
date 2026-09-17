@@ -2,6 +2,7 @@
 
 import builtins
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -36,6 +37,19 @@ def protect_setup_globals(im_module, monkeypatch):
         monkeypatch.setattr(im_module, name, getattr(im_module, name), raising=False)
 
 
+# Answers each mail server prompt with a value that prompt accepts, so a section under test reaches its end instead
+# of looping on an answer the wizard rejects
+def mail_answer(question, default="", required=False):
+    lowered = question.lower()
+    if "url" in lowered:
+        return "https://ntfy.sh/example"
+    if "host" in lowered:
+        return "smtp.example.test"
+    if "port" in lowered:
+        return "587"
+    return "answer@example.test"
+
+
 # Builds a minimal editable state for one setup-section unit test
 def make_setup_state(im_module, directory: Path):
     baseline = dict(vars(im_module))
@@ -53,7 +67,7 @@ class TestTheFollowQuestionsNameTheSwitchTheyWrite:
             state = make_setup_state(im_module, Path(directory_name))
             with pytest.MonkeyPatch.context() as patcher:
                 patcher.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: asked.append(question) or True)
-                patcher.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: "https://ntfy.sh/example" if "URL" in question else "answer@example.test")
+                patcher.setattr(im_module, "_wizard_ask_text", mail_answer)
                 patcher.setattr(im_module, "_wizard_ask_positive_int", lambda question, default, maximum=None: 587)
                 patcher.setattr(im_module, "_wizard_ask_secret", lambda question: "private-value")
                 patcher.setattr(im_module, "_wizard_verify_smtp", lambda values, password: None)
@@ -131,7 +145,7 @@ class TestTargetCollection:
             im_module._wizard_collect_target_section(state, allow_empty=False)
 
             assert state.targets == ["target.user"]
-            assert "Enter one or more Instagram usernames separated by commas." in capsys.readouterr().out
+            assert "Enter one or more Instagram usernames or profile URLs separated by commas." in capsys.readouterr().out
 
     # Verifies a required target can be abandoned, so the question is not a loop the user can only leave with Ctrl+C
     def test_a_required_target_can_be_abandoned(self, im_module, monkeypatch, capsys):
@@ -923,7 +937,7 @@ class TestRejectedAnswerEscape:
             state.baseline_values["STATUS_NOTIFICATION"] = True
             state.config_values["STATUS_NOTIFICATION"] = True
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
-            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: "" if question == abandoned else "587" if question == "SMTP port" else "answer@example.test")
+            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: "" if question == abandoned else mail_answer(question))
             monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: "private-password")
             monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: 0)
 
@@ -938,7 +952,7 @@ class TestRejectedAnswerEscape:
         with make_test_directory() as directory_name:
             state = make_setup_state(im_module, Path(directory_name))
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
-            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: "587" if question == "SMTP port" else "answer@example.test")
+            monkeypatch.setattr(im_module, "_wizard_ask_text", mail_answer)
             monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: "")
             monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: 0)
 
@@ -1627,56 +1641,62 @@ def test_prompts_restore_the_default_interrupt_handler(im_module, monkeypatch):
         signal.signal(signal.SIGINT, previous_handler)
 
 
+# Runs the real email section with every other prompt answered, returning the questions asked and the stored secret
+def run_email_password_section(im_module, monkeypatch, directory, saved=None, replace=True):
+    if saved is not None:
+        (directory / ".env").write_text(f'SMTP_PASSWORD="{saved}"\n', encoding="utf-8")
+    state = make_setup_state(im_module, directory)
+    questions = []
+
+    def yes_no(question, default=True):
+        questions.append(question)
+        return replace if "Replace the SMTP password" in question else True
+
+    monkeypatch.setattr(im_module, "_wizard_ask_yes_no", yes_no)
+    monkeypatch.setattr(im_module, "_wizard_ask_text", mail_answer)
+    monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: "typed-password")
+    monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: 0)
+    monkeypatch.setattr(im_module, "_wizard_smtp_sign_in_accepted", lambda values, password: True)
+    im_module._wizard_collect_email_section(state)
+    return questions, state
+
+
 class TestSecretReplacePrompt:
     # Verifies a secret already in the dotenv file is kept when the replacement is declined
     def test_an_existing_dotenv_secret_is_kept_unless_the_replacement_is_confirmed(self, im_module, monkeypatch, capsys):
         with make_test_directory() as directory_name:
-            directory = Path(directory_name)
-            (directory / ".env").write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
-            state = make_setup_state(im_module, directory)
-            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: False)
+            questions, state = run_email_password_section(im_module, monkeypatch, Path(directory_name), saved="original", replace=False)
 
-            queued = im_module._wizard_queue_secret(state.secret_updates, state.env_path, "SMTP_PASSWORD", "typed-password")
-
-            assert queued is False
             assert "SMTP_PASSWORD" not in state.secret_updates
+            assert any("Replace the SMTP password already configured" in question for question in questions)
             assert "Existing SMTP_PASSWORD will be retained" in capsys.readouterr().out
 
     # Verifies a confirmed replacement is queued for the save step
     def test_a_confirmed_replacement_is_queued(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
-            directory = Path(directory_name)
-            (directory / ".env").write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
-            state = make_setup_state(im_module, directory)
-            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
+            questions, state = run_email_password_section(im_module, monkeypatch, Path(directory_name), saved="original", replace=True)
 
-            assert im_module._wizard_queue_secret(state.secret_updates, state.env_path, "SMTP_PASSWORD", "typed-password") is True
             assert state.secret_updates["SMTP_PASSWORD"] == "typed-password"
+            # Consent is asked once, before the value is typed, not again afterwards
+            assert len([question for question in questions if "SMTP_PASSWORD" in question or "SMTP password" in question]) == 1
 
     # Verifies a dotenv file that does not hold the secret yet is written without asking anything
     def test_a_new_secret_is_queued_without_a_question(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
-            state = make_setup_state(im_module, Path(directory_name))
+            questions, state = run_email_password_section(im_module, monkeypatch, Path(directory_name))
 
-            def refuse_every_question(question, default=True):
-                raise AssertionError(f"Setup asked about a secret the dotenv file does not hold: {question!r}")
+            assert state.secret_updates["SMTP_PASSWORD"] == "typed-password"
+            assert not [question for question in questions if "SMTP_PASSWORD" in question or "SMTP password" in question]
 
-            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", refuse_every_question)
-
-            assert im_module._wizard_queue_secret(state.secret_updates, state.env_path, "SESSION_PASSWORD", "typed-password") is True
-            assert state.secret_updates["SESSION_PASSWORD"] == "typed-password"
-
-    # Verifies both password prompts guard a stored value, the session password through its own replace question
+    # Verifies both password prompts offer a stored value for replacement before the hidden prompt rather than after it
     def test_both_password_sections_route_through_the_replace_guard(self, im_module):
         from pathlib import Path as _Path
 
         source = _Path(im_module.__file__).read_text(encoding="utf-8")
 
-        assert 'state.secret_updates["SMTP_PASSWORD"] =' not in source
-        assert source.count('_wizard_queue_secret(state.secret_updates, state.env_path, "SMTP_PASSWORD"') == 1
-        assert source.count('_wizard_existing_secret("SESSION_PASSWORD", state.env_path, secret_updates=state.secret_updates)') == 1
-        assert source.count('state.secret_updates["SESSION_PASSWORD"] =') == 1
-        assert '_wizard_queue_secret(state.secret_updates, state.env_path, "SESSION_PASSWORD"' not in source
+        for key in ("SESSION_PASSWORD", "SMTP_PASSWORD"):
+            assert source.count(f'_wizard_existing_secret("{key}", state.env_path, secret_updates=state.secret_updates)') == 1
+            assert source.count(f'state.secret_updates["{key}"] =') == 1
 
     # Verifies a saved Instagram password is offered for replacement before the hidden prompt rather than after it
     def test_a_saved_instagram_password_is_kept_without_being_retyped(self, im_module, monkeypatch, capsys):
@@ -2313,3 +2333,217 @@ class TestLoginMenuReportsBrowserSessions:
             menus, _ = collect_login_menus(im_module, monkeypatch, Path(directory_name), "manual", [1])
 
         assert menus["login"]["options"]["Import from Firefox, recommended"] == "Reuses your Firefox session with no additional package."
+
+
+# Runs the target section with scripted answers, returning the collected targets and everything printed
+def run_target_section(im_module, monkeypatch, directory, answers, retries=(), allow_empty=False):
+    state = make_setup_state(im_module, directory)
+    state.targets = []
+    monkeypatch.setattr(im_module, "_wizard_ask_text", Mock(side_effect=list(answers)))
+    monkeypatch.setattr(im_module, "_wizard_ask_yes_no", Mock(side_effect=list(retries) + [True] * 8))
+    im_module._wizard_collect_target_section(state, allow_empty=allow_empty)
+    return state
+
+
+class TestTargetsAreCheckedBeforeTheyAreSaved:
+    # The welcome screen offers a profile URL, so setup and monitoring both have to take one
+    @pytest.mark.parametrize("answer,expected", [
+        ("https://www.instagram.com/someuser/", ["someuser"]),
+        ("instagram.com/Some.User", ["some.user"]),
+        ("@someuser, other.user", ["someuser", "other.user"]),
+    ])
+    def test_a_profile_url_is_stored_as_the_account_name(self, im_module, monkeypatch, answer, expected):
+        with make_test_directory() as directory_name:
+            state = run_target_section(im_module, monkeypatch, Path(directory_name), [answer])
+
+            assert state.targets == expected
+            assert state.config_values["TARGET_USERNAMES"] == expected
+
+    # A target setup accepts and monitoring refuses turns a finished setup into a command that stops before it starts
+    @pytest.mark.parametrize("answer", ["not a username!!", "https://www.instagram.com/p/ABC123/", "a" * 31])
+    def test_a_target_the_next_run_would_refuse_is_re_asked(self, im_module, monkeypatch, capsys, answer):
+        with make_test_directory() as directory_name:
+            state = run_target_section(im_module, monkeypatch, Path(directory_name), [answer, "good.user"], retries=[False])
+
+            assert state.targets == ["good.user"]
+            assert "cannot be monitored" in capsys.readouterr().out
+            for target in state.targets:
+                assert im_module.normalize_instagram_username(target) == target
+
+    # Choosing to continue without a target has to end the question rather than loop on an answer setup will not take
+    def test_continuing_without_a_target_leaves_the_list_empty(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            state = run_target_section(im_module, monkeypatch, Path(directory_name), ["not a username!!"], retries=[True], allow_empty=True)
+
+            assert state.targets == []
+            assert state.config_values["TARGET_USERNAMES"] == []
+
+
+class TestEditingLoginReasksTheListQuestion:
+    # Runs the review edit menu on one section with the login answer scripted
+    @staticmethod
+    def _edit_login(im_module, monkeypatch, directory, login_index, start_logged_in):
+        state = make_setup_state(im_module, directory)
+        state.logged_in = start_logged_in
+        state.login_method = "existing" if start_logged_in else "no-login"
+        state.config_values.update({"SKIP_FOLLOWERS": False, "SKIP_FOLLOWINGS": False})
+        asked = []
+
+        def choose(question, options, default_index=0):
+            asked.append(question)
+            if "Which setup section" in question:
+                return 2
+            if "access Instagram" in question:
+                return login_index
+            return 0
+
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", choose)
+        monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: "login.user")
+        monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: True)
+        monkeypatch.setattr(im_module, "_wizard_confirm_existing_session", lambda state: True)
+        im_module._wizard_edit_setup_section(state, "pip")
+        return asked, state
+
+    # The list questions are their own menu item, so a session enabled here would otherwise write the shipped
+    # defaults, which collect every name, without the question that exists to prevent that
+    def test_enabling_a_session_asks_what_to_collect(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            asked, state = self._edit_login(im_module, monkeypatch, Path(directory_name), 3, start_logged_in=False)
+
+            assert state.logged_in is True
+            assert any("should be collected" in question for question in asked)
+            assert state.config_values["SKIP_FOLLOWERS"] is True
+            assert state.config_values["SKIP_FOLLOWINGS"] is True
+
+    # Turning the session off leaves answers the summary stops showing, so the file records what will happen
+    def test_removing_the_session_records_counts_only(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            asked, state = self._edit_login(im_module, monkeypatch, Path(directory_name), 0, start_logged_in=True)
+
+            assert state.logged_in is False
+            assert state.config_values["SKIP_FOLLOWERS"] is True
+            assert state.config_values["SKIP_FOLLOWINGS"] is True
+            assert not any("should be collected" in question for question in asked)
+
+    # Re-picking the same kind of login is not a change, so the list answers already given stand
+    def test_keeping_the_session_does_not_re_ask(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            asked, state = self._edit_login(im_module, monkeypatch, Path(directory_name), 3, start_logged_in=True)
+
+            assert state.logged_in is True
+            assert not any("should be collected" in question for question in asked)
+            assert state.config_values["SKIP_FOLLOWERS"] is False
+
+
+class TestMailAnswersAreCheckedBeforeTheyAreSaved:
+    # Runs the email section with one answer replaced by a value the sender would refuse
+    @staticmethod
+    def _collect(im_module, monkeypatch, directory, label, bad_value, retry=True):
+        state = make_setup_state(im_module, directory)
+        seen = []
+
+        def text(question, default="", required=False):
+            seen.append(question)
+            return bad_value if question == label and seen.count(label) == 1 else mail_answer(question)
+
+        monkeypatch.setattr(im_module, "_wizard_ask_text", text)
+        monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: retry if "Try entering" in question else True)
+        monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: "private-password")
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: 0)
+        monkeypatch.setattr(im_module, "_wizard_smtp_sign_in_accepted", lambda values, password: True)
+        im_module._wizard_collect_email_section(state)
+        return seen, state
+
+    # The sign-in check only proves the username and password, so an address it never sees was reported as working
+    @pytest.mark.parametrize("label,key,bad", [("Sender email", "SENDER_EMAIL", "x"), ("Receiver email", "RECEIVER_EMAIL", "nobody@"), ("SMTP host", "SMTP_HOST", "not a host")])
+    def test_a_value_the_sender_would_refuse_is_re_asked(self, im_module, monkeypatch, capsys, label, key, bad):
+        with make_test_directory() as directory_name:
+            seen, state = self._collect(im_module, monkeypatch, Path(directory_name), label, bad)
+
+            assert seen.count(label) == 2
+            assert state.config_values[key] != bad
+            assert state.want_email is True
+            assert "Enter a" in capsys.readouterr().out
+
+    # Abandoning the answer switches email off rather than saving a channel that cannot deliver
+    def test_abandoning_the_answer_switches_email_off(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            seen, state = self._collect(im_module, monkeypatch, Path(directory_name), "Sender email", "x", retry=False)
+
+            assert state.want_email is False
+            assert state.config_values["STATUS_NOTIFICATION"] is False
+
+    # The addresses setup saves have to be the ones the send path accepts, or setup reports a working channel
+    def test_the_saved_addresses_pass_the_send_path_check(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            seen, state = self._collect(im_module, monkeypatch, Path(directory_name), "Sender email", "x")
+
+            for key in ("SENDER_EMAIL", "RECEIVER_EMAIL"):
+                assert im_module.is_valid_email_address(state.config_values[key]) is True
+            assert im_module.smtp_host_is_usable(state.config_values["SMTP_HOST"]) is True
+
+
+class TestSessionUsernameIsCheckedWhereItIsCollected:
+    # Runs the login section with one scripted username answer
+    @staticmethod
+    def _collect(im_module, monkeypatch, directory, answers, retries=()):
+        state = make_setup_state(im_module, directory)
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: 4 if "access Instagram" in question else 0)
+        monkeypatch.setattr(im_module, "_wizard_ask_text", Mock(side_effect=list(answers)))
+        monkeypatch.setattr(im_module, "_wizard_ask_yes_no", Mock(side_effect=list(retries) + [False] * 8))
+        monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: "private-password")
+        im_module._wizard_collect_login_section(state, "pip")
+        return state
+
+    # A name monitoring refuses is otherwise saved as the account to sign in with and fails at the first request
+    def test_an_unusable_username_is_re_asked(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            state = self._collect(im_module, monkeypatch, Path(directory_name), ["my account", "login.user"], retries=[True])
+
+            assert state.session_username == "login.user"
+            assert state.logged_in is True
+            assert "1-30 letters" in capsys.readouterr().out
+
+    def test_declining_the_retry_falls_back_to_no_login(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            state = self._collect(im_module, monkeypatch, Path(directory_name), ["my account"], retries=[False])
+
+            assert state.logged_in is False
+            assert state.config_values["SKIP_SESSION"] is True
+
+    # The existing-session check reported a found session for a name no session file can exist for
+    def test_the_existing_session_check_refuses_an_unusable_name(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            state = make_setup_state(im_module, Path(directory_name))
+            state.session_username = "my account"
+
+            assert im_module._wizard_confirm_existing_session(state) is False
+            assert "cannot be used as an Instagram username" in capsys.readouterr().out
+
+
+# The import prints its next steps for the configuration it was given, so it has to be handed the one setup wrote
+def test_the_printed_import_command_carries_the_config(im_module):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.import_browser = "chrome"
+
+        command = im_module._wizard_browser_import_command(state, "pip")
+
+        assert f"--config-file {shlex.quote(str(state.config_path))}" in command
+        assert f"--env-file {shlex.quote(str(state.env_path))}" in command
+
+
+# A dashboard moved off the default port was still advertised at the default one
+@pytest.mark.parametrize("port,expected", [(8000, "http://127.0.0.1:8000/"), (9443, "http://127.0.0.1:9443/")])
+def test_the_dashboard_address_uses_the_configured_port(im_module, monkeypatch, port, expected):
+    monkeypatch.setattr(im_module, "WEB_DASHBOARD_PORT", port, raising=False)
+
+    assert im_module.web_dashboard_local_url() == expected
+    assert "127.0.0.1:8000" not in Path(im_module.__file__).read_text(encoding="utf-8").split("def web_dashboard_local_url")[1]
+
+
+# 'python -m instagram_monitor' runs the installed package, so the printed commands must not name a downloaded script
+def test_a_module_launch_is_reported_as_an_installed_package(im_module, monkeypatch):
+    monkeypatch.setattr(im_module.sys, "argv", ["/opt/venv/lib/python3.14/site-packages/instagram_monitor/__main__.py"])
+
+    assert im_module._wizard_install_method() == "pip"

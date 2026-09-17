@@ -8,11 +8,11 @@ This page assumes Instagram Monitor is already installed (see [Installation](ins
 
 The wizard asks for targets, a saved login, polling interval, which follower lists to collect, interface, alerts and output files. The login menu reports which browsers on this machine already have a profile signed in to Instagram, so you do not pick one and find out afterwards. If the import still fails, setup offers another attempt or a different browser instead of continuing without a session. Choosing an existing Instaloader session checks that a session file for that account exists before saving the choice. In login mode it asks whether to collect followers and following, followers only, or counts only with no names at all, because names are the most expensive thing to request and the operation Instagram acts against. Counts only is the default, so pressing Enter through the wizard never sets up name collection. It asks where to read them from only when it is going to read them. The [HTTP backend](usage.md#http-transport-backend) keeps its saved value, since its default suits almost every setup. If `curl_cffi` is missing, requests is used until you install it. The experimental [browser source](usage.md#browser-source-experimental) is offered too and needs Playwright.
 
-You can leave targets empty for the Web Dashboard and add accounts in your browser later. Terminal Dashboard and plain-text mode need at least one target. Polling accepts seconds or durations such as `1.5h` and `1h 30m`.
+Targets can be usernames or complete profile URLs such as `https://www.instagram.com/someuser/`, in the wizard and on the command line. A post or story URL is not a target, so setup refuses it and asks again rather than saving something the next run would reject. You can leave targets empty for the Web Dashboard and add accounts in your browser later. Terminal Dashboard and plain-text mode need at least one target. Polling accepts seconds or durations such as `1.5h` and `1h 30m`.
 
-Review or change your answers before saving. Settings go to `instagram_monitor.conf` and private values go to `.env`. Setup asks before replacing a saved secret. See [Storing Secrets](configuration.md#storing-secrets) for backup details.
+Review or change your answers before saving. Turning a login on from the review menu asks which follower lists to collect, so enabling a session there never starts name collection you were not asked about. Turning it off records counts only, since no list can be read without a session. Settings go to `instagram_monitor.conf` and private values go to `.env`. Setup asks before replacing a saved secret. See [Storing Secrets](configuration.md#storing-secrets) for backup details.
 
-A rerun uses saved settings as defaults. Declining a section disables it. Setup explains invalid answers and lets you retry. Email setup checks sign-in without sending a message. If the mail server is unreachable, check the saved settings later with `--doctor`.
+A rerun uses saved settings as defaults. Declining a section disables it. Setup explains invalid answers and lets you retry. Answers it cannot use are refused where you enter them: an account name Instagram would not accept, a mail server address, and a sender or receiver that is not a complete email address. Email setup checks sign-in without sending a message, and when a password is already saved it asks whether to replace it before the hidden prompt rather than after. If the mail server is unreachable, check the saved settings later with `--doctor`.
 
 After saving, the wizard offers the Doctor checks. For a local install it then offers to start monitoring once those checks passed. In a container, it prints the next Docker or Docker Compose commands to run.
 
@@ -123,7 +123,7 @@ The table uses the PyPI command. If you chose another installation, use its [com
 
 The examples below use PyPI. For a manual script, replace `instagram_monitor` with `python3 instagram_monitor.py` on macOS or Linux. Use `python instagram_monitor.py` on Windows. Docker users should copy the matching prefix under [Command Format by Installation Method](usage.md#command-format-by-installation-method).
 
-Throughout this page `<target_insta_user>` means the Instagram username to monitor and `<your_insta_user>` the account you sign in with.
+Throughout this page `<target_insta_user>` means the Instagram username to monitor, or a complete profile URL, and `<your_insta_user>` the account you sign in with.
 
 <a id="save-an-instagram-login"></a>
 ### Save an Instagram login

@@ -76,7 +76,7 @@ class TestValidateEmailAddress:
         assert im_module.is_valid_email_address(address) is True
 
     # Rejects values that lack a mailbox, domain label or suffix without applying a backtracking expression
-    @pytest.mark.parametrize("address", ["", "alerts", "alerts@example", "@example.com", "alerts@.com", "alerts@example."])
+    @pytest.mark.parametrize("address", ["", "alerts", "alerts@example", "@example.com", "alerts@.com", "alerts@example.", "two words@example.com", "alerts@exa mple.com", "alerts@example.com\nBcc: other@example.com", "<>"])
     def test_invalid_addresses(self, im_module, address):
         assert im_module.is_valid_email_address(address) is False
 
