@@ -2770,7 +2770,9 @@
             document.getElementById('browser-import-btn').style.display = 'inline-flex';
         }
 
-        // Returns profiles normalised to {value, label}, or null on error (Firefox value is a path, Chromium a profile dir)
+        // Returns profiles normalised to {value, label, signedIn}, or null on error (Firefox value is a path,
+        // Chromium a profile dir). Snap and Flatpak Firefox installs commonly share a profile name, so the
+        // packaging is part of the label rather than hidden in the value
         async function fetchBrowserProfiles(browser) {
             const url = browser === 'firefox'
                 ? '/api/session/firefox/profiles'
@@ -2782,8 +2784,8 @@
                 return null;
             }
             return data.profiles.map(p => browser === 'firefox'
-                ? { value: p.path, label: p.name }
-                : { value: p.dir, label: `${p.name} (${p.dir})` });
+                ? { value: p.path, label: p.install ? `${p.name} (${p.install})` : p.name, signedIn: p.signed_in }
+                : { value: p.dir, label: `${p.name} (${p.dir})`, signedIn: p.signed_in });
         }
 
         // Same logic for every browser: one profile imports directly, several reveal the list to choose from
@@ -2805,17 +2807,27 @@
                 return;
             }
             if (profiles.length === 1) {
+                if (profiles[0].signedIn === false) {
+                    showToast(`${profiles[0].label} is not signed in to Instagram - sign in there first`, 'error');
+                }
                 doBrowserImport(browser, profiles[0].value);
                 return;
             }
 
-            // Multiple profiles - let the user choose, then import the selected one
+            // Multiple profiles - let the user choose, then import the selected one. Only the profiles holding a
+            // session are marked, since labelling every other one buries the few worth choosing
             const select = document.getElementById('browser-profile-select');
             select.innerHTML = profiles.map(p =>
-                `<option value="${escapeHtml(p.value)}">${escapeHtml(p.label)}</option>`).join('');
+                `<option value="${escapeHtml(p.value)}">${p.signedIn ? '* ' : ''}${escapeHtml(p.label)}</option>`).join('');
             document.getElementById('browser-profiles-container').style.display = 'block';
             document.getElementById('browser-import-btn').style.display = 'none';
-            showToast(`Found ${profiles.length} profiles - select one and import`);
+            const signedIn = profiles.filter(p => p.signedIn);
+            if (signedIn.length === 1) {
+                select.value = signedIn[0].value;
+            }
+            showToast(signedIn.length
+                ? `Found ${profiles.length} profiles - * marks the ${signedIn.length} signed in to Instagram`
+                : `Found ${profiles.length} profiles - select one and import`);
         }
 
         function importSelectedProfile() {

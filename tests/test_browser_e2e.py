@@ -278,3 +278,29 @@ def test_a_page_without_a_dialog_is_reported_in_chromium(im_module):
             list(im_module.harvest_follow_list_dialog(page, 0))
 
         browser.close()
+
+
+# Verifies the dashboard profile picker marks the profiles holding an Instagram session and preselects the only one
+@pytest.mark.e2e
+def test_browser_import_marks_signed_in_profiles_in_chromium(dashboard_server, im_module, monkeypatch):
+    signed_in = "/u/b/cookies.sqlite"
+    monkeypatch.setattr(im_module, "list_firefox_profiles", lambda: [{"dir": "a.work", "name": "work", "path": "/u/a/cookies.sqlite", "install": ""}, {"dir": "b.default", "name": "default-release", "path": signed_in, "install": ""}, {"dir": "c.default", "name": "default-release", "path": "/u/c/cookies.sqlite", "install": "Snap"}])
+    monkeypatch.setattr(im_module, "cookie_file_has_instagram_session", lambda cookie_file, firefox=False: cookie_file == signed_in)
+    page_errors = []
+    with playwright_sync.sync_playwright() as playwright:
+        browser = launch_chromium(playwright)
+        page = browser.new_page()
+        page.set_default_timeout(5000)
+        page.on("pageerror", lambda error: page_errors.append(str(error)))
+        page.goto(dashboard_server, wait_until="domcontentloaded")
+        page.locator('[data-page="session"]').click()
+        page.locator("#browser-import-btn").click()
+
+        playwright_sync.expect(page.locator("#browser-profiles-container")).to_be_visible()
+        assert page.locator("#browser-profile-select option").all_text_contents() == ["work", "* default-release", "default-release (Snap)"]
+        # The two installs share a friendly name, so the packaging has to reach the label the user reads
+        playwright_sync.expect(page.locator("#browser-profile-select")).to_have_value(signed_in)
+        playwright_sync.expect(page.locator("#toast-message")).to_contain_text("* marks the 1 signed in to Instagram")
+
+        assert page_errors == []
+        browser.close()

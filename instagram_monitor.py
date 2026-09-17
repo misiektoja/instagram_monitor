@@ -3707,7 +3707,7 @@ def create_web_dashboard_app():
     @app.route('/api/session/firefox/profiles', methods=['GET'])
     def api_firefox_profiles():  # type: ignore
         try:
-            profiles = [{'name': p['name'], 'path': p['path']} for p in list_firefox_profiles()]
+            profiles = [{'name': p['name'], 'path': p['path'], 'install': p['install'], 'signed_in': cookie_file_has_instagram_session(p['path'], firefox=True)} for p in list_firefox_profiles()]
             return jsonify({'success': True, 'profiles': profiles})  # type: ignore
         except Exception as e:
             # Profile discovery already returns local paths and its failure detail tells the operator what to fix
@@ -3723,7 +3723,7 @@ def create_web_dashboard_app():
         if system() == "Windows":
             return jsonify({'success': False, 'error': chromium_windows_unsupported_message(browser)}), 400  # type: ignore
         try:
-            profiles = [{'dir': p['dir'], 'name': p['name']} for p in list_chromium_profiles(browser)]
+            profiles = [{'dir': p['dir'], 'name': p['name'], 'signed_in': cookie_file_has_instagram_session(p.get('cookie_file'))} for p in list_chromium_profiles(browser)]
             return jsonify({'success': True, 'profiles': profiles})  # type: ignore
         except Exception as e:
             # Profile discovery already returns local paths and its failure detail tells the operator what to fix

@@ -367,6 +367,31 @@ class TestDashboardConfigAndSession:
         assert response.status_code == 400
         assert "not supported on Windows" in response.get_json()["error"]
 
+    # Both profile lists report which profile holds an Instagram session, so the dropdown is not a blind choice
+    def test_profile_listings_report_the_session_state(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "system", lambda: "Darwin")
+        monkeypatch.setattr(im_module, "list_firefox_profiles", lambda: [{"dir": "a.default", "name": "default", "path": "/u/a/cookies.sqlite", "install": ""}, {"dir": "b.default", "name": "default", "path": "/u/b/cookies.sqlite", "install": "Snap"}])
+        monkeypatch.setattr(im_module, "list_chromium_profiles", lambda browser: [{"dir": "Default", "name": "Your Chrome", "cookie_file": "/u/Default/Cookies"}])
+        monkeypatch.setattr(im_module, "cookie_file_has_instagram_session", lambda cookie_file, firefox=False: cookie_file in ("/u/b/cookies.sqlite", "/u/Default/Cookies"))
+
+        firefox = client.get("/api/session/firefox/profiles").get_json()["profiles"]
+
+        assert [p["signed_in"] for p in firefox] == [False, True]
+        assert [p["install"] for p in firefox] == ["", "Snap"], "two installs sharing a profile name are told apart in the dropdown"
+
+        chromium = client.get("/api/session/chromium/profiles?browser=chrome").get_json()["profiles"]
+
+        assert chromium[0]["signed_in"] is True
+
+    # An unreadable cookie database leaves the state unknown rather than claiming the profile is signed out
+    def test_an_unreadable_profile_reports_an_unknown_state(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "list_firefox_profiles", lambda: [{"dir": "a.default", "name": "default", "path": "/u/a/cookies.sqlite", "install": ""}])
+        monkeypatch.setattr(im_module, "cookie_file_has_instagram_session", lambda cookie_file, firefox=False: None)
+
+        assert client.get("/api/session/firefox/profiles").get_json()["profiles"][0]["signed_in"] is None
+
     # Dashboard profile failures retain the filesystem detail the local operator needs to troubleshoot them
     def test_profile_listing_failure_returns_exception_details(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)
