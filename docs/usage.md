@@ -19,6 +19,8 @@ For example, the PyPI command `instagram_monitor target1 --doctor` becomes `dock
 
 In Windows Command Prompt replace `${PWD}` with `%cd%`. If your runtime reports that `:z` is invalid, remove only that suffix. A direct Docker run of the Web Dashboard also needs `-p 127.0.0.1:8000:8000` before the image name. The current host directory appears as `/data` inside the container, so container paths to its files must start with `/data`.
 
+The manual-script prefix names the file rather than its path, so run it from the directory holding `instagram_monitor.py`. From another directory, use the full path instead, for example `python3 /opt/instagram-monitor/instagram_monitor.py --doctor`. The commands the tool prints after setup and Doctor use the same short form.
+
 <a id="monitoring-mode"></a>
 ## Monitoring Mode
 

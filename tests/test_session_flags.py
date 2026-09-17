@@ -210,8 +210,8 @@ class TestNotifyMonitoringError:
         assert (state.webhook_failures, state.webhook_retry_at) == (0, 0)
         assert state.pending("webhook", True, 0) is True
 
-    # A failure that changes category is a different failure, so it earns each channel a new alert
-    def test_a_changed_failure_category_earns_a_new_alert(self, im_module, monkeypatch):
+    # One outage earns one alert per channel, however the failure changes, until a check succeeds again
+    def test_a_changed_failure_category_does_not_earn_a_second_alert(self, im_module, monkeypatch):
         calls = self._capture(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
@@ -222,8 +222,8 @@ class TestNotifyMonitoringError:
         self._notify(im_module, state, "401 Unauthorized", 3)
         self._notify(im_module, state, "The read operation timed out", 4)
 
-        assert len(calls["email"]) == 2
-        assert len(calls["webhook"]) == 2
+        assert len(calls["email"]) == 1
+        assert len(calls["webhook"]) == 1
 
     # A run that recovered and fails again is in a new outage, which deserves its own alert
     def test_a_reset_state_alerts_again(self, im_module, monkeypatch):
@@ -284,12 +284,12 @@ class TestOneOutageIsOneAlertWhateverItsSubtype:
         assert len(flapping_sent) == len(steady_sent)
         assert flapping_state.email_failures == steady_state.email_failures > 1
 
-    # A failure from another family is a different problem, so it still earns each channel its own alert
-    def test_a_failure_from_another_family_still_alerts(self, im_module, monkeypatch):
+    # A failure from another family is still the same outage, so the console reports the change while the alert is not repeated
+    def test_a_failure_from_another_family_is_reported_without_a_second_alert(self, im_module, monkeypatch):
         reports, sent, _ = self._run(im_module, monkeypatch, ["Temporary failure in name resolution", "The read operation timed out", "429 Too Many Requests"])
 
         assert reports == ["full", "", "changed"]
-        assert len(sent) == 2
+        assert len(sent) == 1
 
 
 class TestNotifySessionFlagged:

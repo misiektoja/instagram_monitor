@@ -10572,12 +10572,11 @@ def is_session_flagged(error_msg, bot):
     return False
 
 
-# Tracks the error alert of one monitored target: which channel has delivered it and for which failure category
+# Tracks the error alert of one monitored target: which channel has delivered it and how long a channel that failed waits before the next attempt
 @dataclass
 class ErrorAlertState:
     email_sent: bool = False
     webhook_sent: bool = False
-    code: Optional[str] = None
     email_failures: int = 0
     webhook_failures: int = 0
     email_retry_at: int = 0
@@ -10587,7 +10586,6 @@ class ErrorAlertState:
     def reset(self):
         self.email_sent = False
         self.webhook_sent = False
-        self.code = None
         self.email_failures = 0
         self.webhook_failures = 0
         self.email_retry_at = 0
@@ -10613,14 +10611,8 @@ class ErrorAlertState:
         print(f"* The {channel} alert is on hold for {display_time(delay)} after {failures} {'attempt' if failures == 1 else 'attempts'}, then tried again")
 
 
-# Alerts both channels once a failure has lasted ERROR_ALERT_AFTER_SECONDS or at once when it cannot clear on its own, once per failure category and per channel
+# Alerts both channels once a failure has lasted ERROR_ALERT_AFTER_SECONDS or at once when it cannot clear on its own, once per channel and per outage
 def notify_monitoring_error(user, advice, error_msg, failed_since, failure_count, check_interval, alert_state):
-    # A failure that changes family is a different failure, so each channel earns a new alert for it, while an internet
-    # outage flapping between a timeout and an unresolved host stays one failure. Keyed on the family the console
-    # reporter groups by, or one outage would alert on every subtype and clear the hold of a channel that is failing
-    if outage_family(advice.code) != outage_family(alert_state.code):
-        alert_state.reset()
-        alert_state.code = advice.code
     # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
     lasted = max(0, int(time.time()) - failed_since)
     if advice.retryable and lasted < ERROR_ALERT_AFTER_SECONDS:
