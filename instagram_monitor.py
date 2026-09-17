@@ -3993,10 +3993,10 @@ def create_web_dashboard_app():
     def api_test_email():  # type: ignore
         global SMTP_SSL
         print("* Sending test email notification (triggered via web dashboard) ...")
-        m_subject = "instagram_monitor: test email"
+        m_subject = "Instagram Monitor test email"
         m_body = "This test email was sent from the web dashboard. Your SMTP settings work."
         m_body_html = "This test email was sent from the <b>web dashboard</b>. Your SMTP settings work."
-        res = send_email(m_subject, m_body, m_body_html, SMTP_SSL, smtp_timeout=5)
+        res = send_email(m_subject, m_body, m_body_html, SMTP_SSL, smtp_timeout=5, report_delivery=False)
         if res == 0:
             print("* Email notification sent successfully")
             print_cur_ts(newline=True)
@@ -4015,10 +4015,11 @@ def create_web_dashboard_app():
         # Temporarily enable if we are testing
         old_webhook_enabled = WEBHOOK_ENABLED
         WEBHOOK_ENABLED = True
-        res = send_webhook("instagram_monitor: test webhook", "This test notification was sent from the web dashboard. Your webhook settings work.", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE)
+        res = send_webhook("Instagram Monitor test webhook", "This test notification was sent from the web dashboard. Your webhook settings work.", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE, report_delivery=False)
         WEBHOOK_ENABLED = old_webhook_enabled
 
         if res == 0:
+            print("* Webhook sent successfully !")
             print_cur_ts(newline=True)
             return jsonify({'success': True})  # type: ignore
         print("* Error: Test webhook notification failed. Check the error message above.")
@@ -5882,8 +5883,22 @@ def is_valid_fqdn(value) -> bool:
     return all(1 <= len(label) <= 63 and label[0] != "-" and label[-1] != "-" and all(character.isascii() and (character.isalnum() or character == "-") for character in label) for label in labels)
 
 
+# Closes an SMTP session without changing the result of an accepted or failed message
+def smtp_quit_quietly(smtp_object):
+    if smtp_object is None:
+        return
+    try:
+        smtp_object.quit()
+    except Exception as quit_error:
+        debug_print("SMTP quit", outcome="failed", error=f"{type(quit_error).__name__}: {quit_error}")
+        try:
+            smtp_object.close()
+        except Exception as close_error:
+            debug_print("SMTP close", outcome="failed", error=f"{type(close_error).__name__}: {close_error}")
+
+
 # Sends email notification
-def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15):
+def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15, report_delivery=True):
     subject = apply_privacy_substitutions(subject)
     body = apply_privacy_substitutions(body)
     body_html = apply_privacy_substitutions(body_html)
@@ -5919,6 +5934,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         print_recovery_error("Cannot send email because the message has no body")
         return 1
 
+    smtpObj = None
     try:
         if use_ssl:
             ssl_context = smtp_ssl_context()
@@ -5949,11 +5965,13 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
             email_msg.attach(img_part)
 
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
-        smtpObj.quit()
     except Exception as e:
         print_recovery_error(e, context="email", summary=f"Error sending email: {e}")
         return 1
-    verbose_delivery_print(f"Email delivered to {RECEIVER_EMAIL}: '{subject}'")
+    finally:
+        smtp_quit_quietly(smtpObj)
+    if report_delivery:
+        verbose_delivery_print(f"Email sent to {RECEIVER_EMAIL}")
     return 0
 
 
@@ -6494,7 +6512,7 @@ def _retain_webhook_secrets(deliver):
 
 @_retain_webhook_secrets
 # Sends a notification with bounded retries and a fixed destination for each delivery
-def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status", force=False):
+def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status", force=False, report_delivery=True):
     if not WEBHOOK_ENABLED or is_placeholder_setting(WEBHOOK_URL):
         return 1
 
@@ -6613,7 +6631,8 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                     response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers=final_headers, json=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS)
 
             if 200 <= response.status_code <= 299:
-                verbose_delivery_print(f"Webhook delivered through {webhook_provider_display_name(provider)}: '{payload['title']}'")
+                if report_delivery:
+                    verbose_delivery_print(f"Webhook sent through {webhook_provider_display_name(provider)}")
                 return 0
             last_error = response
             if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
@@ -11020,7 +11039,7 @@ def notify_monitoring_error(user, advice, error_msg, failed_since, failure_count
         return False
     streak = f"failure #{failure_count}, failing for {display_time(lasted)}"
     interval = f"{display_time(check_interval)} ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)})"
-    alert_subject = f"instagram_monitor: error for {user} ({streak})"
+    alert_subject = f"Instagram error for {user} ({streak})"
     alert_body = f"{advice.summary} ({streak})\n{error_msg}\n\nTo fix: {advice.fix}\n\nCheck interval: {interval}{get_cur_ts(nl_ch + 'Timestamp: ')}"
     alert_body_html = f"{html_text(str(advice.summary))} ({escape(streak)})<br><br><b>{html_text(str(error_msg))}</b><br><br>To fix: {html_text(str(advice.fix))}<br><br>Check interval: <b>{escape(interval)}</b>{get_cur_ts('<br>Timestamp: ')}"
     email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=email_pending, webhook_enabled=webhook_pending, webhook_title=f"Error for {user}", webhook_description=f"{advice.summary}\n{error_msg}\n({streak})\nTo fix: {advice.fix}", webhook_color=0xFF0000)
@@ -11058,7 +11077,7 @@ def notify_session_flagged(user, err_str, error_msg):
     identity_text = "".join(f"\n{label}: {value}" for label, value in identity_rows)
     identity_html = "".join(f"<br>{label}: <b>{escape(str(value))}</b>" for label, value in identity_rows)
 
-    alert_subject = f"instagram_monitor: session account flagged (target: {user})"
+    alert_subject = f"Instagram session account flagged (target: {user})"
     alert_body = f"{err_str}\n\nTriggering error: {error_msg}\n{identity_text}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
     alert_body_html = f"{escape(str(err_str))}<br><br>Triggering error: <b>{escape(str(error_msg))}</b><br>{identity_html}{get_cur_ts('<br><br>Timestamp: ')}"
     send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=ERROR_NOTIFICATION, webhook_title=f"🚩 Session account flagged (target: {user})", webhook_description=f"{err_str}\n\nTriggering error: `{error_msg}`\n{identity_text}", webhook_color=0xFF0000)
@@ -15160,7 +15179,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             if int(time.time()) - behuman_failed_since >= ERROR_ALERT_AFTER_SECONDS:
                 error_msg = format_error_message(e)
                 streak = f"failure #{consecutive_behuman_errors}, failing for {display_time(int(time.time()) - behuman_failed_since)}"
-                alert_subject = f"instagram_monitor: BeHuman mode error for {user} ({streak})"
+                alert_subject = f"Instagram BeHuman mode error for {user} ({streak})"
                 alert_body = f"A BeHuman simulation error occurred for user {user} ({streak}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                 alert_body_html = f"A BeHuman simulation error occurred for user <b>{escape(str(user))}</b> ({escape(streak)}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
                 # Tried again on a later failing simulation once the alert is due, after a wait that grows with each failed attempt
@@ -16838,7 +16857,7 @@ def _doctor_send_test_webhook() -> int:
     previous_enabled = WEBHOOK_ENABLED
     try:
         WEBHOOK_ENABLED = True
-        return send_webhook("instagram_monitor: doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE)
+        return send_webhook("Instagram Monitor doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE, report_delivery=False)
     finally:
         WEBHOOK_ENABLED = previous_enabled
 
@@ -16851,7 +16870,7 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> None:
     print("Doctor will not write files. Each approved test sends one real message.\n")
     if report.smtp_ready:
         if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
-            result = send_email("instagram_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "This test email was sent after approval in <b>--doctor</b>. Your SMTP delivery settings work.", SMTP_SSL, smtp_timeout=5)
+            result = send_email("Instagram Monitor doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "This test email was sent after approval in <b>--doctor</b>. Your SMTP delivery settings work.", SMTP_SSL, smtp_timeout=5, report_delivery=False)
             if result == 0:
                 check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", "Doctor test email delivered", "One real test email was sent after confirmation")
             else:
@@ -18733,10 +18752,10 @@ def run_main():
 
     if args.send_test_email:
         print("* Sending test email notification ...\n")
-        m_subject = "instagram_monitor: test email"
+        m_subject = "Instagram Monitor test email"
         m_body = "This test email was sent by --send-test-email. Your SMTP settings work."
         m_body_html = "This test email was sent by <b>--send-test-email</b>. Your SMTP settings work."
-        if send_email(m_subject, m_body, m_body_html, SMTP_SSL, smtp_timeout=5) == 0:
+        if send_email(m_subject, m_body, m_body_html, SMTP_SSL, smtp_timeout=5, report_delivery=False) == 0:
             print("* Email sent successfully !")
         else:
             sys.exit(1)
@@ -18755,7 +18774,7 @@ def run_main():
         old_webhook_enabled = WEBHOOK_ENABLED
         WEBHOOK_ENABLED = True
 
-        if send_webhook("instagram_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE) == 0:
+        if send_webhook("Instagram Monitor test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE, report_delivery=False) == 0:
             print("* Webhook sent successfully !")
         else:
             print("* Error: Test webhook notification failed. Check the error message above.")

@@ -248,8 +248,8 @@ def test_the_test_messages_use_the_shared_wording(im_module, monkeypatch):
             im_module.run_main()
         assert exc.value.code == 0
 
-    assert email.call_args.args[:2] == ("instagram_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work.")
-    assert delivery.call_args.args[:2] == ("instagram_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.")
+    assert email.call_args.args[:2] == ("Instagram Monitor test email", "This test email was sent by --send-test-email. Your SMTP settings work.")
+    assert delivery.call_args.args[:2] == ("Instagram Monitor test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.")
 
 
 # Verifies a test webhook with no destination reports the shared three-line block instead of a bare error

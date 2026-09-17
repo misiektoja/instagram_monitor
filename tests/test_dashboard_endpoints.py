@@ -391,7 +391,7 @@ class TestDashboardTestNotifications:
 
         assert response.status_code == 200
         assert response.get_json() == {"success": True}
-        assert calls[0][0][0] == "instagram_monitor: test email"
+        assert calls[0][0][0] == "Instagram Monitor test email"
 
     # Test webhook route temporarily enables webhooks and restores the previous value
     def test_test_webhook_uses_stubbed_sender(self, im_module, monkeypatch):
@@ -406,7 +406,7 @@ class TestDashboardTestNotifications:
 
         assert response.status_code == 200
         assert response.get_json() == {"success": True}
-        assert calls[0][0][0] == "instagram_monitor: test webhook"
+        assert calls[0][0][0] == "Instagram Monitor test webhook"
         assert im_module.WEBHOOK_ENABLED is False
 
 

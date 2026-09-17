@@ -500,7 +500,7 @@ class TestWebhookDeliveryTests:
         assert posts == []
 
 
-# Verifies a delivered webhook names the provider and the alert in verbose, the way the sibling monitors report it
+# Verifies a webhook receipt names its provider
 def test_a_delivered_webhook_is_reported_in_verbose(im_module, monkeypatch, capsys):
     monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
     monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
@@ -512,7 +512,7 @@ def test_a_delivered_webhook_is_reported_in_verbose(im_module, monkeypatch, caps
 
     assert im_module.send_webhook("Profile picture changed", "desc", notification_type="status") == 0
 
-    assert "* Webhook delivered through Discord: 'Profile picture changed'" in capsys.readouterr().out
+    assert "* Webhook sent through Discord" in capsys.readouterr().out
 
 
 # Verifies the delivery line follows the flag rather than printing on every alert, so an ordinary run stays
@@ -531,7 +531,7 @@ def test_a_delivered_webhook_stays_quiet_without_the_flag(im_module, monkeypatch
     assert capsys.readouterr().out == ""
 
 
-# Verifies a delivered email names where it went and what it was, so verbose answers whether the alert arrived
+# Verifies an email receipt names its recipient
 def test_a_delivered_email_is_reported_in_verbose(im_module, monkeypatch, capsys):
     monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.com")
     monkeypatch.setattr(im_module, "SMTP_PORT", 587)
@@ -545,7 +545,7 @@ def test_a_delivered_email_is_reported_in_verbose(im_module, monkeypatch, capsys
 
     assert im_module.send_email("Profile picture changed", "Body", "", False) == 0
 
-    assert "* Email delivered to receiver@example.com: 'Profile picture changed'" in capsys.readouterr().out
+    assert "* Email sent to receiver@example.com" in capsys.readouterr().out
 
 
 # Verifies DELIVERY_CONFIRMATIONS drops both delivery lines without turning the rest of verbose mode off
@@ -570,8 +570,8 @@ def test_delivery_confirmations_can_be_turned_off(im_module, monkeypatch, capsys
     assert im_module.send_email("Profile picture changed", "Body", "", False) == 0
 
     output = capsys.readouterr().out
-    assert "Webhook delivered" not in output
-    assert "Email delivered" not in output
+    assert "Webhook sent through" not in output
+    assert "Email sent to" not in output
 
 
 class TestSendNotificationChannels:

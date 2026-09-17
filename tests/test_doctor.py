@@ -945,7 +945,7 @@ class TestDoctorDeliveryTests:
         report = im_module.DoctorReport(smtp_ready=True, webhook_ready=True)
         im_module._doctor_offer_notification_tests(report)
         assert report.count("FAIL") == 0
-        email.assert_called_once_with("instagram_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "This test email was sent after approval in <b>--doctor</b>. Your SMTP delivery settings work.", im_module.SMTP_SSL, smtp_timeout=5)
+        email.assert_called_once_with("Instagram Monitor doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "This test email was sent after approval in <b>--doctor</b>. Your SMTP delivery settings work.", im_module.SMTP_SSL, smtp_timeout=5, report_delivery=False)
         webhook.assert_called_once_with()
 
     # Noninteractive doctor runs never offer or send delivery tests
@@ -977,7 +977,7 @@ class TestDoctorDeliveryTests:
         monkeypatch.setattr(im_module, "send_webhook", delivery)
         assert im_module._doctor_send_test_webhook() == 0
         assert im_module.WEBHOOK_ENABLED is False
-        delivery.assert_called_once_with("instagram_monitor: doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type=im_module.WEBHOOK_TEST_NOTIFICATION_TYPE)
+        delivery.assert_called_once_with("Instagram Monitor doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type=im_module.WEBHOOK_TEST_NOTIFICATION_TYPE, report_delivery=False)
 
 
 # Verifies a secret passed as an argument is reported under the command line rather than the configuration file
