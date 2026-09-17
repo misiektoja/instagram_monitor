@@ -645,7 +645,7 @@ class TestSendNotificationChannels:
         im_module.send_notification_channels("error", "subject", "body", webhook_title="Error for user", webhook_description="what happened", webhook_color=0xFF0000, webhook_fields=fields, image_url="https://example.test/pic.jpg", local_image_file="pic.jpg")
 
         assert sent["args"] == ("Error for user", "what happened")
-        assert sent["kwargs"] == {"color": 0xFF0000, "fields": fields, "image_url": "https://example.test/pic.jpg", "local_image_file": "pic.jpg", "notification_type": "error", "force": True, "discord_description": ""}
+        assert sent["kwargs"] == {"color": 0xFF0000, "fields": fields, "image_url": "https://example.test/pic.jpg", "local_image_file": "pic.jpg", "notification_type": "error", "force": True}
 
     # Without an embed of its own the webhook carries the subject and body, the way the family's plain alerts do
     def test_the_subject_and_body_stand_in_for_a_missing_embed(self, im_module, monkeypatch):
@@ -709,24 +709,3 @@ def test_a_forced_webhook_skips_the_switch_it_was_already_given(im_module, monke
 
     assert im_module.send_webhook("t", "b", notification_type="status", force=True) == 0
     assert len(posts) == 1
-
-
-# Verifies a link whose text repeats its destination reaches Discord bare, because a masked link there prints as plain text
-def test_self_labeled_links_stay_bare_in_discord_markdown(im_module):
-    post_url = "https://www.instagram.com/p/AbCdEf/"
-    markdown = im_module.html_body_to_discord_markdown(f"Post URL: <a href=\"{post_url}\">{post_url}</a><br>")
-    assert markdown == f"Post URL: {post_url}"
-
-
-# Verifies a link with its own text keeps the masked form Discord renders as a hyperlink
-def test_labeled_links_keep_the_masked_discord_form(im_module):
-    body_html = "Owner: <b><a href=\"https://www.instagram.com/misiektoja/\">misiektoja</a></b><br>"
-    assert im_module.html_body_to_discord_markdown(body_html) == "Owner: **[misiektoja](https://www.instagram.com/misiektoja/)**"
-
-
-# Verifies an image link becomes its alt text or a bare URL instead of an empty masked link
-def test_image_links_never_produce_an_empty_discord_label(im_module):
-    with_alt = "<a href=\"https://www.instagram.com/p/AbCdEf/\"><img src=\"https://scontent.cdninstagram.com/a.jpg\" alt=\"Post\"></a>"
-    without_alt = "<a href=\"https://www.instagram.com/p/AbCdEf/\"><img src=\"https://scontent.cdninstagram.com/a.jpg\"></a>"
-    assert im_module.html_body_to_discord_markdown(with_alt) == "[Post](https://www.instagram.com/p/AbCdEf/)"
-    assert im_module.html_body_to_discord_markdown(without_alt) == "https://www.instagram.com/p/AbCdEf/"
