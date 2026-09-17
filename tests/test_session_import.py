@@ -1,6 +1,7 @@
 """Offline tests for browser cookie filtering and session path discovery."""
 
 import sqlite3
+import stat
 import tempfile
 from pathlib import Path
 
@@ -277,3 +278,103 @@ class TestLiveBrowserCookies:
         assert forbidden not in uri
         assert uri.endswith("?mode=ro")
         assert uri.count("?") == 1
+
+
+class TestReadOnlyMediaFallback:
+    # The Docker Firefox import mounts the profile read-only, and SQLite cannot open a WAL database that way
+    # because it still needs to write the shared-memory file. Losing the immutable fallback would break that
+    # import completely, which is why this pins it rather than trusting the read-only mode alone
+    def test_a_read_only_profile_still_imports(self, im_module):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            directory = Path(directory_name)
+            cookie_path = directory / "cookies.sqlite"
+            writer = sqlite3.connect(cookie_path)
+            writer.execute("PRAGMA journal_mode=WAL")
+            writer.execute("CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT)")
+            writer.execute("INSERT INTO moz_cookies VALUES ('instagram.com', 'sessionid', 'mounted')")
+            writer.commit()
+            writer.close()
+            for entry in directory.iterdir():
+                entry.chmod(stat.S_IRUSR)
+            directory.chmod(stat.S_IRUSR | stat.S_IXUSR)
+            try:
+                with pytest.raises(sqlite3.OperationalError):
+                    sqlite3.connect(im_module.sqlite_readonly_uri(cookie_path), uri=True).execute("SELECT 1 FROM moz_cookies")
+
+                assert im_module.get_firefox_cookie_dict(str(cookie_path)) == {"sessionid": "mounted"}
+                assert im_module.cookie_file_has_instagram_session(str(cookie_path), firefox=True) is True
+            finally:
+                directory.chmod(stat.S_IRWXU)
+                for entry in directory.iterdir():
+                    entry.chmod(stat.S_IRUSR | stat.S_IWUSR)
+
+
+class TestFirefoxProfileAmbiguity:
+    # Snap, Flatpak and distribution builds keep separate profile trees that commonly share a friendly name
+    @staticmethod
+    def _two_installs():
+        return [{"dir": "aaa.default-release", "name": "default-release", "path": "/home/u/.mozilla/firefox/aaa.default-release/cookies.sqlite", "install": ""}, {"dir": "bbb.default-release", "name": "default-release", "path": "/home/u/snap/firefox/common/.mozilla/firefox/bbb.default-release/cookies.sqlite", "install": "Snap"}]
+
+    # Verifies a name matching two installs is refused rather than resolved to whichever was listed first
+    def test_an_ambiguous_profile_name_is_refused(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "list_firefox_profiles", self._two_installs)
+
+        with pytest.raises(im_module.CookieImportError) as failure:
+            im_module.resolve_firefox_profile("default-release")
+
+        assert "matches 2 profiles" in str(failure.value)
+        assert "aaa.default-release" in str(failure.value) and "bbb.default-release" in str(failure.value)
+
+    # Verifies the full profile directory still resolves, since that is what the ambiguity error tells you to pass
+    def test_the_full_directory_resolves_one_install(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "list_firefox_profiles", self._two_installs)
+
+        assert im_module.resolve_firefox_profile("bbb.default-release").endswith("snap/firefox/common/.mozilla/firefox/bbb.default-release/cookies.sqlite")
+
+    # Verifies an unknown name lists the profiles tagged by install, so two entries do not read identically
+    def test_an_unknown_profile_lists_installs(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "list_firefox_profiles", self._two_installs)
+
+        with pytest.raises(im_module.CookieImportError) as failure:
+            im_module.resolve_firefox_profile("work")
+
+        assert "default-release, default-release (Snap)" in str(failure.value)
+
+    # Verifies the packaging is read from the profile path rather than guessed
+    @pytest.mark.parametrize("path,expected", [("/home/u/.mozilla/firefox/a.default/cookies.sqlite", ""), ("/home/u/snap/firefox/common/.mozilla/firefox/a.default/cookies.sqlite", "Snap"), ("/home/u/.var/app/org.mozilla.firefox/.mozilla/firefox/a.default/cookies.sqlite", "Flatpak")])
+    def test_the_install_is_read_from_the_path(self, im_module, path, expected):
+        assert im_module.firefox_install_label(path) == expected
+
+
+class TestSingleProfileWarning:
+    # Verifies the one profile available is checked before the import, since there is no other one to pick instead
+    def test_the_only_firefox_profile_warns_when_signed_out(self, im_module, monkeypatch, capsys):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            cookie_path = Path(directory_name) / "cookies.sqlite"
+            with sqlite3.connect(cookie_path) as connection:
+                connection.execute("CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT)")
+                connection.execute("INSERT INTO moz_cookies VALUES ('instagram.com', 'csrftoken', 'x')")
+            monkeypatch.setattr(im_module, "list_firefox_profiles", lambda: [{"dir": "a.default", "name": "default", "path": str(cookie_path), "install": ""}])
+
+            assert im_module.get_firefox_cookiefile() == str(cookie_path)
+            assert "not signed in to Instagram" in capsys.readouterr().out
+
+    # Verifies a signed-in profile is used without a warning, and an unreadable one is not guessed at
+    @pytest.mark.parametrize("name", ["sessionid", None])
+    def test_a_usable_or_unknown_profile_warns_about_nothing(self, im_module, monkeypatch, capsys, name):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            cookie_path = Path(directory_name) / "cookies.sqlite"
+            if name is None:
+                cookie_path.write_bytes(b"not a database")
+            else:
+                with sqlite3.connect(cookie_path) as connection:
+                    connection.execute("CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT)")
+                    connection.execute("INSERT INTO moz_cookies VALUES ('instagram.com', ?, 'x')", (name,))
+            monkeypatch.setattr(im_module, "list_firefox_profiles", lambda: [{"dir": "a.default", "name": "default", "path": str(cookie_path), "install": ""}])
+
+            im_module.get_firefox_cookiefile()
+
+            assert "not signed in" not in capsys.readouterr().out

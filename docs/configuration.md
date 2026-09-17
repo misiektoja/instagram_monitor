@@ -201,7 +201,7 @@ On Windows, Chrome 127 and newer prevent external programs from reading these co
 
 Every supported browser can have several profiles with separate cookies. Use one of these methods:
 
-- **Pick by name** with `--browser-profile`. Use the Firefox profile name (e.g. `default-release`) or the Chromium profile directory (e.g. `Default`, `Profile 1`):
+- **Pick by name** with `--browser-profile`. Use the Firefox profile name (e.g. `default-release`) or the Chromium profile directory (e.g. `Default`, `Profile 1`). On Linux, Snap, Flatpak and distribution builds of Firefox keep separate profile trees that often share a name. A name matching more than one is refused rather than guessed at, and the error lists the full profile directories to pass instead:
 
     ```sh
     instagram_monitor --import-browser-session --browser chrome --browser-profile "Profile 1"

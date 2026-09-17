@@ -8320,6 +8320,28 @@ def firefox_cookie_patterns():
     return tuple(dict.fromkeys(patterns))
 
 
+# Names the Firefox packaging a profile belongs to, since Snap, Flatpak and distribution builds keep separate
+# profile trees that routinely contain the same friendly name
+def firefox_install_label(profile_path) -> str:
+    lowered = str(profile_path).replace(os.sep, "/").lower()
+    if "/snap/firefox/" in lowered:
+        return "Snap"
+    if "/org.mozilla.firefox/" in lowered:
+        return "Flatpak"
+    return ""
+
+
+# Describes one Firefox profile for a message, tagging the packaging when it is not the distribution build
+def firefox_profile_description(profile) -> str:
+    return f"{profile['name']} ({profile['install']})" if profile.get("install") else str(profile["name"])
+
+
+# Warns that the only profile available holds no Instagram session, since there is no other one to choose instead
+def warn_when_profile_is_signed_out(cookie_file, description: str, firefox: bool = False) -> None:
+    if cookie_file_has_instagram_session(cookie_file, firefox=firefox) is False:
+        print(f"* Warning: {description} is not signed in to Instagram, so the import will most likely fail. To fix: open https://www.instagram.com/ in that browser, sign in, then run the import again")
+
+
 # Lists available Firefox profiles with their directory, friendly name and cookies.sqlite path
 def list_firefox_profiles():
     profiles = []
@@ -8333,7 +8355,7 @@ def list_firefox_profiles():
             profile_dir = basename(dirname(path))
             # Firefox profile dirs look like "<random>.default-release"; the part after the first dot is the friendly name
             friendly = profile_dir.split(".", 1)[1] if "." in profile_dir else profile_dir
-            profiles.append({"dir": profile_dir, "name": friendly, "path": path})
+            profiles.append({"dir": profile_dir, "name": friendly, "path": path, "install": firefox_install_label(path)})
     return profiles
 
 
@@ -8345,19 +8367,25 @@ def get_firefox_cookiefile():
         raise SystemExit("No Firefox cookies.sqlite file found, use --cookie-file COOKIEFILE flag")
 
     if len(profiles) == 1:
+        warn_when_profile_is_signed_out(profiles[0]["path"], f"the only Firefox profile, '{firefox_profile_description(profiles[0])}',", firefox=True)
         return profiles[0]["path"]
 
-    choices = [{"label": f"{p['name']}  -  {p['path']}", "signed_in": cookie_file_has_instagram_session(p["path"], firefox=True), "value": p["path"]} for p in profiles]
+    choices = [{"label": f"{firefox_profile_description(p)}  -  {p['path']}", "signed_in": cookie_file_has_instagram_session(p["path"], firefox=True), "value": p["path"]} for p in profiles]
     return select_profile_interactively("Multiple Firefox profiles found:", choices)
 
 
 # Resolves a Firefox profile name (directory or friendly name) to its cookies.sqlite path
 def resolve_firefox_profile(name):
     profiles = list_firefox_profiles()
-    for p in profiles:
-        if name.lower() in (p["dir"].lower(), p["name"].lower()):
-            return p["path"]
-    available = ", ".join(p["name"] for p in profiles) or "none found"
+    matches = [p for p in profiles if name.lower() in (p["dir"].lower(), p["name"].lower())]
+    if len(matches) == 1:
+        return matches[0]["path"]
+    # Separate Firefox installs share friendly names, and silently importing from whichever was globbed first
+    # would hand the user a session from a browser they did not name
+    if matches:
+        directories = ", ".join(p["dir"] for p in matches)
+        raise CookieImportError(f"Firefox profile '{name}' matches {len(matches)} profiles from different Firefox installs, pass the full profile directory instead (one of: {directories})")
+    available = ", ".join(firefox_profile_description(p) for p in profiles) or "none found"
     raise CookieImportError(f"Firefox profile '{name}' not found (available: {available})")
 
 
@@ -8515,7 +8543,7 @@ def get_firefox_cookie_dict(cookiefile):
 def firefox_profile_alternatives(cookiefile) -> str:
     try:
         used = os.path.realpath(os.path.expanduser(str(cookiefile)))
-        others = [p["name"] for p in list_firefox_profiles() if os.path.realpath(os.path.expanduser(p["path"])) != used]
+        others = [firefox_profile_description(p) for p in list_firefox_profiles() if os.path.realpath(os.path.expanduser(p["path"])) != used]
     except Exception:
         return ""
     return f" (other profiles: {', '.join(others)})" if others else ""
@@ -8660,6 +8688,7 @@ def select_chromium_profile_cli(browser, explicit_profile):
     if not profiles:
         raise SystemExit(f"No {browser_label(browser)} profiles found - is it installed and are you logged in to Instagram?")
     if len(profiles) == 1:
+        warn_when_profile_is_signed_out(profiles[0].get("cookie_file"), f"the only {browser_label(browser)} profile, '{profiles[0]['dir']}',")
         return profiles[0]["dir"]
 
     choices = [{"label": f"{p['dir']}  -  {p['name']}", "signed_in": cookie_file_has_instagram_session(p.get("cookie_file")), "value": p["dir"]} for p in profiles]
