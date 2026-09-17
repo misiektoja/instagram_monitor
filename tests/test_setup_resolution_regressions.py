@@ -1,5 +1,4 @@
 import copy
-from pathlib import Path
 
 import pytest
 
@@ -51,14 +50,11 @@ def test_exported_secret_keeps_precedence(monkeypatch, tmp_path):
     assert monitor.effective_secret_after_setup("SMTP_PASSWORD", path, {"SMTP_PASSWORD": "synthetic-new"}) == ("synthetic-export", True)
 
 
-# Recovery commands identify the active installation even from an unrelated working directory
-def test_recovery_prefix_uses_running_interpreter(monkeypatch, tmp_path):
-    import sys
+# Recovery commands stay readable independently of the installation directory
+def test_recovery_prefix_uses_short_names(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    import shlex
-    command = monitor._wizard_cmd_prefix("manual")
-    assert shlex.quote(sys.executable) in command
-    assert shlex.quote(str(Path(monitor.__file__).resolve())) in command
+    assert monitor._wizard_local_command_args("manual") == ["python3", "instagram_monitor.py"]
+    assert monitor._wizard_local_command_args("pip") == ["instagram_monitor"]
 
 
 

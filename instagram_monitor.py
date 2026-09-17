@@ -8319,7 +8319,7 @@ def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
     try:
         from pycookiecheat import BrowserType, get_cookies
     except (ImportError, ModuleNotFoundError):
-        executable = sys.executable or ("python" if system() == "Windows" else "python3")
+        executable = ("python" if system() == "Windows" else "python3")
         install_command = _wizard_render_command([executable, "-m", "pip", "install", "pycookiecheat>=0.8"])
         raise CookieImportError(
             f"Importing {label} cookies requires the 'pycookiecheat' library !\n\n"
@@ -10754,7 +10754,7 @@ def missing_dependency_advice(package: str, effect: str, install_command: str, a
 
 # Returns the command that installs one package through the active Python environment
 def pip_install_command(requirement: str) -> str:
-    return _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", requirement])
+    return _wizard_render_command([("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", requirement])
 
 
 # Returns True when the formatted error indicates a profile could not be found (deleted/renamed target or a flagged session masking every profile)
@@ -15003,16 +15003,14 @@ def install_method_display_name(method: Optional[str] = None) -> str:
 
 
 # Returns local command arguments using friendly names or exact runtime paths
-def _wizard_local_command_args(method: str, exact: bool = True) -> List[str]:
+def _wizard_local_command_args(method: str, exact: bool = False) -> List[str]:
     if exact:
         executable = sys.executable or ("python" if system() == "Windows" else "python3")
         if method == "pip":
             return [executable, "-m", "instagram_monitor"]
         return [executable, str(Path(__file__).resolve())]
     path_class = PureWindowsPath if system() == "Windows" else Path
-    executable_name = path_class(sys.executable).name or ("python" if system() == "Windows" else "python3")
-    if system() == "Windows" and executable_name.casefold().endswith(".exe"):
-        executable_name = executable_name[:-4]
+    executable_name = "python" if system() == "Windows" else "python3"
     script_name = path_class(__file__).name
     return [executable_name, script_name] if method == "manual" else ["instagram_monitor"]
 
@@ -15036,7 +15034,7 @@ def _wizard_quote_argument(value) -> str:
 
 
 # Returns the command prefix used to invoke the tool for the detected install method
-def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, exact: bool = True, host_os: Optional[str] = None, web_dashboard_port: Optional[int] = None) -> str:
+def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, host_os: Optional[str] = None, web_dashboard_port: Optional[int] = None) -> str:
     selected_web_port = web_dashboard_port if web_dashboard_port is not None else WEB_DASHBOARD_PORT
     if method == "compose":
         port_flag = ""
@@ -15049,7 +15047,7 @@ def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, exact: bool = T
         user_flag = ' --user "$(id -u):$(id -g)"' if linux_user_mapping else ""
         current_directory = "%cd%" if host_os == "windows-cmd" else "${PWD}"
         return (f'docker run --rm -it --init{user_flag} -v "{current_directory}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor')
-    return _wizard_render_command(_wizard_local_command_args(method, exact=exact))
+    return _wizard_render_command(_wizard_local_command_args(method, exact=False))
 
 
 # Rejects container setup destinations that would disappear with the temporary container
@@ -15180,9 +15178,9 @@ def _wizard_action_command(method: str, action: str, config_path, env_path, targ
 
 
 # Returns the full Firefox import command with an optional exact dotenv destination
-def _firefox_import_cmd(method: str, env_path=None, exact: bool = True, host_os: Optional[str] = None, config_path=None, targets=()) -> str:
+def _firefox_import_cmd(method: str, env_path=None, host_os: Optional[str] = None, config_path=None, targets=()) -> str:
     selected_host = host_os or "linux"
-    prefix = _wizard_cmd_prefix(method, exact=exact, host_os=selected_host if method in ("docker", "compose") else host_os)
+    prefix = _wizard_cmd_prefix(method, host_os=selected_host if method in ("docker", "compose") else host_os)
     if method not in ("docker", "compose"):
         command = f"{prefix} --import-browser-session --browser firefox"
         if config_path is not None:
@@ -15236,7 +15234,8 @@ def _wizard_install_chromium_dependency(method: str) -> bool:
     requirement = "pycookiecheat>=0.8"
     executable = sys.executable or ("python" if system() == "Windows" else "python3")
     command = [executable, "-m", "pip", "install", requirement]
-    print(f"Installing Chromium browser support with:\n    {_wizard_render_command(command)}\n")
+    display_command = ["python" if platform.system() == "Windows" else "python3", *command[1:]]
+    print(f"Installing Chromium browser support with:\n    {_wizard_render_command(display_command)}\n")
     try:
         result = subprocess.run(command, check=False)
     except OSError as exc:
