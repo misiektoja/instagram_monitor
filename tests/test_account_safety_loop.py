@@ -172,3 +172,49 @@ class TestATruncatedListDoesNotReplaceASavedBaseline:
 
         assert stored == [80, saved[:80]]
         assert removals == [("followers", sorted(saved[80:]))]
+
+
+@pytest.mark.parametrize("kind", ["followers", "followings"])
+@pytest.mark.parametrize("challenge", [False, True])
+# Records a periodic list failure once when it passes from the paginator to the real monitor
+def test_periodic_list_failure_is_recorded_once(monitored_account, kind, challenge):
+    monkeypatch = monitored_account
+    monkeypatch.setattr(im, "SKIP_" + kind.upper(), False)
+    bot = SimpleNamespace(context=SimpleNamespace(_session=SimpleNamespace(), is_logged_in=True, iphone_headers={}), load_session_from_file=lambda *args: None)
+    profile = _profile()
+    field = "followers" if kind == "followers" else "followees"
+    lookups = []
+    fetches = []
+    waits = []
+    failure = im.instaloader.exceptions.AbortDownloadException("400 checkpoint_required") if challenge else im.instaloader.exceptions.TooManyRequestsException("429 Too Many Requests")
+
+    # Changes the reported count after startup so the periodic list path runs
+    def lookup(*args):
+        lookups.append(1)
+        setattr(profile, field, 1 if len(lookups) == 1 else 2)
+        return profile
+
+    # Produces the startup baseline then fails the next list request
+    def names(*args, **kwargs):
+        fetches.append(1)
+        if len(fetches) > 1:
+            raise failure
+        yield SimpleNamespace(username="saved")
+
+    # Ends the probe after the first periodic check if it remains retryable
+    def wait(*args, **kwargs):
+        waits.append(1)
+        return len(waits) >= 2
+
+    monkeypatch.setattr(im, "instaloader_client", lambda **kwargs: bot)
+    monkeypatch.setattr(im, "profile_from_username_resilient", lookup)
+    monkeypatch.setattr(im, "follow_list_generator", names)
+    monkeypatch.setattr(im, "interruptible_sleep", wait)
+    args = ("target", "", False, kind != "followers", kind != "followings", True, True, False)
+    if challenge:
+        with pytest.raises(SystemExit):
+            im.instagram_monitor_user(*args)
+    else:
+        im.instagram_monitor_user(*args)
+    assert len(fetches) == 2
+    assert im.exposure_snapshot()["failures"] == {"challenge" if challenge else "rate_limit": 1}

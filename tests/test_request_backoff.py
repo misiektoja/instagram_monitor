@@ -58,13 +58,13 @@ class TestASpentBackoffBudgetKeepsItsRealCause:
         assert im.classify_failure_class(im.format_error_message(error.value)) == "rate_limit"
 
     # A checkpoint reply is Instagram acting against the account, so it has to classify as a challenge
-    def test_a_repeated_checkpoint_is_reported_as_a_challenge(self, wrapper):
+    def test_the_first_checkpoint_is_reported_as_a_challenge(self, wrapper):
         wrapped, attempts = wrapper(_response(400, 'checkpoint_required'))
 
         with pytest.raises(instaloader.exceptions.AbortDownloadException) as error:
             wrapped("GET", FOLLOWERS_URL)
 
-        assert len(attempts) == 4
+        assert len(attempts) == 1
         assert im.classify_failure_class(im.format_error_message(error.value)) == "challenge"
         assert im.is_session_flagged(im.format_error_message(error.value), None) is True
 
@@ -134,3 +134,21 @@ class TestTheAutoListSourceSeesTheRealCause:
             list(im.iter_auto_follow_list(SimpleNamespace(context=context), profile, "followers"))
 
         assert graphql_scans == []
+
+
+# Stops before a successful second response can hide a checkpoint
+def test_checkpoint_followed_by_success_never_retries(monkeypatch, wrapper):
+    replies = [_response(400, "checkpoint_required"), _response(200, "ok")]
+    attempts = []
+    monkeypatch.setattr(im, "CIRCUIT_BREAKER", True)
+    im.ACCOUNT_BREAKER_MEMORY.clear()
+
+    # Returns a success only if the wrapper incorrectly retries the checkpoint
+    def request(*args, **kwargs):
+        attempts.append(1)
+        return replies.pop(0)
+
+    with pytest.raises(instaloader.exceptions.AbortDownloadException):
+        im.instagram_wrap_request(request)("GET", FOLLOWERS_URL)
+    assert len(attempts) == 1
+    assert len(replies) == 1

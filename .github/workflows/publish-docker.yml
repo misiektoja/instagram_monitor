@@ -116,5 +116,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.resolve_tags.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Refresh OS packages and dependencies even when source files have not changed
+          no-cache: true

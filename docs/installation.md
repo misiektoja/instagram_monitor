@@ -308,7 +308,7 @@ The `--pull=always` flag pulls the current image first, so no separate pull comm
 From a cloned repository:
 
 ```sh
-docker build --pull --tag instagram-monitor:local .
+docker build --pull --no-cache --tag instagram-monitor:local .
 docker run --rm instagram-monitor:local --version
 ```
 
@@ -385,7 +385,7 @@ docker pull misiektoja/instagram-monitor:3.8
 Update the cloned repository then rebuild while refreshing the base image:
 
 ```sh
-docker build --pull --tag instagram-monitor:local .
+docker build --pull --no-cache --tag instagram-monitor:local .
 docker run --rm instagram-monitor:local --version
 ```
 

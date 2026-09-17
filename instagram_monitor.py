@@ -1270,6 +1270,22 @@ def mail_sign_in_settings_missing():
     return missing + [name for name in ("SENDER_EMAIL", "RECEIVER_EMAIL") if not is_valid_email_address(globals().get(name))]
 
 
+# Signs in while removing the attempted password from SMTP rejection replies before they can be rendered
+def smtp_login(connection, username, password):
+    try:
+        return connection.login(username, password)
+    except smtplib.SMTPResponseException as error:
+        reply = error.smtp_error
+        if password:
+            if isinstance(reply, bytes):
+                reply = reply.replace(str(password).encode("utf-8"), b"[private value]")
+            else:
+                reply = str(reply).replace(str(password), "[private value]")
+        error.smtp_error = reply
+        error.args = (error.smtp_code, reply)
+        raise
+
+
 # Signs in to the configured mail server with one entered password, so nothing is saved that cannot deliver
 def smtp_sign_in(password, timeout=5):
     candidate = str(password or "")
@@ -1285,7 +1301,7 @@ def smtp_sign_in(password, timeout=5):
         smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=timeout)
         if SMTP_SSL:
             smtp.starttls(context=smtp_ssl_context())
-        smtp.login(SMTP_USER, candidate)
+        smtp_login(smtp, SMTP_USER, candidate)
     finally:
         if smtp is not None:
             try:
@@ -5747,7 +5763,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
             smtpObj.starttls(context=ssl_context)
         else:
             smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
-        smtpObj.login(SMTP_USER, SMTP_PASSWORD)
+        smtp_login(smtpObj, SMTP_USER, SMTP_PASSWORD)
         email_msg = MIMEMultipart('alternative')
         email_msg["From"] = SENDER_EMAIL
         email_msg["To"] = RECEIVER_EMAIL
@@ -9788,9 +9804,10 @@ def instagram_wrap_request(orig_request):
                 # Update progress bar for follower/following requests
                 _update_progress_bar(resp)
 
-                # Back-off on any 429 (Too Many Requests) or 400 with "checkpoint"
-                checkpointed = resp.status_code == 400 and "checkpoint" in resp.text
-                if resp.status_code == 429 or checkpointed:
+                # A checkpoint needs account recovery rather than another request
+                if resp.status_code == 400 and "checkpoint" in resp.text:
+                    raise instaloader.exceptions.AbortDownloadException("400 checkpoint_required")
+                if resp.status_code == 429:
                     attempt += 1
                     if attempt > 3:
                         thread_pbar = getattr(_thread_local, 'pbar', None)
@@ -9799,8 +9816,6 @@ def instagram_wrap_request(orig_request):
                         # A spent back-off budget is still a rate limit or a challenge, never a missing endpoint.
                         # Reporting it as one sends every reader down the path for an Instagram API change, which
                         # for the follow list means retrying the whole scan on the other surface
-                        if checkpointed:
-                            raise instaloader.exceptions.AbortDownloadException(f"400 checkpoint_required after {attempt - 1} back-offs")
                         raise instaloader.exceptions.TooManyRequestsException(f"Giving up after {attempt - 1} back-offs on HTTP 429")
                     wait = backoff + random.uniform(0, 30)
                     if JITTER_VERBOSE or DEBUG_MODE:
@@ -10874,6 +10889,15 @@ def _validate_exposure_count(field: str, value: Any) -> None:
         raise _exposure_field_error(field, f"expected a count of zero or more, found {value}")
 
 
+# Rejects timestamps that the exposure report cannot render
+def _validate_exposure_timestamp(field: str, value: Any) -> None:
+    _validate_exposure_count(field, value)
+    try:
+        datetime.fromtimestamp(value, local_timezone())
+    except (OverflowError, OSError, ValueError):
+        raise _exposure_field_error(field, "expected a timestamp within the supported date range") from None
+
+
 # Checks one stored account record against what every reader assumes, leaving fields this version does not know in place
 def _validate_exposure_record(record: Any) -> None:
     if not isinstance(record, dict):
@@ -10890,12 +10914,14 @@ def _validate_exposure_record(record: Any) -> None:
     if breaker is not None:
         if not isinstance(breaker, dict):
             raise _exposure_field_error("breaker", f"expected a stop record or null, found {type(breaker).__name__}")
-        _validate_exposure_count("breaker.tripped_ts", breaker.get('tripped_ts'))
+        _validate_exposure_timestamp("breaker.tripped_ts", breaker.get('tripped_ts'))
         if not breaker.get('tripped_ts'):
             raise _exposure_field_error("breaker.tripped_ts", "expected the time the account was stopped, found zero")
     last_failure = record.get('last_account_failure')
     if last_failure is not None and not isinstance(last_failure, dict):
         raise _exposure_field_error("last_account_failure", f"expected a failure record or null, found {type(last_failure).__name__}")
+    if isinstance(last_failure, dict) and last_failure.get('ts') is not None:
+        _validate_exposure_timestamp("last_account_failure.ts", last_failure['ts'])
 
 
 # Reads the ledger from disk and rejects state that cannot be trusted
@@ -12123,7 +12149,7 @@ def _stop_fetch_for_unavailable_ledger(error: BaseException, results, user: str)
 
 
 # Serializes account-wide identity scans so budget checks and accounting cannot race
-def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user, stop_event=None, identities_counted_at_source=False):
+def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user, stop_event=None, identities_counted_at_source=False, record_failures=True):
     while not IDENTITY_SCAN_LOCK.acquire(timeout=0.2):
         if stop_event is not None and stop_event.is_set():
             return PaginatedUsernameResult()
@@ -12132,6 +12158,11 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
             return PaginatedUsernameResult()
     try:
         return _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user, stop_event, identities_counted_at_source)
+    except Exception as fetch_error:
+        # Monitoring handlers also cover failures during the profile refresh after fetching
+        if record_failures:
+            note_instagram_failure(format_error_message(fetch_error), user, bot)
+        raise
     finally:
         IDENTITY_SCAN_LOCK.release()
 
@@ -12235,9 +12266,8 @@ def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, tota
         except ExposureLedgerError as safety_error:
             results.extend(batch)
             return _stop_fetch_for_unavailable_ledger(safety_error, results, user)
-        except Exception as fetch_error:
-            # Names already returned still cost the account, so bank them before the error propagates,
-            # and classify it here where we know the request was an identity fetch
+        except Exception:
+            # Names already returned still cost the account, so bank them before the error propagates
             results.extend(batch)
             if not identities_counted_at_source:
                 # A ledger that dies here must not replace the Instagram error the caller needs to see
@@ -12245,7 +12275,6 @@ def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, tota
                     record_identities_returned(len(batch))
                 except ExposureLedgerError as safety_error:
                     _mark_account_safety_unavailable(safety_error)
-            note_instagram_failure(format_error_message(fetch_error), user, bot)
             raise
 
         if not batch:
@@ -12829,6 +12858,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 user=user,
                 stop_event=stop_event,
                 identities_counted_at_source=True,
+                record_failures=False,
             )
             _thread_local.FETCH_TYPE = None
             end_time_dl = time.time()
@@ -12840,6 +12870,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         except Exception as e:
             close_pbar()
             error_msg = format_error_message(e)
+            note_instagram_failure(error_msg, user, bot)
             print(f"* Error while getting followers: {error_msg}")
             print_fix_hint(error_msg)
             update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
@@ -12968,6 +12999,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 user=user,
                 stop_event=stop_event,
                 identities_counted_at_source=True,
+                record_failures=False,
             )
             _thread_local.FETCH_TYPE = None
             end_time_dl = time.time()
@@ -12979,6 +13011,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         except Exception as e:
             close_pbar()
             error_msg = format_error_message(e)
+            note_instagram_failure(error_msg, user, bot)
             print(f"* Error while getting followings: {error_msg}")
             print_fix_hint(error_msg)
             update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
@@ -13818,6 +13851,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             user=user,
                             stop_event=stop_event,
                             identities_counted_at_source=True,
+                            record_failures=False,
                         )
                         _thread_local.FETCH_TYPE = None
                         end_time_dl = time.time()
@@ -13964,6 +13998,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             user=user,
                             stop_event=stop_event,
                             identities_counted_at_source=True,
+                            record_failures=False,
                         )
                         _thread_local.FETCH_TYPE = None
                         end_time_dl = time.time()
@@ -15718,7 +15753,7 @@ def _wizard_verify_smtp(values: dict, password: str) -> Optional[Tuple[str, str,
         smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=WIZARD_SMTP_TIMEOUT)
         if SMTP_SSL:
             smtp.starttls(context=smtp_ssl_context())
-        smtp.login(SMTP_USER, SMTP_PASSWORD)
+        smtp_login(smtp, SMTP_USER, SMTP_PASSWORD)
         return None
     except Exception as exc:
         summary, fix = classify_smtp_error(exc)
@@ -16987,7 +17022,7 @@ def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable
             smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=5)
             if SMTP_SSL:
                 smtp.starttls(context=context)
-            smtp.login(SMTP_USER, SMTP_PASSWORD)
+            smtp_login(smtp, SMTP_USER, SMTP_PASSWORD)
             smtp.quit()
             report.smtp_ready = True
             checks.append(make_doctor_check("Notifications", "PASS", SMTP_READY_CHECK_LABEL, f"Alerts: {', '.join(_startup_email_notification_categories())}. No email was sent during this passive check"))

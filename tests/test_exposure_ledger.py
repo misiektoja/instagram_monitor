@@ -799,6 +799,10 @@ class TestAStoredLedgerValueNoReaderCanTrust:
         ('breaker', {'tripped_ts': 0, 'failure_class': "challenge"}, "breaker.tripped_ts"),
         ('date', 20990101, "date"),
         ('last_account_failure', "yesterday", "last_account_failure"),
+        ('last_account_failure', {'ts': "yesterday"}, "last_account_failure.ts"),
+        ('last_account_failure', {'ts': True}, "last_account_failure.ts"),
+        ('last_account_failure', {'ts': 10 ** 30}, "last_account_failure.ts"),
+        ('breaker', {'tripped_ts': 10 ** 30}, "breaker.tripped_ts"),
     ])
     def test_the_error_names_the_field_and_the_repair(self, ledger, tmp_path, field, value, expected):
         record = self._healthy()
@@ -941,3 +945,16 @@ class TestAnAccountScopedCommandActsOnTheAccountTheUserNamed:
 
         assert code == 0
         assert "TRIPPED" in output
+
+
+# Records eager iterator failures even when no name has been yielded
+def test_iterator_construction_failure_is_recorded_once(ledger):
+    failure = im.instaloader.exceptions.TooManyRequestsException("429 Too Many Requests")
+
+    # Fails while constructing the source rather than while consuming it
+    def construct():
+        raise failure
+
+    with pytest.raises(im.instaloader.exceptions.TooManyRequestsException):
+        im.fetch_usernames_paginated(None, construct, 0, 0, 0, False, 1, "target")
+    assert im.exposure_snapshot()["failures"] == {"rate_limit": 1}
