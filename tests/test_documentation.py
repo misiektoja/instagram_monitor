@@ -85,7 +85,7 @@ def assert_concepts(text: str, *concepts: str) -> None:
 def test_installation_docs_cover_delivery_and_upgrade_commands():
     installation = read_asset("docs/installation.md")
     commands = fenced_code_lines(installation)
-    for command in ("pip install instagram_monitor", "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py", "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt", "pip install --upgrade -r requirements.txt", "docker build --pull --tag instagram-monitor:local .", "docker pull misiektoja/instagram-monitor:latest", "docker compose pull"):
+    for command in ("pip install instagram_monitor", "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py", "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt", "pip install --upgrade -r requirements.txt", "docker build --pull --no-cache --tag instagram-monitor:local .", "docker pull misiektoja/instagram-monitor:latest", "docker compose pull"):
         assert command in commands
     assert_concepts(installation, "PyPI", "Docker Hub", "Docker Compose", "Manual")
 

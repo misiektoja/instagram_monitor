@@ -47,11 +47,16 @@ def test_webhook_provider_display_name(im_module, provider, expected):
 
 
 # Verifies SIGHUP redetects ntfy and schedules active Instaloader sessions for proxy refresh
-def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, monkeypatch, capsys):
+def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, monkeypatch, capsys, tmp_path):
     if not hasattr(im_module.signal, "SIGHUP"):
         pytest.skip("SIGHUP is unavailable on Windows")
     replacements = {"WEBHOOK_URL": "https://ntfy.sh/new-private-topic", "PROXY_URL": "https://new-user:new-password@proxy.example.test"}
-    monkeypatch.setattr(im_module, "DOTENV_FILE", "test.env")
+    dotenv_path = tmp_path / "test.env"
+    dotenv_path.write_text("".join(key + "=" + repr(value) + "\n" for key, value in replacements.items()), encoding="utf-8")
+    monkeypatch.setattr(im_module, "DOTENV_FILE", str(dotenv_path))
+    monkeypatch.setattr(im_module, "DOTENV_RELOAD_STATE", {})
+    for key in replacements:
+        monkeypatch.setenv(key, "")
     monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/123/old-token")
     monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
     monkeypatch.setattr(im_module, "PROXY_ENABLED", True)
@@ -61,15 +66,15 @@ def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, mon
     monkeypatch.setattr(im_module._thread_local, "last_proxy_version", 4, raising=False)
     session = SimpleNamespace(proxies={"https": "https://old-user:old-password@proxy.example.test"}, verify=True)
     bot = SimpleNamespace(context=SimpleNamespace(_session=session))
-    with patch("dotenv.load_dotenv"), patch.object(im_module.os, "getenv", side_effect=replacements.get), patch.object(im_module, "log_activity"):
+    with patch.object(im_module, "log_activity"):
         im_module.reload_secrets_signal_handler(im_module.signal.SIGHUP, None)
         im_module.refresh_proxy_if_needed(bot, "target")
     assert im_module.WEBHOOK_PROVIDER == "ntfy"
     assert im_module.PROXY_REFRESH_VERSION == 5
     assert session.proxies == {"http": replacements["PROXY_URL"], "https": replacements["PROXY_URL"]}
     output = capsys.readouterr().out
-    assert "Reloaded WEBHOOK_URL from test.env" in output
-    assert "Reloaded PROXY_URL from test.env" in output
+    assert f"Reloaded WEBHOOK_URL from {dotenv_path}" in output
+    assert f"Reloaded PROXY_URL from {dotenv_path}" in output
     assert "new-private-topic" not in output
     assert "new-password" not in output
 

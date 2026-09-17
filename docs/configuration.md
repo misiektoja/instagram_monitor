@@ -352,3 +352,16 @@ A forgotten `export` can shadow the dotenv file invisibly, so `--debug` names ev
 A secret still holding its `your_...` placeholder counts as unset and is left out, and a run with no secret anywhere says so on one line.
 
 When a `--set-*` command or the setup wizard replaces a secret, it rewrites that one assignment in place and leaves every other line alone. A line you wrote as `export NAME=...` keeps its `export`, so a dotenv file you also source in a shell still exports it. A value you clear has its line removed rather than left empty.
+
+
+### Reloading secrets and backup contents
+
+On systems with SIGHUP, reloading applies changes from the selected dotenv file. Removing a file-owned
+assignment restores its independently configured fallback or clears the value when no fallback exists.
+A read or parsing failure keeps the last usable credentials and reports how to correct the file.
+An explicit reload can override a startup export with a value present in the file.
+
+
+Setup's configuration backup blanks inline secret assignments from older configurations while retaining
+other settings and comments. General `--generate-config` backups remain exact copies and can contain
+inline credentials. The dotenv file is not backed up during secret replacement.
