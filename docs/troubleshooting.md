@@ -65,7 +65,7 @@ ping www.instagram.com
 
 If that fails too, fix DNS first. When you use a VPN or a proxy, confirm it is running and allowed to resolve names. Monitoring recovers on its own once lookups succeed, so no action is needed inside Instagram Monitor.
 
-Other connection errors point elsewhere. `Max retries exceeded` or a timeout usually means the connection dropped or a proxy is unreachable, see [routing traffic through a proxy](usage.md#routing-traffic-through-a-proxy). `429` or `Too Many Requests` means Instagram is rate-limiting you, see [check intervals](anti-detection.md). A message about a redirect, a login or wrong credentials means the saved session expired, see [session import](configuration.md).
+Other connection errors point elsewhere. `Max retries exceeded` or a timeout usually means the connection dropped or a proxy is unreachable, see [routing traffic through a proxy](usage.md#routing-traffic-through-a-proxy). `429` or `Too Many Requests` means Instagram is rate-limiting you, see [keep the polling interval reasonable](anti-detection.md#keep-the-polling-interval-reasonable). A `429` on the very first request of a run is usually a blocked TLS fingerprint rather than a rate limit, see [use a browser transport fingerprint](anti-detection.md#use-a-browser-transport-fingerprint). A message about a redirect, a login or wrong credentials means the saved session expired, see [session import](configuration.md).
 
 For the underlying transport detail behind any of these, add `--debug`. Normal output omits it because it names internal HTTP library errors rather than anything you can act on.
 

@@ -12,7 +12,24 @@ Log in through a supported browser (Firefox, Chrome, Brave or Chromium) and impo
 <a id="set-the-correct-user-agent"></a>
 ## Set the Correct User-Agent
 
-Set `USER_AGENT` or `--user-agent` to the value reported by the browser used for the import. This keeps the browser identity in the requests consistent with the imported session. Follow [User Agent](configuration.md#user-agent).
+Every request should look like it came from one browser. Set `USER_AGENT` or `--user-agent` to the value reported by the browser used for the import, so the browser identity matches the imported cookies. Follow [User Agent](configuration.md#user-agent).
+
+Leaving it empty is fine. The tool then generates a current, complete user agent for you. Pairing a Firefox session with a Chrome user agent is not.
+
+The transport follows the same identity. With the default `CURL_CFFI_IMPERSONATE = "auto"`, the TLS fingerprint and the client-hint headers are taken from your `USER_AGENT`, so one setting keeps the whole request consistent. If you pin a browser by hand, pin it to the same one.
+
+<a id="use-a-browser-transport-fingerprint"></a>
+## Use a Browser Transport Fingerprint
+
+Instagram can block a request before it ever reads the user agent, going by the TLS fingerprint of the library that sent it. The symptom is `HTTP 429` on the very first request from a clean IP, seen most often on Linux builds including Raspberry Pi OS. No interval or budget helps with this one, because nothing got through.
+
+The default `curl_cffi` backend avoids it by presenting a real browser's fingerprint instead of the system TLS stack's. Keep it:
+
+```ini
+HTTP_BACKEND = "curl_cffi"
+```
+
+`curl_cffi` is installed with the tool. If it is missing after a manual install, the tool warns you and falls back to `requests`, which cannot impersonate a browser. Since the fallback is silent in the config file, check what is actually in effect with `--doctor` or `--exposure`. See [HTTP Transport Backend](usage.md#http-transport-backend).
 
 <a id="use-the-human-mode"></a>
 ## Use the Human Mode
@@ -60,6 +77,15 @@ The budget is disabled by default. Names are always counted whether or not you s
 You can also set it for one run with `--identity-budget 750`.
 
 A partial fetch is never written to the baseline file. If the budget stops a fetch halfway, the previous complete list stays in place and the comparison is skipped rather than reporting every unfetched account as an unfollow.
+
+<a id="choose-how-follower-lists-are-read"></a>
+## Choose How Follower Lists Are Read
+
+`FOLLOW_LIST_SOURCE` selects the surface the follower and following lists are read from. The default `auto` reads them over the REST endpoints Instagram's own web app calls and falls back to the older GraphQL queries only when REST is gone before it returned anybody. Both cost the same number of names, so this choice is about staying on a working surface, not about exposure. Leave it on `auto` unless one surface starts failing for you.
+
+The `browser` source is different. It drives a real browser through the follower dialog instead of calling the API, and a browser session that scrolls those dialogs for hours does not look like a person. **It can cost you the account.** `auto` never picks it. Read [Browser Source](usage.md#browser-source-experimental) before turning it on, and only with an account you can afford to lose.
+
+It also has to agree with the rest of the session. The browser runs Chromium, so `HTTP_BACKEND` must be `curl_cffi` and your user agent and impersonation target must name the same browser family. Monitoring refuses to start on a mismatch and the Web Dashboard refuses a settings change that would create one, rather than let one session reach Instagram as two different clients. See [Follower List Source](usage.md#follower-list-source).
 
 <a id="let-the-circuit-breaker-stop-the-account"></a>
 ## Let the Circuit Breaker Stop the Account
