@@ -477,6 +477,40 @@ class TestChromiumUserDataRoots:
         assert im_module.get_chromium_user_data_dir("firefox") is None
 
 
+class TestChromiumProfilesMissing:
+    # Verifies a browser whose profiles have never stored a cookie is not reported as a browser that is not installed
+    def test_a_profile_without_a_cookie_database_is_explained(self, im_module, monkeypatch, tmp_path):
+        (tmp_path / "Default").mkdir()
+        (tmp_path / "Profile 1").mkdir()
+        monkeypatch.setattr(im_module, "get_chromium_user_data_dir", lambda browser: str(tmp_path))
+
+        message = im_module.chromium_no_profiles_message("chrome")
+
+        assert "Chrome is installed" in message
+        assert "Default" in message and "Profile 1" in message
+        assert "sign in" in message
+
+    # Verifies a browser that really is absent still says so, with the location that was searched
+    def test_a_missing_install_is_named(self, im_module, monkeypatch, tmp_path):
+        monkeypatch.setattr(im_module, "get_chromium_user_data_dir", lambda browser: str(tmp_path / "absent"))
+
+        message = im_module.chromium_no_profiles_message("chrome")
+
+        assert "install Chrome" in message
+        assert "absent" in message
+
+    # Verifies the picker raises the explanation rather than always blaming a missing install
+    def test_the_picker_raises_the_explanation(self, im_module, monkeypatch, tmp_path, real_browser_profiles):
+        (tmp_path / "Default").mkdir()
+        monkeypatch.setattr(im_module, "system", lambda: "Darwin")
+        monkeypatch.setattr(im_module, "get_chromium_user_data_dir", lambda browser: str(tmp_path))
+
+        with pytest.raises(SystemExit) as failure:
+            im_module.select_chromium_profile_cli("chrome", None)
+
+        assert "none of its profiles" in str(failure.value)
+
+
 class TestChromiumKeyringFailure:
     # Verifies a locked or denied keyring is reported as such, not as a browser you forgot to sign in to
     def test_a_keyring_failure_is_not_blamed_on_being_signed_out(self, im_module, monkeypatch):

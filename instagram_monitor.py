@@ -3724,7 +3724,9 @@ def create_web_dashboard_app():
             return jsonify({'success': False, 'error': chromium_windows_unsupported_message(browser)}), 400  # type: ignore
         try:
             profiles = [{'dir': p['dir'], 'name': p['name'], 'signed_in': cookie_file_has_instagram_session(p.get('cookie_file'))} for p in list_chromium_profiles(browser)]
-            return jsonify({'success': True, 'profiles': profiles})  # type: ignore
+            # An empty list has several causes and the dashboard has no other place to explain them
+            payload = {'success': True, 'profiles': profiles, 'note': chromium_no_profiles_message(browser)} if not profiles else {'success': True, 'profiles': profiles}
+            return jsonify(payload)  # type: ignore
         except Exception as e:
             # Profile discovery already returns local paths and its failure detail tells the operator what to fix
 
@@ -8605,6 +8607,14 @@ def chromium_profile_cookie_file(base_path, profile_dir):
     return None
 
 
+# Lists the profile directories inside a Chromium user-data root, including ones holding no cookie database yet
+def chromium_profile_dirs(base_path) -> List[str]:
+    try:
+        return [entry for entry in sorted(os.listdir(base_path)) if entry == "Default" or entry.startswith("Profile ")]
+    except OSError:
+        return []
+
+
 # Lists available profiles for a Chromium-based browser with their directory and friendly display name
 def list_chromium_profiles(browser):
     base = get_chromium_user_data_dir(browser)
@@ -8624,13 +8634,25 @@ def list_chromium_profiles(browser):
         pass
 
     profiles = []
-    for entry in sorted(os.listdir(base_path)):
-        if entry != "Default" and not entry.startswith("Profile "):
-            continue
+    for entry in chromium_profile_dirs(base_path):
         cookie_file = chromium_profile_cookie_file(base_path, entry)
         if cookie_file:
             profiles.append({"dir": entry, "name": names.get(entry, entry), "cookie_file": cookie_file})
     return profiles
+
+
+# Explains why no Chromium profile can be offered. A profile that has never stored a cookie is dropped from the
+# listing, so an installed browser with a brand new profile must not be reported as a browser that is not installed
+def chromium_no_profiles_message(browser) -> str:
+    label = browser_label(browser)
+    base = get_chromium_user_data_dir(browser)
+    base_path = expanduser(base) if base else ""
+    if not base_path or not os.path.isdir(base_path):
+        return f"No {label} profiles found - looked in '{base_path or 'no known location for this system'}'. To fix: install {label}, sign in to Instagram in it, then run the import again"
+    without_cookies = chromium_profile_dirs(base_path)
+    if without_cookies:
+        return f"{label} is installed but none of its profiles ({', '.join(without_cookies)}) has a cookie database yet. To fix: open https://www.instagram.com/ in {label}, sign in, then run the import again"
+    return f"No {label} profiles found in '{base_path}'. To fix: open {label} once to create a profile, sign in to Instagram, then run the import again"
 
 
 # Describes one Chromium profile for a message, adding the display name when it differs from the directory
@@ -8739,7 +8761,7 @@ def select_chromium_profile_cli(browser, explicit_profile):
 
     profiles = list_chromium_profiles(browser)
     if not profiles:
-        raise SystemExit(f"No {browser_label(browser)} profiles found - is it installed and are you logged in to Instagram?")
+        raise SystemExit(chromium_no_profiles_message(browser))
     if len(profiles) == 1:
         warn_when_profile_is_signed_out(profiles[0].get("cookie_file"), f"the only {browser_label(browser)} profile, '{profiles[0]['dir']}',")
         return profiles[0]["dir"]
@@ -16286,6 +16308,22 @@ def _wizard_collect_polling_section(state: WizardSetupState) -> None:
     state.config_values["INSTA_CHECK_INTERVAL"] = _wizard_ask_duration("Instagram polling interval (seconds or use s/m/h/d)", current_interval)
 
 
+# Confirms an Instaloader session file exists for the chosen account, since setup does not create one for this login
+# method and a missing file otherwise surfaces only when monitoring first tries to sign in
+def _wizard_confirm_existing_session(state: WizardSetupState) -> bool:
+    try:
+        candidates = get_session_file_candidates(state.session_username)
+    except ValueError:
+        return True
+    if any(os.path.isfile(candidate) for candidate in candidates):
+        return True
+    print()
+    print(colorize("warning", f"No Instaloader session file was found for '{state.session_username}'."))
+    print(colorize("info", f"  Looked in: {', '.join(candidates)}"))
+    print(colorize("info", f"  To fix: run 'instaloader --login {state.session_username}' to create one, or choose a browser import instead."))
+    return _wizard_ask_yes_no("Keep using an existing Instaloader session anyway?", default=False)
+
+
 # Collects one login method with separate Firefox and Chromium paths
 def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
     _wizard_reset_section(state, WIZARD_LOGIN_CONFIG_KEYS, ("SESSION_PASSWORD",))
@@ -16322,50 +16360,54 @@ def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
             container_host = _wizard_select_container_firefox_host()
             if container_host is None:
                 continue
-        break
-
-    state.login_method = action
-    state.logged_in = action != "no-login"
-    state.import_browser = None
-    state.container_host = container_host
-    state.session_username = ""
-    if action == "no-login":
-        state.config_values.update({"SKIP_SESSION": True, "SESSION_USERNAME": ""})
-        return
-    if action == "firefox":
-        state.import_browser = "firefox"
-    elif action == "chromium":
-        chromium_options = [(browser_label(browser), _wizard_chromium_option_desc(browser, local_profiles)) for browser in chromium_browsers]
-        # The browser that already holds a session is the one the import can succeed with, so it leads
-        ready_indexes = [index for index, browser in enumerate(chromium_browsers) if local_profiles and _wizard_browser_is_signed_in(browser)]
-        browser_index = _wizard_ask_choice("Which Chromium browser should be imported?", chromium_options, default_index=ready_indexes[0] if ready_indexes else 0)
-        state.import_browser = chromium_browsers[browser_index]
-
-    print()
-    can_detect_username = state.import_browser is not None and method not in ("docker", "compose")
-    if can_detect_username:
-        state.session_username = _wizard_ask_text(f"Your Instagram username (leave empty to detect it from {browser_label(state.import_browser)} import)").lstrip("@")
-    else:
-        state.session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
-        if not state.session_username:
-            _wizard_fall_back_to_no_login(state, "Sign-in stays off until the username is given.")
+        state.login_method = action
+        state.logged_in = action != "no-login"
+        state.import_browser = None
+        state.container_host = container_host
+        state.session_username = ""
+        if action == "no-login":
+            state.config_values.update({"SKIP_SESSION": True, "SESSION_USERNAME": ""})
             return
-    # Asked before the hidden prompt, so a password that is already saved is never retyped only to be discarded
-    if action == "password" and (not _wizard_existing_secret("SESSION_PASSWORD", state.env_path, secret_updates=state.secret_updates) or _wizard_ask_yes_no("Replace the Instagram password already configured?", default=False)):
-        password = _wizard_ask_secret("Instagram password")
-        if not password:
-            if not _wizard_offer_retry("Instagram password", "Sign-in stays off until one is set"):
+        if action == "firefox":
+            state.import_browser = "firefox"
+        elif action == "chromium":
+            chromium_options = [(browser_label(browser), _wizard_chromium_option_desc(browser, local_profiles)) for browser in chromium_browsers]
+            # The browser that already holds a session is the one the import can succeed with, so it leads
+            ready_indexes = [index for index, browser in enumerate(chromium_browsers) if local_profiles and _wizard_browser_is_signed_in(browser)]
+            browser_index = _wizard_ask_choice("Which Chromium browser should be imported?", chromium_options, default_index=ready_indexes[0] if ready_indexes else 0)
+            state.import_browser = chromium_browsers[browser_index]
+
+        print()
+        can_detect_username = state.import_browser is not None and method not in ("docker", "compose")
+        if can_detect_username:
+            state.session_username = _wizard_ask_text(f"Your Instagram username (leave empty to detect it from {browser_label(state.import_browser)} import)").lstrip("@")
+        else:
+            state.session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
+            if not state.session_username:
+                _wizard_fall_back_to_no_login(state, "Sign-in stays off until the username is given.")
+                return
+        # The session file this method relies on is created by Instaloader, not by setup, so a missing one is
+        # caught here instead of at the first monitoring run
+        if action == "existing" and not _wizard_confirm_existing_session(state):
+            state.login_method = ""
+            continue
+        # Asked before the hidden prompt, so a password that is already saved is never retyped only to be discarded
+        if action == "password" and (not _wizard_existing_secret("SESSION_PASSWORD", state.env_path, secret_updates=state.secret_updates) or _wizard_ask_yes_no("Replace the Instagram password already configured?", default=False)):
+            password = _wizard_ask_secret("Instagram password")
+            if not password:
+                if not _wizard_offer_retry("Instagram password", "Sign-in stays off until one is set"):
+                    _wizard_fall_back_to_no_login(state, "Sign-in stays off until the password is given.")
+                    return
+                password = _wizard_ask_secret("Instagram password")
+            if password:
+                state.secret_updates["SESSION_PASSWORD"] = password
+            else:
                 _wizard_fall_back_to_no_login(state, "Sign-in stays off until the password is given.")
                 return
-            password = _wizard_ask_secret("Instagram password")
-        if password:
-            state.secret_updates["SESSION_PASSWORD"] = password
-        else:
-            _wizard_fall_back_to_no_login(state, "Sign-in stays off until the password is given.")
-            return
-    elif action == "password":
-        print("  Existing SESSION_PASSWORD will be retained without being displayed or rewritten.")
-    state.config_values.update({"SKIP_SESSION": False, "SESSION_USERNAME": state.session_username})
+        elif action == "password":
+            print("  Existing SESSION_PASSWORD will be retained without being displayed or rewritten.")
+        state.config_values.update({"SKIP_SESSION": False, "SESSION_USERNAME": state.session_username})
+        return
 
 
 # Collects the preferred monitoring interface
@@ -16806,6 +16848,27 @@ def _wizard_browser_import_command(state: WizardSetupState, method: str) -> str:
     return f"{_wizard_cmd_prefix(method, host_os=state.container_host)} --import-browser-session --browser {state.import_browser} --env-file {_wizard_quote_argument(str(state.env_path))}"
 
 
+# Offers the other browsers setup can import from, so a failed import is not a dead end when the session lives in
+# another browser. Returns whether the browser was changed
+def _wizard_switch_import_browser(state: WizardSetupState, method: str, others: List[str]) -> bool:
+    options = [(browser_label(browser), _wizard_browser_session_note(browser).strip() or _wizard_browser_desc(browser)) for browser in others]
+    options.append(("Keep trying the current browser", "Returns to the import with the browser unchanged."))
+    choice = _wizard_ask_choice("Which browser should setup import from instead?", options, default_index=0)
+    if choice == len(others):
+        return False
+    selected = others[choice]
+    if selected in CHROMIUM_IMPORT_BROWSERS and not _wizard_chromium_dependency_available():
+        print()
+        if not _wizard_ask_yes_no("Chromium browser import requires pycookiecheat. Install it now?", default=True):
+            return False
+        if not _wizard_install_chromium_dependency(method):
+            return False
+    state.import_browser = selected
+    # The saved login method and the summary name the family, not the browser, so both follow the switch
+    state.login_method = "firefox" if selected == "firefox" else "chromium"
+    return True
+
+
 # Completes a confirmed browser import before the final config is rendered
 def _wizard_finish_browser_import(state: WizardSetupState, method: str) -> bool:
     if not state.import_browser:
@@ -16843,9 +16906,24 @@ def _wizard_finish_browser_import(state: WizardSetupState, method: str) -> bool:
             if import_completed:
                 break
             print()
-            if not _wizard_ask_yes_no(f"Try the {label} import again? (pick another profile, or sign in to Instagram in {label} first)", default=True):
+            # The session often lives in a different browser, so switching is offered before giving up. The
+            # cached counts are dropped first, since the user may have signed in while the prompt was waiting
+            _WIZARD_BROWSER_SESSION_COUNTS.clear()
+            others = [browser for browser in _wizard_import_browsers(method) if browser != state.import_browser]
+            retry_options = [(f"Try the {label} import again", f"Pick another profile, or sign in to Instagram in {label} first.")]
+            retry_actions = ["retry"]
+            if others:
+                retry_options.append(("Import from a different browser", f"Setup can import from {' or '.join(browser_label(browser) for browser in others)} instead."))
+                retry_actions.append("switch")
+            retry_options.append(("Skip the import for now", "Setup continues and shows the import command at the end."))
+            retry_actions.append("skip")
+            retry_action = retry_actions[_wizard_ask_choice(f"The {label} import did not complete. What next?", retry_options, default_index=0)]
+            if retry_action == "skip":
                 print(colorize("info", f"You can import later with: {retry_hint}"))
                 break
+            if retry_action == "switch" and _wizard_switch_import_browser(state, method, others):
+                label = browser_label(cast(str, state.import_browser))
+                retry_hint = _wizard_browser_import_command(state, method)
     else:
         print(colorize("info", f"You can import later with: {retry_hint}"))
     if not state.session_username:

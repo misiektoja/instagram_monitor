@@ -2041,13 +2041,14 @@ def test_the_summary_reports_what_is_collected(im_module, capsys):
         assert "Follower list source:" not in summary, "a setup that collects no names has no surface to report"
 
 
-# Drives the browser import step with scripted yes/no answers and returns the questions it asked
-def run_browser_import(im_module, monkeypatch, directory: Path, browser: str, import_results, answers):
+# Drives the browser import step with scripted answers and returns the yes/no questions and menus it offered
+def run_browser_import(im_module, monkeypatch, directory: Path, browser: str, import_results, answers, choices=()):
     state = make_setup_state(im_module, directory)
     state.logged_in = True
     state.login_method = browser
     state.import_browser = browser
     asked = []
+    menus = []
     attempts = iter(import_results)
 
     def attempt(*args, **kwargs):
@@ -2057,13 +2058,22 @@ def run_browser_import(im_module, monkeypatch, directory: Path, browser: str, im
         return outcome
 
     scripted = iter(answers)
+    scripted_choices = iter(choices)
+
+    def choose(question, options, default_index=0):
+        labels = [label for label, _ in options]
+        menus.append({"question": question, "labels": labels, "options": dict(options), "default": default_index})
+        wanted = next(scripted_choices)
+        return next(index for index, label in enumerate(labels) if wanted in label)
+
     monkeypatch.setattr(im_module, "import_session", attempt)
     monkeypatch.setattr(im_module, "select_chromium_profile_cli", lambda browser_name, explicit: "Default")
     monkeypatch.setattr(im_module, "get_firefox_cookiefile", lambda: str(directory / "cookies.sqlite"))
     monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: (asked.append(question), next(scripted))[1])
+    monkeypatch.setattr(im_module, "_wizard_ask_choice", choose)
     monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: "typed.user")
     completed = im_module._wizard_finish_browser_import(state, "manual")
-    return completed, asked, state
+    return completed, asked, menus, state
 
 
 class TestBrowserImportRetry:
@@ -2073,24 +2083,59 @@ class TestBrowserImportRetry:
             directory = Path(directory_name)
             (directory / "cookies.sqlite").write_text("", encoding="utf-8")
             failure = im_module.CookieImportError("No Instagram cookies found in Chrome (profile 'Default')")
-            completed, asked, state = run_browser_import(im_module, monkeypatch, directory, "chrome", [failure, "login.user"], [True, True])
+            completed, asked, menus, state = run_browser_import(im_module, monkeypatch, directory, "chrome", [failure, "login.user"], [True], ["Try the Chrome import again"])
 
         assert completed is True
         assert state.session_username == "login.user"
-        assert any("Try the Chrome import again?" in question for question in asked)
+        assert any("Try the Chrome import again" in label for label in menus[0]["labels"])
         assert "Chrome import failed" in capsys.readouterr().out
 
-    # Verifies declining the retry stops asking and leaves the import marked incomplete
-    def test_declining_the_retry_stops_asking(self, im_module, monkeypatch, capsys):
+    # Verifies skipping the import stops asking and leaves it marked incomplete
+    def test_skipping_the_import_stops_asking(self, im_module, monkeypatch, capsys):
         with make_test_directory() as directory_name:
             directory = Path(directory_name)
             (directory / "cookies.sqlite").write_text("", encoding="utf-8")
             failure = im_module.CookieImportError("No Instagram cookies found in Chrome (profile 'Default')")
-            completed, asked, state = run_browser_import(im_module, monkeypatch, directory, "chrome", [failure], [True, False])
+            completed, asked, menus, state = run_browser_import(im_module, monkeypatch, directory, "chrome", [failure], [True], ["Skip the import"])
 
         assert completed is False
-        assert len([question for question in asked if "import again?" in question]) == 1
+        assert len(menus) == 1
         assert "--import-browser-session" in capsys.readouterr().out
+
+    # Verifies a failed import can move to another browser, since the session often lives in one setup did not offer first
+    def test_a_failed_import_can_switch_to_another_browser(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            (directory / "cookies.sqlite").write_text("", encoding="utf-8")
+            failure = im_module.CookieImportError("No Instagram cookies found in Chrome (profile 'Default')")
+            completed, asked, menus, state = run_browser_import(im_module, monkeypatch, directory, "chrome", [failure, "login.user"], [True], ["Import from a different browser", "Firefox"])
+
+        assert completed is True
+        assert state.import_browser == "firefox", "the retry imports from the browser the user switched to"
+        assert state.login_method == "firefox", "the saved login method follows the switch, so the summary and a rerun agree with it"
+        assert state.session_username == "login.user"
+
+    # Verifies backing out of the browser list keeps the current browser instead of ending the import
+    def test_cancelling_the_switch_keeps_the_current_browser(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            failure = im_module.CookieImportError("No Instagram cookies found in Chrome (profile 'Default')")
+            completed, asked, menus, state = run_browser_import(im_module, monkeypatch, directory, "chrome", [failure, "login.user"], [True], ["Import from a different browser", "Keep trying the current browser"])
+
+        assert completed is True
+        assert state.import_browser == "chrome"
+
+    # Verifies the retry menu is not offered for a browser the platform cannot import from
+    def test_no_switch_is_offered_when_only_one_browser_is_supported(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            (directory / "cookies.sqlite").write_text("", encoding="utf-8")
+            monkeypatch.setattr(im_module, "_wizard_import_browsers", lambda method: ["firefox"])
+            failure = im_module.CookieImportError("No Instagram cookies found in Firefox")
+            completed, asked, menus, state = run_browser_import(im_module, monkeypatch, directory, "firefox", [failure], [True], ["Skip the import"])
+
+        assert completed is False
+        assert not any("different browser" in label for label in menus[0]["labels"])
 
     # Verifies an aborted profile picker is treated as a failed attempt rather than ending setup
     def test_an_aborted_profile_picker_is_retryable(self, im_module, monkeypatch):
@@ -2109,10 +2154,11 @@ class TestBrowserImportRetry:
                     raise outcome
                 return outcome
 
-            scripted = iter([True, True])
+            scripted = iter([True])
             monkeypatch.setattr(im_module, "select_chromium_profile_cli", pick)
             monkeypatch.setattr(im_module, "import_session", lambda *args, **kwargs: "login.user")
             monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: (asked.append(question), next(scripted))[1])
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: 0)
 
             assert im_module._wizard_finish_browser_import(state, "manual") is True
             assert state.session_username == "login.user"
@@ -2121,10 +2167,66 @@ class TestBrowserImportRetry:
     def test_declining_the_import_offers_no_retry(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
             directory = Path(directory_name)
-            completed, asked, state = run_browser_import(im_module, monkeypatch, directory, "chrome", [], [False])
+            completed, asked, menus, state = run_browser_import(im_module, monkeypatch, directory, "chrome", [], [False])
 
         assert completed is False
-        assert not [question for question in asked if "import again?" in question]
+        assert menus == []
+
+
+# Drives the login menu with scripted option labels and yes/no answers, reporting the session files it should see
+def run_login_section(im_module, monkeypatch, directory: Path, labels, answers=(), session_files=None):
+    state = make_setup_state(im_module, directory)
+    asked = []
+    scripted_labels = iter(labels)
+    scripted_answers = iter(answers)
+
+    def choose(question, options, default_index=0):
+        wanted = next(scripted_labels)
+        return next(index for index, (label, _) in enumerate(options) if wanted in label)
+
+    monkeypatch.setattr(im_module, "_wizard_ask_choice", choose)
+    monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: "login.user")
+    monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: (asked.append(question), next(scripted_answers))[1])
+    monkeypatch.setattr(im_module, "get_session_file_candidates", lambda username: list(session_files) if session_files is not None else [str(directory / f"session-{username}")])
+    im_module._wizard_collect_login_section(state, "manual")
+    return state, asked
+
+
+class TestExistingInstaloaderSession:
+    # Verifies the only login method that depends on a file setup does not create is checked before it is saved
+    def test_a_missing_session_file_returns_to_the_login_menu(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            state, asked = run_login_section(im_module, monkeypatch, directory, ["Use an existing Instaloader session", "No login"], answers=[False])
+
+        output = capsys.readouterr().out
+        assert state.login_method == "no-login"
+        assert state.config_values["SKIP_SESSION"] is True
+        assert "No Instaloader session file was found" in output
+        assert "instaloader --login login.user" in output
+
+    # Verifies an account that already has a session file is saved without a warning
+    def test_an_existing_session_file_is_accepted(self, im_module, monkeypatch, capsys):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            session_file = directory / "session-login.user"
+            session_file.write_text("", encoding="utf-8")
+            state, asked = run_login_section(im_module, monkeypatch, directory, ["Use an existing Instaloader session"], session_files=[str(session_file)])
+
+        assert state.login_method == "existing"
+        assert state.config_values["SKIP_SESSION"] is False
+        assert state.config_values["SESSION_USERNAME"] == "login.user"
+        assert "No Instaloader session file was found" not in capsys.readouterr().out
+        assert asked == []
+
+    # Verifies the warning can be overridden, since the session may be created before monitoring starts
+    def test_the_warning_can_be_overridden(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            state, asked = run_login_section(im_module, monkeypatch, directory, ["Use an existing Instaloader session"], answers=[True])
+
+        assert state.config_values["SKIP_SESSION"] is False
+        assert state.config_values["SESSION_USERNAME"] == "login.user"
 
 
 # Stubs the profile listings so the login menu describes a known set of browsers

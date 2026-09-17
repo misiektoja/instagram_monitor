@@ -2783,9 +2783,10 @@
                 showToast(data.error || 'Failed to detect profiles', 'error');
                 return null;
             }
-            return data.profiles.map(p => browser === 'firefox'
+            const profiles = data.profiles.map(p => browser === 'firefox'
                 ? { value: p.path, label: p.install ? `${p.name} (${p.install})` : p.name, signedIn: p.signed_in }
                 : { value: p.dir, label: `${p.name} (${p.dir})`, signedIn: p.signed_in });
+            return { profiles, note: data.note || '' };
         }
 
         // Same logic for every browser: one profile imports directly, several reveal the list to choose from
@@ -2793,17 +2794,18 @@
             const browser = document.getElementById('browser-select').value;
             showToast(`Searching for ${browser} profiles...`);
 
-            let profiles;
+            let found;
             try {
-                profiles = await fetchBrowserProfiles(browser);
+                found = await fetchBrowserProfiles(browser);
             } catch (err) {
                 showToast('Failed to detect profiles', 'error');
                 return;
             }
-            if (profiles === null) return;
+            if (found === null) return;
 
+            const profiles = found.profiles;
             if (profiles.length === 0) {
-                showToast(`No ${browser} profiles found`, 'error');
+                showToast(found.note || `No ${browser} profiles found`, 'error');
                 return;
             }
             if (profiles.length === 1) {

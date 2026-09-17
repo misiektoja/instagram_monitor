@@ -384,6 +384,18 @@ class TestDashboardConfigAndSession:
 
         assert chromium[0]["signed_in"] is True
 
+    # An empty Chromium listing carries the reason, since the dropdown has nowhere else to explain it
+    def test_an_empty_chromium_listing_explains_why(self, im_module, monkeypatch, tmp_path):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "system", lambda: "Darwin")
+        monkeypatch.setattr(im_module, "get_chromium_user_data_dir", lambda browser: str(tmp_path))
+        (tmp_path / "Default").mkdir()
+
+        payload = client.get("/api/session/chromium/profiles?browser=chrome").get_json()
+
+        assert payload["profiles"] == []
+        assert "Default" in payload["note"] and "cookie database" in payload["note"]
+
     # An unreadable cookie database leaves the state unknown rather than claiming the profile is signed out
     def test_an_unreadable_profile_reports_an_unknown_state(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)
