@@ -8474,13 +8474,17 @@ def cookie_file_has_instagram_session(cookie_file, firefox: bool = False) -> Opt
 def select_profile_interactively(heading: str, choices: List[Dict[str, Any]]):
     signed_in = [index for index, choice in enumerate(choices) if choice["signed_in"]]
     default_index = signed_in[0] if len(signed_in) == 1 else None
+    width = len(str(len(choices)))
     print()
     print(heading)
+    # Only the profiles worth choosing are marked. Labelling the rest as well buries the few that matter in a
+    # long list, and a profile whose database could not be read is left unmarked rather than called signed out
+    if signed_in:
+        print(f"  {colorize('status_online', '*')} marks a profile signed in to Instagram")
     for index, choice in enumerate(choices, start=1):
-        state = choice["signed_in"]
-        note = "" if state is None else ("  [signed in to Instagram]" if state else "  [not signed in to Instagram]")
-        marker = "  (default)" if index - 1 == default_index else ""
-        print(f"  {index}) {choice['label']}{note}{marker}")
+        marker = f"{colorize('status_online', '*')} " if choice["signed_in"] else ("  " if signed_in else "")
+        default_note = "  (default)" if index - 1 == default_index else ""
+        print(f"  {str(index).rjust(width)}) {marker}{choice['label']}{default_note}")
     prompt = f"Select profile number (0 to exit){', Enter for the default' if default_index is not None else ''}: "
     while True:
         raw = input(prompt).strip()

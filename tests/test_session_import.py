@@ -194,17 +194,41 @@ class TestProfileSelection:
         with pytest.raises(SystemExit):
             im_module.select_profile_interactively("Profiles:", choices)
 
-    # Verifies the list says which profile holds an Instagram session, so the choice is not made blind
-    def test_the_list_marks_which_profile_is_signed_in(self, im_module, monkeypatch, capsys):
+    # Verifies only the profiles worth choosing are marked, so a long list is not buried in repeated labels
+    def test_the_list_marks_only_the_signed_in_profiles(self, im_module, monkeypatch, capsys):
         monkeypatch.setattr("builtins.input", lambda prompt="": "1")
         choices = [{"label": "Default", "signed_in": False, "value": "Default"}, {"label": "Profile 1", "signed_in": True, "value": "Profile 1"}, {"label": "Profile 2", "signed_in": None, "value": "Profile 2"}]
 
         im_module.select_profile_interactively("Profiles:", choices)
 
         listing = capsys.readouterr().out
-        assert "1) Default  [not signed in to Instagram]" in listing
-        assert "2) Profile 1  [signed in to Instagram]" in listing
-        assert "3) Profile 2\n" in listing, "an unreadable database is left unlabelled rather than guessed at"
+        assert "* marks a profile signed in to Instagram" in listing
+        assert "2) * Profile 1" in listing
+        assert "1)   Default\n" in listing, "a profile without a session is left unmarked rather than labelled"
+        assert "3)   Profile 2\n" in listing, "an unreadable database is left unmarked rather than guessed at"
+        assert "not signed in" not in listing
+
+    # Verifies a list with nothing to mark drops the legend and the marker column rather than indenting for nothing
+    def test_a_list_with_no_session_has_no_marker_column(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr("builtins.input", lambda prompt="": "1")
+        choices = [{"label": "Default", "signed_in": False, "value": "Default"}, {"label": "Profile 1", "signed_in": None, "value": "Profile 1"}]
+
+        im_module.select_profile_interactively("Profiles:", choices)
+
+        listing = capsys.readouterr().out
+        assert "marks a profile" not in listing
+        assert "1) Default\n" in listing
+
+    # Verifies the numbers stay aligned once the list runs past nine profiles
+    def test_the_numbers_are_aligned_past_nine_profiles(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr("builtins.input", lambda prompt="": "1")
+        choices = [{"label": f"Profile {number}", "signed_in": number == 1, "value": str(number)} for number in range(1, 12)]
+
+        im_module.select_profile_interactively("Profiles:", choices)
+
+        listing = capsys.readouterr().out
+        assert "   1) * Profile 1" in listing
+        assert "  11)   Profile 11" in listing
 
     # Verifies Enter takes the only signed-in profile, and is re-asked when the answer would be a guess
     def test_enter_takes_the_only_signed_in_profile(self, im_module, monkeypatch, capsys):
