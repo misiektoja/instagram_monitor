@@ -157,10 +157,13 @@ def test_doctor_names_invalid_path_and_color_values(monkeypatch):
     monkeypatch.setattr(monitor, path_setting, [])
     monkeypatch.setattr(monitor, "COLOR_THEME", {"game": 7}, raising=False)
     checks = monitor.doctor_check_configuration([])
-    assert all(check.advice is not None for check in checks if check.status == "FAIL")
-    errors = monitor.configuration_shape_errors()
-    assert any(path_setting in error for error in errors)
-    assert any("COLOR_THEME['game']" in error for error in errors)
+    failures = [check for check in checks if check.status == "FAIL"]
+    assert all(check.advice is not None for check in failures)
+    assert any(path_setting in check.label for check in failures)
+    assert any("COLOR_THEME['game']" in check.label for check in failures)
+    # The rest of the section still reports, so one unusable value cannot hide the whole configuration
+    assert any(check.status == "PASS" for check in checks)
+    assert isinstance(getattr(monitor, path_setting), str)
 
 
 # Redacts an old token even when the provider repeats it after a settings reload
@@ -194,7 +197,8 @@ def test_an_unrenderable_discord_template_is_reported_not_raised(delivery, monke
     monkeypatch.setattr(monitor, "WEBHOOK_URL", "https://discord.com/api/webhooks/123456789012345678/private")
     monkeypatch.setattr(monitor, "WEBHOOK_TEMPLATE", template)
     error = monitor.validate_webhook_customization("discord")
-    assert error is None or error == "WEBHOOK_TEMPLATE must be a dictionary or a JSON object string"
+    # The advice has to name the placeholder that failed, since a dictionary template is already a dictionary
+    assert error is None or "WEBHOOK_TEMPLATE cannot render" in error or error == "WEBHOOK_TEMPLATE must be a dictionary or a JSON object string"
     assert monitor.send_webhook("Activity", "A post appeared", force=True) in (0, 1)
     assert "Traceback" not in capsys.readouterr().out
 

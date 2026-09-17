@@ -1,6 +1,8 @@
 """Exercise notification and configuration boundaries with real dependencies."""
 
+import argparse
 import copy
+import errno
 import os
 import sys
 
@@ -91,12 +93,11 @@ def test_private_password_survives_resolution(tmp_path, monkeypatch):
     assert actual == value
 
 
-@pytest.mark.parametrize("setting", ["CSV_FILE", "DOTENV_FILE"])
-# Reports malformed paths before startup expands or opens them
-def test_doctor_reports_invalid_path_types(tmp_path, monkeypatch, capsys, setting):
+# Runs main with a configuration file that sets one path setting to a value that is not a path
+def run_with_invalid_path(tmp_path, monkeypatch, setting, command):
     config = tmp_path / "monitor.conf"
     config.write_text(setting + " = 17\n", encoding="utf-8")
-    args = [monitor.__file__, "--doctor", "--config-file", str(config)]
+    args = [monitor.__file__, command, "--config-file", str(config)]
     if setting != "DOTENV_FILE":
         args.extend(["--env-file", "none"])
     monkeypatch.setattr(sys, "argv", args)
@@ -106,7 +107,63 @@ def test_doctor_reports_invalid_path_types(tmp_path, monkeypatch, capsys, settin
         raise requests.ConnectionError("Offline boundary check")
 
     monkeypatch.setattr(HTTPAdapter, "send", offline_requests)
-    with pytest.raises(SystemExit) as stopped:
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    try:
         monitor.main()
+    except SystemExit as stopped:
+        return stopped.code
+    return 0
+
+
+@pytest.mark.parametrize("setting", ["CSV_FILE", "DOTENV_FILE"])
+# Names a malformed path as a doctor row and still reports the rest of the configuration
+def test_doctor_reports_invalid_path_types(tmp_path, monkeypatch, capsys, setting):
+    run_with_invalid_path(tmp_path, monkeypatch, setting, "--doctor")
+    output = capsys.readouterr().out
+    assert f"{setting} must be a path string" in output
+    # The report keeps going, so one unusable value cannot hide the checks the user came for
+    assert output.count("[PASS]") > 1
+
+
+# Keeps the commands that correct a malformed path usable, since stopping there leaves no way to fix it
+def test_recovery_commands_run_with_an_invalid_path(tmp_path, monkeypatch, capsys):
+    run_with_invalid_path(tmp_path, monkeypatch, "DOTENV_FILE", "--setup")
+    output = capsys.readouterr().out
+    # Not fatal, and the wizard reached its own stop instead of the gate that would have blocked the repair
+    assert "Error: Invalid settings" not in output
+    assert "--generate-config" in output
+
+
+# Keeps a run that is not one of those commands stopping on a path it cannot use
+def test_a_normal_run_still_stops_on_an_invalid_path(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "DOTENV_FILE", 17)
+    monkeypatch.setattr(sys, "argv", [monitor.__file__])
+    with pytest.raises(SystemExit) as stopped:
+        monitor.prepare_configured_paths(argparse.Namespace())
     assert stopped.value.code == 1
-    assert setting in capsys.readouterr().out
+    assert "Error: Invalid settings: DOTENV_FILE must be a path string" in capsys.readouterr().out
+
+
+# Treats a provider that repeats the words of the local limit as the remote failure it is
+def test_a_server_reply_cannot_claim_local_resource_exhaustion():
+    response = requests.Response()
+    response.status_code = 503
+    response.reason = "too many open files"
+    rejected = requests.HTTPError("503 Server Error: too many open files for url: https://example.test", response=response)
+    assert not monitor.is_too_many_open_files(rejected)
+    exhausted = requests.ConnectionError("Could not open socket")
+    exhausted.__cause__ = OSError(errno.EMFILE, "Too many open files")
+    assert monitor.is_too_many_open_files(exhausted)
+
+
+# Names the placeholder a dictionary template cannot fill instead of asking for a dictionary
+def test_an_unfillable_placeholder_is_named(monkeypatch):
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(monitor, "WEBHOOK_TEMPLATE", {"content": "{title[9]}"})
+    monkeypatch.setattr(monitor, "WEBHOOK_AVATAR_URL", "")
+    error = monitor.validate_webhook_customization("discord")
+    assert error is not None
+    assert "{title[9]}" in error
+    assert "must be a dictionary" not in error
+    monkeypatch.setattr(monitor, "WEBHOOK_TEMPLATE", "not a json object")
+    assert monitor.validate_webhook_customization("discord") == "WEBHOOK_TEMPLATE must be a dictionary or a JSON object string"
