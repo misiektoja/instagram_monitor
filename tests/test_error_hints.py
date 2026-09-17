@@ -742,7 +742,7 @@ class TestEveryProblemIsReported:
         lines = capsys.readouterr().out.splitlines()
         assert lines[0] == "* Error: The check interval must be greater than 0"
         assert lines[1].startswith("To fix: Correct the value")
-        assert lines[2] == f"Guide: {im_module.CONFIG_FILE_GUIDE_URL}"
+        assert lines[2] == f"Guide: {im_module.CONFIG_GUIDE_URL}"
 
     # A problem the run recovers from keeps its own label, so a warning is not reported as a failure
     def test_a_warning_keeps_its_label(self, im_module, monkeypatch, capsys):

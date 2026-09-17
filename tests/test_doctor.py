@@ -86,7 +86,7 @@ class TestDoctorChecks:
 
         assert len(failures) == 1
         assert failures[0].label == "Error loading config file 'x.conf'"
-        assert failures[0].advice.fix == im_module.recovery_fix_with_guide("use documented settings.", im_module.CONFIG_FILE_GUIDE_URL)
+        assert failures[0].advice.fix == im_module.recovery_fix_with_guide("use documented settings.", im_module.CONFIG_GUIDE_URL)
 
     # A retired setting is a warning that still names the file and links the guide
     def test_retired_settings_become_a_warning_check(self, im_module, monkeypatch):
@@ -98,7 +98,7 @@ class TestDoctorChecks:
 
         assert len(warnings) == 1
         assert "DISCORD_MAX_FIELDS" in warnings[0].detail
-        assert warnings[0].advice.fix.endswith(f"\nGuide: {im_module.CONFIG_FILE_GUIDE_URL}")
+        assert warnings[0].advice.fix.endswith(f"\nGuide: {im_module.CONFIG_GUIDE_URL}")
 
     # Doctor resolves an automatic timezone instead of reporting the literal Auto value
     def test_automatic_timezone_is_resolved(self, im_module, monkeypatch):
@@ -183,7 +183,7 @@ class TestDoctorChecks:
 
         assert check.status == "FAIL"
         assert "tzlocal" in check.advice.fix
-        assert check.advice.fix.endswith(f"\nGuide: {im_module.CONFIG_FILE_GUIDE_URL}")
+        assert check.advice.fix.endswith(f"\nGuide: {im_module.CONFIG_GUIDE_URL}")
 
     # An unusable timezone name is reported before monitoring rather than at the first timestamp
     def test_invalid_timezone_fails(self, im_module, monkeypatch):
@@ -197,7 +197,7 @@ class TestDoctorChecks:
 
         assert check.status == "FAIL"
         assert check.detail == "Time zone: Europe/Nowhere"
-        assert check.advice.fix == im_module.recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", im_module.CONFIG_FILE_GUIDE_URL)
+        assert check.advice.fix == im_module.recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", im_module.CONFIG_GUIDE_URL)
 
     # Session advice is derived from the shared fix hints so Doctor and monitoring stay consistent
     def test_session_failure_carries_the_shared_fix_hint(self, im_module, monkeypatch):

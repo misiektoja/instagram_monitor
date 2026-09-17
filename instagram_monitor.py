@@ -785,6 +785,432 @@ NTFY_MESSAGE_LIMIT_BYTES = 4095
 # -------------------------
 
 
+# Default dummy values so linters shut up
+# Do not change values below - modify them in the configuration section or config file instead
+SESSION_USERNAME = ""
+SESSION_PASSWORD = ""
+SMTP_HOST: str = ""
+SMTP_PORT: int = 0
+SMTP_USER: str = ""
+SMTP_PASSWORD: str = ""
+SMTP_SSL: bool = False
+SENDER_EMAIL: str = ""
+RECEIVER_EMAIL: str = ""
+STATUS_NOTIFICATION = False
+FOLLOWERS_NOTIFICATION = False
+ERROR_NOTIFICATION = False
+WEBHOOK_ENABLED = False
+WEBHOOK_PROVIDER = "discord"
+WEBHOOK_URL = ""
+WEBHOOK_USERNAME = "Instagram Monitor"
+
+# How LOCAL_TIMEZONE was arrived at, which decides the row doctor prints for it
+LOCAL_TIMEZONE_STATE = "config"
+WEBHOOK_AVATAR_URL = ""
+WEBHOOK_STATUS_NOTIFICATION = True
+WEBHOOK_FOLLOWERS_NOTIFICATION = True
+WEBHOOK_ERROR_NOTIFICATION = False
+WEBHOOK_HEADERS = {}
+NTFY_ACCESS_TOKEN = ""
+WEBHOOK_TEMPLATE = {}
+WEBHOOK_TRANSFORMS = []
+FOLLOWERS_CHURN_AUTODISABLED = False
+FOLLOWERS_CHURN_AUTODISABLED_REASON = ""
+INSTA_CHECK_INTERVAL = 0
+RANDOM_SLEEP_DIFF_LOW = 0
+RANDOM_SLEEP_DIFF_HIGH = 0
+LOCAL_TIMEZONE = ""
+TIME_FORMAT_12H = False
+DETECT_CHANGED_PROFILE_PIC = False
+DOWNLOAD_THUMBNAILS = False
+PROFILE_PIC_FILE_EMPTY = ""
+IMGCAT_PATH = ""
+SKIP_SESSION = False
+SKIP_FOLLOWERS = False
+SKIP_FOLLOWINGS = False
+SKIP_GETTING_STORY_DETAILS = False
+SKIP_GETTING_POSTS_DETAILS = False
+GET_MORE_POST_DETAILS = False
+DETECT_COLLAB_POSTS = True
+FOLLOWERS_CHURN_DETECTION = False
+SKIP_FOLLOW_CHANGES = False
+BE_HUMAN = False
+DAILY_HUMAN_HITS = 0
+MY_HASHTAGS = []
+BE_HUMAN_VERBOSE = False
+ENABLE_JITTER = False
+JITTER_VERBOSE = False
+SKIP_WRAP_MESSAGES = False
+FOLLOWERS_PER_BATCH = 0
+FOLLOWEES_PER_BATCH = 0
+FOLLOWER_LIMIT_TO_FETCH = 0
+FOLLOWER_DELAY_PER_BATCH = 0
+ADVANCED_FOLLOWER_FETCH = False
+ADVANCED_FOLLOWEE_FETCH = False
+FOLLOWEE_LIMIT_TO_FETCH = 0
+FOLLOWEE_DELAY_PER_BATCH = 0
+FOLLOW_LIST_SOURCE = "auto"
+FOLLOW_LIST_BROWSER_CHANNEL = "chromium"
+FOLLOW_LIST_BROWSER_HEADLESS = True
+FOLLOW_LIST_BROWSER_PROFILE_DIR = ""
+FOLLOW_LIST_BROWSER_SCROLL_DELAY = 1.5
+FOLLOW_LIST_BROWSER_TIMEOUT = 30
+IDENTITY_BUDGET_PER_DAY = 0
+CIRCUIT_BREAKER = True
+PRIVACY_SUBSTITUTIONS = []
+PROXY_ENABLED = False
+PROXY_URL = ""
+PROXY_CERT_PATH = ""
+VERIFY_SSL = True
+PROXY_WEBHOOKS = False
+CONTAINER_FIREFOX_HOSTS = {
+    "macos": ("macOS", '"${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"'),
+    "linux": ("Linux with a standard Firefox package", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "linux-snap": ("Linux with Firefox from Snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "linux-flatpak": ("Linux with Firefox from Flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "windows-powershell": ("Windows PowerShell", '"$env:APPDATA\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "windows-cmd": ("Windows Command Prompt", '"%APPDATA%\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'),
+}
+USER_AGENT = ""
+USER_AGENT_MOBILE = ""
+HTTP_BACKEND = "curl_cffi"
+CURL_CFFI_IMPERSONATE = "auto"
+LIVENESS_CHECK_INTERVAL = 0
+CHECK_INTERNET_URL = ""
+CHECK_INTERNET_TIMEOUT = 0
+IP_ADDRESS_URL = ["https://checkip.amazonaws.com", "https://api.ipify.org?format=json", "https://api.my-ip.io/v2/ip.json", "https://ipinfo.io/json", "https://httpbin.org/ip"]
+CHECK_POSTS_IN_HOURS_RANGE = False
+HOURS_VERBOSE = False
+MIN_H1 = 0
+MAX_H1 = 0
+MIN_H2 = 0
+MAX_H2 = 0
+NEXT_OPERATION_DELAY = 0
+TARGET_USERNAMES = []
+MULTI_TARGET_STAGGER = 0
+MULTI_TARGET_STAGGER_JITTER = 0
+MULTI_TARGET_SERIALIZE_HTTP = False
+DASHBOARD_ENABLED = False
+WEB_DASHBOARD_ENABLED = False
+WEB_DASHBOARD_PORT = 8000
+WEB_DASHBOARD_HOST = '127.0.0.1'
+WEB_DASHBOARD_ALLOWED_HOSTS = []
+WEB_DASHBOARD_TEMPLATE_DIR = ""
+DASHBOARD_SHOW_CHECK_SECONDS = True
+CSV_FILE = ""
+DOTENV_FILE = ""
+FIREFOX_MACOS_COOKIE = ""
+FIREFOX_WINDOWS_COOKIE = ""
+FIREFOX_LINUX_COOKIE = ""
+INSTA_LOGFILE = ""
+OUTPUT_DIR = ""
+DISABLE_LOGGING = False
+ASCII_LOG_SEPARATORS = "Auto"
+TRUNCATE_CHARS = 0
+HORIZONTAL_LINE = 0
+# Counts the reports printed so far, so a check can tell whether it said anything before the banner claims it was quiet
+REPORTS_PRINTED = 0
+CLEAR_SCREEN = False
+COLORED_OUTPUT = False
+COLOR_THEME = {}
+VERBOSE_MODE = False
+DEBUG_MODE = False
+DELIVERY_CONFIRMATIONS = True
+INSTA_CHECK_SIGNAL_VALUE = 0
+THUMBNAILS_FORCED_BY_WEB = False
+WEBHOOK_FIELD_VALUE_LIMIT = 1024
+WEBHOOK_EMBED_TITLE_LIMIT = 256
+NTFY_MESSAGE_LIMIT_BYTES = 4095
+mode_of_the_tool = "Unknown"
+
+exec(CONFIG_BLOCK, globals())
+
+# Default name for the optional config file
+DEFAULT_CONFIG_FILENAME = "instagram_monitor.conf"
+
+# List of secret keys to load from env/config
+SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD", "WEBHOOK_URL", "PROXY_URL", "NTFY_ACCESS_TOKEN")
+
+# The one-shot commands that only save a secret, so the other early exits do not swallow them
+SECRET_ACTION_FLAGS = ("--set-smtp-password", "--set-webhook-url")
+
+# Effective source name for each configured secret without storing another copy of its value
+SECRET_SOURCES = {}
+
+# Every layer that can supply a secret, so a source outside the set is a typo rather than a new layer
+SECRET_SOURCE_ORDER = ("configuration file or command line", "dotenv file", "dotenv file reload", "environment", "command line")
+
+# Secret keys that were already exported when the tool started, so a dotenv file cannot be credited for them
+EXPORTED_SECRET_KEYS: frozenset = frozenset()
+
+# Config values that must retain safe template defaults during generated output
+SENSITIVE_CONFIG_KEYS = frozenset((*SECRET_KEYS, "WEBHOOK_HEADERS"))
+
+# List of error substrings that unambiguously indicate the session account or IP has been flagged (challenge/checkpoint/shadowban)
+FLAGGED_TRIGGERS = ("detected automated checks", "checkpoint_required", "challenge_required", "feedback_required")
+
+# Error substrings meaning a profile could not be found, which is ambiguous between a deleted/renamed target and a flagged session
+PROFILE_NOT_FOUND_TRIGGERS = ("ProfileNotExistsException",)
+
+# Canonical always-present public account used to probe whether the session/IP is flagged rather than a target being genuinely gone
+FLAGGED_PROBE_USERNAME = "instagram"
+
+# Seconds to reuse a flag-probe verdict so simultaneous target failures do not each hit the network
+FLAGGED_PROBE_TTL = 300
+
+# Default value for network-related timeouts in functions
+FUNCTION_TIMEOUT = 15
+
+# How many followees BeHuman pulls before picking one profile to visit, so the simulation stays cheap
+BE_HUMAN_FOLLOWEE_SAMPLE = 25
+
+MEDIA_DOWNLOAD_MAX_BYTES = 100 * 1024 * 1024
+MEDIA_DOWNLOAD_CHUNK_BYTES = 64 * 1024
+
+# Computed later once final INSTA_CHECK_INTERVAL is known (config/env/CLI) and updated on SIGTRAP/SIGABRT
+# Seconds rather than checks, because a failing run usually retries on a different interval than a healthy one
+LIVENESS_REMINDER_SECONDS = 0
+
+# Whether the monitoring screen has started, so a verbose notice knows if it needs to close itself with a timestamp
+MONITORING_ACTIVE = False
+
+stdout_bck = None
+last_output = []
+csvfieldnames = ['Date', 'Type', 'Old', 'New']
+PRIVACY_SUBSTITUTIONS_INVALID_WARNED = False
+
+imgcat_exe = ""
+
+CLI_CONFIG_PATH = None
+
+# Set when --config-file none switches discovery off, so no later lookup can find a file the run rejected
+CONFIG_DISCOVERY_DISABLED = False
+
+# The settings a configuration file actually assigned, so a built-in default is never mistaken for a choice
+CONFIGURED_SETTING_NAMES = set()
+
+# To solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
+nl_ch = "\n"
+
+DOCS_BASE_URL = "https://misiektoja.github.io/instagram_monitor"
+QUICK_START_GUIDE_URL = DOCS_BASE_URL + "/setup-and-first-run/"
+INSTALLATION_GUIDE_URL = DOCS_BASE_URL + "/installation/#requirements"
+CONFIG_GUIDE_URL = DOCS_BASE_URL + "/configuration/#configuration-file"
+SESSION_IMPORT_GUIDE_URL = DOCS_BASE_URL + "/configuration/#option-3-session-login-using-browser-cookies-recommended"
+SMTP_GUIDE_URL = DOCS_BASE_URL + "/configuration/#smtp-settings"
+WEBHOOK_GUIDE_URL = DOCS_BASE_URL + "/usage/#webhook-notifications"
+PROXY_GUIDE_URL = DOCS_BASE_URL + "/usage/#routing-traffic-through-a-proxy"
+TLS_GUIDE_URL = DOCS_BASE_URL + "/configuration/#tls-verification"
+FOLLOW_LIST_SOURCE_GUIDE_URL = DOCS_BASE_URL + "/usage/#follower-list-source"
+HTTP_BACKEND_GUIDE_URL = DOCS_BASE_URL + "/usage/#http-transport-backend"
+ANTI_DETECTION_INTERVAL_GUIDE_URL = DOCS_BASE_URL + "/anti-detection/#keep-the-polling-interval-reasonable"
+ANTI_DETECTION_SESSION_GUIDE_URL = DOCS_BASE_URL + "/anti-detection/#sign-in-using-session-mode-with-browser-cookies"
+CONNECTION_ERRORS_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#connection-errors-during-monitoring"
+DOCTOR_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#doctor-preflight"
+SECRETS_GUIDE_URL = DOCS_BASE_URL + "/configuration/#storing-secrets"
+DIAGNOSTICS_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#choosing-the-right-logging-level"
+MONITORING_GUIDE_URL = DOCS_BASE_URL + "/usage/#monitoring-mode"
+WEB_DASHBOARD_GUIDE_URL = DOCS_BASE_URL + "/view-modes/#web-dashboard"
+OUTPUT_GUIDE_URL = DOCS_BASE_URL + "/usage/#output-directory"
+
+# The fix named when nothing is being monitored, shared by the startup gate and the Doctor target check
+NO_TARGET_FIX = "Pass a target on the command line, set TARGET_USERNAMES in the config or enable the Web Dashboard"
+
+# Label of the Doctor check that reports a fully validated webhook, shared with the sibling monitors
+SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
+WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
+
+# The label every sibling monitor uses when email alerts are on but the settings they would use cannot deliver
+EMAIL_UNUSABLE_CHECK_LABEL = "Email alerts are enabled but unusable"
+
+# Placeholder values shipped in the sample configuration, which stand in for a setting the user has not filled in yet
+CONFIG_PLACEHOLDER_VALUES = frozenset({"your_smtp_server_ssl", "your_smtp_user", "your_smtp_password", "your_sender_email", "your_receiver_email", "your_webhook_url"})
+
+# Placeholder prefixes covering the SMTP host variants earlier releases shipped, such as 'your_smtp_server_plaintext'
+CONFIG_PLACEHOLDER_PREFIXES = ("your_smtp_server_",)
+
+# Progress Bar control items
+START_TIME = 0
+NAME_COUNT = 1
+WRAPPER_COUNT = 0
+pbar = None
+
+# Global tracking for last/next check times
+LAST_CHECK_TIME = None
+NEXT_CHECK_TIME = None
+
+# Human-friendly global next-check display (used when NEXT_CHECK_TIME is not available)
+NEXT_CHECK_DISPLAY = None
+CHECK_COUNT = 0
+
+START_TIME_SCRIPT = 0.0
+MINS_CUTOFF = 120
+
+# Global state for debug mode manual check trigger (thread-safe Event)
+# Will be initialized after threading is imported
+DEBUG_INPUT_THREAD = None
+
+# Dashboard components (initialized later)
+DASHBOARD_CONSOLE = None
+DASHBOARD_LIVE = None
+DASHBOARD_MODE = 'user'
+DASHBOARD_DATA = {}
+
+# Web Dashboard global state
+WEB_DASHBOARD_APP = None
+WEB_DASHBOARD_THREAD = None
+WEB_DASHBOARD_DATA = {
+    'version': VERSION,
+    'targets': {},
+    'config': {},
+    'check_count': 0,
+    'last_check': None,
+    'next_check': None,
+    'dashboard_mode': 'user',
+    'uptime': None,
+    'start_time': None,
+    'activities': [],
+    'is_monitoring': False,
+    'session': {'username': SESSION_USERNAME if SESSION_USERNAME else None, 'active': False}
+}
+WEB_DASHBOARD_MONITOR_THREADS = {}  # Active monitoring threads by username
+WEB_DASHBOARD_STOP_EVENTS = {}  # Stop events for each monitoring thread
+WEB_DASHBOARD_RECHECK_EVENTS = {}  # Recheck events for each monitoring thread
+WEB_DASHBOARD_MEDIA_FILES = {}  # Registered media tokens mapped to canonical files
+WEB_DASHBOARD_MEDIA_LIMIT = 1000
+
+
+# ASCII art startup banner (pure ASCII for maximum terminal portability)
+STARTUP_BANNER = r"""
+ .---------------.    ___           _
+|   O        .   |   |_ _|_ __  ___| |_ __ _  __ _ _ __ __ _ _ __ ___
+|     .-----.    |    | || '_ \/ __| __/ _` |/ _` | '__/ _` | '_ ` _ \
+|    |  ( )  |   |    | || | | \__ \ || (_| | (_| | | | (_| | | | | | |
+|     '-----'    |   |___|_| |_|___/\__\__,_|\__, |_|  \__,_|_| |_| |_|
+ '---------------'                           |___/
+                      __  __             _ _
+                     |  \/  | ___  _ __ (_) |_ ___  _ __
+                     | |\/| |/ _ \| '_ \| | __/ _ \| '__|
+                     | |  | | (_) | | | | | || (_) | |
+                     |_|  |_|\___/|_| |_|_|\__\___/|_|"""
+
+
+import sys
+import contextvars
+import functools
+import signal
+
+
+# Early signal handler to catch Ctrl+C during imports/initialization
+def _startup_sigint_handler(signum, frame):
+    sys.exit(0)
+
+
+# Reads one answer with Python's default Ctrl+C behavior, so the prompt reports the outcome instead of the signal handler
+def read_interactively(reader, *args, **kwargs):
+    try:
+        previous_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+    except (ValueError, OSError):
+        # Handlers can only be replaced from the main thread, which is where every prompt runs
+        return reader(*args, **kwargs)
+    try:
+        return reader(*args, **kwargs)
+    finally:
+        try:
+            signal.signal(signal.SIGINT, previous_handler)
+        except (ValueError, OSError):
+            pass
+
+
+# Reads one hidden value with debug output forced off, so the secret cannot reach the debug stream while it is handled
+def read_secret_privately(hidden_prompt, prompt_text):
+    global DEBUG_MODE
+    previous_debug_mode = DEBUG_MODE
+    DEBUG_MODE = False
+    try:
+        return read_interactively(hidden_prompt, prompt_text)
+    finally:
+        DEBUG_MODE = previous_debug_mode
+
+
+signal.signal(signal.SIGINT, _startup_sigint_handler)
+
+# Oldest interpreter this tool supports, shared by the startup gate and the Doctor environment check
+MINIMUM_PYTHON_VERSION = (3, 9)
+MINIMUM_PYTHON_VERSION_TEXT = ".".join(str(part) for part in MINIMUM_PYTHON_VERSION)
+
+if sys.version_info[:2] < MINIMUM_PYTHON_VERSION:
+    print(f"* Error: Python version {MINIMUM_PYTHON_VERSION_TEXT} or higher required !")
+    print(f"To fix: Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer, then re-run the tool")
+    print(f"Guide: {INSTALLATION_GUIDE_URL}")
+    sys.exit(1)
+
+import time
+import json
+import os
+import tempfile
+import getpass
+import importlib.util
+import shlex
+from os.path import expanduser, dirname, basename
+from datetime import datetime, timezone, timedelta
+from dateutil import relativedelta
+from dateutil.parser import isoparse, parse
+import calendar
+import requests as req
+import urllib3
+WEBHOOK_SESSION = req.Session()
+import atexit
+import errno
+import shutil
+import textwrap
+import smtplib
+import ssl
+from email.utils import parsedate_to_datetime
+from email.header import Header
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
+import argparse
+import csv
+import random
+try:
+    import pytz
+except ModuleNotFoundError:
+    raise SystemExit("Error: Couldn't find the pytz library !\n\nTo install it, run:\n    pip3 install pytz\n\nOnce installed, re-run this tool")
+try:
+    from tzlocal import get_localzone
+except ImportError:
+    get_localzone = None
+import platform
+from platform import system
+import re
+import ipaddress
+from itertools import zip_longest
+import subprocess
+import threading
+import hashlib
+import heapq
+
+# Initialize the web dashboard data lock now that threading is imported
+# Important: this lock is acquired from multiple call-sites that can nest (e.g. helpers called inside other locked
+# regions). Use an RLock to avoid self-deadlocks that would freeze the web dashboard API
+WEB_DASHBOARD_DATA_LOCK = threading.RLock()
+DASHBOARD_DATA_LOCK = threading.RLock()
+WEB_DASHBOARD_MONITOR_LOCK = threading.RLock()
+SESSION_REFRESH_CONDITION = threading.Condition()
+SESSION_REFRESH_GENERATION = 0
+FLAGGED_PROBE_LOCK = threading.Condition()  # Dedupes flag-probe network calls without holding a lock across one
+FLAGGED_PROBE_CACHE = {'ts': 0.0, 'flagged': False, 'in_flight': False}  # Cached flag-probe verdict with its timestamp
+FLAGGED_NOTIFY_LOCK = threading.Lock()  # Serializes flag-alert de-dup across concurrent target threads
+FLAGGED_NOTIFY_STATE = {'ts': 0.0}  # Timestamp of the last flag alert so one shared session flag alerts once per window
+PROXY_REFRESH_VERSION = 0
+PROXY_REFRESH_LOCK = threading.Lock()
+FOLLOW_ANALYSIS_LIST_LIMIT = 500
+FOLLOW_ANALYSIS_SNAPSHOT_SKEW_WARNING_SECONDS = 3600
+
+
 # Splits 'value  # comment' into ('value', '# comment'), ignoring # inside quotes
 def _split_inline_comment_preserving_strings(rhs: str) -> tuple[str, str]:
     in_single = False
@@ -1464,432 +1890,6 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     _wizard_print_command("Send a test email:", test_command)
     _wizard_print_command("Check setup again:", doctor_command)
     return str(destination)
-
-
-# Default dummy values so linters shut up
-# Do not change values below - modify them in the configuration section or config file instead
-SESSION_USERNAME = ""
-SESSION_PASSWORD = ""
-SMTP_HOST: str = ""
-SMTP_PORT: int = 0
-SMTP_USER: str = ""
-SMTP_PASSWORD: str = ""
-SMTP_SSL: bool = False
-SENDER_EMAIL: str = ""
-RECEIVER_EMAIL: str = ""
-STATUS_NOTIFICATION = False
-FOLLOWERS_NOTIFICATION = False
-ERROR_NOTIFICATION = False
-WEBHOOK_ENABLED = False
-WEBHOOK_PROVIDER = "discord"
-WEBHOOK_URL = ""
-WEBHOOK_USERNAME = "Instagram Monitor"
-
-# How LOCAL_TIMEZONE was arrived at, which decides the row doctor prints for it
-LOCAL_TIMEZONE_STATE = "config"
-WEBHOOK_AVATAR_URL = ""
-WEBHOOK_STATUS_NOTIFICATION = True
-WEBHOOK_FOLLOWERS_NOTIFICATION = True
-WEBHOOK_ERROR_NOTIFICATION = False
-WEBHOOK_HEADERS = {}
-NTFY_ACCESS_TOKEN = ""
-WEBHOOK_TEMPLATE = {}
-WEBHOOK_TRANSFORMS = []
-FOLLOWERS_CHURN_AUTODISABLED = False
-FOLLOWERS_CHURN_AUTODISABLED_REASON = ""
-INSTA_CHECK_INTERVAL = 0
-RANDOM_SLEEP_DIFF_LOW = 0
-RANDOM_SLEEP_DIFF_HIGH = 0
-LOCAL_TIMEZONE = ""
-TIME_FORMAT_12H = False
-DETECT_CHANGED_PROFILE_PIC = False
-DOWNLOAD_THUMBNAILS = False
-PROFILE_PIC_FILE_EMPTY = ""
-IMGCAT_PATH = ""
-SKIP_SESSION = False
-SKIP_FOLLOWERS = False
-SKIP_FOLLOWINGS = False
-SKIP_GETTING_STORY_DETAILS = False
-SKIP_GETTING_POSTS_DETAILS = False
-GET_MORE_POST_DETAILS = False
-DETECT_COLLAB_POSTS = True
-FOLLOWERS_CHURN_DETECTION = False
-SKIP_FOLLOW_CHANGES = False
-BE_HUMAN = False
-DAILY_HUMAN_HITS = 0
-MY_HASHTAGS = []
-BE_HUMAN_VERBOSE = False
-ENABLE_JITTER = False
-JITTER_VERBOSE = False
-SKIP_WRAP_MESSAGES = False
-FOLLOWERS_PER_BATCH = 0
-FOLLOWEES_PER_BATCH = 0
-FOLLOWER_LIMIT_TO_FETCH = 0
-FOLLOWER_DELAY_PER_BATCH = 0
-ADVANCED_FOLLOWER_FETCH = False
-ADVANCED_FOLLOWEE_FETCH = False
-FOLLOWEE_LIMIT_TO_FETCH = 0
-FOLLOWEE_DELAY_PER_BATCH = 0
-FOLLOW_LIST_SOURCE = "auto"
-FOLLOW_LIST_BROWSER_CHANNEL = "chromium"
-FOLLOW_LIST_BROWSER_HEADLESS = True
-FOLLOW_LIST_BROWSER_PROFILE_DIR = ""
-FOLLOW_LIST_BROWSER_SCROLL_DELAY = 1.5
-FOLLOW_LIST_BROWSER_TIMEOUT = 30
-IDENTITY_BUDGET_PER_DAY = 0
-CIRCUIT_BREAKER = True
-PRIVACY_SUBSTITUTIONS = []
-PROXY_ENABLED = False
-PROXY_URL = ""
-PROXY_CERT_PATH = ""
-VERIFY_SSL = True
-PROXY_WEBHOOKS = False
-CONTAINER_FIREFOX_HOSTS = {
-    "macos": ("macOS", '"${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"'),
-    "linux": ("Linux with a standard Firefox package", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
-    "linux-snap": ("Linux with Firefox from Snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
-    "linux-flatpak": ("Linux with Firefox from Flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
-    "windows-powershell": ("Windows PowerShell", '"$env:APPDATA\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'),
-    "windows-cmd": ("Windows Command Prompt", '"%APPDATA%\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'),
-}
-USER_AGENT = ""
-USER_AGENT_MOBILE = ""
-HTTP_BACKEND = "curl_cffi"
-CURL_CFFI_IMPERSONATE = "auto"
-LIVENESS_CHECK_INTERVAL = 0
-CHECK_INTERNET_URL = ""
-CHECK_INTERNET_TIMEOUT = 0
-IP_ADDRESS_URL = ["https://checkip.amazonaws.com", "https://api.ipify.org?format=json", "https://api.my-ip.io/v2/ip.json", "https://ipinfo.io/json", "https://httpbin.org/ip"]
-CHECK_POSTS_IN_HOURS_RANGE = False
-HOURS_VERBOSE = False
-MIN_H1 = 0
-MAX_H1 = 0
-MIN_H2 = 0
-MAX_H2 = 0
-NEXT_OPERATION_DELAY = 0
-TARGET_USERNAMES = []
-MULTI_TARGET_STAGGER = 0
-MULTI_TARGET_STAGGER_JITTER = 0
-MULTI_TARGET_SERIALIZE_HTTP = False
-DASHBOARD_ENABLED = False
-WEB_DASHBOARD_ENABLED = False
-WEB_DASHBOARD_PORT = 8000
-WEB_DASHBOARD_HOST = '127.0.0.1'
-WEB_DASHBOARD_ALLOWED_HOSTS = []
-WEB_DASHBOARD_TEMPLATE_DIR = ""
-DASHBOARD_SHOW_CHECK_SECONDS = True
-CSV_FILE = ""
-DOTENV_FILE = ""
-FIREFOX_MACOS_COOKIE = ""
-FIREFOX_WINDOWS_COOKIE = ""
-FIREFOX_LINUX_COOKIE = ""
-INSTA_LOGFILE = ""
-OUTPUT_DIR = ""
-DISABLE_LOGGING = False
-ASCII_LOG_SEPARATORS = "Auto"
-TRUNCATE_CHARS = 0
-HORIZONTAL_LINE = 0
-# Counts the reports printed so far, so a check can tell whether it said anything before the banner claims it was quiet
-REPORTS_PRINTED = 0
-CLEAR_SCREEN = False
-COLORED_OUTPUT = False
-COLOR_THEME = {}
-VERBOSE_MODE = False
-DEBUG_MODE = False
-DELIVERY_CONFIRMATIONS = True
-INSTA_CHECK_SIGNAL_VALUE = 0
-THUMBNAILS_FORCED_BY_WEB = False
-WEBHOOK_FIELD_VALUE_LIMIT = 1024
-WEBHOOK_EMBED_TITLE_LIMIT = 256
-NTFY_MESSAGE_LIMIT_BYTES = 4095
-mode_of_the_tool = "Unknown"
-
-exec(CONFIG_BLOCK, globals())
-
-# Default name for the optional config file
-DEFAULT_CONFIG_FILENAME = "instagram_monitor.conf"
-
-# List of secret keys to load from env/config
-SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD", "WEBHOOK_URL", "PROXY_URL", "NTFY_ACCESS_TOKEN")
-
-# The one-shot commands that only save a secret, so the other early exits do not swallow them
-SECRET_ACTION_FLAGS = ("--set-smtp-password", "--set-webhook-url")
-
-# Effective source name for each configured secret without storing another copy of its value
-SECRET_SOURCES = {}
-
-# Every layer that can supply a secret, so a source outside the set is a typo rather than a new layer
-SECRET_SOURCE_ORDER = ("configuration file or command line", "dotenv file", "dotenv file reload", "environment", "command line")
-
-# Secret keys that were already exported when the tool started, so a dotenv file cannot be credited for them
-EXPORTED_SECRET_KEYS: frozenset = frozenset()
-
-# Config values that must retain safe template defaults during generated output
-SENSITIVE_CONFIG_KEYS = frozenset((*SECRET_KEYS, "WEBHOOK_HEADERS"))
-
-# List of error substrings that unambiguously indicate the session account or IP has been flagged (challenge/checkpoint/shadowban)
-FLAGGED_TRIGGERS = ("detected automated checks", "checkpoint_required", "challenge_required", "feedback_required")
-
-# Error substrings meaning a profile could not be found, which is ambiguous between a deleted/renamed target and a flagged session
-PROFILE_NOT_FOUND_TRIGGERS = ("ProfileNotExistsException",)
-
-# Canonical always-present public account used to probe whether the session/IP is flagged rather than a target being genuinely gone
-FLAGGED_PROBE_USERNAME = "instagram"
-
-# Seconds to reuse a flag-probe verdict so simultaneous target failures do not each hit the network
-FLAGGED_PROBE_TTL = 300
-
-# Default value for network-related timeouts in functions
-FUNCTION_TIMEOUT = 15
-
-# How many followees BeHuman pulls before picking one profile to visit, so the simulation stays cheap
-BE_HUMAN_FOLLOWEE_SAMPLE = 25
-
-MEDIA_DOWNLOAD_MAX_BYTES = 100 * 1024 * 1024
-MEDIA_DOWNLOAD_CHUNK_BYTES = 64 * 1024
-
-# Computed later once final INSTA_CHECK_INTERVAL is known (config/env/CLI) and updated on SIGTRAP/SIGABRT
-# Seconds rather than checks, because a failing run usually retries on a different interval than a healthy one
-LIVENESS_REMINDER_SECONDS = 0
-
-# Whether the monitoring screen has started, so a verbose notice knows if it needs to close itself with a timestamp
-MONITORING_ACTIVE = False
-
-stdout_bck = None
-last_output = []
-csvfieldnames = ['Date', 'Type', 'Old', 'New']
-PRIVACY_SUBSTITUTIONS_INVALID_WARNED = False
-
-imgcat_exe = ""
-
-CLI_CONFIG_PATH = None
-
-# Set when --config-file none switches discovery off, so no later lookup can find a file the run rejected
-CONFIG_DISCOVERY_DISABLED = False
-
-# The settings a configuration file actually assigned, so a built-in default is never mistaken for a choice
-CONFIGURED_SETTING_NAMES = set()
-
-# To solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
-nl_ch = "\n"
-
-DOCUMENTATION_URL = "https://misiektoja.github.io/instagram_monitor"
-QUICK_START_GUIDE_URL = DOCUMENTATION_URL + "/setup-and-first-run/"
-INSTALLATION_GUIDE_URL = DOCUMENTATION_URL + "/installation/#requirements"
-CONFIG_FILE_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#configuration-file"
-SESSION_IMPORT_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#option-3-session-login-using-browser-cookies-recommended"
-SMTP_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#smtp-settings"
-WEBHOOK_GUIDE_URL = DOCUMENTATION_URL + "/usage/#webhook-notifications"
-PROXY_GUIDE_URL = DOCUMENTATION_URL + "/usage/#routing-traffic-through-a-proxy"
-TLS_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#tls-verification"
-FOLLOW_LIST_SOURCE_GUIDE_URL = DOCUMENTATION_URL + "/usage/#follower-list-source"
-HTTP_BACKEND_GUIDE_URL = DOCUMENTATION_URL + "/usage/#http-transport-backend"
-ANTI_DETECTION_INTERVAL_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#keep-the-polling-interval-reasonable"
-ANTI_DETECTION_SESSION_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#sign-in-using-session-mode-with-browser-cookies"
-CONNECTION_ERRORS_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#connection-errors-during-monitoring"
-DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
-SECRETS_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#storing-secrets"
-DIAGNOSTICS_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#choosing-the-right-logging-level"
-MONITORING_GUIDE_URL = DOCUMENTATION_URL + "/usage/#monitoring-mode"
-WEB_DASHBOARD_GUIDE_URL = DOCUMENTATION_URL + "/view-modes/#web-dashboard"
-OUTPUT_GUIDE_URL = DOCUMENTATION_URL + "/usage/#output-directory"
-
-# The fix named when nothing is being monitored, shared by the startup gate and the Doctor target check
-NO_TARGET_FIX = "Pass a target on the command line, set TARGET_USERNAMES in the config or enable the Web Dashboard"
-
-# Label of the Doctor check that reports a fully validated webhook, shared with the sibling monitors
-SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
-WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
-
-# The label every sibling monitor uses when email alerts are on but the settings they would use cannot deliver
-EMAIL_UNUSABLE_CHECK_LABEL = "Email alerts are enabled but unusable"
-
-# Placeholder values shipped in the sample configuration, which stand in for a setting the user has not filled in yet
-CONFIG_PLACEHOLDER_VALUES = frozenset({"your_smtp_server_ssl", "your_smtp_user", "your_smtp_password", "your_sender_email", "your_receiver_email", "your_webhook_url"})
-
-# Placeholder prefixes covering the SMTP host variants earlier releases shipped, such as 'your_smtp_server_plaintext'
-CONFIG_PLACEHOLDER_PREFIXES = ("your_smtp_server_",)
-
-# Progress Bar control items
-START_TIME = 0
-NAME_COUNT = 1
-WRAPPER_COUNT = 0
-pbar = None
-
-# Global tracking for last/next check times
-LAST_CHECK_TIME = None
-NEXT_CHECK_TIME = None
-
-# Human-friendly global next-check display (used when NEXT_CHECK_TIME is not available)
-NEXT_CHECK_DISPLAY = None
-CHECK_COUNT = 0
-
-START_TIME_SCRIPT = 0.0
-MINS_CUTOFF = 120
-
-# Global state for debug mode manual check trigger (thread-safe Event)
-# Will be initialized after threading is imported
-DEBUG_INPUT_THREAD = None
-
-# Dashboard components (initialized later)
-DASHBOARD_CONSOLE = None
-DASHBOARD_LIVE = None
-DASHBOARD_MODE = 'user'
-DASHBOARD_DATA = {}
-
-# Web Dashboard global state
-WEB_DASHBOARD_APP = None
-WEB_DASHBOARD_THREAD = None
-WEB_DASHBOARD_DATA = {
-    'version': VERSION,
-    'targets': {},
-    'config': {},
-    'check_count': 0,
-    'last_check': None,
-    'next_check': None,
-    'dashboard_mode': 'user',
-    'uptime': None,
-    'start_time': None,
-    'activities': [],
-    'is_monitoring': False,
-    'session': {'username': SESSION_USERNAME if SESSION_USERNAME else None, 'active': False}
-}
-WEB_DASHBOARD_MONITOR_THREADS = {}  # Active monitoring threads by username
-WEB_DASHBOARD_STOP_EVENTS = {}  # Stop events for each monitoring thread
-WEB_DASHBOARD_RECHECK_EVENTS = {}  # Recheck events for each monitoring thread
-WEB_DASHBOARD_MEDIA_FILES = {}  # Registered media tokens mapped to canonical files
-WEB_DASHBOARD_MEDIA_LIMIT = 1000
-
-
-# ASCII art startup banner (pure ASCII for maximum terminal portability)
-STARTUP_BANNER = r"""
- .---------------.    ___           _
-|   O        .   |   |_ _|_ __  ___| |_ __ _  __ _ _ __ __ _ _ __ ___
-|     .-----.    |    | || '_ \/ __| __/ _` |/ _` | '__/ _` | '_ ` _ \
-|    |  ( )  |   |    | || | | \__ \ || (_| | (_| | | | (_| | | | | | |
-|     '-----'    |   |___|_| |_|___/\__\__,_|\__, |_|  \__,_|_| |_| |_|
- '---------------'                           |___/
-                      __  __             _ _
-                     |  \/  | ___  _ __ (_) |_ ___  _ __
-                     | |\/| |/ _ \| '_ \| | __/ _ \| '__|
-                     | |  | | (_) | | | | | || (_) | |
-                     |_|  |_|\___/|_| |_|_|\__\___/|_|"""
-
-
-import sys
-import contextvars
-import functools
-import signal
-
-
-# Early signal handler to catch Ctrl+C during imports/initialization
-def _startup_sigint_handler(signum, frame):
-    sys.exit(0)
-
-
-# Reads one answer with Python's default Ctrl+C behavior, so the prompt reports the outcome instead of the signal handler
-def read_interactively(reader, *args, **kwargs):
-    try:
-        previous_handler = signal.getsignal(signal.SIGINT)
-        signal.signal(signal.SIGINT, signal.default_int_handler)
-    except (ValueError, OSError):
-        # Handlers can only be replaced from the main thread, which is where every prompt runs
-        return reader(*args, **kwargs)
-    try:
-        return reader(*args, **kwargs)
-    finally:
-        try:
-            signal.signal(signal.SIGINT, previous_handler)
-        except (ValueError, OSError):
-            pass
-
-
-# Reads one hidden value with debug output forced off, so the secret cannot reach the debug stream while it is handled
-def read_secret_privately(hidden_prompt, prompt_text):
-    global DEBUG_MODE
-    previous_debug_mode = DEBUG_MODE
-    DEBUG_MODE = False
-    try:
-        return read_interactively(hidden_prompt, prompt_text)
-    finally:
-        DEBUG_MODE = previous_debug_mode
-
-
-signal.signal(signal.SIGINT, _startup_sigint_handler)
-
-# Oldest interpreter this tool supports, shared by the startup gate and the Doctor environment check
-MINIMUM_PYTHON_VERSION = (3, 9)
-MINIMUM_PYTHON_VERSION_TEXT = ".".join(str(part) for part in MINIMUM_PYTHON_VERSION)
-
-if sys.version_info[:2] < MINIMUM_PYTHON_VERSION:
-    print(f"* Error: Python version {MINIMUM_PYTHON_VERSION_TEXT} or higher required !")
-    print(f"To fix: Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer, then re-run the tool")
-    print(f"Guide: {INSTALLATION_GUIDE_URL}")
-    sys.exit(1)
-
-import time
-import json
-import os
-import tempfile
-import getpass
-import importlib.util
-import shlex
-from os.path import expanduser, dirname, basename
-from datetime import datetime, timezone, timedelta
-from dateutil import relativedelta
-from dateutil.parser import isoparse, parse
-import calendar
-import requests as req
-import urllib3
-WEBHOOK_SESSION = req.Session()
-import atexit
-import errno
-import shutil
-import textwrap
-import smtplib
-import ssl
-from email.utils import parsedate_to_datetime
-from email.header import Header
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.image import MIMEImage
-import argparse
-import csv
-import random
-try:
-    import pytz
-except ModuleNotFoundError:
-    raise SystemExit("Error: Couldn't find the pytz library !\n\nTo install it, run:\n    pip3 install pytz\n\nOnce installed, re-run this tool")
-try:
-    from tzlocal import get_localzone
-except ImportError:
-    get_localzone = None
-import platform
-from platform import system
-import re
-import ipaddress
-from itertools import zip_longest
-import subprocess
-import threading
-import hashlib
-import heapq
-
-# Initialize the web dashboard data lock now that threading is imported
-# Important: this lock is acquired from multiple call-sites that can nest (e.g. helpers called inside other locked
-# regions). Use an RLock to avoid self-deadlocks that would freeze the web dashboard API
-WEB_DASHBOARD_DATA_LOCK = threading.RLock()
-DASHBOARD_DATA_LOCK = threading.RLock()
-WEB_DASHBOARD_MONITOR_LOCK = threading.RLock()
-SESSION_REFRESH_CONDITION = threading.Condition()
-SESSION_REFRESH_GENERATION = 0
-FLAGGED_PROBE_LOCK = threading.Condition()  # Dedupes flag-probe network calls without holding a lock across one
-FLAGGED_PROBE_CACHE = {'ts': 0.0, 'flagged': False, 'in_flight': False}  # Cached flag-probe verdict with its timestamp
-FLAGGED_NOTIFY_LOCK = threading.Lock()  # Serializes flag-alert de-dup across concurrent target threads
-FLAGGED_NOTIFY_STATE = {'ts': 0.0}  # Timestamp of the last flag alert so one shared session flag alerts once per window
-PROXY_REFRESH_VERSION = 0
-PROXY_REFRESH_LOCK = threading.Lock()
-FOLLOW_ANALYSIS_LIST_LIMIT = 500
-FOLLOW_ANALYSIS_SNAPSHOT_SKEW_WARNING_SECONDS = 3600
 
 
 # Normalizes and validates an Instagram username before it enters paths or HTML
@@ -7386,13 +7386,13 @@ def resolve_local_timezone():
             LOCAL_TIMEZONE_STATE = "auto"
         elif get_localzone is None:
             LOCAL_TIMEZONE_STATE = "auto_unavailable"
-            timezone_advice = make_recovery_advice("dependency.missing", "The local timezone could not be detected", recovery_fix_with_guide("Install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL), False, "LOCAL_TIMEZONE is Auto but tzlocal is unavailable")
+            timezone_advice = make_recovery_advice("dependency.missing", "The local timezone could not be detected", recovery_fix_with_guide("Install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_GUIDE_URL), False, "LOCAL_TIMEZONE is Auto but tzlocal is unavailable")
         else:
             LOCAL_TIMEZONE_STATE = "auto_failed"
-            timezone_advice = make_recovery_advice("config.invalid", "The local timezone could not be detected", recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL), False, "tzlocal did not return a supported timezone")
+            timezone_advice = make_recovery_advice("config.invalid", "The local timezone could not be detected", recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_GUIDE_URL), False, "tzlocal did not return a supported timezone")
     elif not is_valid_timezone(LOCAL_TIMEZONE):
         LOCAL_TIMEZONE_STATE = "invalid"
-        timezone_advice = make_recovery_advice("config.invalid", f"Configured LOCAL_TIMEZONE '{LOCAL_TIMEZONE}' is not valid", recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_FILE_GUIDE_URL), False, f"Time zone: {LOCAL_TIMEZONE}")
+        timezone_advice = make_recovery_advice("config.invalid", f"Configured LOCAL_TIMEZONE '{LOCAL_TIMEZONE}' is not valid", recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_GUIDE_URL), False, f"Time zone: {LOCAL_TIMEZONE}")
     return timezone_advice
 
 
@@ -8727,7 +8727,7 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
             for line in lines:
                 print(line)
             print(colorize("info", f"To fix: {fix}"))
-            print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
+            print(f"Guide: {CONFIG_GUIDE_URL}")
         return False
 
     try:
@@ -10657,10 +10657,10 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not an Instagram problem", "Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", False, DIAGNOSTICS_GUIDE_URL)
 
     if context == "config_missing":
-        return advice("config.missing", "A required setting has no value", "Set it in the configuration file, in the environment or with its command-line flag, then re-run the tool", False, CONFIG_FILE_GUIDE_URL)
+        return advice("config.missing", "A required setting has no value", "Set it in the configuration file, in the environment or with its command-line flag, then re-run the tool", False, CONFIG_GUIDE_URL)
 
     if context == "config":
-        return advice("config.invalid", "A configured value cannot be used", "Correct the value in the configuration file or on the command line, then re-run the tool", False, CONFIG_FILE_GUIDE_URL)
+        return advice("config.invalid", "A configured value cannot be used", "Correct the value in the configuration file or on the command line, then re-run the tool", False, CONFIG_GUIDE_URL)
 
     if context == "dotenv_missing":
         return advice("secret.missing", "The named dotenv file does not exist", "Create it with --setup, point --env-file at the right path, or set the private values in the environment instead", False, SECRETS_GUIDE_URL)
@@ -10669,7 +10669,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return advice("secret.missing", "A private value could not be stored", "Check that the dotenv file is writable, or set the value in the environment instead", False, SECRETS_GUIDE_URL)
 
     if context == "file_exists":
-        return advice("file.exists", "The destination file already exists", "Re-run with --force to replace it after a timestamped backup, or write to a different path", False, CONFIG_FILE_GUIDE_URL)
+        return advice("file.exists", "The destination file already exists", "Re-run with --force to replace it after a timestamped backup, or write to a different path", False, CONFIG_GUIDE_URL)
 
     if context == "file_read":
         return advice("file.unreadable", "A file the tool reads could not be opened", "Check the path and its permissions, and that the file is readable UTF-8 text", False, OUTPUT_GUIDE_URL)
@@ -10678,7 +10678,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return advice("file.unwritable", "A file the tool writes could not be opened", "Check that the output directory exists and is writable, or choose another with --output-dir", False, OUTPUT_GUIDE_URL)
 
     if context == "config_write":
-        return advice("file.unwritable", "The configuration file could not be written", "Check that the directory exists and is writable, or choose another path with --config-file", False, CONFIG_FILE_GUIDE_URL)
+        return advice("file.unwritable", "The configuration file could not be written", "Check that the directory exists and is writable, or choose another path with --config-file", False, CONFIG_GUIDE_URL)
 
     if context == "smtp_config":
         return advice("smtp.invalid", "The SMTP configuration is incomplete or invalid", "Check SMTP_HOST, SMTP_PORT, SENDER_EMAIL and RECEIVER_EMAIL in the configuration file", False, SMTP_GUIDE_URL)
@@ -17381,7 +17381,7 @@ def prepare_configured_paths(args):
         # Cleared here so a run that starts with usable settings cannot inherit an earlier run's report
         DISCARDED_SETTING_ERRORS.clear()
         return
-    advice = make_recovery_advice("config.invalid", "Invalid settings: " + ". ".join(errors), recovery_fix_with_guide("Correct the named settings in the configuration file or command line", CONFIG_FILE_GUIDE_URL), False)
+    advice = make_recovery_advice("config.invalid", "Invalid settings: " + ". ".join(errors), recovery_fix_with_guide("Correct the named settings in the configuration file or command line", CONFIG_GUIDE_URL), False)
     # A monitoring run cannot continue on a value this broken, but doctor, the setup wizard and the secret
     # commands are how it gets corrected, so they fall back to the built-in values and report the setting
     if not command_reports_configuration(args):
@@ -17428,24 +17428,24 @@ def discard_invalid_shape_settings():
 def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None, timezone_advice=None) -> List[DoctorCheck]:
     # Read before the unusable values are replaced, so each row names the value the user configured
     # Reported as ordinary rows so one malformed setting cannot hide the rest of the configuration report
-    checks: List[DoctorCheck] = [make_doctor_check("Configuration", "FAIL", detail, advice=make_recovery_advice("config.invalid", detail, recovery_fix_with_guide("Correct the named setting in the configuration file", CONFIG_FILE_GUIDE_URL), False)) for detail in configuration_shape_errors()]
+    checks: List[DoctorCheck] = [make_doctor_check("Configuration", "FAIL", detail, advice=make_recovery_advice("config.invalid", detail, recovery_fix_with_guide("Correct the named setting in the configuration file", CONFIG_GUIDE_URL), False)) for detail in configuration_shape_errors()]
     discard_invalid_shape_settings()
     cfg = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
     if config_errors:
         for config_error in config_errors:
-            advice = make_recovery_advice("config.invalid", doctor_label_from_error(config_error["summary"]), recovery_fix_with_guide(config_error.get("fix", ""), CONFIG_FILE_GUIDE_URL), False, config_error.get("detail", ""))
+            advice = make_recovery_advice("config.invalid", doctor_label_from_error(config_error["summary"]), recovery_fix_with_guide(config_error.get("fix", ""), CONFIG_GUIDE_URL), False, config_error.get("detail", ""))
             checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, config_error.get("detail", ""), advice))
     elif cfg:
         checks.append(make_doctor_check("Configuration", "PASS", "Configuration file loaded", f"Path: {cfg}"))
     else:
         checks.append(make_doctor_check("Configuration", "PASS", "No configuration file selected", "Using built-in defaults and command-line overrides"))
     if retired_settings:
-        advice = make_recovery_advice("config.invalid", "Config file contains removed settings", recovery_fix_with_guide("Delete the reported settings or regenerate the file with --generate-config", CONFIG_FILE_GUIDE_URL), False)
+        advice = make_recovery_advice("config.invalid", "Config file contains removed settings", recovery_fix_with_guide("Delete the reported settings or regenerate the file with --generate-config", CONFIG_GUIDE_URL), False)
         checks.append(make_doctor_check("Configuration", "WARN", advice.summary, describe_retired_settings(retired_settings, cfg), advice))
 
     if env_path and str(env_path) in DOTENV_STARTUP_ERRORS:
         detail, fix = DOTENV_STARTUP_ERRORS[str(env_path)]
-        advice = make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(f"{fix}, then run Doctor again", CONFIG_FILE_GUIDE_URL), False)
+        advice = make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(f"{fix}, then run Doctor again", CONFIG_GUIDE_URL), False)
         checks.append(make_doctor_check("Configuration", "FAIL", "Dotenv file could not be loaded", detail, advice))
     elif env_path and os.path.isfile(str(env_path)):
         checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
@@ -17466,11 +17466,11 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
     # type raises out of the one command whose job is to explain a broken configuration
     numeric_problems = runtime_configuration_problems()
     if numeric_problems:
-        advice = make_recovery_advice("config.invalid", "One or more numeric settings are invalid", recovery_fix_with_guide("Correct the reported settings in the configuration file", CONFIG_FILE_GUIDE_URL), False)
+        advice = make_recovery_advice("config.invalid", "One or more numeric settings are invalid", recovery_fix_with_guide("Correct the reported settings in the configuration file", CONFIG_GUIDE_URL), False)
         checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, "Invalid numeric settings: " + "; ".join(f"{name} {requirement}" for name, requirement in numeric_problems.items()), advice))
     boolean_errors = runtime_boolean_errors()
     if boolean_errors:
-        advice = make_recovery_advice("config.invalid", "One or more on/off settings are invalid", recovery_fix_with_guide("Set the reported settings to True or False in the configuration file", CONFIG_FILE_GUIDE_URL), False)
+        advice = make_recovery_advice("config.invalid", "One or more on/off settings are invalid", recovery_fix_with_guide("Set the reported settings to True or False in the configuration file", CONFIG_GUIDE_URL), False)
         checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, "Invalid on/off settings: " + "; ".join(boolean_errors), advice))
 
     if 'INSTA_CHECK_INTERVAL' not in numeric_problems:
@@ -18496,7 +18496,7 @@ def run_main():
         else:
             print(f"* Error: {summary}")
             print(colorize("info", f"To fix: {fix}"))
-            print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
+            print(f"Guide: {CONFIG_GUIDE_URL}")
             sys.exit(1)
 
     if cfg_path and not load_config_file(cfg_path, error_out=doctor_config_errors, report_errors=not doctor_mode, retired_out=doctor_config_retired) and not doctor_mode:
@@ -18554,7 +18554,7 @@ def run_main():
             detail, fix = dotenv_load_problem(env_path, exc)
             DOTENV_STARTUP_ERRORS[str(env_path)] = (detail, fix)
             if not args.doctor:
-                print_recovery_advice(make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(fix, CONFIG_FILE_GUIDE_URL), False))
+                print_recovery_advice(make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(fix, CONFIG_GUIDE_URL), False))
                 if not command_reports_configuration(args):
                     sys.exit(1)
 
@@ -18752,7 +18752,7 @@ def run_main():
         for name, requirement in numeric_problems.items():
             print(f"  - {name} {requirement}")
         print(colorize("info", "To fix: Correct the reported settings in the configuration file"))
-        print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
+        print(f"Guide: {CONFIG_GUIDE_URL}")
         sys.exit(1)
 
     # Both combinations below are read from settings the check above may have rejected, and only doctor mode gets

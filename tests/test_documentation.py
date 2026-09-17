@@ -217,8 +217,8 @@ def test_runtime_guide_urls_resolve_to_a_real_page_and_anchor():
 
     for name in guide_names:
         url = getattr(monitor, name)
-        assert url.startswith(monitor.DOCUMENTATION_URL + "/"), f"{name} does not point at the documentation site: {url}"
-        relative_path, _separator, anchor = url.removeprefix(monitor.DOCUMENTATION_URL).lstrip("/").partition("#")
+        assert url.startswith(monitor.DOCS_BASE_URL + "/"), f"{name} does not point at the documentation site: {url}"
+        relative_path, _separator, anchor = url.removeprefix(monitor.DOCS_BASE_URL).lstrip("/").partition("#")
         slug = relative_path.strip("/")
         page = DOCS_DIRECTORY / "index.md" if not slug else DOCS_DIRECTORY / f"{slug}.md"
         assert page.is_file(), f"{name} points at a missing page: {page.name}"
