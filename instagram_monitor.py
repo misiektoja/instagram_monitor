@@ -8429,15 +8429,24 @@ def sqlite_cookie_uri(database_path, parameters: str) -> str:
     return "file:" + quote(PurePosixPath(Path(database_path).as_posix()).as_posix()) + "?" + parameters
 
 
-# Opens a cookie database read-only. Firefox and Chromium keep recent cookies in a write-ahead log until they
-# check it in, and an immutable open ignores that log, so a session saved moments ago by a running browser would
-# look absent. The immutable mode stays as the fallback for media where a plain read-only open cannot work
+# A running browser holds its cookie database locked, so a plain read-only open waits out the busy timeout before
+# failing. Kept short because that wait is paid once per profile while listing them
+COOKIE_DATABASE_BUSY_TIMEOUT = 0.25
+
+
+# Opens a cookie database read-only. Browsers keep recent cookies in a write-ahead log until they check it in, and
+# an immutable open ignores that log, so a session saved moments ago would look absent. The read-only open that
+# does see the log is only attempted when a log is actually present, since it is the slower of the two and fails
+# outright on read-only media such as the container's mounted Firefox profile
 def open_cookie_database(database_path):
+    uris = [sqlite_immutable_uri(database_path)]
+    if os.path.exists(f"{database_path}-wal"):
+        uris.insert(0, sqlite_readonly_uri(database_path))
     first_error: Optional[sqlite3.DatabaseError] = None
-    for uri in (sqlite_readonly_uri(database_path), sqlite_immutable_uri(database_path)):
+    for uri in uris:
         conn = None
         try:
-            conn = connect(uri, uri=True)
+            conn = connect(uri, uri=True, timeout=COOKIE_DATABASE_BUSY_TIMEOUT)
             conn.execute("PRAGMA schema_version").fetchone()
             return conn
         except sqlite3.DatabaseError as error:
@@ -15728,6 +15737,50 @@ def _wizard_import_browsers(method: str) -> list:
     return list(IMPORT_BROWSERS)
 
 
+# Cached per wizard run, since the login menu re-renders on every retry and each answer costs a cookie database read
+_WIZARD_BROWSER_SESSION_COUNTS: Dict[str, Optional[Tuple[int, int]]] = {}
+
+
+# Counts one browser's profiles and how many hold an Instagram session, or None when they could not be read.
+# Reading the cookie name needs no decryption key, so this works before pycookiecheat is installed
+def _wizard_browser_session_counts(browser: str) -> Optional[Tuple[int, int]]:
+    if browser not in _WIZARD_BROWSER_SESSION_COUNTS:
+        try:
+            if browser == "firefox":
+                states = [cookie_file_has_instagram_session(p["path"], firefox=True) for p in list_firefox_profiles()]
+            else:
+                states = [cookie_file_has_instagram_session(p.get("cookie_file")) for p in list_chromium_profiles(browser)]
+            _WIZARD_BROWSER_SESSION_COUNTS[browser] = (len([state for state in states if state]), len(states))
+        except Exception:
+            _WIZARD_BROWSER_SESSION_COUNTS[browser] = None
+    return _WIZARD_BROWSER_SESSION_COUNTS[browser]
+
+
+# Returns whether any profile of one browser holds an Instagram session
+def _wizard_browser_is_signed_in(browser: str) -> bool:
+    counts = _wizard_browser_session_counts(browser)
+    return bool(counts and counts[0])
+
+
+# Describes what setup can see of one browser's profiles, so the login menu is not a blind choice between browsers
+def _wizard_browser_session_note(browser: str) -> str:
+    counts = _wizard_browser_session_counts(browser)
+    if counts is None:
+        return ""
+    signed_in, total = counts
+    if not total:
+        return f" No {browser_label(browser)} profiles were found on this machine."
+    if not signed_in:
+        return f" No {browser_label(browser)} profile here is signed in to Instagram yet."
+    return f" {signed_in} of {total} profiles here are signed in to Instagram." if total > 1 else " This profile is signed in to Instagram."
+
+
+# Describes one Chromium browser in the import menu, preferring what its own profiles show over the generic line
+def _wizard_chromium_option_desc(browser: str, local_profiles: bool) -> str:
+    note = _wizard_browser_session_note(browser) if local_profiles else ""
+    return note.strip() or _wizard_browser_desc(browser)
+
+
 # One-line wizard menu description for an import browser choice
 def _wizard_browser_desc(browser: str) -> str:
     if browser == "firefox":
@@ -16236,12 +16289,19 @@ def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
     _wizard_reset_section(state, WIZARD_LOGIN_CONFIG_KEYS, ("SESSION_PASSWORD",))
     supported_browsers = _wizard_import_browsers(method)
     chromium_browsers = [browser for browser in supported_browsers if browser in CHROMIUM_IMPORT_BROWSERS]
+    _WIZARD_BROWSER_SESSION_COUNTS.clear()
+    # A container reads the host's profiles through a mount that is not attached yet, so nothing local describes them
+    local_profiles = method not in ("docker", "compose")
     while True:
         firefox_label = "Import from Firefox after setup, recommended" if method in ("docker", "compose") else "Import from Firefox, recommended"
-        options = [("No login", "Sees new posts, bio and follower counts."), (firefox_label, "Reuses a signed-in host Firefox profile through one read-only import command." if method in ("docker", "compose") else "Reuses a signed-in Firefox session with no additional package.")]
+        firefox_description = "Reuses a signed-in host Firefox profile through one read-only import command." if not local_profiles else f"Reuses your Firefox session with no additional package.{_wizard_browser_session_note('firefox')}"
+        options = [("No login", "Sees new posts, bio and follower counts."), (firefox_label, firefox_description)]
         actions = ["no-login", "firefox"]
         if chromium_browsers:
             chromium_description = "Import from a signed-in Chrome, Brave or Chromium profile." if _wizard_chromium_dependency_available() else "Setup can install the required pycookiecheat package now."
+            if local_profiles:
+                ready = [browser_label(browser) for browser in chromium_browsers if _wizard_browser_is_signed_in(browser)]
+                chromium_description += f" Signed in here: {', '.join(ready)}." if ready else " None of them has a signed-in profile on this machine."
             options.append(("Import from Chrome, Brave or Chromium", chromium_description))
             actions.append("chromium")
         options.extend((("Use an existing Instaloader session", "You previously created a session with Instaloader."), ("Username and password", "Least safe. The password is stored in .env and never in the config.")))
@@ -16273,7 +16333,10 @@ def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
     if action == "firefox":
         state.import_browser = "firefox"
     elif action == "chromium":
-        browser_index = _wizard_ask_choice("Which Chromium browser should be imported?", [(browser_label(browser), _wizard_browser_desc(browser)) for browser in chromium_browsers])
+        chromium_options = [(browser_label(browser), _wizard_chromium_option_desc(browser, local_profiles)) for browser in chromium_browsers]
+        # The browser that already holds a session is the one the import can succeed with, so it leads
+        ready_indexes = [index for index, browser in enumerate(chromium_browsers) if local_profiles and _wizard_browser_is_signed_in(browser)]
+        browser_index = _wizard_ask_choice("Which Chromium browser should be imported?", chromium_options, default_index=ready_indexes[0] if ready_indexes else 0)
         state.import_browser = chromium_browsers[browser_index]
 
     print()
