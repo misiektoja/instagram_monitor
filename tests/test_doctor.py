@@ -3,7 +3,7 @@
 import ast
 import inspect
 import io
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
@@ -601,7 +601,7 @@ class TestRunDoctor:
 
         out = capsys.readouterr().out
         assert "Log destination for 'friend' appears writable\n  Path: instagram_monitor_friend.log" in out
-        writable.assert_called_once_with("instagram_monitor_friend.log")
+        assert call("instagram_monitor_friend.log") in writable.call_args_list, "the log row checks the final target-specific filename"
 
     def test_all_pass_no_login_returns_zero(self, im_module, monkeypatch, capsys):
         _setup_no_network(monkeypatch, im_module)
@@ -1393,3 +1393,300 @@ def test_doctor_reports_the_output_overrides_the_run_was_given(im_module, monkey
 
     assert seen["csv"] == str(csv_path)
     assert seen["logging_disabled"] is True
+
+
+# Collects the rows one doctor section produced, so a test asserts on results rather than rendered output
+def rows_for(checks, section):
+    return [check for check in checks if check.section == section]
+
+
+class TestDoctorProxyRows:
+    # Verifies the report says whether Instagram traffic leaves through a proxy, which nothing else in it stated
+    def test_an_enabled_proxy_is_reported_without_its_credentials(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "PROXY_ENABLED", True, raising=False)
+        monkeypatch.setattr(im_module, "PROXY_URL", "http://user:secret@proxy.example:8080", raising=False)
+        monkeypatch.setattr(im_module, "PROXY_CERT_PATH", "", raising=False)
+        monkeypatch.setattr(im_module, "PROXY_WEBHOOKS", False, raising=False)
+
+        rows = im_module.doctor_proxy_checks()
+
+        assert [row.status for row in rows] == ["PASS"]
+        assert "proxy.example:8080" in rows[0].detail
+        assert "secret" not in rows[0].detail and "user" not in rows[0].detail
+
+    # Verifies a run without a proxy still says so, since silence reads the same as not being checked
+    def test_a_disabled_proxy_is_stated(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "PROXY_ENABLED", False, raising=False)
+
+        rows = im_module.doctor_proxy_checks()
+
+        assert rows[0].status == "PASS" and "Proxy is disabled" in rows[0].label
+
+    # Verifies a proxy setting that would stop every request is a failure that names the setting, not the value
+    @pytest.mark.parametrize("url,expected", [("", "PROXY_URL has no value"), ("ftp://proxy.example", "not http or https"), ("proxy.example:8080", "no http:// or https:// prefix")])
+    def test_a_broken_proxy_url_is_named_without_being_quoted(self, im_module, monkeypatch, url, expected):
+        monkeypatch.setattr(im_module, "PROXY_ENABLED", True, raising=False)
+        monkeypatch.setattr(im_module, "PROXY_URL", url, raising=False)
+        monkeypatch.setattr(im_module, "PROXY_CERT_PATH", "", raising=False)
+        monkeypatch.setattr(im_module, "PROXY_STARTUP_ERRORS", [], raising=False)
+
+        rows = im_module.doctor_proxy_checks()
+
+        assert rows[0].status == "FAIL"
+        assert expected in rows[0].label
+        assert url not in rows[0].label or not url
+
+    # Verifies a certificate path that does not exist is reported rather than raising on the first request
+    def test_a_missing_proxy_certificate_is_reported(self, im_module, monkeypatch, tmp_path):
+        monkeypatch.setattr(im_module, "PROXY_ENABLED", True, raising=False)
+        monkeypatch.setattr(im_module, "PROXY_URL", "http://proxy.example:8080", raising=False)
+        monkeypatch.setattr(im_module, "PROXY_CERT_PATH", str(tmp_path / "absent.pem"), raising=False)
+        monkeypatch.setattr(im_module, "PROXY_STARTUP_ERRORS", [], raising=False)
+
+        rows = im_module.doctor_proxy_checks()
+
+        assert rows[0].status == "FAIL" and "does not exist" in rows[0].label
+
+    # Verifies the commands that exist to explain or repair a configuration are not stopped by the proxy in it
+    def test_a_broken_proxy_does_not_stop_the_reporting_commands(self, im_module, monkeypatch):
+        seen = {}
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--doctor", "--config-file", "none", "--env-file", "none", "--no-color", "--enable-proxy", "--proxy-url", "notaurl"])
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "run_doctor", lambda *args, **kwargs: seen.setdefault("reached", True) and 0)
+
+        with pytest.raises(SystemExit):
+            im_module.run_main()
+
+        assert seen.get("reached") is True, "doctor is the command that explains a broken proxy, so it has to run"
+        assert im_module.PROXY_STARTUP_ERRORS, "the problem is recorded so the report can name it"
+        assert im_module.PROXY_ENABLED is False, "the report continues with the proxy switched off"
+
+    # Verifies the proxy, interface and state-path rows reach the rendered report, not just their own helpers
+    def test_the_new_rows_reach_the_configuration_section(self, im_module, monkeypatch, tmp_path):
+        monkeypatch.setattr(im_module, "find_config_file", lambda p=None: None)
+        monkeypatch.setattr(im_module, "PROXY_ENABLED", False, raising=False)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", True, raising=False)
+        monkeypatch.setattr(im_module, "FLASK_AVAILABLE", False, raising=False)
+        monkeypatch.setattr(im_module, "DASHBOARD_ENABLED", False, raising=False)
+        monkeypatch.setattr(im_module, "exposure_state_path", lambda: str(tmp_path / "ledger.json"))
+
+        labels = [row.label for row in im_module.doctor_check_configuration([])]
+
+        assert any("Proxy is disabled" in label for label in labels)
+        assert any("Web Dashboard is enabled but cannot start" in label for label in labels)
+        assert any("Account safety ledger" in label for label in labels)
+
+
+class TestDoctorCircuitBreakerRow:
+    # Verifies a stopped account is reported, since every other check can pass while monitoring makes no request
+    @pytest.mark.parametrize("session_valid,expected", [(True, "WARN"), (False, "FAIL")])
+    def test_a_stopped_account_is_reported(self, im_module, monkeypatch, session_valid, expected):
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "alice", raising=False)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", False, raising=False)
+        monkeypatch.setattr(im_module, "circuit_breaker_state", lambda: {"tripped_ts": 1758000000, "failure_class": "action_block", "target": "bob", "error": ""})
+
+        rows = im_module.doctor_breaker_checks(session_valid)
+
+        assert [row.status for row in rows] == [expected]
+        assert "alice" in rows[0].label
+        assert "action_block" in rows[0].detail
+        assert rows[0].advice is not None and "several hours" in rows[0].advice.fix
+
+    # Verifies an account that is not stopped adds no row at all
+    def test_a_running_account_adds_no_row(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "circuit_breaker_state", lambda: None)
+
+        assert im_module.doctor_breaker_checks(True) == []
+
+    # Verifies the row reaches the Session section of a full check, not just the helper
+    def test_the_row_reaches_the_session_section(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "me", raising=False)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", False, raising=False)
+        monkeypatch.setattr(im_module, "circuit_breaker_state", lambda: {"tripped_ts": 1758000000, "failure_class": "challenge"})
+        report = im_module.DoctorReport()
+        report.bot = _FakeBot()
+
+        rows = im_module.doctor_check_session(report)
+
+        assert [row.status for row in rows] == ["PASS", "WARN"]
+        assert all(row.section == "Session" for row in rows)
+
+
+class TestDoctorSessionIdentity:
+    # Verifies a session signing in as another account fails, the way monitoring itself refuses to resume it
+    def test_a_session_for_another_account_fails(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "alice", raising=False)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", False, raising=False)
+        monkeypatch.setattr(im_module, "circuit_breaker_state", lambda: None)
+        report = im_module.DoctorReport()
+        report.bot = _FakeBot()
+
+        rows = im_module.doctor_check_session(report)
+
+        assert rows[0].status == "FAIL"
+        assert "signs in as me, not alice" in rows[0].label
+
+    # Verifies the matching case still passes, so the check cannot be satisfied by failing everything
+    def test_a_matching_session_passes(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "ME", raising=False)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", False, raising=False)
+        monkeypatch.setattr(im_module, "circuit_breaker_state", lambda: None)
+        report = im_module.DoctorReport()
+        report.bot = _FakeBot()
+
+        assert im_module.doctor_check_session(report)[0].status == "PASS"
+
+
+class TestDoctorInterfaceRows:
+    # Verifies an interface the configuration switches on but this machine cannot start is a failure
+    @pytest.mark.parametrize("flag,available,package", [("WEB_DASHBOARD_ENABLED", "FLASK_AVAILABLE", "flask"), ("DASHBOARD_ENABLED", "RICH_AVAILABLE", "rich")])
+    def test_an_enabled_interface_without_its_package_fails(self, im_module, monkeypatch, flag, available, package):
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", False, raising=False)
+        monkeypatch.setattr(im_module, "DASHBOARD_ENABLED", False, raising=False)
+        monkeypatch.setattr(im_module, flag, True, raising=False)
+        monkeypatch.setattr(im_module, available, False, raising=False)
+
+        rows = im_module.doctor_interface_checks()
+
+        assert [row.status for row in rows] == ["FAIL"]
+        assert "cannot start" in rows[0].label
+        assert package in rows[0].detail
+
+    # Verifies the Web Dashboard is not offered as the place to add targets when it cannot start
+    def test_a_dashboard_that_cannot_start_is_not_offered_for_targets(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", True, raising=False)
+        monkeypatch.setattr(im_module, "FLASK_AVAILABLE", False, raising=False)
+
+        rows = im_module.doctor_check_targets(im_module.DoctorReport(), [])
+
+        assert rows[0].status == "FAIL"
+        assert "cannot start" in rows[0].label
+        assert "targets can be added there" not in rows[0].detail
+
+    # Verifies a working dashboard still stands in for a configured target
+    def test_a_working_dashboard_still_passes(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", True, raising=False)
+        monkeypatch.setattr(im_module, "FLASK_AVAILABLE", True, raising=False)
+
+        assert im_module.doctor_check_targets(im_module.DoctorReport(), [])[0].status == "PASS"
+
+
+class TestDoctorTargetAdvice:
+    # Verifies a no-login run is never told its session may be flagged, matching the connectivity row above it
+    def test_no_login_target_failure_does_not_blame_a_session(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "", raising=False)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", True, raising=False)
+        monkeypatch.setattr(im_module, "profile_from_username_resilient", lambda bot, user: (_ for _ in ()).throw(Exception("Profile nosuchuser does not exist")))
+        report = im_module.DoctorReport()
+        report.bot = _FakeBot()
+
+        rows = im_module.doctor_check_targets(report, ["nosuchuser"])
+
+        assert rows[0].status == "FAIL"
+        assert rows[0].advice is not None and "session or IP may be temporarily flagged" not in rows[0].advice.fix
+
+    # Verifies a logged-in run keeps the extra cause, so the fix was made conditional and not deleted
+    def test_a_logged_in_target_failure_keeps_the_session_cause(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "alice", raising=False)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", False, raising=False)
+        monkeypatch.setattr(im_module, "profile_from_username_resilient", lambda bot, user: (_ for _ in ()).throw(Exception("Profile nosuchuser does not exist")))
+        report = im_module.DoctorReport()
+        report.bot = _FakeBot()
+
+        rows = im_module.doctor_check_targets(report, ["nosuchuser"])
+
+        assert rows[0].advice is not None and "session or IP may be temporarily flagged" in rows[0].advice.fix
+
+
+class TestDoctorEmailSettingShapes:
+    # Verifies a port the sender would refuse is named as a setting instead of raising inside the connection
+    def test_an_unusable_port_is_named_and_no_connection_is_attempted(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SMTP_PORT", "not-a-port", raising=False)
+        monkeypatch.setattr(im_module, "SMTP_HOST", "mail.example.test", raising=False)
+        monkeypatch.setattr(im_module, "SMTP_USER", "user", raising=False)
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "pass", raising=False)
+        monkeypatch.setattr(im_module, "SENDER_EMAIL", "a@example.test", raising=False)
+        monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "b@example.test", raising=False)
+        monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", True, raising=False)
+        monkeypatch.setattr(im_module.smtplib, "SMTP", _unreachable_smtp)
+
+        rows = rows_for(im_module.doctor_check_notifications(im_module.DoctorReport()), "Notifications")
+
+        assert rows[0].status == "WARN"
+        assert "SMTP_PORT" in rows[0].detail
+        assert "ValueError" not in rows[0].detail and "int()" not in rows[0].detail
+
+    # Verifies a host the sender would refuse is named here too, rather than surfacing as a lookup failure
+    def test_an_unusable_host_is_named_and_no_connection_is_attempted(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SMTP_PORT", 587, raising=False)
+        monkeypatch.setattr(im_module, "SMTP_HOST", "not a host name", raising=False)
+        monkeypatch.setattr(im_module, "SMTP_USER", "user", raising=False)
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "pass", raising=False)
+        monkeypatch.setattr(im_module, "SENDER_EMAIL", "a@example.test", raising=False)
+        monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "b@example.test", raising=False)
+        monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", True, raising=False)
+        monkeypatch.setattr(im_module.smtplib, "SMTP", _unreachable_smtp)
+
+        rows = rows_for(im_module.doctor_check_notifications(im_module.DoctorReport()), "Notifications")
+
+        assert rows[0].status == "WARN" and "SMTP_HOST" in rows[0].detail
+
+    # Verifies Doctor and the sender judge the host through the same helper, so they cannot drift apart
+    @pytest.mark.parametrize("host,usable", [("mail.example.test", True), ("192.0.2.10", True), ("not a host name", False), ("", False)])
+    def test_the_host_rule_is_shared_with_the_sender(self, im_module, host, usable):
+        assert im_module.smtp_host_is_usable(host) is usable
+
+
+class TestDoctorStatePaths:
+    # Verifies the safety ledger is checked, since an unwritable one stops the account rather than one output file
+    def test_an_unwritable_ledger_is_a_failure(self, im_module, monkeypatch, tmp_path):
+        monkeypatch.setattr(im_module, "exposure_state_path", lambda: str(tmp_path / "ledger.json"))
+        monkeypatch.setattr(im_module, "SKIP_FOLLOWERS", True, raising=False)
+        monkeypatch.setattr(im_module, "SKIP_FOLLOWINGS", True, raising=False)
+        monkeypatch.setattr(im_module, "output_destination_is_writable", lambda destination: False)
+
+        rows = im_module.doctor_state_path_checks([])
+
+        assert [row.status for row in rows] == ["FAIL"]
+        assert "Account safety ledger" in rows[0].label
+
+    # Verifies the saved follower lists are checked when names are collected, whatever the log and CSV settings say
+    def test_the_saved_list_directory_is_checked_when_names_are_collected(self, im_module, monkeypatch, tmp_path):
+        monkeypatch.setattr(im_module, "exposure_state_path", lambda: str(tmp_path / "ledger.json"))
+        monkeypatch.setattr(im_module, "OUTPUT_DIR", str(tmp_path), raising=False)
+        monkeypatch.setattr(im_module, "SKIP_FOLLOWERS", False, raising=False)
+        monkeypatch.setattr(im_module, "SKIP_FOLLOWINGS", False, raising=False)
+        monkeypatch.setattr(im_module, "output_destination_is_writable", lambda destination: True)
+
+        labels = [row.label for row in im_module.doctor_state_path_checks(["friend"])]
+
+        assert any("Saved follower list directory" in label for label in labels)
+
+    # Verifies a counts-only run is not asked about a directory it never writes into
+    def test_a_counts_only_run_checks_no_list_directory(self, im_module, monkeypatch, tmp_path):
+        monkeypatch.setattr(im_module, "exposure_state_path", lambda: str(tmp_path / "ledger.json"))
+        monkeypatch.setattr(im_module, "SKIP_FOLLOWERS", True, raising=False)
+        monkeypatch.setattr(im_module, "SKIP_FOLLOWINGS", True, raising=False)
+        monkeypatch.setattr(im_module, "output_destination_is_writable", lambda destination: True)
+
+        assert len(im_module.doctor_state_path_checks(["friend"])) == 1
+
+
+class TestDoctorRequestCost:
+    # Verifies the notice states what running Doctor costs, since it is reached for when Instagram is already refusing
+    def test_the_notice_counts_the_live_requests(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "alice", raising=False)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", False, raising=False)
+
+        im_module.render_doctor_notice(["one", "two"])
+
+        assert "about 4 Instagram request(s)" in capsys.readouterr().out
+
+    # Verifies a no-login run with no targets is counted as the single connectivity request it makes
+    def test_a_no_login_run_counts_one_request(self, im_module, monkeypatch, capsys):
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "", raising=False)
+        monkeypatch.setattr(im_module, "SKIP_SESSION", True, raising=False)
+
+        im_module.render_doctor_notice([])
+
+        assert "about 1 Instagram request(s)" in capsys.readouterr().out

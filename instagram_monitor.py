@@ -1003,6 +1003,7 @@ SESSION_IMPORT_GUIDE_URL = DOCS_BASE_URL + "/configuration/#option-3-session-log
 SMTP_GUIDE_URL = DOCS_BASE_URL + "/configuration/#smtp-settings"
 WEBHOOK_GUIDE_URL = DOCS_BASE_URL + "/usage/#webhook-notifications"
 PROXY_GUIDE_URL = DOCS_BASE_URL + "/usage/#routing-traffic-through-a-proxy"
+CIRCUIT_BREAKER_GUIDE_URL = DOCS_BASE_URL + "/usage/#identity-budget-and-circuit-breaker"
 TLS_GUIDE_URL = DOCS_BASE_URL + "/configuration/#tls-verification"
 FOLLOW_LIST_SOURCE_GUIDE_URL = DOCS_BASE_URL + "/usage/#follower-list-source"
 HTTP_BACKEND_GUIDE_URL = DOCS_BASE_URL + "/usage/#http-transport-backend"
@@ -5913,12 +5914,9 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     body = apply_privacy_substitutions(body)
     body_html = apply_privacy_substitutions(body_html)
 
-    try:
-        ipaddress.ip_address(str(SMTP_HOST))
-    except ValueError:
-        if not is_valid_fqdn(SMTP_HOST):
-            print_recovery_error("Cannot send email because SMTP_HOST is not a valid IP address or hostname", context="smtp_config")
-            return 1
+    if not smtp_host_is_usable(SMTP_HOST):
+        print_recovery_error("Cannot send email because SMTP_HOST is not a valid IP address or hostname", context="smtp_config")
+        return 1
 
     try:
         port = int(SMTP_PORT)
@@ -5985,6 +5983,15 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     return 0
 
 
+# Returns whether SMTP_HOST is something a mail connection can be opened to at all
+def smtp_host_is_usable(host) -> bool:
+    try:
+        ipaddress.ip_address(str(host))
+        return True
+    except ValueError:
+        return is_valid_fqdn(host)
+
+
 # Returns whether a setting is empty or still holds the placeholder value shipped in the sample configuration
 def is_placeholder_setting(value) -> bool:
     if not isinstance(value, str) or not value.strip():
@@ -6027,6 +6034,35 @@ def validate_proxy_url(url):
     except ValueError:
         return False
     return parsed.scheme.casefold() in ("https", "http") and bool(parsed.hostname)
+
+
+# Names what is wrong with a proxy URL without quoting it, since PROXY_URL is a private value and is redacted
+# from any message that repeats it, which would leave the reader nothing to act on
+def describe_proxy_url_shape(url) -> str:
+    text = str(url or "").strip()
+    # urlsplit reads a bare 'host:port' as a scheme, so the prefix is judged on the text rather than on the parse
+    scheme, separator, _ = text.partition("://")
+    if not separator:
+        return "it has no http:// or https:// prefix"
+    if scheme.casefold() not in ("http", "https"):
+        return f"its scheme is '{scheme}', not http or https"
+    try:
+        hostname = urlsplit(text).hostname
+    except ValueError:
+        return "it cannot be read as a URL"
+    return "it names no host" if not hostname else "it is not a complete proxy address"
+
+
+# Describes where proxied traffic goes, with any credentials left out
+def proxy_destination_display() -> str:
+    try:
+        parsed = urlsplit(str(PROXY_URL or ""))
+    except ValueError:
+        return "not a readable URL"
+    host = parsed.hostname or ""
+    if not host:
+        return "not a readable URL"
+    return f"{parsed.scheme or 'http'}://{host}" + (f":{parsed.port}" if parsed.port else "")
 
 
 # Converts a complete ntfy URL or valid ntfy.sh topic name into a complete topic URL
@@ -17674,6 +17710,23 @@ def runtime_boolean_errors() -> List[str]:
     return [f"{name} must be True or False, not {globals().get(name)!r}" for name in booleans if not isinstance(globals().get(name), bool)]
 
 
+# Names every proxy setting that would stop traffic reaching Instagram, as one detail and action per problem
+def proxy_configuration_problems() -> List[Tuple[str, str]]:
+    if not PROXY_ENABLED:
+        return []
+    problems: List[Tuple[str, str]] = []
+    if not PROXY_URL:
+        problems.append(("Proxies are enabled but PROXY_URL has no value", "Set PROXY_URL to the proxy address, or set PROXY_ENABLED to False"))
+    elif not validate_proxy_url(PROXY_URL):
+        problems.append((f"PROXY_URL is not a usable proxy address, {describe_proxy_url_shape(PROXY_URL)}", "Set PROXY_URL to a complete address such as http://host:port, or set PROXY_ENABLED to False"))
+    if PROXY_CERT_PATH:
+        try:
+            resolve_existing_file_path(PROXY_CERT_PATH, "proxy certificate")
+        except ValueError:
+            problems.append((f"The proxy certificate file '{PROXY_CERT_PATH}' does not exist", "Point PROXY_CERT_PATH at an existing certificate file, or leave it empty"))
+    return problems
+
+
 # The values this file defines for the settings checked below, so a configuration file that makes one
 # unusable can be reported and then ignored instead of stopping the commands that exist to correct it
 BUILT_IN_SHAPE_SETTINGS = {name: globals()[name] for name in ('INSTA_LOGFILE', 'CSV_FILE', 'DOTENV_FILE', 'COLOR_THEME', 'TRUNCATE_CHARS', 'OUTPUT_DIR', 'WEB_DASHBOARD_TEMPLATE_DIR', 'PROFILE_PIC_FILE_EMPTY') if name in globals()}
@@ -17682,6 +17735,10 @@ BUILT_IN_SHAPE_SETTINGS = {name: globals()[name] for name in ('INSTA_LOGFILE', '
 DISCARDED_SETTING_ERRORS = []
 
 DOTENV_STARTUP_ERRORS = {}
+
+# Proxy problems the run reported instead of exiting on, so a reporting command still names them after
+# continuing with the proxy switched off
+PROXY_STARTUP_ERRORS: List[Tuple[str, str]] = []
 
 
 # Names the cause of a dotenv file the run could not load, so startup and doctor word the same failure the same way
@@ -17698,6 +17755,12 @@ def dotenv_load_problem(path, error):
 def command_reports_configuration(args=None):
     # Read from the parsed namespace rather than the raw words, since argparse also accepts abbreviations
     return any(getattr(args, name, False) for name in ("doctor", "setup", "set_smtp_password", "set_webhook_url"))
+
+
+# True when the selected command only reads or repairs local state, or exists to explain the configuration, so a
+# proxy it never uses is reported rather than allowed to stop it
+def command_runs_without_proxy(args=None):
+    return command_reports_configuration(args) or any(getattr(args, name, False) for name in ("clear_breaker", "show_exposure", "analyze_follows"))
 
 
 # Validates effective path settings before startup expands or opens them
@@ -17760,6 +17823,64 @@ def discard_invalid_shape_settings():
             globals()[name] = built_in
 
 
+# Reports whether Instagram traffic is routed through a proxy, and every proxy setting that would stop it.
+# The recorded startup problems win, since a run that reported them continued with the proxy switched off
+def doctor_proxy_checks() -> List[DoctorCheck]:
+    problems = list(PROXY_STARTUP_ERRORS) or proxy_configuration_problems()
+    if problems:
+        return [make_doctor_check("Configuration", "FAIL", detail, "", make_recovery_advice("config.invalid", detail, recovery_fix_with_guide(fix, PROXY_GUIDE_URL), False)) for detail, fix in problems]
+    if not PROXY_ENABLED:
+        return [make_doctor_check("Configuration", "PASS", "Proxy is disabled", "Instagram requests leave this machine directly")]
+    detail = f"Destination: {proxy_destination_display()}. Webhooks: {'through the proxy' if PROXY_WEBHOOKS else 'sent directly'}"
+    if PROXY_CERT_PATH:
+        detail += f". Certificate: {PROXY_CERT_PATH}"
+    return [make_doctor_check("Configuration", "PASS", "Instagram requests go through a proxy", detail)]
+
+
+# Reports an interface the configuration switches on that this machine cannot start, since the optional dependency
+# warning states the general case and says the opposite of what an enabled interface means
+def doctor_interface_checks() -> List[DoctorCheck]:
+    checks: List[DoctorCheck] = []
+    for enabled, available, name, package in ((WEB_DASHBOARD_ENABLED, FLASK_AVAILABLE, "Web Dashboard", "flask"), (DASHBOARD_ENABLED, RICH_AVAILABLE, "Terminal Dashboard", "rich")):
+        if not enabled:
+            continue
+        if available:
+            checks.append(make_doctor_check("Configuration", "PASS", f"The {name} is enabled"))
+            continue
+        advice = make_recovery_advice("dependency.missing", f"The {name} is enabled but cannot start", recovery_fix_with_guide(f"Install it with: {pip_install_command(package)}, or turn the {name} off", INSTALLATION_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, f"The {package} package is not installed, so monitoring runs without it", advice))
+    return checks
+
+
+# Reports the paths a run writes whatever the log and CSV settings say: the account safety ledger, whose loss stops
+# the account rather than one output file, and the saved follower and following lists
+def doctor_state_path_checks(targets) -> List[DoctorCheck]:
+    ledger = exposure_state_path()
+    if output_destination_is_writable(ledger):
+        checks = [make_doctor_check("Configuration", "PASS", "Account safety ledger appears writable", f"Path: {ledger}")]
+    else:
+        advice = make_recovery_advice("file.unwritable", "Account safety ledger is not writable", recovery_fix_with_guide("Choose a writable location with --output-dir or OUTPUT_DIR", CONFIG_GUIDE_URL), False)
+        checks = [make_doctor_check("Configuration", "FAIL", advice.summary, f"Path: {ledger}. Monitoring stops the account when this file cannot be maintained", advice)]
+    if SKIP_FOLLOWERS and SKIP_FOLLOWINGS:
+        return checks
+    reported = set()
+    for target in targets or []:
+        try:
+            followers_file = get_follow_list_paths(target, is_multi=len(targets) > 1)[0]
+        except ValueError:
+            continue
+        directory = os.path.dirname(os.path.abspath(followers_file))
+        if directory in reported:
+            continue
+        reported.add(directory)
+        if output_destination_is_writable(followers_file):
+            checks.append(make_doctor_check("Configuration", "PASS", "Saved follower list directory appears writable", f"Path: {directory}"))
+        else:
+            advice = make_recovery_advice("file.unwritable", "Saved follower list directory is not writable", recovery_fix_with_guide("Choose a writable location with --output-dir or OUTPUT_DIR", CONFIG_GUIDE_URL), False)
+            checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, f"Path: {directory}. Follower and following changes cannot be compared without it", advice))
+    return checks
+
+
 # Reports the selected configuration, any startup rejection, known secrets and the final log destinations
 def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None, timezone_advice=None) -> List[DoctorCheck]:
     # Read before the unusable values are replaced, so each row names the value the user configured
@@ -17820,6 +17941,7 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
     else:
         advice = make_recovery_advice("config.insecure", "TLS certificate verification is off", recovery_fix_with_guide("Set VERIFY_SSL back to True unless this network intercepts TLS with its own certificate authority", TLS_GUIDE_URL), False)
         checks.append(make_doctor_check("Configuration", "WARN", advice.summary, "VERIFY_SSL is False, so an intercepted connection cannot be told apart from the real service", advice))
+    checks.extend(doctor_proxy_checks())
 
     agents = ". ".join(f"{label}: {agent}" for label, agent in (("Browser agent", USER_AGENT), ("Mobile agent", USER_AGENT_MOBILE)) if agent)
     if _curl_cffi_backend_active():
@@ -17848,6 +17970,8 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
             advice = make_recovery_advice("dependency.missing", "The browser follower list source cannot run", recovery_fix_with_guide(browser_fix, FOLLOW_LIST_SOURCE_GUIDE_URL), False)
             checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, browser_detail, advice))
 
+    checks.extend(doctor_interface_checks())
+
     if not CSV_FILE:
         checks.append(make_doctor_check("Configuration", "PASS", "CSV logging is disabled"))
     else:
@@ -17872,6 +17996,7 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
                 checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, f"Path: {target_log}", advice))
     else:
         checks.append(make_doctor_check("Configuration", "PASS", "Log destination will be finalized after a target is selected", f"Base path: {INSTA_LOGFILE}"))
+    checks.extend(doctor_state_path_checks(targets))
     return checks
 
 
@@ -17885,26 +18010,61 @@ def doctor_prepare_bot(report: DoctorReport) -> List[DoctorCheck]:
     return []
 
 
+# Maps a circuit breaker failure class to the recovery code and guide the rest of the tool uses for that cause
+def breaker_recovery_classification(failure_class: str) -> Tuple[str, str]:
+    if failure_class == "auth_expired":
+        return "session.expired", SESSION_IMPORT_GUIDE_URL
+    if failure_class == "ledger_unavailable":
+        return "file.unreadable", CIRCUIT_BREAKER_GUIDE_URL
+    if failure_class == "challenge":
+        return "instagram.challenge", CIRCUIT_BREAKER_GUIDE_URL
+    if failure_class == "action_block":
+        return "instagram.action_blocked", ACTION_BLOCK_GUIDE_URL
+    return "instagram.action_blocked", CIRCUIT_BREAKER_GUIDE_URL
+
+
+# Reports an account the circuit breaker has stopped, since every other check can pass while monitoring stays paused.
+# A session that still signs in only warns, because the next start re-checks it and resumes without anything to clear
+def doctor_breaker_checks(session_valid: bool) -> List[DoctorCheck]:
+    state = circuit_breaker_state()
+    if not state:
+        return []
+    account = exposure_account_name()
+    failure_class = str(state.get("failure_class") or "unknown")
+    code, guide = breaker_recovery_classification(failure_class)
+    stopped_at = get_date_from_ts(state.get("tripped_ts")) if state.get("tripped_ts") else "an earlier run"
+    detail = f"Instagram acted against {account} ({failure_class}) at {stopped_at}. No Instagram request is made for this account until it recovers"
+    advice = make_recovery_advice(code, f"Monitoring is paused for {account}", recovery_fix_with_guide(breaker_recovery_hint(failure_class), guide), False, detail)
+    return [make_doctor_check("Session", "WARN" if session_valid else "FAIL", advice.summary, detail, advice)]
+
+
 # Validates the saved Instagram session, or explains that no-login mode needs none
 def doctor_check_session(report: DoctorReport, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
     if not logged_in:
         return [make_doctor_check("Session", "PASS", "No-login mode", "Stories, reels and follower churn require Logged-in mode")]
     if report.bot is None:
-        return [make_doctor_check("Session", "SKIP", "The saved session was not checked", "Instaloader could not be initialised, so no sign-in was attempted")]
+        return [make_doctor_check("Session", "SKIP", "The saved session was not checked", "Instaloader could not be initialised, so no sign-in was attempted")] + doctor_breaker_checks(False)
     if progress is not None:
         progress(f"the session for {SESSION_USERNAME}")
     try:
         report.bot.load_session_from_file(SESSION_USERNAME)
         who = report.bot.test_login()
-        if who:
-            return [make_doctor_check("Session", "PASS", f"Session valid for {who}")]
-        return [doctor_check_from_error("Session", "WARN", f"Session for {SESSION_USERNAME} is not logged in", "login_required", True)]
+        if who and str(who).casefold() != str(SESSION_USERNAME).casefold():
+            # Monitoring refuses to resume an account whose saved session signs in as somebody else, so a pass here
+            # would promise something the next run will not do
+            advice = make_recovery_advice("session.expired", f"The saved session signs in as {who}, not {SESSION_USERNAME}", recovery_fix_with_guide(f"Set SESSION_USERNAME to {who}, or re-import the session for {SESSION_USERNAME} with '{session_recovery_command()}'", SESSION_IMPORT_GUIDE_URL), False)
+            checks = [make_doctor_check("Session", "FAIL", advice.summary, "Monitoring stops an account whose saved session belongs to another account", advice)]
+        elif who:
+            checks = [make_doctor_check("Session", "PASS", f"Session valid for {who}")]
+        else:
+            checks = [doctor_check_from_error("Session", "WARN", f"Session for {SESSION_USERNAME} is not logged in", "login_required", True)]
     except FileNotFoundError:
-        return [doctor_check_from_error("Session", "FAIL", f"No saved session for {SESSION_USERNAME}", "session file not found", True)]
+        checks = [doctor_check_from_error("Session", "FAIL", f"No saved session for {SESSION_USERNAME}", "session file not found", True)]
     except Exception as exc:
         message = format_error_message(exc)
-        return [doctor_check_from_error("Session", "FAIL", "", message, True, message)]
+        checks = [doctor_check_from_error("Session", "FAIL", "", message, True, message)]
+    return checks + doctor_breaker_checks(checks[0].status == "PASS")
 
 
 # Confirms the endpoint the tool checks at startup answers, using the configured URL and timeout
@@ -17936,13 +18096,18 @@ def doctor_check_connectivity(report: DoctorReport, progress: Optional[Callable[
 # Confirms each configured target profile can be fetched
 def doctor_check_targets(report: DoctorReport, targets, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     if not targets:
-        if WEB_DASHBOARD_ENABLED:
+        if WEB_DASHBOARD_ENABLED and FLASK_AVAILABLE:
             return [make_doctor_check("Targets", "PASS", "No targets configured yet", "The Web Dashboard is enabled, so targets can be added there")]
+        if WEB_DASHBOARD_ENABLED:
+            advice = make_recovery_advice("dependency.missing", "No targets configured and the Web Dashboard cannot start", recovery_fix_with_guide(f"Install Flask with: {pip_install_command('flask')}, or pass a target on the command line or set TARGET_USERNAMES in the config", INSTALLATION_GUIDE_URL), False)
+            return [make_doctor_check("Targets", "FAIL", advice.summary, "Nothing will be monitored and there is no dashboard to add a target in", advice)]
         advice = make_recovery_advice("target.missing", "No targets configured", recovery_fix_with_guide(NO_TARGET_FIX, QUICK_START_GUIDE_URL), False)
         return [make_doctor_check("Targets", "WARN", advice.summary, "Nothing will be monitored", advice)]
     if report.bot is None:
         return [make_doctor_check("Targets", "SKIP", "The monitored profiles were not checked", "Instaloader could not be initialised, so no lookup was attempted")]
     checks: List[DoctorCheck] = []
+    # Matches the connectivity check, so a no-login run is never told its session may be flagged
+    logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
     for target in targets:
         if progress is not None:
             progress(f"the monitored profile '{target}'")
@@ -17951,7 +18116,7 @@ def doctor_check_targets(report: DoctorReport, targets, progress: Optional[Calla
             checks.append(make_doctor_check("Targets", "PASS", f"Target '{target}' found"))
         except Exception as exc:
             message = format_error_message(exc)
-            checks.append(doctor_check_from_error("Targets", "FAIL", f"Target '{target}' could not be fetched", message, True, message))
+            checks.append(doctor_check_from_error("Targets", "FAIL", f"Target '{target}' could not be fetched", message, logged_in, message))
     return checks
 
 
@@ -17965,6 +18130,12 @@ def email_settings_problem() -> Optional[Tuple[str, str]]:
     unset = [name for name, value in (("SMTP_HOST", SMTP_HOST), ("SMTP_USER", SMTP_USER), ("SMTP_PASSWORD", SMTP_PASSWORD)) if is_placeholder_setting(value)]
     if unset:
         return (f"{join_setting_names(unset, 'or')} is empty or still set to its placeholder", f"Set {join_setting_names(unset, 'and')} or turn the email alerts off")
+    # Named here rather than attempted, since the connection would otherwise raise on int(SMTP_PORT) and report a
+    # Python error, or resolve a host name the sender itself refuses
+    if "SMTP_PORT" in runtime_configuration_problems():
+        return ("SMTP_PORT is not a port number from 1 through 65535", "Correct SMTP_PORT or turn the email alerts off")
+    if not smtp_host_is_usable(SMTP_HOST):
+        return ("SMTP_HOST is not an IP address or hostname", "Correct SMTP_HOST or turn the email alerts off")
     if not is_valid_email_address(SENDER_EMAIL) or not is_valid_email_address(RECEIVER_EMAIL):
         return ("SENDER_EMAIL or RECEIVER_EMAIL is not an email address", "Correct SENDER_EMAIL and RECEIVER_EMAIL or turn the email alerts off")
     return None
@@ -18056,8 +18227,11 @@ def build_doctor_report(targets, config_errors: Sequence[dict] = (), retired_set
 
 
 # Prints what Doctor will and will not do, before the checks start
-def render_doctor_notice() -> None:
-    print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.\n")
+def render_doctor_notice(targets=()) -> None:
+    print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.")
+    # Doctor is reached for when Instagram is already refusing requests, so what it costs is stated before it runs
+    live_requests = 1 + (1 if bool(SESSION_USERNAME) and not SKIP_SESSION else 0) + len(targets or ())
+    print(f"It makes about {live_requests} Instagram request(s): one connectivity check, one for the saved session and one for each monitored profile.\n")
 
 
 # Prints the heading and every non-empty section, keeping the marker and indent format scripts and users already read
@@ -18094,7 +18268,7 @@ def render_doctor_summary(fails: int, warns: int) -> None:
 # Runs doctor preflight plus approved delivery tests and returns the number of failed checks
 def run_doctor(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None, timezone_advice=None) -> int:
     progress = _doctor_progress if sys.stdout.isatty() else None
-    render_doctor_notice()
+    render_doctor_notice(targets)
     try:
         report = build_doctor_report(targets, config_errors, retired_settings, progress, env_path, timezone_advice)
     finally:
@@ -19029,19 +19203,17 @@ def run_main():
     if args.proxy_webhooks is True:
         PROXY_WEBHOOKS = True
 
-    if PROXY_ENABLED:
-        if not PROXY_URL:
-            print_recovery_error("Proxies are enabled but PROXY_URL has no value", context="config_missing")
+    PROXY_STARTUP_ERRORS[:] = proxy_configuration_problems()
+    if PROXY_STARTUP_ERRORS:
+        # Doctor, the setup wizard and the local reports are how a broken proxy gets corrected, so they name it
+        # and carry on with the proxy switched off rather than being stopped by the setting they exist to explain
+        if not command_runs_without_proxy(args):
+            for detail, fix in PROXY_STARTUP_ERRORS:
+                print_recovery_advice(make_recovery_advice("config.invalid", detail, recovery_fix_with_guide(fix, PROXY_GUIDE_URL), False))
             sys.exit(1)
-        if not validate_proxy_url(PROXY_URL):
-            print_recovery_error(f"Invalid proxy URL format '{mask_url_credentials(PROXY_URL)}'. It must be an HTTPS or HTTP URL", context="proxy")
-            sys.exit(1)
-        if PROXY_CERT_PATH:
-            try:
-                PROXY_CERT_PATH = resolve_existing_file_path(PROXY_CERT_PATH, "proxy certificate")
-            except ValueError:
-                print_recovery_error(f"The proxy certificate file '{PROXY_CERT_PATH}' does not exist", context="proxy")
-                sys.exit(1)
+        PROXY_ENABLED = False
+    elif PROXY_ENABLED and PROXY_CERT_PATH:
+        PROXY_CERT_PATH = resolve_existing_file_path(PROXY_CERT_PATH, "proxy certificate")
 
     # Dispatched before the connectivity check, since both only read or repair the local safety record and an
     # internet outage is exactly when a user reaches for them

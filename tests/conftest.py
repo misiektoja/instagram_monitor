@@ -110,6 +110,9 @@ def deterministic_globals(monkeypatch):
     monkeypatch.setattr(im, "list_firefox_profiles", lambda: [], raising=False)
     monkeypatch.setattr(im, "list_chromium_profiles", lambda browser: [], raising=False)
     im._WIZARD_BROWSER_SESSION_COUNTS.clear()
+    # A run that reported a broken proxy leaves the record on the module, and Doctor reads it in place of the
+    # live settings, so a later test would inherit the earlier run's proxy problem
+    im.PROXY_STARTUP_ERRORS.clear()
     # Drop any cached flag-probe verdict between tests
     with im.FLAGGED_PROBE_LOCK:
         im.FLAGGED_PROBE_CACHE["ts"] = 0.0

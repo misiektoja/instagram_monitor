@@ -606,6 +606,8 @@ Additional options:
 
 `PROXY_URL` may contain a username and password. The tool masks it in output. Store it through an [environment variable or `.env` file](configuration.md#storing-secrets).
 
+A monitoring run stops when the proxy settings cannot work. `--doctor`, `--setup`, `--exposure`, `--clear-breaker`, `--analyze-follows` and the secret commands report the problem instead and continue with the proxy switched off, so you can use them to correct it. Because `PROXY_URL` is private and removed from messages that repeat it, the report describes what is wrong with the value rather than printing it.
+
 ```ini
 PROXY_ENABLED = True
 PROXY_URL = "http://user:pass@host:port"

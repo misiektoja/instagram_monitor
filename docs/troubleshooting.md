@@ -13,15 +13,17 @@ Before a long monitoring run, check the current configuration:
 instagram_monitor --doctor
 ```
 
-Doctor writes no files. Results use `[PASS]`, `[WARN]`, `[FAIL]` and `[SKIP]`. Checks cover **Environment**, **Configuration**, **Session**, **Connectivity**, **Targets** and **Notifications**. Secret values are not displayed. Follow the reported fixes then use **Next steps** to start monitoring.
+Doctor writes no files. Before the checks start it states how many Instagram requests it will make: one for connectivity, one for the saved session and one for each monitored profile. Results use `[PASS]`, `[WARN]`, `[FAIL]` and `[SKIP]`. Checks cover **Environment**, **Configuration**, **Session**, **Connectivity**, **Targets** and **Notifications**. Secret values are not displayed. Follow the reported fixes then use **Next steps** to start monitoring.
 
 Missing optional packages are warnings you can ignore when you do not use those features. Login checks apply only to Logged-In Mode. An empty target list is valid for the Web Dashboard. Other modes need at least one target.
 
-A configuration file Instagram Monitor cannot accept is reported by Doctor as a `FAIL` naming the line and the reason, instead of stopping the command before the checks run. This means you can point Doctor at a configuration you are still fixing. Settings that a later release removed are reported as a `WARN` and ignored, so an older configuration file still runs.
+A configuration file Instagram Monitor cannot accept is reported by Doctor as a `FAIL` naming the line and the reason, instead of stopping the command before the checks run. This means you can point Doctor at a configuration you are still fixing. A proxy setting that would stop every request is handled the same way: Doctor, the setup wizard, `--exposure`, `--clear-breaker`, `--analyze-follows` and the secret commands report it and carry on with the proxy switched off, while a monitoring run still stops. Settings that a later release removed are reported as a `WARN` and ignored, so an older configuration file still runs.
 
-Configuration checks include [TLS verification](configuration.md#tls-verification), [HTTP backend](usage.md#http-transport-backend), browser identity, polling limits, check hours, timezone and output files. A `requests` backend warning means its TLS fingerprint does not match a browser. Invalid settings are named with the expected format.
+Configuration checks include [TLS verification](configuration.md#tls-verification), [HTTP backend](usage.md#http-transport-backend), browser identity, polling limits, check hours, timezone and output files. A `requests` backend warning means its TLS fingerprint does not match a browser. Invalid settings are named with the expected format. Doctor also reports whether traffic goes through a [proxy](usage.md#routing-traffic-through-a-proxy) and where to, whether an enabled Web Dashboard or Terminal Dashboard can actually start on this machine, and whether the account safety ledger and the saved follower list directory are writable. Those two are written whatever your log and CSV settings are.
 
-The Notifications section signs in to the configured SMTP server and checks webhook settings without sending a message. Each ready row lists the alert categories that channel would deliver.
+The Session section also reports an account the [circuit breaker](usage.md#identity-budget-and-circuit-breaker) has stopped, and a saved session that signs in as a different account than `SESSION_USERNAME`. Both leave monitoring unable to run while every other check passes.
+
+The Notifications section signs in to the configured SMTP server and checks webhook settings without sending a message. Each ready row lists the alert categories that channel would deliver. Settings the sender itself would refuse, such as an `SMTP_PORT` that is not a port number or an `SMTP_HOST` that is not an address, are named without opening a connection.
 
 In an interactive terminal, Doctor offers one real test message per ready notification channel. Each prompt defaults to No and requires separate approval. Disabled or incomplete channels have no delivery test. Ctrl+C ends the report. Noninteractive runs send no test messages.
 
