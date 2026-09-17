@@ -8294,15 +8294,12 @@ def get_reels_count_mobile(user: str, bot: instaloader.Instaloader):
     return reels_count
 
 
-# Reels counts already established, keyed by target, each holding the posts count it was established at and how
-# many cycles have reused it since. Instagram stopped answering the endpoint that reports the count directly, so the
-# fallback walks the whole reel list, which is far more requests than a number that cannot have changed is worth
-REELS_COUNT_CACHE: Dict[str, Tuple[int, int, int]] = {}
+# Reels counts already established, keyed by target, each holding the posts count it was established at. Instagram
+# stopped answering the endpoint that reports the count directly, so the fallback walks the whole reel list, which is
+# far more requests than a number that cannot have changed is worth. A reel counts towards the posts number, so that
+# number moving is what says the list is worth reading again
+REELS_COUNT_CACHE: Dict[str, Tuple[int, int]] = {}
 REELS_COUNT_CACHE_LOCK = threading.Lock()
-
-# How many cycles in a row may reuse one reels count. A reel added in the same interval a post is removed leaves the
-# posts count where it was, so a count is re-established from time to time rather than trusted until that number moves
-REELS_COUNT_MAX_REUSE = 10
 
 
 # Returns a reels count already established for this posts count, or None when it has to be counted again
@@ -8311,10 +8308,7 @@ def cached_reels_count(user: str, posts_count: Optional[int]) -> Optional[int]:
         return None
     with REELS_COUNT_CACHE_LOCK:
         entry = REELS_COUNT_CACHE.get(user)
-        if entry is None or entry[0] != int(posts_count) or entry[2] >= REELS_COUNT_MAX_REUSE:
-            return None
-        REELS_COUNT_CACHE[user] = (entry[0], entry[1], entry[2] + 1)
-        return entry[1]
+    return entry[1] if entry is not None and entry[0] == int(posts_count) else None
 
 
 # Remembers one reels count against the posts count it was established at
@@ -8322,7 +8316,7 @@ def remember_reels_count(user: str, posts_count: Optional[int], reels_count: Opt
     if posts_count is None or reels_count is None:
         return
     with REELS_COUNT_CACHE_LOCK:
-        REELS_COUNT_CACHE[user] = (int(posts_count), int(reels_count), 0)
+        REELS_COUNT_CACHE[user] = (int(posts_count), int(reels_count))
 
 
 # Return the total number of reels (clips) for the user, reusing a count already established for this posts count

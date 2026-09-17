@@ -165,16 +165,13 @@ class TestTheReelsCountIsReused:
         assert im_module.get_total_reels_count("two", None, False, 20) == 9
         assert im_module.get_total_reels_count("one", None, False, 20) == 3
 
-    # A reel added in the same interval a post is removed leaves the posts count where it was, so a count that has
-    # been reused for long enough is established again rather than trusted until that number moves
-    def test_a_count_is_not_reused_forever(self, im_module, monkeypatch):
-        walks = []
-        monkeypatch.setattr(im_module, "_count_total_reels", lambda user, bot, skip_session: walks.append(user) or 7)
+    # A reel counts towards the posts number, so posting one moves that number and the list is read again
+    def test_a_new_reel_moves_the_posts_count_and_counts_again(self, im_module, monkeypatch):
+        counts = iter([1, 2])
+        monkeypatch.setattr(im_module, "_count_total_reels", lambda user, bot, skip_session: next(counts))
 
-        for _ in range(im_module.REELS_COUNT_MAX_REUSE + 2):
-            im_module.get_total_reels_count("target", None, False, 20)
-
-        assert len(walks) == 2
+        assert im_module.get_total_reels_count("target", None, False, 2) == 1
+        assert im_module.get_total_reels_count("target", None, False, 3) == 2
 
     # A caller with no posts count to compare has nothing to reuse against, so it always counts
     def test_a_missing_posts_count_always_counts(self, im_module, monkeypatch):
