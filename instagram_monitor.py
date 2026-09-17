@@ -403,9 +403,8 @@ IDENTITY_BUDGET_PER_DAY = 0
 
 # Whether to stop all Instagram requests for the logged-in account after Instagram acts against it
 #
-# When Instagram returns a challenge, a checkpoint or an expired session, continuing to send requests
-# is what turns a warning into a suspension. With this enabled the tool stops every target at once and
-# stays stopped across restarts until you resume it with --clear-breaker
+# A confirmed challenge, checkpoint or expired session stops every target using the account
+# Restarting checks the saved session once before resuming any targets
 CIRCUIT_BREAKER = True
 
 # ----------------------------
@@ -3762,6 +3761,7 @@ def create_web_dashboard_app():
         print_cur_ts(newline=True)
 
         notify_session_refresh()
+        resume_recovered_account_targets()
         return jsonify({'success': True, 'username': username})  # type: ignore
 
     @app.route('/api/session/firefox/import', methods=['POST'])
@@ -3864,6 +3864,14 @@ def create_web_dashboard_app():
         global SESSION_USERNAME, SESSION_PASSWORD
         if not SESSION_USERNAME:
             return jsonify({'success': False, 'error': 'No session configured'})  # type: ignore
+        if circuit_breaker_state():
+            if not recover_account_on_startup(retry=True):
+                return jsonify({'success': False, 'error': breaker_recovery_hint((circuit_breaker_state() or {}).get('failure_class', ''))})  # type: ignore
+            with WEB_DASHBOARD_DATA_LOCK:
+                WEB_DASHBOARD_DATA['session']['active'] = True
+            notify_session_refresh()
+            resume_recovered_account_targets()
+            return jsonify({'success': True, 'username': SESSION_USERNAME, 'message': 'Session verified and monitoring resumed'})  # type: ignore
 
         try:
             L = instaloader_client()
@@ -4031,6 +4039,13 @@ def sync_target_usernames_from_dashboard() -> None:
 def start_monitoring_for_target(username, wait_event=None, signal_event=None, delay_s=0):
     global WEB_DASHBOARD_MONITOR_THREADS, WEB_DASHBOARD_STOP_EVENTS
     username = normalize_instagram_username(username)
+    if not recover_account_on_startup():
+        with ACCOUNT_BREAKER_MEMORY_LOCK:
+            ACCOUNT_PAUSED_TARGETS.setdefault(exposure_account_name(), set()).add(username)
+        update_ui_data(targets={username: {'status': 'Paused: account recovery required'}})
+        if signal_event:
+            signal_event.set()
+        return False
 
     # Runs one target monitor and releases only its own registry entries
     def _monitor_runner(user, stop_evt, wait_evt, signal_evt, sleep_s):
@@ -4121,6 +4136,8 @@ def start_monitoring_for_target(username, wait_event=None, signal_event=None, de
 def stop_monitoring_for_target(username):
     global WEB_DASHBOARD_STOP_EVENTS, WEB_DASHBOARD_MONITOR_THREADS
     username = normalize_instagram_username(username)
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        ACCOUNT_PAUSED_TARGETS.get(exposure_account_name(), set()).discard(username)
     with WEB_DASHBOARD_MONITOR_LOCK:
         stop_event = WEB_DASHBOARD_STOP_EVENTS.get(username)
         thread = WEB_DASHBOARD_MONITOR_THREADS.get(username)
@@ -4150,6 +4167,12 @@ def start_all_monitoring():
 
     with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
         targets = list(WEB_DASHBOARD_DATA.get('targets', {}).keys())
+    if not recover_account_on_startup():
+        with ACCOUNT_BREAKER_MEMORY_LOCK:
+            ACCOUNT_PAUSED_TARGETS.setdefault(exposure_account_name(), set()).update(targets)
+        for user in targets:
+            update_ui_data(targets={user: {'status': 'Paused: account recovery required'}})
+        return
 
     if not targets:
         log_activity("Start All: No targets found")
@@ -8522,15 +8545,13 @@ def select_chromium_profile_cli(browser, explicit_profile):
 def import_browser_session_dashboard(browser, cookiefile=None, profile=None):
     cookie_dict = get_browser_cookie_dict(browser, cookiefile, profile=profile)
 
-    L = instaloader_client(user_agent=USER_AGENT, max_connection_attempts=1)
+    L = instaloader_client(user_agent=USER_AGENT, max_connection_attempts=1, request_timeout=30, sleep=False)
     L.context._session.cookies.update(cookie_dict)
-    username = L.test_login()
+    username = save_checked_browser_session(L)
 
     if not username:
         raise CookieImportError(f"Not logged in - are you logged in successfully in {browser_label(browser)}?")
 
-    L.context.username = username
-    L.save_session_to_file()
     return username
 
 
@@ -8550,21 +8571,14 @@ def import_session(browser, cookiefile, sessionfile, profile=None):
     except CookieImportError as e:
         raise SystemExit(f"Error: {e}")
 
-    instaloader = instaloader_client(user_agent=USER_AGENT, max_connection_attempts=1)
+    instaloader = instaloader_client(user_agent=USER_AGENT, max_connection_attempts=1, request_timeout=30, sleep=False)
     instaloader.context._session.cookies.update(cookie_dict)
-    username = instaloader.test_login()
+    username = save_checked_browser_session(instaloader, sessionfile)
 
     if not username:
         raise SystemExit(f"Not logged in - are you logged in successfully in {label}?")
 
     print(f"Imported session cookies for {username}")
-
-    instaloader.context.username = username
-
-    if sessionfile:
-        instaloader.save_session_to_file(sessionfile)
-    else:
-        instaloader.save_session_to_file()
 
     # Emit the warning in red only when colour output is enabled and supported, otherwise plain text
     RED = f"\033[{_STYLE_CODES['red']}m" if COLOR_ENABLED else ""
@@ -10034,6 +10048,20 @@ def instagram_wrap_request(orig_request):
         url = kwargs.get("url") or (args[1] if len(args) > 1 else None)
         if not is_instagram_request_url(url):
             return orig_request(*args, **kwargs)
+        recovery = getattr(_thread_local, 'account_recovery', None)
+        if recovery is not None:
+            if not recovery['remaining']:
+                raise instaloader.exceptions.AbortDownloadException("The account recovery check allows only one request")
+            recovery['remaining'] = 0
+            kwargs['allow_redirects'] = False
+            try:
+                response = orig_request(*args, **kwargs)
+            except Exception as error:
+                recovery['error'] = error
+                raise
+            if response.status_code >= 300:
+                recovery['error'] = instaloader.exceptions.ConnectionException(f"HTTP {response.status_code}: {response.text[:500]}")
+            return response
         breaker_state = _account_breaker_memory_state() if CIRCUIT_BREAKER else None
         if breaker_state:
             raise instaloader.exceptions.AbortDownloadException(f"Account circuit breaker is open ({breaker_state.get('failure_class', 'unknown')})")
@@ -10044,6 +10072,8 @@ def instagram_wrap_request(orig_request):
                 print(f"* [WRAP-REQ] {method} {url}")
 
         def _do_request():
+            if CIRCUIT_BREAKER and _account_breaker_memory_state():
+                raise instaloader.exceptions.AbortDownloadException("Monitoring is paused for this account")
             # If jitter is disabled, just perform the request (but still optionally serialized by the outer lock)
             if not ENABLE_JITTER:
                 resp = orig_request(*args, **kwargs)
@@ -10061,6 +10091,8 @@ def instagram_wrap_request(orig_request):
             attempt = 0
             backoff = 60
             while True:
+                if CIRCUIT_BREAKER and _account_breaker_memory_state():
+                    raise instaloader.exceptions.AbortDownloadException("Monitoring is paused for this account")
                 resp = orig_request(*args, **kwargs)
 
                 # Update progress bar for follower/following requests
@@ -11068,7 +11100,8 @@ def handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_gen
             if other_user != user:
                 log_activity(err_str, user=other_user)
                 update_check_times(next_time="Paused", user=other_user, increment_count=False)
-                stop_monitoring_for_target(other_user)
+                if not CIRCUIT_BREAKER:
+                    stop_monitoring_for_target(other_user)
                 update_ui_data(targets={other_user: {'status': f'Paused: {err_str}'}})
         NEXT_CHECK_TIME = None
         NEXT_CHECK_DISPLAY = "Paused"
@@ -11113,6 +11146,9 @@ EXPOSURE_LOCK = threading.Lock()
 IDENTITY_SCAN_LOCK = threading.Lock()
 ACCOUNT_BREAKER_MEMORY_LOCK = threading.Lock()
 ACCOUNT_BREAKER_MEMORY: Dict[str, Dict[str, Any]] = {}
+ACCOUNT_RECOVERY_LOCK = threading.RLock()
+ACCOUNT_RECOVERY_ATTEMPTED: set[str] = set()
+ACCOUNT_PAUSED_TARGETS: Dict[str, set[str]] = {}
 EXPOSURE_STATE_FILENAME = "instagram_monitor_exposure.json"
 EXPOSURE_STATE_VERSION = 1
 
@@ -11278,8 +11314,10 @@ def _account_breaker_memory_state() -> Optional[Dict[str, Any]]:
 # Stops every target event after the shared session account becomes unsafe
 def _stop_account_target_events() -> None:
     with WEB_DASHBOARD_MONITOR_LOCK:
-        stop_events = list(WEB_DASHBOARD_STOP_EVENTS.values())
-    for event in stop_events:
+        targets = dict(WEB_DASHBOARD_STOP_EVENTS)
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        ACCOUNT_PAUSED_TARGETS.setdefault(exposure_account_name(), set()).update(user for user, event in targets.items() if not event.is_set())
+    for event in targets.values():
         event.set()
 
 
@@ -11335,12 +11373,150 @@ def identity_budget_exhausted() -> bool:
 # Maps a tripped breaker to the one action that resolves its failure class, so every surface gives the same remedy
 def breaker_recovery_hint(failure_class: str) -> str:
     if failure_class == 'auth_expired':
-        return f"Log in to Instagram again and re-import the session with '{session_recovery_command()}', then resume with '--clear-breaker'"
+        return f"Log in to Instagram again and re-import the session with '{session_recovery_command()}', or restart after replacing the saved session"
     if failure_class == 'ledger_unavailable':
-        return f"Restore read and write access to the account safety ledger at {exposure_state_path()}, or move that file aside to start a fresh one, then resume with '--clear-breaker'"
+        return f"Repair the account safety ledger at {exposure_state_path()} and restore read and write access, then restart"
     if failure_class == 'challenge':
-        return "Open Instagram in a browser and clear the challenge, then resume with '--clear-breaker'"
-    return "Resolve the account issue on Instagram, then resume with '--clear-breaker'"
+        return "Open Instagram in a browser and complete the account verification, then restart or re-import the session"
+    return "Resolve the account issue on Instagram, then restart or re-import the session"
+
+
+# Checks one session with a single request while all ordinary account requests remain stopped
+def check_account_login(bot) -> Optional[str]:
+    previous = getattr(_thread_local, 'account_recovery', None)
+    recovery: Dict[str, Any] = {'remaining': 1, 'error': None}
+    _thread_local.account_recovery = recovery
+    try:
+        username = bot.test_login()
+        if not username and recovery['error'] is not None:
+            raise recovery['error']
+        return username
+    finally:
+        _thread_local.account_recovery = previous
+
+
+# Clears only the successfully checked account stop without discarding counters or a newer failure
+def finish_account_recovery(account: str, expected_state: Optional[Dict[str, Any]]) -> bool:
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        if ACCOUNT_BREAKER_MEMORY.get(account) is not expected_state:
+            return False
+        with EXPOSURE_LOCK:
+            data = _load_exposure_file()
+            record = _exposure_record(data, account)
+            if record.get('breaker') is not None or expected_state is not None:
+                record['breaker'] = None
+                _write_exposure_file(data)
+        ACCOUNT_BREAKER_MEMORY.pop(account, None)
+    with FLAGGED_PROBE_LOCK:
+        FLAGGED_PROBE_CACHE['ts'] = 0.0
+        FLAGGED_PROBE_CACHE['flagged'] = False
+    with FLAGGED_NOTIFY_LOCK:
+        FLAGGED_NOTIFY_STATE['ts'] = 0.0
+    return True
+
+
+# Saves a verified browser session before releasing that account's existing stop
+def save_checked_browser_session(bot, sessionfile=None) -> Optional[str]:
+    with ACCOUNT_RECOVERY_LOCK:
+        with ACCOUNT_BREAKER_MEMORY_LOCK:
+            previous_stops = dict(ACCOUNT_BREAKER_MEMORY)
+        username = check_account_login(bot)
+        if not username:
+            return None
+        bot.context.username = username
+        with SESSION_FILE_LOCK:
+            if sessionfile:
+                bot.save_session_to_file(sessionfile)
+            else:
+                bot.save_session_to_file()
+        if CIRCUIT_BREAKER and not finish_account_recovery(username, previous_stops.get(username)):
+            raise CookieImportError("The session was saved but another account failure occurred during import. Restart to check the account again")
+        return username
+
+
+# Checks a persisted account stop once before this process starts any target workers
+def recover_account_on_startup(retry: bool = False) -> bool:
+    if not CIRCUIT_BREAKER or SKIP_SESSION or not SESSION_USERNAME:
+        return True
+    with ACCOUNT_RECOVERY_LOCK:
+        account = exposure_account_name()
+        state = circuit_breaker_state()
+        if not state:
+            return True
+        if account in ACCOUNT_RECOVERY_ATTEMPTED and not retry:
+            return False
+        ACCOUNT_RECOVERY_ATTEMPTED.add(account)
+        with ACCOUNT_BREAKER_MEMORY_LOCK:
+            expected_state = ACCOUNT_BREAKER_MEMORY.get(account)
+        bot = None
+        print(f"* Checking the saved session for {account} before resuming monitoring")
+        try:
+            verify_exposure_ledger_writable()
+            bot = instaloader_client(user_agent=USER_AGENT, max_connection_attempts=1, request_timeout=30, sleep=False, quiet=True)
+            with SESSION_FILE_LOCK:
+                bot.load_session_from_file(account)
+            username = check_account_login(bot)
+            if not username or username.casefold() != account.casefold():
+                raise instaloader.exceptions.LoginRequiredException("The saved session does not sign in as the configured account")
+            if exposure_account_name() != account or not finish_account_recovery(account, expected_state):
+                print("* Monitoring remains paused because the session or account stop changed during the check")
+                return False
+        except Exception as error:
+            message = format_error_message(error)
+            failure_class = classify_failure_class(message)
+            if isinstance(error, ExposureLedgerError):
+                _mark_account_safety_unavailable(error)
+                fix = breaker_recovery_hint('ledger_unavailable')
+            elif is_account_level_failure(failure_class):
+                fix = breaker_recovery_hint(failure_class)
+            elif isinstance(error, FileNotFoundError):
+                fix = breaker_recovery_hint('auth_expired')
+            else:
+                fix = classify_recovery_error(error, is_logged_in=True).fix
+            print(f"* Monitoring remains paused for {account}: {message}")
+            print(f"* To fix: {fix}")
+            return False
+        finally:
+            if bot is not None:
+                try:
+                    bot.close()
+                except Exception as error:
+                    debug_print("Account recovery client cleanup", error=type(error).__name__)
+        print(f"* Session verified for {account}. Monitoring can resume")
+        return True
+
+
+# Restarts account-paused dashboard targets once their previous workers have exited
+def resume_recovered_account_targets() -> Optional[threading.Thread]:
+    account = exposure_account_name()
+    if not WEB_DASHBOARD_ENABLED:
+        return
+
+    # Waits for stopped workers without blocking the dashboard's session-import response
+    def resume():
+        while exposure_account_name() == account:
+            with ACCOUNT_BREAKER_MEMORY_LOCK:
+                pending = set(ACCOUNT_PAUSED_TARGETS.get(account, ()))
+                if not pending or account in ACCOUNT_BREAKER_MEMORY:
+                    return
+            for user in pending:
+                with WEB_DASHBOARD_MONITOR_LOCK:
+                    worker = WEB_DASHBOARD_MONITOR_THREADS.get(user)
+                    if worker is not None and worker.is_alive():
+                        continue
+                with ACCOUNT_BREAKER_MEMORY_LOCK:
+                    if user not in ACCOUNT_PAUSED_TARGETS.get(account, ()):
+                        continue
+                    ACCOUNT_PAUSED_TARGETS[account].discard(user)
+                with WEB_DASHBOARD_DATA_LOCK:
+                    configured = user in WEB_DASHBOARD_DATA.get('targets', {})
+                if configured:
+                    start_monitoring_for_target(user)
+            time.sleep(0.1)
+
+    thread = threading.Thread(target=resume, daemon=True, name="account-recovery")
+    thread.start()
+    return thread
 
 
 # Returns the stored circuit breaker record when the session account is stopped, otherwise None
@@ -11369,6 +11545,7 @@ def circuit_breaker_tripped() -> bool:
 def trip_circuit_breaker(failure_class: str, user: str = "", error_msg: str = "") -> bool:
     if not CIRCUIT_BREAKER:
         return False
+    ACCOUNT_RECOVERY_ATTEMPTED.add(exposure_account_name())
 
     breaker_state = {'tripped_ts': int(time.time()), 'failure_class': failure_class, 'target': user, 'error': (error_msg or "")[:500]}
     activated = _remember_account_breaker(breaker_state)
@@ -11387,7 +11564,7 @@ def trip_circuit_breaker(failure_class: str, user: str = "", error_msg: str = ""
     if tripped:
         account = exposure_account_name()
         print(f"\n* Circuit breaker: Instagram acted against session account {account} ({failure_class}). Stopping all Instagram requests for this account")
-        print(f"* Continuing after an account-level action is what turns a warning into a suspension. {breaker_recovery_hint(failure_class)}")
+        print(f"* {breaker_recovery_hint(failure_class)}")
         log_activity(f"Circuit breaker tripped for {account}: {failure_class}", user=user or account, level='system')
     return bool(tripped)
 
@@ -11520,7 +11697,7 @@ def exposure_summary_lines() -> List[str]:
     breaker = breaker or record.get('breaker')
     if isinstance(breaker, dict) and breaker.get('tripped_ts'):
         lines.append(_exposure_row("Circuit breaker", f"TRIPPED at {get_date_from_ts(int(breaker['tripped_ts']))} ({breaker.get('failure_class', 'unknown')})"))
-        lines.append(_exposure_row("Resume with", "--clear-breaker"))
+        lines.append(_exposure_row("Resume with", "Restart or re-import the session after resolving the account issue"))
     else:
         lines.append(_exposure_row("Circuit breaker", "armed" if CIRCUIT_BREAKER else "disabled"))
     last_failure = record.get('last_account_failure')
@@ -12115,7 +12292,7 @@ def guard_browser_page_state(page) -> None:
     lowered = url.lower()
     for marker, description in BROWSER_INTERRUPTION_PAGES:
         if marker in lowered:
-            raise BrowserFollowListError(f"Instagram answered with {description}. Open Instagram in your own browser, clear it there, then resume with --clear-breaker")
+            raise BrowserFollowListError(f"Instagram answered with {description}. Open Instagram in your own browser, resolve it there, then restart or re-import the session")
 
 
 # Yields each new batch of names the open dialog renders, scrolling until it stops growing
@@ -17983,7 +18160,7 @@ def run_main():
         "--clear-breaker",
         dest="clear_breaker",
         action='store_true',
-        help="Resume monitoring after Instagram acted against the logged-in account, then exit. Clear the challenge in a browser first"
+        help="Clear local account-stop state and exit. Normally restart or re-import the session to check recovery automatically"
     )
     session_opts.add_argument(
         "--exposure",
@@ -18472,7 +18649,7 @@ def run_main():
         except ExposureLedgerError as ledger_error:
             print(f"\n* Error: {ledger_error}")
             print(f"* Path: {exposure_state_path()}")
-            print("To fix: Fix the file's contents or permissions, or move it aside, then run --clear-breaker to start a fresh ledger")
+            print("To fix: Repair the file or restore access, then restart. Use --clear-breaker only to reset unusable state")
         sys.exit(0)
 
     apply_timing_cli_overrides(args)
@@ -18946,7 +19123,7 @@ def run_main():
 
     breaker_state = circuit_breaker_state()
     if breaker_state:
-        breaker_str = f"TRIPPED ({breaker_state.get('failure_class', 'unknown')}) - resume with --clear-breaker"
+        breaker_str = f"Paused ({breaker_state.get('failure_class', 'unknown')}) - checking the session before monitoring"
     else:
         breaker_str = "Armed" if CIRCUIT_BREAKER else "Disabled"
     summary_rows.append(StartupSummaryRow("Account circuit breaker", breaker_str, concise=bool(CIRCUIT_BREAKER) and not breaker_state))
@@ -19119,9 +19296,18 @@ def run_main():
         signal.signal(signal.SIGABRT, decrease_check_signal_handler)
         signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
 
+    recovery_ready = recover_account_on_startup()
+    if not recovery_ready:
+        if not WEB_DASHBOARD_ENABLED:
+            sys.exit(1)
+        with ACCOUNT_BREAKER_MEMORY_LOCK:
+            ACCOUNT_PAUSED_TARGETS.setdefault(exposure_account_name(), set()).update(targets)
+        for user in targets:
+            update_ui_data(targets={user: {'status': 'Paused: account recovery required'}})
+
     # Print monitoring message after all setup is complete
     # Note: If Dashboard is enabled, this will be shown in the dashboard instead
-    if targets:
+    if targets and recovery_ready:
         if len(targets) == 1:
             out = f"\nMonitoring Instagram user {targets[0]}"
         else:
@@ -19130,14 +19316,15 @@ def run_main():
         print("─" * len(out))
 
     # Multi-target mode: run multiple monitors in one process, with configurable staggering
-    if len(targets) == 0:
+    if len(targets) == 0 or not recovery_ready:
         print("\n" + "═" * 80)
         print("     INSTAGRAM MONITOR - WEB DASHBOARD MODE")
         print("═" * 80)
-        print(f"\n* Status: Waiting for targets...")
+        print("\n* Status: Waiting for targets..." if recovery_ready else "\n* Status: Account paused. Re-import or refresh the session to resume monitoring.")
         print(f"* Web UI: {_web_dashboard_browser_url()}")
-        print("\n* Info: No initial targets specified on command line.")
-        print("  Please open the Web UI above to manually add Instagram users for monitoring.")
+        if recovery_ready:
+            print("\n* Info: No initial targets specified on command line.")
+            print("  Please open the Web UI above to manually add Instagram users for monitoring.")
         print("  You can also configure sessions and settings directly from the dashboard.")
         print("\n" + "─" * 80)
         print("Press Ctrl+C to exit\n")
