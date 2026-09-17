@@ -333,7 +333,7 @@ def test_transport_and_schema_failures_do_not_trip_the_breaker(ledger):
 
 
 @pytest.mark.parametrize(("failure_class", "expected"), [
-    ("challenge", "clear the challenge"),
+    ("challenge", "complete the account verification"),
     ("auth_expired", "re-import the session"),
     ("ledger_unavailable", "account safety ledger"),
     ("unknown", "Resolve the account issue"),
@@ -341,7 +341,8 @@ def test_transport_and_schema_failures_do_not_trip_the_breaker(ledger):
 def test_the_recovery_hint_matches_the_failure_class(ledger, failure_class, expected):
     hint = im.breaker_recovery_hint(failure_class)
     assert expected in hint
-    assert "--clear-breaker" in hint
+    assert "restart" in hint.lower()
+    assert "--clear-breaker" not in hint
 
 
 def test_a_stopped_target_is_told_how_to_recover_from_an_expired_session(ledger, capsys):
@@ -503,7 +504,7 @@ def test_exposure_summary_reports_state(ledger, tmp_path):
     im.note_instagram_failure("checkpoint_required", "target")
     tripped_text = "\n".join(im.exposure_summary_lines())
     assert "TRIPPED" in tripped_text
-    assert "--clear-breaker" in tripped_text
+    assert "Restart or re-import" in tripped_text
     assert "testacct" not in tripped_text
     assert "checkpoint_required" not in tripped_text
 
@@ -672,7 +673,7 @@ def test_exposure_report_says_why_the_ledger_is_unusable(ledger, tmp_path, monke
     assert "Account safety ledger:" in output
     assert "* Error: The account safety ledger has an invalid structure" in output
     assert f"* Path: {tmp_path / 'instagram_monitor_exposure.json'}" in output
-    assert "To fix: Fix the file's contents or permissions" in output
+    assert "To fix: Repair the file or restore access, then restart" in output
 
 
 # A report pasted into an issue has to say whether impersonation actually ran, not only which backend was set

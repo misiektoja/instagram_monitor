@@ -129,7 +129,7 @@ Common browser source errors:
 - **The browser source runs a chrome browser, but ...**: the browser channel and the rest of the session name different browsers. Set `HTTP_BACKEND` to `curl_cffi`, `CURL_CFFI_IMPERSONATE` to `auto` and `USER_AGENT` to a browser from the channel's family, or leave `USER_AGENT` empty. See [Browser Source](usage.md#browser-source-experimental).
 - **The browser could not start**: Playwright is installed but the browser is not. Run `playwright install chromium`, or set `FOLLOW_LIST_BROWSER_CHANNEL` to a browser already installed here, such as `chrome`.
 - **The login page, so this session is not logged in**: the cookies handed to the browser are no longer valid. Refresh the session and try again.
-- **A challenge page**: clear the challenge in an ordinary browser first. This also trips the circuit breaker.
+- **A challenge page**: complete account verification in an ordinary browser, then restart or re-import the session. The circuit breaker checks recovery without requiring a separate clearing command.
 - **Rendered only N of about M**: the dialog stopped growing early, usually from a slow connection. Raise `FOLLOW_LIST_BROWSER_SCROLL_DELAY` and `FOLLOW_LIST_BROWSER_TIMEOUT`. The short list is discarded, not saved over your baseline.
 
 Run `instagram_monitor --doctor` to confirm Playwright and the browser are installed before a real run.

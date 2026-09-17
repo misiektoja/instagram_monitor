@@ -67,6 +67,7 @@ installed copy of the package.
 | `test_terminal_color.py` | The colour engine: theme resolution, line rules, quoted content and the shipped theme keys |
 | `test_tls_verification.py` | Every request honouring `VERIFY_SSL`, what is reported while it is off and its shipped default |
 | `test_exposure_ledger.py` | The identity exposure ledger, the daily budget and the account circuit breaker |
+| `test_account_recovery.py` | Single-request restart and import recovery, preserved counters, concurrent starts and dashboard resumption |
 | `test_account_safety_loop.py` | The real monitoring loop stopping an account Instagram keeps refusing, and leaving a transient fault alone |
 | `test_human_simulation.py` | The BeHuman activity simulation guards |
 | `test_impersonate_validation.py` | curl_cffi impersonation target validation |

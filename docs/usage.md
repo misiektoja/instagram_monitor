@@ -666,14 +666,16 @@ CIRCUIT_BREAKER = True
 
 The budget is shared by every target and resets at local midnight. Identity scans run one at a time so workers cannot spend the same remaining allowance. REST responses are counted as soon as a page arrives, including names the caller does not consume. When the budget is spent, name fetching stops for the day while counts, posts, reels, stories and profile changes carry on. Names are counted even with no budget set, so you can measure first and choose a number afterwards.
 
-The circuit breaker stops every target at once when Instagram returns a challenge, a checkpoint or an expired session and stays stopped across restarts. A stored breaker is checked before an Instagram client or session is created. If the safety ledger cannot be read or saved, or holds a value no reader can trust, authenticated monitoring also stops instead of continuing with unknown state. Rate limits, network errors and Instagram API changes do not trip it.
+The circuit breaker stops every target using the account after a confirmed challenge, checkpoint or expired session. Fix the account issue and restart with your usual command. Before target workers start, a stopped account gets one login check with a 30-second timeout and no automatic retries or redirects. Success resumes monitoring without clearing anything manually. Failure leaves the account paused with a recovery action. Re-importing a session uses its successful login check to recover after saving. The Web Dashboard also resumes targets paused by the account stop after a successful import or refresh.
+
+If the safety ledger cannot be read or saved, or holds a value no reader can trust, authenticated monitoring stays stopped until the file is repaired. Recovery preserves daily counts. Rate limits, network errors and Instagram API changes do not trip the breaker. During a recovery check, any unsuccessful result keeps the existing stop in place.
 
 Three commands:
 
 ```
 instagram_monitor --exposure                   # redacted support report with names, failures and runtime context
 instagram_monitor --identity-budget 750        # set the budget for this run
-instagram_monitor --clear-breaker              # resume after fixing what tripped it
+instagram_monitor --clear-breaker              # optional local-state repair, normally restart instead
 ```
 
 Everything is stored locally in `instagram_monitor_exposure.json` next to your output directory. Nothing is transmitted anywhere. The file holds one record per session account, so both commands act on the account the run resolved. Add `-u <account>` to pick one when you run more than one account from the same directory. Both read and repair local state only, so they still work while the connection is down. The `--exposure` report omits account names, target names, stored error text and local paths so it can be pasted into a support issue.

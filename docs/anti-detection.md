@@ -64,25 +64,23 @@ A partial fetch is never written to the baseline file. If the budget stops a fet
 <a id="let-the-circuit-breaker-stop-the-account"></a>
 ## Let the Circuit Breaker Stop the Account
 
-When Instagram returns a challenge, a checkpoint or an expired session, it has acted against the account rather than against one request. Continuing to send requests after that is what turns a warning into a suspension.
+When Instagram returns a confirmed challenge, checkpoint or expired session, monitoring pauses for the account.
 
-`CIRCUIT_BREAKER` is enabled by default. On the first account-level response it stops every target at once, not just the one that hit the problem, and it stays stopped across restarts.
+`CIRCUIT_BREAKER` is enabled by default. An account-level failure stops all targets using that account for the rest of the run. Restarting checks the saved session once before starting any target workers. The check allows one request with a 30-second timeout and no automatic retries or redirects. Success resumes monitoring. Failure leaves the account paused and explains what to fix.
 
 ```
 * Circuit breaker: Instagram acted against session account your_account (challenge). Stopping all Instagram requests for this account
 ```
 
-The second line of that message names the fix for the failure it recorded: clear the challenge in a browser, re-import an expired session or restore access to the safety ledger. Do that first, then resume:
+The second line names the required action. Complete account verification in a browser or re-import an expired session, then start the tool with your usual command. No separate clearing command is needed. Importing a session reuses its login check and releases the stop only after the session is saved. In the Web Dashboard, importing or successfully refreshing the session also resumes targets paused by the account stop. Targets you stopped manually remain stopped.
 
-```
-instagram_monitor --clear-breaker
-```
+Each process restart can make another check. Configure a restart delay if a service manager restarts failed runs automatically.
 
 Rate limits, network errors and Instagram API changes do not trip the breaker. Only responses that act against the account do. A rejected or redirected request that reads like an expired session is confirmed with one public profile fetch first, so a single mislabelled request cannot stop every target. If the session still signs in, the run says so and the breaker stays armed.
 
 The email and webhook alert for a flagged account also carries the client identity behind it: the transport in effect, the browser `curl_cffi` impersonated and the browser user agent. That is usually what you need to decide whether the transport caused the flag. It means those values reach your notification service, so leave account-level alerts off if that matters for your webhook destination. Routine per-target error alerts carry no identity.
 
-The safety ledger also fails closed. If `instagram_monitor_exposure.json` cannot be read or saved, authenticated monitoring stops before another identity scan. That includes a file that parses but holds a value no reader can trust, such as a negative name count or a stop record that is not one. The error names the field, so fix that field or move the file aside, then run `--clear-breaker` to reset unusable state. Fields the tool does not recognize are left alone.
+The safety ledger also fails closed. If `instagram_monitor_exposure.json` cannot be read or saved, authenticated monitoring stops before another identity scan. That includes invalid counts or stop records. Repair the named field or restore file access, then restart. Automatic recovery preserves daily counts and never replaces an unreadable ledger. `--clear-breaker` remains available for explicit local-state repair, including resetting an unusable ledger, but is not part of normal recovery. Fields the tool does not recognize are left alone.
 
 <a id="check-your-exposure"></a>
 ## Check Your Exposure
