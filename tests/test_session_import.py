@@ -218,3 +218,62 @@ class TestProfileSelection:
         both_signed_in = [{"label": "Default", "signed_in": True, "value": "Default"}, {"label": "Profile 1", "signed_in": True, "value": "Profile 1"}]
 
         assert im_module.select_profile_interactively("Profiles:", both_signed_in) == "Default"
+
+
+class TestLiveBrowserCookies:
+    # Builds a WAL cookie database whose newest row is still only in the write-ahead log, as a running browser leaves it
+    @staticmethod
+    def _live_database(directory: Path, firefox: bool = True):
+        cookie_path = directory / ("cookies.sqlite" if firefox else "Cookies")
+        table, column = ("moz_cookies", "host") if firefox else ("cookies", "host_key")
+        writer = sqlite3.connect(cookie_path)
+        writer.execute("PRAGMA journal_mode=WAL")
+        writer.execute(f"CREATE TABLE {table} ({column} TEXT, name TEXT, value TEXT)")
+        writer.commit()
+        writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        writer.execute(f"INSERT INTO {table} VALUES (?, ?, ?)", ("instagram.com", "sessionid", "fresh"))
+        writer.commit()
+        return cookie_path, writer
+
+    # Verifies a session written moments ago by a still-running Firefox is read, rather than reported as absent
+    def test_a_running_firefox_session_is_read(self, im_module):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            cookie_path, writer = self._live_database(Path(directory_name))
+            try:
+                assert Path(str(cookie_path) + "-wal").exists(), "the row has to still be in the log for this to test anything"
+                assert im_module.get_firefox_cookie_dict(str(cookie_path)) == {"sessionid": "fresh"}
+            finally:
+                writer.close()
+
+    # Verifies the picker does not mark a running browser's profile as signed out while the import would succeed
+    @pytest.mark.parametrize("firefox", [True, False])
+    def test_a_running_browser_profile_reads_as_signed_in(self, im_module, firefox):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            cookie_path, writer = self._live_database(Path(directory_name), firefox=firefox)
+            try:
+                assert im_module.cookie_file_has_instagram_session(str(cookie_path), firefox=firefox) is True
+            finally:
+                writer.close()
+
+    # Verifies a database that cannot be opened read-only still falls back to the immutable mode
+    def test_an_unreadable_mode_falls_back_to_immutable(self, im_module, monkeypatch):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
+            cookie_path = Path(directory_name) / "cookies.sqlite"
+            with sqlite3.connect(cookie_path) as connection:
+                connection.execute("CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT)")
+                connection.execute("INSERT INTO moz_cookies VALUES ('instagram.com', 'sessionid', 'checkpointed')")
+            monkeypatch.setattr(im_module, "sqlite_readonly_uri", lambda path: "file:/nonexistent/db.sqlite?mode=ro")
+
+            assert im_module.get_firefox_cookie_dict(str(cookie_path)) == {"sessionid": "checkpointed"}
+
+    # Verifies the read-only URI cannot have its parameters displaced by a path, as the immutable one cannot
+    @pytest.mark.parametrize("path,forbidden", [("/tmp/db.sqlite?immutable=0", "?immutable=0"), ("/tmp/db.sqlite?vfs=unix-none", "?vfs="), ("/tmp/a#frag/db.sqlite", "#frag")])
+    def test_the_read_only_uri_cannot_be_injected(self, im_module, path, forbidden):
+        uri = im_module.sqlite_readonly_uri(path)
+
+        assert forbidden not in uri
+        assert uri.endswith("?mode=ro")
+        assert uri.count("?") == 1

@@ -1955,7 +1955,11 @@ def test_the_collection_options_name_the_identity_budget(im_module, monkeypatch)
 
         im_module._wizard_collect_connection_section(state)
 
-        assert "IDENTITY_BUDGET_PER_DAY, 2000 names a day" in asked_question[0]
+        assert "IDENTITY_BUDGET_PER_DAY (currently 2000)" in asked_question[0]
+        monkeypatch.setattr(im_module, "IDENTITY_BUDGET_PER_DAY", 750)
+        im_module._wizard_collect_connection_section(state)
+
+        assert "(currently 750)" in asked_question[1], "a changed budget is reported as it is, never as the shipped default"
         assert not [label for label, desc in described.items() if "IDENTITY_BUDGET_PER_DAY" in desc], "the cap governs both name options, so it is stated once on the question"
 
 

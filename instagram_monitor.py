@@ -8384,8 +8384,37 @@ class CookieImportError(Exception):
 
 # Returns the SQLite URI that opens one cookie database read-only, with the path encoded rather than interpolated
 def sqlite_immutable_uri(database_path) -> str:
-    # A raw '?' or '#' in the path would otherwise start URI parameters and could displace immutable=1
-    return "file:" + quote(PurePosixPath(Path(database_path).as_posix()).as_posix()) + "?immutable=1"
+    return sqlite_cookie_uri(database_path, "immutable=1")
+
+
+# Returns the plain read-only URI for a cookie database, which unlike the immutable one sees rows a running
+# browser has written only to the write-ahead log
+def sqlite_readonly_uri(database_path) -> str:
+    return sqlite_cookie_uri(database_path, "mode=ro")
+
+
+# Builds a SQLite URI for a cookie database with the given parameters
+def sqlite_cookie_uri(database_path, parameters: str) -> str:
+    # A raw '?' or '#' in the path would otherwise start URI parameters and could displace the ones asked for
+    return "file:" + quote(PurePosixPath(Path(database_path).as_posix()).as_posix()) + "?" + parameters
+
+
+# Opens a cookie database read-only. Firefox and Chromium keep recent cookies in a write-ahead log until they
+# check it in, and an immutable open ignores that log, so a session saved moments ago by a running browser would
+# look absent. The immutable mode stays as the fallback for media where a plain read-only open cannot work
+def open_cookie_database(database_path):
+    first_error: Optional[sqlite3.DatabaseError] = None
+    for uri in (sqlite_readonly_uri(database_path), sqlite_immutable_uri(database_path)):
+        conn = None
+        try:
+            conn = connect(uri, uri=True)
+            conn.execute("PRAGMA schema_version").fetchone()
+            return conn
+        except sqlite3.DatabaseError as error:
+            if conn is not None:
+                conn.close()
+            first_error = first_error or error
+    raise first_error if first_error is not None else sqlite3.DatabaseError(f"could not open '{database_path}'")
 
 
 # Cookie host keys an Instagram session is stored under, matched exactly so a lookalike domain such as
@@ -8402,7 +8431,7 @@ def cookie_file_has_instagram_session(cookie_file, firefox: bool = False) -> Opt
     table, column = ("moz_cookies", "host") if firefox else ("cookies", "host_key")
     placeholders = ", ".join("?" * len(INSTAGRAM_COOKIE_HOSTS))
     try:
-        conn = connect(sqlite_immutable_uri(os.path.expanduser(str(cookie_file))), uri=True)
+        conn = open_cookie_database(os.path.expanduser(str(cookie_file)))
     except sqlite3.DatabaseError:
         return None
     try:
@@ -8457,7 +8486,7 @@ def get_firefox_cookie_dict(cookiefile):
         raise CookieImportError(f"Firefox cookie file '{cookiefile}' not found")
     try:
         # sqlite3's context manager only wraps a transaction, so the connection is closed explicitly
-        conn = connect(sqlite_immutable_uri(cookiefile), uri=True)
+        conn = open_cookie_database(cookiefile)
     except sqlite3.DatabaseError:
         raise CookieImportError(f"'{cookiefile}' is not a valid Firefox cookies.sqlite file")
     try:
@@ -16445,7 +16474,7 @@ def _wizard_collect_connection_section(state: WizardSetupState) -> None:
         # against, so the first question is whether to collect them at all rather than how, and the
         # option that never requests a name is the default
         # The cap governs both name options, so it belongs with the question rather than inside one answer
-        budget_note = f"Instagram counts every name it returns, so name collection is capped by IDENTITY_BUDGET_PER_DAY, {IDENTITY_BUDGET_PER_DAY} names a day here." if IDENTITY_BUDGET_PER_DAY else "Instagram counts every name it returns and IDENTITY_BUDGET_PER_DAY is 0 here, so nothing caps how many are collected."
+        budget_note = f"Instagram counts every name it returns, so name collection is capped by IDENTITY_BUDGET_PER_DAY (currently {IDENTITY_BUDGET_PER_DAY})" if IDENTITY_BUDGET_PER_DAY else "Instagram counts every name it returns and IDENTITY_BUDGET_PER_DAY is 0 here, so nothing caps how many are collected"
         collect_options = [("Counts only, no names", "Follower and following numbers are still tracked, just never the names behind them.\nThe safest choice for the account, since names are what Instagram acts against."), ("Followers only", "See who followed and unfollowed, at about half the names per check that both lists cost."), ("Followers and following", "See who followed and unfollowed, and who the account started and stopped following.\nCosts the most names and is the likeliest to reach the daily cap.")]
         collect = _wizard_ask_choice(f"Which follower and following lists should be collected?\n{budget_note}", collect_options, default_index=0)
         state.config_values["SKIP_FOLLOWERS"] = collect == 0
