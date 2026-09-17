@@ -11180,8 +11180,21 @@ def render_recovery_error(error: Any = None, context: str = "runtime", debug: Op
     return render_recovery_advice(classify_recovery_error(error, context, detail, is_logged_in), debug, retry_note, with_fix, label, summary or caller_summary(error))
 
 
+# True once anything has been printed since the startup banner, whose own trailing blank line is otherwise still the
+# last thing on screen. A block that has to stand apart from a preceding notice reads this instead of adding a blank
+# line that would double the banner one
+CONSOLE_OUTPUT_PRINTED = False
+
+
+# Records that something has been printed since the startup banner
+def note_console_output() -> None:
+    global CONSOLE_OUTPUT_PRINTED
+    CONSOLE_OUTPUT_PRINTED = True
+
+
 # Prints one built advice through the shared recovery block and returns it
 def print_recovery_advice(advice: RecoveryAdvice, debug: Optional[bool] = None, retry_note: str = "", with_fix: bool = True, label: str = "Error", summary: str = "") -> RecoveryAdvice:
+    note_console_output()
     print(render_recovery_advice(advice, debug, retry_note, with_fix, label, summary))
     return advice
 
@@ -11189,6 +11202,7 @@ def print_recovery_advice(advice: RecoveryAdvice, debug: Optional[bool] = None, 
 # Classifies one failure, prints it through the shared recovery block and returns its stable advice
 def print_recovery_error(error: Any = None, context: str = "runtime", debug: Optional[bool] = None, detail: str = "", retry_note: str = "", with_fix: bool = True, label: str = "Error", summary: str = "", is_logged_in: Optional[bool] = None) -> RecoveryAdvice:
     advice = classify_recovery_error(error, context, detail, is_logged_in)
+    note_console_output()
     print(render_recovery_advice(advice, debug, retry_note, with_fix, label, summary or caller_summary(error)))
     return advice
 
@@ -11197,6 +11211,7 @@ def print_recovery_error(error: Any = None, context: str = "runtime", debug: Opt
 def print_recovery_fix(error: Any = None, context: str = "runtime", detail: str = "") -> RecoveryAdvice:
     advice = classify_recovery_error(error, context, detail)
     if advice.fix:
+        note_console_output()
         print(colorize("info", f"To fix: {advice.fix}"))
         if DEBUG_MODE and advice.detail and advice.detail != advice.summary:
             print(f"Technical detail: {sanitize_error_text(advice.detail)}")
@@ -16075,6 +16090,7 @@ def _build_help_epilog() -> str:
 
 # Reads one input line, letting a cancelled prompt reach the handler that knows what was written
 def _wizard_input(prompt_text: str) -> str:
+    note_console_output()
     try:
         return read_interactively(input, prompt_text)
     except (EOFError, KeyboardInterrupt):
@@ -17269,7 +17285,10 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     except (EOFError, KeyboardInterrupt):
         print(colorize("warning", "Setup cancelled. Destination files were not changed."))
         raise SystemExit(1) from None
-    state.config_values.update({"TARGET_USERNAMES": list(state.targets) if state.persist_targets else [], "SESSION_USERNAME": state.session_username, "SKIP_SESSION": not state.logged_in, "DOTENV_FILE": str(state.env_path)})
+    # Setup never creates a dotenv with nothing in it, so the config names one only when the file will be there.
+    # Naming a file that does not exist opens every later run with a warning about a file the setup does not need
+    dotenv_setting = str(state.env_path) if state.secret_updates or state.env_path.exists() else ""
+    state.config_values.update({"TARGET_USERNAMES": list(state.targets) if state.persist_targets else [], "SESSION_USERNAME": state.session_username, "SKIP_SESSION": not state.logged_in, "DOTENV_FILE": dotenv_setting})
     config_content = generate_config_with_current_values(state.config_values)
     try:
         preserve_inline_config_secrets(state.config_path, state.env_path)
@@ -17296,7 +17315,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
 
     wizard_timezone_advice = _wizard_apply_saved_values(state)
     CLI_CONFIG_PATH = str(state.config_path)
-    DOTENV_FILE = str(state.env_path)
+    DOTENV_FILE = dotenv_setting
 
     print(colorize("header", "\nSaved files\n"))
     print(f"  Configuration: {write_status['path']}")
@@ -18442,7 +18461,12 @@ def build_doctor_report(targets, config_errors: Sequence[dict] = (), retired_set
 
 
 # Prints what Doctor will and will not do, before the checks start
-def render_doctor_notice(targets=()) -> None:
+def render_doctor_notice(targets=(), separate: Optional[bool] = None) -> None:
+    # The banner already ends with a blank line, so one is added here only when a startup notice came after it
+    if separate is None:
+        separate = CONSOLE_OUTPUT_PRINTED
+    if separate:
+        print()
     print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.")
     # Doctor is reached for when Instagram is already refusing requests, so what it costs is stated before it runs
     live_requests = 1 + (1 if bool(SESSION_USERNAME) and not SKIP_SESSION else 0) + len(targets or ())
@@ -19394,6 +19418,7 @@ def run_main():
         sys.exit(1)
 
     if str(HTTP_BACKEND).strip().lower() == "curl_cffi" and not _CURL_CFFI_AVAILABLE:
+        note_console_output()
         print("* Warning: HTTP_BACKEND is 'curl_cffi' but the 'curl_cffi' package is not installed, using the 'requests' backend instead (run: pip3 install curl_cffi)")
 
     # Only a run that will monitor can present two clients, and --doctor has to report this rather than die on it
@@ -19509,6 +19534,7 @@ def run_main():
         SKIP_FOLLOW_CHANGES = True
 
     if args.error_threshold is not None:
+        note_console_output()
         print(f"* Note: --error-threshold was removed in a later version and is ignored. An error alert now goes out once a failure has lasted {display_time(ERROR_ALERT_AFTER_SECONDS)}, or at once when it cannot clear on its own")
 
     # Webhook configuration

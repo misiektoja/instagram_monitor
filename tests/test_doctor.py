@@ -1690,3 +1690,26 @@ class TestDoctorRequestCost:
         im_module.render_doctor_notice([])
 
         assert "about 1 Instagram request(s)" in capsys.readouterr().out
+
+    # The banner already ends with a blank line, so a notice printed straight after it must not add a second one
+    def test_the_notice_follows_the_banner_without_a_gap(self, im_module, capsys):
+        im_module.render_doctor_notice([])
+
+        assert not capsys.readouterr().out.startswith("\n")
+
+    # A startup warning between the banner and the notice runs the two blocks together, so the notice stands apart
+    def test_the_notice_stands_apart_from_a_startup_warning(self, im_module, capsys):
+        im_module.print_recovery_error("dotenv file '/absent/.env' does not exist", context="dotenv_missing", label="Warning")
+        capsys.readouterr()
+
+        im_module.render_doctor_notice([])
+
+        assert capsys.readouterr().out.startswith("\n")
+
+    # A caller that knows what came before it decides for itself, so the flag is a default rather than the rule
+    def test_the_caller_can_override_the_spacing(self, im_module, capsys):
+        im_module.note_console_output()
+
+        im_module.render_doctor_notice([], separate=False)
+
+        assert not capsys.readouterr().out.startswith("\n")

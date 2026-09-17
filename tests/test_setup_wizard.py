@@ -266,12 +266,88 @@ class TestEditableReview:
             namespace = {}
             exec(config_path.read_text(encoding="utf-8"), namespace)
             assert namespace["TARGET_USERNAMES"] == []
-            assert namespace["DOTENV_FILE"] == str(env_path.resolve())
             output = capsys.readouterr().out
             assert "second.target" in output
-            # No secret was entered, so nothing was written to the dotenv and no printed command names it
+            # No secret was entered, so nothing was written to the dotenv, no printed command names it and the
+            # saved config does not name it either
             assert not env_path.exists()
+            assert namespace["DOTENV_FILE"] == ""
             assert "--env-file" not in output
+
+
+class TestTheConfigNamesTheDotenvOnlyWhenItExists:
+    # Runs one setup that saves without entering a secret, returning the saved config values and the dotenv path
+    def _save_without_secrets(self, im_module, monkeypatch, directory: Path, collect_login=None):
+        config_path = directory / "instagram_monitor.conf"
+        env_path = directory / ".env"
+        answers = iter([True, False, False, False, False, False])
+        choices = iter([0, 2, 1, 0, 0])
+        protect_setup_globals(im_module, monkeypatch)
+        monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+        monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
+        monkeypatch.setattr(im_module, "_wizard_ask_text", lambda *args, **kwargs: "target.user")
+        monkeypatch.setattr(im_module, "_wizard_ask_duration", lambda question, default: default)
+        monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
+        monkeypatch.setattr(im_module, "run_doctor", lambda *args, **kwargs: 0)
+        monkeypatch.setattr(im_module, "_wizard_collect_login_section", collect_login or (lambda state, method: None))
+        monkeypatch.setattr(im_module, "_wizard_collect_connection_section", lambda state: None)
+        monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
+
+        with pytest.raises(SystemExit):
+            im_module.run_setup_wizard(config_file=config_path, env_file=env_path)
+
+        namespace = {}
+        exec(config_path.read_text(encoding="utf-8"), namespace)
+        return namespace, env_path
+
+    # A setup that writes no secret writes no dotenv, so naming one would open every later run with a warning about
+    # a file this setup decided not to create
+    def test_a_setup_without_secrets_names_no_dotenv(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            namespace, env_path = self._save_without_secrets(im_module, monkeypatch, Path(directory_name))
+
+            assert not env_path.exists()
+            assert namespace["DOTENV_FILE"] == ""
+            assert im_module.DOTENV_FILE == ""
+
+    # The next run reads the config setup saved, and a warning about a file setup chose not to create is what it must
+    # not open with. The same run against a config naming a missing file is the control that the warning still works
+    def test_the_saved_config_opens_the_next_run_without_a_warning(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            self._save_without_secrets(im_module, monkeypatch, directory)
+            config_path = directory / "instagram_monitor.conf"
+
+            command = [sys.executable, str(PROJECT_ROOT / "instagram_monitor.py"), "--config-file", str(config_path), "--exposure", "--no-color"]
+            quiet = subprocess.run(command, cwd=directory, capture_output=True, text=True, check=False)
+            config_path.write_text(config_path.read_text(encoding="utf-8").replace('DOTENV_FILE = ""', f'DOTENV_FILE = {str(directory / "absent.env")!r}'), encoding="utf-8")
+            warned = subprocess.run(command, cwd=directory, capture_output=True, text=True, check=False)
+
+            assert "does not exist" not in quiet.stdout
+            assert "does not exist" in warned.stdout
+
+    # A secret entered during setup is written to the dotenv, so the config has to name the file the run needs to read
+    def test_a_setup_that_writes_a_secret_names_the_dotenv(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            def collect_login(state, method):
+                state.secret_updates["SESSION_PASSWORD"] = "written-by-setup"
+
+            namespace, env_path = self._save_without_secrets(im_module, monkeypatch, Path(directory_name), collect_login)
+
+            assert env_path.exists()
+            assert namespace["DOTENV_FILE"] == str(env_path.resolve())
+            assert im_module.DOTENV_FILE == str(env_path.resolve())
+
+    # A rerun over a dotenv an earlier setup wrote must keep naming it, since its secrets are still the ones in use
+    def test_a_rerun_keeps_naming_an_existing_dotenv(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            (directory / ".env").write_text("SESSION_PASSWORD = 'kept'\n", encoding="utf-8")
+
+            namespace, env_path = self._save_without_secrets(im_module, monkeypatch, directory)
+
+            assert namespace["DOTENV_FILE"] == str(env_path.resolve())
 
 
 class TestBrowserOnboarding:
