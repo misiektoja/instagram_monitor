@@ -25,7 +25,7 @@ When the named file already exists, `--generate-config` asks before replacing it
 
 The file contains a short explanation above each setting.
 
-By default the tool looks for a configuration file named `instagram_monitor.conf` in the current directory, the home directory (`~`) and the script directory. Use `--config-file` to name another location, or `--config-file none` to disable automatic config discovery for one run.
+By default the tool looks for a configuration file named `instagram_monitor.conf` in the current directory, the home directory (`~`) and the script directory. Use `--config-file` to name another location or `--config-file none` to disable automatic config discovery for one run.
 
 <a id="what-a-configuration-file-may-contain"></a>
 ### What a Configuration File May Contain

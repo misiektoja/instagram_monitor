@@ -57,9 +57,9 @@ Every failure is reported in the same three-part shape: what went wrong, a `To f
 | Emails never arrive | Incomplete SMTP settings | [SMTP Settings](configuration.md#smtp-settings) then run `instagram_monitor --send-test-email` |
 | Webhook alerts never arrive | Provider mismatch or a stale destination | [Webhook Settings](configuration.md#webhook-settings) then run `instagram_monitor --send-test-webhook` |
 | `instagram_monitor` is not found after installation | The shell has not picked up the new command | [Installation and Command Problems](#installation-and-command-problems) |
-| Escape sequences such as `[36m` printed as text, or no colour at all | The terminal cannot display ANSI colour, or colour was switched off | [Terminal Colours Look Wrong](#terminal-colours-look-wrong) |
+| Escape sequences such as `[36m` printed as text or no colour at all | The terminal cannot display ANSI colour or colour was switched off | [Terminal Colours Look Wrong](#terminal-colours-look-wrong) |
 
-A continuing outage produces a `* Monitoring degraded` reminder once an hour, even when the [liveness reminder](usage.md#liveness-reminder) is switched off, and `* Monitoring recovered` marks recovery. Use `--verbose` to see the first failed check.
+A continuing outage produces a `* Monitoring degraded` reminder once an hour, even when the [liveness reminder](usage.md#liveness-reminder) is switched off. `* Monitoring recovered` marks recovery. Use `--verbose` to see the first failed check.
 
 <a id="connection-errors-during-monitoring"></a>
 ## Connection Errors During Monitoring
