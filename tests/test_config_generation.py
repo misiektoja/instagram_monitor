@@ -270,6 +270,27 @@ class TestDotenvPersistence:
             assert content == "WEBHOOK_URL=https://example.test/topic\n"
             assert "NTFY_ACCESS_TOKEN" not in dotenv_values(destination, interpolate=False)
 
+    # A saved value written across several lines is replaced whole, since replacing only its first line left
+    # the rest of the old secret behind and the next run could not parse what it wrote
+    def test_a_multiline_secret_is_replaced_whole(self, im_module):
+        with make_test_directory() as directory_name:
+            destination = Path(directory_name) / ".env"
+            destination.write_text('NTFY_ACCESS_TOKEN="first line\nsecond line"\nOTHER=keep\n', encoding="utf-8")
+
+            im_module.update_dotenv_file(destination, {"NTFY_ACCESS_TOKEN": "replacement"})
+
+            assert destination.read_text(encoding="utf-8") == 'NTFY_ACCESS_TOKEN="replacement"\nOTHER=keep\n'
+
+    # Clearing such a value removes all of it, for the same reason
+    def test_a_cleared_multiline_secret_leaves_nothing_behind(self, im_module):
+        with make_test_directory() as directory_name:
+            destination = Path(directory_name) / ".env"
+            destination.write_text('NTFY_ACCESS_TOKEN="first line\nsecond line"\nOTHER=keep\n', encoding="utf-8")
+
+            im_module.update_dotenv_file(destination, {"NTFY_ACCESS_TOKEN": ""})
+
+            assert destination.read_text(encoding="utf-8") == "OTHER=keep\n"
+
     # Turning off a secret that was never saved does not add an empty key to the file
     def test_clearing_an_unsaved_secret_adds_nothing(self, im_module):
         with make_test_directory() as directory_name:
