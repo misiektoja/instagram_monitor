@@ -201,7 +201,7 @@ On Windows, Chrome 127 and newer prevent external programs from reading these co
 
 Every supported browser can have several profiles with separate cookies. Use one of these methods:
 
-- **Pick by name** with `--browser-profile`. Use the Firefox profile name (e.g. `default-release`) or the Chromium profile directory (e.g. `Default`, `Profile 1`). On Linux, Snap, Flatpak and distribution builds of Firefox keep separate profile trees that often share a name. A name matching more than one is refused rather than guessed at, and the error lists the full profile directories to pass instead:
+- **Pick by name** with `--browser-profile`. Use the Firefox profile name (e.g. `default-release`) or, for Chromium-based browsers, either the profile directory (e.g. `Default`, `Profile 1`) or the display name the picker shows (e.g. `Your Chrome`). A display name used by two profiles is refused with the directories to pass instead. On Linux, Snap, Flatpak and distribution builds of Firefox keep separate profile trees that often share a name. A name matching more than one is refused rather than guessed at, and the error lists the full profile directories to pass instead:
 
     ```sh
     instagram_monitor --import-browser-session --browser chrome --browser-profile "Profile 1"
@@ -212,7 +212,9 @@ Every supported browser can have several profiles with separate cookies. Use one
 - **On the [Web Dashboard](view-modes.md#web-dashboard)**, pick the browser, click **Import** and select a profile if prompted. The dashboard imports only from the profiles it detected, so it cannot be pointed at another file on your computer. Use `--cookie-file PATH` on the command line when you deliberately want a database from somewhere else.
 - **Advanced:** point `--cookie-file` at a specific cookie database (Firefox `cookies.sqlite` or a Chromium `Cookies` file). This overrides `--browser-profile`.
 
-For Chromium-based browsers, the tool finds the cookie database inside the selected profile. It supports both `<profile>/Cookies` and `<profile>/Network/Cookies` layouts.
+For Chromium-based browsers, the tool finds the cookie database inside the selected profile. It supports both `<profile>/Cookies` and `<profile>/Network/Cookies` layouts. On Linux it looks for the distribution install first, then Snap and Flatpak builds of Chromium and Brave.
+
+Chromium-based browsers encrypt their cookies with a key held in your keychain or keyring. If you deny that prompt or the keyring is locked, the import says so instead of blaming a missing login.
 
 Chromium-based import does not work inside Docker because the container cannot use the host password service needed to decrypt the cookies. Use Firefox as shown under [Container Operation](usage.md#container-operation). You can also perform a Chromium import with a local PyPI or manual installation.
 

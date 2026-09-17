@@ -3739,6 +3739,8 @@ def create_web_dashboard_app():
             # reach an arbitrary file. The --cookie-file flag remains available for deliberate local use
             if browser == 'firefox':
                 cookiefile = resolve_offered_firefox_cookiefile(cookiefile)
+            elif profile:
+                profile = resolve_chromium_profile(browser, profile)
             username = normalize_instagram_username(import_browser_session_dashboard(browser, cookiefile, profile=profile))
         except CookieImportError as e:
             # CookieImportError messages are authored operational guidance for the local dashboard user
@@ -8485,7 +8487,7 @@ def select_profile_interactively(heading: str, choices: List[Dict[str, Any]]):
         marker = f"{colorize('status_online', '*')} " if choice["signed_in"] else ("  " if signed_in else "")
         default_note = "  (default)" if index - 1 == default_index else ""
         print(f"  {str(index).rjust(width)}) {marker}{choice['label']}{default_note}")
-    prompt = f"Select profile number (0 to exit){', Enter for the default' if default_index is not None else ''}: "
+    prompt = f"Select profile number (0 to exit{', Enter for default' if default_index is not None else ''}): "
     while True:
         raw = input(prompt).strip()
         if not raw and default_index is not None:
@@ -8553,25 +8555,31 @@ def firefox_profile_alternatives(cookiefile) -> str:
     return f" (other profiles: {', '.join(others)})" if others else ""
 
 
-# Reads Instagram session cookies from a Chromium-based browser via pycookiecheat and returns them as a name to value dict
 # Default Chromium-family user-data directories (parent of the per-profile folders) by OS and browser
 CHROMIUM_USER_DATA_DIRS = {
     "Darwin": {
-        "chrome": "~/Library/Application Support/Google/Chrome",
-        "chromium": "~/Library/Application Support/Chromium",
-        "brave": "~/Library/Application Support/BraveSoftware/Brave-Browser",
+        "chrome": ("~/Library/Application Support/Google/Chrome",),
+        "chromium": ("~/Library/Application Support/Chromium",),
+        "brave": ("~/Library/Application Support/BraveSoftware/Brave-Browser",),
     },
     "Linux": {
-        "chrome": "~/.config/google-chrome",
-        "chromium": "~/.config/chromium",
-        "brave": "~/.config/BraveSoftware/Brave-Browser",
+        "chrome": ("~/.config/google-chrome",),
+        "chromium": ("~/.config/chromium", "~/snap/chromium/common/chromium", "~/.var/app/org.chromium.Chromium/config/chromium"),
+        "brave": ("~/.config/BraveSoftware/Brave-Browser", "~/snap/brave/current/.config/BraveSoftware/Brave-Browser", "~/.var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser"),
     },
 }
 
 
-# Returns the user-data directory for a Chromium-based browser on this OS, or None if unsupported
+# Returns the user-data directory for a Chromium-based browser on this OS, or None if unsupported. Snap and
+# Flatpak builds keep their own profile trees, so the first root that exists wins and a packaged build is used
+# only when no distribution install is present
 def get_chromium_user_data_dir(browser):
-    return CHROMIUM_USER_DATA_DIRS.get(system(), {}).get(browser)
+    candidates = CHROMIUM_USER_DATA_DIRS.get(system(), {}).get(browser) or ()
+    for candidate in candidates:
+        if os.path.isdir(expanduser(candidate)):
+            return candidate
+    # Naming the conventional root keeps a failure readable when the browser is not installed at all
+    return candidates[0] if candidates else None
 
 
 # Resolves the cookie database path for a Chromium profile dir, preferring the modern Network layout over the legacy one
@@ -8614,6 +8622,30 @@ def list_chromium_profiles(browser):
     return profiles
 
 
+# Describes one Chromium profile for a message, adding the display name when it differs from the directory
+def chromium_profile_description(profile) -> str:
+    return f"{profile['dir']} ({profile['name']})" if str(profile.get("name")) != profile["dir"] else str(profile["dir"])
+
+
+# Resolves a requested Chromium profile to one the tool enumerated, accepting either the profile directory or the
+# display name the picker shows. Resolving against that list also keeps a submitted value from reaching a cookie
+# database outside the browser's own profiles
+def resolve_chromium_profile(browser, requested):
+    wanted = str(requested or "").strip()
+    profiles = list_chromium_profiles(browser)
+    for profile in profiles:
+        if wanted.lower() == profile["dir"].lower():
+            return profile["dir"]
+    matches = [p for p in profiles if wanted.lower() == str(p["name"]).lower()]
+    if len(matches) == 1:
+        return matches[0]["dir"]
+    if matches:
+        directories = ", ".join(p["dir"] for p in matches)
+        raise CookieImportError(f"{browser_label(browser)} display name '{wanted}' is used by {len(matches)} profiles, pass the profile directory instead (one of: {directories})")
+    available = ", ".join(chromium_profile_description(p) for p in profiles) or "none found"
+    raise CookieImportError(f"{browser_label(browser)} profile '{wanted}' not found (available: {available})")
+
+
 # Reads Instagram session cookies from a Chromium-based browser via pycookiecheat and returns them as a name to value dict
 def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
     label = browser_label(browser)
@@ -8649,15 +8681,21 @@ def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
         base = get_chromium_user_data_dir(browser)
         if base:
             base_path = expanduser(base)
-            cookie_file = chromium_profile_cookie_file(base_path, profile or "Default")
+            cookie_file = chromium_profile_cookie_file(base_path, resolve_chromium_profile(browser, profile) if profile else "Default")
             if cookie_file is None and profile:
-                available = ", ".join(p["dir"] for p in list_chromium_profiles(browser)) or "none found"
+                available = ", ".join(chromium_profile_description(p) for p in list_chromium_profiles(browser)) or "none found"
                 raise CookieImportError(f"{label} profile '{profile}' not found (available: {available})")
         # if base is unknown or Default is missing, leave cookie_file None and let pycookiecheat try its own default
 
     try:
         cookies = get_cookies("https://www.instagram.com", browser=browser_type, cookie_file=cookie_file)
     except Exception as e:
+        # Chromium encrypts its cookies with a key held in the OS keyring, so a denied prompt or a locked keyring
+        # fails here for a reason that has nothing to do with being signed in
+        if "Safe Storage" in str(e) or "keychain" in str(e).lower() or "keyring" in str(e).lower():
+            raise CookieImportError(
+                f"Could not read the {label} encryption key: {e}\nTo fix: allow the keychain or keyring prompt, unlock it if it is locked, then run the import again"
+            )
         raise CookieImportError(
             f"Could not read {label} cookies: {e}\nMake sure {label} is installed and you are logged in to Instagram in it"
         )

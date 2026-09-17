@@ -402,3 +402,120 @@ class TestSingleProfileWarning:
             im_module.get_firefox_cookiefile()
 
             assert "not signed in" not in capsys.readouterr().out
+
+
+class TestChromiumProfileResolution:
+    # Chrome keeps the directory and the display name separate, and the picker shows both
+    @staticmethod
+    def _profiles():
+        return [{"dir": "Default", "name": "Your Chrome", "cookie_file": "/u/Default/Cookies"}, {"dir": "Profile 1", "name": "Test", "cookie_file": "/u/Profile 1/Cookies"}, {"dir": "Profile 2", "name": "Test", "cookie_file": "/u/Profile 2/Cookies"}]
+
+    # Verifies the display name the picker shows also works with --browser-profile, as a Firefox name does
+    def test_a_display_name_resolves_to_its_directory(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "list_chromium_profiles", lambda browser: self._profiles())
+
+        assert im_module.resolve_chromium_profile("chrome", "Your Chrome") == "Default"
+        assert im_module.resolve_chromium_profile("chrome", "Profile 1") == "Profile 1"
+
+    # Verifies a directory match wins over a display name, since the directory is the unambiguous identifier
+    def test_a_directory_is_preferred_over_a_display_name(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "list_chromium_profiles", lambda browser: [{"dir": "Profile 1", "name": "Default", "cookie_file": "/u/Profile 1/Cookies"}, {"dir": "Default", "name": "Other", "cookie_file": "/u/Default/Cookies"}])
+
+        assert im_module.resolve_chromium_profile("chrome", "Default") == "Default"
+
+    # Verifies a display name shared by two profiles is refused rather than resolved to whichever came first
+    def test_a_shared_display_name_is_refused(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "list_chromium_profiles", lambda browser: self._profiles())
+
+        with pytest.raises(im_module.CookieImportError) as failure:
+            im_module.resolve_chromium_profile("chrome", "Test")
+
+        assert "used by 2 profiles" in str(failure.value)
+        assert "Profile 1, Profile 2" in str(failure.value)
+
+    # Verifies an unknown profile lists the directories with their display names, so the answer is usable
+    def test_an_unknown_profile_lists_the_directories(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "list_chromium_profiles", lambda browser: self._profiles())
+
+        with pytest.raises(im_module.CookieImportError) as failure:
+            im_module.resolve_chromium_profile("chrome", "nope")
+
+        assert "Default (Your Chrome)" in str(failure.value)
+
+    # Verifies a submitted profile cannot reach a cookie database outside the browser's own profiles, which is
+    # the guarantee the dashboard already made for Firefox cookie paths
+    @pytest.mark.parametrize("escape", ["../../../../tmp/evil", "/tmp/evil", "Default/../../../tmp"])
+    def test_a_profile_cannot_escape_the_enumerated_list(self, im_module, monkeypatch, escape):
+        monkeypatch.setattr(im_module, "list_chromium_profiles", lambda browser: self._profiles())
+
+        with pytest.raises(im_module.CookieImportError, match="not found"):
+            im_module.resolve_chromium_profile("chrome", escape)
+
+
+class TestChromiumUserDataRoots:
+    # Verifies a Snap or Flatpak Chromium is found when no distribution install is present
+    @pytest.mark.parametrize("browser,packaged", [("chromium", "~/snap/chromium/common/chromium"), ("chromium", "~/.var/app/org.chromium.Chromium/config/chromium"), ("brave", "~/snap/brave/current/.config/BraveSoftware/Brave-Browser"), ("brave", "~/.var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser")])
+    def test_a_packaged_install_is_found(self, im_module, monkeypatch, browser, packaged):
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
+        monkeypatch.setattr(im_module.os.path, "isdir", lambda path: path == im_module.expanduser(packaged))
+
+        assert im_module.get_chromium_user_data_dir(browser) == packaged
+
+    # Verifies a distribution install wins, so a machine with both never has to disambiguate them
+    def test_the_distribution_install_wins(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
+        monkeypatch.setattr(im_module.os.path, "isdir", lambda path: True)
+
+        assert im_module.get_chromium_user_data_dir("chromium") == "~/.config/chromium"
+
+    # Verifies the conventional root is still named when nothing is installed, so the failure stays readable
+    def test_a_missing_browser_still_names_a_root(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
+        monkeypatch.setattr(im_module.os.path, "isdir", lambda path: False)
+
+        assert im_module.get_chromium_user_data_dir("brave") == "~/.config/BraveSoftware/Brave-Browser"
+        assert im_module.get_chromium_user_data_dir("firefox") is None
+
+
+class TestChromiumKeyringFailure:
+    # Verifies a locked or denied keyring is reported as such, not as a browser you forgot to sign in to
+    def test_a_keyring_failure_is_not_blamed_on_being_signed_out(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "system", lambda: "Darwin")
+
+        def refuse(*args, **kwargs):
+            raise ValueError("Could not find a password for the pair (Chrome Safe Storage, Chrome). Please manually verify they exist in `Keychain Access.app`.")
+
+        import pycookiecheat
+        monkeypatch.setattr(pycookiecheat, "get_cookies", refuse)
+
+        with pytest.raises(im_module.CookieImportError) as failure:
+            im_module.get_chromium_cookie_dict("chrome", cookie_file=__file__)
+
+        assert "encryption key" in str(failure.value)
+        assert "allow the keychain or keyring prompt" in str(failure.value)
+        assert "logged in to Instagram" not in str(failure.value)
+
+
+class TestDashboardChromiumImport:
+    # The dashboard states that it only imports databases it enumerated itself, and that guarantee was previously
+    # enforced for Firefox cookie paths but not for the Chromium profile the same handler accepts
+    def test_a_submitted_profile_is_resolved_against_the_enumerated_list(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", True)
+        monkeypatch.setattr(im_module, "list_chromium_profiles", lambda browser: [{"dir": "Default", "name": "Your Chrome", "cookie_file": "/u/Default/Cookies"}])
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+        imported = []
+        monkeypatch.setattr(im_module, "import_browser_session_dashboard", lambda browser, cookiefile=None, profile=None: imported.append(profile) or "login.user")
+        app = im_module.create_web_dashboard_app()
+        assert app is not None
+        client = app.test_client()
+
+        refused = client.post("/api/session/browser/import", json={"browser": "chrome", "profile": "../../../../tmp/evil"})
+
+        assert refused.status_code == 400
+        assert "not found" in refused.get_json()["error"]
+        assert imported == [], "a profile outside the enumerated list never reaches the importer"
+
+        accepted = client.post("/api/session/browser/import", json={"browser": "chrome", "profile": "Your Chrome"})
+
+        assert accepted.get_json()["success"]
+        assert imported == ["Default"], "the display name is resolved to the directory the importer expects"
