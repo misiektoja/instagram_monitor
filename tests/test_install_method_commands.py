@@ -1,5 +1,6 @@
 """Tests for install-method detection and the command examples it drives."""
 
+import shlex
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -257,6 +258,14 @@ class TestPortableWizardCommands:
         assert f"--config-file '{config_path.resolve()}'" in command
         assert f"--env-file '{env_path.resolve()}'" in command
         assert "target.user" in command
+
+    # A value only shaped like a placeholder is user input, so pasting the rendered command must not run a substitution
+    def test_a_value_shaped_like_a_placeholder_is_quoted(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
+        crafted = "<$(echo>marker)>"
+
+        assert shlex.split(im_module._wizard_quote_argument(crafted)) == [crafted]
+        assert im_module._wizard_quote_argument("<target_insta_user>") == "<target_insta_user>"
 
     def test_windows_renderer_quotes_paths_with_spaces(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "system", lambda: "Windows")

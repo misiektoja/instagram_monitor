@@ -14765,10 +14765,15 @@ def _wizard_render_command(arguments) -> str:
     return " ".join(_wizard_quote_argument(argument) for argument in arguments)
 
 
+# The documentation placeholders a printed command carries unquoted, because the reader replaces them before running it
+COMMAND_PLACEHOLDERS = frozenset(("<target_insta_user>",))
+
+
 # Quotes one command argument for the active host shell, leaving a <placeholder> as documentation for the reader
 def _wizard_quote_argument(value) -> str:
     text = str(value)
-    if text.startswith("<") and text.endswith(">"):
+    # Matched exactly rather than by shape, since any other angle-bracket value is user-derived and would otherwise reach the shell unquoted
+    if text in COMMAND_PLACEHOLDERS:
         return text
     return subprocess.list2cmdline([text]) if system() == "Windows" else shlex.quote(text)
 
