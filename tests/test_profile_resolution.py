@@ -1,5 +1,6 @@
 """Offline tests for resolving a profile without the endpoint Instagram retired for signed-in sessions."""
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -182,3 +183,55 @@ class TestTheReelsCountIsReused:
         im_module.get_total_reels_count("target", None, False, None)
 
         assert len(walks) == 2
+
+
+class TestResolvedIdsOutliveTheRun:
+    # A name keeps its id for as long as the account exists, so resolving it again after a restart would spend a
+    # request on an answer the previous run already wrote down
+    def test_a_stored_id_is_read_back_without_a_request(self, im_module):
+        context, calls = _context(im_module, search_users=[_search_user("target", "77")])
+        assert im_module.resolve_user_id(context, "target") == "77"
+
+        im_module.USER_ID_CACHE.clear()
+        im_module.USER_ID_CACHE_LOADED = False
+
+        assert im_module.resolve_user_id(context, "target") == "77"
+        assert len(calls) == 1
+
+    # The file only saves a lookup, so one this run cannot read must leave it resolving names rather than failing
+    def test_an_unreadable_file_is_ignored(self, im_module):
+        Path(im_module.user_id_cache_path()).write_text("{ not json", encoding="utf-8")
+        im_module.USER_ID_CACHE.clear()
+        im_module.USER_ID_CACHE_LOADED = False
+        context, calls = _context(im_module, search_users=[_search_user("target", "77")])
+
+        assert im_module.resolve_user_id(context, "target") == "77"
+        assert len(calls) == 1
+
+    # A file written by a different version may hold anything, so it is not read as this version's shape
+    def test_another_version_is_ignored(self, im_module):
+        Path(im_module.user_id_cache_path()).write_text('{"version": 99, "ids": {"target": "11"}}', encoding="utf-8")
+        im_module.USER_ID_CACHE.clear()
+        im_module.USER_ID_CACHE_LOADED = False
+        context, _ = _context(im_module, search_users=[_search_user("target", "77")])
+
+        assert im_module.resolve_user_id(context, "target") == "77"
+
+    # A freed username can be taken by another account, so an id is trusted only while it answers to the name it
+    # was stored for. The stored one is dropped and the name looked up again rather than monitoring a stranger
+    def test_an_id_answering_to_another_name_is_dropped(self, im_module, monkeypatch):
+        im_module.remember_user_id("target", "11")
+        context, calls = _context(im_module, search_users=[_search_user("target", "77")])
+        built = []
+
+        def profile(ctx, username, user_id):
+            built.append(user_id)
+            return None if user_id == "11" else SimpleNamespace(username=username, userid=int(user_id))
+
+        monkeypatch.setattr(im_module, "_profile_by_user_id", profile)
+
+        resolved = im_module.profile_from_username_resilient(SimpleNamespace(context=context), "target")
+
+        assert resolved.userid == 77
+        assert built == ["11", "77"]
+        assert im_module.stored_user_id("target") == "77"

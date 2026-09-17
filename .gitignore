@@ -214,4 +214,5 @@ tmp/
 
 # Local identity exposure ledger and circuit breaker state (never leaves the machine)
 instagram_monitor_exposure.json
+instagram_monitor_user_ids.json
 instagram_monitor_exposure.json.lock

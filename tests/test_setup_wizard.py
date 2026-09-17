@@ -831,13 +831,59 @@ def scripted_connection_choices(im_module, monkeypatch, answers):
     asked = {}
 
     def ask(question, options, default_index=0):
-        key = "collect" if "should be collected" in question else "source"
-        assert key == "collect" or "follower and following lists" in question, f"unexpected wizard question: {question}"
+        if "should be collected" in question:
+            key = "collect"
+        elif "names a day" in question:
+            key = "budget"
+        else:
+            key = "source"
+            assert "follower and following lists" in question, f"unexpected wizard question: {question}"
         asked[key] = {"options": [label for label, _ in options], "default": default_index}
         return answers.get(key, default_index)
 
     monkeypatch.setattr(im_module, "_wizard_ask_choice", ask)
     return asked
+
+
+# Verifies the cap the collect question names can be changed where it is named, since it governs both name options
+def test_setup_can_change_the_daily_name_cap(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        state.config_values["IDENTITY_BUDGET_PER_DAY"] = 2000
+        asked = scripted_connection_choices(im_module, monkeypatch, {"collect": 2, "budget": 1})
+        monkeypatch.setattr(im_module, "_wizard_ask_positive_int", lambda question, default, maximum=None: 750)
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert asked["budget"]["options"][0] == "Keep the cap at 2000 names a day"
+        assert asked["budget"]["default"] == 0
+        assert state.config_values["IDENTITY_BUDGET_PER_DAY"] == 750
+
+
+# Verifies the cap can be removed, which is the answer that lets a run collect names without a daily stop
+def test_setup_can_remove_the_daily_name_cap(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        state.config_values["IDENTITY_BUDGET_PER_DAY"] = 2000
+        scripted_connection_choices(im_module, monkeypatch, {"collect": 1, "budget": 2})
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert state.config_values["IDENTITY_BUDGET_PER_DAY"] == 0
+
+
+# Verifies a setup collecting no names is not asked about a cap that would govern nothing
+def test_a_counts_only_setup_is_not_asked_about_the_cap(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        asked = scripted_connection_choices(im_module, monkeypatch, {"collect": 0})
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert "budget" not in asked
 
 
 # Verifies the connection section records the list surface and leaves the saved transport settings alone

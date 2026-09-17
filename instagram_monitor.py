@@ -7951,9 +7951,89 @@ def _profile_from_web_profile_info(bot: instaloader.Instaloader, username: str) 
     return instaloader.Profile(bot.context, normalized)
 
 
-# Numeric user ids already resolved in this run, so a monitored target is looked up once instead of once a cycle
+# Numeric user ids already resolved, so a monitored target is looked up once rather than once a cycle. They survive
+# a restart in a file beside the other state this run writes, since a name keeps its id for as long as the account does
 USER_ID_CACHE: Dict[str, str] = {}
 USER_ID_CACHE_LOCK = threading.Lock()
+USER_ID_CACHE_FILENAME = "instagram_monitor_user_ids.json"
+USER_ID_CACHE_VERSION = 1
+USER_ID_CACHE_LOADED = False
+
+
+# Returns the path of the file holding resolved user ids
+def user_id_cache_path() -> str:
+    base = OUTPUT_DIR if OUTPUT_DIR else "."
+    return os.path.abspath(os.path.join(base, USER_ID_CACHE_FILENAME))
+
+
+# Reads stored ids into the cache once per run, with the lock already held. The file only saves a lookup, so an
+# unreadable or malformed one is ignored rather than reported and this run resolves the names it needs
+def _load_user_id_cache() -> None:
+    global USER_ID_CACHE_LOADED
+    if USER_ID_CACHE_LOADED:
+        return
+    USER_ID_CACHE_LOADED = True
+    try:
+        with open(user_id_cache_path(), 'r', encoding='utf-8') as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return
+    if not isinstance(data, dict) or data.get('version') != USER_ID_CACHE_VERSION:
+        return
+    for name, identifier in (data.get('ids') or {}).items() if isinstance(data.get('ids'), dict) else ():
+        if isinstance(name, str) and name and isinstance(identifier, str) and identifier.isdigit():
+            USER_ID_CACHE.setdefault(name, identifier)
+
+
+# Writes the cache so the next run starts with the ids this one resolved, with the lock already held. Saving is best
+# effort, since a name the next run has to resolve again costs one request rather than anything it cannot recover from
+def _save_user_id_cache() -> None:
+    destination = user_id_cache_path()
+    temporary_path = None
+    try:
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=os.path.dirname(destination), prefix=f".{os.path.basename(destination)}.", suffix='.tmp', delete=False) as handle:
+            temporary_path = handle.name
+            json.dump({'version': USER_ID_CACHE_VERSION, 'ids': dict(USER_ID_CACHE)}, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, destination)
+        temporary_path = None
+    except Exception as error:
+        debug_print("Resolved user ids could not be saved", path=destination, error=type(error).__name__)
+    finally:
+        if temporary_path and os.path.exists(temporary_path):
+            try:
+                os.remove(temporary_path)
+            except OSError:
+                pass
+
+
+# Returns an id already resolved for this name, by this run or by one before it
+def stored_user_id(username: str) -> Optional[str]:
+    with USER_ID_CACHE_LOCK:
+        _load_user_id_cache()
+        return USER_ID_CACHE.get(username.strip().lower())
+
+
+# Stores one resolved id for this run and the next
+def remember_user_id(username: str, user_id: str) -> None:
+    key = username.strip().lower()
+    with USER_ID_CACHE_LOCK:
+        _load_user_id_cache()
+        if USER_ID_CACHE.get(key) == user_id:
+            return
+        USER_ID_CACHE[key] = user_id
+        _save_user_id_cache()
+
+
+# Drops a stored id that no longer answers to the name it was stored for
+def forget_user_id(username: str) -> None:
+    with USER_ID_CACHE_LOCK:
+        _load_user_id_cache()
+        if USER_ID_CACHE.pop(username.strip().lower(), None) is None:
+            return
+        _save_user_id_cache()
 
 
 # Returns the numeric user id Instagram's search reports for a username, or None when the search does not list that
@@ -7971,20 +8051,28 @@ def user_id_from_search(ctx, username: str) -> Optional[str]:
     return None
 
 
-# Returns the user id for a username, resolving it through search the first time and reusing it afterwards
+# Returns the user id for a username, reusing a stored answer and searching only when there is none
 def resolve_user_id(ctx, username: str) -> Optional[str]:
-    key = username.strip().lower()
-    with USER_ID_CACHE_LOCK:
-        cached = USER_ID_CACHE.get(key)
-    if cached:
-        return cached
+    stored = stored_user_id(username)
+    if stored:
+        return stored
 
-    resolved = user_id_from_search(ctx, key)
+    resolved = user_id_from_search(ctx, username.strip().lower())
     if resolved:
-        with USER_ID_CACHE_LOCK:
-            USER_ID_CACHE[key] = resolved
-        debug_print("Resolved Instagram user id", username=key, source="search")
+        remember_user_id(username, resolved)
+        debug_print("Resolved Instagram user id", username=username.strip().lower(), source="search")
     return resolved
+
+
+# Builds a profile from a user id and reads its metadata, returning None when Instagram answers with another name.
+# A freed username can be taken by another account and a rename leaves a stored id pointing at a name this run is not
+# monitoring, so an id is trusted only for as long as it still answers to the name it was stored for
+def _profile_by_user_id(ctx, username: str, user_id: str) -> Optional[instaloader.Profile]:
+    profile = instaloader.Profile(ctx, {'username': username, 'id': user_id})
+    # Read now rather than on first attribute access, so a refused lookup is reported where the profile is resolved
+    # and the flag probe keeps making a request it can fail on
+    profile._obtain_metadata()
+    return profile if str(profile.username or "").strip().lower() == username.strip().lower() else None
 
 
 # Resolves a profile by username. Instagram retired web_profile_info for accounts that are signed in, answering
@@ -7999,16 +8087,22 @@ def profile_from_username_resilient(bot: instaloader.Instaloader, username: str)
         return instaloader.Profile.from_username(ctx, username)
 
     user_id = resolve_user_id(ctx, username)
-    if user_id is None:
-        # Search does not list every account, so the retired endpoint stays as the last resort. Its refusal is
-        # classified as an endpoint failure, which is why reaching it cannot stop the session account
-        return instaloader.Profile.from_username(ctx, username)
+    if user_id is not None:
+        profile = _profile_by_user_id(ctx, username, user_id)
+        if profile is not None:
+            return profile
+        # The id answers to another name now, so it is dropped and the name looked up again
+        forget_user_id(username)
+        refreshed = user_id_from_search(ctx, username.strip().lower())
+        if refreshed is not None and refreshed != user_id:
+            remember_user_id(username, refreshed)
+            profile = _profile_by_user_id(ctx, username, refreshed)
+            if profile is not None:
+                return profile
 
-    profile = instaloader.Profile(ctx, {'username': username, 'id': user_id})
-    # Read now rather than on first attribute access, so a refused lookup is reported where the profile is resolved
-    # and the flag probe keeps making a request it can fail on
-    profile._obtain_metadata()
-    return profile
+    # Search does not list every account, so the retired endpoint stays as the last resort. Its refusal is
+    # classified as an endpoint failure, which is why reaching it cannot stop the session account
+    return instaloader.Profile.from_username(ctx, username)
 
 
 # Return the most recent post and/or reel for the user (GraphQL helper when logged in)
@@ -16456,7 +16550,7 @@ WIZARD_INTERFACE_CONFIG_KEYS = ("WEB_DASHBOARD_ENABLED", "DASHBOARD_ENABLED", "W
 WIZARD_WEBHOOK_CONFIG_KEYS = ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_FOLLOWERS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
 WIZARD_EMAIL_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL", "STATUS_NOTIFICATION", "FOLLOWERS_NOTIFICATION", "ERROR_NOTIFICATION")
 WIZARD_OUTPUT_CONFIG_KEYS = ("DISABLE_LOGGING", "CSV_FILE")
-WIZARD_CONNECTION_CONFIG_KEYS = ("HTTP_BACKEND", "CURL_CFFI_IMPERSONATE", "FOLLOW_LIST_SOURCE", "SKIP_FOLLOWERS", "SKIP_FOLLOWINGS")
+WIZARD_CONNECTION_CONFIG_KEYS = ("HTTP_BACKEND", "CURL_CFFI_IMPERSONATE", "FOLLOW_LIST_SOURCE", "SKIP_FOLLOWERS", "SKIP_FOLLOWINGS", "IDENTITY_BUDGET_PER_DAY")
 
 
 # The mail server settings the wizard collects, and how long its sign-in check waits for the server
@@ -17030,6 +17124,8 @@ def _wizard_collect_connection_section(state: WizardSetupState) -> None:
         if collect == 0:
             return
 
+        _wizard_collect_identity_budget(state)
+
         browser_note = "Needs the playwright package and a downloaded browser, is much slower and risks the logged-in account."
         if not playwright_available():
             browser_note = "The playwright package is not installed here, so install it before monitoring starts: pip install playwright, then playwright install chromium."
@@ -17038,6 +17134,21 @@ def _wizard_collect_connection_section(state: WizardSetupState) -> None:
         state.config_values["FOLLOW_LIST_SOURCE"] = source
         if source == "browser":
             _wizard_align_transport_with_browser_source(state)
+
+
+# Asks what the daily name cap should be, which the question above names but no answer there changes. Only a setup
+# that collects names reaches this, since the cap governs nothing when no name is ever requested
+def _wizard_collect_identity_budget(state: WizardSetupState) -> None:
+    budget = int(state.config_values.get("IDENTITY_BUDGET_PER_DAY") or 0)
+    options = [(f"Keep the cap at {budget} names a day" if budget else "Keep name collection uncapped", "Instagram counts every name it returns, and a spent cap stops name collection for the day while counts, posts and stories carry on."), ("Set a different number", "Around 500 to 1000 is the safer figure if this account has been challenged before.")]
+    if budget:
+        options.append(("Remove the cap", "Names are still counted and reported, but nothing stops collecting them."))
+
+    answer = _wizard_ask_choice("How many names a day may Instagram return for this account?", options, default_index=0)
+    if answer == 1:
+        state.config_values["IDENTITY_BUDGET_PER_DAY"] = _wizard_ask_positive_int("Names a day", default=budget or 2000)
+    elif answer == 2:
+        state.config_values["IDENTITY_BUDGET_PER_DAY"] = 0
 
 
 # Keeps the transport answers consistent with the browser source, which reaches Instagram as a Chromium browser

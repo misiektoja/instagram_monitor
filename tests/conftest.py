@@ -73,7 +73,7 @@ def isolated_exposure_ledger(monkeypatch, tmp_path):
 
 # Resets the handful of module-level globals the helpers read so each test starts from a known, deterministic baseline
 @pytest.fixture(autouse=True)
-def deterministic_globals(monkeypatch):
+def deterministic_globals(monkeypatch, tmp_path):
     monkeypatch.setattr(im, "LOCAL_TIMEZONE", "UTC", raising=False)
     monkeypatch.setattr(im, "TIME_FORMAT_12H", False, raising=False)
     monkeypatch.setattr(im, "PRIVACY_SUBSTITUTIONS", [], raising=False)
@@ -115,6 +115,9 @@ def deterministic_globals(monkeypatch):
     im.PROXY_STARTUP_ERRORS.clear()
     # Resolved user ids are reused for the whole run, so one test's target must not answer for another's
     im.USER_ID_CACHE.clear()
+    # Resolved ids outlive a run in a file, so each test is given its own rather than the working directory's
+    im.USER_ID_CACHE_LOADED = False
+    monkeypatch.setattr(im, "user_id_cache_path", lambda: str(tmp_path / "instagram_monitor_user_ids.json"), raising=False)
     # A reels count established for one test's posts count must not answer for another's
     im.REELS_COUNT_CACHE.clear()
     # Set by the first startup notice a test prints, and read by the Doctor notice to decide its leading blank line

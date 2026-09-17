@@ -70,6 +70,8 @@ IDENTITY_BUDGET_PER_DAY = 2000
 
 Once the budget is spent, name fetching stops until the next day. Counts, posts, reels, stories and profile changes keep being monitored normally, so you still see that the follower number moved, just not who moved.
 
+`--setup` asks for this number when the setup collects names, so you can choose it there instead of editing the configuration afterwards.
+
 REST pages are counted when Instagram returns them, before the tool consumes individual names. The last response can therefore put the recorded total above the configured limit if Instagram returns more accounts than requested. This records the actual exposure and stops another request. GraphQL names are banked in groups of 25 with the last group cut to what the budget still allows, so the recorded total is exact where the fetch stops.
 
 The default is 2000, which clears one full follower and following scan for a typical account with room to repeat it, while stopping a loop that would otherwise read a list many times a day. Names are always counted whether or not you set one, so you can watch your own usage with `--exposure` and adjust. If you have been challenged before, somewhere around 500 to 1000 is a better figure.
