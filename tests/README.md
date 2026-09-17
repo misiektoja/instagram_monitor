@@ -25,6 +25,7 @@ installed copy of the package.
 
 | File | Area under test |
 | --- | --- |
+| `test_dotenv_quoted_keys.py` | Quoted dotenv keys, export prefixes, multiline values and duplicate removal |
 | `test_config_generation.py` | Config inline-comment splitting, value formatting, `generate_config_with_current_values` round-trip, config replacement backups and confirmation, dotenv secret writes and removals |
 | `test_proxy_ip.py` | Proxy IP endpoint validation, IPv4/IPv6 parsing, ordered failover and retry timing |
 | `test_startup_summary_channels.py` | Summary rows naming the webhook provider, the mail server, the masked recipient, the delivery confirmations and the runtime |

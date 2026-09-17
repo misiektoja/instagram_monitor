@@ -1083,7 +1083,8 @@ def update_dotenv_file(destination, updates):
             continue
         # An "export " the owner wrote is kept, since dropping it changes what a shell sourcing the file exports
         head = original[len(blank_prefix):]
-        written_prefix = head[:head.index(binding.key)]
+        # Keep key quotes out of the indentation and export prefix
+        written_prefix = head[:head.index(binding.key)].rstrip("'")
         output_parts.append(f"{blank_prefix}{written_prefix}{binding.key}={_format_dotenv_value(values_by_key[binding.key])}\n")
 
     content = "".join(output_parts)
