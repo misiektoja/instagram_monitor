@@ -1,5 +1,6 @@
 """Tests for the action-oriented error hint classifier (no network)."""
 
+from command_expectations import runtime_command
 import ast
 import inspect
 import re
@@ -128,8 +129,8 @@ class TestErrorFixHint:
         monkeypatch.setattr(im_module, "system", lambda: "Linux")
         monkeypatch.setattr(im_module.sys, "executable", "/usr/bin/python3")
         hint = im_module.error_fix_hint("ConnectionException: Login required, redirected")
-        assert "python3 instagram_monitor.py --import-browser-session --browser firefox" in hint
-        assert "instagram_monitor --import-browser-session" not in hint
+        assert runtime_command("python3 instagram_monitor.py --import-browser-session --browser firefox") in hint
+        assert runtime_command("instagram_monitor --import-browser-session") not in hint
 
     # Printed recovery hints have no leading spaces or tabs
     def test_printed_hint_is_flush_left(self, im_module, monkeypatch, capsys):
@@ -714,7 +715,6 @@ class TestEveryProblemIsReported:
         "* Error: Python version ": "runs before the module is loaded, so it prints its action and page as literals",
         "* Error: Web Dashboard templates not found": "followed by the searched paths and a numbered list of the four ways to fix it",
         "* Monitoring failure changed for {target}. {advice.summary}": "a one-line note on a classified outage that already had its full report",
-        "Those settings could not be read, so the questions start from the built-in defaults.": "a wizard result printed under the classified config failure above it",
     }
 
     def test_every_reported_problem_carries_an_action(self, im_module):

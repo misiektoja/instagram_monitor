@@ -1,6 +1,9 @@
 # Setup & First Run
 
 <a id="new-here-run-the-setup-wizard"></a>
+When rebuilding an existing configuration, setup keeps its saved `DOTENV_FILE` unless you pass `--env-file PATH`. A nonempty exported secret takes precedence over the dotenv file. An explicit empty value in that file still overrides the configuration, both after saving and on the next run. Quoted dotenv keys receive the same replacement confirmation as unquoted keys.
+
+
 ## Run the setup wizard
 
 This page assumes Instagram Monitor is already installed (see [Installation](installation.md)). It walks through the interactive setup wizard then your first monitoring run. If you opened this page first, choose [PyPI](installation.md#install-from-pypi), the [manual Python script](installation.md#manual-python-based-installation), the [Docker image](installation.md#install-from-docker-hub) or [Docker Compose](installation.md#docker-compose), finish that method's steps then return here.

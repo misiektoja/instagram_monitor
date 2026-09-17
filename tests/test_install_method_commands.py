@@ -1,5 +1,6 @@
 """Tests for install-method detection and the command examples it drives."""
 
+from command_expectations import runtime_command
 import shlex
 from pathlib import Path
 from types import SimpleNamespace
@@ -84,10 +85,10 @@ class TestCmdPrefix:
     def test_manual_matches_active_python_name(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "system", lambda: "Linux")
         monkeypatch.setattr(im_module.sys, "executable", "/opt/runtime/python3.13")
-        assert im_module._wizard_cmd_prefix("manual") == "python3.13 instagram_monitor.py"
+        assert im_module._wizard_cmd_prefix("manual") == runtime_command("python3 instagram_monitor.py")
 
     def test_pip(self, im_module):
-        assert im_module._wizard_cmd_prefix("pip") == "instagram_monitor"
+        assert im_module._wizard_cmd_prefix("pip") == runtime_command("instagram_monitor")
 
     def test_docker_only_web_adds_port_publish(self, im_module):
         assert "-p 127.0.0.1:8000:8000" not in im_module._wizard_cmd_prefix("docker")
@@ -144,7 +145,7 @@ class TestWebDashboardBrowserUrl:
 
 class TestFirefoxImportCmd:
     def test_non_container_has_no_mount(self, im_module):
-        assert im_module._firefox_import_cmd("pip") == "instagram_monitor --import-browser-session --browser firefox"
+        assert im_module._firefox_import_cmd("pip") == runtime_command("instagram_monitor --import-browser-session --browser firefox")
 
     @pytest.mark.parametrize("host_os,source", [("macos", '"${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"'), ("linux", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("windows-powershell", '"$env:APPDATA\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'), ("windows-cmd", '"%APPDATA%\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"')])
     def test_container_commands_mount_selected_host_profile(self, im_module, host_os, source):
@@ -254,7 +255,7 @@ class TestPortableWizardCommands:
 
         command = im_module._wizard_action_command("manual", "--doctor", config_path, env_path, ["target.user"])
 
-        assert command.startswith("python3 instagram_monitor.py --doctor")
+        assert command.startswith(runtime_command("python3 instagram_monitor.py --doctor"))
         assert f"--config-file '{config_path.resolve()}'" in command
         assert f"--env-file '{env_path.resolve()}'" in command
         assert "target.user" in command
@@ -343,7 +344,7 @@ class TestHelpEpilog:
         _force_env(monkeypatch, im_module, dockerenv=False, docker_env=False, compose_env=False, argv0="instagram_monitor")
         web_line = self._web_dashboard_line(im_module._build_help_epilog())
         assert "<username>" not in web_line
-        assert web_line.strip() == "instagram_monitor --web-dashboard"
+        assert web_line.strip() == runtime_command("instagram_monitor --web-dashboard")
 
     def test_compose_epilog_uses_compose_commands(self, im_module, monkeypatch):
         _force_env(monkeypatch, im_module, dockerenv=True, docker_env=False, compose_env=True, argv0="instagram_monitor.py")
@@ -386,7 +387,7 @@ def test_the_session_recovery_command_names_the_files_this_run_was_given(im_modu
     monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", str(config_path))
     monkeypatch.setattr(im_module, "DOTENV_FILE", str(env_path))
 
-    assert im_module.session_recovery_command() == f"python3 instagram_monitor.py --import-browser-session --browser firefox --config-file {config_path} --env-file {env_path}"
+    assert im_module.session_recovery_command() == runtime_command(f"python3 instagram_monitor.py --import-browser-session --browser firefox --config-file {config_path} --env-file {env_path}")
 
 
 # Verifies a dotenv switched off with the none sentinel is not printed as a file path
@@ -396,7 +397,7 @@ def test_the_session_recovery_command_skips_a_dotenv_switched_off(im_module, mon
     monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
     monkeypatch.setattr(im_module, "DOTENV_FILE", "none")
 
-    assert im_module.session_recovery_command() == "python3 instagram_monitor.py --import-browser-session --browser firefox"
+    assert im_module.session_recovery_command() == runtime_command("python3 instagram_monitor.py --import-browser-session --browser firefox")
 
 
 # Verifies the config sentinel is carried, since the import it suggests reads the config rather than writing it
@@ -407,4 +408,4 @@ def test_the_session_recovery_command_carries_the_config_sentinel(im_module, mon
     monkeypatch.setattr(im_module, "CONFIG_DISCOVERY_DISABLED", True)
     monkeypatch.setattr(im_module, "DOTENV_FILE", "")
 
-    assert im_module.session_recovery_command() == "python3 instagram_monitor.py --import-browser-session --browser firefox --config-file none"
+    assert im_module.session_recovery_command() == runtime_command("python3 instagram_monitor.py --import-browser-session --browser firefox --config-file none")

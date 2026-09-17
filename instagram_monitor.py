@@ -1190,11 +1190,10 @@ def _dotenv_contains_key(destination, key):
     if not destination_path.exists():
         return False
     try:
-        lines = destination_path.read_text(encoding="utf-8").splitlines()
+        content = destination_path.read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         raise WebhookConfigurationError(f"Could not read dotenv destination '{destination_path}'. Check that it is a readable UTF-8 file.") from None
-    assignment_pattern = re.compile(rf"^\s*(?:export\s+)?{re.escape(key)}\s*=")
-    return any(assignment_pattern.match(line) for line in lines)
+    return any(binding.key == key for binding in _dotenv_bindings(content))
 
 
 # Returns the config a printed command should name, so a run started with discovery off cannot point the reader
@@ -14826,7 +14825,7 @@ def install_method_display_name(method: Optional[str] = None) -> str:
 
 
 # Returns local command arguments using friendly names or exact runtime paths
-def _wizard_local_command_args(method: str, exact: bool = False) -> List[str]:
+def _wizard_local_command_args(method: str, exact: bool = True) -> List[str]:
     if exact:
         executable = sys.executable or ("python" if system() == "Windows" else "python3")
         if method == "pip":
@@ -14859,7 +14858,7 @@ def _wizard_quote_argument(value) -> str:
 
 
 # Returns the command prefix used to invoke the tool for the detected install method
-def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, exact: bool = False, host_os: Optional[str] = None, web_dashboard_port: Optional[int] = None) -> str:
+def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, exact: bool = True, host_os: Optional[str] = None, web_dashboard_port: Optional[int] = None) -> str:
     selected_web_port = web_dashboard_port if web_dashboard_port is not None else WEB_DASHBOARD_PORT
     if method == "compose":
         port_flag = ""
@@ -15003,7 +15002,7 @@ def _wizard_action_command(method: str, action: str, config_path, env_path, targ
 
 
 # Returns the full Firefox import command with an optional exact dotenv destination
-def _firefox_import_cmd(method: str, env_path=None, exact: bool = False, host_os: Optional[str] = None, config_path=None, targets=()) -> str:
+def _firefox_import_cmd(method: str, env_path=None, exact: bool = True, host_os: Optional[str] = None, config_path=None, targets=()) -> str:
     selected_host = host_os or "linux"
     prefix = _wizard_cmd_prefix(method, exact=exact, host_os=selected_host if method in ("docker", "compose") else host_os)
     if method not in ("docker", "compose"):
@@ -15298,7 +15297,7 @@ def effective_secret_after_setup(key: str, env_path: Path, secret_updates: Dict[
     if key in secret_updates:
         return str(secret_updates[key] or ""), False
     saved = _wizard_secret_value(key, env_path)
-    if saved:
+    if saved is not None:
         return saved, False
     # Nothing private holds it, so the configuration file is what a restart would read
     return str(globals().get(key) or ""), False
@@ -15307,18 +15306,23 @@ def effective_secret_after_setup(key: str, env_path: Path, secret_updates: Dict[
 # Puts the values setup just saved into effect, so doctor checks the written files instead of the earlier state.
 # Each secret records where it came from, so the report names the source a restart would name
 def _wizard_apply_saved_values(state):
+    exported = {key: os.environ.get(key) for key in SECRET_KEYS if SECRET_SOURCES.get(key) not in ("dotenv file", "dotenv file reload")}
+    try:
+        from dotenv import dotenv_values
+        saved = dotenv_values(state.env_path, interpolate=False) if state.env_path.exists() else {}
+    except (OSError, UnicodeError, ValueError) as exc:
+        print_recovery_error(exc, "secret")
+        raise SystemExit(1) from None
     globals().update(state.config_values)
-    for secret_key in SECRET_KEYS:
-        saved_secret = _wizard_secret_value(secret_key, state.env_path)
-        globals()[secret_key] = saved_secret if saved_secret is not None else ""
-        if saved_secret is None:
-            SECRET_SOURCES.pop(secret_key, None)
+    for key in SECRET_KEYS:
+        if exported.get(key):
+            value, source = exported[key], "environment"
+        elif saved.get(key) is not None:
+            value, source = saved[key], "dotenv file"
         else:
-            record_secret_source(secret_key, "environment" if secret_key in EXPORTED_SECRET_KEYS else "dotenv file", saved_secret)
-    globals().update(state.secret_updates)
-    for secret_key in state.secret_updates:
-        record_secret_source(secret_key, "environment" if secret_key in EXPORTED_SECRET_KEYS else "dotenv file")
-    # The shared resolver rather than the configured value, so doctor names the state a restart would find
+            value, source = state.config_values.get(key), "configuration file or command line"
+        globals()[key] = value
+        record_secret_source(key, source)
     return resolve_local_timezone()
 
 
@@ -15457,16 +15461,23 @@ def _wizard_reset_section(state: WizardSetupState, config_keys, secret_keys) -> 
         state.secret_updates.pop(key, None)
 
 
+# Preserves a saved dotenv destination unless setup received an explicit override
+def _wizard_saved_env_destination(values: dict, env_file, fallback: Path, method: str) -> Path:
+    selected = env_file if env_file is not None else values.get("DOTENV_FILE") or fallback
+    if str(selected).casefold() == "none":
+        raise ValueError("Setup needs a writable dotenv destination. Pass --env-file PATH to choose one.")
+    return _wizard_validate_destination(method, selected, "Dotenv destination")
+
+
 # Seeds the proposed answers from the configuration the wizard is about to rebuild, which is what the rebuild question offers
-def _wizard_seed_saved_settings(values: dict, config_path: Path) -> None:
+def _wizard_seed_saved_settings(values: dict, config_path: Path) -> dict:
     if not config_path.is_file():
-        return
+        return {}
     saved: dict = {}
     if not load_config_file(config_path, namespace=saved):
-        print("  Those settings could not be read, so the questions start from the built-in defaults.\n")
-        return
-    # Secrets are resolved from the dotenv file and the config keeps their placeholders, so only the settings this wizard writes are proposed
+        raise ValueError(f"Configuration file '{config_path}' could not be read. Correct it before retrying setup.")
     values.update({key: value for key, value in saved.items() if key not in SENSITIVE_CONFIG_KEYS})
+    return saved
 
 
 # Confirms replacement or selects another config destination before answers are collected
@@ -16068,12 +16079,11 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
 
     try:
         config_path = _wizard_choose_config_destination(config_path, method)
-        for secret_key in SECRET_KEYS:
-            existing_secret = _wizard_secret_value(secret_key, env_path)
-            if existing_secret is not None:
-                globals()[secret_key] = existing_secret
         baseline_values = dict(globals())
-        _wizard_seed_saved_settings(baseline_values, config_path)
+        saved_settings = _wizard_seed_saved_settings(baseline_values, config_path)
+        env_path = _wizard_saved_env_destination(saved_settings, env_file, env_path, method)
+        if env_path == config_path.resolve():
+            raise ValueError("Configuration and dotenv destinations must be different files. Pass --env-file with another path.")
         config_values = dict(baseline_values)
         config_values["DOTENV_FILE"] = str(env_path)
         state = WizardSetupState(config_path, env_path, baseline_values, config_values, {}, list(baseline_values.get("TARGET_USERNAMES") or []), True, False, "no-login", "", None, None, True, False, False, False)
@@ -16094,6 +16104,10 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
 
         print()
         browser_import_complete = _wizard_finish_browser_import(state, method)
+    except (OSError, UnicodeError, ValueError) as exc:
+        print_recovery_error(exc, "setup")
+        print("Correct the selected file or pass --env-file with a writable destination.")
+        raise SystemExit(1) from None
     except (EOFError, KeyboardInterrupt):
         print(colorize("warning", "Setup cancelled. Destination files were not changed."))
         raise SystemExit(1) from None

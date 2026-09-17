@@ -1786,6 +1786,7 @@ def test_an_exported_secret_is_not_credited_to_the_dotenv_file(im_module, monkey
     env_path.write_text("SESSION_PASSWORD=a-saved-session-password\n", encoding="utf-8")
     monkeypatch.setattr(im_module, "SECRET_SOURCES", {})
     monkeypatch.setattr(im_module, "EXPORTED_SECRET_KEYS", frozenset({"SESSION_PASSWORD"}))
+    monkeypatch.setenv("SESSION_PASSWORD", "synthetic-export")
     state = make_setup_state(im_module, tmp_path)
     state.env_path = env_path
 
@@ -1793,6 +1794,7 @@ def test_an_exported_secret_is_not_credited_to_the_dotenv_file(im_module, monkey
 
     assert im_module.SECRET_SOURCES["SESSION_PASSWORD"] == "environment"
 
+    assert im_module.SESSION_PASSWORD == "synthetic-export"
 
 # Verifies a config destination switched off is refused, rather than writing settings to a file named 'none'
 def test_setup_refuses_a_config_destination_switched_off(tmp_path):
