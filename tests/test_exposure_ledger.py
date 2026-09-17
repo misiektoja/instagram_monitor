@@ -333,6 +333,7 @@ def test_transport_and_schema_failures_do_not_trip_the_breaker(ledger):
 
 
 @pytest.mark.parametrize(("failure_class", "expected"), [
+    ("action_block", "several hours"),
     ("challenge", "complete the account verification"),
     ("auth_expired", "re-import the session"),
     ("ledger_unavailable", "account safety ledger"),

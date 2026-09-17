@@ -233,6 +233,7 @@ class TestErrorSummary:
     @pytest.mark.parametrize("msg, summary", [
         ("ConnectionException: 429 Too Many Requests", "Instagram is rate-limiting this account or IP"),
         ("JSONDecodeError: challenge_required", "Instagram is asking this session or IP to pass a challenge"),
+        ('AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required" when accessing https://www.instagram.com/api/v1/users/web_profile_info/?username=x', "Instagram is temporarily limiting this account or IP"),
         ("FileNotFoundError: Instagram session file for me not found", "No saved Instagram session was found"),
         ("ConnectionException: Login required, redirected", "The saved Instagram session is invalid or expired"),
         ("ProfileNotExistsException: Profile xyz does not exist", "Instagram could not find the requested profile"),
@@ -262,6 +263,26 @@ class TestErrorSummary:
         assert "re-import" in check.advice.fix.casefold()
 
 
+class TestTemporaryLimitAdvice:
+    # Instagram's "Try Again Later" notice clears with time alone, so the advice must not send the reader to clear a checkpoint or re-import
+    def test_a_temporary_limit_is_told_to_wait_rather_than_re_import(self, im_module):
+        advice = im_module.classify_recovery_error('AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required"', is_logged_in=True)
+
+        assert advice.code == "instagram.action_blocked"
+        assert "several hours" in advice.fix
+        assert "checkpoint" not in advice.fix.replace("not a checkpoint", "")
+        assert "--import-browser-session" not in advice.fix
+        assert im_module.ACTION_BLOCK_GUIDE_URL in advice.fix
+
+    # The limit still acts against the account, so the breaker stops it like a challenge and names its own remedy
+    def test_a_temporary_limit_stops_the_account_with_its_own_remedy(self, im_module):
+        failure_class = im_module.classify_failure_class('400 Bad Request - "fail" status, message "feedback_required"')
+
+        assert failure_class == "action_block"
+        assert im_module.is_account_level_failure(failure_class) is True
+        assert "re-importing the session does not lift" in im_module.breaker_recovery_hint(failure_class)
+
+
 class TestSmtpErrorSummary:
     @pytest.mark.parametrize("error, summary", [
         (smtplib.SMTPAuthenticationError(535, b"auth failed"), "The SMTP server rejected the sign-in"),
@@ -277,6 +298,7 @@ class TestOutageReporting:
     @pytest.mark.parametrize("msg, code", [
         ("ConnectionException: 429 Too Many Requests", "instagram.rate_limited"),
         ("JSONDecodeError: challenge_required", "instagram.challenge"),
+        ('AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required"', "instagram.action_blocked"),
         ("FileNotFoundError: Instagram session file for me not found", "session.missing"),
         ("ConnectionException: Login required, redirected", "session.expired"),
         ("ProfileNotExistsException: Profile xyz does not exist", "target.not_found"),
@@ -588,7 +610,7 @@ class TestTheLoopFailurePaths:
 class TestRecoveryCodeSet:
     def test_recovery_codes_are_stable(self, im_module):
         assert im_module.RECOVERY_CODES == frozenset({
-            "instagram.rate_limited", "instagram.challenge", "instagram.empty_data",
+            "instagram.rate_limited", "instagram.action_blocked", "instagram.challenge", "instagram.empty_data",
             "session.missing", "session.expired",
             "target.missing", "target.not_found",
             "config.missing", "config.invalid", "config.insecure", "config.impersonate_unsupported",
@@ -613,6 +635,7 @@ class TestRecoveryCodeSet:
         failures = [
             ("ConnectionException: 429 Too Many Requests", "runtime"),
             ("JSONDecodeError: challenge_required", "runtime"),
+            ('AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required"', "runtime"),
             ("FileNotFoundError: Instagram session file for me not found", "runtime"),
             ("ConnectionException: Login required, redirected", "runtime"),
             ("ProfileNotExistsException: Profile xyz does not exist", "runtime"),
@@ -660,7 +683,7 @@ class TestRecoveryCodeSet:
         rows = _rule_table_rows(im_module)
         calls = _context_advice_calls(im_module)
 
-        assert len(rows) == 11, "the runtime rule table lost or gained a row"
+        assert len(rows) == 12, "the runtime rule table lost or gained a row"
         assert all(len(row.elts) == 5 for row in rows)
         assert len(calls) >= 15, "the context table lost branches"
         assert all(len(call.args) == 5 for call in calls)

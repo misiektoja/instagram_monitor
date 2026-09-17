@@ -741,51 +741,108 @@ def scripted_connection_choices(im_module, monkeypatch, answers):
     asked = {}
 
     def ask(question, options, default_index=0):
-        key = "backend" if "requests to Instagram" in question else "impersonate" if "impersonate" in question else "source"
-        asked[key] = {"options": [label for label, _ in options], "default": default_index}
-        return answers.get(key, default_index)
+        assert "follower and following lists" in question, f"unexpected wizard question: {question}"
+        asked["source"] = {"options": [label for label, _ in options], "default": default_index}
+        return answers.get("source", default_index)
 
     monkeypatch.setattr(im_module, "_wizard_ask_choice", ask)
     return asked
 
 
-# Verifies the connection section records the transport, the impersonated browser and the list surface
-def test_the_connection_section_records_every_answer(im_module, monkeypatch):
+# Verifies the connection section records the list surface and leaves the saved transport settings alone
+def test_the_connection_section_records_the_list_surface_only(im_module, monkeypatch):
     with make_test_directory() as directory_name:
         state = make_setup_state(im_module, Path(directory_name))
         state.logged_in = True
-        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
-        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"chrome", "firefox", "safari"})
-        scripted_connection_choices(im_module, monkeypatch, {"backend": 0, "impersonate": 2, "source": 2})
+        state.baseline_values.update({"HTTP_BACKEND": "requests", "CURL_CFFI_IMPERSONATE": "safari"})
+        scripted_connection_choices(im_module, monkeypatch, {"source": 2})
 
         im_module._wizard_collect_connection_section(state)
 
-        assert state.config_values["HTTP_BACKEND"] == "curl_cffi"
-        assert state.config_values["CURL_CFFI_IMPERSONATE"] == "firefox"
         assert state.config_values["FOLLOW_LIST_SOURCE"] == "graphql"
+        assert state.config_values["HTTP_BACKEND"] == "requests"
+        assert state.config_values["CURL_CFFI_IMPERSONATE"] == "safari"
 
 
-# Verifies the stock transport skips the impersonation question, which only curl_cffi acts on
-def test_the_requests_backend_is_not_asked_which_browser_to_impersonate(im_module, monkeypatch):
+# Verifies login setup is offered the experimental browser source next to the three API surfaces
+def test_login_setup_is_offered_the_browser_source(im_module, monkeypatch):
     with make_test_directory() as directory_name:
         state = make_setup_state(im_module, Path(directory_name))
         state.logged_in = True
-        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
-        asked = scripted_connection_choices(im_module, monkeypatch, {"backend": 1})
+        monkeypatch.setattr(im_module, "playwright_available", lambda: True)
+        asked = scripted_connection_choices(im_module, monkeypatch, {"source": 3})
 
         im_module._wizard_collect_connection_section(state)
 
-        assert state.config_values["HTTP_BACKEND"] == "requests"
-        assert "impersonate" not in asked
-        assert state.config_values["CURL_CFFI_IMPERSONATE"] == state.baseline_values["CURL_CFFI_IMPERSONATE"]
+        assert asked["source"]["options"] == ["Auto", "REST only", "GraphQL only", "Browser (experimental)"]
+        assert state.config_values["FOLLOW_LIST_SOURCE"] == "browser"
+        assert state.config_values["HTTP_BACKEND"] == "curl_cffi"
+        assert state.config_values["CURL_CFFI_IMPERSONATE"] == "auto"
+
+
+# Verifies the browser source moves a saved stock transport to curl_cffi, since monitoring refuses the mismatch
+def test_the_browser_source_moves_the_stock_transport_to_curl_cffi(im_module, monkeypatch, capsys):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        state.baseline_values["HTTP_BACKEND"] = "requests"
+        monkeypatch.setattr(im_module, "playwright_available", lambda: True)
+        scripted_connection_choices(im_module, monkeypatch, {"source": 3})
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert state.config_values["FOLLOW_LIST_SOURCE"] == "browser"
+        assert state.config_values["HTTP_BACKEND"] == "curl_cffi"
+        assert "the transport is set to curl_cffi" in capsys.readouterr().out
+
+
+# Verifies a saved browser pin from another family goes back to auto, while a Chromium pin is left alone
+def test_the_browser_source_unpins_an_impersonation_from_another_family(im_module, monkeypatch, capsys):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        state.baseline_values["CURL_CFFI_IMPERSONATE"] = "firefox"
+        monkeypatch.setattr(im_module, "playwright_available", lambda: True)
+        scripted_connection_choices(im_module, monkeypatch, {"source": 3})
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert state.config_values["CURL_CFFI_IMPERSONATE"] == "auto"
+        assert "instead of firefox" in capsys.readouterr().out
+
+        state.baseline_values["CURL_CFFI_IMPERSONATE"] = "chrome"
+        im_module._wizard_collect_connection_section(state)
+
+        assert state.config_values["CURL_CFFI_IMPERSONATE"] == "chrome"
+        assert capsys.readouterr().out == ""
+
+
+# Verifies a machine without Playwright is told what to install rather than offered a source that cannot run
+def test_a_missing_playwright_is_named_on_the_browser_source(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.logged_in = True
+        monkeypatch.setattr(im_module, "playwright_available", lambda: False)
+        described = {}
+
+        def ask(question, options, default_index=0):
+            if "follower and following lists" in question:
+                described.update(dict(options))
+            return default_index
+
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", ask)
+
+        im_module._wizard_collect_connection_section(state)
+
+        assert "playwright install chromium" in described["Browser (experimental)"]
+        assert state.config_values["FOLLOW_LIST_SOURCE"] == "auto"
 
 
 # Verifies no-login setup is not asked a question about lists no surface returns without a session
 def test_no_login_setup_is_not_asked_for_a_follower_list_source(im_module, monkeypatch):
     with make_test_directory() as directory_name:
         state = make_setup_state(im_module, Path(directory_name))
-        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
-        asked = scripted_connection_choices(im_module, monkeypatch, {"backend": 0})
+        asked = scripted_connection_choices(im_module, monkeypatch, {})
 
         im_module._wizard_collect_connection_section(state)
 
@@ -793,41 +850,7 @@ def test_no_login_setup_is_not_asked_for_a_follower_list_source(im_module, monke
         assert state.config_values["FOLLOW_LIST_SOURCE"] == state.baseline_values["FOLLOW_LIST_SOURCE"]
 
 
-# Verifies a machine without curl_cffi defaults to the transport it can actually use and says so
-def test_a_missing_curl_cffi_defaults_to_the_stock_transport(im_module, monkeypatch):
-    with make_test_directory() as directory_name:
-        state = make_setup_state(im_module, Path(directory_name))
-        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
-        asked = scripted_connection_choices(im_module, monkeypatch, {})
-
-        im_module._wizard_collect_connection_section(state)
-
-        assert asked["backend"]["default"] == 1
-        assert state.config_values["HTTP_BACKEND"] == "requests"
-
-
-# Verifies only impersonation targets the installed curl_cffi accepts are offered
-def test_the_impersonation_targets_come_from_the_installed_curl_cffi(im_module, monkeypatch):
-    with make_test_directory() as directory_name:
-        state = make_setup_state(im_module, Path(directory_name))
-        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
-        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"chrome", "edge"})
-        asked = scripted_connection_choices(im_module, monkeypatch, {"backend": 0})
-
-        im_module._wizard_collect_connection_section(state)
-
-        assert asked["impersonate"]["options"] == ["Auto", "chrome", "edge"]
-        assert state.config_values["CURL_CFFI_IMPERSONATE"] == "auto"
-
-
-# Verifies a curl_cffi build that publishes no target list is trusted rather than left with no choice
-def test_an_unlisted_curl_cffi_build_still_offers_the_common_targets(im_module, monkeypatch):
-    monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: set())
-
-    assert im_module._wizard_impersonate_options() == list(im_module.WIZARD_IMPERSONATE_CHOICES)
-
-
-# Verifies the review summary names the transport and, in login mode, the list surface
+# Verifies the review summary names the list surface in login mode and never the transport setup does not ask about
 def test_the_summary_names_the_connection_answers(im_module, monkeypatch, capsys):
     with make_test_directory() as directory_name:
         state = make_setup_state(im_module, Path(directory_name))
@@ -837,48 +860,8 @@ def test_the_summary_names_the_connection_answers(im_module, monkeypatch, capsys
         im_module._wizard_print_setup_summary(state, "manual")
 
         summary = capsys.readouterr().out
-        assert "HTTP backend:" in summary and "curl_cffi impersonating firefox" in summary
         assert "Follower list source:" in summary and "rest" in summary
-
-
-# Verifies the last screen before saving does not claim a transport that would fall back
-def test_the_summary_names_the_curl_cffi_fallback(im_module, monkeypatch, capsys):
-    with make_test_directory() as directory_name:
-        state = make_setup_state(im_module, Path(directory_name))
-        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
-        state.config_values.update({"HTTP_BACKEND": "curl_cffi", "CURL_CFFI_IMPERSONATE": "auto"})
-
-        im_module._wizard_print_setup_summary(state, "manual")
-
-        summary = capsys.readouterr().out
-        assert "curl_cffi impersonating auto" in summary
-        assert "not installed here" in summary and "requests is used" in summary
-
-
-# Verifies an installed curl_cffi is reported without a fallback note that does not apply
-def test_the_summary_omits_the_fallback_when_curl_cffi_is_installed(im_module, monkeypatch, capsys):
-    with make_test_directory() as directory_name:
-        state = make_setup_state(im_module, Path(directory_name))
-        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
-        state.config_values.update({"HTTP_BACKEND": "curl_cffi", "CURL_CFFI_IMPERSONATE": "auto"})
-
-        im_module._wizard_print_setup_summary(state, "manual")
-
-        assert "not installed here" not in capsys.readouterr().out
-
-
-# Verifies a chosen requests transport carries no impersonation or fallback wording
-def test_the_summary_reports_the_requests_transport_plainly(im_module, monkeypatch, capsys):
-    with make_test_directory() as directory_name:
-        state = make_setup_state(im_module, Path(directory_name))
-        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
-        state.config_values.update({"HTTP_BACKEND": "requests"})
-
-        im_module._wizard_print_setup_summary(state, "manual")
-
-        summary = capsys.readouterr().out
-        assert "HTTP backend:" in summary and "requests" in summary
-        assert "impersonating" not in summary and "not installed here" not in summary
+        assert "HTTP backend:" not in summary and "impersonating" not in summary
 
 
 # Verifies no-login setup is not shown a follower list row for lists it never fetches
@@ -889,7 +872,7 @@ def test_the_summary_hides_the_list_source_without_a_session(im_module, capsys):
         im_module._wizard_print_setup_summary(state, "manual")
 
         summary = capsys.readouterr().out
-        assert "HTTP backend:" in summary
+        assert "Polling interval:" in summary
         assert "Follower list source:" not in summary
 
 

@@ -1007,6 +1007,7 @@ ANTI_DETECTION_INTERVAL_GUIDE_URL = DOCS_BASE_URL + "/anti-detection/#keep-the-p
 ANTI_DETECTION_SESSION_GUIDE_URL = DOCS_BASE_URL + "/anti-detection/#sign-in-using-session-mode-with-browser-cookies"
 CONNECTION_ERRORS_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#connection-errors-during-monitoring"
 DOCTOR_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#doctor-preflight"
+ACTION_BLOCK_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#instagram-says-try-again-later"
 SECRETS_GUIDE_URL = DOCS_BASE_URL + "/configuration/#storing-secrets"
 DIAGNOSTICS_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#choosing-the-right-logging-level"
 MONITORING_GUIDE_URL = DOCS_BASE_URL + "/usage/#monitoring-mode"
@@ -10486,7 +10487,8 @@ def session_recovery_command() -> str:
 # Ordered match terms for every recognized failure, shared by the message and the failure-class lookups so the two cannot drift
 FAILURE_TERMS = {
     'rate_limit': ("429", "too many requests", "wait a few minutes", "rate limit", "please wait"),
-    'challenge': ("challenge", "checkpoint", "automated", "feedback_required", "shadow ban", "shadowban", "missing expected data"),
+    'action_block': ("feedback_required",),
+    'challenge': ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data"),
     'session_missing': ("session file",),
     'auth_expired': ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required"),
     'target_unavailable': ("profilenotexists", "does not exist", "not found", "404"),
@@ -10498,12 +10500,13 @@ FAILURE_TERMS = {
 }
 
 # Evaluation order of FAILURE_TERMS, matching the branch order in classify_error_parts
-FAILURE_CLASS_ORDER = ('rate_limit', 'challenge', 'session_missing', 'auth_expired', 'target_unavailable', 'impersonate_unsupported', 'proxy_unresolved', 'dns_failure', 'network', 'schema_change')
+FAILURE_CLASS_ORDER = ('rate_limit', 'action_block', 'challenge', 'session_missing', 'auth_expired', 'target_unavailable', 'impersonate_unsupported', 'proxy_unresolved', 'dns_failure', 'network', 'schema_change')
 
 # Reliability group each failure class belongs to: A blocks the transport, B breaks on an Instagram API change, C acts against the session account
 FAILURE_CLASS_GROUPS = {
     'rate_limit': 'A',
     'schema_change': 'B',
+    'action_block': 'C',
     'challenge': 'C',
     'auth_expired': 'C',
 }
@@ -10545,7 +10548,7 @@ def is_account_level_failure(failure_class: str) -> bool:
 
 # Every recovery category the tool can report, kept closed so a message is testable, deduplicable and translatable later
 RECOVERY_CODES = frozenset({
-    "instagram.rate_limited", "instagram.challenge", "instagram.empty_data",
+    "instagram.rate_limited", "instagram.action_blocked", "instagram.challenge", "instagram.empty_data",
     "session.missing", "session.expired",
     "target.missing", "target.not_found",
     "config.missing", "config.invalid", "config.insecure", "config.impersonate_unsupported",
@@ -10723,6 +10726,11 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
     # Rate limiting or TLS-fingerprint blocks
     if any(t in m for t in FAILURE_TERMS['rate_limit']):
         return "instagram.rate_limited", "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
+
+    # A temporary limit, which Instagram reports as feedback_required with a "Try Again Later" notice. Only time
+    # clears it, so the checkpoint advice would send the reader to clear something that is not there
+    if any(t in m for t in FAILURE_TERMS['action_block']):
+        return "instagram.action_blocked", "Instagram is temporarily limiting this account or IP", "Instagram answered feedback_required, its 'Try Again Later' notice that limits what this account or this IP address may do for a while. It is not a checkpoint, so there is nothing to clear in the browser and re-importing the session does not lift it. Make no requests from this account and this network for several hours, then run --doctor again. If it works from another network, the limit is on your IP address. Once it passes, raise the check interval and monitor fewer users", ACTION_BLOCK_GUIDE_URL, False
 
     # Challenge, checkpoint or shadowban
     if any(t in m for t in FAILURE_TERMS['challenge']):
@@ -11422,6 +11430,8 @@ def breaker_recovery_hint(failure_class: str) -> str:
         return f"Log in to Instagram again and re-import the session with '{session_recovery_command()}', or restart after replacing the saved session"
     if failure_class == 'ledger_unavailable':
         return f"Repair the account safety ledger at {exposure_state_path()} and restore read and write access, then restart"
+    if failure_class == 'action_block':
+        return "Make no requests from this account and this network for several hours, then restart. There is nothing to clear in the browser and re-importing the session does not lift the limit"
     if failure_class == 'challenge':
         return "Open Instagram in a browser and complete the account verification, then restart or re-import the session"
     return "Resolve the account issue on Instagram, then restart or re-import the session"
@@ -16366,39 +16376,36 @@ def _wizard_collect_output_section(state: WizardSetupState) -> None:
         state.config_values["CSV_FILE"] = ""
 
 
-# Browser profiles the wizard offers as pinned curl_cffi impersonation targets
-WIZARD_IMPERSONATE_CHOICES = ("chrome", "firefox", "safari", "safari_ios", "edge")
-
-
-# Returns the pinned impersonation targets to offer, keeping only what the installed curl_cffi accepts
-def _wizard_impersonate_options() -> List[str]:
-    supported = curl_cffi_supported_impersonate_targets()
-    # A curl_cffi build that does not expose its target list is trusted rather than reduced to nothing
-    if not supported:
-        return list(WIZARD_IMPERSONATE_CHOICES)
-    return [target for target in WIZARD_IMPERSONATE_CHOICES if target in supported]
-
-
-# Collects the HTTP transport, its impersonated browser and the surface follower lists are read from
+# Collects the surface follower lists are read from. The HTTP transport and its impersonated browser keep their
+# saved values: their defaults suit almost everyone and the configuration file explains them for the few who care
 def _wizard_collect_connection_section(state: WizardSetupState) -> None:
     _wizard_reset_section(state, WIZARD_CONNECTION_CONFIG_KEYS, ())
-    backend_options = [("curl_cffi", "Impersonate a real browser's TLS fingerprint.\nAvoids Instagram answering the very first request with 429, most often seen on Linux and Raspberry Pi."), ("requests", "The stock transport using this machine's own TLS stack.")]
-    if not _CURL_CFFI_AVAILABLE:
-        backend_options[0] = ("curl_cffi", "Impersonate a real browser's TLS fingerprint.\nThe curl_cffi package is not installed here, so monitoring would fall back to requests until you install it.")
-    backend = "requests" if _wizard_ask_choice("How should requests to Instagram be sent?", backend_options, default_index=0 if _CURL_CFFI_AVAILABLE else 1) else "curl_cffi"
-    state.config_values["HTTP_BACKEND"] = backend
-
-    if backend == "curl_cffi":
-        targets = _wizard_impersonate_options()
-        options = [("Auto", "Match the browser identity in USER_AGENT, so the TLS and header fingerprints stay consistent.")]
-        options.extend((target, "") for target in targets)
-        selected = _wizard_ask_choice("Which browser should curl_cffi impersonate?", options, default_index=0)
-        state.config_values["CURL_CFFI_IMPERSONATE"] = "auto" if selected == 0 else targets[selected - 1]
-
-    # Neither surface lists followers without a session, so the question is only worth asking in login mode
+    # No API surface lists followers without a session, so the question is only worth asking in login mode
     if state.logged_in:
-        source_options = [("Auto", "Read over the REST endpoints Instagram's own web app calls.\nRetry over GraphQL only when REST is missing or unreadable and nothing was returned yet."), ("REST only", "Report the error instead of retrying on the other surface."), ("GraphQL only", "The older queries, which is what versions before 4.0 used.")]
-        state.config_values["FOLLOW_LIST_SOURCE"] = ("auto", "rest", "graphql")[_wizard_ask_choice("Where should follower and following lists be read from?", source_options, default_index=0)]
+        browser_note = "Needs the playwright package and a downloaded browser, is much slower and risks the logged-in account."
+        if not playwright_available():
+            browser_note = "The playwright package is not installed here, so install it before monitoring starts: pip install playwright, then playwright install chromium."
+        source_options = [("Auto", "Read over the REST endpoints Instagram's own web app calls.\nRetry over GraphQL only when REST is missing or unreadable and nothing was returned yet."), ("REST only", "Report the error instead of retrying on the other surface."), ("GraphQL only", "The older queries, which is what versions before 4.0 used."), ("Browser (experimental)", f"Drive a real browser through Instagram's web pages instead of calling its API.\n{browser_note}")]
+        source = ("auto", "rest", "graphql", "browser")[_wizard_ask_choice("Where should follower and following lists be read from?", source_options, default_index=0)]
+        state.config_values["FOLLOW_LIST_SOURCE"] = source
+        if source == "browser":
+            _wizard_align_transport_with_browser_source(state)
+
+
+# Keeps the transport answers consistent with the browser source, which reaches Instagram as a Chromium browser
+def _wizard_align_transport_with_browser_source(state: WizardSetupState) -> None:
+    family = browser_channel_family()
+    changes = []
+    if state.config_values.get("HTTP_BACKEND") != "curl_cffi":
+        state.config_values["HTTP_BACKEND"] = "curl_cffi"
+        changes.append("the transport is set to curl_cffi")
+    pinned = str(state.config_values.get("CURL_CFFI_IMPERSONATE") or "auto").strip().lower()
+    if pinned != "auto" and impersonate_family(pinned) != family:
+        state.config_values["CURL_CFFI_IMPERSONATE"] = "auto"
+        changes.append(f"the impersonated browser is set back to auto instead of {pinned}")
+    # Monitoring refuses to start when the browser and the HTTP path would reach Instagram as two different clients
+    if changes:
+        print(f"  The browser source runs a {family} browser, so {' and '.join(changes)} to keep one client identity.")
 
 
 # Returns genuine environment credentials without treating previously loaded file values as exports
@@ -16483,12 +16490,6 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
     email_categories = _wizard_notification_categories(state.config_values) if state.want_email else []
     webhook_categories = _wizard_notification_categories(state.config_values, "WEBHOOK_") if state.want_webhook else []
     webhook_state = f"enabled ({webhook_provider_display_name(state.config_values.get('WEBHOOK_PROVIDER'))})" if state.want_webhook else "disabled"
-    backend_summary = str(state.config_values.get("HTTP_BACKEND") or "curl_cffi")
-    if backend_summary == "curl_cffi":
-        backend_summary += f" impersonating {state.config_values.get('CURL_CFFI_IMPERSONATE') or 'auto'}"
-        # The answer is still saved, so the review has to show the setting and what it would do until the package is there
-        if not _CURL_CFFI_AVAILABLE:
-            backend_summary += " - not installed here, so requests is used until you install it"
     rows = [
         ("Targets", target_summary),
         ("Persist targets", "yes" if state.persist_targets else "no"),
@@ -16500,7 +16501,6 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
         rows.append(("Browser", browser_label(state.import_browser)))
     if state.container_host:
         rows.append(("Docker host", CONTAINER_FIREFOX_HOSTS[state.container_host][0]))
-    rows.append(("HTTP backend", backend_summary))
     if state.logged_in:
         rows.append(("Follower list source", str(state.config_values.get("FOLLOW_LIST_SOURCE") or "auto")))
     rows.extend([
@@ -16521,7 +16521,7 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
 
 # Opens one selected setup section then returns to the summary
 def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
-    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets", "Change the Instagram accounts that are monitored."), ("Polling interval", "Change how often Instagram is checked."), ("Login and session", "Change no-login, browser or credential settings."), ("Instagram connection", "Change the HTTP backend and the follower list source."), ("Interface", "Change the dashboard or plain text mode."), ("Email notifications", "Change SMTP details and email events."), ("Webhook alerts", "Change Discord or ntfy details and events."), ("Output files", "Change log and CSV output settings."), ("File destinations", "Change the configuration or dotenv output path."), ("Return to summary", "Keep every current answer.")])
+    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets", "Change the Instagram accounts that are monitored."), ("Polling interval", "Change how often Instagram is checked."), ("Login and session", "Change no-login, browser or credential settings."), ("Instagram connection", "Change where follower and following lists are read from."), ("Interface", "Change the dashboard or plain text mode."), ("Email notifications", "Change SMTP details and email events."), ("Webhook alerts", "Change Discord or ntfy details and events."), ("Output files", "Change log and CSV output settings."), ("File destinations", "Change the configuration or dotenv output path."), ("Return to summary", "Keep every current answer.")])
     if section == 0:
         print()
         _wizard_collect_target_section(state, allow_empty=state.want_web)
