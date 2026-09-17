@@ -268,3 +268,40 @@ class TestConfigDiscoverySentinel:
         output = result.stdout + result.stderr
         assert "Config file 'none' does not exist" not in output
         assert "At least one TARGET_USERNAME argument is required" in output
+
+
+# Verifies the early peek carries the theme, since --help is printed and exited from inside argparse before the config load
+def test_the_early_output_config_carries_the_help_theme(im_module, monkeypatch, tmp_path):
+    (tmp_path / "instagram_monitor.conf").write_text('COLOR_THEME = {"help_heading": "bright_red"}\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(im_module, "COLOR_THEME", {})
+    monkeypatch.setattr(im_module, "CONFIG_DISCOVERY_DISABLED", False)
+    monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor", "--help"])
+
+    im_module.apply_early_output_config()
+
+    assert im_module.COLOR_THEME == {"help_heading": "bright_red"}
+
+
+# Verifies a run started with discovery off names the sentinel rather than a config file it deliberately ignored
+def test_a_printed_command_keeps_discovery_off(im_module, monkeypatch, tmp_path):
+    (tmp_path / "instagram_monitor.conf").write_text("DISABLE_LOGGING = True\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(im_module, "CONFIG_DISCOVERY_DISABLED", True)
+    monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+
+    assert im_module.find_config_file() is not None
+    assert im_module.resolved_command_config(None) == "none"
+    assert im_module.resolved_command_config("none") == "none"
+
+
+# Verifies discovery left on still names the file a printed command should carry
+def test_a_printed_command_names_the_discovered_config(im_module, monkeypatch, tmp_path):
+    config_path = tmp_path / "instagram_monitor.conf"
+    config_path.write_text("DISABLE_LOGGING = True\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(im_module, "CONFIG_DISCOVERY_DISABLED", False)
+    monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+
+    assert str(im_module.resolved_command_config(None)) == str(config_path)
+    assert im_module.resolved_command_config("/given/path.conf") == "/given/path.conf"

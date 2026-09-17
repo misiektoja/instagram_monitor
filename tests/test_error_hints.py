@@ -461,7 +461,7 @@ class TestOutageReporting:
 class TestTheLoopFailurePaths:
     # Runs one monitoring pass, letting the startup fetch succeed and failing the given number of loop checks
     @staticmethod
-    def _drive(im_module, monkeypatch, thread_output=(), profile_error=None, posts_error=None, checks=1, recovers=False):
+    def _drive(im_module, monkeypatch, thread_output=(), profile_error=None, posts_error=None, checks=1, recovers=False, liveness_seconds=0):
         reporter_calls = []
         alerts = []
         stop_event = threading.Event()
@@ -498,8 +498,10 @@ class TestTheLoopFailurePaths:
 
         bot = Mock()
         bot.context.is_logged_in = False
+        clock = [float(int(im_module.time.time()))]
+        monkeypatch.setattr(im_module.time, "time", lambda: clock[0])
         # The loop re-reads these from the module every iteration, so the positional arguments alone do not hold
-        for name, value in (("INSTA_CHECK_INTERVAL", 1), ("RANDOM_SLEEP_DIFF_LOW", 0), ("RANDOM_SLEEP_DIFF_HIGH", 0), ("NEXT_OPERATION_DELAY", 0), ("WEB_DASHBOARD_ENABLED", False), ("SESSION_USERNAME", ""), ("SKIP_SESSION", True), ("SKIP_FOLLOWERS", True), ("SKIP_FOLLOWINGS", True), ("SKIP_FOLLOW_CHANGES", True), ("SKIP_GETTING_STORY_DETAILS", True), ("SKIP_GETTING_POSTS_DETAILS", posts_error is None), ("GET_MORE_POST_DETAILS", False), ("DETECT_COLLAB_POSTS", False), ("LIVENESS_REMINDER_SECONDS", 0)):
+        for name, value in (("INSTA_CHECK_INTERVAL", 1), ("RANDOM_SLEEP_DIFF_LOW", 0), ("RANDOM_SLEEP_DIFF_HIGH", 0), ("NEXT_OPERATION_DELAY", 0), ("WEB_DASHBOARD_ENABLED", False), ("SESSION_USERNAME", ""), ("SKIP_SESSION", True), ("SKIP_FOLLOWERS", True), ("SKIP_FOLLOWINGS", True), ("SKIP_FOLLOW_CHANGES", True), ("SKIP_GETTING_STORY_DETAILS", True), ("SKIP_GETTING_POSTS_DETAILS", posts_error is None), ("GET_MORE_POST_DETAILS", False), ("DETECT_COLLAB_POSTS", False), ("LIVENESS_REMINDER_SECONDS", liveness_seconds)):
             monkeypatch.setattr(im_module, name, value, raising=False)
         monkeypatch.setattr(im_module.OutageReporter, "failed", failed)
         monkeypatch.setattr(im_module, "notify_monitoring_error", alert)
@@ -507,8 +509,13 @@ class TestTheLoopFailurePaths:
         monkeypatch.setattr(im_module, "instaloader_client", lambda **kwargs: bot)
         monkeypatch.setattr(im_module, "profile_from_username_resilient", profile)
         monkeypatch.setattr(im_module, "latest_post_mobile", posts)
-        # Reports the stop the harness asked for rather than always interrupting, so more than one check can run
-        monkeypatch.setattr(im_module, "interruptible_sleep", lambda seconds, event=None: stop_event.is_set())
+        # Reports the stop the harness asked for rather than always interrupting, so more than one check can run.
+        # The wait also advances the clock, which is what makes a timed reminder deterministic here
+        def wait(seconds, event=None):
+            clock[0] += seconds
+            return stop_event.is_set()
+
+        monkeypatch.setattr(im_module, "interruptible_sleep", wait)
 
         im_module._run_instagram_monitor_pass("target", "", True, True, True, True, posts_error is None, False, stop_event=stop_event)
         return reporter_calls, alerts
@@ -555,6 +562,15 @@ class TestTheLoopFailurePaths:
         capsys.readouterr()
 
         assert recoveries == ["target"]
+
+    # The banner speaks for a check that said nothing, so a check that reported the end of an outage restarts
+    # the quiet clock instead of being contradicted by the line under it
+    def test_a_check_that_reported_a_recovery_does_not_claim_it_was_quiet(self, im_module, monkeypatch, capsys):
+        self._drive(im_module, monkeypatch, profile_error=RuntimeError("500 Server Error"), checks=3, recovers=True, liveness_seconds=2)
+
+        output = capsys.readouterr().out
+        assert "* Monitoring recovered for target after " in output, "the check under test reported no recovery"
+        assert "Monitoring healthy for" not in output
 
     # A run that never recovers must not claim it did
     def test_a_run_that_only_fails_announces_no_recovery(self, im_module, monkeypatch, capsys):

@@ -458,3 +458,20 @@ def test_the_linter_defaults_follow_the_template_order(im_module):
 
     assert len(mirrored) == len(set(mirrored)), "a setting is repeated in the linter defaults"
     assert mirrored == [name for name in order if name in set(mirrored)]
+
+
+# Verifies an explicit colour theme survives a config rebuild, since the template ships the setting commented out
+def test_a_rebuilt_config_keeps_an_explicit_color_theme(im_module):
+    values = dict(im_module.config_template_defaults())
+    values["COLOR_THEME"] = {"header": "bright_red"}
+
+    rendered = im_module.generate_config_with_current_values(values)
+
+    assert im_module.parse_config_content(rendered, "<generated>")["COLOR_THEME"] == {"header": "bright_red"}
+
+
+# Verifies the shipped default stays commented out, so a rebuild does not pin a theme the user never chose
+def test_a_rebuilt_config_leaves_the_default_theme_commented(im_module):
+    rendered = im_module.generate_config_with_current_values(dict(im_module.config_template_defaults()))
+
+    assert "\nCOLOR_THEME = {" not in rendered

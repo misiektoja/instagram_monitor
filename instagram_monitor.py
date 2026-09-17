@@ -897,18 +897,56 @@ def validate_config_content(content: str, filename: str = "<generated-config>") 
     parse_config_content(content, filename)
 
 
+# Returns the inline comment to write beside a rendered value, restating a changed duration instead of keeping the template's
+def _config_value_comment(comment, template_expression, value):
+    import ast
+
+    if not comment:
+        return ""
+    try:
+        unchanged = ast.literal_eval(template_expression) == value
+    except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+        return comment
+    # Every numeric template comment restates its default as a duration, so a changed one is restated the same way.
+    # A comment on any other kind of setting is guidance about the setting itself and still applies
+    if unchanged or isinstance(value, bool) or not isinstance(value, (int, float)):
+        return comment
+    restated = display_time(value)
+    return f"# {restated}" if restated else ""
+
+
+# Renders an explicit assignment for a setting the template ships commented out, so overrides the user wrote
+# survive a rewrite instead of being replaced by the commented default
+def _rendered_commented_setting(variable, values):
+    value = values.get(variable)
+    if not isinstance(value, dict) or not value:
+        return []
+    lines = ["", f"{variable} = {{"]
+    lines.extend(f"    {_format_config_value(str(name), True)}: {_format_config_value(str(setting), True)}," for name, setting in value.items())
+    lines.append("}")
+    return lines
+
+
 # Renders CONFIG_BLOCK with selected runtime values substituted into simple one-line assignments
 def generate_config_with_current_values(values=None) -> str:
     import re
 
     current_values = globals() if values is None else values
     assign_re = re.compile(r"^([A-Z][A-Z0-9_]*)\s*=\s*(.*)$")
+    commented_pattern = re.compile(r"^#\s*([A-Z][A-Z0-9_]*)\s*=\s*\{$")
+    commented_block = ""
     out_lines: list[str] = []
 
     for line in CONFIG_BLOCK.strip("\n").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             out_lines.append(line)
+            commented_match = commented_pattern.match(stripped)
+            if commented_match and commented_match.group(1) in EXTRA_CONFIG_KEYS:
+                commented_block = commented_match.group(1)
+            elif commented_block and stripped == "# }":
+                out_lines.extend(_rendered_commented_setting(commented_block, current_values))
+                commented_block = ""
             continue
 
         m = assign_re.match(line)
@@ -937,8 +975,9 @@ def generate_config_with_current_values(values=None) -> str:
         prefer_double_quotes = expr_stripped.startswith('"')
         new_expr = _format_config_value(current_values[var], prefer_double_quotes=prefer_double_quotes)
         new_line = f"{var} = {new_expr}"
-        if comment:
-            new_line = f"{new_line}  {comment}"
+        rendered_comment = _config_value_comment(comment, expr_stripped, current_values[var])
+        if rendered_comment:
+            new_line = f"{new_line}  {rendered_comment}"
         out_lines.append(new_line)
 
     rendered = "\n".join(out_lines) + "\n"
@@ -1149,6 +1188,15 @@ def _dotenv_contains_key(destination, key):
     return any(assignment_pattern.match(line) for line in lines)
 
 
+# Returns the config a printed command should name, so a run started with discovery off cannot point the reader
+# at a file it deliberately ignored
+def resolved_command_config(config_path=None):
+    # A path the caller was given is what the command names, so a stale discovery flag cannot override it
+    if config_path is not None:
+        return "none" if str(config_path).casefold() == "none" else config_path
+    return "none" if CONFIG_DISCOVERY_DISABLED else find_config_file()
+
+
 # Checks and safely stores one privately entered webhook URL
 def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpass_func=None, config_path=None):
     destination = resolve_webhook_env_path(env_file)
@@ -1176,7 +1224,7 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
         update_dotenv_file(destination, {"WEBHOOK_URL": webhook_url})
     except Exception:
         raise WebhookConfigurationError(f"Could not save the webhook URL in '{destination}'. Check file permissions or choose another path with --env-file.") from None
-    selected_config = config_path or find_config_file()
+    selected_config = resolved_command_config(config_path)
     method = _wizard_install_method()
     test_command = _wizard_action_command(method, "--send-test-webhook", selected_config, destination)
     doctor_command = _wizard_action_command(method, "--doctor", selected_config, destination)
@@ -1285,7 +1333,7 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
         update_dotenv_file(destination, {"SMTP_PASSWORD": smtp_password})
     except Exception:
         raise SmtpConfigurationError(f"Could not save the SMTP password in '{destination}'. Check file permissions or choose another path with --env-file.") from None
-    selected_config = config_path or find_config_file()
+    selected_config = resolved_command_config(config_path)
     method = _wizard_install_method()
     test_command = _wizard_action_command(method, "--send-test-email", selected_config, destination)
     doctor_command = _wizard_action_command(method, "--doctor", selected_config, destination)
@@ -1425,6 +1473,8 @@ DISABLE_LOGGING = False
 ASCII_LOG_SEPARATORS = "Auto"
 TRUNCATE_CHARS = 0
 HORIZONTAL_LINE = 0
+# Counts the reports printed so far, so a check can tell whether it said anything before the banner claims it was quiet
+REPORTS_PRINTED = 0
 CLEAR_SCREEN = False
 COLORED_OUTPUT = False
 COLOR_THEME = {}
@@ -6767,6 +6817,8 @@ def get_cur_ts(ts_str=""):
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str="Timestamp:\t\t\t\t", newline=False):
     # Always print; Logger handles terminal suppression while ensuring file logging
+    global REPORTS_PRINTED
+    REPORTS_PRINTED += 1
     print(get_cur_ts(("\n" if newline else "") + str(ts_str)))
     print("─" * HORIZONTAL_LINE)
 
@@ -8295,9 +8347,12 @@ def early_config_file_argument(arguments=None):
 
 # Applies the config settings that take effect before argument parsing, leaving errors to the later load
 def apply_early_output_config() -> None:
-    global CLEAR_SCREEN, COLORED_OUTPUT
+    global CLEAR_SCREEN, COLORED_OUTPUT, COLOR_THEME
     try:
         cli_path = early_config_file_argument()
+        if cli_path is not None and cli_path.casefold() == "none":
+            # Config discovery is disabled for this run, so there is nothing to peek at
+            return
         config_path = find_config_file(os.path.expanduser(cli_path) if cli_path else None)
         if not config_path:
             return
@@ -8310,6 +8365,10 @@ def apply_early_output_config() -> None:
         CLEAR_SCREEN = values["CLEAR_SCREEN"]
     if isinstance(values.get("COLORED_OUTPUT"), bool):
         COLORED_OUTPUT = values["COLORED_OUTPUT"]
+    # --help is printed and exited from inside argparse, long before the config load, so the help_* overrides
+    # have to be here or they could never colour the one screen they name. Unusable styles are dropped downstream
+    if isinstance(values.get("COLOR_THEME"), dict):
+        COLOR_THEME = values["COLOR_THEME"]
 
 
 # Reads one UTF-8 config file into the given namespace, reporting why it was rejected
@@ -13475,6 +13534,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
     outage = OutageReporter()
     debug_print("Entering primary loop")
     while True:
+        reports_before_check = REPORTS_PRINTED
+
         # Check stop event at the start of each loop iteration
         if stop_event and stop_event.is_set():
             print(f"* Monitoring stopped for {user}\n")
@@ -14565,9 +14626,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             outage_lasted = outage.recovered()
             if outage_lasted is not None:
                 print_outage_recovery(user, outage_lasted)
-                alive_since = int(time.time())
 
-        if LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
+        # The banner speaks for a quiet check, so anything this one reported restarts the clock instead of being contradicted by it
+        if REPORTS_PRINTED != reports_before_check:
+            alive_since = int(time.time())
+        elif LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
             print_liveness_banner(f"Monitoring healthy for {user}. No tracked change since the last check")
             alive_since = int(time.time())
 
@@ -15742,7 +15805,12 @@ def _wizard_collect_output_section(state: WizardSetupState) -> None:
     _wizard_reset_section(state, WIZARD_OUTPUT_CONFIG_KEYS, ())
     print()
     state.config_values["DISABLE_LOGGING"] = not _wizard_ask_yes_no("Write the normal per-target log file?", default=not bool(state.config_values.get("DISABLE_LOGGING")))
-    state.config_values["CSV_FILE"] = _wizard_normalize_csv_path(_wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or "")))
+    saved_csv = str(state.config_values.get("CSV_FILE") or "")
+    # Asked as its own question, since Enter on the path prompt takes the shown default and so could never clear a saved one
+    if _wizard_ask_yes_no("Write a CSV file of the changes?", default=bool(saved_csv)):
+        state.config_values["CSV_FILE"] = _wizard_normalize_csv_path(_wizard_ask_text("CSV output path", default=saved_csv, required=True))
+    else:
+        state.config_values["CSV_FILE"] = ""
 
 
 # Browser profiles the wizard offers as pinned curl_cffi impersonation targets
@@ -18194,6 +18262,12 @@ def run_main():
 
     # Run preflight checks once the effective session mode and targets are resolved
     if getattr(args, "doctor", False):
+        # Doctor exits before monitoring applies these, so they are resolved here too and the output rows
+        # describe the run that was actually asked for. Nothing is written, only reported
+        if args.csv_file:
+            CSV_FILE = os.path.expanduser(args.csv_file)
+        if args.disable_logging is True:
+            DISABLE_LOGGING = True
         doctor_failures = run_doctor(targets, doctor_config_errors, doctor_config_retired, env_path, timezone_advice)
         # Targets already saved in the config file are left out, so the command stays as short as the wizard's
         # Both "none" sentinels are carried, since the printed command monitors with the setup doctor just checked

@@ -1366,3 +1366,26 @@ def test_a_row_carries_its_advice_and_refuses_to_go_without(im_module):
     assert not hasattr(advice, "guide_url")
     with pytest.raises(ValueError):
         im_module.make_doctor_check("Configuration", "WARN", "a warning row", "a detail worth keeping")
+
+
+# Verifies doctor reports the output destinations the run was given, since it exits before monitoring applies them
+def test_doctor_reports_the_output_overrides_the_run_was_given(im_module, monkeypatch, tmp_path):
+    csv_path = tmp_path / "chosen.csv"
+    seen = {}
+
+    def capture(*args, **keywords):
+        seen["csv"] = im_module.CSV_FILE
+        seen["logging_disabled"] = im_module.DISABLE_LOGGING
+        return 0
+
+    monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "--doctor", "someuser", "--config-file", "none", "--env-file", "none", "--no-color", "-b", str(csv_path), "-d"])
+    monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+    monkeypatch.setattr(im_module, "CSV_FILE", "")
+    monkeypatch.setattr(im_module, "DISABLE_LOGGING", False)
+    monkeypatch.setattr(im_module, "run_doctor", capture)
+
+    with pytest.raises(SystemExit):
+        im_module.run_main()
+
+    assert seen["csv"] == str(csv_path)
+    assert seen["logging_disabled"] is True

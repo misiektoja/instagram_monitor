@@ -693,13 +693,28 @@ def test_the_output_section_records_the_log_and_csv_choices(im_module, monkeypat
     with make_test_directory() as directory_name:
         directory = Path(directory_name)
         state = make_setup_state(im_module, directory)
-        monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: False)
+        answers = {"Write the normal per-target log file?": False, "Write a CSV file of the changes?": True}
+        monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: answers.get(question, default))
         monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False: str(directory / "posts.csv"))
 
         im_module._wizard_collect_output_section(state)
 
         assert state.config_values["DISABLE_LOGGING"] is True
         assert state.config_values["CSV_FILE"] == str(directory / "posts.csv")
+
+
+# Verifies declining CSV output clears a saved path, which the path prompt alone could never do
+def test_declining_csv_output_clears_a_saved_path(im_module, monkeypatch):
+    with make_test_directory() as directory_name:
+        state = make_setup_state(im_module, Path(directory_name))
+        state.config_values["CSV_FILE"] = "saved.csv"
+        state.baseline_values["CSV_FILE"] = "saved.csv"
+        answers = {"Write a CSV file of the changes?": False}
+        monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda question, default=True: answers.get(question, default))
+
+        im_module._wizard_collect_output_section(state)
+
+        assert state.config_values["CSV_FILE"] == ""
 
 
 # Verifies a blank CSV answer disables CSV output rather than storing an empty path as a file name
