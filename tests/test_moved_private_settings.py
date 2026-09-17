@@ -96,7 +96,7 @@ def test_doctor_reports_unreadable_dotenv(tmp_path, monkeypatch, capsys, offline
 
     output = capsys.readouterr().out
     assert "Dotenv file could not be loaded" in output
-    assert "could not be read as UTF-8" in output
+    assert "is not valid UTF-8 text" in output
     assert "Dotenv file loaded" not in output
 
 
@@ -114,4 +114,17 @@ def test_startup_reports_unreadable_dotenv(tmp_path, monkeypatch, capsys, offlin
     assert stopped.value.code == 1
     output = capsys.readouterr().out
     assert str(env) in output
-    assert "Save the dotenv file as UTF-8 and check its read permissions" in output
+    assert "Save the dotenv file as UTF-8" in output
+
+
+# Proves each cause names itself, so a readable file with bad bytes and an unopenable one do not share one message
+@pytest.mark.parametrize("error,expected_detail,expected_fix", [
+    (UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"), "is not valid UTF-8 text", "Save the dotenv file as UTF-8"),
+    (PermissionError(13, "Permission denied"), "could not be opened", "Check the dotenv file path and its read permissions"),
+    (ValueError("unexpected"), "could not be read", "Check that the dotenv file is readable UTF-8 text"),
+])
+def test_dotenv_load_problem_names_its_cause(error, expected_detail, expected_fix):
+    detail, fix = monitor.dotenv_load_problem("/tmp/private.env", error)
+
+    assert detail == f"Dotenv file '/tmp/private.env' {expected_detail}"
+    assert fix == expected_fix

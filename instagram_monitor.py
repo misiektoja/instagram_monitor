@@ -17080,6 +17080,15 @@ DISCARDED_SETTING_ERRORS = []
 DOTENV_STARTUP_ERRORS = {}
 
 
+# Names the cause of a dotenv file the run could not load, so startup and doctor word the same failure the same way
+def dotenv_load_problem(path, error):
+    if isinstance(error, UnicodeError):
+        return f"Dotenv file '{path}' is not valid UTF-8 text", "Save the dotenv file as UTF-8"
+    if isinstance(error, OSError):
+        return f"Dotenv file '{path}' could not be opened", "Check the dotenv file path and its read permissions"
+    return f"Dotenv file '{path}' could not be read", "Check that the dotenv file is readable UTF-8 text"
+
+
 # True when the selected command exists to correct the configuration, so a malformed setting is reported
 # there instead of stopping the one run that could repair it
 def command_reports_configuration(args=None):
@@ -17167,8 +17176,8 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
         checks.append(make_doctor_check("Configuration", "WARN", advice.summary, describe_retired_settings(retired_settings, cfg), advice))
 
     if env_path and str(env_path) in DOTENV_STARTUP_ERRORS:
-        detail = DOTENV_STARTUP_ERRORS[str(env_path)]
-        advice = make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide("Save the dotenv file as UTF-8 and check its read permissions, then run Doctor again", CONFIG_FILE_GUIDE_URL), False)
+        detail, fix = DOTENV_STARTUP_ERRORS[str(env_path)]
+        advice = make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(f"{fix}, then run Doctor again", CONFIG_FILE_GUIDE_URL), False)
         checks.append(make_doctor_check("Configuration", "FAIL", "Dotenv file could not be loaded", detail, advice))
     elif env_path and os.path.isfile(str(env_path)):
         checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
@@ -18275,11 +18284,11 @@ def run_main():
             env_path = DOTENV_FILE if DOTENV_FILE else None
             if env_path:
                 print(render_recovery_advice(missing_dependency_advice("python-dotenv", f"The dotenv file '{env_path}' cannot be loaded", pip_install_command("python-dotenv")), label="Warning"))
-        except (OSError, UnicodeError, ValueError):
-            detail = f"Dotenv file '{env_path}' could not be read as UTF-8"
-            DOTENV_STARTUP_ERRORS[str(env_path)] = detail
+        except (OSError, UnicodeError, ValueError) as exc:
+            detail, fix = dotenv_load_problem(env_path, exc)
+            DOTENV_STARTUP_ERRORS[str(env_path)] = (detail, fix)
             if not args.doctor:
-                print_recovery_advice(make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide("Save the dotenv file as UTF-8 and check its read permissions", CONFIG_FILE_GUIDE_URL), False))
+                print_recovery_advice(make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(fix, CONFIG_FILE_GUIDE_URL), False))
                 if not command_reports_configuration(args):
                     sys.exit(1)
 
