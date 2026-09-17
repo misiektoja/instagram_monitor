@@ -5260,7 +5260,8 @@ def truncate_string_per_line(message, truncate_width, tabsize=8):
     try:
         from wcwidth import wcwidth
     except ImportError:
-        return message
+        # Without wcwidth every character costs one column, so truncation still applies and only wide characters are measured short
+        wcwidth = len
     truncated_lines = []
     for line in message.split("\n"):
         expanded_line = line.expandtabs(tabsize)
@@ -6213,14 +6214,19 @@ def format_payload(template, payload):
 
 # Parses legacy and current Discord templates before validating their object shape
 def render_discord_template(template, values):
-    if isinstance(template, str):
-        try:
-            template = json.loads(template)
-        except json.JSONDecodeError:
-            template = json.loads(str(format_payload(template, values)))
-    if not isinstance(template, dict):
-        raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string")
-    return format_payload(template, values)
+    # A placeholder the payload cannot fill, such as the positional {0}, fails inside str.format rather than as a
+    # value error, so every parsing and rendering failure is reported as the one error callers already handle
+    try:
+        if isinstance(template, str):
+            try:
+                template = json.loads(template)
+            except json.JSONDecodeError:
+                template = json.loads(str(format_payload(template, values)))
+        if isinstance(template, dict):
+            return format_payload(template, values)
+    except Exception as exc:
+        raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string") from exc
+    raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string")
 
 
 # Returns a configuration error for unsafe or unsupported webhook customization
@@ -6435,7 +6441,8 @@ def _retain_webhook_secrets(deliver):
         headers = settings.get("WEBHOOK_HEADERS")
         if isinstance(headers, dict):
             values.extend(value for name, value in headers.items() if isinstance(name, str) and name.casefold() == "authorization")
-        secrets = tuple(value for value in values if isinstance(value, str) and value and not value.startswith("your_"))
+        # The same minimum length every other redaction path applies, so a short secret cannot blank out ordinary words
+        secrets = tuple(value for value in values if isinstance(value, str) and len(value) > 4 and not value.startswith("your_"))
         token = _DELIVERY_SECRET_VALUES.set(_DELIVERY_SECRET_VALUES.get() + secrets)
         try:
             return deliver(*args, **kwargs)
@@ -16897,7 +16904,7 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         ("flask", "flask", FLASK_AVAILABLE, "Used only for the Web Dashboard", "Normal monitoring is unaffected when the Web Dashboard is unused"),
         ("dotenv", "python-dotenv", module_present("dotenv"), "Used only for loading secrets from a dotenv file", "Secrets in a dotenv file are ignored. Export them as environment variables instead"),
         ("pycookiecheat", "pycookiecheat", module_present("pycookiecheat"), "Used only for importing sessions from Chromium-based browsers. Firefox session import does not need it", "Required only for importing sessions from Chromium-based browsers. Firefox session import is unaffected"),
-        ("wcwidth", "wcwidth", module_present("wcwidth"), "Used only to measure display width for screen truncation", "Screen truncation is disabled and lines are printed in full. Normal monitoring is unaffected"),
+        ("wcwidth", "wcwidth", module_present("wcwidth"), "Used only to measure display width for screen truncation", "Wide characters count as one column, so a line holding them can run past the limit. Normal monitoring is unaffected"),
     )
     # The classic Command Prompt is the only place this library changes anything, so a machine it cannot affect is not warned about a package it does not need
     if platform.system() == "Windows":

@@ -768,7 +768,7 @@ Biographies, captions, story text, comments and usernames come from Instagram an
 <a id="terminal-line-width"></a>
 ## Terminal Line Width
 
-Captions, biographies and long file paths can wrap across several terminal lines. Set `TRUNCATE_CHARS` or use the `--truncate N` flag to cut each screen line to a maximum width. Use `999` to auto-detect the terminal width. The log file always keeps the full line, so the setting is ignored when logging is disabled with `-d`. It is off by default and needs the optional `wcwidth` library to measure display width, otherwise lines are left untouched.
+Captions, biographies and long file paths can wrap across several terminal lines. Set `TRUNCATE_CHARS` or use the `--truncate N` flag to cut each screen line to a maximum width. Use `999` to auto-detect the terminal width. The log file always keeps the full line, so the setting is ignored when logging is disabled with `-d`. It is off by default. Install the optional `wcwidth` library for correct widths with wide characters, which otherwise count as one column and can run a line past the limit.
 
 <a id="shadowban-and-flagged-account-detection"></a>
 ## Shadowban and Flagged Account Detection

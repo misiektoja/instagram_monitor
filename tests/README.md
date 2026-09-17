@@ -25,7 +25,7 @@ installed copy of the package.
 
 | File | Area under test |
 | --- | --- |
-| `test_release_boundaries.py` | Real HTTP retries, Discord mention safety, SMTP password round trips and split terminal writes |
+| `test_release_boundaries.py` | Real HTTP retries, Discord mention safety, unrenderable templates, SMTP password round trips, split terminal writes and the width cap without wcwidth |
 | `test_compact_commands.py` | Literal short command prefixes, real help output and dependency hints |
 | `test_release_safety.py` | Credential preservation, private error rendering, runtime timing validation and saved-state compatibility |
 | `test_recovery_safety.py` | Real dotenv reloads, setup backups, oversized counts and provider-error privacy |
