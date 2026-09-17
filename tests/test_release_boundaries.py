@@ -237,3 +237,51 @@ def test_a_short_retained_secret_never_replaces_ordinary_words(monkeypatch):
         return monitor.sanitize_webhook_error_text(text)
 
     assert during_delivery() == text
+
+
+# Verifies a provider the configuration file actually set is reported when the URL disagrees with it
+def test_a_configured_provider_that_disagrees_is_reported(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "https://ntfy.sh/private-topic")
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(monitor, "CONFIGURED_SETTING_NAMES", {"WEBHOOK_PROVIDER"})
+
+    monitor.apply_webhook_provider_autodetection()
+
+    assert monitor.WEBHOOK_PROVIDER == "ntfy"
+    assert "did not match the URL" in capsys.readouterr().out
+
+
+# Verifies the documented setup is silent, because the built-in default is not a provider anyone chose
+def test_the_default_provider_follows_the_url_without_a_warning(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "https://ntfy.sh/private-topic")
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(monitor, "CONFIGURED_SETTING_NAMES", set())
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", False)
+
+    monitor.apply_webhook_provider_autodetection()
+
+    assert monitor.WEBHOOK_PROVIDER == "ntfy"
+    assert "did not match the URL" not in capsys.readouterr().out
+
+
+# Verifies the same detection is still reported to anyone who asked for the operational detail
+def test_verbose_mode_reports_the_detected_provider(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "https://ntfy.sh/private-topic")
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(monitor, "CONFIGURED_SETTING_NAMES", set())
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", True)
+
+    monitor.apply_webhook_provider_autodetection()
+
+    assert "Webhook provider detected from the URL: ntfy" in capsys.readouterr().out
+
+
+# Verifies a configuration read for the wizard or a report is not mistaken for the settings this run uses
+def test_only_a_load_into_the_module_records_a_configured_setting(tmp_path, monkeypatch):
+    path = tmp_path / "scoped.conf"
+    path.write_text('WEBHOOK_PROVIDER = "ntfy"\n')
+    monkeypatch.setattr(monitor, "CONFIGURED_SETTING_NAMES", set())
+
+    monitor.load_config_file(str(path), namespace={}, report_errors=False)
+
+    assert "WEBHOOK_PROVIDER" not in monitor.CONFIGURED_SETTING_NAMES

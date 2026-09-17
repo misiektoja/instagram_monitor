@@ -294,7 +294,7 @@ The recommended way to save a Discord or ntfy destination is:
 instagram_monitor --set-webhook-url
 ```
 
-Paste the complete HTTPS URL at the hidden prompt. Instagram Monitor validates it then updates only `WEBHOOK_URL` in `.env` without displaying the value. Standard Discord and public `ntfy.sh` URLs select the matching request format automatically. Configure `WEBHOOK_PROVIDER` in `instagram_monitor.conf` for a self-hosted or compatible endpoint. Use `--env-file PATH` with this command to select another dotenv destination.
+Paste the complete HTTPS URL at the hidden prompt. Instagram Monitor validates it then updates only `WEBHOOK_URL` in `.env` without displaying the value. Standard Discord and public `ntfy.sh` URLs select the matching request format automatically. While `WEBHOOK_PROVIDER` is left at its default, that detection is silent and `--verbose` reports it. A warning appears only when your configuration file sets a provider the URL disagrees with. Configure `WEBHOOK_PROVIDER` in `instagram_monitor.conf` for a self-hosted or compatible endpoint. Use `--env-file PATH` with this command to select another dotenv destination.
 
 The mail server password has its own command:
 

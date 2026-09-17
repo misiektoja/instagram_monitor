@@ -1669,6 +1669,9 @@ CLI_CONFIG_PATH = None
 # Set when --config-file none switches discovery off, so no later lookup can find a file the run rejected
 CONFIG_DISCOVERY_DISABLED = False
 
+# The settings a configuration file actually assigned, so a built-in default is never mistaken for a choice
+CONFIGURED_SETTING_NAMES = set()
+
 # To solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
 
@@ -5448,6 +5451,9 @@ class Logger(object):
 
     # Limits the terminal line across separate writes while leaving the log complete
     def _truncate_terminal(self, message):
+        # The limit is fixed once at startup, so with truncation off there is no column to keep track of
+        if not TRUNCATE_CHARS:
+            return message
         try:
             from wcwidth import wcwidth
         except ImportError:
@@ -6026,8 +6032,12 @@ def apply_webhook_provider_autodetection(explicit_provider=False, announce=True)
     configured_provider = normalized_webhook_provider()
     if detected_provider and detected_provider != configured_provider:
         WEBHOOK_PROVIDER = detected_provider
-        if announce:
+        # The built-in default is not a choice anyone made, so detection there is the documented behaviour
+        # rather than a mismatch. Only a provider the configuration actually sets is worth warning about
+        if announce and "WEBHOOK_PROVIDER" in CONFIGURED_SETTING_NAMES:
             print(f"* Warning: Configured webhook provider did not match the URL. Using {webhook_provider_display_name(detected_provider)}.")
+        elif announce:
+            verbose_print(f"Webhook provider detected from the URL: {webhook_provider_display_name(detected_provider)}")
     return normalized_webhook_provider()
 
 
@@ -8672,6 +8682,9 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
     try:
         parsed_values = parse_config_content(content, str(config_path), retired_settings)
         target_namespace.update(parsed_values)
+        # Only a load that reaches the module settings records a choice, not a copy read for the wizard or a report
+        if target_namespace is globals():
+            CONFIGURED_SETTING_NAMES.update(parsed_values)
         if report_errors:
             debug_print("Configuration applied", path=config_path, settings=len(parsed_values))
         if retired_out is not None:
