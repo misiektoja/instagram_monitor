@@ -698,6 +698,7 @@ class TestEveryProblemIsReported:
         "* Error: Python version ": "runs before the module is loaded, so it prints its action and page as literals",
         "* Error: Web Dashboard templates not found": "followed by the searched paths and a numbered list of the four ways to fix it",
         "* Monitoring failure changed for {target}. {advice.summary}": "a one-line note on a classified outage that already had its full report",
+        "Those settings could not be read, so the questions start from the built-in defaults.": "a wizard result printed under the classified config failure above it",
     }
 
     def test_every_reported_problem_carries_an_action(self, im_module):

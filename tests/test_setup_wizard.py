@@ -201,6 +201,32 @@ class TestEditableReview:
             assert not config_path.exists()
             assert not env_path.exists()
 
+    # A rerun over an existing configuration proposes its saved settings, which is what the rebuild question offers
+    def test_a_rerun_proposes_the_saved_settings(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            directory = Path(directory_name)
+            config_path = directory / "instagram_monitor.conf"
+            config_path.write_text('TARGET_USERNAMES = ["saved.review.user"]\nINSTA_CHECK_INTERVAL = 1234\n', encoding="utf-8")
+            env_path = directory / ".env"
+            offered = {}
+            answers = iter([True, True, False, False, True])
+            choices = iter([0, 2, 2])
+            protect_setup_globals(im_module, monkeypatch)
+            monkeypatch.setattr(im_module.sys, "stdin", Mock(isatty=lambda: True))
+            monkeypatch.setattr(im_module, "_wizard_install_method", lambda: "manual")
+            monkeypatch.setattr(im_module, "_wizard_ask_text", lambda question, default="", required=False, **kwargs: offered.setdefault("targets", default))
+            monkeypatch.setattr(im_module, "_wizard_ask_duration", lambda question, default: offered.setdefault("interval", default))
+            monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
+            monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
+            monkeypatch.setattr(im_module, "_wizard_collect_connection_section", lambda state: None)
+            monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
+
+            with pytest.raises(SystemExit):
+                im_module.run_setup_wizard(config_file=config_path, env_file=env_path)
+
+            assert offered == {"targets": "saved.review.user", "interval": 1234}
+
+
     def test_target_section_can_be_edited_before_save(self, im_module, monkeypatch, capsys):
         with make_test_directory() as directory_name:
             directory = Path(directory_name)

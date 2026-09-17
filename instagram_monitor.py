@@ -15369,6 +15369,18 @@ def _wizard_reset_section(state: WizardSetupState, config_keys, secret_keys) -> 
         state.secret_updates.pop(key, None)
 
 
+# Seeds the proposed answers from the configuration the wizard is about to rebuild, which is what the rebuild question offers
+def _wizard_seed_saved_settings(values: dict, config_path: Path) -> None:
+    if not config_path.is_file():
+        return
+    saved: dict = {}
+    if not load_config_file(config_path, namespace=saved):
+        print("  Those settings could not be read, so the questions start from the built-in defaults.\n")
+        return
+    # Secrets are resolved from the dotenv file and the config keeps their placeholders, so only the settings this wizard writes are proposed
+    values.update({key: value for key, value in saved.items() if key not in SENSITIVE_CONFIG_KEYS})
+
+
 # Confirms replacement or selects another config destination before answers are collected
 def _wizard_choose_config_destination(config_path: Path, method: str) -> Path:
     selected = config_path.expanduser().resolve()
@@ -15968,9 +15980,10 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
             if existing_secret is not None:
                 globals()[secret_key] = existing_secret
         baseline_values = dict(globals())
+        _wizard_seed_saved_settings(baseline_values, config_path)
         config_values = dict(baseline_values)
         config_values["DOTENV_FILE"] = str(env_path)
-        state = WizardSetupState(config_path, env_path, baseline_values, config_values, {}, [], True, False, "no-login", "", None, None, True, False, False, False)
+        state = WizardSetupState(config_path, env_path, baseline_values, config_values, {}, list(baseline_values.get("TARGET_USERNAMES") or []), True, False, "no-login", "", None, None, True, False, False, False)
 
         print()
         _wizard_collect_target_section(state, allow_empty=True)
