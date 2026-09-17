@@ -135,8 +135,8 @@ class TestSendWebhook:
         assert calls == []
         assert "Webhook error" not in capsys.readouterr().out
 
-    # A string webhook template is sent as raw data instead of JSON
-    def test_string_template_uses_data_post(self, im_module, monkeypatch):
+    # Rejects a non-JSON Discord template before contacting the service
+    def test_non_json_template_is_refused(self, im_module, monkeypatch):
         calls = []
 
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
@@ -147,11 +147,8 @@ class TestSendWebhook:
 
         rc = im_module.send_webhook("Title", "desc", fields=[{"name": "Name", "value": "Value"}])
 
-        assert rc == 0
-        assert len(calls) == 1
-        _, kwargs = calls[0]
-        assert kwargs["data"] == "Title:Name: Value"
-        assert "json" not in kwargs
+        assert rc == 1
+        assert calls == []
 
     # Disabled notification types return without posting to the webhook URL
     def test_notification_type_gate_blocks_post(self, im_module, monkeypatch):

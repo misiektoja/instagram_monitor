@@ -148,7 +148,7 @@ NTFY_ACCESS_TOKEN = ""
 # Supported placeholders include title, description, version, image_url, fields, fields_str, color, timestamp,
 # username and avatar_url
 #
-# A dictionary or list is sent as JSON while a string is sent as the raw request body
+# Use a dictionary or a JSON object string so Discord mentions can always be disabled
 # Dictionary payloads always disable Discord mentions even if the template requests them
 WEBHOOK_TEMPLATE = {
     "username": "Instagram Monitor",
@@ -1434,7 +1434,7 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     print(f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent")
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
-        smtp_password = str(read_secret_privately(hidden_prompt, "Enter the SMTP password (input hidden): ")).strip()
+        smtp_password = str(read_secret_privately(hidden_prompt, "Enter the SMTP password (input hidden): "))
     except (EOFError, KeyboardInterrupt):
         print()
         raise SmtpConfigurationError("SMTP password setup was cancelled and the dotenv file was not changed", "Run --set-smtp-password again when you have the value ready", SMTP_GUIDE_URL) from None
@@ -1776,6 +1776,8 @@ STARTUP_BANNER = r"""
 
 
 import sys
+import contextvars
+import functools
 import signal
 
 
@@ -4752,7 +4754,7 @@ _ACCOUNT_LIMIT_RE = re.compile(r"(\d{1,20})[ \t]+(accounts?)\b", re.IGNORECASE)
 
 # Builds ANSI escape sequence from a style description string
 def _build_ansi_sequence(style_str):
-    if not style_str:
+    if not isinstance(style_str, str) or not style_str:
         return ""
     parts = re.split(r"[+ ]+", style_str.strip().lower())
     codes = []
@@ -5361,7 +5363,6 @@ class Logger(object):
         with STDOUT_LOCK:
             # Apply color for terminal
             message = sanitize_terminal_text(apply_privacy_substitutions(message))
-            colorized_message = apply_color_to_text(truncate_string_per_line(message, TRUNCATE_CHARS) if TRUNCATE_CHARS else message)
 
             if message != '\n':
                 last_output.append(message)
@@ -5374,7 +5375,7 @@ class Logger(object):
             if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
                 # Suppress terminal writes only for the thread that currently owns a progress bar
                 if (getattr(_thread_local, 'pbar', None) is None) and not pbar:
-                    self.terminal.write(colorized_message)
+                    self.terminal.write(apply_color_to_text(self._truncate_terminal(message)))
                     self.terminal.flush()
 
             # Expand tabs for file output and ensure ANSI codes are stripped. Taken from the full message rather than
@@ -5404,7 +5405,7 @@ class Logger(object):
     def terminal_only(self, message):
         with STDOUT_LOCK:
             message = sanitize_terminal_text(apply_privacy_substitutions(message))
-            colorized_message = apply_color_to_text(truncate_string_per_line(message, TRUNCATE_CHARS) if TRUNCATE_CHARS else message)
+            colorized_message = apply_color_to_text(self._truncate_terminal(message))
             self.terminal.write(colorized_message)
             self.terminal.flush()
 
@@ -5443,6 +5444,40 @@ class Logger(object):
 
     def isatty(self):
         return self.terminal.isatty()
+
+
+    # Limits the terminal line across separate writes while leaving the log complete
+    def _truncate_terminal(self, message):
+        try:
+            from wcwidth import wcwidth
+        except ImportError:
+            wcwidth = len
+        column = getattr(self, "_terminal_column", 0)
+        clipped = getattr(self, "_terminal_clipped", False)
+        output = []
+        position = 0
+        while position < len(message):
+            escape = ANSI_ESCAPE_RE.match(message, position)
+            if escape:
+                output.append(escape.group(0))
+                position = escape.end()
+                continue
+            char = message[position]
+            position += 1
+            if char in ("\n", "\r"):
+                output.append(char)
+                column, clipped = 0, False
+                continue
+            width = 8 - column % 8 if char == "\t" else max(0, wcwidth(char))
+            if char == "\t" and TRUNCATE_CHARS:
+                width = min(width, max(0, TRUNCATE_CHARS - column))
+            if TRUNCATE_CHARS and (clipped or column + width > TRUNCATE_CHARS):
+                clipped = True
+                continue
+            output.append(" " * width if char == "\t" and TRUNCATE_CHARS else char)
+            column += width
+        self._terminal_column, self._terminal_clipped = column, clipped
+        return "".join(output)
 
 
 # Simple colour-aware stdout wrapper used when logging is disabled
@@ -6176,6 +6211,18 @@ def format_payload(template, payload):
     return template
 
 
+# Parses legacy and current Discord templates before validating their object shape
+def render_discord_template(template, values):
+    if isinstance(template, str):
+        try:
+            template = json.loads(template)
+        except json.JSONDecodeError:
+            template = json.loads(str(format_payload(template, values)))
+    if not isinstance(template, dict):
+        raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string")
+    return format_payload(template, values)
+
+
 # Returns a configuration error for unsafe or unsupported webhook customization
 def validate_webhook_customization(provider=None) -> Optional[str]:
     selected_provider = normalized_webhook_provider(provider)
@@ -6186,8 +6233,8 @@ def validate_webhook_customization(provider=None) -> Optional[str]:
             return "WEBHOOK_AVATAR_URL must be a string"
         if WEBHOOK_AVATAR_URL.strip() and not validate_webhook_url(WEBHOOK_AVATAR_URL):
             return "WEBHOOK_AVATAR_URL must contain a complete HTTPS link without embedded credentials"
-        if not isinstance(WEBHOOK_TEMPLATE, (dict, list, str)):
-            return "WEBHOOK_TEMPLATE must be a dictionary, list or string"
+        if not isinstance(WEBHOOK_TEMPLATE, (dict, str)):
+            return "WEBHOOK_TEMPLATE must be a dictionary or a JSON object string"
     if not isinstance(WEBHOOK_TRANSFORMS, (list, tuple)):
         return "WEBHOOK_TRANSFORMS must be a list or tuple"
     for index, transform in enumerate(WEBHOOK_TRANSFORMS):
@@ -6195,6 +6242,11 @@ def validate_webhook_customization(provider=None) -> Optional[str]:
             return f"WEBHOOK_TRANSFORMS entry {index + 1} must contain a field name and string method name"
         if transform[1].startswith("_") or not callable(getattr("", transform[1], None)):
             return f"WEBHOOK_TRANSFORMS entry {index + 1} uses an unsupported string method"
+    if selected_provider == "discord":
+        try:
+            render_discord_template(WEBHOOK_TEMPLATE, {"title": "", "description": "", "username": "", "avatar_url": "", "image_url": "", "fields_str": "", "fields": [], "color": 0, "timestamp": "", "version": VERSION})
+        except (ValueError, TypeError):
+            return "WEBHOOK_TEMPLATE must be a dictionary or a JSON object string"
     return None
 
 
@@ -6296,7 +6348,7 @@ def build_webhook_headers(provider: str, payload: dict) -> dict[str, str]:
 # Returns webhook diagnostic text with configured private values removed
 def sanitize_webhook_error_text(value) -> str:
     sanitized = apply_privacy_substitutions(str(value or ""))
-    for private_value in (WEBHOOK_URL, NTFY_ACCESS_TOKEN):
+    for private_value in (WEBHOOK_URL, NTFY_ACCESS_TOKEN, *_DELIVERY_SECRET_VALUES.get()):
         if isinstance(private_value, str) and private_value:
             sanitized = sanitized.replace(private_value, "[private value]")
     return sanitized
@@ -6370,6 +6422,30 @@ def send_notification_channels(notification_type, subject, body, body_html="", e
     return email_delivered, webhook_delivered
 
 
+_DELIVERY_SECRET_VALUES: contextvars.ContextVar[tuple] = contextvars.ContextVar("delivery_secret_values", default=())
+
+
+# Keeps in-flight credentials available to error redaction across settings reloads
+def _retain_webhook_secrets(deliver):
+    @functools.wraps(deliver)
+    # Restores the previous redaction scope after this delivery finishes
+    def retained(*args, **kwargs):
+        settings = globals().copy()
+        values = [settings.get(name) for name in SECRET_KEYS]
+        headers = settings.get("WEBHOOK_HEADERS")
+        if isinstance(headers, dict):
+            values.extend(value for name, value in headers.items() if isinstance(name, str) and name.casefold() == "authorization")
+        secrets = tuple(value for value in values if isinstance(value, str) and value and not value.startswith("your_"))
+        token = _DELIVERY_SECRET_VALUES.set(_DELIVERY_SECRET_VALUES.get() + secrets)
+        try:
+            return deliver(*args, **kwargs)
+        finally:
+            _DELIVERY_SECRET_VALUES.reset(token)
+    return retained
+
+
+@_retain_webhook_secrets
+# Sends a notification with bounded retries and a fixed destination for each delivery
 def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status", force=False):
     if not WEBHOOK_ENABLED or is_placeholder_setting(WEBHOOK_URL):
         return 1
@@ -6377,7 +6453,8 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     title = apply_privacy_substitutions(title)
     description = apply_privacy_substitutions(description)
 
-    if not validate_webhook_url(WEBHOOK_URL):
+    destination = str(WEBHOOK_URL or "").strip()
+    if not validate_webhook_url(destination):
         print_recovery_error("WEBHOOK_URL must contain a complete HTTPS link without embedded credentials", context="webhook_config")
         return 1
 
@@ -6435,7 +6512,9 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     try:
         payload = apply_webhook_transforms(payload)
         final_headers = build_webhook_headers(provider, payload)
-        final_payload = format_payload(WEBHOOK_TEMPLATE, payload) if provider == "discord" else None  # type: ignore
+        final_payload = render_discord_template(WEBHOOK_TEMPLATE, payload) if provider == "discord" else None
+        if provider == "discord" and not isinstance(final_payload, dict):
+            raise ValueError("WEBHOOK_TEMPLATE must be a JSON object or a dictionary")
         if isinstance(final_payload, dict):
             final_payload["allowed_mentions"] = {"parse": []}
     except Exception as exc:
@@ -6452,6 +6531,9 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     ntfy_title, ntfy_message = build_ntfy_webhook_message(str(payload["title"]), str(payload["description"]), payload["fields"], webhook_image_url) if provider == "ntfy" else ("", "")
     ntfy_image = build_ntfy_local_image(local_image_file) if provider == "ntfy" else None
     use_ntfy_image = ntfy_image is not None
+    if destination != str(WEBHOOK_URL or "").strip():
+        print_recovery_error(context="webhook_config", detail="Webhook settings changed while preparing the delivery. Retry the notification with the current settings")
+        return 1
     last_error = None
     for attempt in range(WEBHOOK_MAX_ATTEMPTS):
         try:
@@ -6461,9 +6543,9 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                 if use_ntfy_image and ntfy_image is not None:
                     image_bytes, image_filename, image_content_type = ntfy_image
                     attachment_headers = {**final_headers, "Content-Type": image_content_type, "X-Filename": image_filename, "X-Title": ntfy_title, "X-Message": encode_ntfy_header_text(ntfy_message)}
-                    response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers=attachment_headers, data=image_bytes, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers=attachment_headers, data=image_bytes, timeout=WEBHOOK_TIMEOUT_SECONDS)
                 else:
-                    response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers={**final_headers, "X-Title": ntfy_title}, data=ntfy_message.encode("utf-8"), timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers={**final_headers, "X-Title": ntfy_title}, data=ntfy_message.encode("utf-8"), timeout=WEBHOOK_TIMEOUT_SECONDS)
             else:
                 if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
                     filename = os.path.basename(local_image_file)
@@ -6476,11 +6558,11 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                             "file": (filename, f, "image/jpeg"),
                             "payload_json": (None, json.dumps(final_payload))
                         }
-                        response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers=final_headers, files=files, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                        response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers=final_headers, files=files, timeout=WEBHOOK_TIMEOUT_SECONDS)
                 elif isinstance(final_payload, str):
-                    response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers=final_headers, data=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers=final_headers, data=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS)
                 else:
-                    response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers=final_headers, json=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers=final_headers, json=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS)
 
             if 200 <= response.status_code <= 299:
                 verbose_delivery_print(f"Webhook delivered through {webhook_provider_display_name(provider)}: '{payload['title']}'")
@@ -10372,7 +10454,7 @@ SECRET_ASSIGNMENT_RE = re.compile(r"(?im)(\b(?:" + "|".join(SECRET_KEYS) + r")\b
 def sanitize_error_text(text: Any, *extra_private_values: str) -> str:
     sanitized = apply_privacy_substitutions(str(text or ""))
     # A value being checked before it is saved is held by the caller and by no global, so it is passed in instead
-    for private_value in [globals().get(name) for name in SECRET_KEYS] + list(extra_private_values):
+    for private_value in [globals().get(name) for name in SECRET_KEYS] + list(extra_private_values) + list(_DELIVERY_SECRET_VALUES.get()):
         # A short value would match unrelated words, and no real secret this tool stores is that short
         if isinstance(private_value, str) and len(private_value) > 4:
             sanitized = sanitized.replace(private_value, "[private value]")
@@ -16943,8 +17025,25 @@ def runtime_boolean_errors() -> List[str]:
     return [f"{name} must be True or False, not {globals().get(name)!r}" for name in booleans if not isinstance(globals().get(name), bool)]
 
 
+# Names malformed path and color settings before diagnostics consume their values
+def configuration_shape_errors():
+    errors = []
+    for name in ('INSTA_LOGFILE', 'CSV_FILE', 'DOTENV_FILE'):
+        if name in globals() and not isinstance(globals()[name], (str, os.PathLike)):
+            errors.append(f"{name} must be a path string")
+    theme = globals().get("COLOR_THEME", {})
+    if not isinstance(theme, dict):
+        errors.append("COLOR_THEME must be a dictionary of style strings")
+    else:
+        errors.extend(f"COLOR_THEME[{key!r}] must be a style string" for key, value in theme.items() if not isinstance(value, str))
+    return errors
+
+
 # Reports the selected configuration, any startup rejection, known secrets and the final log destinations
 def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None, timezone_advice=None) -> List[DoctorCheck]:
+    shape_errors = configuration_shape_errors()
+    if shape_errors:
+        return [make_doctor_check("Configuration", "FAIL", detail, advice=make_recovery_advice("config.invalid", detail, recovery_fix_with_guide("Correct the named setting in the configuration file", CONFIG_FILE_GUIDE_URL), False)) for detail in shape_errors]
     checks: List[DoctorCheck] = []
     cfg = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
     if config_errors:

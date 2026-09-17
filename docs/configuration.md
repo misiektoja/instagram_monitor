@@ -271,6 +271,8 @@ Set `TIME_FORMAT_12H = True` to display times in 12-hour format instead of the d
 <a id="smtp-settings"></a>
 ## SMTP Settings
 
+Private password entry preserves leading and trailing spaces. The exact value checked with the mail server is saved.
+
 Email notifications need the SMTP server details for the email account that sends the messages. Add them to `instagram_monitor.conf` or use the setup wizard. Keep the password out of the config file and save it with [`--set-smtp-password`](#storing-secrets).
 
 Send one test message to verify the settings:
