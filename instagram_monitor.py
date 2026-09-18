@@ -20243,9 +20243,9 @@ def run_main():
 
     if OUTPUT_DIR:
         output_dir_desc = "(root for user data & logs)" if len(targets) == 1 else "(container for per-user subdirectories & logs)"
-        summary_rows.append(StartupSummaryRow("Output directory", f"{OUTPUT_DIR} {output_dir_desc}", concise=True))
+        summary_rows.append(StartupSummaryRow("Output directory", f"{Path(OUTPUT_DIR).expanduser().resolve()} {output_dir_desc}", concise=True))
     else:
-        summary_rows.append(StartupSummaryRow("Output directory", f"{os.getcwd()} (current working directory)", concise=True))
+        summary_rows.append(StartupSummaryRow("Output directory", str(Path.cwd()), concise=True))
 
     summary_rows.append(StartupSummaryRow("Session mode", mode_of_the_tool, concise=True))
     summary_rows.append(StartupSummaryRow("Human mode", f"{BE_HUMAN}" + (" (Verbose)" if BE_HUMAN_VERBOSE else ""), concise=bool(BE_HUMAN)))
