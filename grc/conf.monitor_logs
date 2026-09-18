@@ -433,10 +433,12 @@ colours=blue underline
 regexp=(?<![\w:])~?(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:[\t ]*[AP]M)?(?![\w:])
 colours=magenta
 -
-regexp=(?i)\b(?:\w{3}[\t ]+)?\d{1,2}[\t ]+\w{3}(?:[\t ]+\d{2,4})?[\s,]*\d{2}:\d{2}(?::\d{2})?(?:[\t ]*[AP]M)?\b
+# A date is separated from its weekday by one space, so the wide gap of a padded listing column cannot pull
+# the word before it, such as the last word of a track title, into the date
+regexp=(?i)\b(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[\t ])?\d{1,2}[\t ]+\w{3}(?:[\t ]+\d{2,4})?[\s,]*\d{2}:\d{2}(?::\d{2})?(?:[\t ]*[AP]M)?\b
 colours=magenta
 -
-regexp=(?i)\b\w{3}[\t ]+\d{1,2}[\t ]+\w{3}[\t ]+\d{2}:\d{2}(?:[\t ]*[AP]M)?[\t ]*-[\t ]*\d{2}:\d{2}(?:[\t ]*[AP]M)?\b
+regexp=(?i)\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[\t ]\d{1,2}[\t ]+\w{3}[\t ]+\d{2}:\d{2}(?:[\t ]*[AP]M)?[\t ]*-[\t ]*\d{2}:\d{2}(?:[\t ]*[AP]M)?\b
 colours=magenta
 -
 regexp=(?i)\b\d{2}:\d{2}(?:[\t ]*[AP]M)?[\t ]*-[\t ]*\d{2}:\d{2}(?:[\t ]*[AP]M)?\b

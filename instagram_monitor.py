@@ -4759,10 +4759,14 @@ _USER_TAG_RE = re.compile(r"((?:for|by|of|Session|Initial|Monitoring\s+Instagram
 # The startup summary lists every monitored account on one row
 _TARGETS_ROW_RE = re.compile(r"^(\*\s+Targets?:\s+)(\S.*)$")
 _DURATION_RE = re.compile(r"\b[0-9]{1,20}[ \t]{1,20}(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\b", re.IGNORECASE)
-_LONG_DATE_RE = re.compile(r"\b(?:\w{3}\s+)?\d{1,2}\s+\w{3}(?:\s+\d{2,4})?[\s,]*\d{2}:\d{2}(:\d{2})?(\s*[AP]M)?\b", re.IGNORECASE)
+# The weekday in front of a date, taken from the abbreviations the running locale prints. A date is separated
+# from its weekday by one space, so the wide gap of a padded listing column cannot pull the word before it,
+# such as the last word of a line, into the date
+_WEEKDAY_ABBR_PATTERN = "|".join(re.escape(day_abbr) for day_abbr in calendar.day_abbr)
+_LONG_DATE_RE = re.compile(r"\b(?:(?:" + _WEEKDAY_ABBR_PATTERN + r")[\t ])?\d{1,2}\s+\w{3}(?:\s+\d{2,4})?[\s,]*\d{2}:\d{2}(:\d{2})?(\s*[AP]M)?\b", re.IGNORECASE)
 _TIME_ONLY_RE = re.compile(r"(?<![\w:])(~?(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:\s*[AP]M)?)(?![\w:])", re.IGNORECASE)
-_SHORT_RANGE_DATE_RE = re.compile(r"\(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\)", re.IGNORECASE)
-_DATE_RANGE_RE = re.compile(r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
+_SHORT_RANGE_DATE_RE = re.compile(r"\((?:" + _WEEKDAY_ABBR_PATTERN + r")[\t ]\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\)", re.IGNORECASE)
+_DATE_RANGE_RE = re.compile(r"\b(?:" + _WEEKDAY_ABBR_PATTERN + r")[\t ]\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
 _HOUR_RANGE_RE = re.compile(r"\b\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
 _URL_RE = re.compile(r"(https?://[^\s\]]+)")
 # A Yes or No is an answer only as the whole value of a labelled row, never as the word inside a sentence
