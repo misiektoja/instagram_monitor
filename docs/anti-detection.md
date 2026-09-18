@@ -16,20 +16,16 @@ Every request should look like it came from one browser. Set `USER_AGENT` or `--
 
 Leaving it empty is fine. The tool then generates a current, complete user agent for you. Pairing a Firefox session with a Chrome user agent is not.
 
-The transport follows the same identity. With the default `CURL_CFFI_IMPERSONATE = "auto"`, the TLS fingerprint and the client-hint headers are taken from your `USER_AGENT`, so one setting keeps the whole request consistent. If you pin a browser by hand, pin it to the same one.
+The transport follows the same identity. The default `CURL_CFFI_IMPERSONATE = "auto"` takes the TLS fingerprint and the client-hint headers from your `USER_AGENT`, so one setting keeps the whole request consistent. If you pin a browser by hand, pin it to the same one. See [HTTP Transport Backend](usage.md#http-transport-backend).
 
 <a id="use-a-browser-transport-fingerprint"></a>
 ## Use a Browser Transport Fingerprint
 
-Instagram can block a request before it ever reads the user agent, going by the TLS fingerprint of the library that sent it. The symptom is `HTTP 429` on the very first request from a clean IP, seen most often on Linux builds including Raspberry Pi OS. No interval or budget helps with this one, because nothing got through.
+Instagram can block a request before it ever reads the user agent, going by the TLS fingerprint of the library that sent it. The symptom is `HTTP 429` on the very first request from a clean IP, seen most often on Linux builds.
 
-The default `curl_cffi` backend avoids it by presenting a real browser's fingerprint instead of the system TLS stack's. Keep it:
+The default `curl_cffi` backend avoids it by presenting a real browser's fingerprint instead of the system TLS stack's. Keep `HTTP_BACKEND = "curl_cffi"`.
 
-```ini
-HTTP_BACKEND = "curl_cffi"
-```
-
-`curl_cffi` is installed with the tool. If it is missing after a manual install, the tool warns you and falls back to `requests`, which cannot impersonate a browser. Since the fallback is silent in the config file, check what is actually in effect with `--doctor` or `--exposure`. See [HTTP Transport Backend](usage.md#http-transport-backend).
+`curl_cffi` is installed with the tool. If it is missing after a manual install the tool falls back to `requests`, which cannot impersonate a browser. Your configuration file still says `curl_cffi` either way. Check what is actually in effect with `--doctor` or `--exposure`. See [HTTP Transport Backend](usage.md#http-transport-backend) for the backend values and the impersonation targets.
 
 <a id="use-the-human-mode"></a>
 ## Use the Human Mode
@@ -62,55 +58,41 @@ Instagram scores automated collection by how much user-identifiable information 
 
 That means fetching follower and following names is far more expensive than checking counts, posts or stories, even though each is one request. It also means batch sizes and delays matter less than the total number of names you pull per day.
 
-`IDENTITY_BUDGET_PER_DAY` caps that total for the logged-in account. It is shared by every monitored target and every worker in the process and it resets at local midnight. Identity scans run one at a time so two targets cannot spend the same remaining allowance.
+`IDENTITY_BUDGET_PER_DAY` caps that total for the logged-in account:
 
 ```
 IDENTITY_BUDGET_PER_DAY = 2000
 ```
 
-Once the budget is spent, name fetching stops until the next day. Counts, posts, reels, stories and profile changes keep being monitored normally, so you still see that the follower number moved, just not who moved.
+You can also set it for one run with `--identity-budget 2000`. `--setup` asks for the number when the setup collects names, so you can choose it there instead of editing the configuration afterwards.
 
-`--setup` asks for this number when the setup collects names, so you can choose it there instead of editing the configuration afterwards.
+The default is 2000, which clears one full follower and following scan for a typical account with room to repeat it, while stopping a loop that would otherwise read a list many times a day. Names are always counted whether or not you set a budget, so you can watch your own usage with `--exposure` and adjust. If you have been challenged before, somewhere around 500 to 1000 is a better figure.
 
-REST pages are counted when Instagram returns them, before the tool consumes individual names. The last response can therefore put the recorded total above the configured limit if Instagram returns more accounts than requested. This records the actual exposure and stops another request. GraphQL names are banked in groups of 25 with the last group cut to what the budget still allows, so the recorded total is exact where the fetch stops.
-
-The default is 2000, which clears one full follower and following scan for a typical account with room to repeat it, while stopping a loop that would otherwise read a list many times a day. Names are always counted whether or not you set one, so you can watch your own usage with `--exposure` and adjust. If you have been challenged before, somewhere around 500 to 1000 is a better figure.
-
-Set the budget above the largest list you monitor. A scan needing more names than the budget still allows is skipped in full and says so, because a truncated list is discarded rather than saved, so starting it would spend the rest of the day's allowance and still leave you without a baseline.
-
-You can also set it for one run with `--identity-budget 750`.
-
-A partial fetch is never written to the baseline file. If the budget stops a fetch halfway, the previous complete list stays in place and the comparison is skipped rather than reporting every unfetched account as an unfollow.
+See [Identity Budget and Circuit Breaker](usage.md#identity-budget-and-circuit-breaker) for how the allowance is shared between targets, when it resets and how each surface is counted.
 
 <a id="choose-how-follower-lists-are-read"></a>
 ## Choose How Follower Lists Are Read
 
-`FOLLOW_LIST_SOURCE` selects the surface the follower and following lists are read from. The default `auto` reads them over the REST endpoints Instagram's own web app calls and falls back to the older GraphQL queries only when REST is gone before it returned anybody. Both cost the same number of names, so this choice is about staying on a working surface, not about exposure. Leave it on `auto` unless one surface starts failing for you.
+`FOLLOW_LIST_SOURCE` selects the surface the follower and following lists are read from. REST and GraphQL cost the same number of names, so this choice is about staying on a working surface rather than about exposure. Leave it on the default `auto` unless one surface starts failing for you.
 
 The `browser` source is different. It drives a real browser through the follower dialog instead of calling the API, and a browser session that scrolls those dialogs for hours does not look like a person. **It can cost you the account.** `auto` never picks it. Read [Browser Source](usage.md#browser-source-experimental) before turning it on, and only with an account you can afford to lose.
 
-It also has to agree with the rest of the session. The browser runs Chromium, so `HTTP_BACKEND` must be `curl_cffi` and your user agent and impersonation target must name the same browser family. Monitoring refuses to start on a mismatch and the Web Dashboard refuses a settings change that would create one, rather than let one session reach Instagram as two different clients. See [Follower List Source](usage.md#follower-list-source).
+See [Follower List Source](usage.md#follower-list-source) for the available values and for the browser identity the rest of the session has to match.
 
 <a id="let-the-circuit-breaker-stop-the-account"></a>
 ## Let the Circuit Breaker Stop the Account
 
-When Instagram returns a confirmed challenge, checkpoint, temporary limit or expired session, monitoring pauses for the account.
-
-`CIRCUIT_BREAKER` is enabled by default. An account-level failure stops all targets using that account for the rest of the run. Restarting checks the saved session once before starting any target workers. The check allows one request with a 30-second timeout and no automatic retries or redirects. Success resumes monitoring. Failure leaves the account paused and explains what to fix.
+When Instagram returns a confirmed challenge, checkpoint, temporary limit or expired session, monitoring pauses for the account. `CIRCUIT_BREAKER` is enabled by default and an account-level failure stops every target using that account for the rest of the run.
 
 ```
 * Circuit breaker: Instagram acted against session account your_account (challenge). Stopping all Instagram requests for this account
 ```
 
-The second line names the required action. Complete account verification in a browser or re-import an expired session, then start the tool with your usual command. A temporary limit, reported as `feedback_required`, has nothing to clear: make no requests from the account and the network for several hours before restarting. See [Instagram Says Try Again Later](troubleshooting.md#instagram-says-try-again-later). No separate clearing command is needed. Importing a session reuses its login check and releases the stop only after the session is saved. In the Web Dashboard, importing or successfully refreshing the session also resumes targets paused by the account stop. Targets you stopped manually remain stopped.
+The second line names the required action. Complete account verification in a browser or re-import an expired session, then start the tool with your usual command. No separate clearing command is needed. A temporary limit, reported as `feedback_required`, has nothing to clear: see [Instagram Says Try Again Later](troubleshooting.md#instagram-says-try-again-later).
 
-Each process restart can make another check. Configure a restart delay if a service manager restarts failed runs automatically.
+Rate limits, network errors and Instagram API changes do not trip the breaker. Only responses that act against the account do.
 
-Rate limits, network errors and Instagram API changes do not trip the breaker. Only responses that act against the account do. A rejected or redirected request that reads like an expired session is confirmed with one public profile fetch first, so a single mislabelled request cannot stop every target. If the session still signs in, the run says so and the breaker stays armed.
-
-The email and webhook alert for a flagged account also carries the client identity behind it: the transport in effect, the browser `curl_cffi` impersonated and the browser user agent. That is usually what you need to decide whether the transport caused the flag. It means those values reach your notification service, so leave account-level alerts off if that matters for your webhook destination. Routine per-target error alerts carry no identity.
-
-The safety ledger also fails closed. If `instagram_monitor_exposure.json` cannot be read or saved, authenticated monitoring stops before another identity scan. That includes invalid counts or stop records. Repair the named field or restore file access, then restart. Automatic recovery preserves daily counts and never replaces an unreadable ledger. `--clear-breaker` remains available for explicit local-state repair, including resetting an unusable ledger, but is not part of normal recovery. Fields the tool does not recognize are left alone.
+See [Identity Budget and Circuit Breaker](usage.md#identity-budget-and-circuit-breaker) for how a stopped account is checked on restart and how importing a session releases the stop.
 
 <a id="check-your-exposure"></a>
 ## Check Your Exposure
@@ -139,7 +121,7 @@ A few rows describe the ledger itself rather than today's activity:
 
 The command exits with status `1` when the ledger cannot be read or cannot be saved, so a script can tell a broken ledger from a clean report. A tripped breaker is normal reporting and still exits `0`.
 
-The ledger remains local and is never transmitted anywhere. It lives next to your output directory as `instagram_monitor_exposure.json`, beside an empty `instagram_monitor_exposure.json.lock` the monitors coordinate through. The pasteable report does not print that path, but the command prints it below the report so you know which file it read. Monitors sharing an output directory share the file, and every change to it is made under a lock the operating system holds, so two running monitors cannot lose each other's counts.
+The ledger remains local and is never transmitted anywhere. It lives next to your output directory as `instagram_monitor_exposure.json`, beside an empty `instagram_monitor_exposure.json.lock` the monitors coordinate through. The report prints its path underneath.
 
 <a id="use-the-jitter-mode"></a>
 ## Use the Jitter Mode
@@ -215,6 +197,6 @@ Avoid frequent changes to the public IP address or geographic region used by the
 <a id="use-the-account-for-normal-activities"></a>
 ## Use the Account for Normal Activities
 
-Before monitoring, confirm that the account works normally in the browser used for [session import](configuration.md#option-3-session-login-using-browser-cookies-recommended). Resolve any login or security prompts there first.
+Before monitoring, confirm that the account works normally in the browser used for [session import](configuration.md#option-3-session-login-using-browser-cookies-recommended). Resolve any login or security prompts there first. Continuing to use the account normally in that browser may help Instagram recognize the session as yours.
 
 Do not use the same browser session while Instagram Monitor is actively making requests. Simultaneous activity from the browser and tool may cause additional security checks.

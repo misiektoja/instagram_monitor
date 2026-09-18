@@ -265,7 +265,7 @@ On Windows, configure Docker Desktop or another Docker-compatible runtime to use
 
 The `:z` suffix lets Docker relabel the mounted directory on hosts that use SELinux. If your Docker-compatible runtime reports that `:z` is invalid, remove only `:z` and keep the rest of the mount.
 
-The published image includes all core dependencies but not the optional Chromium browser extra. Firefox works inside a container because its cookie database can be mounted as a read-only file. Chrome, Brave and Chromium need the host password service to decrypt cookies. A container cannot use that service.
+The published image includes all core dependencies but not the optional Chromium browser extra. Only Firefox sessions can be imported into a container, for the reason given under [Import Firefox into the Container Session](usage.md#import-firefox-into-the-container-session).
 
 <a id="install-with-docker-compose"></a>
 ### Install with Docker Compose

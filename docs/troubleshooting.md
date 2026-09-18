@@ -2,8 +2,6 @@
 
 Examples on this page use the PyPI command `instagram_monitor`. If you chose another installation, replace that command with the matching [command prefix](usage.md#command-format-by-installation-method). The setup wizard and `--help` also print commands for the detected installation.
 
-If a dotenv file cannot be opened or is not UTF-8, monitoring stops with the file path and the repair step for that cause. Doctor reports the failed load and continues the remaining checks.
-
 <a id="doctor-preflight"></a>
 ## Doctor Preflight
 
@@ -17,15 +15,7 @@ Doctor writes no files. Before the checks start it states how many Instagram req
 
 Missing optional packages are warnings you can ignore when you do not use those features. Login checks apply only to Logged-In Mode. An empty target list is valid for the Web Dashboard. Other modes need at least one target.
 
-A configuration file Instagram Monitor cannot accept is reported by Doctor as a `FAIL` naming the line and the reason, instead of stopping the command before the checks run. This means you can point Doctor at a configuration you are still fixing. A proxy setting that would stop every request is handled the same way: Doctor, the setup wizard, `--exposure`, `--clear-breaker`, `--analyze-follows` and the secret commands report it and carry on with the proxy switched off, while a monitoring run still stops. Settings that a later release removed are reported as a `WARN` and ignored, so an older configuration file still runs.
-
-Configuration checks include [TLS verification](configuration.md#tls-verification), [HTTP backend](usage.md#http-transport-backend), browser identity, polling limits, check hours, timezone and output files. A `requests` backend warning means its TLS fingerprint does not match a browser. Invalid settings are named with the expected format. Doctor also reports whether traffic goes through a [proxy](usage.md#routing-traffic-through-a-proxy) and where to, whether an enabled Web Dashboard or Terminal Dashboard can actually start on this machine, and whether the account safety ledger and the saved follower list directory are writable. Those two are written whatever your log and CSV settings are.
-
-The Session section also reports an account the [circuit breaker](usage.md#identity-budget-and-circuit-breaker) has stopped, and a saved session that signs in as a different account than `SESSION_USERNAME`. Both leave monitoring unable to run while every other check passes.
-
-The Notifications section signs in to the configured SMTP server and checks webhook settings without sending a message. Each ready row lists the alert categories that channel would deliver. Settings the sender itself would refuse, such as an `SMTP_PORT` that is not a port number or an `SMTP_HOST` that is not an address, are named without opening a connection.
-
-In an interactive terminal, Doctor offers one real test message per ready notification channel. Each prompt defaults to No and requires separate approval. Disabled or incomplete channels have no delivery test. Ctrl+C ends the report. Noninteractive runs send no test messages.
+A configuration file Instagram Monitor cannot accept is reported by Doctor as a `FAIL` naming the line and the reason, instead of stopping the command before the checks run. This means you can point Doctor at a configuration you are still fixing. A proxy setting that would stop every request is handled the same way, so Doctor reports it and carries on with the proxy switched off while a monitoring run still stops. See [Routing Traffic Through a Proxy](usage.md#routing-traffic-through-a-proxy) for the commands that behave this way. Settings that a later release removed are reported as a `WARN` and ignored, so an older configuration file still runs.
 
 Each failure and warning includes a `To fix:` action and a `Guide:` link to the relevant documentation page where one applies. The command returns a nonzero exit status if a check or approved delivery test fails, so scripts can detect the failure. Doctor accepts normal login, target and file options. Use them to check the saved setup or one exact combination:
 
@@ -68,13 +58,11 @@ A continuing outage produces a `* Monitoring degraded` reminder once an hour, ev
 
 When a check fails, Instagram Monitor prints the error, a `To fix:` action and a `Guide:` link where one applies, then retries automatically at the next interval. You do not need to restart the tool. A command in the fix text matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is.
 
-Every other problem reads the same way. A setting the tool cannot use, a file it cannot read or write, a mail or webhook delivery that failed, a proxy it cannot reach and an optional library that is missing all print `* Error:` with what went wrong, a `To fix:` action and a `Guide:` link. A problem the run recovers from prints `* Warning:` with the same two lines under it. A missing library names the exact install command for the Python you are running. Secret values are removed from all of it.
+Every other problem reads the same way: all print `* Error:` with what went wrong, a `To fix:` action and a `Guide:` link. A problem the run recovers from prints `* Warning:` with the same two lines under it.
 
 A failure the tool could not place still names an action: it asks you to re-run with `--debug` and links the page explaining the output modes.
 
 Failures show an error and a `To fix:` action. A continuing outage produces a `* Monitoring degraded` reminder once an hour, even when the [liveness reminder](usage.md#liveness-reminder) is switched off. `* Monitoring recovered` marks recovery. Follow any new instructions if the failure changes.
-
-A redirect or a rejected request usually means the saved session. When the failure was not recognized well enough to suggest anything else, the `To fix:` line names the session and the exact re-import command instead. That command shows the Firefox import because nothing records which browser your session came from, and it names the other supported browsers next to it. Replace `--browser firefox` with `chrome`, `brave` or `chromium` when your session lives in one of those.
 
 A message naming `Could not resolve host` means the machine could not look up Instagram's address. This is a DNS problem on your side rather than an Instagram block. It is common on devices that start monitoring before the network is fully up, such as a Raspberry Pi booting from cold. Check that name lookups work:
 
@@ -94,8 +82,6 @@ For the underlying transport detail behind any of these, add `--debug`. Normal o
 A `400 Bad Request` naming `feedback_required` means Instagram is limiting what the logged-in account or your IP address may do for a while. Instagram shows this as a "Try Again Later" notice. It is not a checkpoint: Instagram in your browser may keep working, there is nothing to clear there and re-importing the session does not lift it. The circuit breaker stops the account so no further request is made and `--exposure` counts it as `action_block`.
 
 Make no requests from that account and that network for several hours, then run `instagram_monitor --doctor` again. If the same session works from another network, such as a mobile connection, the limit is on your IP address rather than the account. Once it passes, raise `INSTA_CHECK_INTERVAL`, monitor fewer users and follow the [anti-detection guidance](anti-detection.md). A limit that returns soon after monitoring resumes means the account is still being watched, so wait longer before the next attempt.
-
-One `feedback_required` does not mean this, and the tool tells the two apart. See [Profile Lookups Report a Retired Endpoint](#profile-lookups-report-a-retired-endpoint) below.
 
 <a id="profile-lookups-report-a-retired-endpoint"></a>
 ## Profile Lookups Report a Retired Endpoint

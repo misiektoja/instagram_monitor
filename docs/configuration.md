@@ -27,62 +27,46 @@ The file contains a short explanation above each setting.
 
 By default the tool looks for a configuration file named `instagram_monitor.conf` in the current directory, the home directory (`~`) and the script directory. Use `--config-file` to name another location or `--config-file none` to disable automatic config discovery for one run.
 
-<a id="what-a-configuration-file-may-contain"></a>
-### What a Configuration File May Contain
+A configuration file is read as data, not executed. The tool accepts only `SETTING = value` lines where the name is one of the documented settings and the value is a plain literal such as a string, number, `True`, `False`, `None`, a list or a dictionary. Comments and blank lines are fine.
 
-A configuration file is a list of settings, not a program. Instagram Monitor reads it without running it, and accepts only lines of the form `SETTING = value` where the value is plain text, a number, `True`, `False`, `None`, a list, a tuple or a dictionary:
-
-```ini
-INSTA_CHECK_INTERVAL = 5400
-TARGET_USERNAMES = ["user1", "user2"]
-COLOR_THEME = { "header": "bright_cyan" }
-```
-
-Imports, function calls, conditions and any other code are rejected, and the setting name must be one Instagram Monitor recognizes. This matters because the first configuration searched is the one in your current directory: without this rule, starting the tool inside a downloaded archive or a shared directory that happened to contain an `instagram_monitor.conf` would run whatever that file contained.
-
-A rejected file changes nothing. The error names the line and the reason, and no setting from that file is applied.
+Imports, function calls, expressions and unknown settings are rejected with the setting and line number to correct.
 
 If the same setting appears in more than one place, the item later in this list wins:
 
 1. Built-in defaults
 2. The discovered or explicitly selected configuration file
-3. Supported private values from the selected `.env` file
-4. Supported private values exported in the process environment
+3. Values from the selected `.env` file
+4. Secret environment variables
 5. Command-line options
 
-The `.env` and process environment layers apply only to `SESSION_PASSWORD`, `SMTP_PASSWORD`, `WEBHOOK_URL`, `PROXY_URL` and `NTFY_ACCESS_TOKEN`. For these keys, a value exported in the process environment wins when the same key also exists in the selected `.env` file. Use `--config-file PATH` and `--env-file PATH` if you do not want automatic file discovery.
+By default the tool looks for a configuration file named `instagram_monitor.conf` in the current directory, the home directory (`~`) and the script directory. Use `--config-file` to name another location or `--config-file none` to disable automatic config discovery for one run.
 
-### Proxy IP Lookup Endpoints
+<a id="monitored-target"></a>
+## Monitored Target
 
-When proxy routing is enabled, Instagram Monitor checks the proxy exit address through `IP_ADDRESS_URL`. The setting accepts one complete HTTP or HTTPS URL or an ordered non-empty list:
+The Instagram usernames are positional arguments. At least one is required to start monitoring:
 
-```ini
-IP_ADDRESS_URL = [
-    "https://checkip.amazonaws.com",
-    "https://api.ipify.org?format=json",
-    "https://api.my-ip.io/v2/ip.json",
-]
+```sh
+instagram_monitor <target_insta_user>
 ```
 
-Each retry cycle tries every configured endpoint in order before the long retry delay. A response is accepted only when a recognized JSON field or plain-text body contains a valid IPv4 or IPv6 address. Empty lists, incomplete URLs and URLs with embedded credentials are rejected with an unavailable status instead of crashing monitoring.
+Several usernames can follow the command. `--targets` takes the same list in one comma-separated value and both forms are combined.
 
-Each public lookup service can observe the proxy exit IP. Set one trusted endpoint or a self-hosted service if you do not want fallback requests sent to multiple providers. These lookup requests do not include Instagram session credentials.
-
-Save one or more monitoring targets through setup or set `TARGET_USERNAMES` yourself:
+To stop repeating them, save the list in the configuration file:
 
 ```ini
 TARGET_USERNAMES = ["target_user_1", "target_user_2"]
 ```
 
-Each target may be a username or a complete profile URL such as `https://www.instagram.com/target_user_1/`, which is stored as the username. Usernames written directly after the command and usernames passed through `--targets` are combined. If the command contains any targets, that combined list replaces `TARGET_USERNAMES` for that run. To use only the saved targets, run:
+Each target may be a username or a complete profile URL such as `https://www.instagram.com/target_user_1/`.
+
+Then `instagram_monitor` alone starts monitoring those accounts. A username on the command line still wins and replaces the whole saved list, so you can watch someone else for one run without editing the file:
 
 ```sh
-instagram_monitor --config-file instagram_monitor.conf
+instagram_monitor other_user
 ```
 
 You can also change most settings and generate a config file through the [Web Dashboard](view-modes.md#web-dashboard). Targets you add or remove in the browser are saved into `TARGET_USERNAMES` when you press **Generate Config**, so the next start monitors the same list.
-
-Target and session usernames may contain 1 to 30 letters, digits, periods or underscores. A leading `@` is accepted and removed. Other characters are rejected before monitoring starts so usernames cannot be interpreted as file paths.
 
 <a id="no-login-mode-no-session-login"></a>
 ## No-Login Mode (No Session Login)
@@ -201,14 +185,14 @@ On Windows, Chrome 127 and newer prevent external programs from reading these co
 
 Every supported browser can have several profiles with separate cookies. Use one of these methods:
 
-- **Pick by name** with `--browser-profile`. Use the Firefox profile name (e.g. `default-release`) or, for Chromium-based browsers, either the profile directory (e.g. `Default`, `Profile 1`) or the display name the picker shows (e.g. `Your Chrome`). A display name used by two profiles is refused with the directories to pass instead. On Linux, Snap, Flatpak and distribution builds of Firefox keep separate profile trees that often share a name. A name matching more than one is refused rather than guessed at, and the error lists the full profile directories to pass instead:
+- **Pick by name** with `--browser-profile`. Use the Firefox profile name (e.g. `default-release`) or, for Chromium-based browsers, either the profile directory (e.g. `Default`, `Profile 1`) or the display name the picker shows (e.g. `Your Chrome`):
 
     ```sh
     instagram_monitor --import-browser-session --browser chrome --browser-profile "Profile 1"
     instagram_monitor --import-browser-session --browser firefox --browser-profile "default-release"
     ```
 
-- **Let it prompt you.** If you do not pass `--browser-profile` and several profiles exist, the tool lists them so you can choose. Profiles signed in to Instagram are marked with `*`, so you do not have to guess which one holds the session. When exactly one is signed in it is the default and Enter selects it. An answer outside the list is re-asked rather than ending the command, and `0` exits.
+- **Let it prompt you.** If you do not pass `--browser-profile` and several profiles exist, the tool lists them so you can choose. Profiles signed in to Instagram are marked with `*`, so you do not have to guess which one holds the session. When exactly one is signed in it is the default and Enter selects it.
 - **On the [Web Dashboard](view-modes.md#web-dashboard)**, pick the browser, click **Import** and select a profile if prompted. Profiles signed in to Instagram are marked with `*` and the only signed-in one is preselected. The dashboard imports only from the profiles it detected, so it cannot be pointed at another file or profile on your computer. Use `--cookie-file PATH` on the command line when you deliberately want a database from somewhere else.
 - **Advanced:** point `--cookie-file` at a specific cookie database (Firefox `cookies.sqlite` or a Chromium `Cookies` file). This overrides `--browser-profile`.
 
@@ -216,9 +200,9 @@ For Chromium-based browsers, the tool finds the cookie database inside the selec
 
 Chromium-based browsers encrypt their cookies with a key held in your keychain or keyring. If you deny that prompt or the keyring is locked, the import says so instead of blaming a missing login.
 
-Chromium-based import does not work inside Docker because the container cannot use the host password service needed to decrypt the cookies. Use Firefox as shown under [Container Operation](usage.md#container-operation). You can also perform a Chromium import with a local PyPI or manual installation.
+Chromium-based import does not work inside Docker. Use Firefox as shown under [Import Firefox into the Container Session](usage.md#import-firefox-into-the-container-session). To import from Chromium, run a local PyPI or manual installation instead.
 
-Using the account normally in the same browser may help Instagram recognize the session. Avoid using the browser account while Instagram Monitor is making requests because simultaneous activity may look unusual.
+How you use the account in that browser afterwards matters too. See [Use the Account for Normal Activities](anti-detection.md#use-the-account-for-normal-activities).
 
 <a id="user-agent"></a>
 #### User Agent
@@ -236,39 +220,6 @@ python3 -c "from instaloader.instaloadercontext import default_user_agent; print
 ```
 
 With the default `auto` setting under [HTTP Transport Backend](usage.md#http-transport-backend), `curl_cffi` selects a matching browser network profile. For example, a Chrome user agent selects a Chrome profile.
-
-<a id="monitored-target"></a>
-## Monitored Target
-
-The Instagram usernames are positional arguments. At least one is required to start monitoring:
-
-```sh
-instagram_monitor <target_insta_user>
-```
-
-Several usernames can follow the command. `--targets` takes the same list in one comma-separated value, and both forms are combined.
-
-To stop repeating them, save the list in the configuration file:
-
-```ini
-TARGET_USERNAMES = ["target_user_1", "target_user_2"]
-```
-
-Then `instagram_monitor` alone starts monitoring those accounts. A username on the command line still wins and replaces the whole saved list, so you can watch someone else for one run without editing the file:
-
-```sh
-instagram_monitor other_user
-```
-
-[`--setup`](setup-and-first-run.md#run-the-setup-wizard) asks whether to save the targets. Targets you add or remove in the [Web Dashboard](view-modes.md#web-dashboard) are written into `TARGET_USERNAMES` when you press **Generate Config**.
-
-## TLS Verification
-
-Instagram Monitor verifies the TLS certificate of every server it contacts: Instagram, the connectivity check endpoint, the proxy IP lookup, downloaded media, the mail server that delivers email alerts and, when enabled, the webhook service.
-
-Set `VERIFY_SSL` to `False` only on a network that intercepts TLS with its own certificate authority, such as a corporate proxy. With verification off, an intercepted connection cannot be told apart from the real service, and `PROXY_CERT_PATH` is ignored because there is nothing left to check the certificate against.
-
-The startup summary shows `TLS verification` and [`--doctor`](troubleshooting.md#doctor-preflight) reports a warning while it is off.
 
 <a id="time-zone"></a>
 ## Time Zone
@@ -395,7 +346,23 @@ Webhook and avatar URLs must be complete HTTPS links with a hostname and no embe
 
 Webhook delivery uses an isolated session with a 10-second timeout and at most two attempts. It accepts every HTTP 2xx response, retries HTTP 429 according to a server delay capped at 5 seconds and retries HTTP 5xx once. Other HTTP 4xx responses fail immediately.
 
-<a id="follower-churn-detection"></a>
+<a id="proxy-ip-lookup-endpoints"></a>
+### Proxy IP Lookup Endpoints
+
+When proxy routing is enabled, Instagram Monitor checks the proxy exit address through `IP_ADDRESS_URL`. The setting accepts one complete HTTP or HTTPS URL or an ordered non-empty list:
+
+```ini
+IP_ADDRESS_URL = [
+    "https://checkip.amazonaws.com",
+    "https://api.ipify.org?format=json",
+    "https://api.my-ip.io/v2/ip.json",
+]
+```
+
+Each retry cycle tries every configured endpoint in order before the long retry delay. A response is accepted only when a recognized JSON field or plain-text body contains a valid IPv4 or IPv6 address. Empty lists, incomplete URLs and URLs with embedded credentials are rejected with an unavailable status instead of crashing monitoring.
+
+Each public lookup service can observe the proxy exit IP. Set one trusted endpoint or a self-hosted service if you do not want fallback requests sent to multiple providers. These lookup requests do not include Instagram session credentials.
+
 
 <a id="terminal-colours"></a>
 ## Terminal Colours
@@ -488,7 +455,11 @@ A forgotten `export` can shadow the dotenv file invisibly, so `--debug` names ev
 [DEBUG 12:00:00] Secret resolution: name=SMTP_PASSWORD, source=dotenv file, value=set
 ```
 
-A secret still holding its `your_...` placeholder counts as unset and is left out, and a run with no secret anywhere says so on one line.
+<a id="tls-verification"></a>
+## TLS Verification
 
-Secret commands update the selected value without changing other dotenv settings. Clearing a value removes its assignment.
+Instagram Monitor verifies the TLS certificate of every server it contacts: Instagram, the connectivity check endpoint, the proxy IP lookup, downloaded media, the mail server that delivers email alerts and, when enabled, the webhook service.
 
+Set `VERIFY_SSL` to `False` only on a network that intercepts TLS with its own certificate authority, such as a corporate proxy. With verification off, an intercepted connection cannot be told apart from the real service, and `PROXY_CERT_PATH` is ignored because there is nothing left to check the certificate against.
+
+The startup summary shows `TLS verification` and [`--doctor`](troubleshooting.md#doctor-preflight) reports a warning while it is off.

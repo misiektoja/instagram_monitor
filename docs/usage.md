@@ -206,6 +206,7 @@ If the saved configuration enables the Web Dashboard, add `-p 127.0.0.1:8000:800
 
 Use the same `instagram_monitor_session` volume during browser import and every later logged-in run. Otherwise the later container cannot find the imported session.
 
+<a id="import-firefox-into-the-container-session"></a>
 ### Import Firefox into the Container Session
 
 Finish the setup wizard first. It asks which host environment runs Docker then prints the matching one-time import command. Run Doctor only after that import succeeds.
@@ -405,7 +406,7 @@ The categories are:
 
 Both saved lists are required. The analysis shows each snapshot's save time and warns when the two files are at least one hour apart, since changes between those downloads can be misclassified.
 
-Run it with the `--analyze-follows` flag. It prints the analysis and exits without starting the monitoring loop:
+Run it via web dashboard (use the **Follow analysis** chart button next to a configured target) or with the `--analyze-follows` flag. It prints the analysis and exits without starting the monitoring loop:
 
 ```sh
 instagram_monitor <target_insta_user> --analyze-follows
@@ -421,12 +422,6 @@ Usable targets are still reported when another target has missing or malformed d
 
 The analysis needs the saved lists `instagram_<username>_followers.json` and `instagram_<username>_followings.json`. These are produced when the monitor runs in [Logged-In Mode](configuration.md#logged-in-mode-with-session-login) with follower and following fetching enabled. They are read from the JSON directory described in [Output Directory](#output-directory), so they resolve under `OUTPUT_DIR/json/` for a single target, `OUTPUT_DIR/<username>/json/` for multiple targets, or the working directory when no output directory is set. If both output layouts contain a complete pair, the newest coherent pair is used. This keeps analysis correct after changing between single-target and multi-target monitoring or after adding a target through the Web Dashboard.
 
-If the lists have not been downloaded yet, the command names the directory it searched and explains that the monitor has to run once first. Older saved files may contain partial lists from a private account, an interrupted download or a configured fetch limit. In that case the analysis covers only the saved handles and prints a note. Current monitoring keeps the last complete baseline instead of replacing it with a partial fetch. When the newest output layout is incomplete or malformed, an older complete pair is used when available and the result includes a warning. Otherwise malformed data or invalid usernames make that target unavailable instead of crashing the command.
-
-The command and Web Dashboard show complete counts for all three categories. Mutual accounts are count-only. The not-following-back and fan categories list at most the first 500 usernames alphabetically. This bounds terminal output, API responses and browser rendering for large accounts.
-
-The same analysis is available in the **Web Dashboard**. Use the **Follow analysis** chart button next to a configured target. Privacy substitutions apply to the target and relationship usernames shown in the modal.
-
 <a id="follower-list-source"></a>
 ## Follower List Source
 
@@ -441,8 +436,6 @@ FOLLOW_LIST_SOURCE = "auto"
 - `graphql`: always read over GraphQL. This is what versions before 4.0 did.
 - `browser`: experimental. Do not call the API at all, drive a real browser through Instagram's web pages instead. Never chosen by `auto`. Read [Browser Source](#browser-source-experimental) before turning it on.
 
-A fetch that already returned names is never repeated on the other surface. Those names have already been counted against the account, and a second pass over the same list would count them twice for nothing. For the same reason a rate limit, a challenge, an expired session or a network fault is reported rather than retried elsewhere: only a missing endpoint or an unreadable reply is worth a second attempt.
-
 Pin the source for one run without editing the configuration file:
 
 ```sh
@@ -451,13 +444,11 @@ instagram_monitor <target_insta_user> --follow-list-source graphql
 
 The startup summary names the source in use. Anonymous mode is unaffected, since neither surface lists followers without a session.
 
-`--setup` asks for the source in login mode, and the Web Dashboard changes it under **Settings** in the **Instagram Connection** card.
-
 ### Browser Source (experimental)
 
 `browser` is a third source that does not call Instagram's API at all. It drives a real browser through the ordinary web pages, opens the follower or following dialog and reads the names off the rendered list, the same way a person scrolling that dialog would.
 
-**This is experimental and it can cost you the account.** Instagram's terms forbid automated collection however it is done, and a browser session that scrolls follower dialogs for hours does not look like a person. It is never selected by `auto`. Turn it on only if you accept losing the logged-in account.
+**This is experimental and it can cost you the account.** Instagram's terms forbid automated collection however it is done and a browser session that scrolls follower dialogs for hours does not look like a person. It is never selected by `auto`. Turn it on only if you accept losing the logged-in account.
 
 It needs the optional `playwright` package and a downloaded browser:
 
@@ -492,14 +483,14 @@ FOLLOW_LIST_BROWSER_SCROLL_DELAY = 1.5
 FOLLOW_LIST_BROWSER_TIMEOUT = 30
 ```
 
-Every Playwright channel is a Chromium build, so the browser source only works when the rest of the session presents the same browser. Monitoring refuses to start otherwise, rather than let one Instagram session arrive as two different clients:
+Every Playwright channel is a Chromium build, so the browser source only works when the rest of the session presents the same browser. Monitoring refuses to start otherwise and the Web Dashboard refuses a settings change that would create the mismatch, rather than let one Instagram session arrive as two different clients:
 
 | `FOLLOW_LIST_BROWSER_CHANNEL` | needs `USER_AGENT` and `CURL_CFFI_IMPERSONATE` |
 | --- | --- |
 | `chromium`, `chrome` | Chrome |
 | `msedge` | Edge |
 
-`HTTP_BACKEND` must be `curl_cffi`, since the stock `requests` transport cannot present a browser TLS fingerprint at all. `CURL_CFFI_IMPERSONATE = "auto"` follows `USER_AGENT` and is the simplest way to satisfy this. If you leave `USER_AGENT` empty the tool picks one from the matching family instead of at random. `--doctor` reports a mismatch and names the setting to change, and the Web Dashboard refuses a settings change that would create one, so a running session cannot be switched into it either.
+`HTTP_BACKEND` must be `curl_cffi`, since the stock `requests` transport cannot present a browser TLS fingerprint at all. `CURL_CFFI_IMPERSONATE = "auto"` follows `USER_AGENT` and is the simplest way to satisfy this. If you leave `USER_AGENT` empty the tool picks one from the matching family instead of at random.
 
 What to expect:
 
@@ -566,13 +557,13 @@ IDENTITY_BUDGET_PER_DAY = 2000
 CIRCUIT_BREAKER = True
 ```
 
-The budget is shared by every target and resets at local midnight. Identity scans run one at a time so workers cannot spend the same remaining allowance. REST responses are counted as soon as a page arrives, including names the caller does not consume. When the budget is spent, name fetching stops for the day while counts, posts, reels, stories and profile changes carry on. Names are counted even with no budget set, so you can measure first and choose a number afterwards. A scan needing more names than the budget still allows is skipped in full rather than started, because a truncated list is discarded instead of saved and starting it would spend the rest of the day's allowance for nothing.
+The budget is shared by every target and every worker in the process. It resets at local midnight. Identity scans run one at a time so workers cannot spend the same remaining allowance. When the budget is spent, name fetching stops for the day while counts, posts, reels, stories and profile changes carry on. Names are counted even with no budget set, so you can measure first and choose a number afterwards.
 
-The circuit breaker stops every target using the account after a confirmed challenge, checkpoint, temporary limit or expired session. Fix the account issue and restart with your usual command. Before target workers start, a stopped account gets one login check with a 30-second timeout and no automatic retries or redirects. Success resumes monitoring without clearing anything manually. Failure leaves the account paused with a recovery action. Re-importing a session uses its successful login check to recover after saving. The Web Dashboard also resumes targets paused by the account stop after a successful import or refresh.
+The two surfaces are counted differently. A REST page is counted as soon as it arrives, including names the caller does not consume, so the last response can put the recorded total above the limit when Instagram returns more accounts than requested. That records the actual exposure and stops another request. GraphQL names are banked in groups of 25, with the last group cut to what the budget still allows, so the recorded total is exact where the fetch stops.
 
-If the safety ledger cannot be read or saved, or holds a value no reader can trust, authenticated monitoring stays stopped until the file is repaired. The error names the account whose record is at fault, since one bad record stops every account in the file. Recovery preserves daily counts. Rate limits, network errors and Instagram API changes do not trip the breaker. During a recovery check, any unsuccessful result keeps the existing stop in place.
+The circuit breaker stops every target using the account after a confirmed challenge, checkpoint, temporary limit or expired session. Fix the account issue and restart with your usual command. Before target workers start, a stopped account gets one login check with a 30-second timeout and no automatic retries or redirects. Success resumes monitoring. Failure leaves the account paused and explains what to fix. Importing a session reuses that login check and releases the stop only after the session is saved, so in the Web Dashboard importing or successfully refreshing the session also resumes the targets the account stop paused. Targets you stopped by hand stay stopped.
 
-Three commands:
+Useful commands:
 
 ```
 instagram_monitor --exposure                   # redacted support report with names, failures and runtime context
@@ -580,9 +571,9 @@ instagram_monitor --identity-budget 750        # set the budget for this run
 instagram_monitor --clear-breaker              # optional local-state repair, normally restart instead
 ```
 
-Everything is stored locally in `instagram_monitor_exposure.json` next to your output directory. Nothing is transmitted anywhere. The file holds one record per session account, so both commands act on the account the run resolved. Add `-u <account>` to pick one when you run more than one account from the same directory. Several monitors may share one output directory: each change to the file is made under a lock the operating system holds, so their counts cannot overwrite each other. Both read and repair local state only, so they still work while the connection is down. The `--exposure` report omits account names, target names, stored error text and local paths so it can be pasted into a support issue, and prints the ledger path below the report. It exits with status `1` when the ledger cannot be read or cannot be saved.
+Both commands act on the account the run resolved, since the local `instagram_monitor_exposure.json` ledger holds one record per session account. Add `-u <account>` to pick one when you run more than one account from the same directory.
 
-See [Set an Identity Budget](anti-detection.md#set-an-identity-budget) for how to choose a value and why names rather than requests are the unit that matters.
+See [Set an Identity Budget](anti-detection.md#set-an-identity-budget) for how to choose a value and why names rather than requests are the unit that matters. [Check Your Exposure](anti-detection.md#check-your-exposure) describes what the report contains.
 
 <a id="routing-traffic-through-a-proxy"></a>
 ## Routing Traffic Through a Proxy
@@ -650,8 +641,6 @@ instagram_monitor <target_insta_user> --http-backend curl_cffi --impersonate fir
 See the [curl_cffi documentation](https://github.com/lexiforest/curl_cffi) for the full list of impersonation targets available in your installed version.
 
 The target is checked against that list at startup and when saved from the Web Dashboard. An unrecognized value stops the tool with a message naming supported targets, rather than letting every Instagram request fail later as a connection error.
-
-`--setup` does not ask about the backend or the impersonated browser, since the defaults suit almost every setup. Change them in the configuration file or in the Web Dashboard under **Settings** in the **Instagram Connection** card, where curl_cffi is not selectable when the package is missing.
 
 <a id="privacy-substitutions"></a>
 ## Privacy Substitutions
@@ -895,7 +884,7 @@ The console and email notifications show the wait selected for the current cycle
 To restrict checks to selected times of day, set `CHECK_POSTS_IN_HOURS_RANGE = True` and configure `MIN_H1`, `MAX_H1`, `MIN_H2` and `MAX_H2`. See [Use Hour-Range Checking](anti-detection.md#use-hour-range-checking).
 
 <a id="liveness-reminder"></a>
-### Liveness Reminder
+## Liveness Reminder
 
 While nothing changes, the tool prints one reminder that it is still running:
 

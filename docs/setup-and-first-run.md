@@ -1,22 +1,15 @@
 # Setup & First Run
 
 <a id="run-the-setup-wizard"></a>
-
 ## Run the setup wizard
 
-This page assumes Instagram Monitor is already installed (see [Installation](installation.md)). It walks through the interactive setup wizard then your first monitoring run. If you opened this page first, choose [PyPI](installation.md#install-from-pypi), the [manual Python script](installation.md#install-the-manual-script), the [Docker image](installation.md#install-from-docker-hub) or [Docker Compose](installation.md#install-with-docker-compose), finish that method's steps then return here.
+Already installed? Run the setup command below for your installation and follow the prompts. Otherwise, start with [Installation](installation.md).
 
-The wizard asks for targets, a saved login, polling interval, which follower lists to collect, interface, alerts and output files. The login menu reports which browsers on this machine already have a profile signed in to Instagram, so you do not pick one and find out afterwards. If the import still fails, setup offers another attempt or a different browser instead of continuing without a session. Choosing an existing Instaloader session checks that a session file for that account exists before saving the choice. In login mode it asks whether to collect followers and following, followers only, or counts only with no names at all, because names are the most expensive thing to request and the operation Instagram acts against. Counts only is the default, so pressing Enter through the wizard never sets up name collection. It asks where to read them from only when it is going to read them. The [HTTP backend](usage.md#http-transport-backend) keeps its saved value, since its default suits almost every setup. If `curl_cffi` is missing, requests is used until you install it. The experimental [browser source](usage.md#browser-source-experimental) is offered too and needs Playwright.
+The wizard setup asks for targets, a saved login, polling interval, which follower lists to collect, interface, alerts and output files. You can review your answers before saving. Regular settings go in `instagram_monitor.conf` and private values go in `.env`. Keep `.env` private.
 
-Targets can be usernames or complete profile URLs such as `https://www.instagram.com/someuser/`, in the wizard and on the command line. A post or story URL is not a target, so setup refuses it and asks again rather than saving something the next run would reject. You can leave targets empty for the Web Dashboard and add accounts in your browser later. Terminal Dashboard and plain-text mode need at least one target. Polling accepts seconds or durations such as `1.5h` and `1h 30m`.
+Press Enter to accept a default or Ctrl+C to cancel. Cancelling before saving leaves your files untouched. Cancelling after saving keeps the saved settings. For changes to an existing setup, see [Configuration File](configuration.md#configuration-file).
 
-Review or change your answers before saving. Turning a login on from the review menu asks which follower lists to collect, so enabling a session there never starts name collection you were not asked about. Turning it off records counts only, since no list can be read without a session. Settings go to `instagram_monitor.conf` and private values go to `.env`, which is written only when you enter a secret. Setup asks before replacing a saved secret. See [Storing Secrets](configuration.md#storing-secrets) for backup details.
-
-A rerun uses saved settings as defaults. Declining a section disables it. Setup explains invalid answers and lets you retry. Answers it cannot use are refused where you enter them: an account name Instagram would not accept, a mail server address, and a sender or receiver that is not a complete email address. Email setup checks sign-in without sending a message, and when a password is already saved it asks whether to replace it before the hidden prompt rather than after. If the mail server is unreachable, check the saved settings later with `--doctor`.
-
-After saving, the wizard offers the Doctor checks. For a local install it then offers to start monitoring once those checks passed. In a container, it prints the next Docker or Docker Compose commands to run.
-
-Use the tab that matches how you installed the tool. Copy and run only the commands in that tab.
+After saving, follow the offered Doctor checks and monitoring steps.
 
 === "PyPI"
 
@@ -65,25 +58,15 @@ Use the tab that matches how you installed the tool. Copy and run only the comma
     docker compose run --rm --pull=always instagram_monitor --setup
     ```
 
-Run interactive setup commands by themselves instead of including them in a multi-command paste.
-
-In Windows Command Prompt replace `${PWD}` with `%cd%`. Windows hosts must use Linux containers. The `:z` suffix is for hosts that use SELinux. If your Docker-compatible runtime reports that it is invalid, remove only `:z`.
-
 In this documentation, a **target** is an Instagram account you want to monitor. The **session account** is the Instagram account that Instagram Monitor uses to sign in. They can be different accounts.
 
-The wizard recommends importing a saved Firefox login. On macOS and Linux it can also import from Chrome, Brave or Chromium. Those three browsers require the optional `pycookiecheat` package. If it is missing, the wizard can install it in a local Python installation.
+Targets can be usernames or complete profile URLs such as `https://www.instagram.com/someuser/`
 
-Activate your virtual environment before running local commands. For a downloaded script, run them from the script directory.
+The wizard recommends importing a saved web browser login.
 
-Container setup destinations must stay inside `/data`. That directory is the current host directory mounted into the temporary setup container, so files written there survive `--rm`. The wizard rejects paths such as `/tmp/instagram_monitor.conf` instead of printing a command for a different file.
+Container setup destinations must stay inside `/data`, which is the host directory mounted for setup. Files saved there remain on your computer after the container stops.
 
-`--setup` needs somewhere to put both files, so it refuses `--config-file none` and `--env-file none`.
-
-For Docker or Docker Compose, choose **Import from Firefox after setup**. The wizard asks whether Docker runs on macOS, standard Linux, Linux with Snap, Linux with Flatpak, Windows PowerShell or Windows Command Prompt. It then prints the matching command to mount the signed-in host profile read-only once and save the imported login in the persistent `instagram_monitor_session` volume. Windows commands use the Firefox profiles under `%APPDATA%\Mozilla\Firefox\Profiles`.
-
-Firefox import works on macOS, Linux and Windows without an extra package. Containers use Firefox. Chrome, Brave and Chromium import needs the optional browser dependency and works only on macOS and Linux. See [Session Login Using Browser Cookies](configuration.md#option-3-session-login-using-browser-cookies-recommended).
-
-Running without arguments starts the targets saved in `TARGET_USERNAMES`. With only the Web Dashboard enabled, it opens an empty control panel where you can add targets. If neither is saved, an interactive run opens the setup wizard.
+After saving authentication, the wizard checks whether the target is visible.
 
 <a id="before-you-start"></a>
 ## Before you start
@@ -91,7 +74,7 @@ Running without arguments starts the targets saved in `TARGET_USERNAMES`. With o
 How much Instagram Monitor can see depends on the target and on the login you give it:
 
 1. A public target can be monitored with no login at all, in [No-Login Mode](configuration.md#no-login-mode-no-session-login). Posts, bio and follower counts are visible, follower and following lists are not.
-2. Stories, reels and named follower changes need a session account, in [Logged-In Mode](configuration.md#logged-in-mode-with-session-login).
+2. Stories, reels and named follower / following changes need a session account, in [Logged-In Mode](configuration.md#logged-in-mode-with-session-login).
 3. A private target needs a session account that already follows it. Send and get the follow request accepted before the first run.
 
 Logged-in monitoring can trigger a security challenge or a suspension, so use a separate Instagram account if losing access to your main one would be unacceptable. The setup wizard asks which login you want and saves the choice. See the [risk reduction guide](anti-detection.md).

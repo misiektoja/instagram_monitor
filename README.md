@@ -111,11 +111,11 @@ For the manual single-file method, optional extras and upgrade commands, see [In
 - **Error Reporting**: Be notified if the monitoring process hits a snag.
 
 ### 🛡️ Privacy & Detection Avoidance
-- **Identity Budget**: Caps how many follower and following names are fetched per day.
-- **Circuit Breaker**: Stops every target after Instagram challenges your account, until you clear it.
 - **Be Human Mode**: Simulates random user actions to blend in.
 - **Jitter Mode**: Adds human-like delays to HTTP requests.
 - **Hour-Range Checking**: Limits activity to specific hours of the day.
+- **Identity Budget**: Caps how many follower and following names are fetched per day.
+- **Circuit Breaker**: Stops every target after Instagram challenges your account until a restart or a fresh session clears it.
 - **Account Flexibility**: Works with or without a logged-in Instagram account.
 - **Browser Session Import**: Reuse Firefox, Chrome, Brave or Chromium sessions with profile selection.
 - **Browser TLS Impersonation**: Routes traffic through curl_cffi to mimic a real browser's TLS fingerprint and dodge fingerprint-based blocks.
@@ -144,7 +144,7 @@ For the manual single-file method, optional extras and upgrade commands, see [In
 <a id="common-commands"></a>
 ## Common Commands
 
-Use [Quick Install & Run](#-quick-install--run) above for first-time setup. The table uses PyPI commands. For manual script, direct Docker and Docker Compose equivalents, see [Run Individual Commands](https://misiektoja.github.io/instagram_monitor/setup-and-first-run/#run-individual-commands).
+Use [Quick Install & Run](#quick-install-run) above for first-time setup. The table uses PyPI commands. For manual script, direct Docker and Docker Compose equivalents, see [Run Individual Commands](https://misiektoja.github.io/instagram_monitor/setup-and-first-run/#run-individual-commands).
 
 Replace the target placeholders with an Instagram username.
 
