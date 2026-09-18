@@ -650,3 +650,33 @@ def test_a_fix_block_guide_line_is_a_link(im_module, monkeypatch):
     assert im_module.colorize_fix_line("To fix: Set the key then re-run") == f"{info}To fix: Set the key then re-run{im_module.ANSI_RESET}"
     assert im_module.colorize_fix_line("Guide: https://example.test/page") == f"Guide: {link}https://example.test/page{im_module.ANSI_RESET}"
     assert 'colorize("info", f"Guide:' not in Path(im_module.__file__).read_text(encoding="utf-8")
+
+
+# Verifies a settings row is never painted as an error, since a value such as the follow list source reads like a log keyword
+def test_a_summary_row_is_not_painted_by_a_log_keyword(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {name: f"<{name}>" for name in im_module.DEFAULT_COLOR_THEME})
+    row = im_module._format_startup_summary_row(im_module.StartupSummaryRow("Follow list source", "auto (REST, GraphQL on failure)")).rstrip("\n")
+
+    assert im_module._colorize_line(row) == row
+
+
+# Verifies an ordinary error line still carries the block colour the summary rows opt out of
+def test_an_error_line_is_still_painted(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+    monkeypatch.setattr(im_module, "_COLOR_STYLES", {"error": "<error>"})
+
+    assert im_module._colorize_line("* Error: the request timed out") == f"<error>* Error: the request timed out{im_module.ANSI_RESET}"
+
+
+# Verifies the row shape the colouriser matches is the one the summary emitter prints, so the two cannot drift
+def test_every_summary_row_is_recognised_by_its_value_column(im_module):
+    rows = [im_module.StartupSummaryRow("Targets", "misiektoja"), im_module.StartupSummaryRow("Email transport", "Not configured"), im_module.StartupSummaryRow("  Proxy IP Address", "10.0.0.1")]
+
+    for row in rows:
+        line = im_module._format_startup_summary_row(row).rstrip("\n")
+        assert im_module.is_startup_summary_row(line)
+        assert line.index(row.value.strip()) == im_module.STARTUP_SUMMARY_VALUE_COLUMN
+
+    assert not im_module.is_startup_summary_row("* Error: something failed")
+    assert not im_module.is_startup_summary_row("* Warning: a timeout was hit")

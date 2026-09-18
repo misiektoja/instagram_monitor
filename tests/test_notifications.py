@@ -7,6 +7,15 @@ import time
 import pytest
 
 
+# Gives both channels a destination, since the rollup rows report a channel with none as off whatever its alert types are
+def _configure_channel_destinations(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(im_module, "SMTP_PORT", 587)
+    monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "michal.k@example.com")
+    monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/abc")
+
+
 class TestStartupNotificationSummary:
     # Verifies every startup view shares independent email and webhook category rows
     @pytest.mark.parametrize("email_flags,webhook_flags,webhook_enabled,expected_email,expected_webhook", [((), (), False, "Off", "Off"), (("STATUS_NOTIFICATION", "FOLLOWERS_NOTIFICATION", "ERROR_NOTIFICATION"), (), False, "On (status/profile changes, followers, errors)", "Off"), ((), ("WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_FOLLOWERS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"), True, "Off", "On (status/profile changes, followers, errors)"), (("STATUS_NOTIFICATION", "ERROR_NOTIFICATION"), ("WEBHOOK_FOLLOWERS_NOTIFICATION",), True, "On (status/profile changes, errors)", "On (followers)"), ((), ("WEBHOOK_ERROR_NOTIFICATION",), False, "Off", "Off")])
@@ -14,6 +23,7 @@ class TestStartupNotificationSummary:
         all_flags = ("STATUS_NOTIFICATION", "FOLLOWERS_NOTIFICATION", "ERROR_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_FOLLOWERS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
         for name in all_flags:
             monkeypatch.setattr(im_module, name, False)
+        _configure_channel_destinations(im_module, monkeypatch)
         for name in email_flags + webhook_flags:
             monkeypatch.setattr(im_module, name, True)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", webhook_enabled)
@@ -23,6 +33,20 @@ class TestStartupNotificationSummary:
         # The detail rows sit next to the channel they describe and stay out of the short view
         assert [label for label in rows] == ["Notifications (email)", "Email transport", "Email recipient", "Notifications (webhook)", "Webhook provider", "Delivery confirmations"]
         assert not any(concise for label, (_, concise, _full) in rows.items() if label.startswith(("Email ", "Webhook ", "Delivery ")))
+
+    # Verifies a channel with its alert types on but no destination is not reported as live, since the rollup is the only line the short view prints
+    @pytest.mark.parametrize("label,unset", [("Notifications (email)", {"SMTP_HOST": "your_smtp_server_ssl"}), ("Notifications (email)", {"RECEIVER_EMAIL": "your_receiver_email"}), ("Notifications (webhook)", {"WEBHOOK_URL": "your_webhook_url"})])
+    def test_a_channel_without_a_destination_is_reported_as_off(self, im_module, monkeypatch, label, unset):
+        _configure_channel_destinations(im_module, monkeypatch)
+        for name in ("STATUS_NOTIFICATION", "FOLLOWERS_NOTIFICATION", "ERROR_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_FOLLOWERS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"):
+            monkeypatch.setattr(im_module, name, True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        for name, value in unset.items():
+            monkeypatch.setattr(im_module, name, value)
+
+        rows = {row.label: row.value for row in im_module._startup_notification_summary_rows()}
+
+        assert rows[label] == "Off (not configured)"
 
     # Verifies compact notification rows color only their On or Off state
     def test_channel_rows_color_on_off_state(self, im_module, monkeypatch):

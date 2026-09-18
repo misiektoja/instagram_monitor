@@ -90,6 +90,18 @@ def test_the_email_transport_row_reports_an_unconfigured_server(monkeypatch):
     assert summary_values()["Email transport"] == "Not configured"
 
 
+# Verifies a configuration still holding the shipped sample values reports no channel, rather than naming a server and a recipient no alert can reach
+@pytest.mark.parametrize("label,setting,placeholder,expected", [
+    ("Email transport", "SMTP_HOST", "your_smtp_server_ssl", "Not configured"),
+    ("Email recipient", "RECEIVER_EMAIL", "your_receiver_email", "Not configured"),
+    ("Webhook provider", "WEBHOOK_URL", "your_webhook_url", "Not configured"),
+])
+def test_a_placeholder_destination_is_reported_as_unconfigured(monkeypatch, label, setting, placeholder, expected):
+    monkeypatch.setattr(monitor, setting, placeholder)
+
+    assert summary_values()[label] == expected
+
+
 # Verifies the recipient keeps enough shape to spot a typo while the address itself does not survive a pasted log
 @pytest.mark.parametrize("address,expected", [
     ("michal.k@example.com", "m******k@example.com"),
