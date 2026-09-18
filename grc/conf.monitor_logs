@@ -12,7 +12,7 @@
 #   repository green                     event, post, trophy, achievement, rank  bright_green
 #   branch, reel  bright_magenta         date, date_range      magenta
 #   timestamp_value cyan                 info      cyan        link  blue underline
-#   warning, signal, status_change yellow          error       red
+#   warning, signal, status_change, status_away  yellow        error       red
 #   email bright_cyan                    webhook   bright_blue
 #   boolean_true, count_up, duration, status_active  green
 #   boolean_false, count_down, status_inactive, status_offline  red
@@ -25,6 +25,10 @@
 # paint a drop red, which needs both values at once, so both are green here. They also know
 # whether a monitored target is a handle or an opaque identifier, so here a target is read as a
 # handle unless it has the shape of a Spotify URI ID or a Steam64 ID.
+#
+# The padded listing tables have no rule here. Their columns are positional, so a rule wide enough
+# to read one tool's table reads across the column boundaries of another's. The tools colour those
+# rows at the point they print them instead.
 
 -
 
@@ -142,7 +146,7 @@ regexp=^[\t ]*(?:[-*][\t ]+)?(?:Last track duration|Match duration|Match finishe
 colours=unchanged, green
 count=stop
 -
-regexp=^[\t ]*(?:[-*][\t ]+)?(?:Current game|Title name|User is currently in-game|In-game|Game|Commit message|IP Address|Proxy IP Address|Proxy URL|Proxy Certificate|Proxy for Webhooks):[\t ]+(\S.*?)(?:[\t ]*\((PS[A-Z0-9_]*|MOBILE_APP)\))?[\t ]*$
+regexp=^[\t ]*(?:[-*][\t ]+)?(?:Current game|Title name|User is currently in-game|In-game|Game|Commit message|IP Address|Proxy IP Address|Proxy URL|Proxy Certificate|Proxy for Webhooks):[\t ]+(\S.*?)(?:[\t ]*\((PS[A-Z0-9_]*|MOBILE_APP|Xbox One Series X/S|Android Phone/Tablet|Xbox One X/S|iPhone/iPad|Xbox 360|Xbox One|Windows|Android|XONEX|X360|XONE|XSX)\))?[\t ]*$
 colours=unchanged, bright_yellow, blue
 count=stop
 -
@@ -178,6 +182,24 @@ count=stop
 # A roster entry names a player and what they played
 regexp=^(-[\t ]+)([^:(\n]+?)([\t ]+\()([^()]+)(\)[\t ]*)$
 colours=unchanged, unchanged, bright_cyan underline, unchanged, bright_yellow, unchanged
+count=stop
+-
+# A friends list row names one player and the presence Xbox reports for them. The state word is mixed case
+# here, unlike the capitalised keyword an event line prints, so these rules do not reach a presence report
+regexp=^([^\s:*-][^:\n]*?)([\t ]{2,})(Online)([\t ]+\()([^()\n]+)(\))[\t ]*$
+colours=unchanged, bright_cyan underline, unchanged, green, unchanged, bright_yellow, unchanged
+count=stop
+-
+regexp=^([^\s:*-][^:\n]*?)([\t ]{2,})(Online)[\t ]*$
+colours=unchanged, bright_cyan underline, unchanged, green
+count=stop
+-
+regexp=^([^\s:*-][^:\n]*?)([\t ]{2,})(Away)[\t ]*$
+colours=unchanged, bright_cyan underline, unchanged, yellow
+count=stop
+-
+regexp=^([^\s:*-][^:\n]*?)([\t ]{2,})(Offline)[\t ]*$
+colours=unchanged, bright_cyan underline, unchanged, red
 count=stop
 
 -
@@ -287,21 +309,35 @@ colours=unchanged, unchanged, bright_yellow, unchanged
 regexp=\b(?:changed status|changed game)\b
 colours=yellow
 -
-# A status named in prose rather than in a Status: row
-regexp=(?i)changed status from[\t ]+(online|available|active)\b
+# A status named in prose rather than in a Status: row, read through the same table that row uses. The
+# value between "from" and "to" may be two words, so the middle is not matched as a single word
+regexp=(?i)changed status from[\t ]+(online|available|active|playing|private mode)\b
 colours=unchanged, green
 -
-regexp=(?i)changed status from[\t ]+(offline|inactive|standby|away)\b
+regexp=(?i)changed status from[\t ]+(away)\b
+colours=unchanged, yellow
+-
+regexp=(?i)changed status from[\t ]+(snooze)\b
+colours=unchanged, magenta
+-
+regexp=(?i)changed status from[\t ]+(offline|invisible|inactive|standby)\b
 colours=unchanged, red
 -
-regexp=(?i)changed status from[\t ]+\w+[\t ]+to[\t ]+(online|available|active)\b
+regexp=(?i)changed status from[\t ]+[\w ]+?[\t ]+to[\t ]+(online|available|active|playing|private mode)\b
 colours=unchanged, green
 -
-regexp=(?i)changed status from[\t ]+\w+[\t ]+to[\t ]+(offline|inactive|standby|away)\b
+regexp=(?i)changed status from[\t ]+[\w ]+?[\t ]+to[\t ]+(away)\b
+colours=unchanged, yellow
+-
+regexp=(?i)changed status from[\t ]+[\w ]+?[\t ]+to[\t ]+(snooze)\b
+colours=unchanged, magenta
+-
+regexp=(?i)changed status from[\t ]+[\w ]+?[\t ]+to[\t ]+(offline|invisible|inactive|standby)\b
 colours=unchanged, red
 -
-# The console a game was launched on
-regexp=\((PS[A-Z0-9_]*|MOBILE_APP)\)
+# The console a game was launched on. Only the names the tools print are listed, so a bracketed word in
+# ordinary prose is not read as a platform
+regexp=\((PS[A-Z0-9_]*|MOBILE_APP|Xbox One Series X/S|Android Phone/Tablet|Xbox One X/S|iPhone/iPad|Xbox 360|Xbox One|Windows|Android|XONEX|X360|XONE|XSX)\)
 colours=unchanged, blue
 
 -
