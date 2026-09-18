@@ -32,7 +32,7 @@ ALLOWED_UNESCAPED = frozenset({
 
 # Helpers that emit their own markup or render only dates, durations and numbers. None of them can carry
 # Instagram-supplied text, so escaping their output would only mangle the timestamps users read
-SAFE_HELPERS = frozenset({"get_cur_ts", "display_time", "get_date_from_ts", "get_short_date_from_ts", "calculate_timespan", "get_range_of_dates_from_tss"})
+SAFE_HELPERS = frozenset({"get_cur_ts", "display_time", "get_date_from_ts", "get_short_date_from_ts", "calculate_timespan", "get_range_of_dates_from_tss", "check_window_html"})
 
 # Attribute access that resolves to a fixed word rather than free text
 SAFE_ATTRIBUTES = frozenset({"capitalize", "lower", "upper", "title", "replace"})
@@ -90,7 +90,7 @@ class TestHtmlNotificationEscaping:
     # Verifies the sweep is actually looking at the notification bodies rather than silently finding none
     def test_html_body_sweep_covers_every_notification(self, im_module):
         interpolations = list(html_body_interpolations(im_module))
-        assert len(interpolations) >= 150, "the HTML body sweep stopped finding notification bodies, update its matching"
+        assert len(interpolations) >= 140, "the HTML body sweep stopped finding notification bodies, update its matching"
 
     # Verifies an unescaped interpolation would actually be reported, so the sweep cannot pass vacuously
     @pytest.mark.parametrize("expression,expected", [

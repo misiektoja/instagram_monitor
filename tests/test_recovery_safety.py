@@ -253,3 +253,26 @@ def test_every_failing_path_defers_the_reminder_trailer(monitor):
     # One trailer inside the helper and at least one in every path that defers it
     assert source.count('print_cur_ts("Liveness check, timestamp:\\t")') >= len(calls) + 1
 
+
+# Verifies a reported change names the window the run observed, which a failing check leaves further back than
+# the configured interval
+def test_a_reported_change_names_the_window_the_run_observed(monitor, monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "INSTA_CHECK_INTERVAL", 3600)
+    monkeypatch.setattr(monitor, "LAST_CHECK_TS", int(monitor.time.time()) - 60)
+
+    assert monitor.observed_window()[0] == 60
+    assert monitor.check_window_text().startswith("1 minute (")
+    assert monitor.check_window_html().startswith("<b>1 minute</b> (")
+
+    monkeypatch.setattr(monitor, "LAST_CHECK_TS", 0)
+    assert monitor.observed_window()[0] == 3600, "the configured interval is all a run knows before its first check"
+
+
+# Verifies no report still builds its window from the configured interval, which a failing check makes wrong
+def test_no_report_builds_its_window_from_the_configured_interval(monitor):
+    source = Path(monitor.__file__).read_text(encoding="utf-8")
+
+    assert "int(time.time()) - r_sleep_time" not in source
+    assert "int(time.time()) - check_interval" not in source
+    assert source.count("check_window_text()") + source.count("check_window_html()") >= 53
