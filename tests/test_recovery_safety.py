@@ -225,3 +225,31 @@ def test_setup_backup_keeps_settings_with_short_secret(monitor, tmp_path):
     content = Path(backup).read_text(encoding="utf-8")
     assert 'SMTP_PASSWORD = "" # previous: <redacted>' in content
     assert "UNRELATED = 1800" in content
+
+
+# Verifies the outage reminder can hold its trailer, so an alert delivered by the same check is printed inside
+# the report rather than under the separator that ended it
+def test_the_outage_reminder_can_hold_its_trailer(monitor, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    advice = monitor.make_recovery_advice("network.unavailable", "The network is unreachable", "Check connectivity then retry", True)
+
+    monitor.print_outage_liveness("watched-target", advice, 1_000_000, 2, close=False)
+    held = capsys.readouterr().out
+    monitor.print_outage_liveness("watched-target", advice, 1_000_000, 2)
+    closed = capsys.readouterr().out
+
+    assert "* Monitoring degraded for watched-target. The network is unreachable since " in held
+    assert "Liveness check, timestamp:" not in held, "a reminder that closes itself leaves the alert outside the report"
+    assert "Liveness check, timestamp:" in closed
+
+
+# Verifies every failing path defers the reminder trailer, since the alert it may deliver prints after the reminder
+def test_every_failing_path_defers_the_reminder_trailer(monitor):
+    source = Path(monitor.__file__).read_text(encoding="utf-8")
+    calls = [line.strip() for line in source.splitlines() if "print_outage_liveness(" in line and not line.lstrip().startswith("def ")]
+
+    assert calls, "the outage reminder is never reported"
+    assert all("close=False" in call for call in calls), calls
+    # One trailer inside the helper and at least one in every path that defers it
+    assert source.count('print_cur_ts("Liveness check, timestamp:\\t")') >= len(calls) + 1
+
