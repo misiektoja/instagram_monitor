@@ -11379,10 +11379,12 @@ def print_liveness_banner(message: str) -> None:
 
 
 # Reminds about a lasting failure once an hour, so a broken run still says it is alive without repeating itself
-def print_outage_liveness(target: str, advice: RecoveryAdvice, since: int, failures: int = 0) -> None:
+def print_outage_liveness(target: str, advice: RecoveryAdvice, since: int, failures: int = 0, close: bool = True) -> None:
     count = f", {failures} failed {'check' if failures == 1 else 'checks'}" if failures else ""
     print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}{count}")
-    print_cur_ts("Liveness check, timestamp:\t")
+    # A caller with an alert still to deliver closes the report itself, so the delivery lines stay inside it
+    if close:
+        print_cur_ts("Liveness check, timestamp:\t")
 
 
 # Notes that a reported outage now fails differently, in one line rather than a second full report
@@ -14886,7 +14888,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 elif outage_outcome == "changed":
                     print_outage_change(user, advice)
                 elif outage_outcome == "reminder":
-                    print_outage_liveness(user, advice, outage.since, outage.failures)
+                    print_outage_liveness(user, advice, outage.since, outage.failures, close=False)
                 log_activity(f"Error: {error_msg}", user=user)
                 debug_print("Full exception", outcome="failed", error=f"{type(e).__name__}: {e}")
 
@@ -14916,7 +14918,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 now = now_local_naive()
                 r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
                 update_check_times(next_time=next_check_val, user=user, increment_count=False)
-                if outage_outcome in ("full", "changed"):
+                # The reminder closes last so the delivery lines it carries stay inside the report rather than
+                # landing under the separator that ended it
+                if outage_outcome == "reminder":
+                    print_cur_ts("Liveness check, timestamp:\t")
+                elif outage_outcome in ("full", "changed"):
                     print_cur_ts(newline=True)
                 if interruptible_sleep(r_sleep_time, stop_event):
                     return
@@ -15600,10 +15606,14 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     elif outage_outcome == "changed":
                         print_outage_change(user, posts_advice)
                     elif outage_outcome == "reminder":
-                        print_outage_liveness(user, posts_advice, outage.since, outage.failures)
+                        print_outage_liveness(user, posts_advice, outage.since, outage.failures, close=False)
                     notify_monitoring_error(user, posts_advice, error_msg, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
 
-                    if outage_outcome in ("full", "changed"):
+                    # The reminder closes last so the delivery lines it carries stay inside the report rather
+                    # than landing under the separator that ended it
+                    if outage_outcome == "reminder":
+                        print_cur_ts("Liveness check, timestamp:\t")
+                    elif outage_outcome in ("full", "changed"):
                         print_cur_ts()
 
                     update_check_times(next_time=next_check_val, user=user, increment_count=False)
