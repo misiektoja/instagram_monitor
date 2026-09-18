@@ -4958,30 +4958,55 @@ def mask_email_address(address) -> str:
     return f"{masked}@{domain}"
 
 
+# Returns whether a mail server is set rather than left empty or still holding the placeholder from the sample configuration
+def smtp_server_configured() -> bool:
+    return bool(SMTP_HOST) and bool(SMTP_PORT) and not is_placeholder_setting(SMTP_HOST)
+
+
+# Returns whether an email alert has both a server to send through and an address to reach
+def email_channel_configured() -> bool:
+    return smtp_server_configured() and not is_placeholder_setting(RECEIVER_EMAIL)
+
+
+# Returns whether a webhook alert has a destination to post to
+def webhook_channel_configured() -> bool:
+    return bool(normalized_webhook_provider()) and not is_placeholder_setting(WEBHOOK_URL)
+
+
 # Reports the mail server and the recipient an alert would reach, without the account that signs in to the server
 def _startup_email_detail_rows() -> List["StartupSummaryRow"]:
-    transport = f"{SMTP_HOST}:{SMTP_PORT} ({'STARTTLS' if SMTP_SSL else 'TLS off'})" if SMTP_HOST and SMTP_PORT else "Not configured"
+    transport = f"{SMTP_HOST}:{SMTP_PORT} ({'STARTTLS' if SMTP_SSL else 'TLS off'})" if smtp_server_configured() else "Not configured"
+    recipient = "Not configured" if is_placeholder_setting(RECEIVER_EMAIL) else mask_email_address(RECEIVER_EMAIL)
     return [
         StartupSummaryRow("Email transport", transport),
-        StartupSummaryRow("Email recipient", mask_email_address(RECEIVER_EMAIL) if RECEIVER_EMAIL else "Not configured"),
+        StartupSummaryRow("Email recipient", recipient),
     ]
 
 
 # Reports the webhook service alerts would reach and whether the delivery lines are printed at all
 def _startup_webhook_detail_rows() -> List["StartupSummaryRow"]:
-    if not normalized_webhook_provider() or not str(WEBHOOK_URL or "").strip():
+    if not webhook_channel_configured():
         provider = "Not configured"
     else:
         provider = f"{webhook_provider_display_name()} ({'enabled' if WEBHOOK_ENABLED else 'disabled'})"
     return [StartupSummaryRow("Webhook provider", provider), StartupSummaryRow("Delivery confirmations", str(DELIVERY_CONFIRMATIONS))]
 
 
+# Renders one channel rollup from the alert types it would send and whether it has a destination at all
+def _startup_channel_state(categories: Sequence[str], configured: bool) -> str:
+    if not categories:
+        return "Off"
+    return "On (" + ", ".join(categories) + ")" if configured else "Off (not configured)"
+
+
 # Builds notification summary rows shared by concise, verbose and logged views
 def _startup_notification_summary_rows() -> List["StartupSummaryRow"]:
     email_categories = _startup_email_notification_categories()
     webhook_categories = _startup_webhook_notification_categories()
-    email_state = "On (" + ", ".join(email_categories) + ")" if email_categories else "Off"
-    webhook_state = "On (" + ", ".join(webhook_categories) + ")" if webhook_categories else "Off"
+    # A selected alert type cannot make a channel live while its destination is unset, and the rollup is the only
+    # line the concise view prints, so it has to carry that rather than contradict the detail rows below it
+    email_state = _startup_channel_state(email_categories, email_channel_configured())
+    webhook_state = _startup_channel_state(webhook_categories, webhook_channel_configured())
     return [StartupSummaryRow("Notifications (email)", email_state, concise=True), *_startup_email_detail_rows(), StartupSummaryRow("Notifications (webhook)", webhook_state, concise=True), *_startup_webhook_detail_rows()]
 
 
@@ -5015,11 +5040,23 @@ def _startup_environment_rows(env_path) -> List["StartupSummaryRow"]:
 # Rows that detail the channel named right above them, indented so the block reads as one setting with its details
 _STARTUP_SUMMARY_NESTED_LABELS = ("Email transport", "Email recipient", "Email images", "Webhook provider", "ntfy images")
 
+# The column every summary value starts in, which also lets the colouriser recognize a summary row
+STARTUP_SUMMARY_VALUE_COLUMN = 32
+
+# Matches a summary row by that padded label column, since no log line puts a value there
+_STARTUP_SUMMARY_ROW_RE = re.compile(r"^\*(?: {1,3})[^:\s][^:]*: {2,}(?=\S)")
+
+
+# Returns whether a line is a startup summary row rather than ordinary output
+def is_startup_summary_row(line: str) -> bool:
+    match = _STARTUP_SUMMARY_ROW_RE.match(line)
+    return bool(match) and match.end() == STARTUP_SUMMARY_VALUE_COLUMN
+
 
 # Formats one startup summary row with aligned plain ASCII columns
 def _format_startup_summary_row(row: "StartupSummaryRow") -> str:
     indent = "  " if row.label in _STARTUP_SUMMARY_NESTED_LABELS else ""
-    prefix = f"* {indent}{(row.label + ':'):<{30 - len(indent)}}"
+    prefix = f"* {indent}{(row.label + ':'):<{STARTUP_SUMMARY_VALUE_COLUMN - 2 - len(indent)}}"
     if row.label in ("Notifications (email)", "Notifications (webhook)"):
         return textwrap.fill(str(row.value), width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False) + "\n"
     return f"{prefix}{row.value}\n"
@@ -5104,6 +5141,8 @@ def _colorize_line(line):
         return f"{prefix}{colorize(state_style, state)}{suffix}"
 
     is_summary_line = any(line.startswith(p) for p in ("* Output directory:", "* Hours for fetching updates:", "* Skip fetching ", "* Email notifications:", "* Recheck All:", "* Followers: reported", "* Followings: reported", "* Followers (", "* Followings (", "User ID:", "* Browser user agent:", "* Mobile user agent:"))
+    # Read before any highlight is inserted, since the label column has to be measured on the plain text
+    is_settings_row = is_startup_summary_row(line)
 
     if line.startswith(("* IP Address:", "*   Proxy", "* Proxy")):
         labeled_value = _split_output_label(line, ("IP Address:", "Proxy IP Address:", "Proxy URL:", "Proxy Certificate:", "Proxy for Webhooks:", "Proxies:"))
@@ -5237,6 +5276,10 @@ def _colorize_line(line):
 
     # If it's a summary line, we return after internal highlights
     if is_summary_line:
+        return line
+
+    # A summary row reports a setting, so a value that happens to read like a log keyword must not paint the whole row
+    if is_settings_row:
         return line
 
     # Block highlighting (activity headers, errors, warnings)
