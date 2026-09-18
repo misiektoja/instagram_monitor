@@ -7471,6 +7471,25 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
     return str(out_str)
 
 
+# Returns how long the window a change was observed in lasted and when it ended, falling back to the configured
+# interval until the run has a previous check to measure from
+def observed_window():
+    ended = int(time.time())
+    return max(1, ended - LAST_CHECK_TS if LAST_CHECK_TS else INSTA_CHECK_INTERVAL), ended
+
+
+# Returns the window a change was observed in, as a duration followed by the dates it spans
+def check_window_text():
+    lasted, ended = observed_window()
+    return f"{display_time(lasted)} ({get_range_of_dates_from_tss(ended - lasted, ended, short=True)})"
+
+
+# Returns the same window with the duration emphasized, for an HTML notification body
+def check_window_html():
+    lasted, ended = observed_window()
+    return f"<b>{escape(display_time(lasted))}</b> ({escape(get_range_of_dates_from_tss(ended - lasted, ended, short=True))})"
+
+
 # Checks if the timezone name is correct
 def is_valid_timezone(tz_name):
     return tz_name in pytz.all_timezones
@@ -7839,7 +7858,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
             print(f"* Error saving profile picture !{new_line}")
 
         if func_ver == 2:
-            print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+            print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
             print_cur_ts()
         else:
             print_cur_ts(newline=True)
@@ -7872,8 +7891,8 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
 
                     m_subject = f"Instagram user {user} has removed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
 
-                    m_body = f"Instagram user {user} has removed profile picture added on {profile_pic_mdate} (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"Instagram user <b>{user}</b> has removed profile picture added on <b>{profile_pic_mdate}</b> (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                    m_body = f"Instagram user {user} has removed profile picture added on {profile_pic_mdate} (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body_html = f"Instagram user <b>{user}</b> has removed profile picture added on <b>{profile_pic_mdate}</b> (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
                 # User has set profile picture
                 elif is_empty_profile_pic and not is_empty_profile_pic_tmp:
@@ -7886,8 +7905,8 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
                     m_subject = f"Instagram user {user} has set profile picture ! ({get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)})"
 
-                    m_body = f"Instagram user {user} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"Instagram user <b>{user}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                    m_body = f"Instagram user {user} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body_html = f"Instagram user <b>{user}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
                 # User has changed profile picture
                 elif not is_empty_profile_pic_tmp and not is_empty_profile_pic:
@@ -7899,8 +7918,8 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
                     m_subject = f"Instagram user {user} has changed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
 
-                    m_body = f"Instagram user {user} has changed profile picture !\n\nPrevious one added on {profile_pic_mdate} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"Instagram user <b>{user}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{profile_pic_mdate}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                    m_body = f"Instagram user {user} has changed profile picture !\n\nPrevious one added on {profile_pic_mdate} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body_html = f"Instagram user <b>{user}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{profile_pic_mdate}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
                 try:
                     if csv_file_name:
@@ -7941,7 +7960,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=send_email_notification, email_image_file=profile_pic_file if m_body_html_pic_saved_text else "", email_image_name="profile_pic", webhook_title=webhook_title, webhook_description=webhook_description, webhook_color=webhook_color, local_image_file=None if csv_text == "Profile Picture Removed" else profile_pic_file)
 
                 if func_ver == 2:
-                    print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                    print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                     print_cur_ts()
 
             else:
@@ -7965,7 +7984,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
         else:
             print_recovery_error("Error while checking if the profile picture has changed !")
             if func_ver == 2:
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
         if func_ver == 1:
             print_cur_ts(newline=True)
@@ -8376,12 +8395,12 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
 
     if is_new:
         m_subject = f"Instagram private user {user} has a leaked collab {source} - {get_short_date_from_ts(post_dt)}"
-        m_body = f"Leaked collab {source} detected for private Instagram user {user} (revealed via a public collaborator)\n\nDate: {get_date_from_ts(post_dt)}\n{source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nOwner: https://www.instagram.com/{owner}/\nCollaborators: {collab_str}\nLikes: {likes}\nComments: {comments}\nDescription:\n\n{caption}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+        m_body = f"Leaked collab {source} detected for private Instagram user {user} (revealed via a public collaborator)\n\nDate: {get_date_from_ts(post_dt)}\n{source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nOwner: https://www.instagram.com/{owner}/\nCollaborators: {collab_str}\nLikes: {likes}\nComments: {comments}\nDescription:\n\n{caption}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
         safe_post_url = escape(post_url, quote=True)
         safe_profile_url = escape(f"https://www.instagram.com/{insta_username}/", quote=True)
         safe_owner = escape(str(owner), quote=True)
         safe_owner_url = escape(f"https://www.instagram.com/{owner}/", quote=True)
-        m_body_html = f"Leaked collab {source} detected for private Instagram user <b>{user}</b> (revealed via a public collaborator){pic_saved_html}<br><br>Date: <b>{get_date_from_ts(post_dt)}</b><br>{source.capitalize()} URL: <a href=\"{safe_post_url}\">{safe_post_url}</a><br>Profile URL: <a href=\"{safe_profile_url}\">{safe_profile_url}</a><br>Owner: <a href=\"{safe_owner_url}\">{safe_owner}</a><br>Collaborators: {escape(collab_str)}<br>Likes: {likes}<br>Comments: {comments}<br>Description:<br><br>{escape(str(caption))}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+        m_body_html = f"Leaked collab {source} detected for private Instagram user <b>{user}</b> (revealed via a public collaborator){pic_saved_html}<br><br>Date: <b>{get_date_from_ts(post_dt)}</b><br>{source.capitalize()} URL: <a href=\"{safe_post_url}\">{safe_post_url}</a><br>Profile URL: <a href=\"{safe_profile_url}\">{safe_profile_url}</a><br>Owner: <a href=\"{safe_owner_url}\">{safe_owner}</a><br>Collaborators: {escape(collab_str)}<br>Likes: {likes}<br>Comments: {comments}<br>Description:<br><br>{escape(str(caption))}<br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
         webhook_fields = [
             {"name": "Date", "value": f"**{get_date_from_ts(post_dt)}**", "inline": True},
             {"name": "Likes", "value": f"**{likes}**", "inline": True},
@@ -8502,8 +8521,8 @@ def check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
 
         m_subject = f"Instagram user {user} posts number has changed! ({posts_count_old} -> {posts_count})"
 
-        m_body = f"Posts number changed for user {user} from {posts_count_old} to {posts_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-        m_body_html = f"Posts number changed for user <b>{user}</b> from <b>{posts_count_old}</b> to <b>{posts_count}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+        m_body = f"Posts number changed for user {user} from {posts_count_old} to {posts_count}\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+        m_body_html = f"Posts number changed for user <b>{user}</b> from <b>{posts_count_old}</b> to <b>{posts_count}</b><br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
         if posts_count is not None and posts_count_old is not None:
             diff = posts_count - posts_count_old
@@ -8514,7 +8533,7 @@ def check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
         send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"📮 {user} Posts Count Changed", webhook_description=f"User **{user}** posts count changed from **{posts_count_old}** to **{posts_count}**{diff_str}", webhook_color=0x34495e)
 
         log_activity(f"Posts changed: {posts_count_old} -> {posts_count}", user=user, level='update')
-        print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+        print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
         print_cur_ts()
         return 1
     else:
@@ -8529,14 +8548,14 @@ def check_reels_counts(user, reels_count, reels_count_old, r_sleep_time):
 
         m_subject = f"Instagram user {user} reels number has changed! ({reels_count_old} -> {reels_count})"
 
-        m_body = f"Reels number changed for user {user} from {reels_count_old} to {reels_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-        m_body_html = f"Reels number changed for user <b>{user}</b> from <b>{reels_count_old}</b> to <b>{reels_count}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+        m_body = f"Reels number changed for user {user} from {reels_count_old} to {reels_count}\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+        m_body_html = f"Reels number changed for user <b>{user}</b> from <b>{reels_count_old}</b> to <b>{reels_count}</b><br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
         diff = reels_count - reels_count_old
         diff_str = f"+{diff}" if diff > 0 else str(diff)
         send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"🎬 {user} Reels Count Changed", webhook_description=f"User **{user}** reels count changed from **{reels_count_old}** to **{reels_count}** ({diff_str})", webhook_color=0x34495e)
 
-        print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+        print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
         print_cur_ts()
         return 1
     else:
@@ -10332,7 +10351,7 @@ def print_check_timing(r_sleep_time, prefix="", user=None):
             print(f"{prefix}Target:\t\t\t\t\t{user}")
         print(f"{prefix}Last check:\t\t\t\t{get_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else 'N/A'}")
         print(f"{prefix}Next check:\t\t\t\t{next_check_str} (in {display_time(r_sleep_time)})")
-        print(f"{prefix}Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+        print(f"{prefix}Check interval:\t\t\t\t{check_window_text()}")
         print_cur_ts(newline=True)
 
 
@@ -11319,6 +11338,10 @@ ERROR_ALERT_AFTER_SECONDS = 300  # 5 minutes
 ERROR_ALERT_RETRY_SECONDS = 300  # 5 minutes
 ERROR_ALERT_RETRY_MAX_SECONDS = 3600  # 1 hour
 
+# When the run last read the data a change is compared against. The polling interval is randomized and the run can
+# pause outside the monitoring hours, so the configured interval is not the window a change was observed in
+LAST_CHECK_TS = 0
+
 
 # Returns the family a failure code belongs to, so the DNS and timeout failures of one internet outage count as one
 def outage_family(code: Optional[str]) -> str:
@@ -11592,7 +11615,7 @@ def notify_monitoring_error(user, advice, error_msg, failed_since, failure_count
     if not (email_pending or webhook_pending):
         return False
     streak = f"failure #{failure_count}, failing for {display_time(lasted)}"
-    interval = f"{display_time(check_interval)} ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)})"
+    interval = f"{check_window_text()}"
     alert_subject = f"Instagram error for {user} ({streak})"
     alert_body = f"{advice.summary} ({streak})\n{error_msg}\n\nTo fix: {advice.fix}\n\nCheck interval: {interval}{get_cur_ts(nl_ch + 'Timestamp: ')}"
     alert_body_html = f"{html_text(str(advice.summary))} ({escape(streak)})<br><br><b>{html_text(str(error_msg))}</b><br><br>To fix: {html_text(str(advice.fix))}<br><br>Check interval: <b>{escape(interval)}</b>{get_cur_ts('<br>Timestamp: ')}"
@@ -13495,12 +13518,12 @@ def send_story_item_notifications(user, story_type, local_ts, expire_ts, story_m
     story_hashtags_text = f"\nHashtags: {story_hashtags}" if story_hashtags else ""
     story_caption_text = f"\nDescription:\n\n{story_caption}" if story_caption else ""
     m_subject = f"Instagram user {user} has a new story item ({get_short_date_from_ts(int(local_ts))})"
-    m_body = f"Instagram user {user} has a new story item\n\nDate: {get_date_from_ts(int(local_ts))}\nExpiry: {get_date_from_ts(int(expire_ts))}\nType: {story_type}{story_mentions_text}{story_hashtags_text}{story_caption_text}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+    m_body = f"Instagram user {user} has a new story item\n\nDate: {get_date_from_ts(int(local_ts))}\nExpiry: {get_date_from_ts(int(expire_ts))}\nType: {story_type}{story_mentions_text}{story_hashtags_text}{story_caption_text}\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
     mentions_html = f"<br>Mentions: {escape(str(story_mentions))}" if story_mentions else ""
     hashtags_html = f"<br>Hashtags: {escape(str(story_hashtags))}" if story_hashtags else ""
     caption_html = f"<br>Description:<br><br>{escape(str(story_caption)).replace(chr(10), '<br>')}" if story_caption else ""
     image_html = '<br><br><img src="cid:story_pic" width="50%">' if has_local_image else ""
-    m_body_html = f"Instagram user <b>{user}</b> has a new story item{image_html}<br><br>Date: <b>{get_date_from_ts(int(local_ts))}</b><br>Expiry: {get_date_from_ts(int(expire_ts))}<br>Type: {story_type}{mentions_html}{hashtags_html}{caption_html}<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+    m_body_html = f"Instagram user <b>{user}</b> has a new story item{image_html}<br><br>Date: <b>{get_date_from_ts(int(local_ts))}</b><br>Expiry: {get_date_from_ts(int(expire_ts))}<br>Type: {story_type}{mentions_html}{hashtags_html}{caption_html}<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
     story_webhook_fields = [
         {"name": "Date", "value": get_date_from_ts(int(local_ts)), "inline": True},
@@ -13540,6 +13563,7 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
 # Runs one monitoring pass for the specified Instagram user until it stops or needs a fresh context
 def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None, manual_recheck=False, skip_follow_changes=False):  # type: ignore[reportComplexity]
+    global LAST_CHECK_TS
     global pbar, DASHBOARD_DATA, VERBOSE_MODE, CHECK_COUNT, NEXT_CHECK_TIME, NEXT_CHECK_DISPLAY
     user = normalize_instagram_username(user)
     session_refresh_generation = get_session_refresh_generation()
@@ -14706,6 +14730,9 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         if interruptible_sleep(r_sleep_time, stop_event):
             return
 
+    # The initial snapshot is what the first check compares against, so the window a change is reported in starts here
+    LAST_CHECK_TS = int(time.time())
+
     alive_since = int(time.time())
     mark_monitoring_started()
 
@@ -15065,11 +15092,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                         if not skip_session and not skip_followings and can_view:
                             if followings_count != followings_old_count:
-                                m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
                             else:
-                                m_body = f"Followings list changed for user {user} (count: {followings_count})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                m_body = f"Followings list changed for user {user} (count: {followings_count})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
                         else:
-                            m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                            m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
 
                         if not skip_session and not skip_followings and can_view:
                             if followings_count != followings_old_count:
@@ -15081,15 +15108,15 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                                 m_body_html_parts.append(f"<br><br><b>{removed_followings_mbody.strip()}</b><br>{removed_followings_list_html.strip().replace(chr(10), '<br>')}")
                             if added_followings_list_html:
                                 m_body_html_parts.append(f"<br><br><b>{added_followings_mbody.strip()}</b><br>{added_followings_list_html.strip().replace(chr(10), '<br>')}")
-                            m_body_html_parts.append(f"<br><br>Check interval: <b>{display_time(r_sleep_time) if r_sleep_time else 'N/A'}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}")
+                            m_body_html_parts.append(f"<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}")
                             m_body_html = "".join(m_body_html_parts)
                         else:
-                            m_body_html = f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                            m_body_html = f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
                         send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, **follower_change_embed(user, "followings", followings_old_count, followings_count, added_followings_list_webhook, removed_followings_list_webhook))
 
                 followings_old_count = followings_count
 
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
 
             if int(followers_count) != int(followers_old_count) or FOLLOWERS_CHURN_DETECTION:
@@ -15212,11 +15239,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                         if not skip_session and not skip_followers and can_view:
                             if followers_count != followers_old_count:
-                                m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
                             else:
-                                m_body = f"Followers list changed for user {user} (count: {followers_count})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                m_body = f"Followers list changed for user {user} (count: {followers_count})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
                         else:
-                            m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                            m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
 
                         if not skip_session and not skip_followers and can_view:
                             if followers_count != followers_old_count:
@@ -15228,15 +15255,15 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                                 m_body_html_parts.append(f"<br><br><b>{removed_followers_mbody.strip()}</b><br>{removed_followers_list_html.strip().replace(chr(10), '<br>')}")
                             if added_followers_list_html:
                                 m_body_html_parts.append(f"<br><br><b>{added_followers_mbody.strip()}</b><br>{added_followers_list_html.strip().replace(chr(10), '<br>')}")
-                            m_body_html_parts.append(f"<br><br>Check interval: <b>{display_time(r_sleep_time) if r_sleep_time else 'N/A'}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}")
+                            m_body_html_parts.append(f"<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}")
                             m_body_html = "".join(m_body_html_parts)
                         else:
-                            m_body_html = f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                            m_body_html = f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
                         send_notification_channels("followers", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION, **follower_change_embed(user, "followers", followers_old_count, followers_count, added_followers_list_webhook, removed_followers_list_webhook))
 
                 followers_old_count = followers_count
 
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
 
             # Profile pic
@@ -15265,8 +15292,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                 m_subject = f"Instagram user {user} bio has changed!"
 
-                m_body = f"Instagram user {user} bio has changed\n\nOld bio:\n\n{bio_old}\n\nNew bio:\n\n{bio}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                m_body_html = f"Instagram user <b>{user}</b> bio has changed<br><br><b>Old bio:</b><br><br>{escape(str(bio_old)).replace(chr(10), '<br>')}<br><br><b>New bio:</b><br><br>{escape(str(bio)).replace(chr(10), '<br>')}<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                m_body = f"Instagram user {user} bio has changed\n\nOld bio:\n\n{bio_old}\n\nNew bio:\n\n{bio}\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                m_body_html = f"Instagram user <b>{user}</b> bio has changed<br><br><b>Old bio:</b><br><br>{escape(str(bio_old)).replace(chr(10), '<br>')}<br><br><b>New bio:</b><br><br>{escape(str(bio)).replace(chr(10), '<br>')}<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
                 bio_webhook_fields = [
                     {"name": "Old Bio", "value": (bio_old[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(bio_old) > WEBHOOK_FIELD_VALUE_LIMIT else bio_old or "(empty)"},
@@ -15275,7 +15302,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"📝 {user} Bio Changed", webhook_description=f"User **{user}** has updated their bio", webhook_color=0x9b59b6, webhook_fields=bio_webhook_fields)
 
                 bio_old = bio
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
 
             if is_private != is_private_old:
@@ -15298,8 +15325,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                 m_subject = f"Instagram user {user} profile visibility has changed to {profile_visibility} !"
 
-                m_body = f"Instagram user {user} profile visibility has changed to {profile_visibility}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                m_body_html = f"Instagram user <b>{user}</b> profile visibility has changed to <b>{profile_visibility}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                m_body = f"Instagram user {user} profile visibility has changed to {profile_visibility}\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                m_body_html = f"Instagram user <b>{user}</b> profile visibility has changed to <b>{profile_visibility}</b><br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
                 emoji = "🔒" if is_private else "🔓"
                 visibility_webhook_fields = [
@@ -15309,7 +15336,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"{emoji} {user} Profile Visibility Changed", webhook_description=f"User **{user}** profile is now **{profile_visibility}**", webhook_color=0xe67e22, webhook_fields=visibility_webhook_fields)
 
                 is_private_old = is_private
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
 
             if followed_by_viewer != followed_by_viewer_old:
@@ -15324,14 +15351,14 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                 m_subject = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user} !"
 
-                m_body = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                m_body_html = f"Your account <b>{'started following' if followed_by_viewer else 'stopped following'}</b> the user <b>{user}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                m_body = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user}\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                m_body_html = f"Your account <b>{'started following' if followed_by_viewer else 'stopped following'}</b> the user <b>{user}</b><br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
                 emoji = "✅" if followed_by_viewer else "❌"
                 send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"{emoji} {user} Following Status Changed", webhook_description=f"Your account {'started following' if followed_by_viewer else 'stopped following'} **{user}**", webhook_color=0x95a5a6)
 
                 followed_by_viewer_old = followed_by_viewer
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
 
             if has_story and not story_flag:
@@ -15348,12 +15375,12 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                 m_subject = f"Instagram user {user} has a new story!"
 
-                m_body = f"Instagram user {user} has a new story\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                m_body_html = f"Instagram user <b>{user}</b> has a new story<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                m_body = f"Instagram user {user} has a new story\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                m_body_html = f"Instagram user <b>{user}</b> has a new story<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
                 send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"📖 {user} New Story", webhook_description=f"User **{user}** has posted a new story!", webhook_color=0xe91e63, webhook_fields=[{"name": "Profile URL", "value": f"https://www.instagram.com/{user}/", "inline": True}])
 
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
 
             if not has_story and story_flag:
@@ -15361,7 +15388,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 stories_count = 0
                 print(f"* Story for user {user} disappeared !")
                 log_activity("Story disappeared", user=user)
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
                 story_flag = False
 
@@ -15469,7 +15496,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                             send_story_item_notifications(user, story_type, local_ts, expire_ts, story_mentions, story_hashtags, story_caption, r_sleep_time, story_thumbnail_url, story_image_filename)
 
-                            print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                            print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                             print_cur_ts()
 
                             # Update web dashboard with the new story
@@ -15722,10 +15749,10 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                     m_subject = f"Instagram user {user} has a new {last_source.lower()} - {get_short_date_from_ts(highestinsta_dt)} (after {calculate_timespan(highestinsta_dt, highestinsta_dt_old, show_seconds=False)} - {get_short_date_from_ts(highestinsta_dt_old)})"
 
-                    m_body = f"Instagram user {user} has a new {last_source.lower()} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n\nDate: {get_date_from_ts(highestinsta_dt)}\n{last_source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nLikes: {likes}\nComments: {comments}\nTagged: {tagged_users}{location_mbody}{location_mbody_str}\nDescription:\n\n{caption}\n{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{post_comments_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body = f"Instagram user {user} has a new {last_source.lower()} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n\nDate: {get_date_from_ts(highestinsta_dt)}\n{last_source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nLikes: {likes}\nComments: {comments}\nTagged: {tagged_users}{location_mbody}{location_mbody_str}\nDescription:\n\n{caption}\n{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{post_comments_list}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
                     safe_post_url = escape(post_url, quote=True)
                     safe_profile_url = escape(f"https://www.instagram.com/{insta_username}/", quote=True)
-                    m_body_html = f"Instagram user <b>{user}</b> has a new {last_source.lower()} after <b>{calculate_timespan(highestinsta_dt, highestinsta_dt_old)}</b> ({get_date_from_ts(highestinsta_dt_old)}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(highestinsta_dt)}</b><br>{last_source.capitalize()} URL: <a href=\"{safe_post_url}\">{safe_post_url}</a><br>Profile URL: <a href=\"{safe_profile_url}\">{safe_profile_url}</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {escape(str(tagged_users))}{location_mbody_html}{escape(str(location_mbody_str))}<br>Description:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{escape(likes_users_list)}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                    m_body_html = f"Instagram user <b>{user}</b> has a new {last_source.lower()} after <b>{calculate_timespan(highestinsta_dt, highestinsta_dt_old)}</b> ({get_date_from_ts(highestinsta_dt_old)}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(highestinsta_dt)}</b><br>{last_source.capitalize()} URL: <a href=\"{safe_post_url}\">{safe_post_url}</a><br>Profile URL: <a href=\"{safe_profile_url}\">{safe_profile_url}</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {escape(str(tagged_users))}{location_mbody_html}{escape(str(location_mbody_str))}<br>Description:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{escape(likes_users_list)}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
                     emoji = "🎬" if last_source == "reel" else "📸"
                     webhook_fields = [
@@ -15768,7 +15795,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     highestinsta_ts_old = highestinsta_ts
                     highestinsta_dt_old = highestinsta_dt
 
-                    print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                    print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                     print_cur_ts()
 
                 elif not new_post and (posts_count != posts_count_old or reels_count != reels_count_old):
@@ -15800,7 +15827,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         if leaked_update:
                             update_ui_data(targets={user: {'new_update': leaked_update, 'last_post': leaked_update, 'posts': posts_count, 'reels': reels_count}})
                     if new_leaked:
-                        print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                        print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                         print_cur_ts("Timestamp:\t\t\t\t")
                     if leaked:
                         highest_collab_ts_old = max(highest_collab_ts_old, max(p.get("ts", 0) for p in leaked))
@@ -15872,8 +15899,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 error_msg = format_error_message(e)
                 streak = f"failure #{consecutive_behuman_errors}, failing for {display_time(int(time.time()) - behuman_failed_since)}"
                 alert_subject = f"Instagram BeHuman mode error for {user} ({streak})"
-                alert_body = f"A BeHuman simulation error occurred for user {user} ({streak}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                alert_body_html = f"A BeHuman simulation error occurred for user <b>{escape(str(user))}</b> ({escape(streak)}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                alert_body = f"A BeHuman simulation error occurred for user {user} ({streak}):\n{error_msg}\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                alert_body_html = f"A BeHuman simulation error occurred for user <b>{escape(str(user))}</b> ({escape(streak)}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
                 # Tried again on a later failing simulation once the alert is due, after a wait that grows with each failed attempt
                 now = int(time.time())
                 behuman_email_pending = behuman_alert.pending("email", ERROR_NOTIFICATION, now)
@@ -15886,6 +15913,9 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         if HOURS_VERBOSE or DEBUG_MODE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE):
             sleep_message(r_sleep_time, user)
             debug_print("Next check scheduled", next=get_date_from_ts(NEXT_CHECK_TIME))
+
+        # Only a check that got this far advanced the baselines, so a failing check leaves the window where it was
+        LAST_CHECK_TS = int(time.time())
 
         # Sleep with manual check support in debug mode (or stop event support in Web Dashboard mode)
         if DEBUG_MODE or stop_event or WEB_DASHBOARD_ENABLED:
