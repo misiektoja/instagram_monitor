@@ -4,6 +4,7 @@ import sqlite3
 import stat
 import sys
 import tempfile
+from contextlib import closing
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
@@ -29,7 +30,7 @@ class TestFirefoxCookieImport:
         ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as directory_name:
             cookie_path = Path(directory_name) / "cookies.sqlite"
-            with sqlite3.connect(cookie_path) as connection:
+            with closing(sqlite3.connect(cookie_path)) as connection, connection:
                 connection.execute("CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT)")
                 connection.executemany("INSERT INTO moz_cookies VALUES (?, ?, ?)", [("instagram.com", "sessionid", "root"), (".instagram.com", "csrftoken", "subdomain"), ("notinstagram.com", "attacker", "suffix"), ("instagram.com.evil.example", "attacker2", "prefix"), ("evilinstagram.com", "attacker3", "lookalike")])
 
@@ -38,12 +39,87 @@ class TestFirefoxCookieImport:
         assert cookies == {"sessionid": "root", "csrftoken": "subdomain"}
 
 
+class TestWindowsFirefoxDiscovery:
+    @pytest.fixture
+    def windows_home(self, im_module, monkeypatch, tmp_path):
+        home = tmp_path / "home"
+        roaming = home / "AppData" / "Roaming"
+        local = home / "AppData" / "Local"
+        monkeypatch.setattr(im_module, "system", lambda: "Windows")
+        monkeypatch.setattr(im_module, "expanduser", lambda path: str(home) + path[1:] if path.startswith("~") else path)
+        monkeypatch.setenv("APPDATA", str(roaming))
+        monkeypatch.setenv("LOCALAPPDATA", str(local))
+        monkeypatch.setattr(im_module, "FIREFOX_WINDOWS_COOKIE", str(roaming / "Mozilla/Firefox/Profiles/*/cookies.sqlite"))
+        return home, roaming, local
+
+    # Both traditional installers and Store/MSIX profiles are offered without duplicates
+    def test_regular_and_store_profiles(self, im_module, windows_home):
+        _, roaming, local = windows_home
+        regular = roaming / "Mozilla/Firefox/Profiles/regular.default-release/cookies.sqlite"
+        store = local / "Packages/Mozilla.Firefox_test/LocalCache/Roaming/Mozilla/Firefox/Profiles/store.profile/cookies.sqlite"
+        for path in (regular, store):
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"")
+        profiles = im_module.list_firefox_profiles()
+        assert [Path(profile["path"]) for profile in profiles] == [regular, store]
+        assert [profile["name"] for profile in profiles] == ["default-release", "profile"]
+        assert Path(im_module.resolve_firefox_profile("store.profile")) == store
+
+    # A Store-only machine auto-selects its sole profile instead of reporting no database
+    def test_store_only_auto_selection(self, im_module, windows_home):
+        _, _, local = windows_home
+        store = local / "Packages/Mozilla.Firefox_test/LocalCache/Roaming/Mozilla/Firefox/Profiles/a.default/cookies.sqlite"
+        store.parent.mkdir(parents=True)
+        store.write_bytes(b"")
+        assert Path(im_module.get_firefox_cookiefile()) == store
+
+    # Missing or redirected environment variables do not hide the user's package directory
+    @pytest.mark.parametrize("redirected", [False, True])
+    def test_package_home_fallback(self, im_module, monkeypatch, windows_home, redirected):
+        home, _, local = windows_home
+        if redirected:
+            monkeypatch.setenv("LOCALAPPDATA", str(home / "redirected"))
+        else:
+            monkeypatch.delenv("LOCALAPPDATA")
+            monkeypatch.delenv("APPDATA")
+        store = local / "Packages/Mozilla.Firefox_test/LocalCache/Roaming/Mozilla/Firefox/Profiles/a.default/cookies.sqlite"
+        store.parent.mkdir(parents=True)
+        store.write_bytes(b"")
+        assert Path(im_module.get_firefox_cookiefile()) == store
+
+    # User configuration remains first and redirected roaming data is also searched
+    def test_custom_pattern_and_roaming(self, im_module, monkeypatch, windows_home):
+        home, _, _ = windows_home
+        custom = home / "custom/cookies.sqlite"
+        roaming = home / "redirected-roaming"
+        regular = roaming / "Mozilla/Firefox/Profiles/a.default/cookies.sqlite"
+        for path in (custom, regular):
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"")
+        monkeypatch.setattr(im_module, "FIREFOX_WINDOWS_COOKIE", str(custom))
+        monkeypatch.setenv("APPDATA", str(roaming))
+        assert im_module.firefox_cookie_patterns()[0] == str(custom)
+        assert [Path(p["path"]) for p in im_module.list_firefox_profiles()] == [custom, regular]
+
+    # Non-Windows profile lookup keeps its existing search paths
+    @pytest.mark.parametrize("platform", ["Darwin", "Linux"])
+    def test_other_platforms_unchanged(self, im_module, monkeypatch, platform):
+        monkeypatch.setattr(im_module, "system", lambda: platform)
+        monkeypatch.setattr(im_module, "FIREFOX_MACOS_COOKIE", "mac-pattern")
+        monkeypatch.setattr(im_module, "FIREFOX_LINUX_COOKIE", "linux-pattern")
+        patterns = im_module.firefox_cookie_patterns()
+        if platform == "Darwin":
+            assert patterns == ("mac-pattern",)
+        else:
+            assert patterns == ("linux-pattern", "~/snap/firefox/common/.mozilla/firefox/*/cookies.sqlite", "~/.var/app/org.mozilla.firefox/.mozilla/firefox/*/cookies.sqlite")
+
+
 class TestSessionPaths:
     # Unix session discovery includes Instaloader's canonical path plus both legacy locations
     def test_unix_candidates_include_canonical_and_legacy_paths(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "system", lambda: "Darwin")
 
-        candidates = im_module.get_session_file_candidates("Session.User")
+        candidates = [path.replace("\\", "/") for path in im_module.get_session_file_candidates("Session.User")]
 
         assert candidates[0].endswith("/.config/instaloader/session-session.user")
         assert any(path.endswith("/session.user.session") for path in candidates)

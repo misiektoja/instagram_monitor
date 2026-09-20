@@ -139,7 +139,9 @@ Profile selection works the same way for every browser (see [Selecting a browser
 instagram_monitor --import-browser-session --browser firefox --browser-profile "default-release"
 ```
 
-On Linux, Firefox profiles installed natively, through Snap or through Flatpak are discovered automatically. You can adjust the default Firefox cookie directory permanently via `FIREFOX_*_COOKIE` configuration options. The advanced `--cookie-file` option covers any other layout.
+On Windows, Firefox profiles from the regular installer (including MSI) and Microsoft Store/MSIX are discovered automatically. Discovery includes `%APPDATA%\Mozilla\Firefox\Profiles` and `%LOCALAPPDATA%\Packages\Mozilla.Firefox_*\LocalCache\Roaming\Mozilla\Firefox\Profiles`. Multiple profiles are offered for selection; the importer does not silently choose an account.
+
+On Linux, Firefox profiles installed natively, through Snap or through Flatpak are discovered automatically. You can adjust the default Firefox cookie directory permanently via `FIREFOX_*_COOKIE` configuration options; the configured pattern is searched first. The advanced `--cookie-file` option covers any other layout and continues to override automatic discovery.
 
 <a id="which-browsers-are-supported"></a>
 #### Which browsers are supported

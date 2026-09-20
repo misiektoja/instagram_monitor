@@ -8645,12 +8645,19 @@ def get_real_reel_code(bot: instaloader.Instaloader, username: str) -> Optional[
         return None
 
 
-# Returns Firefox cookie patterns for the active platform including Linux package variants
+# Returns Firefox cookie patterns for the active platform and packaged installations
 def firefox_cookie_patterns():
     selected_system = system()
     configured_pattern = {"Windows": FIREFOX_WINDOWS_COOKIE, "Darwin": FIREFOX_MACOS_COOKIE}.get(selected_system, FIREFOX_LINUX_COOKIE)
     patterns = [configured_pattern]
-    if selected_system == "Linux":
+    if selected_system == "Windows":
+        roaming = os.environ.get("APPDATA") or expanduser("~/AppData/Roaming")
+        patterns.append(os.path.join(roaming, "Mozilla", "Firefox", "Profiles", "*", "cookies.sqlite"))
+        # Store/MSIX Firefox keeps its profiles inside its package's redirected data.
+        local_roots = (os.environ.get("LOCALAPPDATA"), expanduser("~/AppData/Local"))
+        for local_root in dict.fromkeys(root for root in local_roots if root):
+            patterns.append(os.path.join(local_root, "Packages", "Mozilla.Firefox_*", "LocalCache", "Roaming", "Mozilla", "Firefox", "Profiles", "*", "cookies.sqlite"))
+    elif selected_system == "Linux":
         # The last pattern covers a container given the Windows Firefox root, where the profiles sit one level
         # deeper in a Profiles folder. It matches nothing on an ordinary Linux host
         patterns.extend(("~/snap/firefox/common/.mozilla/firefox/*/cookies.sqlite", "~/.var/app/org.mozilla.firefox/.mozilla/firefox/*/cookies.sqlite", "~/.mozilla/firefox/Profiles/*/cookies.sqlite"))
