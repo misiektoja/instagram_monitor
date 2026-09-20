@@ -286,7 +286,7 @@ Follower emails report accounts that followed or unfollowed the target. Enable t
 instagram_monitor <target_insta_user> -m
 ```
 
-Error emails are enabled by default when email is configured. Disable them in one of these ways:
+Error emails are enabled by default when email is configured. They cover both the failure alert and the recovery alert that follows it. Disable both in one of these ways:
 
 - set `ERROR_NOTIFICATION` to `False`
 - or use the `-e` flag
@@ -297,6 +297,8 @@ instagram_monitor <target_insta_user> -e
 ```
 
 Error alerts are sent after **5 minutes** of a continuing failure. Problems that need your action, such as an expired session, alert immediately. Webhooks follow the same rule when `WEBHOOK_ERROR_NOTIFICATION` is enabled. Each kind of failure alerts once per channel. Changing network errors during one outage do not trigger repeated alerts. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour. Alerts can fire again after monitoring recovers.
+
+Every failure alert has the subject `Instagram Monitor error: <what went wrong> (user: <target>)` and a body naming the fix, the guide link, how many checks failed in a row, since when and when the next retry is. When the failure clears, a **recovery alert** with the subject `Instagram Monitor recovered: monitoring <target> resumed after <duration>` goes to the channels the failure alert reached. `-e` for email and `WEBHOOK_ERROR_NOTIFICATION` for webhooks switch off both alerts together.
 
 Email requires [SMTP settings](configuration.md#smtp-settings). Run `instagram_monitor --send-test-email` before a long monitoring session.
 
@@ -315,7 +317,7 @@ By default, all webhook notification types (status, followers, errors) are **dis
 
 - Use `--webhook-status` to toggle status notifications (new posts, reels, stories, bio, visibility, profile pic)
 - Use `--webhook-followers` to toggle follower/following change notifications
-- Use `--webhook-errors` to toggle error notifications
+- Use `--webhook-errors` to toggle error notifications, which cover both the failure alert and the recovery alert that follows it
 
 Example:
 ```sh

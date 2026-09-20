@@ -50,13 +50,18 @@ Every failure is reported in the same three-part shape: what went wrong, a `To f
 | Webhook alerts never arrive | Provider mismatch or a stale destination | [Webhook Settings](configuration.md#webhook-settings) then run `instagram_monitor --send-test-webhook` |
 | `instagram_monitor` is not found after installation | The shell has not picked up the new command | [Installation and Command Problems](#installation-and-command-problems) |
 | Escape sequences such as `[36m` printed as text or no colour at all | The terminal cannot display ANSI colour or colour was switched off | [Terminal Colours Look Wrong](#terminal-colours-look-wrong) |
+| `Instagram could not be reached` or `Instagram's address could not be resolved` | A network problem between this machine and Instagram | [Connection Errors During Monitoring](#connection-problems) |
+| `This process ran out of file descriptors` | The operating system limit on open files was reached | [Too Many Open Files](#too-many-open-files) |
 
 A continuing outage produces a `* Monitoring degraded` reminder once an hour, even when the [liveness reminder](usage.md#liveness-reminder) is switched off. `* Monitoring recovered` marks recovery. Use `--verbose` to see the first failed check.
 
+<a id="connection-problems"></a>
 <a id="connection-errors-during-monitoring"></a>
 ## Connection Errors During Monitoring
 
 When a check fails, Instagram Monitor prints the error, a `To fix:` action and a `Guide:` link where one applies, then retries automatically at the next interval. You do not need to restart the tool. A command in the fix text matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is.
+
+`Instagram could not be reached` means a check got no answer from Instagram, and `Instagram's address could not be resolved` means the lookup of the name failed before any request was made. Both are retried on their own and the report names how long until the next check, so a short outage needs no action. A failure that lasts produces the hourly `Monitoring degraded` reminder and `Monitoring recovered` when it clears.
 
 Every other problem reads the same way: all print `* Error:` with what went wrong, a `To fix:` action and a `Guide:` link. A problem the run recovers from prints `* Warning:` with the same two lines under it.
 
@@ -164,6 +169,11 @@ Common browser source errors:
 - **Rendered only N of about M**: the dialog stopped growing early, usually from a slow connection. Raise `FOLLOW_LIST_BROWSER_SCROLL_DELAY` and `FOLLOW_LIST_BROWSER_TIMEOUT`. The short list is discarded, not saved over your baseline.
 
 Run `instagram_monitor --doctor` to confirm Playwright and the browser are installed before a real run.
+
+<a id="too-many-open-files"></a>
+## Too Many Open Files
+
+`This process ran out of file descriptors` means the operating system limit on open files was reached. It is a local limit and not an Instagram problem. Raise it with `ulimit -n 4096` in the shell that starts the tool or set `LimitNOFILE=` in the systemd unit, then restart the tool.
 
 <a id="terminal-colours-look-wrong"></a>
 ## Terminal Colours Look Wrong

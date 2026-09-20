@@ -108,7 +108,7 @@ For the manual single-file method, optional extras and upgrade commands, see [In
 ### 🔔 Smart Notifications
 - **Multi-Channel**: Instant alerts via **Email**, **Discord webhooks** and native **ntfy** notifications.
 - **Rich Alerts**: Attached media (profile pics, stories, posts) in Discord notifications.
-- **Error Reporting**: Be notified if the monitoring process hits a snag.
+- **Error Reporting**: Be notified when monitoring starts failing, and again when it recovers.
 
 ### 🛡️ Privacy & Detection Avoidance
 - **Be Human Mode**: Simulates random user actions to blend in.
