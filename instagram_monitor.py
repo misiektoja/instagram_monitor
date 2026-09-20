@@ -8117,16 +8117,36 @@ def user_id_from_search(ctx, username: str) -> Optional[str]:
     return None
 
 
+# Returns the id of the account the session is signed in as when that is the name being resolved, or None for any
+# other name. Instagram writes it into the session's ds_user_id cookie, so searching for it would spend a request
+# on an answer already on hand
+def own_user_id(ctx, username: str) -> Optional[str]:
+    if username.strip().lower() != str(getattr(ctx, 'username', None) or "").strip().lower():
+        return None
+    cookies = getattr(getattr(ctx, '_session', None), 'cookies', None)
+    if cookies is None:
+        return None
+    try:
+        identifier = str(cookies.get('ds_user_id') or "").strip()
+    except Exception:
+        return None
+    return identifier if identifier.isdigit() else None
+
+
 # Returns the user id for a username, reusing a stored answer and searching only when there is none
 def resolve_user_id(ctx, username: str) -> Optional[str]:
     stored = stored_user_id(username)
     if stored:
         return stored
 
-    resolved = user_id_from_search(ctx, username.strip().lower())
+    resolved = own_user_id(ctx, username)
+    source = "session"
+    if not resolved:
+        resolved = user_id_from_search(ctx, username.strip().lower())
+        source = "search"
     if resolved:
         remember_user_id(username, resolved)
-        debug_print("Resolved Instagram user id", username=username.strip().lower(), source="search")
+        debug_print("Resolved Instagram user id", username=username.strip().lower(), source=source)
     return resolved
 
 
