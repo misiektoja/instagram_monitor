@@ -368,7 +368,7 @@ class TestAccountFlagIdentity:
         monkeypatch.setattr(im_module, "send_webhook", lambda title, description, *args, **kwargs: captured.update(webhook=description))
 
         advice = im_module.classify_recovery_error("connection reset", is_logged_in=True)
-        im_module.notify_monitoring_error("target.user", advice, "connection reset", int(time.time()), 1, 3600, im_module.ErrorAlertState())
+        im_module.notify_monitoring_error("target.user", advice, int(time.time()), 1, 3600, im_module.ErrorAlertState())
 
         assert "SecretBuild" not in captured["body"] and "SecretBuild" not in captured["webhook"]
         assert "Transport:" not in captured["body"]
@@ -382,7 +382,7 @@ class TestAccountFlagIdentity:
 
         advice = im_module.classify_recovery_error("connection reset", is_logged_in=True)
         assert "\nGuide: " in advice.fix
-        im_module.notify_monitoring_error("target.user", advice, "connection reset", int(time.time()), 1, 3600, im_module.ErrorAlertState())
+        im_module.notify_monitoring_error("target.user", advice, int(time.time()), 1, 3600, im_module.ErrorAlertState())
 
         parts = captured["html"].split("<br>")
         fix_index = next(index for index, part in enumerate(parts) if part.startswith("To fix: "))

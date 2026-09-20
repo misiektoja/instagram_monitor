@@ -19,7 +19,7 @@ KNOWN_ERRORS = [
     ("BadCredentialsException: Wrong password", "invalid or expired"),
     ("FileNotFoundError: Instagram session file for me not found", "No saved session"),
     ("ProfileNotExistsException: Profile xyz does not exist", "spelled correctly"),
-    ("ConnectionException: HTTPSConnectionPool max retries exceeded", "network problem"),
+    ("ConnectionException: HTTPSConnectionPool max retries exceeded", "the tool retries on its own"),
 ]
 
 
@@ -194,8 +194,8 @@ class TestDnsHint:
 
     def test_plain_network_errors_keep_the_generic_hint(self, im_module):
         hint = im_module.error_fix_hint("ConnectionException: HTTPSConnectionPool max retries exceeded")
-        assert "network problem" in hint
-        assert "DNS" not in hint
+        assert "check network access, DNS, firewall and proxy settings" in hint
+        assert "cannot resolve Instagram's address" not in hint
 
     def test_dns_hint_mentions_recovery_is_automatic(self, im_module):
         assert "resumes on its own" in im_module.error_fix_hint("ConnectionException: Could not resolve host: x")
@@ -205,7 +205,7 @@ class TestDnsHint:
         hint = im_module.error_fix_hint("ConnectionException: 400 Bad Request")
 
         assert "invalid or expired" not in hint
-        assert "network problem" in hint
+        assert "check network access, DNS, firewall and proxy settings" in hint
 
 
 class TestGuideLinkRelevance:
@@ -213,7 +213,7 @@ class TestGuideLinkRelevance:
         # A machine with no proxy configured must not be sent to proxy setup docs
         hint = im_module.error_fix_hint("ConnectionException: Could not resolve host: www.instagram.com")
         assert im_module.PROXY_GUIDE_URL not in hint
-        assert im_module.CONNECTION_ERRORS_GUIDE_URL in hint
+        assert im_module.CONNECTION_GUIDE_URL in hint
 
     def test_unresolvable_proxy_still_links_the_proxy_guide(self, im_module):
         hint = im_module.error_fix_hint("ConnectionException: Could not resolve proxy: myproxy.local")
@@ -226,7 +226,7 @@ class TestGuideLinkRelevance:
 
     def test_generic_network_hint_links_the_connection_guide(self, im_module):
         hint = im_module.error_fix_hint("ConnectionException: HTTPSConnectionPool max retries exceeded")
-        assert im_module.CONNECTION_ERRORS_GUIDE_URL in hint
+        assert im_module.CONNECTION_GUIDE_URL in hint
 
 
 class TestErrorSummary:
@@ -495,8 +495,8 @@ class TestTheLoopFailurePaths:
             reporter_calls.append({"code": advice.code, "since": self.since, "failures": self.failures, "outcome": outcome})
             return outcome
 
-        def alert(user, advice, error_msg, since, count, sleep_time, state):
-            alerts.append({"code": advice.code, "since": since, "count": count, "error": error_msg})
+        def alert(user, advice, since, count, sleep_time, state):
+            alerts.append({"code": advice.code, "since": since, "count": count, "detail": advice.detail})
 
         # The startup pass runs before the loop and a failure there ends the process, so only loop checks fail
         def profile(bot, user):
@@ -579,7 +579,7 @@ class TestTheLoopFailurePaths:
     # A reported outage is closed on screen once a check succeeds, so it is never left open
     def test_a_check_that_succeeds_after_a_failure_announces_the_recovery(self, im_module, monkeypatch, capsys):
         recoveries = []
-        monkeypatch.setattr(im_module, "print_outage_recovery", lambda user, lasted: recoveries.append(user))
+        monkeypatch.setattr(im_module, "print_outage_recovery", lambda user, lasted, alert_state=None: recoveries.append(user))
 
         self._drive(im_module, monkeypatch, profile_error=RuntimeError("500 Server Error"), recovers=True)
         capsys.readouterr()
@@ -598,7 +598,7 @@ class TestTheLoopFailurePaths:
     # A run that never recovers must not claim it did
     def test_a_run_that_only_fails_announces_no_recovery(self, im_module, monkeypatch, capsys):
         recoveries = []
-        monkeypatch.setattr(im_module, "print_outage_recovery", lambda user, lasted: recoveries.append(user))
+        monkeypatch.setattr(im_module, "print_outage_recovery", lambda user, lasted, alert_state=None: recoveries.append(user))
 
         self._drive(im_module, monkeypatch, profile_error=RuntimeError("500 Server Error"), checks=2)
         capsys.readouterr()

@@ -99,7 +99,7 @@ class TestNotifyMonitoringError:
     # Runs one failing check through the alert with the given error, keeping the state between calls
     def _notify(self, im_module, state, error, failure_count, lasted=600):
         advice = im_module.classify_recovery_error(error, is_logged_in=True)
-        return im_module.notify_monitoring_error("targetuser", advice, error, int(time.time()) - lasted, failure_count, 60, state)
+        return im_module.notify_monitoring_error("targetuser", advice, int(time.time()) - lasted, failure_count, 60, state)
 
     # A failure the tool can retry away waits until it has lasted ERROR_ALERT_AFTER_SECONDS, then alerts each channel once
     def test_email_and_webhook_send_once_after_the_alert_delay(self, im_module, monkeypatch):
@@ -114,8 +114,10 @@ class TestNotifyMonitoringError:
         assert results == [False, False, True, False]
         assert len(calls["email"]) == 1
         assert len(calls["webhook"]) == 1
-        assert "failure #3, failing for 5 minutes" in calls["email"][0][0][0]
-        assert "failure #3, failing for 5 minutes" in calls["webhook"][0][0][1]
+        assert calls["email"][0][0][0].startswith("Instagram Monitor error: ")
+        assert "(user: targetuser)" in calls["email"][0][0][0]
+        assert "Failed checks in a row: 3" in calls["email"][0][0][1]
+        assert "Failing since: " in calls["email"][0][0][1]
         assert "To fix:" in calls["email"][0][0][1]
 
     # A failure that cannot clear on its own, such as an expired session, is alerted on the first failing check
@@ -171,7 +173,7 @@ class TestNotifyMonitoringError:
         attempts = []
         for offset in (0, 60, 299, 300, 600, 899, 900, 1200):
             clock["now"] = 1_000_000 + offset
-            im_module.notify_monitoring_error("targetuser", advice, "401 Unauthorized", 1_000_000, 1, 60, state)
+            im_module.notify_monitoring_error("targetuser", advice, 1_000_000, 1, 60, state)
             attempts.append(len(calls["email"]))
 
         assert attempts == [1, 1, 1, 2, 2, 2, 3, 3]
@@ -265,7 +267,7 @@ class TestOneOutageIsOneAlertWhateverItsSubtype:
         for error in errors:
             advice = im_module.classify_recovery_error(error, is_logged_in=True)
             reports.append(reporter.failed(advice))
-            im_module.notify_monitoring_error("targetuser", advice, error, reporter.since, reporter.failures, 60, state)
+            im_module.notify_monitoring_error("targetuser", advice, reporter.since, reporter.failures, 60, state)
             clock["now"] += 360
         return reports, sent, state
 
@@ -474,3 +476,41 @@ class TestAChallengeOnALowerEndpointIsNotSwallowed:
 
         assert im_module.get_total_reels_count("target", bot, False) == 0
         assert calls == ["mobile", "fallback"]
+
+
+class TestMonitoringRecoveryAlert:
+    # Captures channel delivery without contacting SMTP or webhook endpoints
+    @staticmethod
+    def _capture(im_module, monkeypatch):
+        sent = {"email": [], "webhook": []}
+        monkeypatch.setattr(im_module, "send_email", lambda *a, **k: sent["email"].append(a) or 0)
+        monkeypatch.setattr(im_module, "send_webhook", lambda *a, **k: sent["webhook"].append(a) or 0)
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "ops@example.com", raising=False)
+        monkeypatch.setattr(im_module, "SMTP_SSL", True, raising=False)
+        monkeypatch.setattr(im_module, "webhook_event_enabled", lambda event: False)
+        return sent
+
+    # A recovery alert answers the failure alert, so it goes only where that failure alert was delivered
+    def test_a_channel_that_was_never_alerted_hears_nothing(self, im_module, monkeypatch):
+        sent = self._capture(im_module, monkeypatch)
+        state = im_module.ErrorAlertState()
+
+        assert im_module.notify_monitoring_recovery("targetuser", state) is False
+        assert sent["email"] == [] and sent["webhook"] == []
+
+    # The channel that carried the failure alert is told the failure ended, naming how long it lasted and what it was
+    def test_the_alerted_channel_is_told_the_failure_ended(self, im_module, monkeypatch):
+        sent = self._capture(im_module, monkeypatch)
+        state = im_module.ErrorAlertState()
+        advice = im_module.classify_recovery_error("The read operation timed out", is_logged_in=True)
+        state.remember(advice, int(time.time()) - 514)
+        state.record("email", True, True, int(time.time()))
+
+        assert im_module.notify_monitoring_recovery("targetuser", state) is True
+        assert len(sent["email"]) == 1
+        subject, body = sent["email"][0][0], sent["email"][0][1]
+        assert subject.startswith("Instagram Monitor recovered: monitoring targetuser resumed after ")
+        assert "Monitoring recovered for targetuser after " in body
+        assert advice.summary in body
+        assert sent["webhook"] == []
