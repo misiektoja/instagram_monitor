@@ -83,7 +83,7 @@ STATUS_NOTIFICATION = False
 # Can also be enabled via the -m flag
 FOLLOWERS_NOTIFICATION = False
 
-# Whether to send an email on monitoring errors
+# Whether to send an email on monitoring errors and when they clear
 # Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
 
@@ -125,7 +125,7 @@ WEBHOOK_STATUS_NOTIFICATION = False
 # Can also be enabled via the --webhook-followers flag
 WEBHOOK_FOLLOWERS_NOTIFICATION = False
 
-# Whether to send a webhook notification on monitoring errors
+# Whether to send a webhook notification on monitoring errors and when they clear
 # Can also be enabled via the --webhook-errors flag
 WEBHOOK_ERROR_NOTIFICATION = False
 
@@ -1013,7 +1013,8 @@ FOLLOW_LIST_SOURCE_GUIDE_URL = DOCS_BASE_URL + "/usage/#follower-list-source"
 HTTP_BACKEND_GUIDE_URL = DOCS_BASE_URL + "/usage/#http-transport-backend"
 ANTI_DETECTION_INTERVAL_GUIDE_URL = DOCS_BASE_URL + "/anti-detection/#keep-the-polling-interval-reasonable"
 ANTI_DETECTION_SESSION_GUIDE_URL = DOCS_BASE_URL + "/anti-detection/#sign-in-using-session-mode-with-browser-cookies"
-CONNECTION_ERRORS_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#connection-errors-during-monitoring"
+CONNECTION_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#connection-problems"
+DESCRIPTOR_LIMIT_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#too-many-open-files"
 DOCTOR_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#doctor-preflight"
 ACTION_BLOCK_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#instagram-says-try-again-later"
 RETIRED_ENDPOINT_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#profile-lookups-report-a-retired-endpoint"
@@ -11194,7 +11195,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
 
     # Checked ahead of every context, since a local descriptor limit is not a failure of whatever call hit it
     if error is not None and is_too_many_open_files(error):
-        return advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not an Instagram problem", "Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", False, DIAGNOSTICS_GUIDE_URL)
+        return advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not an Instagram problem", "Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", False, DESCRIPTOR_LIMIT_GUIDE_URL)
 
     if context == "config_missing":
         return advice("config.missing", "A required setting has no value", "Set it in the configuration file, in the environment or with its command-line flag, then re-run the tool", False, CONFIG_GUIDE_URL)
@@ -11301,11 +11302,11 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
 
     # DNS failures are resolver-side, so they need their own fix before the generic network branch swallows them
     if any(t in m for t in FAILURE_TERMS['dns_failure']):
-        return "network.dns", "Instagram's address could not be resolved", "Your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com') and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again", CONNECTION_ERRORS_GUIDE_URL, True
+        return "network.dns", "Instagram's address could not be resolved", "Your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com') and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again", CONNECTION_GUIDE_URL, True
 
     # Network or connectivity problems
     if any(t in m for t in FAILURE_TERMS['network']):
-        return "network.unavailable", "Instagram could not be reached", "This looks like a network problem. Check your internet connection, then your proxy settings if --enable-proxy is set, then try again", CONNECTION_ERRORS_GUIDE_URL, True
+        return "network.unavailable", "Instagram could not be reached", "Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings. Check the proxy first if --enable-proxy is set", CONNECTION_GUIDE_URL, True
 
     # Deprecated GraphQL doc_id returning null data, or a temporary block
     if any(t in m for t in FAILURE_TERMS['schema_change']):
@@ -11440,8 +11441,11 @@ def print_outage_change(target: str, advice: RecoveryAdvice) -> None:
 
 
 # Reports that a failure cleared, since a throttled failure no longer stops printing when it is over
-def print_outage_recovery(target: str, lasted: int) -> None:
+def print_outage_recovery(target: str, lasted: int, alert_state=None) -> None:
     print(f"* Monitoring recovered for {target} after {display_time(max(1, lasted))}")
+    # Sent before the report closes so the delivery lines stay inside it, as the failure alert's own lines do
+    if alert_state is not None:
+        notify_monitoring_recovery(target, alert_state)
     print_cur_ts()
 
 
@@ -11595,6 +11599,8 @@ class ErrorAlertState:
     webhook_failures: int = 0
     email_retry_at: int = 0
     webhook_retry_at: int = 0
+    summary: str = ""
+    failing_since: int = 0
 
     # Forgets the delivered alert, so the next failure earns each channel a new one
     def reset(self):
@@ -11604,6 +11610,13 @@ class ErrorAlertState:
         self.webhook_failures = 0
         self.email_retry_at = 0
         self.webhook_retry_at = 0
+        self.summary = ""
+        self.failing_since = 0
+
+    # Keeps what this outage failed with and when it started, so the recovery alert can name the failure it clears
+    def remember(self, advice: RecoveryAdvice, failed_since: int) -> None:
+        self.summary = advice.summary
+        self.failing_since = int(failed_since)
 
     # Tells whether a channel still owes the alert and its wait after a failed attempt, if any, has passed
     def pending(self, channel: str, enabled, now: int) -> bool:
@@ -11625,8 +11638,77 @@ class ErrorAlertState:
         print(f"* The {channel} alert is on hold for {display_time(delay)} after {failures} {'attempt' if failures == 1 else 'attempts'}, then tried again")
 
 
+# Builds the subject every failure alert shares, so an inbox fed by several monitors sorts them by tool
+def recovery_alert_subject(advice: RecoveryAdvice, target: str) -> str:
+    return f"Instagram Monitor error: {advice.summary} (user: {target})"
+
+
+# Returns the failure alert body as groups of (label, value, emphasized) rows, so the plain and HTML forms cannot drift apart
+def recovery_alert_rows(advice: RecoveryAdvice, retry_seconds: int, failed_checks: int = 0, failing_since: int = 0) -> List[List[Tuple[str, str, bool]]]:
+    groups: List[List[Tuple[str, str, bool]]] = [[("", advice.summary, True)]]
+    if advice.fix:
+        groups.append([("To fix: ", advice.fix, False)])
+    counters: List[Tuple[str, str, bool]] = []
+    # A single failure has no streak to report, and the outage start it would name is the timestamp below it
+    if failed_checks > 1:
+        counters.append(("Failed checks in a row: ", str(failed_checks), True))
+        if failing_since:
+            counters.append(("Failing since: ", get_date_from_ts(failing_since), True))
+    counters.append(("Next retry in: ", display_time(max(1, int(retry_seconds))), True))
+    groups.append(counters)
+    # A detail repeating the summary spends a line saying nothing, and it names internal library errors rather than anything actionable
+    if DEBUG_MODE and advice.detail and advice.detail != advice.summary:
+        groups.append([("Technical detail: ", advice.detail, False)])
+    return groups
+
+
+# Builds the plain text failure alert body, leaving the timestamp to the caller so the webhook copy can go without one
+def recovery_alert_body(advice: RecoveryAdvice, retry_seconds: int, failed_checks: int = 0, failing_since: int = 0) -> str:
+    return "\n\n".join("\n".join(f"{label}{value}" for label, value, _ in group) for group in recovery_alert_rows(advice, retry_seconds, failed_checks, failing_since))
+
+
+# Renders one alert row as HTML, keeping the line breaks HTML would otherwise collapse into spaces
+def recovery_alert_row_html(label: str, value: str, emphasized: bool) -> str:
+    rendered = f"<b>{html_text(str(value))}</b>" if emphasized else html_text(str(value))
+    return f"{escape(label)}{rendered}"
+
+
+# Builds the HTML failure alert body, leaving the timestamp to the caller as the plain form does
+def recovery_alert_body_html(advice: RecoveryAdvice, retry_seconds: int, failed_checks: int = 0, failing_since: int = 0) -> str:
+    return "<br><br>".join("<br>".join(recovery_alert_row_html(*row) for row in group) for group in recovery_alert_rows(advice, retry_seconds, failed_checks, failing_since))
+
+
+# Builds the subject of the alert that says an outage ended, matching the failure alert its reader already has
+def monitoring_recovery_subject(target: str, lasted: int) -> str:
+    return f"Instagram Monitor recovered: monitoring {target} resumed after {display_time(max(1, lasted))}"
+
+
+# Builds the plain text recovery alert body, leaving the timestamp to the caller as the failure body does
+def monitoring_recovery_body(target: str, lasted: int, summary: str = "") -> str:
+    return f"Monitoring recovered for {target} after {display_time(max(1, lasted))}." + (f"\n\nThe failure was: {summary}" if summary else "")
+
+
+# Builds the HTML recovery alert body, emphasizing how long the outage lasted
+def monitoring_recovery_body_html(target: str, lasted: int, summary: str = "") -> str:
+    return f"Monitoring recovered for {escape(str(target))} after <b>{escape(display_time(max(1, lasted)))}</b>." + (f"<br><br>The failure was: {html_text(str(summary))}" if summary else "")
+
+
+# Tells every channel that carried the failure alert that the outage is over, so nobody is left acting on a run that recovered
+def notify_monitoring_recovery(user, alert_state) -> bool:
+    email_pending = bool(alert_state.email_sent) and bool(ERROR_NOTIFICATION)
+    webhook_pending = bool(alert_state.webhook_sent) and webhook_event_enabled("error")
+    if not (email_pending or webhook_pending):
+        return False
+    lasted = max(0, int(time.time()) - alert_state.failing_since) if alert_state.failing_since else 0
+    alert_subject = monitoring_recovery_subject(user, lasted)
+    alert_body = monitoring_recovery_body(user, lasted, alert_state.summary)
+    alert_body_html = monitoring_recovery_body_html(user, lasted, alert_state.summary)
+    email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, f"{alert_body}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}", f"{alert_body_html}{get_cur_ts('<br><br>Timestamp: ')}", email_enabled=email_pending, webhook_enabled=webhook_pending, webhook_title=alert_subject, webhook_description=alert_body, webhook_color=0x2ECC71)
+    return email_delivered or webhook_delivered
+
+
 # Alerts both channels once a failure has lasted ERROR_ALERT_AFTER_SECONDS or at once when it cannot clear on its own, once per channel and per outage
-def notify_monitoring_error(user, advice, error_msg, failed_since, failure_count, check_interval, alert_state):
+def notify_monitoring_error(user, advice, failed_since, failure_count, check_interval, alert_state):
     # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
     lasted = max(0, int(time.time()) - failed_since)
     if advice.retryable and lasted < ERROR_ALERT_AFTER_SECONDS:
@@ -11636,14 +11718,14 @@ def notify_monitoring_error(user, advice, error_msg, failed_since, failure_count
     now = int(time.time())
     email_pending = alert_state.pending("email", ERROR_NOTIFICATION, now)
     webhook_pending = alert_state.pending("webhook", webhook_event_enabled("error"), now)
+    # Recorded on every due check rather than only on a delivery, so a channel still retrying its alert still earns a recovery notice
+    alert_state.remember(advice, failed_since)
     if not (email_pending or webhook_pending):
         return False
-    streak = f"failure #{failure_count}, failing for {display_time(lasted)}"
-    interval = f"{check_window_text()}"
-    alert_subject = f"Instagram error for {user} ({streak})"
-    alert_body = f"{advice.summary} ({streak})\n{error_msg}\n\nTo fix: {advice.fix}\n\nCheck interval: {interval}{get_cur_ts(nl_ch + 'Timestamp: ')}"
-    alert_body_html = f"{html_text(str(advice.summary))} ({escape(streak)})<br><br><b>{html_text(str(error_msg))}</b><br><br>To fix: {html_text(str(advice.fix))}<br><br>Check interval: <b>{escape(interval)}</b>{get_cur_ts('<br>Timestamp: ')}"
-    email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=email_pending, webhook_enabled=webhook_pending, webhook_title=f"Error for {user}", webhook_description=f"{advice.summary}\n{error_msg}\n({streak})\nTo fix: {advice.fix}", webhook_color=0xFF0000)
+    alert_subject = recovery_alert_subject(advice, user)
+    alert_body = recovery_alert_body(advice, check_interval, failure_count, failed_since)
+    alert_body_html = recovery_alert_body_html(advice, check_interval, failure_count, failed_since)
+    email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, f"{alert_body}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}", f"{alert_body_html}{get_cur_ts('<br><br>Timestamp: ')}", email_enabled=email_pending, webhook_enabled=webhook_pending, webhook_title=alert_subject, webhook_description=alert_body, webhook_color=0xFF0000)
     alert_state.record("email", email_pending, email_delivered, now)
     alert_state.record("webhook", webhook_pending, webhook_delivered, now)
     return email_delivered or webhook_delivered
@@ -11678,10 +11760,10 @@ def notify_session_flagged(user, err_str, error_msg):
     identity_text = "".join(f"\n{label}: {value}" for label, value in identity_rows)
     identity_html = "".join(f"<br>{label}: <b>{escape(str(value))}</b>" for label, value in identity_rows)
 
-    alert_subject = f"Instagram session account flagged (target: {user})"
+    alert_subject = f"Instagram Monitor error: The session account is flagged (user: {user})"
     alert_body = f"{err_str}\n\nTriggering error: {error_msg}\n{identity_text}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
     alert_body_html = f"{escape(str(err_str))}<br><br>Triggering error: <b>{escape(str(error_msg))}</b><br>{identity_html}{get_cur_ts('<br><br>Timestamp: ')}"
-    send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=ERROR_NOTIFICATION, webhook_title=f"🚩 Session account flagged (target: {user})", webhook_description=f"{err_str}\n\nTriggering error: `{error_msg}`\n{identity_text}", webhook_color=0xFF0000)
+    send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=ERROR_NOTIFICATION, webhook_title=f"🚩 Session account flagged (user: {user})", webhook_description=f"{err_str}\n\nTriggering error: `{error_msg}`\n{identity_text}", webhook_color=0xFF0000)
 
 
 # Reloads the session file into the bot after a Web Dashboard session or mode change, or clears it in No-login mode
@@ -14952,7 +15034,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 if not session_flagged:
                     if outage_outcome == "full":
                         fix_hint_printed = print_fix_hint(error_msg, recovery_hint_tracker)
-                    notify_monitoring_error(user, advice, error_msg, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
+                    notify_monitoring_error(user, advice, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
 
                 # Handle session recovery for automated checks/challenge errors
                 if session_flagged:
@@ -14987,7 +15069,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 outage.failed(redirect_advice)
                 print(f"* Error: The saved Instagram session may no longer be valid (retrying in {display_time(r_sleep_time)})")
                 print(colorize("info", f"To fix: Re-import the session with '{session_recovery_command()}'{session_recovery_browser_hint()} or from the Web Dashboard Session page"))
-                notify_monitoring_error(user, redirect_advice, error_msg, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
+                notify_monitoring_error(user, redirect_advice, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
                 r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
@@ -15658,7 +15740,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         print_outage_change(user, posts_advice)
                     elif outage_outcome == "reminder":
                         print_outage_liveness(user, posts_advice, outage.since, outage.failures, close=False)
-                    notify_monitoring_error(user, posts_advice, error_msg, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
+                    notify_monitoring_error(user, posts_advice, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
 
                     # The reminder closes last so the delivery lines it carries stay inside the report rather
                     # than landing under the separator that ended it
@@ -15867,11 +15949,12 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
         if in_allowed_hours:
             consecutive_main_errors = 0
-            error_alert.reset()
             recovery_hint_tracker.reset()
             outage_lasted = outage.recovered()
+            # Reset after the report, since the recovery alert is routed by the channels the failure alert reached
             if outage_lasted is not None:
-                print_outage_recovery(user, outage_lasted)
+                print_outage_recovery(user, outage_lasted, error_alert)
+            error_alert.reset()
 
         # The banner speaks for a quiet check, so anything this one reported restarts the clock instead of being contradicted by it
         if REPORTS_PRINTED != reports_before_check:
@@ -15922,7 +16005,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             if int(time.time()) - behuman_failed_since >= ERROR_ALERT_AFTER_SECONDS:
                 error_msg = format_error_message(e)
                 streak = f"failure #{consecutive_behuman_errors}, failing for {display_time(int(time.time()) - behuman_failed_since)}"
-                alert_subject = f"Instagram BeHuman mode error for {user} ({streak})"
+                alert_subject = f"Instagram Monitor error: The BeHuman simulation failed (user: {user})"
                 alert_body = f"A BeHuman simulation error occurred for user {user} ({streak}):\n{error_msg}\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
                 alert_body_html = f"A BeHuman simulation error occurred for user <b>{escape(str(user))}</b> ({escape(streak)}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
                 # Tried again on a later failing simulation once the alert is due, after a wait that grows with each failed attempt
@@ -19117,7 +19200,7 @@ def run_main():
         dest="error_notification",
         action="store_false",
         default=None,
-        help="Disable email on errors (e.g. invalid session)"
+        help="Disable email on errors and the recovery alert that follows"
     )
     notify.add_argument(
         "--send-test-email",
