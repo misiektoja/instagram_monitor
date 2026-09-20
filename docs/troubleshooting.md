@@ -59,6 +59,16 @@ Other connection errors point elsewhere. `Max retries exceeded` or a timeout usu
 
 For the underlying transport detail behind any of these, add `--debug`. Normal output omits it because it names internal HTTP library errors rather than anything you can act on.
 
+## Profile Endpoint Feedback
+
+In logged-in mode, `web_profile_info` can return HTTP 400 `feedback_required` while profile metadata remains available through Instagram's GraphQL interface. For this specific desktop-profile error, Instagram Monitor attempts Instaloader's existing authenticated GraphQL metadata query. It uses the login account's ID or an exact username search, and checks both the returned username and ID before accepting the profile.
+
+After a successful recovery, that HTTP session uses the GraphQL route for subsequent profile checks. Only IDs are cached: profile metadata, including follower and following counts, is fetched again on each check. Loading another HTTP session or changing the login account resets the route. A renamed or mismatched profile is rejected rather than silently monitored under the wrong name.
+
+This fallback does not dismiss a challenge, checkpoint, expired login, HTTP 429, or an error from another endpoint. Errors from the fallback itself propagate normally. It does not change anonymous access or guarantee that separate post, story, or follow-list endpoints will work. It reuses Instaloader's metadata implementation, including its GraphQL query and normalization, rather than maintaining another query ID.
+
+A valid session and CSRF token are still required. If GraphQL returns HTTP 403, check the saved session and refresh it using [browser session import](configuration.md#option-3-session-login-using-browser-cookies-recommended); normal browsing alone does not establish that the imported session contains the current CSRF cookie. The profile fallback does not automatically read browser cookies or save login state.
+
 <a id="container-dashboard-does-not-open"></a>
 ## Container Dashboard Does Not Open
 

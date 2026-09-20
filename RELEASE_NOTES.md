@@ -21,6 +21,7 @@ Version **4.0** adds new **follower-list sources** (auto/graphql/rest/browser), 
 
 **Bug fixes**:
 
+- **BUGFIX:** **Profile metadata after endpoint feedback** - Logged-in profile checks can recover through GraphQL when the desktop profile endpoint returns HTTP 400 `feedback_required`. Recovered profiles are identity-checked and refreshed on each check; challenges, expired sessions and other request errors still stop or propagate normally.
 - **BUGFIX:** **Exported secrets take precedence** - At startup, exported environment values now override matching dotenv values. Check for old exports if a file edit seems ignored. `SIGHUP` still applies edited dotenv values
 - **BUGFIX:** **Safer configuration and secret updates** - Generating a configuration to a named file creates a backup before replacement. Shell redirection with `>` still bypasses this protection. Setup asks before replacing saved passwords and clears declined notification settings
 - **BUGFIX:** **Visible diagnostics after startup** - Explicit diagnostic flags cover startup failures. Configuration upgrade notes remain visible in the Terminal Dashboard and liveness messages follow elapsed time in every output mode

@@ -34,6 +34,7 @@ installed copy of the package.
 | `test_paginated_fetching.py` | `fetch_usernames_paginated` batching, limits, completion state and stop-event behavior |
 | `test_dashboard_endpoints.py` | Web Dashboard status, strict atomic settings, private values, media access and isolation, target validation, monitor ownership, session signaling and test-notification endpoints |
 | `test_detection_workflows.py` | Posts/reels count change notifications, leaked-collab notification workflows and hostile email content |
+| `test_profile_resolution.py` | Logged-in profile metadata recovery after endpoint feedback, exact identity checks, session-scoped caching and unchanged error handling |
 | `test_profile_picture_workflows.py` | Profile picture creation, removal, change notifications, CSV rows and file moves |
 | `test_story_workflows.py` | Startup story item CSV and dashboard metadata plus independent email/webhook gates and hostile story content |
 | `test_media_downloads.py` | Atomic media replacement, type validation, truncation, non-200 responses and download limits |

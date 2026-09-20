@@ -7237,15 +7237,76 @@ def _profile_from_web_profile_info(bot: instaloader.Instaloader, username: str) 
     return instaloader.Profile(bot.context, normalized)
 
 
-# Resolves a profile by username by trying web_profile_info first in anonymous mode then Instaloader
+# Recognizes only Instaloader's HTTP 400 feedback error from the desktop profile endpoint
+def _is_web_profile_feedback(error: Exception) -> bool:
+    details, separator, endpoint = str(error).partition(" when accessing ")
+    if not separator or not details.startswith("400 ") or 'message "feedback_required"' not in details:
+        return False
+    if any(marker in details.lower() for marker in ("challenge_required", "checkpoint_required", "login_required")):
+        return False
+    try:
+        parsed = urlsplit(endpoint)
+    except ValueError:
+        return False
+    return parsed.scheme == "https" and parsed.netloc == "www.instagram.com" and parsed.path == "/api/v1/users/web_profile_info/"
+
+
+# Keeps successful fallback identifiers within the current authenticated HTTP session
+def _profile_graphql_state(ctx) -> dict:
+    state = getattr(ctx, "_monitor_profile_graphql", None)
+    if state is None or state["session"] is not ctx._session or state["username"] != ctx.username:
+        state = {"session": ctx._session, "username": ctx.username, "enabled": False, "ids": {}}
+        ctx._monitor_profile_graphql = state
+    return state
+
+
+# Loads fresh full metadata through Instaloader's existing authenticated GraphQL implementation
+def _profile_from_graphql(bot: instaloader.Instaloader, username: str) -> instaloader.Profile:
+    ctx = bot.context
+    state = _profile_graphql_state(ctx)
+    username = username.lower()
+    profile_id = state["ids"].get(username)
+    if not profile_id and username == str(ctx.username or "").lower():
+        profile_id = ctx._session.cookies.get_dict().get("ds_user_id")
+    if not profile_id:
+        for result in instaloader.TopSearchResults(ctx, username).get_profiles():
+            if result.username.lower() == username:
+                profile_id = result.userid
+                break
+    if not profile_id or not str(profile_id).isdigit():
+        raise instaloader.exceptions.ConnectionException("Could not resolve an exact profile ID for GraphQL metadata")
+    profile = instaloader.Profile(ctx, {"id": str(profile_id), "username": username})
+    profile._obtain_metadata()
+    if profile.username.lower() != username or str(profile.userid) != str(profile_id):
+        state["ids"].pop(username, None)
+        raise instaloader.exceptions.ConnectionException("GraphQL returned a different profile")
+    # Never reuse full metadata: counts and other fields must refresh on each check.
+    state["ids"][username] = str(profile_id)
+    return profile
+
+
+# Preserves normal profile resolution, with a narrow authenticated feedback fallback
 def profile_from_username_resilient(bot: instaloader.Instaloader, username: str) -> instaloader.Profile:
     ctx = bot.context
     if not ctx.is_logged_in:
         fallback_profile = _profile_from_web_profile_info(bot, username)
         if fallback_profile is not None:
             return fallback_profile
+        return instaloader.Profile.from_username(ctx, username)
 
-    return instaloader.Profile.from_username(ctx, username)
+    state = _profile_graphql_state(ctx)
+    if state["enabled"]:
+        return _profile_from_graphql(bot, username)
+    try:
+        return instaloader.Profile.from_username(ctx, username)
+    except instaloader.exceptions.AbortDownloadException as error:
+        if not _is_web_profile_feedback(error):
+            raise
+        profile = _profile_from_graphql(bot, username)
+        # Only a successful, identity-checked response switches this session's route.
+        state["enabled"] = True
+        debug_print("Profile metadata recovered through GraphQL after web_profile_info feedback")
+        return profile
 
 
 # Return the most recent post and/or reel for the user (GraphQL helper when logged in)
