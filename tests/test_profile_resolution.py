@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import requests
 
 
 # Returns one entry of a search reply
@@ -11,9 +12,19 @@ def _search_user(username, pk):
     return {"user": {"username": username, "pk": pk}}
 
 
-# Builds a context that records every request and answers from a scripted reply table
-def _context(im_module, logged_in=True, search_users=(), graphql=None):
+# Returns a session carrying the cookie Instagram writes for the signed-in account
+def _session_of(user_id):
+    session = requests.Session()
+    if user_id is not None:
+        session.cookies.set("ds_user_id", user_id)
+    return session
+
+
+# Builds a context that records every request and answers from a scripted reply table. The GraphQL reply is a
+# mutable dict shared with the caller, so a test can change a field and read the profile again
+def _context(im_module, logged_in=True, search_users=(), graphql=None, username=None, session=None):
     calls = []
+    graphql_user = graphql if graphql is not None else {"data": {"user": {"username": "target", "pk": "77", "follower_count": 5, "following_count": 6, "media_count": 7, "is_private": False}}}
 
     def get_json(path, params, *args, **kwargs):
         calls.append((path, dict(params or {})))
@@ -23,9 +34,9 @@ def _context(im_module, logged_in=True, search_users=(), graphql=None):
 
     def doc_id_graphql_query(doc_id, variables, referer=None):
         calls.append((f"graphql/{doc_id}", dict(variables)))
-        return graphql if graphql is not None else {"data": {"user": {"username": "target", "pk": "77", "follower_count": 5, "following_count": 6, "media_count": 7, "is_private": False}}}
+        return graphql_user
 
-    return SimpleNamespace(is_logged_in=logged_in, get_json=get_json, doc_id_graphql_query=doc_id_graphql_query, request_timeout=30, iphone_support=False, profile_id_cache={}, _session=None), calls
+    return SimpleNamespace(is_logged_in=logged_in, username=username, get_json=get_json, doc_id_graphql_query=doc_id_graphql_query, request_timeout=30, iphone_support=False, profile_id_cache={}, _session=session), calls
 
 
 class TestSearchResolvesTheUserId:
@@ -101,6 +112,70 @@ class TestASignedInLookupAvoidsTheRetiredEndpoint:
         assert profile.username == "target"
         assert seen == ["target"]
         assert calls == []
+
+
+class TestTheSignedInAccountIsNotSearchedFor:
+    # The session's own cookies carry the id of the account it is signed in as, so a search for it would spend a
+    # request on a known answer
+    def test_the_own_id_comes_from_the_session(self, im_module):
+        context, calls = _context(im_module, username="owner", session=_session_of("101"))
+
+        assert im_module.resolve_user_id(context, "Owner") == "101"
+        assert calls == []
+        assert im_module.stored_user_id("owner") == "101"
+
+    # Every other name is still resolved through search, whatever the session is signed in as
+    def test_another_name_is_still_searched_for(self, im_module):
+        context, calls = _context(im_module, username="owner", session=_session_of("101"), search_users=[_search_user("target", "77")])
+
+        assert im_module.resolve_user_id(context, "target") == "77"
+        assert [path for path, _ in calls] == ["web/search/topsearch/"]
+
+    # A session that lacks the cookie, or carries something other than a number in it, falls back to search
+    @pytest.mark.parametrize("cookie", [None, "", "not-a-number"])
+    def test_a_missing_or_malformed_cookie_falls_back_to_search(self, im_module, cookie):
+        context, calls = _context(im_module, username="owner", session=_session_of(cookie), search_users=[_search_user("owner", "101")])
+
+        assert im_module.resolve_user_id(context, "owner") == "101"
+        assert [path for path, _ in calls] == ["web/search/topsearch/"]
+
+    # A context without a session, which is what the offline tests and the setup paths build, resolves like any other
+    def test_a_context_without_a_session_falls_back_to_search(self, im_module):
+        context, calls = _context(im_module, username="owner", search_users=[_search_user("owner", "101")])
+
+        assert im_module.resolve_user_id(context, "owner") == "101"
+        assert len(calls) == 1
+
+
+class TestTheGraphqlReadGoesThroughInstaloader:
+    # The profile is a real Instaloader one with only the network replaced, so the fields the monitor reads go
+    # through Instaloader's own normalization of the GraphQL reply rather than a stub of it
+    def test_the_full_metadata_is_read_through_the_real_profile(self, im_module):
+        graphql = {"data": {"user": {"username": "owner", "pk": "101", "full_name": "Owner", "biography": "Owner bio", "follower_count": 12, "following_count": 7, "media_count": 3, "is_private": False, "is_verified": False, "profile_pic_url_hd": "https://example.org/avatar.jpg"}}}
+        context, calls = _context(im_module, username="owner", session=_session_of("101"), graphql=graphql)
+
+        profile = im_module.profile_from_username_resilient(SimpleNamespace(context=context), "owner")
+
+        assert isinstance(profile, im_module.instaloader.Profile)
+        assert profile._has_full_metadata
+        assert (profile.userid, profile.followers, profile.followees, profile.mediacount) == (101, 12, 7, 3)
+        assert (profile.full_name, profile.biography) == ("Owner", "Owner bio")
+        assert profile.profile_pic_url_no_iphone == "https://example.org/avatar.jpg"
+        assert [path for path, _ in calls] == ["graphql/27937681195819736"]
+
+    # Only the id is kept between checks. The counts are what the monitor watches, so every check reads them again
+    def test_every_check_reads_fresh_counts(self, im_module):
+        graphql = {"data": {"user": {"username": "owner", "pk": "101", "follower_count": 12, "following_count": 7, "media_count": 3, "is_private": False}}}
+        context, calls = _context(im_module, username="owner", session=_session_of("101"), graphql=graphql)
+        bot = SimpleNamespace(context=context)
+
+        first = im_module.profile_from_username_resilient(bot, "owner")
+        graphql["data"]["user"]["follower_count"] = 13
+        second = im_module.profile_from_username_resilient(bot, "owner")
+
+        assert first is not second
+        assert (first.followers, second.followers) == (12, 13)
+        assert [path for path, _ in calls] == ["graphql/27937681195819736", "graphql/27937681195819736"]
 
 
 class TestARetiredEndpointDoesNotStopTheAccount:
