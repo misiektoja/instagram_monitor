@@ -83,7 +83,7 @@ STATUS_NOTIFICATION = False
 # Can also be enabled via the -m flag
 FOLLOWERS_NOTIFICATION = False
 
-# Whether to send an email on monitoring errors and when they clear
+# Whether to send an email on errors and the recovery alert that follows once the failure clears
 # Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
 
@@ -125,7 +125,7 @@ WEBHOOK_STATUS_NOTIFICATION = False
 # Can also be enabled via the --webhook-followers flag
 WEBHOOK_FOLLOWERS_NOTIFICATION = False
 
-# Whether to send a webhook notification on monitoring errors and when they clear
+# Whether to send a webhook notification on monitoring errors and the recovery alert that follows once the failure clears
 # Can also be enabled via the --webhook-errors flag
 WEBHOOK_ERROR_NOTIFICATION = False
 
@@ -19252,7 +19252,7 @@ def run_main():
         dest="webhook_errors",
         action="store_true",
         default=None,
-        help="Send webhook on errors"
+        help="Send webhook alerts when monitoring has a problem and the recovery alert that follows"
     )
     webhook_grp.add_argument(
         "--send-test-webhook",
