@@ -2382,6 +2382,7 @@ def stub_browser_profiles(im_module, monkeypatch, firefox, chromium):
 
 # Drives the login menu and returns the option descriptions it offered for each question
 def collect_login_menus(im_module, monkeypatch, directory: Path, method: str, answers):
+    monkeypatch.setattr(im_module, "system", lambda: "Linux")
     state = make_setup_state(im_module, directory)
     menus = {}
     scripted = iter(answers)
@@ -2504,7 +2505,7 @@ class TestTargetsAreCheckedBeforeTheyAreSaved:
 class TestEditingLoginReasksTheListQuestion:
     # Runs the review edit menu on one section with the login answer scripted
     @staticmethod
-    def _edit_login(im_module, monkeypatch, directory, login_index, start_logged_in):
+    def _edit_login(im_module, monkeypatch, directory, login_label, start_logged_in):
         state = make_setup_state(im_module, directory)
         state.logged_in = start_logged_in
         state.login_method = "existing" if start_logged_in else "no-login"
@@ -2516,7 +2517,7 @@ class TestEditingLoginReasksTheListQuestion:
             if "Which setup section" in question:
                 return 2
             if "access Instagram" in question:
-                return login_index
+                return [label for label, _ in options].index(login_label)
             return 0
 
         monkeypatch.setattr(im_module, "_wizard_ask_choice", choose)
@@ -2530,7 +2531,7 @@ class TestEditingLoginReasksTheListQuestion:
     # defaults, which collect every name, without the question that exists to prevent that
     def test_enabling_a_session_asks_what_to_collect(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
-            asked, state = self._edit_login(im_module, monkeypatch, Path(directory_name), 3, start_logged_in=False)
+            asked, state = self._edit_login(im_module, monkeypatch, Path(directory_name), "Use an existing Instaloader session", start_logged_in=False)
 
             assert state.logged_in is True
             assert any("should be collected" in question for question in asked)
@@ -2540,7 +2541,7 @@ class TestEditingLoginReasksTheListQuestion:
     # Turning the session off leaves answers the summary stops showing, so the file records what will happen
     def test_removing_the_session_records_counts_only(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
-            asked, state = self._edit_login(im_module, monkeypatch, Path(directory_name), 0, start_logged_in=True)
+            asked, state = self._edit_login(im_module, monkeypatch, Path(directory_name), "No login", start_logged_in=True)
 
             assert state.logged_in is False
             assert state.config_values["SKIP_FOLLOWERS"] is True
@@ -2550,7 +2551,7 @@ class TestEditingLoginReasksTheListQuestion:
     # Re-picking the same kind of login is not a change, so the list answers already given stand
     def test_keeping_the_session_does_not_re_ask(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
-            asked, state = self._edit_login(im_module, monkeypatch, Path(directory_name), 3, start_logged_in=True)
+            asked, state = self._edit_login(im_module, monkeypatch, Path(directory_name), "Use an existing Instaloader session", start_logged_in=True)
 
             assert state.logged_in is True
             assert not any("should be collected" in question for question in asked)
@@ -2610,7 +2611,7 @@ class TestSessionUsernameIsCheckedWhereItIsCollected:
     @staticmethod
     def _collect(im_module, monkeypatch, directory, answers, retries=()):
         state = make_setup_state(im_module, directory)
-        monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: 4 if "access Instagram" in question else 0)
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda question, options, default_index=0: [label for label, _ in options].index("Username and password") if "access Instagram" in question else 0)
         monkeypatch.setattr(im_module, "_wizard_ask_text", Mock(side_effect=list(answers)))
         monkeypatch.setattr(im_module, "_wizard_ask_yes_no", Mock(side_effect=list(retries) + [False] * 8))
         monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda question: "private-password")
@@ -2644,8 +2645,9 @@ class TestSessionUsernameIsCheckedWhereItIsCollected:
 
 
 # The import prints its next steps for the configuration it was given, so it has to be handed the one setup wrote
-def test_the_printed_import_command_carries_the_config(im_module):
+def test_the_printed_import_command_carries_the_config(im_module, monkeypatch):
     with make_test_directory() as directory_name:
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
         state = make_setup_state(im_module, Path(directory_name))
         state.import_browser = "chrome"
 

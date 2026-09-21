@@ -403,7 +403,9 @@ def test_the_backup_carries_the_family_name_and_mode(tmp_path, im_module):
 
     assert re.fullmatch(r"monitor\.conf\.\d{14}\.bak", Path(backup_path).name)
     assert Path(backup_path).read_text(encoding="utf-8") == "SETTING = 1\n"
-    assert stat.S_IMODE(Path(backup_path).stat().st_mode) == 0o600
+    # Windows has no owner-only permission bits to copy, so only the name and the content are pinned there
+    if os.name == "posix":
+        assert stat.S_IMODE(Path(backup_path).stat().st_mode) == 0o600
 
 
 # Verifies a second backup in the same second takes its own name rather than overwriting the first
