@@ -269,6 +269,14 @@ SKIP_GETTING_POSTS_DETAILS = False
 # Can also be enabled via the -t flag
 GET_MORE_POST_DETAILS = False
 
+# Whether to monitor reels, both the reel count and the reels themselves
+# Off by default: Instagram stopped answering the endpoint that reports a reel count, so the count has to be read
+# from the whole reel list, which costs many requests per check and is often refused. Posts and stories are
+# monitored either way, and a reel counts towards the posts number
+# Only relevant if session login is used and SKIP_SESSION is False
+# Can also be changed via the --fetch-reels and --no-fetch-reels flags
+FETCH_REELS = False
+
 # Whether to detect "collab" posts exposed from private accounts through the public web_profile_info endpoint
 # When a private account co-authors a post with a public account that post stays visible in the
 # private account's timeline media. This probes for such leaked posts and reports new ones over time
@@ -835,6 +843,7 @@ SKIP_FOLLOWINGS = False
 SKIP_GETTING_STORY_DETAILS = False
 SKIP_GETTING_POSTS_DETAILS = False
 GET_MORE_POST_DETAILS = False
+FETCH_REELS = False
 DETECT_COLLAB_POSTS = True
 FOLLOWERS_CHURN_DETECTION = False
 SKIP_FOLLOW_CHANGES = False
@@ -3266,7 +3275,7 @@ def create_web_dashboard_app():
         global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, PROXY_REFRESH_VERSION
         global FOLLOWERS_CHURN_DETECTION, DEBUG_MODE, SESSION_USERNAME, VERBOSE_MODE
         global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SSL, SENDER_EMAIL, RECEIVER_EMAIL
-        global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS
+        global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, FETCH_REELS
         global ENABLE_JITTER, DETECT_CHANGED_PROFILE_PIC, SKIP_SESSION, CLI_CONFIG_PATH
         global DOTENV_FILE, WEB_DASHBOARD_TEMPLATE_DIR, LOCAL_TIMEZONE, OUTPUT_DIR, CSV_FILE
         global BE_HUMAN, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, LIVENESS_CHECK_INTERVAL, SKIP_FOLLOW_CHANGES
@@ -3283,7 +3292,7 @@ def create_web_dashboard_app():
         boolean_keys = {
             'email_notifications', 'follower_notifications', 'error_notifications', 'webhook_enabled', 'webhook_status', 'webhook_followers', 'webhook_errors',
             'proxy_enabled', 'proxy_webhooks', 'followers_churn', 'verbose_mode', 'debug_mode', 'be_human', 'skip_followers', 'skip_followings',
-            'skip_follow_changes', 'skip_stories', 'skip_posts', 'get_more_post_details', 'detect_collab_posts', 'profile_pic_changes', 'skip_session_login',
+            'skip_follow_changes', 'skip_stories', 'skip_posts', 'get_more_post_details', 'fetch_reels', 'detect_collab_posts', 'profile_pic_changes', 'skip_session_login',
             'logging_enabled', 'check_posts_in_hours_range', 'hours_verbose', 'dashboard_show_check_seconds', 'time_format_12h', 'smtp_ssl'
         }
         integer_ranges = {
@@ -3478,6 +3487,7 @@ def create_web_dashboard_app():
         SKIP_GETTING_STORY_DETAILS = bool(update_setting('skip_stories', SKIP_GETTING_STORY_DETAILS, bool))
         SKIP_GETTING_POSTS_DETAILS = bool(update_setting('skip_posts', SKIP_GETTING_POSTS_DETAILS, bool))
         GET_MORE_POST_DETAILS = bool(update_setting('get_more_post_details', GET_MORE_POST_DETAILS, bool))
+        FETCH_REELS = bool(update_setting('fetch_reels', FETCH_REELS, bool))
         DETECT_COLLAB_POSTS = bool(update_setting('detect_collab_posts', DETECT_COLLAB_POSTS, bool))
         DETECT_CHANGED_PROFILE_PIC = bool(update_setting('profile_pic_changes', DETECT_CHANGED_PROFILE_PIC, bool))
         SKIP_SESSION = bool(update_setting('skip_session_login', SKIP_SESSION, bool))
@@ -3554,7 +3564,7 @@ def create_web_dashboard_app():
         global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS
         global FOLLOWERS_CHURN_DETECTION, DEBUG_MODE, SESSION_USERNAME, VERBOSE_MODE
         global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SSL, SENDER_EMAIL, RECEIVER_EMAIL
-        global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS
+        global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, FETCH_REELS
         global ENABLE_JITTER, DETECT_CHANGED_PROFILE_PIC, SKIP_SESSION, CLI_CONFIG_PATH
         global DOTENV_FILE, WEB_DASHBOARD_TEMPLATE_DIR, LOCAL_TIMEZONE, OUTPUT_DIR, CSV_FILE
         global BE_HUMAN, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, LIVENESS_CHECK_INTERVAL, SKIP_FOLLOW_CHANGES
@@ -3596,6 +3606,7 @@ def create_web_dashboard_app():
                 'skip_stories': SKIP_GETTING_STORY_DETAILS,
                 'skip_posts': SKIP_GETTING_POSTS_DETAILS,
                 'get_more_post_details': GET_MORE_POST_DETAILS,
+                'fetch_reels': FETCH_REELS,
                 'detect_collab_posts': DETECT_COLLAB_POSTS,
                 'enable_jitter': ENABLE_JITTER,
                 'profile_pic_changes': DETECT_CHANGED_PROFILE_PIC,
@@ -8201,7 +8212,7 @@ def latest_post_reel(user: str, bot: instaloader.Instaloader) -> Optional[Tuple[
         # Max 3 pinned posts + the latest one
         posts = [(p, "post") for p in islice(profile.get_posts(), 4)]
 
-        reels = [(r, "reel") for r in islice(profile.get_reels(), 4)]
+        reels = [(r, "reel") for r in islice(profile.get_reels(), 4)] if FETCH_REELS else []
     except TypeError as e:
         # Instaloader subscripts a null GraphQL "data" field when Instagram deprecates a doc_id or
         # temporarily blocks the session/IP; surface a clean, actionable error instead of a raw TypeError
@@ -10114,6 +10125,7 @@ def generate_config_dashboard(target_data, config_data):
         ("Skip Follow Changes", str(config_data.get('skip_follow_changes', '-'))),
         ("Skip Stories Details", str(config_data.get('skip_stories', '-'))),
         ("Get More Post Details", str(config_data.get('get_more_post_details', '-'))),
+        ("Fetch Reels", str(config_data.get('fetch_reels', '-'))),
         ("Detect Collab Posts", str(config_data.get('detect_collab_posts', '-'))),
         ("Liveness Check", str(config_data.get('liveness_check', '-'))),
         ("Display Profile Pics", config_data.get('imgcat', '-')),
@@ -10926,6 +10938,7 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'skip_stories': SKIP_GETTING_STORY_DETAILS,
         'skip_posts': SKIP_GETTING_POSTS_DETAILS,
         'get_more_post_details': GET_MORE_POST_DETAILS,
+        'fetch_reels': FETCH_REELS,
         'detect_collab_posts': DETECT_COLLAB_POSTS,
         'followers_churn': FOLLOWERS_CHURN_DETECTION,
         'identity_budget': IDENTITY_BUDGET_PER_DAY,
@@ -14016,7 +14029,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         followed_by_viewer = profile.followed_by_viewer
         can_view = (not is_private) or followed_by_viewer
         posts_count = profile.mediacount
-        if not skip_session and can_view:
+        if not skip_session and can_view and FETCH_REELS:
             update_ui_data(targets={user: {'status': 'Fetching Reels'}})
             _thread_local.in_partial_line = True
             print("- fetching reels count...", end=" ", flush=True)
@@ -14116,7 +14129,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         print(f"Can view all contents:\t\t\t{'Yes' if can_view else 'No'}")
 
         print(f"\nPosts:\t\t\t\t\t{posts_count}")
-        if not skip_session and can_view:
+        if not skip_session and can_view and FETCH_REELS:
             print(f"Reels:\t\t\t\t\t{reels_count}")
 
         if FOLLOWERS_CHURN_DETECTION:
@@ -15055,7 +15068,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                 debug_print("Profile loaded", followers=followers_count, following=followings_count, posts=posts_count)
                 debug_print("Previous load", followers=followers_old_count, following=followings_old_count, posts=posts_count_old)
-                if not skip_session and can_view:
+                if not skip_session and can_view and FETCH_REELS:
                     reels_count = get_total_reels_count(user, bot, skip_session, posts_count)
                     debug_print("Reels count", value=reels_count)
 
@@ -16853,7 +16866,7 @@ WIZARD_INTERFACE_CONFIG_KEYS = ("WEB_DASHBOARD_ENABLED", "DASHBOARD_ENABLED", "W
 WIZARD_WEBHOOK_CONFIG_KEYS = ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_FOLLOWERS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
 WIZARD_EMAIL_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL", "STATUS_NOTIFICATION", "FOLLOWERS_NOTIFICATION", "ERROR_NOTIFICATION")
 WIZARD_OUTPUT_CONFIG_KEYS = ("DISABLE_LOGGING", "CSV_FILE")
-WIZARD_CONNECTION_CONFIG_KEYS = ("HTTP_BACKEND", "CURL_CFFI_IMPERSONATE", "FOLLOW_LIST_SOURCE", "SKIP_FOLLOWERS", "SKIP_FOLLOWINGS", "IDENTITY_BUDGET_PER_DAY")
+WIZARD_CONNECTION_CONFIG_KEYS = ("HTTP_BACKEND", "CURL_CFFI_IMPERSONATE", "FOLLOW_LIST_SOURCE", "SKIP_FOLLOWERS", "SKIP_FOLLOWINGS", "IDENTITY_BUDGET_PER_DAY", "FETCH_REELS")
 
 
 # The mail server settings the wizard collects, and how long its sign-in check waits for the server
@@ -17425,6 +17438,7 @@ def _wizard_collect_connection_section(state: WizardSetupState) -> None:
         state.config_values["SKIP_FOLLOWERS"] = collect == 0
         state.config_values["SKIP_FOLLOWINGS"] = collect <= 1
         if collect == 0:
+            _wizard_collect_reels(state)
             return
 
         _wizard_collect_identity_budget(state)
@@ -17437,6 +17451,15 @@ def _wizard_collect_connection_section(state: WizardSetupState) -> None:
         state.config_values["FOLLOW_LIST_SOURCE"] = source
         if source == "browser":
             _wizard_align_transport_with_browser_source(state)
+
+        _wizard_collect_reels(state)
+
+
+# Asks whether reels should be monitored, which is off because Instagram stopped answering the endpoint reporting
+# the count. Asked rather than assumed, since a run that needs reel notifications should be able to accept the cost
+def _wizard_collect_reels(state: WizardSetupState) -> None:
+    options = [("No, leave reels alone", "Instagram stopped answering the endpoint that reports a reel count, so the whole reel list has to be read instead.\nPosts and stories are still monitored, and a reel counts towards the posts number either way."), ("Yes, monitor reels", "Reads the whole reel list on every check. That is many requests and Instagram often refuses it,\nwhich shows up as repeated errors rather than as missing reels.")]
+    state.config_values["FETCH_REELS"] = _wizard_ask_choice("Should reels be monitored as well as posts and stories?", options, default_index=0) == 1
 
 
 # Asks what the daily name cap should be, which the question above names but no answer there changes. Only a setup
@@ -19090,7 +19113,7 @@ def apply_session_identity_cli_overrides(args: argparse.Namespace) -> None:
 
 # Parses configuration and command-line options then starts the selected operation
 def run_main():
-    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_REMINDER_SECONDS, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE, IDENTITY_BUDGET_PER_DAY, CIRCUIT_BREAKER, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
+    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_REMINDER_SECONDS, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, FETCH_REELS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE, IDENTITY_BUDGET_PER_DAY, CIRCUIT_BREAKER, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H, TRUNCATE_CHARS
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
@@ -19637,6 +19660,20 @@ def run_main():
         action="store_false",
         default=None,
         help="Disable detection of changed profile picture"
+    )
+    opts.add_argument(
+        "--fetch-reels",
+        dest="fetch_reels",
+        action="store_true",
+        default=None,
+        help="Monitor reels, which reads the whole reel list on every check and is often refused"
+    )
+    opts.add_argument(
+        "--no-fetch-reels",
+        dest="fetch_reels",
+        action="store_false",
+        default=None,
+        help="Do not monitor reels (the default)"
     )
     opts.add_argument(
         "--no-detect-collab-posts",
@@ -20221,6 +20258,9 @@ def run_main():
     if args.get_more_post_details is True:
         GET_MORE_POST_DETAILS = True
 
+    if args.fetch_reels is not None:
+        FETCH_REELS = args.fetch_reels
+
     if args.detect_collab_posts is False:
         DETECT_COLLAB_POSTS = False
 
@@ -20476,6 +20516,7 @@ def run_main():
     summary_rows.append(StartupSummaryRow("Skip stories details", str(SKIP_GETTING_STORY_DETAILS), concise=bool(SKIP_GETTING_STORY_DETAILS)))
     summary_rows.append(StartupSummaryRow("Skip posts details", str(SKIP_GETTING_POSTS_DETAILS), concise=bool(SKIP_GETTING_POSTS_DETAILS)))
     summary_rows.append(StartupSummaryRow("Get more posts details", str(GET_MORE_POST_DETAILS), concise=bool(GET_MORE_POST_DETAILS)))
+    summary_rows.append(StartupSummaryRow("Fetch reels", str(FETCH_REELS), concise=bool(FETCH_REELS)))
     summary_rows.append(StartupSummaryRow("Detect collab posts", str(DETECT_COLLAB_POSTS), concise=not DETECT_COLLAB_POSTS))
 
     churn_status = str(FOLLOWERS_CHURN_DETECTION)
