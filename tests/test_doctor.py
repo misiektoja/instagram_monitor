@@ -183,7 +183,7 @@ class TestDoctorChecks:
 
         assert check.status == "FAIL"
         assert "tzlocal" in check.advice.fix
-        assert check.advice.fix.endswith(f"\nGuide: {im_module.CONFIG_GUIDE_URL}")
+        assert check.advice.fix.endswith(f"\nGuide: {im_module.INSTALLATION_GUIDE_URL}")
 
     # An unusable timezone name is reported before monitoring rather than at the first timestamp
     def test_invalid_timezone_fails(self, im_module, monkeypatch):
