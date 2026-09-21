@@ -1,5 +1,6 @@
 """Offline tests for browser cookie filtering and session path discovery."""
 
+import os
 import sqlite3
 import stat
 import sys
@@ -40,8 +41,10 @@ class TestFirefoxCookieImport:
 
 
 class TestWindowsFirefoxDiscovery:
+    # Builds a Windows home directory under tmp_path and points discovery at it, with the real profile
+    # enumeration restored so the globs run against that tree rather than the host's browsers
     @pytest.fixture
-    def windows_home(self, im_module, monkeypatch, tmp_path):
+    def windows_home(self, im_module, monkeypatch, tmp_path, real_browser_profiles):
         home = tmp_path / "home"
         roaming = home / "AppData" / "Roaming"
         local = home / "AppData" / "Local"
@@ -52,28 +55,55 @@ class TestWindowsFirefoxDiscovery:
         monkeypatch.setattr(im_module, "FIREFOX_WINDOWS_COOKIE", str(roaming / "Mozilla/Firefox/Profiles/*/cookies.sqlite"))
         return home, roaming, local
 
-    # Both traditional installers and Store/MSIX profiles are offered without duplicates
+    # Creates an empty cookie database, which is all discovery needs to offer a profile
+    @staticmethod
+    def _make_profile(path: Path) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"")
+        return path
+
+    # Returns the Store package profile path for one profile directory name
+    @staticmethod
+    def _store_path(local: Path, profile_dir: str) -> Path:
+        return local / "Packages/Mozilla.Firefox_n80bbvh6b1yt2/LocalCache/Roaming/Mozilla/Firefox/Profiles" / profile_dir / "cookies.sqlite"
+
+    # Verifies the regular installer and the Store package are both offered, with the Store one tagged
     def test_regular_and_store_profiles(self, im_module, windows_home):
         _, roaming, local = windows_home
-        regular = roaming / "Mozilla/Firefox/Profiles/regular.default-release/cookies.sqlite"
-        store = local / "Packages/Mozilla.Firefox_test/LocalCache/Roaming/Mozilla/Firefox/Profiles/store.profile/cookies.sqlite"
-        for path in (regular, store):
-            path.parent.mkdir(parents=True)
-            path.write_bytes(b"")
-        profiles = im_module.list_firefox_profiles()
-        assert [Path(profile["path"]) for profile in profiles] == [regular, store]
-        assert [profile["name"] for profile in profiles] == ["default-release", "profile"]
-        assert Path(im_module.resolve_firefox_profile("store.profile")) == store
+        regular = self._make_profile(roaming / "Mozilla/Firefox/Profiles/regular.default-release/cookies.sqlite")
+        store = self._make_profile(self._store_path(local, "store.work"))
 
-    # A Store-only machine auto-selects its sole profile instead of reporting no database
+        profiles = im_module.list_firefox_profiles()
+
+        assert [Path(profile["path"]) for profile in profiles] == [regular, store]
+        assert [profile["name"] for profile in profiles] == ["default-release", "work"]
+        assert [profile["install"] for profile in profiles] == ["", "Microsoft Store"]
+        assert Path(im_module.resolve_firefox_profile("store.work")) == store
+
+    # Verifies a Store profile is told apart from a regular one of the same name, which is the usual case
+    # since both installs create a profile called default-release
+    def test_a_store_profile_is_distinguished_from_a_regular_one(self, im_module, windows_home):
+        _, roaming, local = windows_home
+        self._make_profile(roaming / "Mozilla/Firefox/Profiles/aaa.default-release/cookies.sqlite")
+        store = self._make_profile(self._store_path(local, "bbb.default-release"))
+
+        descriptions = [im_module.firefox_profile_description(p) for p in im_module.list_firefox_profiles()]
+        assert descriptions == ["default-release", "default-release (Microsoft Store)"]
+
+        with pytest.raises(im_module.CookieImportError) as failure:
+            im_module.resolve_firefox_profile("default-release")
+
+        assert "matches 2 profiles" in str(failure.value)
+        assert Path(im_module.resolve_firefox_profile("bbb.default-release")) == store
+
+    # Verifies a Store-only machine selects its sole profile instead of reporting that no database was found
     def test_store_only_auto_selection(self, im_module, windows_home):
         _, _, local = windows_home
-        store = local / "Packages/Mozilla.Firefox_test/LocalCache/Roaming/Mozilla/Firefox/Profiles/a.default/cookies.sqlite"
-        store.parent.mkdir(parents=True)
-        store.write_bytes(b"")
+        store = self._make_profile(self._store_path(local, "a.default"))
+
         assert Path(im_module.get_firefox_cookiefile()) == store
 
-    # Missing or redirected environment variables do not hide the user's package directory
+    # Verifies a missing or redirected environment variable does not hide the package directory under the home
     @pytest.mark.parametrize("redirected", [False, True])
     def test_package_home_fallback(self, im_module, monkeypatch, windows_home, redirected):
         home, _, local = windows_home
@@ -82,36 +112,61 @@ class TestWindowsFirefoxDiscovery:
         else:
             monkeypatch.delenv("LOCALAPPDATA")
             monkeypatch.delenv("APPDATA")
-        store = local / "Packages/Mozilla.Firefox_test/LocalCache/Roaming/Mozilla/Firefox/Profiles/a.default/cookies.sqlite"
-        store.parent.mkdir(parents=True)
-        store.write_bytes(b"")
+        store = self._make_profile(self._store_path(local, "a.default"))
+
         assert Path(im_module.get_firefox_cookiefile()) == store
 
-    # User configuration remains first and redirected roaming data is also searched
+    # Verifies a redirected roaming directory is searched as well as the home-relative one, for either variable
+    @pytest.mark.parametrize("variable,relative", [("APPDATA", "Mozilla/Firefox/Profiles/a.default/cookies.sqlite"), ("LOCALAPPDATA", "Packages/Mozilla.Firefox_n80bbvh6b1yt2/LocalCache/Roaming/Mozilla/Firefox/Profiles/a.default/cookies.sqlite")])
+    def test_a_redirected_root_is_searched_alongside_the_home_one(self, im_module, monkeypatch, windows_home, variable, relative):
+        home, _, _ = windows_home
+        monkeypatch.setattr(im_module, "FIREFOX_WINDOWS_COOKIE", str(home / "configured/cookies.sqlite"))
+        redirected = home / "redirected"
+        monkeypatch.setenv(variable, str(redirected))
+        away = self._make_profile(redirected / relative)
+        at_home = self._make_profile(home / "AppData" / ("Roaming" if variable == "APPDATA" else "Local") / relative)
+
+        assert [Path(p["path"]) for p in im_module.list_firefox_profiles()] == [away, at_home]
+
+    # Verifies the configured pattern stays first and is still searched when it points somewhere else entirely
     def test_custom_pattern_and_roaming(self, im_module, monkeypatch, windows_home):
         home, _, _ = windows_home
-        custom = home / "custom/cookies.sqlite"
+        custom = self._make_profile(home / "custom/cookies.sqlite")
         roaming = home / "redirected-roaming"
-        regular = roaming / "Mozilla/Firefox/Profiles/a.default/cookies.sqlite"
-        for path in (custom, regular):
-            path.parent.mkdir(parents=True)
-            path.write_bytes(b"")
+        regular = self._make_profile(roaming / "Mozilla/Firefox/Profiles/a.default/cookies.sqlite")
         monkeypatch.setattr(im_module, "FIREFOX_WINDOWS_COOKIE", str(custom))
         monkeypatch.setenv("APPDATA", str(roaming))
+
         assert im_module.firefox_cookie_patterns()[0] == str(custom)
         assert [Path(p["path"]) for p in im_module.list_firefox_profiles()] == [custom, regular]
 
-    # Non-Windows profile lookup keeps its existing search paths
+    # Verifies the shipped configuration and the environment's answer for the same directory collapse into one
+    # pattern, so the ordinary roaming location is not globbed three times on every Windows run
+    def test_the_roaming_location_is_searched_once(self, im_module, monkeypatch, windows_home):
+        _, roaming, local = windows_home
+        monkeypatch.setattr(im_module, "FIREFOX_WINDOWS_COOKIE", "~/AppData/Roaming/Mozilla/Firefox/Profiles/*/cookies.sqlite")
+        regular = self._make_profile(roaming / "Mozilla/Firefox/Profiles/a.default/cookies.sqlite")
+
+        patterns = im_module.firefox_cookie_patterns()
+
+        assert len(patterns) == 2
+        assert patterns[0] == "~/AppData/Roaming/Mozilla/Firefox/Profiles/*/cookies.sqlite"
+        assert patterns[1] == os.path.join(str(local), "Packages", "Mozilla.Firefox_*", "LocalCache", "Roaming", "Mozilla", "Firefox", "Profiles", "*", "cookies.sqlite")
+        assert [Path(p["path"]) for p in im_module.list_firefox_profiles()] == [regular]
+
+    # Verifies the Windows branch is exclusive, so the other platforms keep the patterns they had
     @pytest.mark.parametrize("platform", ["Darwin", "Linux"])
     def test_other_platforms_unchanged(self, im_module, monkeypatch, platform):
         monkeypatch.setattr(im_module, "system", lambda: platform)
         monkeypatch.setattr(im_module, "FIREFOX_MACOS_COOKIE", "mac-pattern")
         monkeypatch.setattr(im_module, "FIREFOX_LINUX_COOKIE", "linux-pattern")
+
         patterns = im_module.firefox_cookie_patterns()
+
         if platform == "Darwin":
             assert patterns == ("mac-pattern",)
         else:
-            assert patterns == ("linux-pattern", "~/snap/firefox/common/.mozilla/firefox/*/cookies.sqlite", "~/.var/app/org.mozilla.firefox/.mozilla/firefox/*/cookies.sqlite")
+            assert patterns == ("linux-pattern", "~/snap/firefox/common/.mozilla/firefox/*/cookies.sqlite", "~/.var/app/org.mozilla.firefox/.mozilla/firefox/*/cookies.sqlite", "~/.mozilla/firefox/Profiles/*/cookies.sqlite")
 
 
 class TestSessionPaths:
@@ -453,7 +508,7 @@ class TestFirefoxProfileAmbiguity:
         assert "default-release, default-release (Snap)" in str(failure.value)
 
     # Verifies the packaging is read from the profile path rather than guessed
-    @pytest.mark.parametrize("path,expected", [("/home/u/.mozilla/firefox/a.default/cookies.sqlite", ""), ("/home/u/snap/firefox/common/.mozilla/firefox/a.default/cookies.sqlite", "Snap"), ("/home/u/.var/app/org.mozilla.firefox/.mozilla/firefox/a.default/cookies.sqlite", "Flatpak")])
+    @pytest.mark.parametrize("path,expected", [("/home/u/.mozilla/firefox/a.default/cookies.sqlite", ""), ("/home/u/snap/firefox/common/.mozilla/firefox/a.default/cookies.sqlite", "Snap"), ("/home/u/.var/app/org.mozilla.firefox/.mozilla/firefox/a.default/cookies.sqlite", "Flatpak"), (r"C:\Users\u\AppData\Roaming\Mozilla\Firefox\Profiles\a.default\cookies.sqlite", ""), (r"C:\Users\u\AppData\Local\Packages\Mozilla.Firefox_n80bbvh6b1yt2\LocalCache\Roaming\Mozilla\Firefox\Profiles\a.default\cookies.sqlite", "Microsoft Store")])
     def test_the_install_is_read_from_the_path(self, im_module, path, expected):
         assert im_module.firefox_install_label(path) == expected
 
