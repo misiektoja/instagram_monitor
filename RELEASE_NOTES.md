@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 4.0 (TBD)
+# Changes in 4.0 (22 Sep 2026)
 
 > **Upgrading is strongly recommended.** In September 2026 Instagram stopped answering `api/v1/users/web_profile_info/` for accounts that are signed in. Version 3.9.1 and earlier read every profile through that endpoint, so a signed-in run on those versions now fails at the first lookup of every target and cannot be fixed by re-importing the session. Version 4.0 reads profiles another way. Runs without a login are not affected.
 
