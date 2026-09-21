@@ -2463,7 +2463,7 @@ _install_http_backend()
 _install_copy_session_proxy_patch()
 
 from instaloader.exceptions import PrivateProfileNotFollowedException
-from html import escape
+from html import escape, unescape
 from itertools import islice
 from typing import Optional, Sequence, Tuple, Any, Callable, Dict, List, TypeVar, cast
 from glob import glob
@@ -11196,6 +11196,28 @@ def html_autolink_urls(content: str) -> str:
     return re.sub(r"(?<![\"'=])(https?://[^\s<>\"']+[^\s<>\"'.,;:!?)\]])", r'<a href="\1">\1</a>', str(content))
 
 
+# Converts one HTML anchor to Discord markdown, leaving a self-labeled link bare so Discord turns it into a link itself
+def anchor_to_discord_markdown(url: str, inner_html: str) -> str:
+    target = unescape(str(url or "")).strip()
+    label = " ".join(unescape(re.sub(r"(?s)<[^>]+>", "", str(inner_html or ""))).split())
+    # Discord prints a masked link as plain text when its label repeats the destination, while a bare URL always links
+    if not target or not label or label == target:
+        return target or label
+    return f"[{inner_html}]({target})"
+
+
+# Converts one HTML alert body to the Discord markdown subset, so a webhook alert reads like the email
+def html_body_to_discord_markdown(body_html: str) -> str:
+    text = re.sub(r"(?is)</?(?:html|head|body)\s*>", "", str(body_html or ""))
+    text = re.sub(r"(?is)<a\s[^>]*?href=[\"']([^\"']*)[\"'][^>]*>(.*?)</a>", lambda match: anchor_to_discord_markdown(match.group(1), match.group(2)), text)
+    text = re.sub(r"(?is)<b\s*>(.*?)</b\s*>", lambda match: f"**{match.group(1)}**" if match.group(1).strip() else match.group(1), text)
+    text = re.sub(r"(?is)<i\s*>(.*?)</i\s*>", lambda match: f"*{match.group(1)}*" if match.group(1).strip() else match.group(1), text)
+    text = re.sub(r"(?is)<br\s*/?>", "\n", text)
+    # Anything still tag-shaped is layout the markdown body has no use for, such as a stray paragraph or list wrapper
+    text = re.sub(r"(?s)<[^>]+>", "", text)
+    return unescape(text).strip()
+
+
 # Yields the exception and each cause or context up to max_depth, to walk an exception chain
 def iter_exc_chain(error: Any, max_depth: int = 8):
     current = error
@@ -11770,7 +11792,7 @@ def notify_monitoring_recovery(user, alert_state) -> bool:
     alert_subject = monitoring_recovery_subject(user, lasted)
     alert_body = monitoring_recovery_body(user, lasted, alert_state.summary)
     alert_body_html = monitoring_recovery_body_html(user, lasted, alert_state.summary)
-    email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, f"{alert_body}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}", f"{alert_body_html}{get_cur_ts('<br><br>Timestamp: ')}", email_enabled=email_pending, webhook_enabled=webhook_pending, webhook_title=alert_subject, webhook_description=alert_body, webhook_color=0x2ECC71)
+    email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, f"{alert_body}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}", f"{alert_body_html}{get_cur_ts('<br><br>Timestamp: ')}", email_enabled=email_pending, webhook_enabled=webhook_pending, webhook_title=alert_subject, webhook_description=html_body_to_discord_markdown(alert_body_html), webhook_color=0x2ECC71)
     return email_delivered or webhook_delivered
 
 
@@ -11792,7 +11814,7 @@ def notify_monitoring_error(user, advice, failed_since, failure_count, check_int
     alert_subject = recovery_alert_subject(advice, user)
     alert_body = recovery_alert_body(advice, check_interval, failure_count, failed_since)
     alert_body_html = recovery_alert_body_html(advice, check_interval, failure_count, failed_since)
-    email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, f"{alert_body}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}", f"{alert_body_html}{get_cur_ts('<br><br>Timestamp: ')}", email_enabled=email_pending, webhook_enabled=webhook_pending, webhook_title=alert_subject, webhook_description=alert_body, webhook_color=0xFF0000)
+    email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, f"{alert_body}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}", f"{alert_body_html}{get_cur_ts('<br><br>Timestamp: ')}", email_enabled=email_pending, webhook_enabled=webhook_pending, webhook_title=alert_subject, webhook_description=html_body_to_discord_markdown(alert_body_html), webhook_color=0xFF0000)
     alert_state.record("email", email_pending, email_delivered, now)
     alert_state.record("webhook", webhook_pending, webhook_delivered, now)
     return email_delivered or webhook_delivered
