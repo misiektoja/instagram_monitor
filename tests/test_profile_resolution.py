@@ -310,3 +310,77 @@ class TestResolvedIdsOutliveTheRun:
         assert resolved.userid == 77
         assert built == ["11", "77"]
         assert im_module.stored_user_id("target") == "77"
+
+
+class TestReelsAreOptional:
+    # Instagram stopped answering the endpoint that reports a reel count, so reading the list is the only way left
+    # and it is both expensive and often refused. A run that does not need reels should not pay for that
+    def test_the_latest_post_lookup_reads_no_reels_by_default(self, im_module, monkeypatch):
+        walked = []
+        profile = SimpleNamespace(get_posts=lambda: iter(()), get_reels=lambda: walked.append("reels") or iter(()))
+        monkeypatch.setattr(im_module, "profile_from_username_resilient", lambda bot, user: profile)
+
+        assert im_module.latest_post_reel("target", None) is None
+        assert walked == []
+
+    # Turning reels on is what makes the tool read them, so the setting has to reach the lookup
+    def test_the_latest_post_lookup_reads_reels_when_they_are_wanted(self, im_module, monkeypatch):
+        walked = []
+        profile = SimpleNamespace(get_posts=lambda: iter(()), get_reels=lambda: walked.append("reels") or iter(()))
+        monkeypatch.setattr(im_module, "profile_from_username_resilient", lambda bot, user: profile)
+        monkeypatch.setattr(im_module, "FETCH_REELS", True, raising=False)
+
+        assert im_module.latest_post_reel("target", None) is None
+        assert walked == ["reels"]
+
+    # The default has to be off, since that is what keeps a check working while the endpoint is refusing
+    def test_reels_are_off_unless_asked_for(self, im_module):
+        assert im_module.FETCH_REELS is False
+
+
+class TestSetupAsksAboutReels:
+    # Runs a connection section that records which questions were asked and returns scripted answers
+    def _section(self, im_module, monkeypatch, answers):
+        import tests.test_setup_wizard as wizard_tests
+
+        with wizard_tests.make_test_directory() as directory_name:
+            state = wizard_tests.make_setup_state(im_module, Path(directory_name))
+            state.logged_in = True
+            asked = wizard_tests.scripted_connection_choices(im_module, monkeypatch, answers)
+            monkeypatch.setattr(im_module, "_wizard_collect_identity_budget", lambda state: None)
+            im_module._wizard_collect_connection_section(state)
+            return state, asked
+
+    # The answer that keeps a check working while Instagram refuses the reel list is the one Enter selects
+    def test_the_safe_answer_is_the_default(self, im_module, monkeypatch):
+        _, asked = self._section(im_module, monkeypatch, {"collect": 2, "reels": 0})
+
+        assert asked["reels"]["options"] == ["No, leave reels alone", "Yes, monitor reels"]
+        assert asked["reels"]["default"] == 0
+
+    # A reader turning reels on should be told what it costs, so the warning sits on the answer that turns them on
+    def test_the_question_warns_what_reels_cost(self, im_module, monkeypatch):
+        seen = {}
+
+        def ask(question, options, default_index=0):
+            seen["options"] = list(options)
+            return 0
+
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", ask)
+        im_module._wizard_collect_reels(SimpleNamespace(config_values={}))
+
+        assert "refuses" in seen["options"][1][1]
+        assert "counts towards the posts number" in seen["options"][0][1]
+
+    # Answering yes is what records the setting, so a run that wants reel notifications gets them
+    def test_answering_yes_records_the_setting(self, im_module, monkeypatch):
+        state, _ = self._section(im_module, monkeypatch, {"collect": 2, "reels": 1})
+
+        assert state.config_values["FETCH_REELS"] is True
+
+    # Reels do not depend on the follower lists, so a counts-only setup is still asked about them
+    def test_a_counts_only_setup_is_still_asked(self, im_module, monkeypatch):
+        state, asked = self._section(im_module, monkeypatch, {"collect": 0, "reels": 1})
+
+        assert "reels" in asked
+        assert state.config_values["FETCH_REELS"] is True

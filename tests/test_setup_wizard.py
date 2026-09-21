@@ -835,6 +835,8 @@ def scripted_connection_choices(im_module, monkeypatch, answers):
             key = "collect"
         elif "names a day" in question:
             key = "budget"
+        elif "reels be monitored" in question:
+            key = "reels"
         else:
             key = "source"
             assert "follower and following lists" in question, f"unexpected wizard question: {question}"
