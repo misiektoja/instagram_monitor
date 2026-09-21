@@ -78,7 +78,7 @@ No-login mode needs no Instagram credentials and makes fewer requests than logge
 <a id="logged-in-mode-with-session-login"></a>
 ## Logged-In Mode (With Session Login)
 
-This mode signs in with an Instagram account. It can access reels, stories and the usernames added to or removed from follower and following lists.
+This mode signs in with an Instagram account. It can access reels, stories and the usernames added to or removed from follower and following lists. Reels are off by default because the endpoint Instagram used to report them with stopped answering reliably. See [Profile Lookups Report a Retired Endpoint](troubleshooting.md#profile-lookups-report-a-retired-endpoint).
 
 Logged-in monitoring can cause Instagram to show a security challenge, limit the session or suspend the account. There is no known request rate that guarantees safety. Use a separate Instagram account if losing access to your main account would be unacceptable, then follow the [risk reduction guide](anti-detection.md).
 
