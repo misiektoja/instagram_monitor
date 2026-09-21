@@ -11779,7 +11779,7 @@ def monitoring_recovery_body(target: str, lasted: int, summary: str = "") -> str
 
 # Builds the HTML recovery alert body, emphasizing how long the outage lasted
 def monitoring_recovery_body_html(target: str, lasted: int, summary: str = "") -> str:
-    return f"Monitoring recovered for {escape(str(target))} after <b>{escape(display_time(max(1, lasted)))}</b>." + (f"<br><br>The failure was: {html_text(str(summary))}" if summary else "")
+    return f"Monitoring recovered for <b>{escape(str(target))}</b> after <b>{escape(display_time(max(1, lasted)))}</b>." + (f"<br><br>The failure was: {html_text(str(summary))}" if summary else "")
 
 
 # Tells every channel that carried the failure alert that the outage is over, so nobody is left acting on a run that recovered
