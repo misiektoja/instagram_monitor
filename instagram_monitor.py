@@ -629,6 +629,7 @@ DOTENV_FILE = ""
 
 # Default Firefox cookie directories by OS
 FIREFOX_MACOS_COOKIE = "~/Library/Application Support/Firefox/Profiles/*/cookies.sqlite"
+# Regular installer path, with Microsoft Store profiles discovered automatically too
 FIREFOX_WINDOWS_COOKIE = "~/AppData/Roaming/Mozilla/Firefox/Profiles/*/cookies.sqlite"
 # Native Linux path, with Snap and Flatpak paths discovered automatically too
 FIREFOX_LINUX_COOKIE = "~/.mozilla/firefox/*/cookies.sqlite"
@@ -8645,33 +8646,54 @@ def get_real_reel_code(bot: instaloader.Instaloader, username: str) -> Optional[
         return None
 
 
-# Returns Firefox cookie patterns for the active platform and packaged installations
+# Returns Firefox cookie patterns for the active platform, including Linux package and Windows Store installations
 def firefox_cookie_patterns():
     selected_system = system()
     configured_pattern = {"Windows": FIREFOX_WINDOWS_COOKIE, "Darwin": FIREFOX_MACOS_COOKIE}.get(selected_system, FIREFOX_LINUX_COOKIE)
     patterns = [configured_pattern]
     if selected_system == "Windows":
-        roaming = os.environ.get("APPDATA") or expanduser("~/AppData/Roaming")
-        patterns.append(os.path.join(roaming, "Mozilla", "Firefox", "Profiles", "*", "cookies.sqlite"))
-        # Store/MSIX Firefox keeps its profiles inside its package's redirected data.
-        local_roots = (os.environ.get("LOCALAPPDATA"), expanduser("~/AppData/Local"))
-        for local_root in dict.fromkeys(root for root in local_roots if root):
+        # A roaming or redirected user profile moves these roots off the home directory, so both what the
+        # environment reports and the home-relative location are searched
+        for roaming_root in windows_data_roots("APPDATA", "~/AppData/Roaming"):
+            patterns.append(os.path.join(roaming_root, "Mozilla", "Firefox", "Profiles", "*", "cookies.sqlite"))
+        # A Store or MSIX build keeps its profiles inside the package's redirected application data rather
+        # than in the ordinary roaming location
+        for local_root in windows_data_roots("LOCALAPPDATA", "~/AppData/Local"):
             patterns.append(os.path.join(local_root, "Packages", "Mozilla.Firefox_*", "LocalCache", "Roaming", "Mozilla", "Firefox", "Profiles", "*", "cookies.sqlite"))
     elif selected_system == "Linux":
         # The last pattern covers a container given the Windows Firefox root, where the profiles sit one level
         # deeper in a Profiles folder. It matches nothing on an ordinary Linux host
         patterns.extend(("~/snap/firefox/common/.mozilla/firefox/*/cookies.sqlite", "~/.var/app/org.mozilla.firefox/.mozilla/firefox/*/cookies.sqlite", "~/.mozilla/firefox/Profiles/*/cookies.sqlite"))
-    return tuple(dict.fromkeys(patterns))
+    return dedupe_cookie_patterns(patterns)
 
 
-# Names the Firefox packaging a profile belongs to, since Snap, Flatpak and distribution builds keep separate
-# profile trees that routinely contain the same friendly name
+# Returns the Windows application-data roots for one environment variable, the environment's answer first
+def windows_data_roots(variable: str, home_relative: str) -> Tuple[str, ...]:
+    roots = (os.environ.get(variable), expanduser(home_relative))
+    return tuple(dict.fromkeys(root for root in roots if root))
+
+
+# Drops patterns that resolve to the same location, since the configured pattern and the ones added for a
+# platform routinely spell one directory differently and would otherwise be globbed twice
+def dedupe_cookie_patterns(patterns) -> Tuple[str, ...]:
+    kept: Dict[str, str] = {}
+    for pattern in patterns:
+        kept.setdefault(os.path.normcase(os.path.normpath(expanduser(pattern))), pattern)
+    return tuple(kept.values())
+
+
+# Names the Firefox packaging a profile belongs to, since Snap, Flatpak, Microsoft Store and distribution
+# builds keep separate profile trees that routinely contain the same friendly name
 def firefox_install_label(profile_path) -> str:
-    lowered = str(profile_path).replace(os.sep, "/").lower()
+    # Backslashes are normalized rather than os.sep, since the path classified here comes from whichever
+    # platform's pattern matched and not necessarily from the host running the check
+    lowered = str(profile_path).replace("\\", "/").lower()
     if "/snap/firefox/" in lowered:
         return "Snap"
     if "/org.mozilla.firefox/" in lowered:
         return "Flatpak"
+    if "/packages/mozilla.firefox_" in lowered:
+        return "Microsoft Store"
     return ""
 
 
