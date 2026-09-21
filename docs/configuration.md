@@ -245,7 +245,7 @@ Set `TIME_FORMAT_12H = True` to display times in 12-hour format instead of the d
 
 Email notifications need SMTP server details for the sending account. Add them to `instagram_monitor.conf` or use the setup wizard. Setup checks the login without sending an email. To replace only the password, run `instagram_monitor --set-smtp-password`. Password entry is hidden and preserves spaces.
 
-Every alert is sent as both HTML and plain text in one message. Mail clients that render HTML show the account name, the counts and the values that changed in bold, and post, story and profile links are clickable. Clients that do not render HTML fall back to the plain text, which is unchanged.
+Every alert is sent as both HTML and plain text in one message. Mail clients that render HTML show the account name, the counts and the values that changed in bold. Post, story and profile links are clickable. Clients that do not render HTML fall back to the plain text, which is unchanged.
 
 Send one test message to verify the settings:
 
