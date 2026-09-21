@@ -211,7 +211,7 @@ Use the same `instagram_monitor_session` volume during browser import and every 
 
 Finish the setup wizard first. It asks which host environment runs Docker then prints the matching one-time import command. Run Doctor only after that import succeeds.
 
-On Windows, use Docker Desktop or another Docker-compatible runtime in Linux container mode. PowerShell reads the Firefox profiles from `$env:APPDATA\Mozilla\Firefox\Profiles`. Command Prompt uses `%APPDATA%\Mozilla\Firefox\Profiles`.
+On Windows, use Docker Desktop or another Docker-compatible runtime in Linux container mode. PowerShell reads the Firefox profiles from `$env:APPDATA\Mozilla\Firefox\Profiles`. Command Prompt uses `%APPDATA%\Mozilla\Firefox\Profiles`. These mounts cover the regular Firefox installer. Firefox from the Microsoft Store keeps its profiles inside its own package folder, which these commands do not mount, so import that profile with a native install of the tool instead.
 
 Use the direct Docker command that matches the Firefox profile layout on the host:
 

@@ -176,8 +176,8 @@ class TestFirefoxProfileDiscovery:
         assert [profile["path"] for profile in profiles] == ["/native/a.default-release/cookies.sqlite", "/snap/b.default/cookies.sqlite", "/flatpak/c.work/cookies.sqlite"]
         assert [profile["name"] for profile in profiles] == ["default-release", "default", "work"]
 
-    # Verifies non-Linux platforms keep using only their configured Firefox pattern
-    def test_non_linux_uses_only_configured_pattern(self, im_module, monkeypatch):
+    # Verifies macOS keeps using only its configured Firefox pattern, since it has no packaged install to find
+    def test_macos_uses_only_its_configured_pattern(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "system", lambda: "Darwin")
         monkeypatch.setattr(im_module, "FIREFOX_MACOS_COOKIE", "/custom/firefox/*/cookies.sqlite")
         assert im_module.firefox_cookie_patterns() == ("/custom/firefox/*/cookies.sqlite",)
