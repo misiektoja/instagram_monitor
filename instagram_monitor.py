@@ -5989,7 +5989,8 @@ def smtp_quit_quietly(smtp_object):
 def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15, report_delivery=True):
     subject = apply_privacy_substitutions(subject)
     body = apply_privacy_substitutions(body)
-    body_html = apply_privacy_substitutions(body_html)
+    # Alert bodies are built as fragments in many places, so the shared document is applied once here
+    body_html = html_email_body(apply_privacy_substitutions(body_html))
 
     if not smtp_host_is_usable(SMTP_HOST):
         print_recovery_error("Cannot send email because SMTP_HOST is not a valid IP address or hostname", context="smtp_config")
@@ -6039,8 +6040,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
             email_msg.attach(part1)
 
         if body_html:
-            part2 = MIMEText(body_html, 'html')
-            part2 = MIMEText(body_html.encode('utf-8'), 'html', _charset='utf-8')
+            part2 = MIMEText(body_html, 'html', _charset='utf-8')
             email_msg.attach(part2)
 
         if image_file:
@@ -11181,6 +11181,21 @@ def html_text(text: str) -> str:
     return escape(text).replace("\n", "<br>")
 
 
+# Returns one value escaped for use inside an HTML attribute
+def escape_html_attr(value: Any) -> str:
+    return escape(str(value or ""), quote=True)
+
+
+# Wraps one rendered fragment in the document every HTML alert body shares, leaving an absent body absent
+def html_email_body(content: str) -> str:
+    return f"<html><head></head><body>{content}</body></html>" if content else ""
+
+
+# Turns a bare URL inside already escaped HTML text into a link, so an alert that prints a guide link is clickable
+def html_autolink_urls(content: str) -> str:
+    return re.sub(r"(?<![\"'=])(https?://[^\s<>\"']+[^\s<>\"'.,;:!?)\]])", r'<a href="\1">\1</a>', str(content))
+
+
 # Yields the exception and each cause or context up to max_depth, to walk an exception chain
 def iter_exc_chain(error: Any, max_depth: int = 8):
     current = error
@@ -11705,7 +11720,8 @@ def recovery_alert_rows(advice: RecoveryAdvice, retry_seconds: int, failed_check
         counters.append(("Failed checks in a row: ", str(failed_checks), True))
         if failing_since:
             counters.append(("Failing since: ", get_date_from_ts(failing_since), True))
-    counters.append(("Next retry in: ", display_time(max(1, int(retry_seconds))), True))
+    # The retry delay is configured rather than observed, so it carries no emphasis
+    counters.append(("Next retry in: ", display_time(max(1, int(retry_seconds))), False))
     groups.append(counters)
     # A detail repeating the summary spends a line saying nothing, and it names internal library errors rather than anything actionable
     if DEBUG_MODE and advice.detail and advice.detail != advice.summary:
@@ -11724,14 +11740,9 @@ def recovery_alert_row_html(label: str, value: str, emphasized: bool) -> str:
     return f"{escape(label)}{rendered}"
 
 
-# Bolds the moment an outage started, the field a reader looks for first in a failure alert
-def html_bold_failing_since(content):
-    return re.sub(r"(Failing since: )([^<]+)", r"\1<b>\2</b>", content, count=1)
-
-
 # Builds the HTML failure alert body, leaving the timestamp to the caller as the plain form does
 def recovery_alert_body_html(advice: RecoveryAdvice, retry_seconds: int, failed_checks: int = 0, failing_since: int = 0) -> str:
-    return html_bold_failing_since("<br><br>".join("<br>".join(recovery_alert_row_html(*row) for row in group) for group in recovery_alert_rows(advice, retry_seconds, failed_checks, failing_since)))
+    return html_autolink_urls("<br><br>".join("<br>".join(recovery_alert_row_html(*row) for row in group) for group in recovery_alert_rows(advice, retry_seconds, failed_checks, failing_since)))
 
 
 # Builds the subject of the alert that says an outage ended, matching the failure alert its reader already has
