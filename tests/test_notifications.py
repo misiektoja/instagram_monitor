@@ -386,5 +386,5 @@ class TestAccountFlagIdentity:
 
         parts = captured["html"].split("<br>")
         fix_index = next(index for index, part in enumerate(parts) if part.startswith("To fix: "))
-        assert parts[fix_index + 1].startswith("Guide: https://")
+        assert parts[fix_index + 1].startswith('Guide: <a href="https://')
         assert "\n" not in parts[fix_index]

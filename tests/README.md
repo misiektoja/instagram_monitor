@@ -83,6 +83,7 @@ installed copy of the package.
 | `test_follow_analysis.py` | The offline follow relationship analysis behind `--analyze-follows` |
 | `test_imgcat_display.py` | Terminal image display argument handling |
 | `test_notification_escaping.py` | Source-level sweep proving every value reaching an HTML notification body is escaped |
+| `test_email_html.py` | HTML notification bodies: escaping, the ntfy plain form and the plain-text match |
 | `test_documentation.py` | Semantic documentation contracts for commands, concepts and platform variants plus repository metadata: governance files, citation, funding, line endings, the declared editor style, the pinned linter and release integrity |
 | `test_packaging.py` | Wheel contents, installed console help/version and config generation |
 | `test_browser_e2e.py` | Real Chromium rendering, navigation and target creation against the local dashboard |
