@@ -2,14 +2,25 @@
 
 import sqlite3
 import stat
+import sys
 import tempfile
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from typing import Any
 
 import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT_ROOT = PROJECT_ROOT / "local" / "test_artifacts" / "session_import"
+
+
+# Stands in for the optional pycookiecheat package, which the Chromium reader imports but the test run does not install
+def fake_pycookiecheat(get_cookies):
+    module: Any = ModuleType("pycookiecheat")
+    module.BrowserType = SimpleNamespace(CHROME="chrome", BRAVE="brave", CHROMIUM="chromium")
+    module.get_cookies = get_cookies
+    return module
 
 
 class TestFirefoxCookieImport:
@@ -519,8 +530,7 @@ class TestChromiumKeyringFailure:
         def refuse(*args, **kwargs):
             raise ValueError("Could not find a password for the pair (Chrome Safe Storage, Chrome). Please manually verify they exist in `Keychain Access.app`.")
 
-        import pycookiecheat
-        monkeypatch.setattr(pycookiecheat, "get_cookies", refuse)
+        monkeypatch.setitem(sys.modules, "pycookiecheat", fake_pycookiecheat(refuse))
 
         with pytest.raises(im_module.CookieImportError) as failure:
             im_module.get_chromium_cookie_dict("chrome", cookie_file=__file__)
