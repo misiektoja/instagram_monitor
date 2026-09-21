@@ -11724,9 +11724,14 @@ def recovery_alert_row_html(label: str, value: str, emphasized: bool) -> str:
     return f"{escape(label)}{rendered}"
 
 
+# Bolds the moment an outage started, the field a reader looks for first in a failure alert
+def html_bold_failing_since(content):
+    return re.sub(r"(Failing since: )([^<]+)", r"\1<b>\2</b>", content, count=1)
+
+
 # Builds the HTML failure alert body, leaving the timestamp to the caller as the plain form does
 def recovery_alert_body_html(advice: RecoveryAdvice, retry_seconds: int, failed_checks: int = 0, failing_since: int = 0) -> str:
-    return "<br><br>".join("<br>".join(recovery_alert_row_html(*row) for row in group) for group in recovery_alert_rows(advice, retry_seconds, failed_checks, failing_since))
+    return html_bold_failing_since("<br><br>".join("<br>".join(recovery_alert_row_html(*row) for row in group) for group in recovery_alert_rows(advice, retry_seconds, failed_checks, failing_since)))
 
 
 # Builds the subject of the alert that says an outage ended, matching the failure alert its reader already has
