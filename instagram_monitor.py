@@ -11191,6 +11191,24 @@ def iter_exc_chain(error: Any, max_depth: int = 8):
         current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
 
 
+# Names the transport failure behind an exception chain, since a timeout raised with no message leaves the text rules nothing to read
+def network_failure_code(error: Any) -> str:
+    timed_out = False
+    unreachable = False
+    for current in iter_exc_chain(error):
+        name = type(current).__name__
+        # A TLS failure has its own advice, so a chain that names one is left to the rules that recognize it
+        if "SSL" in name or "Certificate" in name:
+            return ""
+        if isinstance(current, TimeoutError) or "Timeout" in name:
+            timed_out = True
+        elif isinstance(current, ConnectionError) or name in ("gaierror", "herror") or any(term in name for term in ("Connect", "ProxyError", "NameResolution", "Unreachable")):
+            unreachable = True
+    if timed_out:
+        return "network.timeout"
+    return "network.unavailable" if unreachable else ""
+
+
 # Reports whether this process hit the local file descriptor limit rather than a remote failure
 def is_too_many_open_files(error: Any) -> bool:
     for current in iter_exc_chain(error):
@@ -11281,6 +11299,10 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
     # Runtime, which is the monitoring loop and every Instagram request it makes
     logged_in = (bool(SESSION_USERNAME) and not SKIP_SESSION) if is_logged_in is None else is_logged_in
     code, summary, fix, guide, retryable = classify_error_parts(str(error or detail or ""), logged_in)
+    # Read only once the text rules found nothing, so a DNS or proxy failure keeps its own advice while a
+    # transport error raised with an empty message still reaches the connection guide rather than the debug one
+    if code == "unknown" and network_failure_code(error):
+        return advice("network.unavailable", "Instagram could not be reached", "Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings. Check the proxy first if --enable-proxy is set", True, CONNECTION_GUIDE_URL)
     return advice(code, summary, fix, retryable, guide)
 
 
