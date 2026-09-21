@@ -139,9 +139,9 @@ Profile selection works the same way for every browser (see [Selecting a browser
 instagram_monitor --import-browser-session --browser firefox --browser-profile "default-release"
 ```
 
-On Windows, Firefox profiles from the regular installer (including MSI) and Microsoft Store/MSIX are discovered automatically. Discovery includes `%APPDATA%\Mozilla\Firefox\Profiles` and `%LOCALAPPDATA%\Packages\Mozilla.Firefox_*\LocalCache\Roaming\Mozilla\Firefox\Profiles`. Multiple profiles are offered for selection; the importer does not silently choose an account.
+On Windows, Firefox profiles from the regular installer and from the Microsoft Store are discovered automatically. Discovery covers `%APPDATA%\Mozilla\Firefox\Profiles` and the Store package's own profile folder under `%LOCALAPPDATA%\Packages\Mozilla.Firefox_*\LocalCache\Roaming\Mozilla\Firefox\Profiles`, and follows `APPDATA` and `LOCALAPPDATA` when a roaming or redirected user profile moves them off the home directory. Store profiles are listed as **Microsoft Store**, so the `default-release` profile that both installs create can be told apart. Importing inside a container covers the regular installer only, because the command mounts a single fixed path.
 
-On Linux, Firefox profiles installed natively, through Snap or through Flatpak are discovered automatically. You can adjust the default Firefox cookie directory permanently via `FIREFOX_*_COOKIE` configuration options; the configured pattern is searched first. The advanced `--cookie-file` option covers any other layout and continues to override automatic discovery.
+On Linux, Firefox profiles installed natively, through Snap or through Flatpak are discovered automatically. You can adjust the default Firefox cookie directory permanently via the `FIREFOX_*_COOKIE` configuration options, which are searched before the paths found automatically. The advanced `--cookie-file` option covers any other layout and overrides automatic discovery.
 
 <a id="which-browsers-are-supported"></a>
 #### Which browsers are supported
