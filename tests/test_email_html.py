@@ -141,6 +141,29 @@ def test_the_failure_alert_bolds_its_summary_and_outage_fields(im_module, monkey
     assert "Next retry in: 1 minute" in rendered
 
 
+# Verifies the Discord copy of the failure alert carries the email's emphasis and its guide link
+def test_the_failure_alert_reaches_discord_with_its_emphasis(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(im_module, "DEBUG_MODE", False)
+    advice = im_module.make_recovery_advice("network.unavailable", "Instagram is unreachable", im_module.recovery_fix_with_guide("Retry later", "https://example.test/guide"), True)
+    rendered = im_module.recovery_alert_body_html(advice, 60, failed_checks=2, failing_since=1700000000)
+
+    discord = im_module.html_body_to_discord_markdown(rendered)
+
+    assert discord.startswith("**Instagram is unreachable**\n\n")
+    assert "Guide: https://example.test/guide" in discord
+    assert "Failed checks in a row: **2**" in discord
+    assert "<" not in discord
+    # ntfy shows a marker literally, so it gets the same wording without any
+    assert im_module.strip_discord_markdown(discord) == im_module.recovery_alert_body(advice, 60, failed_checks=2, failing_since=1700000000)
+
+
+# Verifies a link whose label repeats its destination is left bare, which Discord turns into a link itself
+def test_a_self_labeled_link_stays_bare_in_discord(im_module):
+    assert im_module.html_body_to_discord_markdown('<a href="https://example.test/a">https://example.test/a</a>') == "https://example.test/a"
+    assert im_module.html_body_to_discord_markdown('<a href="https://example.test/a">docs</a>') == "[docs](https://example.test/a)"
+
+
 # Verifies the timeline reaches several alert types, so the structural check is not silently narrow
 def test_the_timeline_covers_several_alert_types(timeline_alerts):
     assert len({alert["subject"] for alert in timeline_alerts}) >= 6
