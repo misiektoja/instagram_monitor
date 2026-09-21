@@ -7527,7 +7527,7 @@ def resolve_local_timezone():
             LOCAL_TIMEZONE_STATE = "auto"
         elif get_localzone is None:
             LOCAL_TIMEZONE_STATE = "auto_unavailable"
-            timezone_advice = make_recovery_advice("dependency.missing", "The local timezone could not be detected", recovery_fix_with_guide("Install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_GUIDE_URL), False, "LOCAL_TIMEZONE is Auto but tzlocal is unavailable")
+            timezone_advice = make_recovery_advice("dependency.missing", "The local timezone could not be detected", recovery_fix_with_guide("Install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone", INSTALLATION_GUIDE_URL), False, "LOCAL_TIMEZONE is Auto but tzlocal is unavailable")
         else:
             LOCAL_TIMEZONE_STATE = "auto_failed"
             timezone_advice = make_recovery_advice("config.invalid", "The local timezone could not be detected", recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_GUIDE_URL), False, "tzlocal did not return a supported timezone")
@@ -18510,7 +18510,7 @@ def doctor_state_path_checks(targets) -> List[DoctorCheck]:
     if output_destination_is_writable(ledger):
         checks = [make_doctor_check("Configuration", "PASS", "Account safety ledger appears writable", f"Path: {ledger}")]
     else:
-        advice = make_recovery_advice("file.unwritable", "Account safety ledger is not writable", recovery_fix_with_guide("Choose a writable location with --output-dir or OUTPUT_DIR", CONFIG_GUIDE_URL), False)
+        advice = make_recovery_advice("file.unwritable", "Account safety ledger is not writable", recovery_fix_with_guide("Choose a writable location with --output-dir or OUTPUT_DIR", OUTPUT_GUIDE_URL), False)
         checks = [make_doctor_check("Configuration", "FAIL", advice.summary, f"Path: {ledger}. Monitoring stops the account when this file cannot be maintained", advice)]
     if SKIP_FOLLOWERS and SKIP_FOLLOWINGS:
         return checks
@@ -18527,7 +18527,7 @@ def doctor_state_path_checks(targets) -> List[DoctorCheck]:
         if output_destination_is_writable(followers_file):
             checks.append(make_doctor_check("Configuration", "PASS", "Saved follower list directory appears writable", f"Path: {directory}"))
         else:
-            advice = make_recovery_advice("file.unwritable", "Saved follower list directory is not writable", recovery_fix_with_guide("Choose a writable location with --output-dir or OUTPUT_DIR", CONFIG_GUIDE_URL), False)
+            advice = make_recovery_advice("file.unwritable", "Saved follower list directory is not writable", recovery_fix_with_guide("Choose a writable location with --output-dir or OUTPUT_DIR", OUTPUT_GUIDE_URL), False)
             checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, f"Path: {directory}. Follower and following changes cannot be compared without it", advice))
     return checks
 
@@ -18553,7 +18553,7 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
 
     if env_path and str(env_path) in DOTENV_STARTUP_ERRORS:
         detail, fix = DOTENV_STARTUP_ERRORS[str(env_path)]
-        advice = make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(f"{fix}, then run Doctor again", CONFIG_GUIDE_URL), False)
+        advice = make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(f"{fix}, then run Doctor again", SECRETS_GUIDE_URL), False)
         checks.append(make_doctor_check("Configuration", "FAIL", "Dotenv file could not be loaded", detail, advice))
     elif env_path and os.path.isfile(str(env_path)):
         checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
@@ -19720,7 +19720,7 @@ def run_main():
             detail, fix = dotenv_load_problem(env_path, exc)
             DOTENV_STARTUP_ERRORS[str(env_path)] = (detail, fix)
             if not args.doctor:
-                print_recovery_advice(make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(fix, CONFIG_GUIDE_URL), False))
+                print_recovery_advice(make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(fix, SECRETS_GUIDE_URL), False))
                 if not command_reports_configuration(args):
                     sys.exit(1)
 
