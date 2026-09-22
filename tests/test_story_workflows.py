@@ -2,21 +2,10 @@
 
 import csv
 import threading
-import uuid
 from datetime import datetime, timezone
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ARTIFACT_ROOT = PROJECT_ROOT / "local" / "test_artifacts"
-
-
-# Returns an isolated local artifact directory for one story workflow test
-def _story_artifact_dir() -> Path:
-    artifact_dir = ARTIFACT_ROOT / "story_workflows" / uuid.uuid4().hex
-    artifact_dir.mkdir(parents=True, exist_ok=True)
-    return artifact_dir
 
 
 # Returns rows from a CSV file using the monitor's expected encoding
@@ -54,8 +43,8 @@ def _patch_startup_monitor_defaults(im_module, monkeypatch) -> None:
 
 class TestStoryWorkflows:
     # Startup story loading writes one CSV row and publishes last story dashboard metadata
-    def test_startup_story_item_writes_csv_and_ui_update(self, im_module, monkeypatch):
-        artifact_dir = _story_artifact_dir()
+    def test_startup_story_item_writes_csv_and_ui_update(self, im_module, monkeypatch, tmp_path):
+        artifact_dir = tmp_path
         csv_path = artifact_dir / "events.csv"
         updates = []
         story_item = SimpleNamespace(
@@ -91,7 +80,16 @@ class TestStoryWorkflows:
         assert last_story["caption"] == "story caption"
         assert last_story["url"] == "https://example.com/story.jpg"
         assert last_story["post_url"] == "https://www.instagram.com/stories/target/"
+        assert last_story["is_story"] is True
         assert last_story["timestamp_ts"] == 1710000000
+
+        target_data = {"target": {"last_story": last_story}}
+        # Render the real startup record so a missing flag cannot hide the terminal warning
+        monkeypatch.setattr(im_module, "RICH_AVAILABLE", True)
+        rendered = im_module.generate_user_dashboard(target_data)
+        output = StringIO()
+        im_module.Console(file=output, width=400, height=60).print(rendered)
+        assert "may break anonymity" in output.getvalue()
 
     # Story webhooks remain active when email status notifications are disabled
     def test_story_item_webhook_is_independent_from_email(self, im_module, monkeypatch):

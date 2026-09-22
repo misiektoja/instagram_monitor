@@ -4,6 +4,7 @@ import re
 import threading
 from collections.abc import Iterator
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 from werkzeug.serving import make_server
@@ -72,6 +73,119 @@ def test_dashboard_user_flow_in_chromium(dashboard_server):
         playwright_sync.expect(page.locator("#targets-list")).to_contain_text("added.user")
         assert page_errors == []
         browser.close()
+
+
+# Opens synthetic story data with every nonlocal browser request intercepted
+@pytest.fixture
+def story_dashboard_page(dashboard_server, im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "DASHBOARD_MODE", "user")
+    external_requests = []
+
+    # Serves external destinations locally so even a failed warning cannot contact Instagram
+    def route_request(route):
+        if urlsplit(route.request.url).netloc == urlsplit(dashboard_server).netloc:
+            route.continue_()
+        else:
+            external_requests.append(route.request.url)
+            route.fulfill(status=200, content_type="text/html", body="Offline destination")
+
+    with playwright_sync.sync_playwright() as playwright:
+        browser = launch_chromium(playwright)
+        context = browser.new_context(service_workers="block")
+        context.route("**/*", route_request)
+        page = context.new_page()
+        page.set_default_timeout(3000)
+        yield page, context, external_requests, dashboard_server
+        browser.close()
+
+
+# Requires confirmation on every story surface for both current and older records
+@pytest.mark.e2e
+@pytest.mark.parametrize("surface", ["fetched", "legacy", "dashboard", "config", "activity"])
+@pytest.mark.parametrize("story_flag", [True, None, False])
+def test_story_warning_guards_navigation_in_chromium(story_dashboard_page, im_module, surface, story_flag):
+    page, context, external_requests, server_url = story_dashboard_page
+    story_url = "https://www.instagram.com/stories/target.user/123/"
+    update = {"type": "Image", "user": "target.user", "post_url": story_url}
+    details = {"url": story_url}
+    if story_flag is not None:
+        update["is_story"] = story_flag
+        details["is_story"] = story_flag
+    if surface == "legacy":
+        im_module.WEB_DASHBOARD_DATA["targets"]["target.user"]["last_story"] = update
+    else:
+        im_module.WEB_DASHBOARD_DATA["targets"]["target.user"]["fetched_updates"] = [update]
+    im_module.WEB_DASHBOARD_DATA["activities"] = [{"time": "12:00", "message": "New story item", "level": "update", "details": details}]
+    page.goto(server_url, wait_until="domcontentloaded")
+    if surface in ("fetched", "legacy"):
+        control = page.locator("#last-fetched-container").get_by_text(re.compile(r"^View (Story|Post)$"))
+        playwright_sync.expect(control).to_have_text("View Story")
+    else:
+        if surface == "config":
+            page.locator("#mode-config-btn").click()
+        elif surface == "activity":
+            page.locator('[data-page="activity"]').click()
+        feed_id = {"dashboard": "dashboard-activity", "config": "dashboard-activity-config", "activity": "activity-feed"}[surface]
+        control = page.locator(f"#{feed_id}").get_by_text("View", exact=True)
+    modal = page.locator("#modal-anonymity")
+    for activation in ("click", "middle", "modified", "keyboard"):
+        if activation == "middle":
+            control.click(button="middle")
+        elif activation == "modified":
+            control.click(modifiers=["ControlOrMeta"])
+        elif activation == "keyboard":
+            control.press("Enter")
+        else:
+            control.click()
+        playwright_sync.expect(modal).to_be_visible()
+        playwright_sync.expect(modal).to_contain_text("Warning")
+        playwright_sync.expect(page.locator("#anonymity-confirm-link")).to_have_attribute("href", story_url)
+        assert external_requests == []
+        assert len(context.pages) == 1
+        modal.get_by_role("button", name="Cancel", exact=True).click()
+        playwright_sync.expect(modal).to_be_hidden()
+
+    control.click()
+    page.keyboard.press("Escape")
+    playwright_sync.expect(modal).to_be_hidden()
+    control.click()
+    modal.click(position={"x": 5, "y": 5})
+    playwright_sync.expect(modal).to_be_hidden()
+    assert control.get_attribute("href") is None
+    control.click()
+    with page.expect_popup() as popup_info:
+        modal.get_by_role("link", name="I Understand, Proceed").click()
+    popup_info.value.wait_for_load_state()
+    assert external_requests == [story_url]
+    playwright_sync.expect(modal).to_be_hidden()
+
+
+# Leaves post links and downloaded images accessible without a story warning
+@pytest.mark.e2e
+def test_posts_and_local_media_do_not_require_story_confirmation(story_dashboard_page, im_module):
+    page, context, external_requests, server_url = story_dashboard_page
+    post_url = "https://www.instagram.com/p/offline/"
+    im_module.WEB_DASHBOARD_DATA["targets"]["target.user"]["fetched_updates"] = [
+        {"type": "Post", "post_url": post_url, "url": "/media/post.jpg", "video_url": None, "is_story": False},
+        {"type": "Story Video", "post_url": "https://www.instagram.com/stories/target.user/", "video_url": "/media/story.mp4", "is_story": True},
+    ]
+    page.add_init_script("HTMLMediaElement.prototype.play = () => Promise.resolve()")
+    page.goto(server_url, wait_until="domcontentloaded")
+    modal = page.locator("#modal-anonymity")
+    with page.expect_popup() as post_popup:
+        page.get_by_role("link", name="View Post", exact=True).click()
+    post_popup.value.wait_for_load_state()
+    assert external_requests == [post_url]
+    playwright_sync.expect(modal).to_be_hidden()
+    with page.expect_popup() as media_popup:
+        page.get_by_role("link", name="View Media", exact=True).click()
+    media_popup.value.wait_for_load_state()
+    assert media_popup.value.url == server_url + "media/post.jpg"
+    page.get_by_role("link", name="Play Video", exact=True).click()
+    playwright_sync.expect(page.locator("#modal-video-player")).to_be_visible()
+    playwright_sync.expect(page.locator("#local-video-element")).to_have_attribute("src", server_url + "media/story.mp4")
+    playwright_sync.expect(modal).to_be_hidden()
+    assert external_requests == [post_url]
 
 
 # Verifies the connection card is filled from the settings endpoint and saves what the user picks
