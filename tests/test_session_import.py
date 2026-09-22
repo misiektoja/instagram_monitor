@@ -5,6 +5,7 @@ import sqlite3
 import stat
 import sys
 import tempfile
+import time
 from contextlib import closing
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -307,6 +308,83 @@ class TestInstagramSessionProbe:
 
         assert "No Instagram cookies found" in str(failure.value)
         assert "other profiles: work" in str(failure.value), "the failure names where else the session might be"
+
+
+class TestSessionExpiry:
+    # Builds one cookie database holding a single Instagram session cookie with the given raw expiry
+    @staticmethod
+    def write_session(cookie_path, expiry, firefox):
+        with sqlite3.connect(cookie_path) as connection:
+            if firefox:
+                connection.execute("CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT, expiry INTEGER)")
+                connection.execute("INSERT INTO moz_cookies VALUES (?, ?, ?, ?)", (".instagram.com", "sessionid", "v", expiry))
+            else:
+                connection.execute("CREATE TABLE cookies (host_key TEXT, name TEXT, encrypted_value BLOB, expires_utc INTEGER)")
+                connection.execute("INSERT INTO cookies VALUES (?, ?, ?, ?)", (".instagram.com", "sessionid", b"v10", expiry))
+
+    # Verifies an expired session is not marked as signed in, whichever unit the profile records expiry in. Current
+    # Firefox writes milliseconds and older profiles write seconds, and nothing in the schema says which
+    @pytest.mark.parametrize("firefox,scale", [(True, 1), (True, 1000), (False, None)])
+    def test_an_expired_session_is_not_called_signed_in(self, im_module, tmp_path, firefox, scale):
+        now = 1_790_000_000.0
+        expired = now - 86400
+        raw = int(expired * scale) if scale else int((expired + im_module.CHROMIUM_EPOCH_OFFSET_SECONDS) * 1_000_000)
+        cookie_path = tmp_path / ("cookies.sqlite" if firefox else "Cookies")
+        self.write_session(cookie_path, raw, firefox)
+
+        assert im_module.cookie_file_has_instagram_session(str(cookie_path), firefox=firefox, now=now) is False
+
+    # Verifies a session still valid is marked, so adding the expiry check does not hide the profiles worth choosing
+    @pytest.mark.parametrize("firefox,scale", [(True, 1), (True, 1000), (False, None)])
+    def test_a_current_session_is_still_called_signed_in(self, im_module, tmp_path, firefox, scale):
+        now = 1_790_000_000.0
+        valid = now + 86400
+        raw = int(valid * scale) if scale else int((valid + im_module.CHROMIUM_EPOCH_OFFSET_SECONDS) * 1_000_000)
+        cookie_path = tmp_path / ("cookies.sqlite" if firefox else "Cookies")
+        self.write_session(cookie_path, raw, firefox)
+
+        assert im_module.cookie_file_has_instagram_session(str(cookie_path), firefox=firefox, now=now) is True
+
+    # Verifies a cookie kept only for the browser run counts as current, since it records no expiry at all
+    def test_a_session_cookie_without_an_expiry_counts_as_current(self, im_module, tmp_path):
+        cookie_path = tmp_path / "cookies.sqlite"
+        self.write_session(cookie_path, 0, True)
+
+        assert im_module.cookie_file_has_instagram_session(str(cookie_path), firefox=True, now=1_790_000_000.0) is True
+
+    # Verifies a Firefox profile holding only an expired session says so from the database, instead of spending an
+    # Instagram request to be told what the expiry already recorded
+    def test_an_expired_firefox_profile_fails_before_any_request(self, im_module, tmp_path, monkeypatch):
+        cookie_path = tmp_path / "cookies.sqlite"
+        self.write_session(cookie_path, int(time.time() - 86400), True)
+        monkeypatch.setattr(im_module, "list_firefox_profiles", lambda: [{"dir": "a.default", "name": "default", "path": str(cookie_path), "install": ""}])
+        monkeypatch.setattr(im_module, "instaloader_client", lambda **keywords: pytest.fail("an expired profile reached Instagram"))
+
+        with pytest.raises(im_module.CookieImportError) as failure:
+            im_module.get_firefox_cookie_dict(str(cookie_path))
+
+        assert "Instagram session expired on" in str(failure.value)
+        assert "sign in to Instagram in Firefox again" in str(failure.value)
+
+    # Verifies a Chromium profile holding only an expired session is refused before the encryption key is requested,
+    # so the failure costs neither a keyring prompt nor a request
+    def test_an_expired_chromium_profile_fails_before_the_keyring(self, im_module, tmp_path, monkeypatch):
+        cookie_path = tmp_path / "Cookies"
+        self.write_session(cookie_path, int((time.time() - 86400 + im_module.CHROMIUM_EPOCH_OFFSET_SECONDS) * 1_000_000), False)
+        monkeypatch.setitem(sys.modules, "pycookiecheat", fake_pycookiecheat(lambda *arguments, **keywords: pytest.fail("the encryption key was requested for an expired session")))
+
+        with pytest.raises(im_module.CookieImportError) as failure:
+            im_module.get_chromium_cookie_dict("chrome", cookie_file=str(cookie_path))
+
+        assert "Instagram session expired on" in str(failure.value)
+
+    # Verifies a profile holding a current session is still read normally, so the new check gates only expired ones
+    def test_a_current_chromium_profile_is_still_read(self, im_module, tmp_path, monkeypatch):
+        cookie_path = tmp_path / "Cookies"
+        self.write_session(cookie_path, int((time.time() + 86400 + im_module.CHROMIUM_EPOCH_OFFSET_SECONDS) * 1_000_000), False)
+        monkeypatch.setitem(sys.modules, "pycookiecheat", fake_pycookiecheat(lambda *arguments, **keywords: {"sessionid": "live"}))
+
+        assert im_module.get_chromium_cookie_dict("chrome", cookie_file=str(cookie_path)) == {"sessionid": "live"}
 
 
 class TestProfileSelection:
