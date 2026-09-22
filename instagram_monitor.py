@@ -1922,12 +1922,23 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     return str(destination)
 
 
-# Returns the profile name from an Instagram profile URL, or the value unchanged when it is not one. A post, reel or
-# story URL carries more than one path segment and is left alone, so it fails the username check rather than reading
-# as the account name
+# Extracts the single account path from an Instagram profile URL without scanning repeated URL fragments
 def strip_instagram_profile_url(value: str) -> str:
-    match = re.fullmatch(r"(?:https?://)?(?:[a-z0-9-]+\.)*instagram\.com/([^/?#]+)/?(?:[?#].*)?", value.strip(), re.IGNORECASE)
-    return match.group(1) if match else value
+    candidate = value.strip()
+    for scheme in ("https://", "http://"):
+        if candidate.lower().startswith(scheme):
+            candidate = candidate[len(scheme):]
+            break
+    hostname, separator, remainder = candidate.partition("/")
+    labels = hostname.lower().split(".")
+    if not separator or labels[-2:] != ["instagram", "com"]:
+        return value
+    if any(not label or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789-" for char in label) for label in labels[:-2]):
+        return value
+    account = remainder.partition("?")[0].partition("#")[0]
+    if account.endswith("/"):
+        account = account[:-1]
+    return account if account and "/" not in account else value
 
 
 # Normalizes and validates an Instagram username before it enters paths or HTML, accepting a profile URL as well
@@ -1937,7 +1948,7 @@ def normalize_instagram_username(value):
     username = strip_instagram_profile_url(value).strip().lower()
     if username.startswith('@'):
         username = username[1:]
-    if not re.fullmatch(r"[a-z0-9._]{1,30}", username):
+    if username in (".", "..") or not re.fullmatch(r"[a-z0-9._]{1,30}", username):
         raise ValueError("Instagram username must be 1-30 letters, digits, periods or underscores, or a profile URL")
     return username
 
@@ -3059,6 +3070,8 @@ def create_web_dashboard_app():
         try:
             user = normalize_instagram_username(username)
         except ValueError as e:
+            # Username validation returns a fixed public rule without exception internals
+            # codeql[py/stack-trace-exposure]
             return jsonify({'success': False, 'error': str(e)}), 400  # type: ignore
         with WEB_DASHBOARD_DATA_LOCK:
             configured_targets = set(WEB_DASHBOARD_DATA.get('targets', {}))
@@ -3067,7 +3080,8 @@ def create_web_dashboard_app():
         try:
             analysis = analyze_follows_for_user(user, is_multi=len(configured_targets) > 1)
         except Exception as e:
-            return jsonify({'success': False, 'error': sanitize_dashboard_error_text(e)}), 500  # type: ignore
+            debug_print("Follow analysis", user=user, error=sanitize_dashboard_error_text(e))
+            return jsonify({'success': False, 'error': 'Could not analyze saved follow lists. Check the local debug output for details.'}), 500  # type: ignore
         private_fields = {'followers_file', 'followings_file', 'searched_directory'}
         public_analysis = {key: value for key, value in analysis.items() if key not in private_fields}
         return jsonify({'success': True, 'analysis': apply_privacy_substitutions(public_analysis)})  # type: ignore
@@ -4784,7 +4798,7 @@ _DATE_RANGE_RE = re.compile(r"\b(?:" + _WEEKDAY_ABBR_PATTERN + r")[\t ]\d{1,2}\s
 _HOUR_RANGE_RE = re.compile(r"\b\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
 _URL_RE = re.compile(r"(https?://[^\s\]]+)")
 # A Yes or No is an answer only as the whole value of a labelled row, never as the word inside a sentence
-_ANSWER_VALUE_RE = re.compile(r"(?<=:)([\t ]+)(Yes|No)[\t ]*$")
+_ANSWER_VALUE_RE = re.compile(r"(:[\t ]+)(Yes|No)[\t ]*$")
 _BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
 _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
 # The TLS row reports a word rather than a boolean, and its off state is the one setting that weakens
@@ -4796,12 +4810,8 @@ _STORY_URL_RE = re.compile(r"(https?://\S+)")
 _SIGNAL_LINE_RE = re.compile(r"^\s*\*\s*signal\b.*\breceived\b", re.IGNORECASE)
 
 # The opening word of a warning and the name of a reported signal, marked instead of painting the line
-_WARNING_LABEL_RE = re.compile(r"^(\s*\*?\s*)(Warning:|Caution:)", re.IGNORECASE)
-_SIGNAL_NAME_RE = re.compile(r"(?<=^\* Signal )(\w+)(?= received\b)")
-# Quoted content such as a caption or a name. At least one word character is required so a run of punctuation
-# between two quotes is not read as content. The closing quote has to be followed by whitespace, punctuation or
-# the end of the line, so the text's own apostrophe does not end it early
-_QUOTED_CONTENT_RE = re.compile(r"(['\"])([^\n]*?\w[^\n]*?)\1(?=[\s.,;:!?)\]]|$)")
+_WARNING_LABEL_RE = re.compile(r"^(\s*(?:\*\s*)?)(Warning:|Caution:)", re.IGNORECASE)
+_SIGNAL_NAME_RE = re.compile(r"^(\* Signal )(\w+)(?= received\b)")
 
 # Quoted values shaped like a file name or a filesystem path stay plain, since an output destination is not
 # content. Captions routinely contain slashes and dots, so only these two shapes are excluded
@@ -5127,12 +5137,41 @@ def _apply_style_nested(line, style_name):
     return line
 
 
-# Colours one quoted value unless it is a path, a placeholder, an option or a piece of a URL
-def _colorize_quoted_content(match):
-    content = match.group(2)
-    if _QUOTED_FILE_LIKE_RE.search(content) or _QUOTED_PLACEHOLDER_RE.match(content) or _QUOTED_OPTION_RE.match(content) or _QUOTED_URL_PART_RE.search(content):
-        return match.group(0)
-    return f"{match.group(1)}{colorize('username', content)}{match.group(1)}"
+# Colours quoted content with a linear scan while leaving paths and command fragments plain
+def _colorize_quoted_content(line):
+    next_closing = {"'": -1, '"': -1}
+    closing_after_word = next_closing.copy()
+    endings = {}
+    # Remember eligible closing quotes beyond the next word to preserve the leftmost match without backtracking
+    for index in range(len(line) - 1, -1, -1):
+        character = line[index]
+        if character == "\n":
+            next_closing = {"'": -1, '"': -1}
+            closing_after_word = next_closing.copy()
+        elif character in next_closing:
+            if closing_after_word[character] > index:
+                endings[index] = closing_after_word[character]
+            following = line[index + 1:index + 2]
+            if not following or following.isspace() or following in ".,;:!?)]":
+                next_closing[character] = index
+        elif character.isalnum() or character == "_":
+            closing_after_word = next_closing.copy()
+    parts = []
+    position = 0
+    for start in reversed(endings):
+        if start < position:
+            continue
+        end = endings[start]
+        content = line[start + 1:end]
+        parts.append(line[position:start + 1])
+        if _QUOTED_FILE_LIKE_RE.search(content) or _QUOTED_PLACEHOLDER_RE.match(content) or _QUOTED_OPTION_RE.match(content) or _QUOTED_URL_PART_RE.search(content):
+            parts.append(content)
+        else:
+            parts.append(colorize("username", content))
+        parts.append(line[end])
+        position = end + 1
+    parts.append(line[position:])
+    return "".join(parts)
 
 
 # Colors a count transition using decimal text comparison without unbounded integer conversion
@@ -5274,7 +5313,7 @@ def _colorize_line(line):
     line = _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), line)
 
     # Highlight quoted content (captions etc.)
-    line = _QUOTED_CONTENT_RE.sub(_colorize_quoted_content, line)
+    line = _colorize_quoted_content(line)
 
     # Highlight boolean values
     line = _BOOLEAN_TRUE_RE.sub(lambda mo: colorize("boolean_true", mo.group(0)), line)
@@ -5314,7 +5353,7 @@ def _colorize_line(line):
     if is_warning:
         line = _WARNING_LABEL_RE.sub(lambda mo: f"{mo.group(1)}{colorize('warning', mo.group(2))}", line, count=1)
     elif is_marked_only:
-        line = _SIGNAL_NAME_RE.sub(lambda mo: colorize("signal", mo.group(0)), line, count=1)
+        line = _SIGNAL_NAME_RE.sub(lambda mo: f"{mo.group(1)}{colorize('signal', mo.group(2))}", line, count=1)
 
     if not is_marked_only and (any(phrase in lowered for phrase in _ACTIVITY_HEADER_PHRASES) or _STORY_ITEM_ACTIVITY_RE.search(line)):
         line = _apply_style_nested(line, "status_change")
@@ -6265,7 +6304,7 @@ def strip_discord_markdown(text: str) -> str:
     plain = re.sub(r"(?s)\*\*(.+?)\*\*", r"\1", str(text))
     plain = re.sub(r"`([^`]+)`", r"\1", plain)
     # Discord suppresses a link preview for a bracketed URL, which ntfy would show as part of the address
-    plain = re.sub(r"<(https?://[^>\s]+)>", r"\1", plain)
+    plain = re.sub(r"<(https?://[^<>\s]+)>", r"\1", plain)
     return re.sub(r"\\([\\*_~`|])", r"\1", plain)
 
 
@@ -7102,6 +7141,8 @@ def debug_print(_operation, **fields):
             print()
             _thread_local.in_partial_line = False
 
+        # Secret-resolution fields contain setting names, source labels and presence flags only
+        # codeql[py/clear-text-logging-sensitive-data]
         print(f"[DEBUG {timestamp}]{user_prefix} {message}")  # substitution applied in LOGGER.write
 
 
@@ -8816,6 +8857,8 @@ COOKIE_DATABASE_BUSY_TIMEOUT = 0.25
 # outright on read-only media such as the container's mounted Firefox profile
 def open_cookie_database(database_path):
     uris = [sqlite_immutable_uri(database_path)]
+    # Cookie databases come from discovered browser profiles or an explicit local operator choice
+    # codeql[py/path-injection]
     if os.path.exists(f"{database_path}-wal"):
         uris.insert(0, sqlite_readonly_uri(database_path))
     first_error: Optional[sqlite3.DatabaseError] = None
@@ -13194,7 +13237,10 @@ def browser_profile_dir() -> str:
         base = os.path.abspath(os.path.expanduser(str(FOLLOW_LIST_BROWSER_PROFILE_DIR)))
     else:
         base = os.path.abspath(os.path.join(OUTPUT_DIR if OUTPUT_DIR else ".", BROWSER_PROFILE_DIRNAME))
-    return os.path.join(base, re.sub(r'[^A-Za-z0-9._-]', '_', exposure_account_name()))
+    account = re.sub(r'[^A-Za-z0-9._-]', '_', exposure_account_name())
+    if account in ("", ".", ".."):
+        raise ValueError("Browser profile account must name a subdirectory")
+    return os.path.join(base, account)
 
 
 # Returns the logged-in Instagram cookies in the shape Playwright's add_cookies expects
@@ -13376,6 +13422,8 @@ def browser_follow_list_batches(bot, profile, kind: str, stop_event=None):
 
     target = profile.username
     user_data_dir = browser_profile_dir()
+    # The operator selects the base directory and browser_profile_dir rejects traversal components
+    # codeql[py/path-injection]
     os.makedirs(user_data_dir, exist_ok=True)
 
     with sync_playwright() as driver:
@@ -16264,11 +16312,16 @@ def get_target_paths(user):
 # Checks whether the runtime can create or update one resolved output file
 def output_destination_is_writable(destination) -> bool:
     path = Path(os.path.expanduser(str(destination)))
+    # This read-only probe checks operator-selected paths or dashboard-validated plain filenames
+    # codeql[py/path-injection]
     if path.exists():
+        # codeql[py/path-injection]
         return path.is_file() and os.access(path, os.W_OK)
     parent = path.parent
+    # codeql[py/path-injection]
     while not parent.exists() and parent != parent.parent:
         parent = parent.parent
+    # codeql[py/path-injection]
     return parent.is_dir() and os.access(parent, os.W_OK)
 
 
@@ -17035,6 +17088,8 @@ def _wizard_collect_target_section(state: WizardSetupState, allow_empty: bool = 
         targets_raw = _wizard_ask_text(question, default=default_targets, required=not allow_empty)
         targets, problem = _wizard_parse_targets(targets_raw)
         if problem:
+            # This response contains target names from visible input, never a password
+            # codeql[py/clear-text-logging-sensitive-data]
             print(f"  {problem}.")
             # Declining leaves the list empty, which the section below reports, rather than looping on a bad answer
             if not _wizard_offer_retry("Instagram target", "Nothing can be monitored until one is added"):
@@ -17090,13 +17145,20 @@ def _wizard_confirm_existing_session(state: WizardSetupState) -> bool:
         # Reached only when a username skipped the prompt's own check, and a name no session file can exist for
         # must not be reported as a session that was found
         print()
+        # The shared reader returns a visible username here, never a password
+        # codeql[py/clear-text-logging-sensitive-data]
         print(colorize("warning", f"'{state.session_username}' cannot be used as an Instagram username: {exc}."))
+        print(colorize("info", "  To fix: Enter a valid Instagram username or profile URL."))
         return False
     if any(os.path.isfile(candidate) for candidate in candidates):
         return True
     print()
+    # The shared reader returns a visible username here, never a password
+    # codeql[py/clear-text-logging-sensitive-data]
     print(colorize("warning", f"No Instaloader session file was found for '{state.session_username}'."))
     print(colorize("info", f"  Looked in: {', '.join(candidates)}"))
+    # The shared reader returns a visible username here, never a password
+    # codeql[py/clear-text-logging-sensitive-data]
     print(colorize("info", f"  To fix: run 'instaloader --login {state.session_username}' to create one, or choose a browser import instead."))
     return _wizard_ask_yes_no("Keep using an existing Instaloader session anyway?", default=False)
 
