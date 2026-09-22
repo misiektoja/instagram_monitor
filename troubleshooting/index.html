@@ -555,6 +555,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#anonymous-runs-are-rate-limited" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anonymous Runs Are Rate Limited
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#profile-lookups-report-a-retired-endpoint" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -797,6 +808,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#anonymous-runs-are-rate-limited" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anonymous Runs Are Rate Limited
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#profile-lookups-report-a-retired-endpoint" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -968,6 +990,11 @@
 <td><a href="#instagram-says-try-again-later">Instagram Says Try Again Later</a></td>
 </tr>
 <tr>
+<td>A run without a session answers <code>Please wait a few minutes</code></td>
+<td>Anonymous requests from this IP address are rate limited</td>
+<td><a href="#anonymous-runs-are-rate-limited">Anonymous Runs Are Rate Limited</a></td>
+</tr>
+<tr>
 <td>Stories, reels or follower details are missing</td>
 <td>The run has no logged in session</td>
 <td><a href="../configuration/#logged-in-mode-with-session-login">Logged-In Mode</a></td>
@@ -1032,12 +1059,16 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>ping<span class="w"> </span>www.instagram.com
 </code></pre></div>
 <p>If that fails too, fix DNS first. When you use a VPN or a proxy, confirm it is running and allowed to resolve names. Monitoring recovers on its own once lookups succeed, so no action is needed inside Instagram Monitor.</p>
-<p>Other connection errors point elsewhere. <code>Max retries exceeded</code> or a timeout usually means the connection dropped or a proxy is unreachable, see <a href="../usage/#routing-traffic-through-a-proxy">routing traffic through a proxy</a>. <code>429</code> or <code>Too Many Requests</code> means Instagram is rate-limiting you, see <a href="../anti-detection/#keep-the-polling-interval-reasonable">keep the polling interval reasonable</a>. A <code>429</code> on the very first request of a run is usually a blocked TLS fingerprint rather than a rate limit, see <a href="../anti-detection/#use-a-browser-transport-fingerprint">use a browser transport fingerprint</a>. A message about a redirect, a login or wrong credentials means the saved session expired, see <a href="../configuration/">session import</a>.</p>
+<p>Other connection errors point elsewhere. <code>Max retries exceeded</code> or a timeout usually means the connection dropped or a proxy is unreachable, see <a href="../usage/#routing-traffic-through-a-proxy">routing traffic through a proxy</a>. <code>429</code> or <code>Too Many Requests</code> means Instagram is rate-limiting you, see <a href="../anti-detection/#keep-the-polling-interval-reasonable">keep the polling interval reasonable</a>. On a run without a session, <code>Please wait a few minutes before you try again</code> means the limit is on your IP address, see <a href="#anonymous-runs-are-rate-limited">anonymous runs are rate limited</a>. A <code>429</code> on the very first request of a run is usually a blocked TLS fingerprint rather than a rate limit, see <a href="../anti-detection/#use-a-browser-transport-fingerprint">use a browser transport fingerprint</a>. A message about a redirect, a login or wrong credentials means the saved session expired, see <a href="../configuration/">session import</a>.</p>
 <p>For the underlying transport detail behind any of these, add <code>--debug</code>. Normal output omits it because it names internal HTTP library errors rather than anything you can act on.</p>
 <p><a id="instagram-says-try-again-later"></a></p>
 <h2 id="instagram-says-try-again-later">Instagram Says Try Again Later<a class="headerlink" href="#instagram-says-try-again-later" title="Permanent link">&para;</a></h2>
 <p>A <code>400 Bad Request</code> naming <code>feedback_required</code> means Instagram is limiting what the logged-in account or your IP address may do for a while. Instagram shows this as a "Try Again Later" notice. It is not a checkpoint: Instagram in your browser may keep working, there is nothing to clear there and re-importing the session does not lift it. The circuit breaker stops the account so no further request is made and <code>--exposure</code> counts it as <code>action_block</code>.</p>
 <p>Make no requests from that account and that network for several hours, then run <code>instagram_monitor --doctor</code> again. If the same session works from another network, such as a mobile connection, the limit is on your IP address rather than the account. Once it passes, raise <code>INSTA_CHECK_INTERVAL</code>, monitor fewer users and follow the <a href="../anti-detection/">anti-detection guidance</a>. A limit that returns soon after monitoring resumes means the account is still being watched, so wait longer before the next attempt.</p>
+<p><a id="anonymous-runs-are-rate-limited"></a></p>
+<h2 id="anonymous-runs-are-rate-limited">Anonymous Runs Are Rate Limited<a class="headerlink" href="#anonymous-runs-are-rate-limited" title="Permanent link">&para;</a></h2>
+<p>A <code>401 Unauthorized</code> naming <code>Please wait a few minutes before you try again</code> on a run without a session means Instagram is rate-limiting anonymous requests from your IP address. The limit is per address, so it counts every device and tool behind it, and it is often reached on the very first request of a run. Raising the check interval does not lift a limit the run did not cause.</p>
+<p>A session login is limited per account instead, so <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">importing a session</a> usually works from the same address. Otherwise wait for the limit to pass or run from another network. If the same run works over a mobile connection, the limit is on the home address rather than on anything in the configuration.</p>
 <p><a id="profile-lookups-report-a-retired-endpoint"></a></p>
 <h2 id="profile-lookups-report-a-retired-endpoint">Profile Lookups Report a Retired Endpoint<a class="headerlink" href="#profile-lookups-report-a-retired-endpoint" title="Permanent link">&para;</a></h2>
 <p>In September 2026 Instagram retired <code>api/v1/users/web_profile_info/</code> for accounts that are signed in. It answers <code>400 feedback_required</code> no matter how healthy the account is, while GraphQL, search and the profile page keep working for the same session in the same second. Runs without a login are unaffected, because they read profiles from <code>i.instagram.com</code> instead.</p>

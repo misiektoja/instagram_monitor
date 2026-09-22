@@ -1736,6 +1736,7 @@
 <a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a>instagram_monitor<span class="w"> </span>--webhook-provider<span class="w"> </span>ntfy<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">"https://ntfy.sh/your-private-topic"</span><span class="w"> </span>--send-test-webhook
 </code></pre></div>
 <p>A test notification is always delivered when the URL and provider are valid. It does not require the event switches above, so you can confirm delivery before deciding which notifications to enable.</p>
+<p>The startup summary shows <code>Unavailable</code> when a selected email or webhook channel has missing or invalid local settings. Automatic alerts skip that channel silently. Fix the settings and future alerts can use it. Explicit test commands still report configuration errors.</p>
 <p><a id="follower-churn-detection"></a></p>
 <h2 id="follower-churn-detection">Follower Churn Detection<a class="headerlink" href="#follower-churn-detection" title="Permanent link">&para;</a></h2>
 <p>Follower churn detection downloads the complete follower and following lists on every check. It compares usernames even when the total counts have not changed. This can detect cases where:</p>
