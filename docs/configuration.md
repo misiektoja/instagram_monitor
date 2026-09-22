@@ -200,7 +200,7 @@ Every supported browser can have several profiles with separate cookies. Use one
 
 For Chromium-based browsers, the tool finds the cookie database inside the selected profile. It supports both `<profile>/Cookies` and `<profile>/Network/Cookies` layouts. On Linux it looks for the distribution install first, then Snap and Flatpak builds of Chromium and Brave.
 
-Chromium-based browsers encrypt their cookies with a key held in your keychain or keyring. If you deny that prompt or the keyring is locked, the import says so instead of blaming a missing login.
+Chromium-based browsers encrypt their cookies with a key held in your keychain or keyring. If you deny that prompt or the keyring is locked, the import says so instead of blaming a missing login. On Linux with no keyring backend installed at all, it names that instead and points you at Firefox, which needs none.
 
 If the selected profile holds an Instagram session that has expired, the import says so and gives the date it expired, without contacting Instagram. Sign in again in that browser, then re-run the import.
 
