@@ -6611,6 +6611,9 @@ def build_webhook_headers(provider: str, payload: dict) -> dict[str, str]:
         if token:
             headers = {name: value for name, value in headers.items() if name.casefold() != "authorization"}
             headers["Authorization"] = f"Bearer {token}"
+    else:
+        # ntfy headers are encoded per request instead, because the title and message headers are added there
+        headers = {name: encode_non_ascii_header_value(value) for name, value in headers.items()}
     return headers
 
 
@@ -6667,15 +6670,27 @@ def encode_ntfy_header_text(message: str) -> str:
     return str(message).replace("\\", "\\\\").replace("\r\n", "\\n").replace("\r", "\\n").replace("\n", "\\n")
 
 
+# Returns one text value as a base64 RFC 2047 UTF-8 encoded word
+def rfc2047_encoded_word(text: str) -> str:
+    return "=?UTF-8?B?" + base64.b64encode(text.encode("utf-8")).decode("ascii") + "?="
+
+
+# Encodes one HTTP header value as an RFC 2047 UTF-8 word when it contains non-ASCII text
+def encode_non_ascii_header_value(value: str) -> str:
+    text = str(value)
+    # requests sends header values as Latin-1, which cannot carry emoji or most non-Latin letters.
+    # Plain ASCII stays unchanged because a generic receiver may not decode RFC 2047
+    return text if text.isascii() else rfc2047_encoded_word(text)
+
+
 # Encodes one ntfy header value as an RFC 2047 UTF-8 word unless it can travel as plain ASCII
 def encode_ntfy_header_value(value: str) -> str:
     text = str(value)
-    # requests sends header values as Latin-1, which cannot carry emoji or most non-Latin letters.
     # ntfy decodes RFC 2047 words in every header it reads, so ASCII text containing "=?" is encoded
     # too, keeping a bio or caption that looks like an encoded word from being decoded by the server
     if text.isascii() and text.isprintable() and "=?" not in text:
         return text
-    return "=?UTF-8?B?" + base64.b64encode(text.encode("utf-8")).decode("ascii") + "?="
+    return rfc2047_encoded_word(text)
 
 
 # Returns ntfy request headers with every value encoded for HTTP transport
