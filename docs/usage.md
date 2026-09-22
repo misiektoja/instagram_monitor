@@ -408,6 +408,8 @@ The categories are:
 
 Both saved lists are required. The analysis shows each snapshot's save time and warns when the two files are at least one hour apart, since changes between those downloads can be misclassified.
 
+Unexpected Web Dashboard analysis errors keep local file details private. Run with `--debug` to see the diagnostic in the local output.
+
 Run it via web dashboard (use the **Follow analysis** chart button next to a configured target) or with the `--analyze-follows` flag. It prints the analysis and exits without starting the monitoring loop:
 
 ```sh
