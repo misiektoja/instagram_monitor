@@ -369,7 +369,8 @@ def test_follow_list_dialog_is_harvested_in_chromium(im_module):
         page.set_default_timeout(5000)
         page.set_content(FOLLOW_DIALOG_PAGE)
 
-        batches = list(im_module.harvest_follow_list_dialog(page, 0.05))
+        # Chromium dispatches the scroll event that appends the next page asynchronously, so the delay has to outlast a loaded CI runner or the harvest stalls out early
+        batches = list(im_module.harvest_follow_list_dialog(page, 0.5))
         harvested = [name for batch in batches for name in batch]
 
         browser.close()
