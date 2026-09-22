@@ -387,6 +387,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#before-you-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before you start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#not-sure-which-command-you-need" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -405,6 +416,45 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Run Individual Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#save-an-instagram-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Save an Instagram login
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#save-notification-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Save notification credentials
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#start-monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Start monitoring
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -654,6 +704,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#before-you-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before you start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#not-sure-which-command-you-need" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -672,6 +733,45 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Run Individual Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#save-an-instagram-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Save an Instagram login
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#save-notification-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Save notification credentials
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#start-monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Start monitoring
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -712,12 +812,12 @@
 
 
 <h1 id="setup-first-run">Setup &amp; First Run<a class="headerlink" href="#setup-first-run" title="Permanent link">&para;</a></h1>
-<p><a id="new-here-run-the-setup-wizard"></a></p>
+<p><a id="run-the-setup-wizard"></a></p>
 <h2 id="run-the-setup-wizard">Run the setup wizard<a class="headerlink" href="#run-the-setup-wizard" title="Permanent link">&para;</a></h2>
-<p>This page assumes Instagram Monitor is already installed (see <a href="../installation/">Installation</a>). It walks through the interactive setup wizard then your first monitoring run. If you opened this page first, choose <a href="../installation/#install-from-pypi">PyPI</a>, the <a href="../installation/#manual-python-based-installation">manual Python script</a>, the <a href="../installation/#install-from-docker-hub">Docker image</a> or <a href="../installation/#docker-compose">Docker Compose</a>, finish that method's steps then return here.</p>
-<p>Then use the interactive setup wizard. It asks which Instagram accounts to monitor, whether to use a saved login, how often to poll, which interface to start and which alerts to enable. Leave the targets question empty if you want to start with only the Web Dashboard then add accounts in your browser. Terminal Dashboard and plain-text setups ask for at least one target before saving. The polling interval accepts seconds directly, decimal units such as <code>1.5h</code> or compound durations such as <code>1h 30m</code>. Supported units are <code>s</code>, <code>m</code>, <code>h</code> and <code>d</code>. You can review and change your answers before saving. Regular settings go in <code>instagram_monitor.conf</code>. Private values such as passwords and webhook URLs go in <code>.env</code>.</p>
-<p>For a local install, the wizard can check the setup and start monitoring immediately. In a container, it prints the next Docker or Docker Compose commands to run.</p>
-<p>Use the tab that matches how you installed the tool. Copy and run only the commands in that tab.</p>
+<p>Already installed? Run the setup command below for your installation and follow the prompts. Otherwise, start with <a href="../installation/">Installation</a>.</p>
+<p>The wizard setup asks for targets, a saved login, polling interval, which follower lists to collect, interface, alerts and output files. You can review your answers before saving. Regular settings go in <code>instagram_monitor.conf</code> and private values go in <code>.env</code>. Keep <code>.env</code> private.</p>
+<p>Press Enter to accept a default or Ctrl+C to cancel. Cancelling before saving leaves your files untouched. Cancelling after saving keeps the saved settings. For changes to an existing setup, see <a href="../configuration/#configuration-file">Configuration File</a>.</p>
+<p>After saving, follow the offered Doctor checks and monitoring steps.</p>
 <div class="tabbed-set tabbed-alternate" data-tabs="1:6"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><input id="__tabbed_1_4" name="__tabbed_1" type="radio" /><input id="__tabbed_1_5" name="__tabbed_1" type="radio" /><input id="__tabbed_1_6" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">PyPI</label><label for="__tabbed_1_2">Manual Python script on macOS or Linux</label><label for="__tabbed_1_3">Manual Python script on Windows</label><label for="__tabbed_1_4">Docker image on macOS or Windows PowerShell</label><label for="__tabbed_1_5">Docker image on Linux</label><label for="__tabbed_1_6">Docker Compose</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
@@ -742,7 +842,7 @@
 </div>
 <div class="tabbed-block">
 <p>Run setup from the directory used during installation. You do not need to download <code>docker-compose.yml</code> again.</p>
-<p>On a native Linux container engine, run these shell commands in the same terminal immediately before setup unless the variables are already set there or you saved the numeric values in the Compose <code>.env</code> file during installation. For permanent project values, use the numeric <code>.env</code> form under <a href="../installation/#docker-compose">Install with Docker Compose</a>. Docker-compatible runtimes on macOS and Windows should skip this export block.</p>
+<p>On a native Linux container engine, run these shell commands in the same terminal immediately before setup unless the variables are already set there or you saved the numeric values in the Compose <code>.env</code> file during installation. For permanent project values, use the numeric <code>.env</code> form under <a href="../installation/#install-with-docker-compose">Install with Docker Compose</a>. Docker-compatible runtimes on macOS and Windows should skip this export block.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_UID</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="s2">"</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTAGRAM_MONITOR_GID</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="s2">"</span>
 </code></pre></div>
@@ -752,18 +852,23 @@
 </div>
 </div>
 </div>
-<p>Run interactive setup commands by themselves instead of including them in a multi-command paste.</p>
-<p>In Windows Command Prompt replace <code>${PWD}</code> with <code>%cd%</code>. Windows hosts must use Linux containers. The <code>:z</code> suffix is for hosts that use SELinux. If your Docker-compatible runtime reports that it is invalid, remove only <code>:z</code>.</p>
 <p>In this documentation, a <strong>target</strong> is an Instagram account you want to monitor. The <strong>session account</strong> is the Instagram account that Instagram Monitor uses to sign in. They can be different accounts.</p>
-<p>The wizard recommends importing a saved Firefox login. On macOS and Linux it can also import from Chrome, Brave or Chromium. Those three browsers require the optional <code>pycookiecheat</code> package. If it is missing, the wizard can install it in a local Python installation.</p>
-<p>The wizard detects PyPI, a downloaded script, Docker or Docker Compose and prints matching commands. It also formats file paths for the current operating system.</p>
-<p>Container setup destinations must stay inside <code>/data</code>. That directory is the current host directory mounted into the temporary setup container, so files written there survive <code>--rm</code>. The wizard rejects paths such as <code>/tmp/instagram_monitor.conf</code> instead of printing a command for a different file.</p>
-<p>For Docker or Docker Compose, choose <strong>Import from Firefox after setup</strong>. The wizard asks whether Docker runs on macOS, standard Linux, Linux with Snap, Linux with Flatpak, Windows PowerShell or Windows Command Prompt. It then prints the matching command to mount the signed-in host profile read-only once and save the imported login in the persistent <code>instagram_monitor_session</code> volume. Windows commands use the Firefox profile under <code>%APPDATA%\Mozilla\Firefox</code>.</p>
-<p>Firefox import works in every local installation without an extra package. Chrome, Brave and Chromium import works on macOS and Linux with the optional browser dependency. Container setup uses Firefox because Chromium cookie decryption needs a password service from the host that is not available inside the container. See <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">Session Login Using Browser Cookies</a>.</p>
-<p>If no targets or Web Dashboard setting have been saved, running the tool with no arguments opens the wizard in an interactive terminal. Leave its targets question empty then select <strong>Web dashboard</strong> to save an empty browser control panel. If <code>TARGET_USERNAMES</code> contains saved targets, the same command starts monitoring them. If only the Web Dashboard is enabled, it starts an empty browser control panel where you can add targets.</p>
-<p><a id="not-sure-which-mode-you-want"></a></p>
+<p>Targets can be usernames or complete profile URLs such as <code>https://www.instagram.com/someuser/</code></p>
+<p>The wizard recommends importing a saved web browser login.</p>
+<p>Container setup destinations must stay inside <code>/data</code>, which is the host directory mounted for setup. Files saved there remain on your computer after the container stops.</p>
+<p>After saving authentication, the wizard checks whether the target is visible.</p>
+<p><a id="before-you-start"></a></p>
+<h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
+<p>How much Instagram Monitor can see depends on the target and on the login you give it:</p>
+<ol>
+<li>A public target can be monitored with no login at all, in <a href="../configuration/#no-login-mode-no-session-login">No-Login Mode</a>. Posts, bio and follower counts are visible, follower and following lists are not.</li>
+<li>Stories, reels and named follower / following changes need a session account, in <a href="../configuration/#logged-in-mode-with-session-login">Logged-In Mode</a>.</li>
+<li>A private target needs a session account that already follows it. Send and get the follow request accepted before the first run.</li>
+</ol>
+<p>Logged-in monitoring can trigger a security challenge or a suspension, so use a separate Instagram account if losing access to your main one would be unacceptable. The setup wizard asks which login you want and saves the choice. See the <a href="../anti-detection/">risk reduction guide</a>.</p>
+<p><a id="not-sure-which-command-you-need"></a></p>
 <h2 id="not-sure-which-command-you-need">Not sure which command you need?<a class="headerlink" href="#not-sure-which-command-you-need" title="Permanent link">&para;</a></h2>
-<p>The table uses the PyPI command. If you chose another installation, use its <a href="../usage/#command-format">command prefix</a> instead of <code>instagram_monitor</code>.</p>
+<p>The table uses the PyPI command. If you chose another installation, use its <a href="../usage/#command-format-by-installation-method">command prefix</a> instead of <code>instagram_monitor</code>.</p>
 <table>
 <thead>
 <tr>
@@ -797,6 +902,34 @@
 <td><code>instagram_monitor --doctor</code></td>
 </tr>
 <tr>
+<td>Import an Instagram login from Firefox</td>
+<td>Sign in at <a href="https://www.instagram.com/">instagram.com</a> in Firefox then run <code>instagram_monitor --import-browser-session --browser firefox</code></td>
+</tr>
+<tr>
+<td>Save an SMTP password for email alerts</td>
+<td>Run <code>instagram_monitor --set-smtp-password</code></td>
+</tr>
+<tr>
+<td>Send a test email</td>
+<td>Run <code>instagram_monitor --send-test-email</code></td>
+</tr>
+<tr>
+<td>Save a new webhook URL</td>
+<td>Run <code>instagram_monitor --set-webhook-url</code></td>
+</tr>
+<tr>
+<td>Send a test webhook</td>
+<td>Run <code>instagram_monitor --send-test-webhook</code></td>
+</tr>
+<tr>
+<td>Write every change to a CSV file</td>
+<td><code>instagram_monitor &lt;target_insta_user&gt; -b changes.csv</code></td>
+</tr>
+<tr>
+<td>List every supported command-line flag</td>
+<td><code>instagram_monitor --help</code></td>
+</tr>
+<tr>
 <td>See stories, reels and follower details</td>
 <td>Import a browser session then run <code>instagram_monitor -u &lt;your_insta_user&gt; &lt;target_insta_user&gt;</code></td>
 </tr>
@@ -804,22 +937,40 @@
 </table>
 <p><a id="run-individual-commands"></a></p>
 <h2 id="run-individual-commands">Run Individual Commands<a class="headerlink" href="#run-individual-commands" title="Permanent link">&para;</a></h2>
-<p>The examples below use PyPI. For a manual script, replace <code>instagram_monitor</code> with <code>python3 instagram_monitor.py</code> on macOS or Linux. Use <code>python instagram_monitor.py</code> on Windows. Docker users should copy the matching prefix under <a href="../usage/#command-format">Command Format by Installation Method</a>.</p>
-<p>Track a public account in <a href="../configuration/#no-login-mode-without-session-login">No-Login Mode</a>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;
+<p>The examples below use PyPI. For a manual script, replace <code>instagram_monitor</code> with <code>python3 instagram_monitor.py</code> on macOS or Linux. Use <code>python instagram_monitor.py</code> on Windows. Docker users should copy the matching prefix under <a href="../usage/#command-format-by-installation-method">Command Format by Installation Method</a>.</p>
+<p>Throughout this page <code>&lt;target_insta_user&gt;</code> means the Instagram username to monitor, or a complete profile URL, and <code>&lt;your_insta_user&gt;</code> the account you sign in with.</p>
+<p><a id="save-an-instagram-login"></a></p>
+<h3 id="save-an-instagram-login">Save an Instagram login<a class="headerlink" href="#save-an-instagram-login" title="Permanent link">&para;</a></h3>
+<p>A public account needs no login. For stories, reels and detailed follower changes, use <a href="../configuration/#logged-in-mode-with-session-login">Logged-In Mode</a>. Log in to Instagram in a supported browser then import the session. Firefox is the recommended local path:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox
 </code></pre></div>
-<p>For stories, reels and detailed follower changes, use <a href="../configuration/#logged-in-mode-with-session-login">Logged-In Mode</a>. Log in to Instagram in a supported browser then import the session. Firefox is the recommended local path:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>instagram_monitor<span class="w"> </span>--import-browser-session<span class="w"> </span>--browser<span class="w"> </span>firefox
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>instagram_monitor<span class="w"> </span>-u<span class="w"> </span>&lt;your_insta_user&gt;<span class="w"> </span>&lt;target_insta_user&gt;
+<p>The import converts the browser login into a saved Instaloader session. The value passed to <code>-u</code> later must be the username of that logged-in account. Container users must use the same <code>instagram_monitor_session</code> Docker volume for the import and later monitoring runs. The complete import command is under <a href="../usage/#container-operation">Container Operation</a>.</p>
+<p><a id="save-notification-credentials"></a></p>
+<h3 id="save-notification-credentials">Save notification credentials<a class="headerlink" href="#save-notification-credentials" title="Permanent link">&para;</a></h3>
+<p>The SMTP password is entered through a hidden prompt, checked against the mail server and saved as <code>SMTP_PASSWORD</code> in <code>.env</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>instagram_monitor<span class="w"> </span>--set-smtp-password
 </code></pre></div>
-<p>The import converts the browser login into a saved Instaloader session. The value passed to <code>-u</code> must be the username of that logged-in account. Container users must use the same <code>instagram_monitor_session</code> Docker volume for the import and later monitoring runs. The complete import command is under <a href="../usage/#container-operation">Container Operation</a>.</p>
-<p>Launch the <a href="../view-modes/#web-dashboard-mode">Web Dashboard</a> with a target or as an empty control panel:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--web-dashboard
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>instagram_monitor<span class="w"> </span>--web-dashboard
+<p>A webhook URL is the private address used to deliver notifications. Treat it like a password because anyone who has it may be able to post through it. Follow the <a href="../configuration/#webhook-settings">webhook setup steps</a> then save the link:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>instagram_monitor<span class="w"> </span>--set-webhook-url
+</code></pre></div>
+<p>The link is entered through a hidden prompt and saved as <code>WEBHOOK_URL</code> in <code>.env</code>. This command only saves the link. It does not turn on webhook alerts or send a message. See <a href="../configuration/#webhook-settings">Webhook Settings</a> to choose your alerts then run <code>instagram_monitor --send-test-webhook</code> to test them.</p>
+<p><a id="start-monitoring"></a></p>
+<h3 id="start-monitoring">Start monitoring<a class="headerlink" href="#start-monitoring" title="Permanent link">&para;</a></h3>
+<p>Track a public account in <a href="../configuration/#no-login-mode-no-session-login">No-Login Mode</a>. The second command uses the imported session:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>instagram_monitor<span class="w"> </span>-u<span class="w"> </span>&lt;your_insta_user&gt;<span class="w"> </span>&lt;target_insta_user&gt;
+</code></pre></div>
+<p>Launch the <a href="../view-modes/#web-dashboard">Web Dashboard</a> with a target or as an empty control panel:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--web-dashboard
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>instagram_monitor<span class="w"> </span>--web-dashboard
 </code></pre></div>
 <p>A one-off Compose command needs <code>--service-ports</code> so the browser can reach the dashboard. A direct Docker command needs a port mapping. Both complete commands are under <a href="../usage/#monitoring-mode">Monitoring Mode</a>.</p>
+<p>To check the setup before the first run, without writing anything:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>instagram_monitor<span class="w"> </span>--doctor
+</code></pre></div>
+<p>See <a href="../troubleshooting/#doctor-preflight">Doctor Preflight</a> for what it reports.</p>
 <p>View every command-line option plus examples adapted to the detected installation:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>instagram_monitor<span class="w"> </span>--help
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>instagram_monitor<span class="w"> </span>--help
 </code></pre></div>
 <p><a id="next-step"></a></p>
 <h2 id="next-step">Next Step<a class="headerlink" href="#next-step" title="Permanent link">&para;</a></h2>

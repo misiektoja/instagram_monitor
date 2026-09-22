@@ -506,10 +506,65 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#use-a-browser-transport-fingerprint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use a Browser Transport Fingerprint
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#use-the-human-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
         Use the Human Mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#set-an-identity-budget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Set an Identity Budget
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#choose-how-follower-lists-are-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choose How Follower Lists Are Read
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#let-the-circuit-breaker-stop-the-account" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Let the Circuit Breaker Stop the Account
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#check-your-exposure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Check Your Exposure
       
     </span>
   </a>
@@ -742,10 +797,65 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#use-a-browser-transport-fingerprint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use a Browser Transport Fingerprint
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#use-the-human-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
         Use the Human Mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#set-an-identity-budget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Set an Identity Budget
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#choose-how-follower-lists-are-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choose How Follower Lists Are Read
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#let-the-circuit-breaker-stop-the-account" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Let the Circuit Breaker Stop the Account
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#check-your-exposure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Check Your Exposure
       
     </span>
   </a>
@@ -873,7 +983,14 @@
 <p>Log in through a supported browser (Firefox, Chrome, Brave or Chromium) and import that saved session instead of sending the password on every start. Follow <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">Session Login Using Browser Cookies</a>.</p>
 <p><a id="set-the-correct-user-agent"></a></p>
 <h2 id="set-the-correct-user-agent">Set the Correct User-Agent<a class="headerlink" href="#set-the-correct-user-agent" title="Permanent link">&para;</a></h2>
-<p>Set <code>USER_AGENT</code> or <code>--user-agent</code> to the value reported by the browser used for the import. This keeps the browser identity in the requests consistent with the imported session. Follow <a href="../configuration/#user-agent">User Agent</a>.</p>
+<p>Every request should look like it came from one browser. Set <code>USER_AGENT</code> or <code>--user-agent</code> to the value reported by the browser used for the import, so the browser identity matches the imported cookies. Follow <a href="../configuration/#user-agent">User Agent</a>.</p>
+<p>Leaving it empty is fine. The tool then generates a current, complete user agent for you. Pairing a Firefox session with a Chrome user agent is not.</p>
+<p>The transport follows the same identity. The default <code>CURL_CFFI_IMPERSONATE = "auto"</code> takes the TLS fingerprint and the client-hint headers from your <code>USER_AGENT</code>, so one setting keeps the whole request consistent. If you pin a browser by hand, pin it to the same one. See <a href="../usage/#http-transport-backend">HTTP Transport Backend</a>.</p>
+<p><a id="use-a-browser-transport-fingerprint"></a></p>
+<h2 id="use-a-browser-transport-fingerprint">Use a Browser Transport Fingerprint<a class="headerlink" href="#use-a-browser-transport-fingerprint" title="Permanent link">&para;</a></h2>
+<p>Instagram can block a request before it ever reads the user agent, going by the TLS fingerprint of the library that sent it. The symptom is <code>HTTP 429</code> on the very first request from a clean IP, seen most often on Linux builds.</p>
+<p>The default <code>curl_cffi</code> backend avoids it by presenting a real browser's fingerprint instead of the system TLS stack's. Keep <code>HTTP_BACKEND = "curl_cffi"</code>.</p>
+<p><code>curl_cffi</code> is installed with the tool. If it is missing after a manual install the tool falls back to <code>requests</code>, which cannot impersonate a browser. Your configuration file still says <code>curl_cffi</code> either way. Check what is actually in effect with <code>--doctor</code> or <code>--exposure</code>. See <a href="../usage/#http-transport-backend">HTTP Transport Backend</a> for the backend values and the impersonation targets.</p>
 <p><a id="use-the-human-mode"></a></p>
 <h2 id="use-the-human-mode">Use the Human Mode<a class="headerlink" href="#use-the-human-mode" title="Permanent link">&para;</a></h2>
 <p>Experimental <strong>Be Human</strong> mode adds a small number of feed or profile requests between normal monitoring checks so it behaves more like a real user to reduce bot detection.</p>
@@ -890,6 +1007,71 @@
 <p>The followee visit reads only the first page of accounts your session follows before picking one, so the simulation stays a few requests rather than paginating a large following list.</p>
 <p>By default, it performs about five of these actions over 24 hours. Change the limit with <code>DAILY_HUMAN_HITS</code>.</p>
 <p>Set <code>BE_HUMAN_VERBOSE = True</code> to log each action.</p>
+<p><a id="set-an-identity-budget"></a></p>
+<h2 id="set-an-identity-budget">Set an Identity Budget<a class="headerlink" href="#set-an-identity-budget" title="Permanent link">&para;</a></h2>
+<p>Instagram scores automated collection by how much user-identifiable information a response returns, not by how many requests were sent. Meta describes this in <a href="https://arxiv.org/abs/2502.17693">Predictive Response Optimization</a>: the metric their system optimizes counts each request "weighted by the number of units of user-identifiable information returned to the user".</p>
+<p>That means fetching follower and following names is far more expensive than checking counts, posts or stories, even though each is one request. It also means batch sizes and delays matter less than the total number of names you pull per day.</p>
+<p><code>IDENTITY_BUDGET_PER_DAY</code> caps that total for the logged-in account:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>IDENTITY_BUDGET_PER_DAY = 2000
+</code></pre></div>
+<p>You can also set it for one run with <code>--identity-budget 2000</code>. <code>--setup</code> asks for the number when the setup collects names, so you can choose it there instead of editing the configuration afterwards.</p>
+<p>The default is 2000, which clears one full follower and following scan for a typical account with room to repeat it, while stopping a loop that would otherwise read a list many times a day. Names are always counted whether or not you set a budget, so you can watch your own usage with <code>--exposure</code> and adjust. If you have been challenged before, somewhere around 500 to 1000 is a better figure.</p>
+<p>See <a href="../usage/#identity-budget-and-circuit-breaker">Identity Budget and Circuit Breaker</a> for how the allowance is shared between targets, when it resets and how each surface is counted.</p>
+<p><a id="choose-how-follower-lists-are-read"></a></p>
+<h2 id="choose-how-follower-lists-are-read">Choose How Follower Lists Are Read<a class="headerlink" href="#choose-how-follower-lists-are-read" title="Permanent link">&para;</a></h2>
+<p><code>FOLLOW_LIST_SOURCE</code> selects the surface the follower and following lists are read from. REST and GraphQL cost the same number of names, so this choice is about staying on a working surface rather than about exposure. Leave it on the default <code>auto</code> unless one surface starts failing for you.</p>
+<p>The <code>browser</code> source is different. It drives a real browser through the follower dialog instead of calling the API, and a browser session that scrolls those dialogs for hours does not look like a person. <strong>It can cost you the account.</strong> <code>auto</code> never picks it. Read <a href="../usage/#browser-source-experimental">Browser Source</a> before turning it on, and only with an account you can afford to lose.</p>
+<p>See <a href="../usage/#follower-list-source">Follower List Source</a> for the available values and for the browser identity the rest of the session has to match.</p>
+<p><a id="let-the-circuit-breaker-stop-the-account"></a></p>
+<h2 id="let-the-circuit-breaker-stop-the-account">Let the Circuit Breaker Stop the Account<a class="headerlink" href="#let-the-circuit-breaker-stop-the-account" title="Permanent link">&para;</a></h2>
+<p>When Instagram returns a confirmed challenge, checkpoint, temporary limit or expired session, monitoring pauses for the account. <code>CIRCUIT_BREAKER</code> is enabled by default and an account-level failure stops every target using that account for the rest of the run.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>* Circuit breaker: Instagram acted against session account your_account (challenge). Stopping all Instagram requests for this account
+</code></pre></div>
+<p>The second line names the required action. Complete account verification in a browser or re-import an expired session, then start the tool with your usual command. No separate clearing command is needed. A temporary limit, reported as <code>feedback_required</code>, has nothing to clear: see <a href="../troubleshooting/#instagram-says-try-again-later">Instagram Says Try Again Later</a>.</p>
+<p>Rate limits, network errors and Instagram API changes do not trip the breaker. Only responses that act against the account do.</p>
+<p>See <a href="../usage/#identity-budget-and-circuit-breaker">Identity Budget and Circuit Breaker</a> for how a stopped account is checked on restart and how importing a session releases the stop.</p>
+<p><a id="check-your-exposure"></a></p>
+<h2 id="check-your-exposure">Check Your Exposure<a class="headerlink" href="#check-your-exposure" title="Permanent link">&para;</a></h2>
+<p><code>--exposure</code> prints a report that can be pasted into a support issue or <a href="https://github.com/misiektoja/instagram_monitor/discussions/128">discussion #128</a>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>instagram_monitor --exposure
+</code></pre></div>
+<p>It shows the Instagram Monitor version, operating system, Python version, HTTP backend, follower-list source, session mode, ledger state, identity total, sanitized failure counts and circuit-breaker state. The backend and list source are the ones in effect, so the report names the browser <code>curl_cffi</code> impersonated and says when a <code>curl_cffi</code> setting fell back to <code>requests</code> because the package is missing. It omits the account name, target names, stored error text and local file paths. Failures are grouped so you can tell the three problems apart:</p>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Meaning</th>
+<th>What helps</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A</td>
+<td>The transport was blocked, usually a first-request HTTP 429</td>
+<td><a href="../usage/#http-transport-backend">HTTP Transport Backend</a></td>
+</tr>
+<tr>
+<td>B</td>
+<td>Instagram changed an API, so a query stopped returning data</td>
+<td>Update to the latest version</td>
+</tr>
+<tr>
+<td>C</td>
+<td>Instagram acted against the account</td>
+<td>Lower the identity budget, raise the interval, monitor fewer targets</td>
+</tr>
+</tbody>
+</table>
+<p>A few rows describe the ledger itself rather than today's activity:</p>
+<ul>
+<li><strong>Account safety ledger</strong> says whether the file exists yet and whether this run could save it. A ledger you can read but not write reads as <code>NOT writable</code>, because monitoring stops the account the first time it cannot record a scan</li>
+<li><strong>Other accounts in this ledger</strong> counts the other accounts sharing the file and how many of them are stopped, without naming any of them</li>
+<li><strong>Identities returned today</strong> says how much of the budget is left and that it resets at local midnight</li>
+<li><strong>Circuit breaker</strong> says <code>disabled</code> when <code>CIRCUIT_BREAKER</code> is off, even when an earlier run recorded a stop, since that stop is kept but no longer enforced</li>
+<li><strong>Monitored targets</strong> appears only when the breaker is tripped, because every target using the account is paused with it</li>
+</ul>
+<p>The command exits with status <code>1</code> when the ledger cannot be read or cannot be saved, so a script can tell a broken ledger from a clean report. A tripped breaker is normal reporting and still exits <code>0</code>.</p>
+<p>The ledger remains local and is never transmitted anywhere. It lives next to your output directory as <code>instagram_monitor_exposure.json</code>, beside an empty <code>instagram_monitor_exposure.json.lock</code> the monitors coordinate through. The report prints its path underneath.</p>
 <p><a id="use-the-jitter-mode"></a></p>
 <h2 id="use-the-jitter-mode">Use the Jitter Mode<a class="headerlink" href="#use-the-jitter-mode" title="Permanent link">&para;</a></h2>
 <p>Jitter mode adds a random delay of about 0.8 to 6 seconds before Instagram requests made by Instaloader. It also retries Instagram HTTP 429 responses and checkpoint challenges after increasingly long waits of about 60, 120 and 240 seconds. Media downloads, webhooks, proxy IP checks and other non-Instagram requests do not inherit these delays or backoff rules.</p>
@@ -937,7 +1119,7 @@
 <p>Avoid frequent changes to the public IP address or geographic region used by the session. For example, switching VPN regions between runs may cause Instagram to request a security check.</p>
 <p><a id="use-the-account-for-normal-activities"></a></p>
 <h2 id="use-the-account-for-normal-activities">Use the Account for Normal Activities<a class="headerlink" href="#use-the-account-for-normal-activities" title="Permanent link">&para;</a></h2>
-<p>Before monitoring, confirm that the account works normally in the browser used for <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">session import</a>. Resolve any login or security prompts there first.</p>
+<p>Before monitoring, confirm that the account works normally in the browser used for <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">session import</a>. Resolve any login or security prompts there first. Continuing to use the account normally in that browser may help Instagram recognize the session as yours.</p>
 <p>Do not use the same browser session while Instagram Monitor is actively making requests. Simultaneous activity from the browser and tool may cause additional security checks.</p>
 
 
