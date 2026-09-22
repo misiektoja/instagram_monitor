@@ -6,9 +6,13 @@ import uuid
 from pathlib import Path
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+ARTIFACT_ROOT = PROJECT_ROOT / "local" / "test_artifacts"
+
+
 # Returns an isolated local artifact directory for one profile picture workflow test
 def _profile_picture_artifact_dir() -> Path:
-    artifact_dir = Path("local") / "test_artifacts" / "profile_picture_workflows" / uuid.uuid4().hex
+    artifact_dir = ARTIFACT_ROOT / "profile_picture_workflows" / uuid.uuid4().hex
     artifact_dir.mkdir(parents=True, exist_ok=True)
     return artifact_dir
 
@@ -72,6 +76,8 @@ class TestProfilePictureWorkflows:
         monkeypatch.setattr(im_module, "SMTP_SSL", True, raising=False)
         monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: logs.append((args, kwargs)))
         monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: emails.append((args, kwargs)) or 0)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: webhooks.append((args, kwargs)) or 0)
         monkeypatch.setattr(im_module, "save_pic_video", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), b"new-picture", 1710000000) is None)
 
@@ -86,6 +92,7 @@ class TestProfilePictureWorkflows:
         assert logs[0][0] == ("Profile picture changed",)
         assert logs[0][1] == {"user": "target"}
         assert emails[0][0][0].startswith("Instagram user target has changed profile picture")
+        assert emails[0][1] == {"image_file": str(profile_pic), "image_name": "profile_pic"}
         assert webhooks[0][0][0].endswith("target Profile Picture Changed")
         assert webhooks[0][1]["local_image_file"] == str(profile_pic)
         assert webhooks[0][1]["notification_type"] == "status"
@@ -104,6 +111,8 @@ class TestProfilePictureWorkflows:
         _write_payload(empty_template, b"empty-template", 1690000000)
         _patch_quiet_output(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: logs.append((args, kwargs)))
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: webhooks.append((args, kwargs)) or 0)
         monkeypatch.setattr(im_module, "save_pic_video", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), b"empty-template", 1710000000) is None)
 
@@ -118,7 +127,7 @@ class TestProfilePictureWorkflows:
         assert logs[0][0] == ("Profile picture removed",)
         assert logs[0][1] == {"user": "target"}
         assert webhooks[0][0][0].endswith("target Profile Picture Removed")
-        assert "local_image_file" not in webhooks[0][1]
+        assert webhooks[0][1]["local_image_file"] is None
         assert webhooks[0][1]["notification_type"] == "status"
 
     # Empty-template transitions detect a newly set profile picture with image attachment metadata
@@ -135,6 +144,8 @@ class TestProfilePictureWorkflows:
         _write_payload(empty_template, b"empty-template", 1690000000)
         _patch_quiet_output(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: logs.append((args, kwargs)))
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: webhooks.append((args, kwargs)) or 0)
         monkeypatch.setattr(im_module, "save_pic_video", lambda url, file_name, custom_mdate_ts=0: _write_payload(Path(file_name), b"new-picture", 1710000000) is None)
 

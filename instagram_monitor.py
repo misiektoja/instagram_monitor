@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.9.1
+v4.0
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -25,7 +25,7 @@ rich (optional - for terminal dashboard)
 # keeps the supported Python floor enforceable regardless of where an import sits in the file
 from __future__ import annotations
 
-VERSION = "3.9.1"
+VERSION = "4.0"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -83,7 +83,7 @@ STATUS_NOTIFICATION = False
 # Can also be enabled via the -m flag
 FOLLOWERS_NOTIFICATION = False
 
-# Whether to send an email on monitoring errors
+# Whether to send an email on errors and the recovery alert that follows once the failure clears
 # Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
 
@@ -125,7 +125,7 @@ WEBHOOK_STATUS_NOTIFICATION = False
 # Can also be enabled via the --webhook-followers flag
 WEBHOOK_FOLLOWERS_NOTIFICATION = False
 
-# Whether to send a webhook notification on monitoring errors
+# Whether to send a webhook notification on monitoring errors and the recovery alert that follows once the failure clears
 # Can also be enabled via the --webhook-errors flag
 WEBHOOK_ERROR_NOTIFICATION = False
 
@@ -138,13 +138,53 @@ WEBHOOK_HEADERS = {}
 NTFY_ACCESS_TOKEN = ""
 
 # ----------------------------
-# Monitoring Settings
+# Advanced Webhook Settings
 # ----------------------------
 
-# Number of consecutive errors required before triggering an alert
-# Useful for avoiding repeated alerts during transient network problems
-# Can also be set via the --error-threshold flag
-ERROR_FAILURE_THRESHOLD = 2
+# Discord-format webhook request payload template
+# Applies only when WEBHOOK_PROVIDER is "discord". The "ntfy" provider needs no template and ignores this
+# value: it sends the alert body as a native ntfy message with the subject as its title. Use WEBHOOK_HEADERS
+# to add ntfy options such as priority or tags
+# Supported placeholders include title, description, version, image_url, fields, fields_str, color, timestamp,
+# username and avatar_url
+#
+# Use a dictionary or a JSON object string so Discord mentions can always be disabled
+# Dictionary payloads always disable Discord mentions even if the template requests them
+WEBHOOK_TEMPLATE = {
+    "username": "Instagram Monitor",
+    "allowed_mentions": {
+        "parse": []
+    },
+    "embeds": [{
+        "title": "{title}",
+        "description": "{description}",
+        "color": "{color}",
+        "fields": "{fields}",
+        "timestamp": "{timestamp}",
+        "footer": {
+            "text": "Instagram Monitor v{version}"
+        },
+        "image": {
+            "url": "{image_url}"
+        }
+    }]
+}
+
+# Optional string transformations applied before WEBHOOK_TEMPLATE and WEBHOOK_HEADERS are rendered
+# Tuple format: (field_to_target, method_name, *optional_arguments)
+# Invalid transforms stop delivery before a webhook request is attempted
+#
+# Examples:
+#   [
+#       ("title", "upper"),                       # Make title all uppercase
+#       ("description", "replace", "**", ""),     # Remove bold markdown in description
+#       ("description", "strip")                  # Remove leading/trailing whitespace
+#   ]
+WEBHOOK_TRANSFORMS = []
+
+# ----------------------------
+# Monitoring Settings
+# ----------------------------
 
 # How often to check for user activity in seconds
 # Can also be set using the -c flag
@@ -229,6 +269,14 @@ SKIP_GETTING_POSTS_DETAILS = False
 # Can also be enabled via the -t flag
 GET_MORE_POST_DETAILS = False
 
+# Whether to monitor reels, both the reel count and the reels themselves
+# Off by default: Instagram stopped answering the endpoint that reports a reel count, so the count has to be read
+# from the whole reel list, which costs many requests per check and is often refused. Posts and stories are
+# monitored either way, and a reel counts towards the posts number
+# Only relevant if session login is used and SKIP_SESSION is False
+# Can also be changed via the --fetch-reels and --no-fetch-reels flags
+FETCH_REELS = False
+
 # Whether to detect "collab" posts exposed from private accounts through the public web_profile_info endpoint
 # When a private account co-authors a post with a public account that post stays visible in the
 # private account's timeline media. This probes for such leaked posts and reports new ones over time
@@ -292,6 +340,84 @@ FOLLOWER_DELAY_PER_BATCH = 0
 FOLLOWEE_LIMIT_TO_FETCH  = 0
 FOLLOWEE_DELAY_PER_BATCH = 0
 
+# Which Instagram surface follower and following lists are read from
+#
+# Instagram serves the same lists twice: through the REST endpoints its own web app calls, and through
+# the older GraphQL queries. Both use the same logged-in session and return the same number of names
+#
+# - "auto" (default): read the lists over REST, and retry over GraphQL only if the REST endpoint is
+#   gone or answers in an unknown shape before it returned anybody. A fetch that already returned
+#   names is never repeated on the other surface
+# - "rest": always read over REST and report the error instead of retrying
+# - "graphql": always read over GraphQL, which is what versions before 4.0 did
+# - "browser": experimental. Read the lists by driving a real browser through Instagram's web pages
+#   instead of calling its API. Needs the optional 'playwright' package and a downloaded browser, uses
+#   far more CPU and memory, and is much slower. It is never chosen automatically. See the settings
+#   below and the documentation before turning it on
+#
+# Anonymous mode is unaffected, since no surface lists followers without a session
+# Can also be set using the --follow-list-source flag
+FOLLOW_LIST_SOURCE = "auto"
+
+# Settings below apply only when FOLLOW_LIST_SOURCE is "browser"
+#
+# Install support with: pip install playwright   then:   playwright install chromium
+
+# Browser Playwright starts
+# "chromium" (default) uses the browser Playwright downloads, "chrome" or "msedge" use a copy already
+# installed on this machine, which looks more like an ordinary visitor but has to be installed first
+#
+# Every channel is a Chromium build, so USER_AGENT and CURL_CFFI_IMPERSONATE have to name the same
+# browser family: Chrome for "chromium" and "chrome", Edge for "msedge". Monitoring refuses to start
+# on a mismatch rather than let one Instagram session arrive as two different clients
+FOLLOW_LIST_BROWSER_CHANNEL = "chromium"
+
+# Whether the browser runs without a visible window
+# It is a real browser either way, not the stripped-down headless shell. Set this to False when you
+# want to watch what it does, which needs a desktop session
+FOLLOW_LIST_BROWSER_HEADLESS = True
+
+# Where the browser profile is kept between runs, one directory per session account
+# Reusing a profile keeps cookies, local storage and browser state stable instead of arriving as a
+# brand new machine on every check. Leave empty to keep it next to the output directory
+FOLLOW_LIST_BROWSER_PROFILE_DIR = ""
+
+# Seconds to wait after each scroll of the follower list
+FOLLOW_LIST_BROWSER_SCROLL_DELAY = 1.5
+
+# Seconds the browser waits for a page or an element before giving up
+FOLLOW_LIST_BROWSER_TIMEOUT = 30
+
+# ----------------------------
+# Account Safety
+# ----------------------------
+
+# Maximum number of follower and following names to fetch per day for the logged-in account
+#
+# Instagram scores automated collection by how much user-identifiable information a response returns,
+# not by how many requests were sent, so this budget counts names rather than requests. It is shared
+# by every monitored target and every worker in this process. Identity scans run one at a time so
+# concurrent targets cannot spend the same remaining allowance
+#
+# Once the budget is spent, name fetching is skipped until the next local day. Counts, posts, reels,
+# stories and profile changes keep being monitored normally
+# If the local safety ledger cannot be read or saved, authenticated collection stops rather than
+# continuing with an unknown budget or breaker state
+#
+# 0 disables the budget. The default clears one full follower and following scan for a typical account
+# with room to repeat it, while stopping a runaway loop. Around 500 to 1000 is a better figure if you
+# have been challenged before. A scan needing more names than the budget still allows is skipped whole,
+# since a truncated list is discarded rather than saved
+# Today's total is always counted and shown, whether or not a budget is set
+# Can also be set using the --identity-budget flag
+IDENTITY_BUDGET_PER_DAY = 2000
+
+# Whether to stop all Instagram requests for the logged-in account after Instagram acts against it
+#
+# A confirmed challenge, checkpoint or expired session stops every target using the account
+# Restarting checks the saved session once before resuming any targets
+CIRCUIT_BREAKER = True
+
 # ----------------------------
 # Privacy
 # ----------------------------
@@ -321,6 +447,11 @@ PROXY_URL = ""
 
 # Optional local TLS certificate used by the proxy
 PROXY_CERT_PATH = ""
+
+# Whether to verify TLS certificates on every outbound connection, email delivery included
+# Only set this to False on a network that intercepts TLS with its own certificate authority
+# Switching it off removes the protection against an intercepted connection
+VERIFY_SSL = True
 
 # Whether webhook requests should use the proxy
 PROXY_WEBHOOKS = False
@@ -364,7 +495,7 @@ CURL_CFFI_IMPERSONATE = "auto"
 
 # How often to print a liveness message in seconds
 # Set to 0 to disable
-LIVENESS_CHECK_INTERVAL = 43200  # 12 hours
+LIVENESS_CHECK_INTERVAL = 86400  # 24 hours
 
 # URL used to verify internet connectivity at startup
 CHECK_INTERNET_URL = 'https://www.instagram.com/'
@@ -405,100 +536,6 @@ MAX_H2 = 23
 
 # Delay for fetching other data to avoid captcha checks and detection of automated tools
 NEXT_OPERATION_DELAY = 0.7
-
-# ----------------------------
-# Files and Storage
-# ----------------------------
-
-# CSV file to write all activities and profile changes
-# Can also be set using the -b flag
-#
-# Path resolution logic:
-# 1. Absolute path:
-#    - Multi-target mode: uses as base (e.g. /path/file_user1.csv), isolation is preserved
-#    - Single-target mode: uses exactly as specified
-# 2. Relative path + no OUTPUT_DIR:
-#    - Multi-target mode: <CSV_FILE_basename>_<username>.csv (in current working dir)
-#    - Single-target mode: <CSV_FILE> (in current working dir, path preserved)
-# 3. Relative path + OUTPUT_DIR:
-#    - Multi-target mode: OUTPUT_DIR/<username>/csvs/<filename> (uses basename of CSV_FILE)
-#    - Single-target mode: OUTPUT_DIR/csvs/<filename> (uses basename of CSV_FILE)
-CSV_FILE = ""
-
-# Optional dotenv file used to store secrets
-# Leave empty to search automatically for .env files
-# To disable auto-search, set this to the literal string "none"
-# Can also be set using the --env-file flag
-DOTENV_FILE = ""
-
-# Default Firefox cookie directories by OS
-FIREFOX_MACOS_COOKIE = "~/Library/Application Support/Firefox/Profiles/*/cookies.sqlite"
-FIREFOX_WINDOWS_COOKIE = "~/AppData/Roaming/Mozilla/Firefox/Profiles/*/cookies.sqlite"
-# Native Linux path, with Snap and Flatpak paths discovered automatically too
-FIREFOX_LINUX_COOKIE = "~/.mozilla/firefox/*/cookies.sqlite"
-
-# Base name for target-specific log files
-# If OUTPUT_DIR is set the log is saved to OUTPUT_DIR/<username>/logs/<INSTA_LOGFILE>.log
-# Otherwise, it will be saved to <INSTA_LOGFILE>_<username>.log in current working dir
-INSTA_LOGFILE = "instagram_monitor"
-
-# Optional base directory for generated files
-# If set all downloaded files are saved under this directory
-#
-# Structure (single-target mode):
-#   OUTPUT_DIR/
-#     logs/
-#     csvs/
-#     images/
-#     videos/
-#     json/
-#
-# Structure (multi-target mode):
-#   OUTPUT_DIR/
-#     username1/
-#       logs/
-#       csvs/
-#       images/
-#       videos/
-#       json/
-#     username2/
-#     ...
-#
-# Can also be set via the --output-dir flag
-OUTPUT_DIR = ""
-
-# Whether to disable logging to instagram_monitor_<username>.log
-# Can also be disabled via the -d flag
-DISABLE_LOGGING = False
-
-# Controls conversion of separator-only log lines to ASCII:
-#   "Auto" - enable on Windows only (default)
-#   "On"   - enable on every operating system
-#   "Off"  - preserve Unicode separators in logs
-ASCII_LOG_SEPARATORS = "Auto"
-
-# ----------------------------
-# Terminal Output
-# ----------------------------
-
-# Width of horizontal line
-HORIZONTAL_LINE = 113
-
-# Whether to clear the terminal screen after starting the tool
-CLEAR_SCREEN = True
-
-# Amount added to or removed from INSTA_CHECK_INTERVAL by signal handlers in seconds
-INSTA_CHECK_SIGNAL_VALUE = 300  # 5 minutes
-
-# Whether to enable verbose operational output
-# Shows calculated sleep durations, next check timestamps and liveness confirmations
-# Can also be enabled via the --verbose flag
-VERBOSE_MODE = False
-
-# Whether to enable debug output
-# Shows every API request and internal state changes
-# Can also be enabled via the --debug flag
-DEBUG_MODE = False
 
 # ----------------------------
 # Multi-target Monitoring
@@ -574,62 +611,93 @@ WEB_DASHBOARD_TEMPLATE_DIR = ""
 DASHBOARD_SHOW_CHECK_SECONDS = True
 
 # ----------------------------
-# Advanced Webhook Settings
+# Files and Storage
 # ----------------------------
 
-# Discord-format webhook request payload template
-# Applies only when WEBHOOK_PROVIDER is "discord". The "ntfy" provider needs no template and ignores this
-# value: it sends the alert body as a native ntfy message with the subject as its title. Use WEBHOOK_HEADERS
-# to add ntfy options such as priority or tags
-# Supported placeholders include title, description, version, image_url, fields, fields_str, color, timestamp,
-# username and avatar_url
+# CSV file to write all activities and profile changes
+# Can also be set using the -b flag
 #
-# A dictionary or list is sent as JSON while a string is sent as the raw request body
-# Dictionary payloads always disable Discord mentions even if the template requests them
-WEBHOOK_TEMPLATE = {
-    "username": "Instagram Monitor",
-    "allowed_mentions": {
-        "parse": []
-    },
-    "embeds": [{
-        "title": "{title}",
-        "description": "{description}",
-        "color": "{color}",
-        "fields": "{fields}",
-        "timestamp": "{timestamp}",
-        "footer": {
-            "text": "Instagram Monitor v{version}"
-        },
-        "image": {
-            "url": "{image_url}"
-        }
-    }]
-}
+# Path resolution logic:
+# 1. Absolute path:
+#    - Multi-target mode: uses as base (e.g. /path/file_user1.csv), isolation is preserved
+#    - Single-target mode: uses exactly as specified
+# 2. Relative path + no OUTPUT_DIR:
+#    - Multi-target mode: <CSV_FILE_basename>_<username>.csv (in current working dir)
+#    - Single-target mode: <CSV_FILE> (in current working dir, path preserved)
+# 3. Relative path + OUTPUT_DIR:
+#    - Multi-target mode: OUTPUT_DIR/<username>/csvs/<filename> (uses basename of CSV_FILE)
+#    - Single-target mode: OUTPUT_DIR/csvs/<filename> (uses basename of CSV_FILE)
+CSV_FILE = ""
 
-# Optional string transformations applied before WEBHOOK_TEMPLATE and WEBHOOK_HEADERS are rendered
-# Tuple format: (field_to_target, method_name, *optional_arguments)
-# Invalid transforms stop delivery before a webhook request is attempted
+# Optional dotenv file used to store secrets
+# Leave empty to search automatically for .env files
+# To disable auto-search, set this to the literal string "none"
+# Can also be set using the --env-file flag
+DOTENV_FILE = ""
+
+# Default Firefox cookie directories by OS
+FIREFOX_MACOS_COOKIE = "~/Library/Application Support/Firefox/Profiles/*/cookies.sqlite"
+# Regular installer path, with Microsoft Store profiles discovered automatically too
+FIREFOX_WINDOWS_COOKIE = "~/AppData/Roaming/Mozilla/Firefox/Profiles/*/cookies.sqlite"
+# Native Linux path, with Snap and Flatpak paths discovered automatically too
+FIREFOX_LINUX_COOKIE = "~/.mozilla/firefox/*/cookies.sqlite"
+
+# Base name for target-specific log files
+# If OUTPUT_DIR is set the log is saved to OUTPUT_DIR/<username>/logs/<INSTA_LOGFILE>.log
+# Otherwise, it will be saved to <INSTA_LOGFILE>_<username>.log in current working dir
+INSTA_LOGFILE = "instagram_monitor"
+
+# Optional base directory for generated files
+# If set all downloaded files are saved under this directory
 #
-# Examples:
-#   [
-#       ("title", "upper"),                       # Make title all uppercase
-#       ("description", "replace", "**", ""),     # Remove bold markdown in description
-#       ("description", "strip")                  # Remove leading/trailing whitespace
-#   ]
-WEBHOOK_TRANSFORMS = []
+# Structure (single-target mode):
+#   OUTPUT_DIR/
+#     logs/
+#     csvs/
+#     images/
+#     videos/
+#     json/
+#
+# Structure (multi-target mode):
+#   OUTPUT_DIR/
+#     username1/
+#       logs/
+#       csvs/
+#       images/
+#       videos/
+#       json/
+#     username2/
+#     ...
+#
+# Can also be set via the --output-dir flag
+OUTPUT_DIR = ""
 
-# Discord and ntfy payload limits used for validation
-# Change these only if the provider limits change
-WEBHOOK_FIELD_VALUE_LIMIT = 1024
-WEBHOOK_FIELD_NAME_LIMIT = 256
-WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
-WEBHOOK_EMBED_TITLE_LIMIT = 256
-WEBHOOK_MAX_FIELDS = 25
-NTFY_MESSAGE_LIMIT_BYTES = 4095
+# Whether to disable logging to instagram_monitor_<username>.log
+# Can also be disabled via the -d flag
+DISABLE_LOGGING = False
+
+# Controls conversion of separator-only log lines to ASCII:
+#   "Auto" - enable on Windows only (default)
+#   "On"   - enable on every operating system
+#   "Off"  - preserve Unicode separators in logs
+ASCII_LOG_SEPARATORS = "Auto"
 
 # ----------------------------
-# Terminal Appearance
+# Terminal Output
 # ----------------------------
+
+# Max characters per line when printing to screen to avoid line wrapping
+# Does not affect log file output
+# Set to 999 to auto-detect terminal width
+# Applies only when DISABLE_LOGGING is False
+# Can also be set via the --truncate flag
+TRUNCATE_CHARS = 0
+
+# Width of horizontal line
+HORIZONTAL_LINE = 113
+
+# Whether to clear the terminal screen after starting the tool
+CLEAR_SCREEN = True
 
 # Whether to use coloured output in the terminal (auto-disabled if the terminal
 # does not appear to support colours or when output is redirected to a file)
@@ -642,368 +710,91 @@ COLORED_OUTPUT = True
 #   "bright_cyan bold", "yellow", "red underline", "bright_magenta bold underline", "red bold blink"
 # Valid colour names: black, red, green, yellow, blue, magenta, cyan, white,
 # and their bright_ variants (bright_red, bright_green, ...).
-COLOR_THEME = {
-    # General sections
-    "header": "bright_cyan",
-    "section": "bright_white",
-    # Identity
-    "username": "blue underline",
-    # Status values
-    "status_online": "green",
-    "status_offline": "red",
-    "status_other": "white",
-    # Content types
-    "post": "bright_green",
-    "reel": "bright_magenta",
-    "story": "bright_yellow",
-    # Activity info
-    "status_change": "yellow",
-    "duration": "green",
-    # Misc
-    "timestamp_label": "",
-    "timestamp_value": "cyan",
-    "info": "cyan",
-    "warning": "yellow",
-    "error": "red",
-    "signal": "yellow",
-    "email": "bright_cyan",
-    "webhook": "bright_blue",
-    # Dates
-    "date": "magenta",
-    "date_range": "magenta",
-    # Boolean values
-    "boolean_true": "green",
-    "boolean_false": "red",
-    # Counters and differences
-    "count_up": "green",
-    "count_down": "red",
-    "link": "blue underline",
-    # Proxies
-    "proxy_ip": "yellow",
-    "ip_address": "yellow",
-}
+# The defaults below are what the tool uses while this block stays commented out. Uncomment it to override
+# them and keep only the lines you want to change, so the rest keep following the tool's own defaults.
+# COLOR_THEME = {
+#     # General sections
+#     "header": "bright_cyan",
+#     "section": "bright_white",
+#     # Identity
+#     "username": "bright_cyan underline",
+#     "id": "bright_magenta",
+#     # Status values
+#     "status_online": "green",
+#     "status_offline": "red",
+#     "status_other": "white",
+#     # Content types
+#     "post": "bright_green",
+#     "reel": "bright_magenta",
+#     "story": "bright_yellow",
+#     # Activity info
+#     "status_change": "yellow",
+#     "duration": "green",
+#     # Misc
+#     "timestamp_label": "",
+#     "timestamp_value": "cyan",
+#     "info": "cyan",
+#     "warning": "yellow",
+#     "error": "red",
+#     "signal": "yellow",
+#     "email": "bright_cyan",
+#     "webhook": "bright_blue",
+#     # Dates
+#     "date": "magenta",
+#     "date_range": "magenta",
+#     # Boolean values
+#     "boolean_true": "green",
+#     "boolean_false": "red",
+#     # Counters and differences
+#     "count_up": "green",
+#     "count_down": "red",
+#     "link": "blue underline",
+#     # Proxies
+#     "proxy_ip": "bright_yellow",
+#     "ip_address": "bright_yellow",
+#     # Help screen
+#     "help_heading": "bright_cyan bold",
+#     "help_usage": "bright_white bold",
+#     "help_option": "bright_green",
+#     "help_metavar": "yellow",
+#     "help_placeholder": "bright_magenta",
+#     "help_command": "bright_white",
+#     "help_comment": "bright_black",
+#     "help_default": "bright_black",
+# }
+
+# Whether to enable verbose operational output
+# Shows calculated sleep durations, next check timestamps and liveness confirmations
+# Independent of DEBUG_MODE, so enable both to see everything
+# Can also be enabled via the --verbose flag, which turns it on regardless of this setting
+VERBOSE_MODE = False
+
+# Whether to enable debug output
+# Shows every API request and internal state changes
+# Independent of VERBOSE_MODE, so enable both to see everything
+# Can also be enabled via the --debug flag, which turns it on regardless of this setting
+DEBUG_MODE = False
+
+# Whether verbose output confirms each delivered email and webhook alert
+# Applies only when VERBOSE_MODE is enabled
+DELIVERY_CONFIRMATIONS = True
+
+# Amount added to or removed from INSTA_CHECK_INTERVAL by signal handlers in seconds
+INSTA_CHECK_SIGNAL_VALUE = 300  # 5 minutes
+
+# Discord and ntfy payload limits used for validation
+# Change these only if the provider limits change
+WEBHOOK_FIELD_VALUE_LIMIT = 1024
+WEBHOOK_FIELD_NAME_LIMIT = 256
+WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
+WEBHOOK_EMBED_TITLE_LIMIT = 256
+WEBHOOK_MAX_FIELDS = 25
+NTFY_MESSAGE_LIMIT_BYTES = 4095
 """
 
 # -------------------------
 # CONFIGURATION SECTION END
 # -------------------------
-
-
-# Splits 'value  # comment' into ('value', '# comment'), ignoring # inside quotes
-def _split_inline_comment_preserving_strings(rhs: str) -> tuple[str, str]:
-    in_single = False
-    in_double = False
-    escaped = False
-    for i, ch in enumerate(rhs):
-        if escaped:
-            escaped = False
-            continue
-        if ch == "\\":
-            escaped = True
-            continue
-        if ch == "'" and not in_double:
-            in_single = not in_single
-            continue
-        if ch == '"' and not in_single:
-            in_double = not in_double
-            continue
-        if ch == "#" and not in_single and not in_double:
-            return rhs[:i].rstrip(), rhs[i:].rstrip()
-    return rhs.rstrip(), ""
-
-
-# Formats python literals for config file assignments
-def _format_config_value(value, prefer_double_quotes: bool) -> str:
-    if isinstance(value, str):
-        if prefer_double_quotes:
-            escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-            return f'"{escaped}"'
-        escaped = value.replace("\\", "\\\\").replace("'", "\\'")
-        return f"'{escaped}'"
-    if value is None:
-        return "None"
-    return repr(value)
-
-
-# Advanced settings documented for config files but deliberately kept out of the generated template
-EXTRA_CONFIG_KEYS = frozenset(("FLAGGED_PROBE_USERNAME", "FLAGGED_PROBE_TTL"))
-
-# Settings that an earlier version wrote into generated configuration files and that a later release
-# removed. Ignoring them with a note keeps an untouched older configuration working on upgrade, while
-# any other unknown name is still rejected so a typo cannot silently do nothing.
-# The DISCORD_* limits below shipped in the 3.0 template and were renamed to WEBHOOK_* in 3.1.
-RETIRED_CONFIG_SETTINGS = frozenset(("DISCORD_EMBED_DESCRIPTION_LIMIT", "DISCORD_EMBED_TITLE_LIMIT", "DISCORD_FIELD_NAME_LIMIT", "DISCORD_FIELD_VALUE_LIMIT", "DISCORD_MAX_FIELDS"))
-
-
-# Describes ignored retired settings in one sentence, optionally naming the file they can be deleted from
-def describe_retired_settings(names, path: Any = "") -> str:
-    listed = ", ".join(sorted(names))
-    single = len(names) == 1
-    sentence = f"{listed} {'was' if single else 'were'} removed in a later version and {'is' if single else 'are'} ignored."
-    if path:
-        sentence += f" You can delete {'it' if single else 'them'} from {path}."
-    return sentence
-
-
-# Returns every setting name a config file may assign, taken from the built-in template plus documented extras
-def config_allowed_names() -> frozenset:
-    import ast
-    declared = {statement.targets[0].id for statement in ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec").body if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name)}
-    return frozenset(declared | EXTRA_CONFIG_KEYS)
-
-
-# Reads allowlisted literal assignments from config content without executing any of it
-def parse_config_content(content: str, filename: str = "<config>", retired_out=None) -> dict:
-    import ast
-    allowed_names = config_allowed_names()
-    parsed_values = {}
-    for statement in ast.parse(content, filename, "exec").body:
-        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
-            raise ValueError(f"line {getattr(statement, 'lineno', '?')}: only 'NAME = value' settings are allowed, this file contains other code")
-        name = statement.targets[0].id
-        if name in RETIRED_CONFIG_SETTINGS and name not in allowed_names:
-            if retired_out is not None and name not in retired_out:
-                retired_out.append(name)
-            continue
-        if name not in allowed_names:
-            raise ValueError(f"line {statement.lineno}: '{name}' is not a recognized setting")
-        try:
-            parsed_values[name] = ast.literal_eval(statement.value)
-        except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as exc:
-            raise ValueError(f"line {statement.lineno}: '{name}' must be a plain value such as text, a number, True, False, a list or a dictionary") from exc
-    return parsed_values
-
-
-# Validates config content through the same restricted parser used when a config file is loaded
-def validate_config_content(content: str, filename: str = "<generated-config>") -> None:
-    parse_config_content(content, filename)
-
-
-# Renders CONFIG_BLOCK with selected runtime values substituted into simple one-line assignments
-def generate_config_with_current_values(values=None) -> str:
-    import re
-
-    current_values = globals() if values is None else values
-    assign_re = re.compile(r"^([A-Z][A-Z0-9_]*)\s*=\s*(.*)$")
-    out_lines: list[str] = []
-
-    for line in CONFIG_BLOCK.strip("\n").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            out_lines.append(line)
-            continue
-
-        m = assign_re.match(line)
-        if not m:
-            out_lines.append(line)
-            continue
-
-        var = m.group(1)
-        rhs = m.group(2)
-        expr, comment = _split_inline_comment_preserving_strings(rhs)
-        expr_stripped = expr.strip()
-
-        if var in SENSITIVE_CONFIG_KEYS:
-            out_lines.append(line)
-            continue
-
-        # Avoid rewriting multiline structures (keep template as-is)
-        if expr_stripped.endswith(("{", "[", "(")) and not any(c in expr_stripped for c in ("}", "]", ")")):
-            out_lines.append(line)
-            continue
-
-        if var not in current_values:
-            out_lines.append(line)
-            continue
-
-        prefer_double_quotes = expr_stripped.startswith('"')
-        new_expr = _format_config_value(current_values[var], prefer_double_quotes=prefer_double_quotes)
-        new_line = f"{var} = {new_expr}"
-        if comment:
-            new_line = f"{new_line}  {comment}"
-        out_lines.append(new_line)
-
-    rendered = "\n".join(out_lines) + "\n"
-    validate_config_content(rendered)
-    return rendered
-
-
-# Writes validated config content atomically and backs up an existing destination
-def write_config_file(destination, content: str):
-    destination_path = Path(destination).expanduser()
-    validate_config_content(content, str(destination_path))
-    destination_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = None
-    backup_path = None
-
-    try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", prefix=f".{destination_path.name}.", suffix=".tmp", dir=str(destination_path.parent), delete=False) as temporary_file:
-            temporary_path = Path(temporary_file.name)
-            temporary_file.write(content)
-            temporary_file.flush()
-            os.fsync(temporary_file.fileno())
-
-        if destination_path.exists():
-            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            for collision_index in range(1000):
-                collision_suffix = "" if collision_index == 0 else f"-{collision_index:02d}"
-                candidate = destination_path.with_name(f"{destination_path.name}.{timestamp}{collision_suffix}.bak")
-                try:
-                    # Created owner-only up front so a configuration kept private is never briefly world-readable
-                    backup_descriptor = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                    with destination_path.open("rb") as source_file, os.fdopen(backup_descriptor, "wb") as backup_file:
-                        shutil.copyfileobj(source_file, backup_file)
-                        backup_file.flush()
-                        os.fsync(backup_file.fileno())
-                    if os.name == "posix":
-                        source_owner_mode = destination_path.stat().st_mode & 0o600
-                        os.chmod(candidate, source_owner_mode)
-                    backup_path = candidate
-                    break
-                except FileExistsError:
-                    continue
-                except Exception:
-                    if candidate.exists():
-                        candidate.unlink()
-                    raise
-            if backup_path is None:
-                raise FileExistsError(f"Could not create a unique backup for '{destination_path}'")
-
-        os.replace(temporary_path, destination_path)
-        temporary_path = None
-    finally:
-        if temporary_path is not None and temporary_path.exists():
-            temporary_path.unlink()
-
-    return {"path": str(destination_path), "backup_path": str(backup_path) if backup_path is not None else None}
-
-
-# Quotes one secret value for lossless parsing by python-dotenv
-def _format_dotenv_value(value: str) -> str:
-    if not isinstance(value, str):
-        raise TypeError("Dotenv secret values must be strings")
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "\\r").replace("\n", "\\n")
-    return f'"{escaped}"'
-
-
-# Updates allowed secrets in a dotenv file through an atomic replacement
-def update_dotenv_file(destination, updates):
-    if not hasattr(updates, "items"):
-        raise TypeError("Dotenv updates must be a mapping")
-    update_items = list(updates.items())
-    for key, value in update_items:
-        if not isinstance(key, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", key) or key not in SECRET_KEYS:
-            raise ValueError(f"Unsupported dotenv key: {key!r}")
-        if not isinstance(value, str):
-            raise TypeError(f"Dotenv value for {key} must be a string")
-
-    destination_path = Path(destination).expanduser()
-    destination_path.parent.mkdir(parents=True, exist_ok=True)
-    existing_lines = destination_path.read_text(encoding="utf-8").splitlines() if destination_path.exists() else []
-    update_keys = {key for key, _ in update_items}
-    values_by_key = dict(update_items)
-    seen_keys = set()
-    output_lines = []
-    assignment_pattern = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
-    for line in existing_lines:
-        match = assignment_pattern.match(line)
-        key = match.group(1) if match else None
-        if key not in update_keys:
-            output_lines.append(line)
-            continue
-        if key in seen_keys:
-            continue
-        output_lines.append(f"{key}={_format_dotenv_value(values_by_key[key])}")
-        seen_keys.add(key)
-
-    for key, value in update_items:
-        if key not in seen_keys:
-            output_lines.append(f"{key}={_format_dotenv_value(value)}")
-            seen_keys.add(key)
-
-    content = "\n".join(output_lines)
-    if output_lines:
-        content += "\n"
-
-    temporary_path = None
-    try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", prefix=f".{destination_path.name}.", suffix=".tmp", dir=str(destination_path.parent), delete=False) as temporary_file:
-            temporary_path = Path(temporary_file.name)
-            temporary_file.write(content)
-            temporary_file.flush()
-            os.fsync(temporary_file.fileno())
-        if os.name == "posix":
-            os.chmod(temporary_path, 0o600)
-        os.replace(temporary_path, destination_path)
-        temporary_path = None
-    finally:
-        if temporary_path is not None and temporary_path.exists():
-            temporary_path.unlink()
-
-    return {"path": str(destination_path), "updated_keys": tuple(key for key, _ in update_items)}
-
-
-# Raised when private webhook URL entry cannot be completed safely
-class WebhookConfigurationError(Exception):
-    pass
-
-
-# Resolves the writable dotenv destination used by private webhook entry
-def resolve_webhook_env_path(env_file=None, cwd=None):
-    if env_file is not None and str(env_file).casefold() == "none":
-        raise WebhookConfigurationError("Webhook setup requires a dotenv destination. Replace '--env-file none' with a writable path.")
-    base_directory = Path.cwd() if cwd is None else Path(cwd)
-    destination = base_directory / ".env" if env_file is None else Path(env_file).expanduser()
-    return destination.resolve()
-
-
-# Checks whether a dotenv file already contains one named assignment
-def _dotenv_contains_key(destination, key):
-    destination_path = Path(destination)
-    if not destination_path.exists():
-        return False
-    try:
-        lines = destination_path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeError):
-        raise WebhookConfigurationError(f"Could not read dotenv destination '{destination_path}'. Check that it is a readable UTF-8 file.") from None
-    assignment_pattern = re.compile(rf"^\s*(?:export\s+)?{re.escape(key)}\s*=")
-    return any(assignment_pattern.match(line) for line in lines)
-
-
-# Checks and safely stores one privately entered webhook URL
-def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpass_func=None, config_path=None):
-    destination = resolve_webhook_env_path(env_file)
-    terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
-    if not terminal_is_interactive:
-        raise WebhookConfigurationError("--set-webhook-url requires an interactive terminal. Run it in a terminal window so the webhook URL stays hidden while you paste it.")
-    prompt = input if input_func is None else input_func
-    if _dotenv_contains_key(destination, "WEBHOOK_URL"):
-        try:
-            confirmed = prompt(f"Replace the saved webhook URL in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
-        except (EOFError, KeyboardInterrupt):
-            confirmed = False
-        if not confirmed:
-            raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
-    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
-    try:
-        webhook_url = hidden_prompt("Paste the Discord or ntfy webhook URL (input hidden): ").strip()
-    except (EOFError, KeyboardInterrupt):
-        raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.") from None
-    if not validate_webhook_url(webhook_url):
-        raise WebhookConfigurationError("That does not look like a complete HTTPS webhook URL. The private settings file was not changed.")
-    try:
-        update_dotenv_file(destination, {"WEBHOOK_URL": webhook_url})
-    except Exception:
-        raise WebhookConfigurationError(f"Could not save the webhook URL in '{destination}'. Check file permissions or choose another path with --env-file.") from None
-    selected_config = config_path or find_config_file()
-    method = _wizard_install_method()
-    test_command = _wizard_action_command(method, "--send-test-webhook", selected_config, destination)
-    doctor_command = _wizard_action_command(method, "--doctor", selected_config, destination)
-    print("* Webhook URL looks valid")
-    print(f"* Updated private settings file: {destination}")
-    print(f"Send a test webhook:\n    {test_command}\n")
-    print(f"Check the complete setup:\n    {doctor_command}\n")
-    return str(destination)
 
 
 # Default dummy values so linters shut up
@@ -1020,11 +811,28 @@ RECEIVER_EMAIL: str = ""
 STATUS_NOTIFICATION = False
 FOLLOWERS_NOTIFICATION = False
 ERROR_NOTIFICATION = False
-ERROR_FAILURE_THRESHOLD = 0
+WEBHOOK_ENABLED = False
+WEBHOOK_PROVIDER = "discord"
+WEBHOOK_URL = ""
+WEBHOOK_USERNAME = "Instagram Monitor"
+
+# How LOCAL_TIMEZONE was arrived at, which decides the row doctor prints for it
+LOCAL_TIMEZONE_STATE = "config"
+WEBHOOK_AVATAR_URL = ""
+WEBHOOK_STATUS_NOTIFICATION = True
+WEBHOOK_FOLLOWERS_NOTIFICATION = True
+WEBHOOK_ERROR_NOTIFICATION = False
+WEBHOOK_HEADERS = {}
+NTFY_ACCESS_TOKEN = ""
+WEBHOOK_TEMPLATE = {}
+WEBHOOK_TRANSFORMS = []
+FOLLOWERS_CHURN_AUTODISABLED = False
+FOLLOWERS_CHURN_AUTODISABLED_REASON = ""
 INSTA_CHECK_INTERVAL = 0
 RANDOM_SLEEP_DIFF_LOW = 0
 RANDOM_SLEEP_DIFF_HIGH = 0
 LOCAL_TIMEZONE = ""
+TIME_FORMAT_12H = False
 DETECT_CHANGED_PROFILE_PIC = False
 DOWNLOAD_THUMBNAILS = False
 PROFILE_PIC_FILE_EMPTY = ""
@@ -1032,17 +840,13 @@ IMGCAT_PATH = ""
 SKIP_SESSION = False
 SKIP_FOLLOWERS = False
 SKIP_FOLLOWINGS = False
-SKIP_FOLLOW_CHANGES = False
-FOLLOWERS_CHURN_AUTODISABLED = False
-FOLLOWERS_CHURN_AUTODISABLED_REASON = ""
 SKIP_GETTING_STORY_DETAILS = False
 SKIP_GETTING_POSTS_DETAILS = False
 GET_MORE_POST_DETAILS = False
+FETCH_REELS = False
 DETECT_COLLAB_POSTS = True
-USER_AGENT = ""
-USER_AGENT_MOBILE = ""
-HTTP_BACKEND = "curl_cffi"
-CURL_CFFI_IMPERSONATE = "auto"
+FOLLOWERS_CHURN_DETECTION = False
+SKIP_FOLLOW_CHANGES = False
 BE_HUMAN = False
 DAILY_HUMAN_HITS = 0
 MY_HASHTAGS = []
@@ -1053,11 +857,37 @@ SKIP_WRAP_MESSAGES = False
 FOLLOWERS_PER_BATCH = 0
 FOLLOWEES_PER_BATCH = 0
 FOLLOWER_LIMIT_TO_FETCH = 0
-FOLLOWEE_LIMIT_TO_FETCH = 0
 FOLLOWER_DELAY_PER_BATCH = 0
-FOLLOWEE_DELAY_PER_BATCH = 0
 ADVANCED_FOLLOWER_FETCH = False
 ADVANCED_FOLLOWEE_FETCH = False
+FOLLOWEE_LIMIT_TO_FETCH = 0
+FOLLOWEE_DELAY_PER_BATCH = 0
+FOLLOW_LIST_SOURCE = "auto"
+FOLLOW_LIST_BROWSER_CHANNEL = "chromium"
+FOLLOW_LIST_BROWSER_HEADLESS = True
+FOLLOW_LIST_BROWSER_PROFILE_DIR = ""
+FOLLOW_LIST_BROWSER_SCROLL_DELAY = 1.5
+FOLLOW_LIST_BROWSER_TIMEOUT = 30
+IDENTITY_BUDGET_PER_DAY = 0
+CIRCUIT_BREAKER = True
+PRIVACY_SUBSTITUTIONS = []
+PROXY_ENABLED = False
+PROXY_URL = ""
+PROXY_CERT_PATH = ""
+VERIFY_SSL = True
+PROXY_WEBHOOKS = False
+CONTAINER_FIREFOX_HOSTS = {
+    "macos": ("macOS", '"${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"'),
+    "linux": ("Linux with a standard Firefox package", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "linux-snap": ("Linux with Firefox from Snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "linux-flatpak": ("Linux with Firefox from Flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
+    "windows-powershell": ("Windows PowerShell", '"$env:APPDATA\\Mozilla\\Firefox\\Profiles:/home/instagram/.mozilla/firefox:ro"'),
+    "windows-cmd": ("Windows Command Prompt", '"%APPDATA%\\Mozilla\\Firefox\\Profiles:/home/instagram/.mozilla/firefox:ro"'),
+}
+USER_AGENT = ""
+USER_AGENT_MOBILE = ""
+HTTP_BACKEND = "curl_cffi"
+CURL_CFFI_IMPERSONATE = "auto"
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
@@ -1069,53 +899,10 @@ MAX_H1 = 0
 MIN_H2 = 0
 MAX_H2 = 0
 NEXT_OPERATION_DELAY = 0
-CSV_FILE = ""
-DOTENV_FILE = ""
-FIREFOX_MACOS_COOKIE = ""
-FIREFOX_WINDOWS_COOKIE = ""
-FIREFOX_LINUX_COOKIE = ""
-CONTAINER_FIREFOX_HOSTS = {
-    "macos": ("macOS", '"${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"'),
-    "linux": ("Linux with a standard Firefox package", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
-    "linux-snap": ("Linux with Firefox from Snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
-    "linux-flatpak": ("Linux with Firefox from Flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'),
-    "windows-powershell": ("Windows PowerShell", '"$env:APPDATA\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'),
-    "windows-cmd": ("Windows Command Prompt", '"%APPDATA%\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'),
-}
-INSTA_LOGFILE = ""
-OUTPUT_DIR = ""
-DISABLE_LOGGING = False
-ASCII_LOG_SEPARATORS = "Auto"
-HORIZONTAL_LINE = 0
-CLEAR_SCREEN = False
-INSTA_CHECK_SIGNAL_VALUE = 0
 TARGET_USERNAMES = []
 MULTI_TARGET_STAGGER = 0
 MULTI_TARGET_STAGGER_JITTER = 0
 MULTI_TARGET_SERIALIZE_HTTP = False
-WEBHOOK_ENABLED = False
-WEBHOOK_URL = ""
-WEBHOOK_PROVIDER = "discord"
-WEBHOOK_FIELD_VALUE_LIMIT = 1024
-WEBHOOK_EMBED_TITLE_LIMIT = 256
-NTFY_MESSAGE_LIMIT_BYTES = 4095
-WEBHOOK_USERNAME = "Instagram Monitor"
-WEBHOOK_AVATAR_URL = ""
-WEBHOOK_HEADERS = {}
-WEBHOOK_TEMPLATE = {}
-WEBHOOK_TRANSFORMS = []
-NTFY_ACCESS_TOKEN = ""
-WEBHOOK_STATUS_NOTIFICATION = True
-WEBHOOK_FOLLOWERS_NOTIFICATION = True
-WEBHOOK_ERROR_NOTIFICATION = False
-PROXY_ENABLED = False
-PROXY_URL = ""
-PROXY_CERT_PATH = ""
-PROXY_WEBHOOKS = False
-COLORED_OUTPUT = False
-COLOR_THEME = {}
-DEBUG_MODE = False
-VERBOSE_MODE = False
 DASHBOARD_ENABLED = False
 WEB_DASHBOARD_ENABLED = False
 WEB_DASHBOARD_PORT = 8000
@@ -1123,10 +910,30 @@ WEB_DASHBOARD_HOST = '127.0.0.1'
 WEB_DASHBOARD_ALLOWED_HOSTS = []
 WEB_DASHBOARD_TEMPLATE_DIR = ""
 DASHBOARD_SHOW_CHECK_SECONDS = True
+CSV_FILE = ""
+DOTENV_FILE = ""
+FIREFOX_MACOS_COOKIE = ""
+FIREFOX_WINDOWS_COOKIE = ""
+FIREFOX_LINUX_COOKIE = ""
+INSTA_LOGFILE = ""
+OUTPUT_DIR = ""
+DISABLE_LOGGING = False
+ASCII_LOG_SEPARATORS = "Auto"
+TRUNCATE_CHARS = 0
+HORIZONTAL_LINE = 0
+# Counts the reports printed so far, so a check can tell whether it said anything before the banner claims it was quiet
+REPORTS_PRINTED = 0
+CLEAR_SCREEN = False
+COLORED_OUTPUT = False
+COLOR_THEME = {}
+VERBOSE_MODE = False
+DEBUG_MODE = False
+DELIVERY_CONFIRMATIONS = True
+INSTA_CHECK_SIGNAL_VALUE = 0
 THUMBNAILS_FORCED_BY_WEB = False
-FOLLOWERS_CHURN_DETECTION = False
-TIME_FORMAT_12H = False
-PRIVACY_SUBSTITUTIONS = []
+WEBHOOK_FIELD_VALUE_LIMIT = 1024
+WEBHOOK_EMBED_TITLE_LIMIT = 256
+NTFY_MESSAGE_LIMIT_BYTES = 4095
 mode_of_the_tool = "Unknown"
 
 exec(CONFIG_BLOCK, globals())
@@ -1137,11 +944,27 @@ DEFAULT_CONFIG_FILENAME = "instagram_monitor.conf"
 # List of secret keys to load from env/config
 SECRET_KEYS = ("SESSION_PASSWORD", "SMTP_PASSWORD", "WEBHOOK_URL", "PROXY_URL", "NTFY_ACCESS_TOKEN")
 
+# The one-shot commands that only save a secret, so the other early exits do not swallow them
+SECRET_ACTION_FLAGS = ("--set-smtp-password", "--set-webhook-url")
+
+# Effective source name for each configured secret without storing another copy of its value
+SECRET_SOURCES = {}
+
+# Every layer that can supply a secret, so a source outside the set is a typo rather than a new layer
+SECRET_SOURCE_ORDER = ("configuration file or command line", "dotenv file", "dotenv file reload", "environment", "command line")
+
+# Secret keys that were already exported when the tool started, so a dotenv file cannot be credited for them
+EXPORTED_SECRET_KEYS: frozenset = frozenset()
+
 # Config values that must retain safe template defaults during generated output
 SENSITIVE_CONFIG_KEYS = frozenset((*SECRET_KEYS, "WEBHOOK_HEADERS"))
 
 # List of error substrings that unambiguously indicate the session account or IP has been flagged (challenge/checkpoint/shadowban)
-FLAGGED_TRIGGERS = ("detected automated checks", "checkpoint_required")
+FLAGGED_TRIGGERS = ("detected automated checks", "checkpoint_required", "challenge_required", "feedback_required")
+
+# Error substrings naming an endpoint Instagram retired. It answers feedback_required for every logged-in session,
+# so reading that reply as a flag would stop an account whose other endpoints all still work
+RETIRED_ENDPOINT_TERMS = ("web_profile_info",)
 
 # Error substrings meaning a profile could not be found, which is ambiguous between a deleted/renamed target and a flagged session
 PROFILE_NOT_FOUND_TRIGGERS = ("ProfileNotExistsException",)
@@ -1162,7 +985,11 @@ MEDIA_DOWNLOAD_MAX_BYTES = 100 * 1024 * 1024
 MEDIA_DOWNLOAD_CHUNK_BYTES = 64 * 1024
 
 # Computed later once final INSTA_CHECK_INTERVAL is known (config/env/CLI) and updated on SIGTRAP/SIGABRT
-LIVENESS_CHECK_COUNTER = 0
+# Seconds rather than checks, because a failing run usually retries on a different interval than a healthy one
+LIVENESS_REMINDER_SECONDS = 0
+
+# Whether the monitoring screen has started, so a verbose notice knows if it needs to close itself with a timestamp
+MONITORING_ACTIVE = False
 
 stdout_bck = None
 last_output = []
@@ -1173,24 +1000,50 @@ imgcat_exe = ""
 
 CLI_CONFIG_PATH = None
 
+# Set when --config-file none switches discovery off, so no later lookup can find a file the run rejected
+CONFIG_DISCOVERY_DISABLED = False
+
+# The settings a configuration file actually assigned, so a built-in default is never mistaken for a choice
+CONFIGURED_SETTING_NAMES = set()
+
 # To solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
 
-DOCUMENTATION_URL = "https://misiektoja.github.io/instagram_monitor"
-QUICK_START_GUIDE_URL = DOCUMENTATION_URL + "/setup-and-first-run/"
-INSTALLATION_GUIDE_URL = DOCUMENTATION_URL + "/installation/#requirements"
-CONFIG_FILE_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#configuration-file"
-SESSION_IMPORT_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#option-3-session-login-using-browser-cookies-recommended"
-SMTP_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#smtp-settings"
-WEBHOOK_GUIDE_URL = DOCUMENTATION_URL + "/usage/#webhook-notifications"
-PROXY_GUIDE_URL = DOCUMENTATION_URL + "/usage/#routing-traffic-through-a-proxy"
-ANTI_DETECTION_INTERVAL_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#keep-the-polling-interval-reasonable"
-ANTI_DETECTION_SESSION_GUIDE_URL = DOCUMENTATION_URL + "/anti-detection/#sign-in-using-session-mode-with-browser-cookies"
-CONNECTION_ERRORS_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#connection-errors-during-monitoring"
-DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
+DOCS_BASE_URL = "https://misiektoja.github.io/instagram_monitor"
+QUICK_START_GUIDE_URL = DOCS_BASE_URL + "/setup-and-first-run/"
+INSTALLATION_GUIDE_URL = DOCS_BASE_URL + "/installation/#requirements"
+CONFIG_GUIDE_URL = DOCS_BASE_URL + "/configuration/#configuration-file"
+SESSION_IMPORT_GUIDE_URL = DOCS_BASE_URL + "/configuration/#option-3-session-login-using-browser-cookies-recommended"
+SMTP_GUIDE_URL = DOCS_BASE_URL + "/configuration/#smtp-settings"
+WEBHOOK_GUIDE_URL = DOCS_BASE_URL + "/usage/#webhook-notifications"
+PROXY_GUIDE_URL = DOCS_BASE_URL + "/usage/#routing-traffic-through-a-proxy"
+CIRCUIT_BREAKER_GUIDE_URL = DOCS_BASE_URL + "/usage/#identity-budget-and-circuit-breaker"
+TLS_GUIDE_URL = DOCS_BASE_URL + "/configuration/#tls-verification"
+FOLLOW_LIST_SOURCE_GUIDE_URL = DOCS_BASE_URL + "/usage/#follower-list-source"
+BROWSER_FOLLOW_LIST_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#follower-and-following-lists-stop-working"
+HTTP_BACKEND_GUIDE_URL = DOCS_BASE_URL + "/usage/#http-transport-backend"
+ANTI_DETECTION_INTERVAL_GUIDE_URL = DOCS_BASE_URL + "/anti-detection/#keep-the-polling-interval-reasonable"
+ANTI_DETECTION_SESSION_GUIDE_URL = DOCS_BASE_URL + "/anti-detection/#sign-in-using-session-mode-with-browser-cookies"
+CONNECTION_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#connection-problems"
+DESCRIPTOR_LIMIT_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#too-many-open-files"
+DOCTOR_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#doctor-preflight"
+ACTION_BLOCK_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#instagram-says-try-again-later"
+RETIRED_ENDPOINT_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#profile-lookups-report-a-retired-endpoint"
+SECRETS_GUIDE_URL = DOCS_BASE_URL + "/configuration/#storing-secrets"
+DIAGNOSTICS_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#choosing-the-right-logging-level"
+MONITORING_GUIDE_URL = DOCS_BASE_URL + "/usage/#monitoring-mode"
+WEB_DASHBOARD_GUIDE_URL = DOCS_BASE_URL + "/view-modes/#web-dashboard"
+OUTPUT_GUIDE_URL = DOCS_BASE_URL + "/usage/#output-directory"
+
+# The fix named when nothing is being monitored, shared by the startup gate and the Doctor target check
+NO_TARGET_FIX = "Pass a target on the command line, set TARGET_USERNAMES in the config or enable the Web Dashboard"
 
 # Label of the Doctor check that reports a fully validated webhook, shared with the sibling monitors
+SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
 WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
+
+# The label every sibling monitor uses when email alerts are on but the settings they would use cannot deliver
+EMAIL_UNUSABLE_CHECK_LABEL = "Email alerts are enabled but unusable"
 
 # Placeholder values shipped in the sample configuration, which stand in for a setting the user has not filled in yet
 CONFIG_PLACEHOLDER_VALUES = frozenset({"your_smtp_server_ssl", "your_smtp_user", "your_smtp_password", "your_sender_email", "your_receiver_email", "your_webhook_url"})
@@ -1251,20 +1104,22 @@ WEB_DASHBOARD_MEDIA_LIMIT = 1000
 
 # ASCII art startup banner (pure ASCII for maximum terminal portability)
 STARTUP_BANNER = r"""
- .-------------.    ___           _
-|  O        .  |   |_ _|_ __  ___| |_ __ _  __ _ _ __ __ _ _ __ ___
-|    .-----.   |    | || '_ \/ __| __/ _` |/ _` | '__/ _` | '_ ` _ \
-|   |  ( )  |  |    | || | | \__ \ || (_| | (_| | | | (_| | | | | | |
-|    '-----'   |   |___|_| |_|___/\__\__,_|\__, |_|  \__,_|_| |_| |_|
- '-------------'                           |___/
-                    __  __             _ _
-                   |  \/  | ___  _ __ (_) |_ ___  _ __
-                   | |\/| |/ _ \| '_ \| | __/ _ \| '__|
-                   | |  | | (_) | | | | | || (_) | |
-                   |_|  |_|\___/|_| |_|_|\__\___/|_|"""
+ .---------------.    ___           _
+|   O        .   |   |_ _|_ __  ___| |_ __ _  __ _ _ __ __ _ _ __ ___
+|     .-----.    |    | || '_ \/ __| __/ _` |/ _` | '__/ _` | '_ ` _ \
+|    |  ( )  |   |    | || | | \__ \ || (_| | (_| | | | (_| | | | | | |
+|     '-----'    |   |___|_| |_|___/\__\__,_|\__, |_|  \__,_|_| |_| |_|
+ '---------------'                           |___/
+                      __  __             _ _
+                     |  \/  | ___  _ __ (_) |_ ___  _ __
+                     | |\/| |/ _ \| '_ \| | __/ _ \| '__|
+                     | |  | | (_) | | | | | || (_) | |
+                     |_|  |_|\___/|_| |_|_|\__\___/|_|"""
 
 
 import sys
+import contextvars
+import functools
 import signal
 
 
@@ -1273,13 +1128,44 @@ def _startup_sigint_handler(signum, frame):
     sys.exit(0)
 
 
+# Reads one answer with Python's default Ctrl+C behavior, so the prompt reports the outcome instead of the signal handler
+def read_interactively(reader, *args, **kwargs):
+    try:
+        previous_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+    except (ValueError, OSError):
+        # Handlers can only be replaced from the main thread, which is where every prompt runs
+        return reader(*args, **kwargs)
+    try:
+        return reader(*args, **kwargs)
+    finally:
+        try:
+            signal.signal(signal.SIGINT, previous_handler)
+        except (ValueError, OSError):
+            pass
+
+
+# Reads one hidden value with debug output forced off, so the secret cannot reach the debug stream while it is handled
+def read_secret_privately(hidden_prompt, prompt_text):
+    global DEBUG_MODE
+    previous_debug_mode = DEBUG_MODE
+    DEBUG_MODE = False
+    try:
+        return read_interactively(hidden_prompt, prompt_text)
+    finally:
+        DEBUG_MODE = previous_debug_mode
+
+
 signal.signal(signal.SIGINT, _startup_sigint_handler)
 
 # Oldest interpreter this tool supports, shared by the startup gate and the Doctor environment check
 MINIMUM_PYTHON_VERSION = (3, 9)
+MINIMUM_PYTHON_VERSION_TEXT = ".".join(str(part) for part in MINIMUM_PYTHON_VERSION)
 
 if sys.version_info[:2] < MINIMUM_PYTHON_VERSION:
-    print(f"* Error: Python version {'.'.join(str(part) for part in MINIMUM_PYTHON_VERSION)} or higher required !")
+    print(f"* Error: Python version {MINIMUM_PYTHON_VERSION_TEXT} or higher required !")
+    print(f"To fix: Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer, then re-run the tool")
+    print(f"Guide: {INSTALLATION_GUIDE_URL}")
     sys.exit(1)
 
 import time
@@ -1295,10 +1181,12 @@ from dateutil import relativedelta
 from dateutil.parser import isoparse, parse
 import calendar
 import requests as req
+import urllib3
 WEBHOOK_SESSION = req.Session()
 import atexit
 import errno
 import shutil
+import textwrap
 import smtplib
 import ssl
 from email.utils import parsedate_to_datetime
@@ -1324,6 +1212,14 @@ import ipaddress
 from itertools import zip_longest
 import subprocess
 import threading
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # type: ignore
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None  # type: ignore
 import hashlib
 import heapq
 
@@ -1345,15 +1241,715 @@ FOLLOW_ANALYSIS_LIST_LIMIT = 500
 FOLLOW_ANALYSIS_SNAPSHOT_SKEW_WARNING_SECONDS = 3600
 
 
-# Normalizes and validates an Instagram username before it enters paths or HTML
+# Splits 'value  # comment' into ('value', '# comment'), ignoring # inside quotes
+def _split_inline_comment_preserving_strings(rhs: str) -> tuple[str, str]:
+    in_single = False
+    in_double = False
+    escaped = False
+    for i, ch in enumerate(rhs):
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if ch == "'" and not in_double:
+            in_single = not in_single
+            continue
+        if ch == '"' and not in_single:
+            in_double = not in_double
+            continue
+        if ch == "#" and not in_single and not in_double:
+            return rhs[:i].rstrip(), rhs[i:].rstrip()
+    return rhs.rstrip(), ""
+
+
+# Formats python literals for config file assignments
+def _format_config_value(value, prefer_double_quotes: bool) -> str:
+    if isinstance(value, str):
+        if prefer_double_quotes:
+            escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+            return f'"{escaped}"'
+        escaped = value.replace("\\", "\\\\").replace("'", "\\'")
+        return f"'{escaped}'"
+    if value is None:
+        return "None"
+    return repr(value)
+
+
+# Advanced settings documented for config files but deliberately kept out of the generated template
+EXTRA_CONFIG_KEYS = frozenset(("FLAGGED_PROBE_USERNAME", "FLAGGED_PROBE_TTL", "COLOR_THEME"))
+
+# Settings that an earlier version wrote into generated configuration files and that a later release
+# removed. Ignoring them with a note keeps an untouched older configuration working on upgrade, while
+# any other unknown name is still rejected so a typo cannot silently do nothing.
+# The DISCORD_* limits below shipped in the 3.0 template and were renamed to WEBHOOK_* in 3.1.
+RETIRED_CONFIG_SETTINGS = frozenset(("DISCORD_EMBED_DESCRIPTION_LIMIT", "DISCORD_EMBED_TITLE_LIMIT", "DISCORD_FIELD_NAME_LIMIT", "DISCORD_FIELD_VALUE_LIMIT", "DISCORD_MAX_FIELDS", "ERROR_FAILURE_THRESHOLD"))
+
+
+# Describes ignored retired settings in one sentence, optionally naming the file they can be deleted from
+def describe_retired_settings(names, path: Any = "") -> str:
+    listed = ", ".join(sorted(names))
+    single = len(names) == 1
+    sentence = f"{listed} {'was' if single else 'were'} removed in a later version and {'is' if single else 'are'} ignored."
+    if path:
+        sentence += f" You can delete {'it' if single else 'them'} from {path}."
+    return sentence
+
+
+# Keeps retired-setting upgrade guidance visible inside the full-screen terminal dashboard
+def retain_retired_settings_in_dashboard(names, path: Any = "") -> None:
+    if not names or not DASHBOARD_ENABLED or not RICH_AVAILABLE:
+        return
+    log_activity(f"Configuration upgrade note: {describe_retired_settings(names, path)}", level="warning")
+
+
+# Returns every setting name a config file may assign, taken from the built-in template plus documented extras
+def config_allowed_names() -> frozenset:
+    import ast
+    declared = {statement.targets[0].id for statement in ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec").body if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name)}
+    return frozenset(declared | EXTRA_CONFIG_KEYS)
+
+
+# Returns the literal values the built-in config template ships with, used to clear a section the user declined
+def config_template_defaults() -> dict:
+    import ast
+    defaults = {}
+    for statement in ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec").body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
+            continue
+        try:
+            defaults[statement.targets[0].id] = ast.literal_eval(statement.value)
+        except ValueError:
+            continue
+    return defaults
+
+
+# Returns the parsed value with a legacy numeric on/off setting read as the boolean it stands for
+def _normalized_config_value(name: str, value, defaults: dict):
+    # 0 and 1 were accepted for these settings before the values were checked, so they still mean off and on
+    if isinstance(value, int) and not isinstance(value, bool) and value in (0, 1) and isinstance(defaults.get(name), bool):
+        return bool(value)
+    return value
+
+
+# Reads allowlisted literal assignments from config content without executing any of it
+def parse_config_content(content: str, filename: str = "<config>", retired_out=None) -> dict:
+    import ast
+    allowed_names = config_allowed_names()
+    template_defaults = config_template_defaults()
+    parsed_values = {}
+    for statement in ast.parse(content, filename, "exec").body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
+            raise ValueError(f"line {getattr(statement, 'lineno', '?')}: only 'NAME = value' settings are allowed, this file contains other code")
+        name = statement.targets[0].id
+        if name in RETIRED_CONFIG_SETTINGS and name not in allowed_names:
+            if retired_out is not None and name not in retired_out:
+                retired_out.append(name)
+            continue
+        if name not in allowed_names:
+            raise ValueError(f"line {statement.lineno}: '{name}' is not a recognized setting")
+        try:
+            parsed_values[name] = _normalized_config_value(name, ast.literal_eval(statement.value), template_defaults)
+        except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as exc:
+            raise ValueError(f"line {statement.lineno}: '{name}' must be a plain value such as text, a number, True, False, a list or a dictionary") from exc
+    return parsed_values
+
+
+# Validates config content through the same restricted parser used when a config file is loaded
+def validate_config_content(content: str, filename: str = "<generated-config>") -> None:
+    parse_config_content(content, filename)
+
+
+# Returns the inline comment to write beside a rendered value, restating a changed duration instead of keeping the template's
+def _config_value_comment(comment, template_expression, value):
+    import ast
+
+    if not comment:
+        return ""
+    try:
+        unchanged = ast.literal_eval(template_expression) == value
+    except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+        return comment
+    # Every numeric template comment restates its default as a duration, so a changed one is restated the same way.
+    # A comment on any other kind of setting is guidance about the setting itself and still applies
+    if unchanged or isinstance(value, bool) or not isinstance(value, (int, float)):
+        return comment
+    restated = display_time(value)
+    return f"# {restated}" if restated else ""
+
+
+# Renders an explicit assignment for a setting the template ships commented out, so overrides the user wrote
+# survive a rewrite instead of being replaced by the commented default
+def _rendered_commented_setting(variable, values):
+    value = values.get(variable)
+    if not isinstance(value, dict) or not value:
+        return []
+    lines = ["", f"{variable} = {{"]
+    lines.extend(f"    {_format_config_value(str(name), True)}: {_format_config_value(str(setting), True)}," for name, setting in value.items())
+    lines.append("}")
+    return lines
+
+
+# Renders CONFIG_BLOCK with selected runtime values substituted into simple one-line assignments
+def generate_config_with_current_values(values=None) -> str:
+    import re
+
+    current_values = globals() if values is None else values
+    assign_re = re.compile(r"^([A-Z][A-Z0-9_]*)\s*=\s*(.*)$")
+    commented_pattern = re.compile(r"^#\s*([A-Z][A-Z0-9_]*)\s*=\s*\{$")
+    commented_block = ""
+    out_lines: list[str] = []
+
+    for line in CONFIG_BLOCK.strip("\n").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            out_lines.append(line)
+            commented_match = commented_pattern.match(stripped)
+            if commented_match and commented_match.group(1) in EXTRA_CONFIG_KEYS:
+                commented_block = commented_match.group(1)
+            elif commented_block and stripped == "# }":
+                out_lines.extend(_rendered_commented_setting(commented_block, current_values))
+                commented_block = ""
+            continue
+
+        m = assign_re.match(line)
+        if not m:
+            out_lines.append(line)
+            continue
+
+        var = m.group(1)
+        rhs = m.group(2)
+        expr, comment = _split_inline_comment_preserving_strings(rhs)
+        expr_stripped = expr.strip()
+
+        if var in SENSITIVE_CONFIG_KEYS:
+            out_lines.append(line)
+            continue
+
+        # Avoid rewriting multiline structures (keep template as-is)
+        if expr_stripped.endswith(("{", "[", "(")) and not any(c in expr_stripped for c in ("}", "]", ")")):
+            out_lines.append(line)
+            continue
+
+        if var not in current_values:
+            out_lines.append(line)
+            continue
+
+        prefer_double_quotes = expr_stripped.startswith('"')
+        new_expr = _format_config_value(current_values[var], prefer_double_quotes=prefer_double_quotes)
+        new_line = f"{var} = {new_expr}"
+        rendered_comment = _config_value_comment(comment, expr_stripped, current_values[var])
+        if rendered_comment:
+            new_line = f"{new_line}  {rendered_comment}"
+        out_lines.append(new_line)
+
+    rendered = "\n".join(out_lines) + "\n"
+    validate_config_content(rendered)
+    return rendered
+
+
+# Reads a saved follow baseline before monitoring compares or replaces it
+def read_follow_record(path):
+    with open(path, "r", encoding="utf-8") as source:
+        record = json.load(source)
+    if not isinstance(record, list) or len(record) < 2:
+        raise ValueError("expected a follow list containing a count and usernames")
+    if not isinstance(record[0], int) or isinstance(record[0], bool) or record[0] < 0:
+        raise ValueError("the saved follow count must be a nonnegative integer")
+    if not isinstance(record[1], list) or any(not isinstance(value, str) or not value.strip() for value in record[1]):
+        raise ValueError("saved usernames must be a list of nonempty strings")
+    return record
+
+
+# Accepts finite numeric values without overflowing on unusually large integers
+def finite_number(value):
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+# Preserves inline credentials privately before setup replaces their only saved source
+def preserve_inline_config_secrets(config_path, env_path):
+    from dotenv import dotenv_values
+    source = Path(config_path).expanduser()
+    if not source.is_file():
+        return None
+    original = {}
+    if not load_config_file(source, namespace=original, report_errors=False):
+        raise ValueError("Existing configuration could not be read before preserving its inline secrets")
+    defaults = config_template_defaults()
+    destination = Path(env_path).expanduser()
+    saved = dotenv_values(str(destination), interpolate=False) if destination.exists() else {}
+    updates = {}
+    for key in SECRET_KEYS:
+        value = original.get(key)
+        if isinstance(value, str) and value and value != defaults.get(key) and saved.get(key) is None:
+            updates[key] = value
+    if not updates:
+        return None
+    try:
+        return update_dotenv_file(destination, updates)
+    except Exception as exc:
+        raise OSError(f"Could not preserve inline secrets in '{destination}'. The original configuration was not replaced") from exc
+
+
+# Removes inline secret assignments from a setup backup while preserving other configuration text
+def redact_config_backup(content):
+    import ast
+    try:
+        text = content.decode("utf-8")
+        tree = ast.parse(text)
+    except (UnicodeError, SyntaxError) as exc:
+        raise ValueError("Cannot create a secret-free configuration backup. Correct the existing file's UTF-8 encoding or assignment syntax before running setup") from exc
+    lines = text.splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line.encode("utf-8")))
+    replacements = []
+    secret_values = set()
+    for statement in ast.walk(tree):
+        if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
+            continue
+        targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+        if any(isinstance(target, ast.Name) and target.id in SECRET_KEYS for target in targets):
+            value = statement.value
+            if value is not None and value.end_lineno is not None and value.end_col_offset is not None:
+                start = offsets[value.lineno - 1] + value.col_offset
+                end = offsets[value.end_lineno - 1] + value.end_col_offset
+                replacements.append((start, end))
+                if isinstance(value, ast.Constant) and isinstance(value.value, str) and value.value:
+                    secret_values.add(value.value)
+    for start, end in sorted(replacements, reverse=True):
+        content = content[:start] + b'""' + content[end:]
+    import io
+    import tokenize
+    text = content.decode("utf-8")
+    lines = text.splitlines(keepends=True)
+    for token in tokenize.generate_tokens(io.StringIO(text).readline):
+        if token.type == tokenize.COMMENT:
+            comment = token.string
+            for secret in sorted(secret_values, key=len, reverse=True):
+                comment = comment.replace(secret, "<redacted>")
+            row, start = token.start
+            end = token.end[1]
+            lines[row - 1] = lines[row - 1][:start] + comment + lines[row - 1][end:]
+    return "".join(lines).encode("utf-8")
+
+
+# Copies an existing file to a timestamped owner-only .bak beside it, returning the backup path or None when there was nothing to copy
+def create_timestamped_backup(destination, attempts=100, redact_secrets=False):
+    destination_path = Path(destination).expanduser()
+    if not destination_path.is_file():
+        return None
+    existing_bytes = destination_path.read_bytes()
+    if redact_secrets:
+        existing_bytes = redact_config_backup(existing_bytes)
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    for attempt in range(attempts):
+        suffix = f".{stamp}.bak" if attempt == 0 else f".{stamp}-{attempt}.bak"
+        backup_path = destination_path.with_name(destination_path.name + suffix)
+        try:
+            # O_EXCL so a backup can never overwrite an earlier one, even under a concurrent run
+            descriptor = os.open(str(backup_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            continue
+        try:
+            with os.fdopen(descriptor, "wb") as backup_file:
+                backup_file.write(existing_bytes)
+                backup_file.flush()
+                os.fsync(backup_file.fileno())
+        except Exception:
+            try:
+                os.unlink(str(backup_path))
+            except OSError:
+                pass
+            raise
+        return str(backup_path)
+    raise OSError(f"Could not create a unique backup for '{destination_path}' after {attempts} attempts")
+
+
+# Writes validated config content atomically and backs up an existing destination
+def write_config_file(destination, content: str, redact_secrets=False):
+    destination_path = Path(destination).expanduser()
+    validate_config_content(content, str(destination_path))
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    backup_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", prefix=f".{destination_path.name}.", suffix=".tmp", dir=str(destination_path.parent), delete=False) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(content)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+
+        if destination_path.exists():
+            backup_path = create_timestamped_backup(destination_path, redact_secrets=redact_secrets)
+
+        os.replace(temporary_path, destination_path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
+
+    return {"path": str(destination_path), "backup_path": str(backup_path) if backup_path is not None else None}
+
+
+# Raised when an existing config is not replaced because nobody could confirm it, as opposed to a path in the way of writing one
+class ConfigExistsError(FileExistsError):
+    pass
+
+
+# Asks before an existing config is replaced, and refuses where there is no terminal to ask on
+def confirm_generated_config_replacement(destination, force: bool = False, interactive=None, input_func=input) -> bool:
+    destination_path = Path(destination).expanduser()
+    if not destination_path.exists() or force:
+        return True
+    terminal_is_interactive = bool(sys.stdin.isatty()) if interactive is None else bool(interactive)
+    if not terminal_is_interactive:
+        raise ConfigExistsError(f"Config file '{destination_path}' already exists and there is no terminal to confirm replacing it")
+    try:
+        answer = str(read_interactively(input_func, f"Config file '{destination_path}' exists. Replace it and keep a timestamped backup? [y/N]: ")).strip().casefold()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        answer = ""
+    return answer in ("y", "yes")
+
+
+# Writes one generated config atomically, backing up whatever was there first
+def write_generated_config(output_file, content: str, force: bool = False, interactive=None, input_func=input):
+    destination = Path(output_file).expanduser()
+    if not confirm_generated_config_replacement(destination, force, interactive, input_func):
+        return None, False
+    return write_config_file(destination, content)["backup_path"], True
+
+
+# Quotes one secret value for lossless parsing by python-dotenv
+def _format_dotenv_value(value: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError("Dotenv secret values must be strings")
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "\\r").replace("\n", "\\n")
+    return f'"{escaped}"'
+
+
+# Returns the dotenv parser's own bindings for one file's text, where a quoted value written across several lines is one binding
+def _dotenv_bindings(text: str):
+    from io import StringIO
+    from dotenv.parser import parse_stream
+    return list(parse_stream(StringIO(text)))
+
+
+# Updates allowed secrets in a dotenv file through an atomic replacement
+def update_dotenv_file(destination, updates):
+    if not hasattr(updates, "items"):
+        raise TypeError("Dotenv updates must be a mapping")
+    update_items = list(updates.items())
+    for key, value in update_items:
+        if not isinstance(key, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", key) or key not in SECRET_KEYS:
+            raise ValueError(f"Unsupported dotenv key: {key!r}")
+        if not isinstance(value, str):
+            raise TypeError(f"Dotenv value for {key} must be a string")
+
+    destination_path = Path(destination).expanduser()
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    existing_bindings = _dotenv_bindings(destination_path.read_text(encoding="utf-8") if destination_path.exists() else "")
+    update_keys = {key for key, _ in update_items}
+    values_by_key = dict(update_items)
+    seen_keys = set()
+    output_parts = []
+    # Rebuilt from the parser's own bindings rather than physical lines, since a quoted value can span several
+    # of them and replacing only the first leaves the rest of the old secret behind as broken syntax
+    for binding in existing_bindings:
+        original = binding.original.string
+        blank_prefix = original[:len(original) - len(original.lstrip("\r\n"))]
+        if binding.key is None or binding.key not in update_keys:
+            output_parts.append(original)
+            continue
+        if binding.key in seen_keys:
+            output_parts.append(blank_prefix)
+            continue
+        seen_keys.add(binding.key)
+        # A secret cleared by its owner is removed rather than emptied, so a disabled value cannot linger here
+        if not values_by_key[binding.key]:
+            output_parts.append(blank_prefix)
+            continue
+        # An "export " the owner wrote is kept, since dropping it changes what a shell sourcing the file exports
+        head = original[len(blank_prefix):]
+        # Keep key quotes out of the indentation and export prefix
+        written_prefix = head[:head.index(binding.key)].rstrip("'")
+        output_parts.append(f"{blank_prefix}{written_prefix}{binding.key}={_format_dotenv_value(values_by_key[binding.key])}\n")
+
+    content = "".join(output_parts)
+    # A file that did not end in a newline would otherwise take the first new assignment onto its last line
+    if content and not content.endswith("\n"):
+        content += "\n"
+    for key, value in update_items:
+        if key not in seen_keys and value:
+            content += f"{key}={_format_dotenv_value(value)}\n"
+            seen_keys.add(key)
+    # Checked before it replaces the file, so a rewrite can never publish a secret the next run cannot read back
+    rewritten = {binding.key: binding.value for binding in _dotenv_bindings(content) if binding.key is not None}
+    if any(rewritten.get(key, "") != value for key, value in update_items):
+        raise ValueError(f"Updating '{destination_path}' would not store the requested values")
+
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", prefix=f".{destination_path.name}.", suffix=".tmp", dir=str(destination_path.parent), delete=False) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(content)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        if os.name == "posix":
+            os.chmod(temporary_path, 0o600)
+        os.replace(temporary_path, destination_path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
+
+    return {"path": str(destination_path), "updated_keys": tuple(key for key, _ in update_items)}
+
+
+# Raised when private webhook URL entry cannot be completed safely
+class WebhookConfigurationError(Exception):
+    # Carries an optional action and guide link, so a cancelled entry prints the same block as any other error
+    def __init__(self, message, fix="", guide=""):
+        self.fix = fix
+        self.guide = guide
+        super().__init__(message)
+
+
+# Resolves the writable dotenv destination used by private webhook entry
+def resolve_webhook_env_path(env_file=None, cwd=None):
+    if env_file is not None and str(env_file).casefold() == "none":
+        raise WebhookConfigurationError("Webhook setup requires a dotenv destination. Replace '--env-file none' with a writable path.")
+    base_directory = Path.cwd() if cwd is None else Path(cwd)
+    destination = base_directory / ".env" if env_file is None else Path(env_file).expanduser()
+    return destination.resolve()
+
+
+# Checks whether a dotenv file already contains one named assignment
+def _dotenv_contains_key(destination, key):
+    destination_path = Path(destination)
+    if not destination_path.exists():
+        return False
+    try:
+        content = destination_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        raise WebhookConfigurationError(f"Could not read dotenv destination '{destination_path}'. Check that it is a readable UTF-8 file.") from None
+    return any(binding.key == key for binding in _dotenv_bindings(content))
+
+
+# Returns the config a printed command should name, so a run started with discovery off cannot point the reader
+# at a file it deliberately ignored
+def resolved_command_config(config_path=None):
+    # A path the caller was given is what the command names, so a stale discovery flag cannot override it
+    if config_path is not None:
+        return "none" if str(config_path).casefold() == "none" else config_path
+    return "none" if CONFIG_DISCOVERY_DISABLED else find_config_file()
+
+
+# Checks and safely stores one privately entered webhook URL
+def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpass_func=None, config_path=None):
+    destination = resolve_webhook_env_path(env_file)
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
+    if not terminal_is_interactive:
+        raise WebhookConfigurationError("--set-webhook-url requires an interactive terminal. Run it in a terminal window so the webhook URL stays hidden while you paste it.")
+    prompt = input if input_func is None else input_func
+    if _dotenv_contains_key(destination, "WEBHOOK_URL"):
+        try:
+            confirmed = read_interactively(prompt, f"Replace the saved webhook URL in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            raise WebhookConfigurationError("Webhook URL setup was cancelled and the dotenv file was not changed", "Run --set-webhook-url again when you have the value ready", WEBHOOK_GUIDE_URL) from None
+        if not confirmed:
+            raise WebhookConfigurationError("The saved webhook URL was left as it is and the dotenv file was not changed", "Run --set-webhook-url again and answer y to replace the saved value", WEBHOOK_GUIDE_URL)
+    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
+    try:
+        webhook_url = read_secret_privately(hidden_prompt, "Paste the Discord or ntfy webhook URL (input hidden): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        raise WebhookConfigurationError("Webhook URL setup was cancelled and the dotenv file was not changed", "Run --set-webhook-url again when you have the value ready", WEBHOOK_GUIDE_URL) from None
+    if not validate_webhook_url(webhook_url):
+        raise WebhookConfigurationError("That does not look like a complete HTTPS webhook URL. The private settings file was not changed.")
+    try:
+        update_dotenv_file(destination, {"WEBHOOK_URL": webhook_url})
+    except Exception:
+        raise WebhookConfigurationError(f"Could not save the webhook URL in '{destination}'. Check file permissions or choose another path with --env-file.") from None
+    selected_config = resolved_command_config(config_path)
+    method = _wizard_install_method()
+    test_command = _wizard_action_command(method, "--send-test-webhook", selected_config, destination)
+    doctor_command = _wizard_action_command(method, "--doctor", selected_config, destination)
+    print("* Webhook URL looks valid")
+    print(f"* Updated private settings file: {destination}")
+    print()
+    _wizard_print_command("Send a test webhook:", test_command)
+    _wizard_print_command("Check setup again:", doctor_command)
+    return str(destination)
+
+
+# Raised when private mail server password entry cannot be completed safely
+class SmtpConfigurationError(Exception):
+    # Carries an optional action and guide link, so a cancelled entry prints the same block as any other error
+    def __init__(self, message, fix="", guide=""):
+        self.fix = fix
+        self.guide = guide
+        super().__init__(message)
+
+
+# Prints one one-shot secret command failure with its action and guide link when the error carries them
+def print_secret_command_error(error):
+    print(f"* Error: {error}")
+    fix = getattr(error, "fix", "")
+    if fix:
+        print(colorize("info", f"To fix: {fix}"))
+    guide = getattr(error, "guide", "")
+    if guide:
+        print(f"Guide: {guide}")
+
+
+# Returns the mail settings a sign-in needs that are still unset, still a placeholder or not a valid address
+def mail_sign_in_settings_missing():
+    missing = [name for name in ("SMTP_HOST", "SMTP_USER") if is_placeholder_setting(globals().get(name))]
+    return missing + [name for name in ("SENDER_EMAIL", "RECEIVER_EMAIL") if not is_valid_email_address(globals().get(name))]
+
+
+# Signs in while removing the attempted password from SMTP rejection replies before they can be rendered
+def smtp_login(connection, username, password):
+    try:
+        return connection.login(username, password)
+    except smtplib.SMTPResponseException as error:
+        reply = error.smtp_error
+        if password:
+            if isinstance(reply, bytes):
+                reply = reply.replace(str(password).encode("utf-8"), b"[private value]")
+            else:
+                reply = str(reply).replace(str(password), "[private value]")
+        error.smtp_error = reply
+        error.args = (error.smtp_code, reply)
+        raise
+
+
+# Signs in to the configured mail server with one entered password, so nothing is saved that cannot deliver
+def smtp_sign_in(password, timeout=5):
+    candidate = str(password or "")
+    if not candidate or candidate == "your_smtp_password":
+        raise SmtpConfigurationError("No SMTP password was entered. The private settings file was not changed.")
+    missing = mail_sign_in_settings_missing()
+    if missing:
+        raise SmtpConfigurationError(f"The mail server settings are incomplete. Set {join_setting_names(missing, 'and')} first, or run --setup.")
+    smtp = None
+    # The sign-in reads the candidate directly and never publishes it as SMTP_PASSWORD, so a failure cannot escape
+    # into a caller that has already had the previous value restored underneath it
+    try:
+        smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=timeout)
+        if SMTP_SSL:
+            smtp.starttls(context=smtp_ssl_context())
+        smtp_login(smtp, SMTP_USER, candidate)
+    finally:
+        if smtp is not None:
+            try:
+                smtp.quit()
+            except Exception:
+                pass
+    return str(SMTP_USER)
+
+
+# Checks one privately entered mail server password against the server and saves it only once it signs in
+def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getpass_func=None, config_path=None, sign_in=None):
+    if env_file is not None and str(env_file).casefold() == "none":
+        raise SmtpConfigurationError("SMTP password setup requires a dotenv destination. Replace '--env-file none' with a writable path.")
+    destination = (Path.cwd() / ".env" if env_file is None else Path(env_file).expanduser()).resolve()
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
+    if not terminal_is_interactive:
+        raise SmtpConfigurationError("--set-smtp-password requires an interactive terminal. Run it in a terminal window so the password stays hidden while you type it.")
+    # Checked before the prompts, so nobody types a password only to be told the mail server was never configured
+    missing = mail_sign_in_settings_missing()
+    if missing:
+        names = join_setting_names(missing, "and")
+        raise SmtpConfigurationError(f"The mail server settings are incomplete, {names} {'is' if len(missing) == 1 else 'are'} not set", f"Set {names} in the config file, or run --setup, then run --set-smtp-password again", SMTP_GUIDE_URL)
+    prompt = input if input_func is None else input_func
+    try:
+        password_already_saved = _dotenv_contains_key(destination, "SMTP_PASSWORD")
+    except WebhookConfigurationError as exc:
+        raise SmtpConfigurationError(str(exc)) from None
+    if password_already_saved:
+        try:
+            confirmed = read_interactively(prompt, f"Replace the saved SMTP password in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            raise SmtpConfigurationError("SMTP password setup was cancelled and the dotenv file was not changed", "Run --set-smtp-password again when you have the value ready", SMTP_GUIDE_URL) from None
+        if not confirmed:
+            raise SmtpConfigurationError("The saved SMTP password was left as it is and the dotenv file was not changed", "Run --set-smtp-password again and answer y to replace the saved value", SMTP_GUIDE_URL)
+    print(f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent")
+    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
+    try:
+        smtp_password = str(read_secret_privately(hidden_prompt, "Enter the SMTP password (input hidden): "))
+    except (EOFError, KeyboardInterrupt):
+        print()
+        raise SmtpConfigurationError("SMTP password setup was cancelled and the dotenv file was not changed", "Run --set-smtp-password again when you have the value ready", SMTP_GUIDE_URL) from None
+    check = smtp_sign_in if sign_in is None else sign_in
+    try:
+        signed_in_user = check(smtp_password, timeout=5)
+    except SmtpConfigurationError:
+        raise
+    except Exception as exc:
+        # The sign-in restores the previous password before the failure reaches here, so the value that was tried
+        # is passed explicitly rather than left to the global the redaction would otherwise read
+        raise SmtpConfigurationError(f"The mail server did not accept the password: {format_error_message(exc, smtp_password)}. The private settings file was not changed.") from None
+    try:
+        update_dotenv_file(destination, {"SMTP_PASSWORD": smtp_password})
+    except Exception:
+        raise SmtpConfigurationError(f"Could not save the SMTP password in '{destination}'. Check file permissions or choose another path with --env-file.") from None
+    selected_config = resolved_command_config(config_path)
+    method = _wizard_install_method()
+    test_command = _wizard_action_command(method, "--send-test-email", selected_config, destination)
+    doctor_command = _wizard_action_command(method, "--doctor", selected_config, destination)
+    print(f"* The mail server accepted the password for {signed_in_user}")
+    print(f"* Updated private settings file: {destination}")
+    # Startup loads the dotenv file without overriding the environment, so a saved replacement that an export
+    # shadows would never be read. The run would keep failing with the password that was just proven good
+    if os.environ.get("SMTP_PASSWORD"):
+        print("* SMTP_PASSWORD is exported in this environment and an export wins at startup, so the next run uses that value rather than the one just saved")
+        print(colorize("info", "To fix: Unset the exported SMTP_PASSWORD to use the saved one"))
+    print()
+    _wizard_print_command("Send a test email:", test_command)
+    _wizard_print_command("Check setup again:", doctor_command)
+    return str(destination)
+
+
+# Extracts the single account path from an Instagram profile URL without scanning repeated URL fragments
+def strip_instagram_profile_url(value: str) -> str:
+    candidate = value.strip()
+    for scheme in ("https://", "http://"):
+        if candidate.lower().startswith(scheme):
+            candidate = candidate[len(scheme):]
+            break
+    hostname, separator, remainder = candidate.partition("/")
+    labels = hostname.lower().split(".")
+    if not separator or labels[-2:] != ["instagram", "com"]:
+        return value
+    if any(not label or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789-" for char in label) for label in labels[:-2]):
+        return value
+    account = remainder.partition("?")[0].partition("#")[0]
+    if account.endswith("/"):
+        account = account[:-1]
+    return account if account and "/" not in account else value
+
+
+# Normalizes and validates an Instagram username before it enters paths or HTML, accepting a profile URL as well
 def normalize_instagram_username(value):
     if not isinstance(value, str):
         raise ValueError("Instagram username must be text")
-    username = value.strip().lower()
+    username = strip_instagram_profile_url(value).strip().lower()
     if username.startswith('@'):
         username = username[1:]
-    if not re.fullmatch(r"[a-z0-9._]{1,30}", username):
-        raise ValueError("Instagram username must be 1-30 letters, digits, periods or underscores")
+    if username in (".", "..") or not re.fullmatch(r"[a-z0-9._]{1,30}", username):
+        raise ValueError("Instagram username must be 1-30 letters, digits, periods or underscores, or a profile URL")
     return username
 
 
@@ -1419,6 +2015,7 @@ def wait_for_session_refresh(observed_generation, timeout=1.0):
         SESSION_REFRESH_CONDITION.wait_for(lambda: SESSION_REFRESH_GENERATION != observed_generation, timeout=timeout)
         return SESSION_REFRESH_GENERATION
 
+
 # Initialize manual check trigger event (thread-safe)
 MANUAL_CHECK_TRIGGERED: threading.Event = threading.Event()
 
@@ -1429,7 +2026,6 @@ except ImportError:
 
 try:
     import instaloader
-    from instaloader import Instaloader
 except ModuleNotFoundError:
     raise SystemExit("Error: Couldn't find the instaloader library !\n\nTo install it, run:\n    pip3 install instaloader\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://instaloader.github.io/")
 
@@ -1584,7 +2180,7 @@ def _apply_instaloader_post_metadata_patch() -> None:
             pic_json["edge_media_to_tagged_user"] = {"edges": [{"node": {"user": {"username": t["user"]["username"].lower()}}} for t in tagged if (t.get("user") or {}).get("username")]}
         self._full_metadata_dict = pic_json
         if DEBUG_MODE:
-            debug_print(f"instaloader post metadata doc_id patch fired (shortcode {self.shortcode})")
+            debug_print("Instaloader doc_id patch fired", shortcode=self.shortcode)
         if self.shortcode != self._full_metadata_dict["shortcode"]:
             self._node.update(self._full_metadata_dict)
             raise PostChangedException
@@ -1686,17 +2282,19 @@ _CURL_CFFI_BACKEND_INSTALLED = False
 _CURL_CFFI_UNAVAILABLE_WARNED = False
 
 
-# Returns True when the curl_cffi transport should handle requests right now (reads the live config)
+# Returns whether Instagram requests will actually go out through curl_cffi's browser impersonation
+def curl_cffi_backend_active(backend: Optional[str] = None) -> bool:
+    return str(HTTP_BACKEND if backend is None else backend).strip().lower() == "curl_cffi" and _CURL_CFFI_AVAILABLE
+
+
+# Returns the same answer and warns once when curl_cffi was selected but cannot be used
 def _curl_cffi_backend_active() -> bool:
     global _CURL_CFFI_UNAVAILABLE_WARNED
-    if str(HTTP_BACKEND).strip().lower() != "curl_cffi":
-        return False
-    if not _CURL_CFFI_AVAILABLE:
-        if not _CURL_CFFI_UNAVAILABLE_WARNED:
-            print("* Warning: HTTP_BACKEND is 'curl_cffi' but the 'curl_cffi' package is not installed, falling back to 'requests'")
-            _CURL_CFFI_UNAVAILABLE_WARNED = True
-        return False
-    return True
+    active = curl_cffi_backend_active()
+    if not active and str(HTTP_BACKEND).strip().lower() == "curl_cffi" and not _CURL_CFFI_UNAVAILABLE_WARNED:
+        print(render_recovery_advice(missing_dependency_advice("curl_cffi", "HTTP_BACKEND is 'curl_cffi' but the 'requests' backend is used instead", pip_install_command("curl_cffi")), label="Warning"))
+        _CURL_CFFI_UNAVAILABLE_WARNED = True
+    return active
 
 
 # Maps a browser user agent string to the matching curl_cffi impersonation family, defaulting to chrome
@@ -1730,11 +2328,24 @@ def curl_cffi_supported_impersonate_targets() -> set:
 
 
 # Returns the curl_cffi impersonation target, resolving "auto" from USER_AGENT so TLS matches the browser identity
-def _curl_cffi_impersonate_target() -> str:
-    target = str(CURL_CFFI_IMPERSONATE or "auto").strip().lower()
+def _curl_cffi_impersonate_target(impersonate: Optional[str] = None) -> str:
+    target = str((CURL_CFFI_IMPERSONATE if impersonate is None else impersonate) or "auto").strip().lower()
     if target in ("", "auto"):
         return _impersonate_target_from_ua(USER_AGENT)
     return target
+
+
+# Returns the impersonation target for the startup summary, showing what Auto actually resolved to
+def _curl_cffi_impersonate_display() -> str:
+    resolved = _curl_cffi_impersonate_target()
+    return f"auto -> {resolved}" if str(CURL_CFFI_IMPERSONATE or "auto").strip().lower() in ("", "auto") else resolved
+
+
+# Names the transport that will actually carry requests, with the reason when a selected curl_cffi cannot be used
+def http_backend_display() -> str:
+    if curl_cffi_backend_active():
+        return "curl_cffi"
+    return "requests (curl_cffi is not installed)" if str(HTTP_BACKEND).strip().lower() == "curl_cffi" else "requests"
 
 
 # Minimal urllib3-style raw wrapper exposing the read/stream surface requests and instaloader downloads rely on
@@ -1836,7 +2447,7 @@ def _install_http_backend() -> None:
     if real_requests is None or isinstance(real_requests, _RequestsBackendShim):
         _CURL_CFFI_BACKEND_INSTALLED = True
         return
-    _ilc.requests = _RequestsBackendShim(real_requests)
+    _ilc.__dict__.update({"requests": _RequestsBackendShim(real_requests)})
     _CURL_CFFI_BACKEND_INSTALLED = True
 
 
@@ -1873,7 +2484,7 @@ _install_http_backend()
 _install_copy_session_proxy_patch()
 
 from instaloader.exceptions import PrivateProfileNotFollowedException
-from html import escape
+from html import escape, unescape
 from itertools import islice
 from typing import Optional, Sequence, Tuple, Any, Callable, Dict, List, TypeVar, cast
 from glob import glob
@@ -2111,7 +2722,7 @@ def run_flask_quietly(app, host, port, debug=False, use_reloader=False, threaded
 
             if is_port_error:
                 print("*" * HORIZONTAL_LINE)
-                print(f"* Error: Port {port} is in use by another program. Either identify and stop that program or start the server with a different port.\n")
+                print_recovery_error(f"Port {port} is in use by another program", context="dashboard")
                 print(f"* Web Dashboard will NOT be available!")
                 print("*" * HORIZONTAL_LINE)
             else:
@@ -2233,7 +2844,7 @@ def create_web_dashboard_app():
         candidate_dirs = [template_dir]  # For error message
         if not os.path.isdir(template_dir):
             print("\n" + "*" * HORIZONTAL_LINE)
-            print(f"* Error: Web Dashboard template directory not found: {template_dir}\n")
+            print_recovery_error(f"The Web Dashboard template directory was not found: {template_dir}", context="dashboard")
             print("Please check the WEB_DASHBOARD_TEMPLATE_DIR setting or --web-dashboard-template-dir flag")
             print("The directory must exist and contain index.html\n")
             print(f"* Web Dashboard will NOT be available!")
@@ -2284,11 +2895,12 @@ def create_web_dashboard_app():
         for candidate in candidate_dirs:
             print(f"- {candidate}")
         print()
-        print("To fix this, you can:")
+        print("To fix:")
         print("1. Ensure templates/ directory exists in the script directory")
         print("2. Set WEB_DASHBOARD_TEMPLATE_DIR in your config file")
         print("3. Use --web-dashboard-template-dir flag to specify the template directory")
-        print("4. If installed via pip, ensure the package includes the templates directory\n")
+        print("4. If installed via pip, ensure the package includes the templates directory")
+        print(f"Guide: {WEB_DASHBOARD_GUIDE_URL}\n")
         print(f"* Web Dashboard will NOT be available!")
         print("*" * HORIZONTAL_LINE)
         return None
@@ -2297,8 +2909,7 @@ def create_web_dashboard_app():
     index_path = os.path.join(template_dir, 'index.html')
     if not os.path.isfile(index_path):
         print("\n" + "*" * HORIZONTAL_LINE)
-        print(f"* Error: Template file 'index.html' not found in: {template_dir}\n")
-        print("The template directory exists but is missing the required index.html file\n")
+        print_recovery_error(f"The Web Dashboard template directory has no index.html file: {template_dir}", context="dashboard")
         print(f"* Web Dashboard will NOT be available!")
         print("*" * HORIZONTAL_LINE)
         return None
@@ -2459,6 +3070,8 @@ def create_web_dashboard_app():
         try:
             user = normalize_instagram_username(username)
         except ValueError as e:
+            # Username validation returns a fixed public rule without exception internals
+            # codeql[py/stack-trace-exposure]
             return jsonify({'success': False, 'error': str(e)}), 400  # type: ignore
         with WEB_DASHBOARD_DATA_LOCK:
             configured_targets = set(WEB_DASHBOARD_DATA.get('targets', {}))
@@ -2467,7 +3080,8 @@ def create_web_dashboard_app():
         try:
             analysis = analyze_follows_for_user(user, is_multi=len(configured_targets) > 1)
         except Exception as e:
-            return jsonify({'success': False, 'error': sanitize_dashboard_error_text(e)}), 500  # type: ignore
+            debug_print("Follow analysis", user=user, error=sanitize_dashboard_error_text(e))
+            return jsonify({'success': False, 'error': 'Could not analyze saved follow lists. Check the local debug output for details.'}), 500  # type: ignore
         private_fields = {'followers_file', 'followings_file', 'searched_directory'}
         public_analysis = {key: value for key, value in analysis.items() if key not in private_fields}
         return jsonify({'success': True, 'analysis': apply_privacy_substitutions(public_analysis)})  # type: ignore
@@ -2676,14 +3290,14 @@ def create_web_dashboard_app():
         global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, PROXY_REFRESH_VERSION
         global FOLLOWERS_CHURN_DETECTION, DEBUG_MODE, SESSION_USERNAME, VERBOSE_MODE
         global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SSL, SENDER_EMAIL, RECEIVER_EMAIL
-        global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS
+        global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, FETCH_REELS
         global ENABLE_JITTER, DETECT_CHANGED_PROFILE_PIC, SKIP_SESSION, CLI_CONFIG_PATH
         global DOTENV_FILE, WEB_DASHBOARD_TEMPLATE_DIR, LOCAL_TIMEZONE, OUTPUT_DIR, CSV_FILE
         global BE_HUMAN, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, LIVENESS_CHECK_INTERVAL, SKIP_FOLLOW_CHANGES
         global WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
         global DISABLE_LOGGING, CHECK_POSTS_IN_HOURS_RANGE, HOURS_VERBOSE, MIN_H1, MAX_H1, MIN_H2, MAX_H2
         global DASHBOARD_SHOW_CHECK_SECONDS, TIME_FORMAT_12H
-        global HTTP_BACKEND, CURL_CFFI_IMPERSONATE
+        global HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE
 
         if data is None:
             return False, [], 'No data provided', 400
@@ -2693,7 +3307,7 @@ def create_web_dashboard_app():
         boolean_keys = {
             'email_notifications', 'follower_notifications', 'error_notifications', 'webhook_enabled', 'webhook_status', 'webhook_followers', 'webhook_errors',
             'proxy_enabled', 'proxy_webhooks', 'followers_churn', 'verbose_mode', 'debug_mode', 'be_human', 'skip_followers', 'skip_followings',
-            'skip_follow_changes', 'skip_stories', 'skip_posts', 'get_more_post_details', 'detect_collab_posts', 'profile_pic_changes', 'skip_session_login',
+            'skip_follow_changes', 'skip_stories', 'skip_posts', 'get_more_post_details', 'fetch_reels', 'detect_collab_posts', 'profile_pic_changes', 'skip_session_login',
             'logging_enabled', 'check_posts_in_hours_range', 'hours_verbose', 'dashboard_show_check_seconds', 'time_format_12h', 'smtp_ssl'
         }
         integer_ranges = {
@@ -2707,7 +3321,7 @@ def create_web_dashboard_app():
             'min_h2': (0, 23),
             'max_h2': (0, 23),
         }
-        string_keys = {'webhook_url', 'webhook_provider', 'proxy_url', 'proxy_cert', 'http_backend', 'impersonate', 'smtp_host', 'smtp_user', 'smtp_password', 'sender_email', 'receiver_email', 'csv_filename'}
+        string_keys = {'webhook_url', 'webhook_provider', 'proxy_url', 'proxy_cert', 'http_backend', 'follow_list_source', 'impersonate', 'smtp_host', 'smtp_user', 'smtp_password', 'sender_email', 'receiver_email', 'csv_filename'}
 
         for key in boolean_keys:
             if key in data and type(data[key]) is not bool:
@@ -2749,10 +3363,18 @@ def create_web_dashboard_app():
                 return False, [], "'http_backend' must be 'curl_cffi' or 'requests'", 400
             if requested_backend == 'curl_cffi' and not _CURL_CFFI_AVAILABLE:
                 return False, [], "'http_backend' cannot use curl_cffi because it is not installed", 400
+        if 'follow_list_source' in data and str(data['follow_list_source']).strip().lower() not in FOLLOW_LIST_SOURCES:
+            return False, [], "'follow_list_source' must be 'auto', 'rest', 'graphql' or 'browser'", 400
         if 'impersonate' in data:
             impersonate_error = validate_impersonate_target(data['impersonate'])
             if impersonate_error is not None:
                 return False, [], f"'impersonate' {impersonate_error}", 400
+        # Each value can be valid on its own and still leave a running session reaching Instagram as two
+        # clients, which is the state monitoring refuses to start in
+        if str(data.get('follow_list_source', FOLLOW_LIST_SOURCE)).strip().lower() == 'browser':
+            mismatch = browser_identity_mismatch(data.get('http_backend', HTTP_BACKEND), data.get('impersonate', CURL_CFFI_IMPERSONATE))
+            if mismatch is not None:
+                return False, [], f"{mismatch[0]}. {mismatch[1]}", 400
 
         # The CSV path decides where the monitor appends rows, so the dashboard may name a file but never a location.
         # An unchanged value is accepted so a CSV path set from the config or CLI still round-trips through the form
@@ -2780,31 +3402,36 @@ def create_web_dashboard_app():
                 note = ""
                 if key == 'webhook_url':
                     if processed_val and not validate_webhook_url(processed_val):
-                        print("* Error: Invalid webhook URL format. Must be a complete HTTPS URL without embedded credentials.")
+                        print_recovery_error("Invalid webhook URL format. It must be a complete HTTPS URL without embedded credentials", context="webhook_config")
                         return current_val
                 elif key == 'webhook_provider':
                     processed_val = normalized_webhook_provider(processed_val)
                     if not processed_val:
-                        print("* Error: Invalid webhook provider. Must be 'discord' or 'ntfy'.")
+                        print_recovery_error("Invalid webhook provider. It must be 'discord' or 'ntfy'", context="webhook_config")
                         return current_val
                 elif key == 'proxy_url':
                     if processed_val and not validate_proxy_url(processed_val):
-                        print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{mask_url_credentials(processed_val)}'")
+                        print_recovery_error(f"Invalid proxy URL format '{mask_url_credentials(processed_val)}'. It must be an HTTPS or HTTP URL", context="proxy")
                         return current_val
                 elif key == 'proxy_cert':
                     if processed_val:
                         try:
                             processed_val = resolve_existing_file_path(processed_val, "proxy certificate")
                         except ValueError:
-                            print(f"* Error: Proxy certificate file does not exist. '{processed_val}'")
+                            print_recovery_error(f"The proxy certificate file '{processed_val}' does not exist", context="proxy")
                             return current_val
+                elif key == 'follow_list_source':
+                    processed_val = str(processed_val).strip().lower()
+                    if processed_val not in FOLLOW_LIST_SOURCES:
+                        print_recovery_error(f"Invalid follow list source '{processed_val}'. It must be 'auto', 'rest', 'graphql' or 'browser'", context="config")
+                        return current_val
                 elif key == 'http_backend':
                     processed_val = str(processed_val).strip().lower()
                     if processed_val not in ('curl_cffi', 'requests'):
-                        print(f"* Error: Invalid HTTP backend '{processed_val}'. Must be 'curl_cffi' or 'requests'.")
+                        print_recovery_error(f"Invalid HTTP backend '{processed_val}'. It must be 'curl_cffi' or 'requests'", context="config")
                         return current_val
                     if processed_val == 'curl_cffi' and not _CURL_CFFI_AVAILABLE:
-                        print("* Error: Cannot select 'curl_cffi' backend because the 'curl_cffi' package is not installed.")
+                        print(render_recovery_advice(missing_dependency_advice("curl_cffi", "The curl_cffi backend cannot be selected", pip_install_command("curl_cffi"))))
                         return current_val
 
                 if key == "webhook_url":
@@ -2850,7 +3477,7 @@ def create_web_dashboard_app():
         PROXY_WEBHOOKS = bool(update_setting('proxy_webhooks', PROXY_WEBHOOKS, bool))
         requested_proxy_enabled = bool(update_setting('proxy_enabled', PROXY_ENABLED, bool))
         if requested_proxy_enabled and not (PROXY_URL and validate_proxy_url(PROXY_URL)):
-            print("* Error: Cannot enable proxy without a valid PROXY_URL. Keeping proxy disabled.")
+            print_recovery_error("Proxy support stays off because PROXY_URL is missing or invalid", context="proxy")
             PROXY_ENABLED = False
         else:
             PROXY_ENABLED = requested_proxy_enabled
@@ -2875,6 +3502,7 @@ def create_web_dashboard_app():
         SKIP_GETTING_STORY_DETAILS = bool(update_setting('skip_stories', SKIP_GETTING_STORY_DETAILS, bool))
         SKIP_GETTING_POSTS_DETAILS = bool(update_setting('skip_posts', SKIP_GETTING_POSTS_DETAILS, bool))
         GET_MORE_POST_DETAILS = bool(update_setting('get_more_post_details', GET_MORE_POST_DETAILS, bool))
+        FETCH_REELS = bool(update_setting('fetch_reels', FETCH_REELS, bool))
         DETECT_COLLAB_POSTS = bool(update_setting('detect_collab_posts', DETECT_COLLAB_POSTS, bool))
         DETECT_CHANGED_PROFILE_PIC = bool(update_setting('profile_pic_changes', DETECT_CHANGED_PROFILE_PIC, bool))
         SKIP_SESSION = bool(update_setting('skip_session_login', SKIP_SESSION, bool))
@@ -2888,11 +3516,12 @@ def create_web_dashboard_app():
         MAX_H2 = int(update_setting('max_h2', MAX_H2, int))
         DASHBOARD_SHOW_CHECK_SECONDS = bool(update_setting('dashboard_show_check_seconds', DASHBOARD_SHOW_CHECK_SECONDS, bool))
         TIME_FORMAT_12H = bool(update_setting('time_format_12h', TIME_FORMAT_12H, bool))
-        recompute_liveness_check_counter()
+        recompute_liveness_reminder()
 
         # HTTP transport backend
         HTTP_BACKEND = str(update_setting('http_backend', HTTP_BACKEND, str))
         CURL_CFFI_IMPERSONATE = str(update_setting('impersonate', CURL_CFFI_IMPERSONATE, str))
+        FOLLOW_LIST_SOURCE = str(update_setting('follow_list_source', FOLLOW_LIST_SOURCE, str))
 
         # SMTP
         previous_smtp_host = SMTP_HOST
@@ -2950,14 +3579,14 @@ def create_web_dashboard_app():
         global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS
         global FOLLOWERS_CHURN_DETECTION, DEBUG_MODE, SESSION_USERNAME, VERBOSE_MODE
         global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_SSL, SENDER_EMAIL, RECEIVER_EMAIL
-        global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS
+        global SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, FETCH_REELS
         global ENABLE_JITTER, DETECT_CHANGED_PROFILE_PIC, SKIP_SESSION, CLI_CONFIG_PATH
         global DOTENV_FILE, WEB_DASHBOARD_TEMPLATE_DIR, LOCAL_TIMEZONE, OUTPUT_DIR, CSV_FILE
         global BE_HUMAN, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, LIVENESS_CHECK_INTERVAL, SKIP_FOLLOW_CHANGES
         global WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
         global DISABLE_LOGGING, CHECK_POSTS_IN_HOURS_RANGE, HOURS_VERBOSE, MIN_H1, MAX_H1, MIN_H2, MAX_H2
         global DASHBOARD_SHOW_CHECK_SECONDS, TIME_FORMAT_12H
-        global HTTP_BACKEND, CURL_CFFI_IMPERSONATE
+        global HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE
 
         if flask_request.method == 'GET':  # type: ignore
             data = {  # type: ignore
@@ -2992,12 +3621,17 @@ def create_web_dashboard_app():
                 'skip_stories': SKIP_GETTING_STORY_DETAILS,
                 'skip_posts': SKIP_GETTING_POSTS_DETAILS,
                 'get_more_post_details': GET_MORE_POST_DETAILS,
+                'fetch_reels': FETCH_REELS,
                 'detect_collab_posts': DETECT_COLLAB_POSTS,
                 'enable_jitter': ENABLE_JITTER,
                 'profile_pic_changes': DETECT_CHANGED_PROFILE_PIC,
                 'skip_session_login': SKIP_SESSION,
                 'http_backend': HTTP_BACKEND,
+                'curl_cffi_available': _CURL_CFFI_AVAILABLE,
+                'follow_list_source': FOLLOW_LIST_SOURCE,
+                'follow_list_sources': list(FOLLOW_LIST_SOURCES),
                 'impersonate': CURL_CFFI_IMPERSONATE,
+                'impersonate_targets': sorted(curl_cffi_supported_impersonate_targets()),
                 'config_file': CLI_CONFIG_PATH or "None",
                 'dotenv_file': DOTENV_FILE or "None",
                 'template_dir': WEB_DASHBOARD_TEMPLATE_DIR or "Auto",
@@ -3123,7 +3757,7 @@ def create_web_dashboard_app():
     @app.route('/api/session/firefox/profiles', methods=['GET'])
     def api_firefox_profiles():  # type: ignore
         try:
-            profiles = [{'name': p['name'], 'path': p['path']} for p in list_firefox_profiles()]
+            profiles = [{'name': p['name'], 'path': p['path'], 'install': p['install'], 'signed_in': cookie_file_has_instagram_session(p['path'], firefox=True)} for p in list_firefox_profiles()]
             return jsonify({'success': True, 'profiles': profiles})  # type: ignore
         except Exception as e:
             # Profile discovery already returns local paths and its failure detail tells the operator what to fix
@@ -3139,8 +3773,10 @@ def create_web_dashboard_app():
         if system() == "Windows":
             return jsonify({'success': False, 'error': chromium_windows_unsupported_message(browser)}), 400  # type: ignore
         try:
-            profiles = [{'dir': p['dir'], 'name': p['name']} for p in list_chromium_profiles(browser)]
-            return jsonify({'success': True, 'profiles': profiles})  # type: ignore
+            profiles = [{'dir': p['dir'], 'name': p['name'], 'signed_in': cookie_file_has_instagram_session(p.get('cookie_file'))} for p in list_chromium_profiles(browser)]
+            # An empty list has several causes and the dashboard has no other place to explain them
+            payload = {'success': True, 'profiles': profiles, 'note': chromium_no_profiles_message(browser)} if not profiles else {'success': True, 'profiles': profiles}
+            return jsonify(payload)  # type: ignore
         except Exception as e:
             # Profile discovery already returns local paths and its failure detail tells the operator what to fix
 
@@ -3155,6 +3791,8 @@ def create_web_dashboard_app():
             # reach an arbitrary file. The --cookie-file flag remains available for deliberate local use
             if browser == 'firefox':
                 cookiefile = resolve_offered_firefox_cookiefile(cookiefile)
+            elif profile:
+                profile = resolve_chromium_profile(browser, profile)
             username = normalize_instagram_username(import_browser_session_dashboard(browser, cookiefile, profile=profile))
         except CookieImportError as e:
             # CookieImportError messages are authored operational guidance for the local dashboard user
@@ -3181,6 +3819,7 @@ def create_web_dashboard_app():
         print_cur_ts(newline=True)
 
         notify_session_refresh()
+        resume_recovered_account_targets()
         return jsonify({'success': True, 'username': username})  # type: ignore
 
     @app.route('/api/session/firefox/import', methods=['POST'])
@@ -3217,7 +3856,7 @@ def create_web_dashboard_app():
             return jsonify({'success': False, 'error': 'No session configured'})  # type: ignore
 
         try:
-            L = Instaloader()
+            L = instaloader_client()
             L.load_session_from_file(SESSION_USERNAME)
             # Test if session is actually valid by trying to get profile
             test_username = L.test_login()
@@ -3283,9 +3922,17 @@ def create_web_dashboard_app():
         global SESSION_USERNAME, SESSION_PASSWORD
         if not SESSION_USERNAME:
             return jsonify({'success': False, 'error': 'No session configured'})  # type: ignore
+        if circuit_breaker_state():
+            if not recover_account_on_startup(retry=True):
+                return jsonify({'success': False, 'error': breaker_recovery_hint((circuit_breaker_state() or {}).get('failure_class', ''))})  # type: ignore
+            with WEB_DASHBOARD_DATA_LOCK:
+                WEB_DASHBOARD_DATA['session']['active'] = True
+            notify_session_refresh()
+            resume_recovered_account_targets()
+            return jsonify({'success': True, 'username': SESSION_USERNAME, 'message': 'Session verified and monitoring resumed'})  # type: ignore
 
         try:
-            L = Instaloader()
+            L = instaloader_client()
             # Try to reload from file first
             try:
                 L.load_session_from_file(SESSION_USERNAME)
@@ -3404,15 +4051,15 @@ def create_web_dashboard_app():
     def api_test_email():  # type: ignore
         global SMTP_SSL
         print("* Sending test email notification (triggered via web dashboard) ...")
-        m_subject = "instagram_monitor: test email"
-        m_body = "This is test email - your SMTP settings seems to be correct !"
-        m_body_html = "This is <b>test email</b> - your SMTP settings seems to be <b>correct</b> !"
-        res = send_email(m_subject, m_body, m_body_html, SMTP_SSL, smtp_timeout=5)
+        m_subject = "Instagram Monitor test email"
+        m_body = "This test email was sent from the web dashboard. Your SMTP settings work."
+        m_body_html = "This test email was sent from the <b>web dashboard</b>. Your SMTP settings work."
+        res = send_email(m_subject, m_body, m_body_html, SMTP_SSL, smtp_timeout=5, report_delivery=False)
         if res == 0:
             print("* Email notification sent successfully")
             print_cur_ts(newline=True)
             return jsonify({'success': True})  # type: ignore
-        print("* Error: Failed to send test email")
+        print("* Error: Failed to send test email. Check the error message above.")
         print_cur_ts(newline=True)
         return jsonify({'success': False, 'error': 'Failed to send test email. Check console logs.'}), 500  # type: ignore
 
@@ -3426,13 +4073,14 @@ def create_web_dashboard_app():
         # Temporarily enable if we are testing
         old_webhook_enabled = WEBHOOK_ENABLED
         WEBHOOK_ENABLED = True
-        res = send_webhook("instagram_monitor: test webhook", "This is **test webhook** - your settings seems to be **correct** !", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE)
+        res = send_webhook("Instagram Monitor test webhook", "This test notification was sent from the web dashboard. Your webhook settings work.", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE, report_delivery=False)
         WEBHOOK_ENABLED = old_webhook_enabled
 
         if res == 0:
+            print("* Webhook sent successfully !")
             print_cur_ts(newline=True)
             return jsonify({'success': True})  # type: ignore
-        print("* Error: Test webhook notification failed")
+        print("* Error: Test webhook notification failed. Check the error message above.")
         print_cur_ts(newline=True)
         return jsonify({'success': False, 'error': 'Failed to send test webhook. Check console logs.'}), 500  # type: ignore
 
@@ -3450,6 +4098,13 @@ def sync_target_usernames_from_dashboard() -> None:
 def start_monitoring_for_target(username, wait_event=None, signal_event=None, delay_s=0):
     global WEB_DASHBOARD_MONITOR_THREADS, WEB_DASHBOARD_STOP_EVENTS
     username = normalize_instagram_username(username)
+    if not recover_account_on_startup():
+        with ACCOUNT_BREAKER_MEMORY_LOCK:
+            ACCOUNT_PAUSED_TARGETS.setdefault(exposure_account_name(), set()).add(username)
+        update_ui_data(targets={username: {'status': 'Paused: account recovery required'}})
+        if signal_event:
+            signal_event.set()
+        return False
 
     # Runs one target monitor and releases only its own registry entries
     def _monitor_runner(user, stop_evt, wait_evt, signal_evt, sleep_s):
@@ -3540,6 +4195,8 @@ def start_monitoring_for_target(username, wait_event=None, signal_event=None, de
 def stop_monitoring_for_target(username):
     global WEB_DASHBOARD_STOP_EVENTS, WEB_DASHBOARD_MONITOR_THREADS
     username = normalize_instagram_username(username)
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        ACCOUNT_PAUSED_TARGETS.get(exposure_account_name(), set()).discard(username)
     with WEB_DASHBOARD_MONITOR_LOCK:
         stop_event = WEB_DASHBOARD_STOP_EVENTS.get(username)
         thread = WEB_DASHBOARD_MONITOR_THREADS.get(username)
@@ -3569,6 +4226,12 @@ def start_all_monitoring():
 
     with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
         targets = list(WEB_DASHBOARD_DATA.get('targets', {}).keys())
+    if not recover_account_on_startup():
+        with ACCOUNT_BREAKER_MEMORY_LOCK:
+            ACCOUNT_PAUSED_TARGETS.setdefault(exposure_account_name(), set()).update(targets)
+        for user in targets:
+            update_ui_data(targets={user: {'status': 'Paused: account recovery required'}})
+        return
 
     if not targets:
         log_activity("Start All: No targets found")
@@ -3694,7 +4357,7 @@ def recheck_all_targets():
                         else:
                             debug_print("Recheck event not found (might have finished or pending start)")
                 except Exception as e:
-                    debug_print(f"Error in rechecker thread: {e}")
+                    debug_print("Error in rechecker thread", outcome="failed", error=f"{type(e).__name__}: {e}")
 
             threading.Thread(target=_single_rechecker, args=(u, delay), daemon=True, name=f"rechecker:{u}").start()
 
@@ -3728,7 +4391,8 @@ def start_web_dashboard_server():
             return False
     except Exception as e:
         # create_web_dashboard_app() already prints nice error messages, but catch any unexpected errors
-        print(f"\n* Error: Failed to create web dashboard application: {e}\n")
+        print()
+        print_recovery_error(e, context="dashboard", summary=f"The Web Dashboard application could not be created: {e}")
         return False
 
     def run_server():
@@ -3849,7 +4513,7 @@ def update_ui_data(targets=None, config=None, check_count=None, last_check=None,
                             tgt_parts.append(f"session={s}")
                 parts.append(f"[{', '.join(tgt_parts)}]")
         if parts:
-            debug_print(f"UI Data Update: {', '.join(parts)}")
+            debug_print("UI data update", changed=", ".join(parts))
     if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
         if DASHBOARD_ENABLED:
             update_terminal_dashboard_data(targets=targets, config=config, is_monitoring=is_monitoring)
@@ -4023,6 +4687,7 @@ def sanitize_terminal_data(value: TSanitizedTerminalData) -> TSanitizedTerminalD
         return cast(TSanitizedTerminalData, tuple(sanitize_terminal_data(item) for item in value))
     return value
 
+
 # Internal flag & style map for colour handling
 COLOR_ENABLED = False
 _COLOR_STYLES = {}
@@ -4033,7 +4698,8 @@ DEFAULT_COLOR_THEME = {
     "header": "bright_cyan",
     "section": "bright_white",
     # Identity
-    "username": "blue underline",
+    "username": "bright_cyan underline",
+    "id": "bright_magenta",
     # Status values
     "status_online": "green",
     "status_offline": "red",
@@ -4065,9 +4731,26 @@ DEFAULT_COLOR_THEME = {
     "count_down": "red",
     "link": "blue underline",
     # Proxies
-    "proxy_ip": "yellow",
-    "ip_address": "yellow",
+    "proxy_ip": "bright_yellow",
+    "ip_address": "bright_yellow",
+    # Help screen
+    "help_heading": "bright_cyan bold",
+    "help_usage": "bright_white bold",
+    "help_option": "bright_green",
+    "help_metavar": "yellow",
+    "help_placeholder": "bright_magenta",
+    "help_command": "bright_white",
+    "help_comment": "bright_black",
+    "help_default": "bright_black",
 }
+
+# Whole-line styles, listed so the palette test can prove no value colour disappears inside one of them.
+# Warnings and signals are not on this list: both are yellow, the colour of the values that report an
+# address or a change, so they mark their own opening word instead of painting the line
+BLOCK_STYLE_PARTS = ("status_change", "error", "info", "email", "webhook")
+
+# Parts that carry a name or an address supplied by Instagram or by the user, which a block style must never hide
+NAME_STYLE_PARTS = ("username", "id", "post", "reel", "story", "link", "proxy_ip", "ip_address")
 
 ANSI_RESET = "\033[0m"
 
@@ -4099,32 +4782,63 @@ _STYLE_CODES = {
 _FROM_TO_COUNT_RE = re.compile(r"(from\s+)(\d+)(\s+to\s+)(\d+)")
 _DIFF_COUNT_UP_RE = re.compile(r"(\(\+\d+\))")
 _DIFF_COUNT_DOWN_RE = re.compile(r"(\(-\d+\))")
-_USER_TAG_RE = re.compile(r"((?:for|by|of|Session|Initial|Monitoring\s+Instagram)\s+user:?|Username:|Target:|Tracking:?|(?:Starting\s+)?check\s+#\d+\s+(?:completed\s+)?for|paused\s+for|resuming\s+for|(?:Firefox|Chrome|Brave|Chromium)\s+for:|User(?=\s+[\w._-]+\s+has))([\t ]+)([\w._-]+)", re.IGNORECASE)
+# The separator is a space in prose and an equals sign in the key=value diagnostic fields
+_USER_TAG_RE = re.compile(r"((?:for|by|of|Session|Initial|Monitoring\s+Instagram)\s+user:?|Username:|Target:|Tracking:?|(?:Starting\s+)?check\s+#\d+\s+(?:completed\s+)?for|paused\s+for|resuming\s+for|(?:Firefox|Chrome|Brave|Chromium)\s+for:|\buser|User(?=\s+[\w._-]+\s+has))([\t ]+|=)([\w._-]+)", re.IGNORECASE)
+# The startup summary lists every monitored account on one row
+_TARGETS_ROW_RE = re.compile(r"^(\*\s+Targets?:\s+)(\S.*)$")
 _DURATION_RE = re.compile(r"\b[0-9]{1,20}[ \t]{1,20}(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\b", re.IGNORECASE)
-_LONG_DATE_RE = re.compile(r"\b(?:\w{3}\s+)?\d{1,2}\s+\w{3}(?:\s+\d{2,4})?[\s,]*\d{2}:\d{2}(:\d{2})?(\s*[AP]M)?\b", re.IGNORECASE)
+# The weekday in front of a date, taken from the abbreviations the running locale prints. A date is separated
+# from its weekday by one space, so the wide gap of a padded listing column cannot pull the word before it,
+# such as the last word of a line, into the date
+_WEEKDAY_ABBR_PATTERN = "|".join(re.escape(day_abbr) for day_abbr in calendar.day_abbr)
+_LONG_DATE_RE = re.compile(r"\b(?:(?:" + _WEEKDAY_ABBR_PATTERN + r")[\t ])?\d{1,2}\s+\w{3}(?:\s+\d{2,4})?[\s,]*\d{2}:\d{2}(:\d{2})?(\s*[AP]M)?\b", re.IGNORECASE)
 _TIME_ONLY_RE = re.compile(r"(?<![\w:])(~?(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:\s*[AP]M)?)(?![\w:])", re.IGNORECASE)
-_SHORT_RANGE_DATE_RE = re.compile(r"\(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\)", re.IGNORECASE)
-_DATE_RANGE_RE = re.compile(r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
+_SHORT_RANGE_DATE_RE = re.compile(r"\((?:" + _WEEKDAY_ABBR_PATTERN + r")[\t ]\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\)", re.IGNORECASE)
+_DATE_RANGE_RE = re.compile(r"\b(?:" + _WEEKDAY_ABBR_PATTERN + r")[\t ]\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
 _HOUR_RANGE_RE = re.compile(r"\b\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
 _URL_RE = re.compile(r"(https?://[^\s\]]+)")
-_ONLINE_WORD_RE = re.compile(r"(\b(?!stop\s+)(?:online|Yes)\b)", re.IGNORECASE)
-_OFFLINE_WORD_RE = re.compile(r"(\b(?:offline|No)\b)", re.IGNORECASE)
+# A Yes or No is an answer only as the whole value of a labelled row, never as the word inside a sentence
+_ANSWER_VALUE_RE = re.compile(r"(:[\t ]+)(Yes|No)[\t ]*$")
 _BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
 _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
+# The TLS row reports a word rather than a boolean, and its off state is the one setting that weakens
+# a security property, so the state word is coloured like a boolean
+_TLS_STATE_RE = re.compile(r"^(\* TLS verification:\s+)(On|Off)(.*)$")
 _NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
 _STORY_URL_RE = re.compile(r"(https?://\S+)")
-_QUOTED_CONTENT_RE = re.compile(r"(['\"])((?![^'\"]*[._/])[^'\"]+)\1")
+# A received signal is an event rather than a problem, so it gets its own whole-line colour
+_SIGNAL_LINE_RE = re.compile(r"^\s*\*\s*signal\b.*\breceived\b", re.IGNORECASE)
+
+# The opening word of a warning and the name of a reported signal, marked instead of painting the line
+_WARNING_LABEL_RE = re.compile(r"^(\s*(?:\*\s*)?)(Warning:|Caution:)", re.IGNORECASE)
+_SIGNAL_NAME_RE = re.compile(r"^(\* Signal )(\w+)(?= received\b)")
+
+# Quoted values shaped like a file name or a filesystem path stay plain, since an output destination is not
+# content. Captions routinely contain slashes and dots, so only these two shapes are excluded
+_QUOTED_FILE_LIKE_RE = re.compile(r"^[~.]?[\\/]|^[A-Za-z]:[\\/]|\.[A-Za-z0-9]{1,8}$")
+
+# A quoted '<name>' inside a printed command is the placeholder the reader has to replace, not content
+_QUOTED_PLACEHOLDER_RE = re.compile(r"^<[^<>]*>$")
+
+# A quoted command-line option is an instruction to retype, not content
+_QUOTED_OPTION_RE = re.compile(r"^-")
+
+# A quoted piece of a URL, such as the '?code=' or '&state=' a prompt points at. Only a leading '?' or '&' counts,
+# so quoted text may end in a question mark and text containing an ampersand is still content
+_QUOTED_URL_PART_RE = re.compile(r"^[?&]|://")
 _STATUS_CHANGE_SUBJECTS = ("status", "mode", "bio", "followers", "followings", "profile picture")
 _ACTIVITY_HEADER_PHRASES = ("story for user", "newest post", "followers number changed", "followings number changed", "bio changed for", "new post for user", "number changed", "number of", "followings changed", "followers changed", "name changed to", "has changed for user", "has been updated for user", "changed profile picture", "removed profile picture", "set profile picture", "update date changed", "has new story item", "story items:", "disappeared")
 _STORY_ITEM_ACTIVITY_RE = re.compile(r"\bhas[ \t]+\d{1,20}[ \t]+story[ \t]+items?\b", re.IGNORECASE)
 _PROXY_IP_RE = re.compile(r"proxy IP address of [\d.]+", re.IGNORECASE)
-_IP_ADDRESS_RE = re.compile(r"(?<!://)\b(\d{1,3}\.){3}\d{1,3}\b(?!:\d+/?)")
+# Every octet is checked and a fifth part rules the value out, so an application version such as
+# 282.0.7.727 or 219.0.0.12.117 is not read as an address
+_IP_ADDRESS_RE = re.compile(r"(?<!://)(?<![.\d])\b(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(?:\.(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}\b(?![.\d]|:\d+/?)")
 _ACCOUNT_LIMIT_RE = re.compile(r"(\d{1,20})[ \t]+(accounts?)\b", re.IGNORECASE)
 
 
 # Builds ANSI escape sequence from a style description string
 def _build_ansi_sequence(style_str):
-    if not style_str:
+    if not isinstance(style_str, str) or not style_str:
         return ""
     parts = re.split(r"[+ ]+", style_str.strip().lower())
     codes = []
@@ -4227,7 +4941,7 @@ def _split_output_label(value, labels):
 # Prints the ASCII art startup banner with the tagline and version, honoring color settings
 def print_startup_banner() -> None:
     print(colorize("header", STARTUP_BANNER))
-    print(colorize("info", f"                   v{VERSION}\n"))
+    print(colorize("info", f"                     v{VERSION}\n"))
 
 
 # Returns enabled email notification category names in display order
@@ -4253,13 +4967,160 @@ def webhook_notifications_enabled() -> bool:
     return bool(WEBHOOK_ENABLED and _startup_webhook_notification_categories())
 
 
+# One startup summary setting, routed to the concise view, the full view or both. The log keeps the full view
+@dataclass(frozen=True)
+class StartupSummaryRow:
+    label: str
+    value: str
+    concise: bool = False
+    full: bool = True
+
+
+# Hides the middle of an address's local part, so a log can be shared while the reader can still spot a typo
+def mask_email_address(address) -> str:
+    text = str(address or "").strip()
+    local, at_sign, domain = text.partition("@")
+    if not at_sign or not local or not domain:
+        return text
+    masked = f"{local[0]}{'*' * (len(local) - 2)}{local[-1]}" if len(local) > 2 else f"{local[0]}{'*' * (len(local) - 1)}"
+    return f"{masked}@{domain}"
+
+
+# Returns whether a mail server is set rather than left empty or still holding the placeholder from the sample configuration
+def smtp_server_configured() -> bool:
+    return bool(SMTP_HOST) and bool(SMTP_PORT) and not is_placeholder_setting(SMTP_HOST)
+
+
+# Returns whether an email alert has both a server to send through and an address to reach
+def email_channel_configured() -> bool:
+    return smtp_server_configured() and not is_placeholder_setting(RECEIVER_EMAIL)
+
+
+# Returns whether a webhook alert has a destination to post to
+def webhook_channel_configured() -> bool:
+    return bool(normalized_webhook_provider()) and not is_placeholder_setting(WEBHOOK_URL)
+
+
+# Reports the mail server and the recipient an alert would reach, without the account that signs in to the server
+def _startup_email_detail_rows() -> List["StartupSummaryRow"]:
+    transport = f"{SMTP_HOST}:{SMTP_PORT} ({'STARTTLS' if SMTP_SSL else 'TLS off'})" if smtp_server_configured() else "Not configured"
+    recipient = "Not configured" if is_placeholder_setting(RECEIVER_EMAIL) else mask_email_address(RECEIVER_EMAIL)
+    return [
+        StartupSummaryRow("Email transport", transport),
+        StartupSummaryRow("Email recipient", recipient),
+    ]
+
+
+# Reports the webhook service alerts would reach and whether the delivery lines are printed at all
+def _startup_webhook_detail_rows() -> List["StartupSummaryRow"]:
+    if not webhook_channel_configured():
+        provider = "Not configured"
+    else:
+        provider = f"{webhook_provider_display_name()} ({'enabled' if WEBHOOK_ENABLED else 'disabled'})"
+    return [StartupSummaryRow("Webhook provider", provider), StartupSummaryRow("Delivery confirmations", str(DELIVERY_CONFIRMATIONS))]
+
+
+# Renders one channel rollup from the alert types it would send and whether it has a destination at all
+def _startup_channel_state(categories: Sequence[str], configured: bool) -> str:
+    if not categories:
+        return "Off"
+    return "On (" + ", ".join(categories) + ")" if configured else "Off (not configured)"
+
+
 # Builds notification summary rows shared by concise, verbose and logged views
-def _startup_notification_summary_rows() -> List[Tuple[str, bool, bool]]:
+def _startup_notification_summary_rows() -> List["StartupSummaryRow"]:
     email_categories = _startup_email_notification_categories()
     webhook_categories = _startup_webhook_notification_categories()
-    email_state = "On (" + ", ".join(email_categories) + ")" if email_categories else "Off"
-    webhook_state = "On (" + ", ".join(webhook_categories) + ")" if webhook_categories else "Off"
-    return [(f"* Notifications (email):\t\t{email_state}", True, True), (f"* Notifications (webhook):\t\t{webhook_state}", True, True)]
+    # A selected alert type cannot make a channel live while its destination is unset, and the rollup is the only
+    # line the concise view prints, so it has to carry that rather than contradict the detail rows below it
+    email_state = _startup_channel_state(email_categories, email_channel_configured())
+    webhook_state = _startup_channel_state(webhook_categories, webhook_channel_configured())
+    return [StartupSummaryRow("Notifications (email)", email_state, concise=True), *_startup_email_detail_rows(), StartupSummaryRow("Notifications (webhook)", webhook_state, concise=True), *_startup_webhook_detail_rows()]
+
+
+# Builds the startup row for TLS verification, shown in the concise view only while the check is off
+def _startup_tls_summary_row() -> "StartupSummaryRow":
+    state = "On" if VERIFY_SSL else "Off, server certificates are not checked"
+    return StartupSummaryRow("TLS verification", state, concise=not VERIFY_SSL)
+
+
+# Reports the install method, which secrets came from where by name and never by value, and the shared output settings
+def _startup_environment_rows(env_path) -> List["StartupSummaryRow"]:
+    from_file, from_environment, from_settings, from_command_line = doctor_secret_sources(env_path)
+    return [
+        StartupSummaryRow("Process id", str(os.getpid())),
+        StartupSummaryRow("Python version", platform.python_version()),
+        StartupSummaryRow("Operating system", f"{platform.platform(terse=True)} ({platform.machine()})"),
+        StartupSummaryRow("Local timezone", str(LOCAL_TIMEZONE)),
+        StartupSummaryRow("12h time format", str(TIME_FORMAT_12H)),
+        StartupSummaryRow("Install method", install_method_display_name()),
+        StartupSummaryRow("Secrets from dotenv", ", ".join(sorted(from_file)) if from_file else "None"),
+        StartupSummaryRow("Secrets from environment", ", ".join(sorted(from_environment)) if from_environment else "None"),
+        StartupSummaryRow("Secrets from config file", ", ".join(sorted(from_settings)) if from_settings else "None"),
+        StartupSummaryRow("Secrets from command line", ", ".join(sorted(from_command_line)) if from_command_line else "None"),
+        _startup_tls_summary_row(),
+        StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})"),
+        # The resolved state, not the setting: colour also switches itself off when the output is not a terminal
+        StartupSummaryRow("Coloured output", f"{COLOR_ENABLED} (setting: {COLORED_OUTPUT})"),
+    ]
+
+
+# Rows that detail the channel named right above them, indented so the block reads as one setting with its details
+_STARTUP_SUMMARY_NESTED_LABELS = ("Email transport", "Email recipient", "Email images", "Webhook provider", "ntfy images")
+
+# The column every summary value starts in, which also lets the colouriser recognize a summary row
+STARTUP_SUMMARY_VALUE_COLUMN = 32
+
+# Matches a summary row by that padded label column, since no log line puts a value there
+_STARTUP_SUMMARY_ROW_RE = re.compile(r"^\*(?: {1,3})[^:\s][^:]*: {2,}(?=\S)")
+
+
+# Returns whether a line is a startup summary row rather than ordinary output
+def is_startup_summary_row(line: str) -> bool:
+    match = _STARTUP_SUMMARY_ROW_RE.match(line)
+    return bool(match) and match.end() == STARTUP_SUMMARY_VALUE_COLUMN
+
+
+# Formats one startup summary row with aligned plain ASCII columns
+def _format_startup_summary_row(row: "StartupSummaryRow") -> str:
+    indent = "  " if row.label in _STARTUP_SUMMARY_NESTED_LABELS else ""
+    prefix = f"* {indent}{(row.label + ':'):<{STARTUP_SUMMARY_VALUE_COLUMN - 2 - len(indent)}}"
+    if row.label in ("Notifications (email)", "Notifications (webhook)"):
+        return textwrap.fill(str(row.value), width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False) + "\n"
+    return f"{prefix}{row.value}\n"
+
+
+# Routes concise or complete startup rows independently to the terminal and the log, which always keeps the full set
+def emit_startup_summary(rows: Sequence["StartupSummaryRow"], show_full: bool, stream=None, suppress_terminal: bool = False) -> None:
+    destination: Any = sys.stdout if stream is None else stream
+    for row in rows:
+        line = _format_startup_summary_row(row)
+        if row.full and hasattr(destination, "log_only"):
+            destination.log_only(line)
+        if suppress_terminal or not (row.full if show_full else row.concise):
+            continue
+        if hasattr(destination, "terminal_only"):
+            destination.terminal_only(line)
+        else:
+            destination.write(line)
+
+
+# Applies a substitution only to the parts of a line outside already coloured spans, so styles never nest
+def _sub_outside_color(pattern, replacement, line):
+    if ANSI_RESET not in line:
+        return pattern.sub(replacement, line)
+    parts = []
+    position = 0
+    inside = False
+    for match in SGR_SEQUENCE_RE.finditer(line):
+        segment = line[position:match.start()]
+        parts.append(segment if inside else pattern.sub(replacement, segment))
+        parts.append(match.group(0))
+        inside = match.group(0) != ANSI_RESET
+        position = match.end()
+    trailing = line[position:]
+    parts.append(trailing if inside else pattern.sub(replacement, trailing))
+    return "".join(parts)
 
 
 # Helper to apply a block style while preserving internal highlights
@@ -4276,14 +5137,53 @@ def _apply_style_nested(line, style_name):
     return line
 
 
+# Colours quoted content with a linear scan while leaving paths and command fragments plain
+def _colorize_quoted_content(line):
+    next_closing = {"'": -1, '"': -1}
+    closing_after_word = next_closing.copy()
+    endings = {}
+    # Remember eligible closing quotes beyond the next word to preserve the leftmost match without backtracking
+    for index in range(len(line) - 1, -1, -1):
+        character = line[index]
+        if character == "\n":
+            next_closing = {"'": -1, '"': -1}
+            closing_after_word = next_closing.copy()
+        elif character in next_closing:
+            if closing_after_word[character] > index:
+                endings[index] = closing_after_word[character]
+            following = line[index + 1:index + 2]
+            if not following or following.isspace() or following in ".,;:!?)]":
+                next_closing[character] = index
+        elif character.isalnum() or character == "_":
+            closing_after_word = next_closing.copy()
+    parts = []
+    position = 0
+    for start in reversed(endings):
+        if start < position:
+            continue
+        end = endings[start]
+        content = line[start + 1:end]
+        parts.append(line[position:start + 1])
+        if _QUOTED_FILE_LIKE_RE.search(content) or _QUOTED_PLACEHOLDER_RE.match(content) or _QUOTED_OPTION_RE.match(content) or _QUOTED_URL_PART_RE.search(content):
+            parts.append(content)
+        else:
+            parts.append(colorize("username", content))
+        parts.append(line[end])
+        position = end + 1
+    parts.append(line[position:])
+    return "".join(parts)
+
+
+# Colors a count transition using decimal text comparison without unbounded integer conversion
+def _colorize_count_change(match):
+    before, after = ("".join(str(int(digit)) for digit in match.group(index)).lstrip("0") or "0" for index in (2, 4))
+    style = "count_up" if (len(after), after) >= (len(before), before) else "count_down"
+    return f"{match.group(1)}{colorize(style, match.group(2))}{match.group(3)}{colorize(style, match.group(4))}"
+
+
 # Applies colour rules to a single output line
 def _colorize_line(line):
     lowered = line.lower()
-
-    # Skip block coloring (yellow/info/warning), but allow internal highlights (booleans etc.) except for "Sending email"
-    # lines which remain plain
-    if line.startswith("* Sending email"):
-        return line
 
     notification_match = _NOTIFICATION_SUMMARY_STATE_RE.match(line)
     if notification_match:
@@ -4291,19 +5191,39 @@ def _colorize_line(line):
         state_style = "boolean_true" if state == "On" else "boolean_false"
         return f"{prefix}{colorize(state_style, state)}{suffix}"
 
-    is_summary_line = any(line.startswith(p) for p in ("* Output directory:", "* Hours for fetching:", "* Skip fetching:", "* Email notifications:", "* Recheck All:", "* Followers: reported", "* Followings: reported", "* Followers (", "* Followings (", "User ID:", "* Browser user agent:", "* Mobile user agent:"))
+    tls_match = _TLS_STATE_RE.match(line)
+    if tls_match:
+        prefix, state, suffix = tls_match.groups()
+        state_style = "boolean_true" if state == "On" else "boolean_false"
+        return f"{prefix}{colorize(state_style, state)}{suffix}"
+
+    is_summary_line = any(line.startswith(p) for p in ("* Output directory:", "* Hours for fetching updates:", "* Skip fetching ", "* Email notifications:", "* Recheck All:", "* Followers: reported", "* Followings: reported", "* Followers (", "* Followings (", "User ID:", "* Browser user agent:", "* Mobile user agent:"))
+    # Read before any highlight is inserted, since the label column has to be measured on the plain text
+    is_settings_row = is_startup_summary_row(line)
 
     if line.startswith(("* IP Address:", "*   Proxy", "* Proxy")):
-        parts = line.rsplit("\t", 1)
-        if len(parts) == 2:
-            line = parts[0] + "\t" + colorize("proxy_ip", parts[1])
-            return line
-        else:
-            return _apply_style_nested(line, "proxy_ip")
+        labeled_value = _split_output_label(line, ("IP Address:", "Proxy IP Address:", "Proxy URL:", "Proxy Certificate:", "Proxy for Webhooks:", "Proxies:"))
+        if labeled_value:
+            label, value = labeled_value
+            return f"{label}{colorize('proxy_ip', value)}" + ("\n" if line.endswith("\n") else "")
+        return _apply_style_nested(line, "proxy_ip")
 
     # Session mode value is free-form text (e.g. "No login ...") - keep it plain so words like "No" are not mistaken for an offline/boolean keyword
-    if line.startswith("* Session Mode:"):
+    if line.startswith("* Session mode:"):
         return line
+
+    # The numeric account ID is an identifier, not a name, so it keeps the identifier colour
+    labeled_value = _split_output_label(line, ("User ID:",))
+    if labeled_value:
+        label, user_id = labeled_value
+        return f"{label}{colorize('id', user_id)}" + ("\n" if line.endswith("\n") else "")
+
+    # Every account on the summary target row is coloured, not only the first one
+    targets_match = _TARGETS_ROW_RE.match(line.rstrip("\n"))
+    if targets_match:
+        label, targets = targets_match.groups()
+        colored = label + ", ".join(colorize("username", target) for target in targets.split(", "))
+        return colored + ("\n" if line.endswith("\n") else "")
 
     # Case for list items (e.g. - username [ link ]) - color username yellow
     if line.strip().startswith("- ") and " [ http" in line:
@@ -4321,7 +5241,7 @@ def _colorize_line(line):
             return colored + ("\n" if line.endswith("\n") else "")
 
     # Timestamp lines
-    labeled_value = _split_output_label(line, ("Timestamp:",))
+    labeled_value = _split_output_label(line, ("Timestamp:", "Liveness check, timestamp:"))
     if labeled_value:
         label, rest = labeled_value
         colored = f"{colorize('timestamp_label', label)}{colorize('timestamp_value', rest)}"
@@ -4372,7 +5292,7 @@ def _colorize_line(line):
         line = colorize("webhook", line)
 
     # Highlight counters (from X to Y)
-    line = _FROM_TO_COUNT_RE.sub(lambda mo: f"{mo.group(1)}{colorize('count_up' if int(mo.group(4)) >= int(mo.group(2)) else 'count_down', mo.group(2))}{mo.group(3)}{colorize('count_up' if int(mo.group(4)) >= int(mo.group(2)) else 'count_down', mo.group(4))}", line)
+    line = _FROM_TO_COUNT_RE.sub(_colorize_count_change, line)
     line = _DIFF_COUNT_UP_RE.sub(lambda mo: colorize("count_up", mo.group(0)), line)
     line = _DIFF_COUNT_DOWN_RE.sub(lambda mo: colorize("count_down", mo.group(0)), line)
 
@@ -4390,28 +5310,33 @@ def _colorize_line(line):
     line = _TIME_ONLY_RE.sub(lambda mo: colorize("date", mo.group(0)), line)
 
     # Highlight URLs / links
-    line = _URL_RE.sub(lambda mo: colorize("link", mo.group(0)), line)
+    line = _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), line)
 
     # Highlight quoted content (captions etc.)
-    line = _QUOTED_CONTENT_RE.sub(lambda mo: f"{mo.group(1)}{colorize('username', mo.group(2))}{mo.group(1)}", line)
+    line = _colorize_quoted_content(line)
 
     # Highlight boolean values
     line = _BOOLEAN_TRUE_RE.sub(lambda mo: colorize("boolean_true", mo.group(0)), line)
     line = _BOOLEAN_FALSE_RE.sub(lambda mo: colorize("boolean_false", mo.group(0)), line)
 
-    # Highlight online/offline keywords
-    line = _ONLINE_WORD_RE.sub(lambda mo: colorize("status_online", mo.group(0)), line)
-    line = _OFFLINE_WORD_RE.sub(lambda mo: colorize("status_offline", mo.group(0)), line)
+    # Highlight a Yes or No answer, which colorize_status reads as a status value
+    line = _sub_outside_color(_ANSWER_VALUE_RE, lambda mo: f"{mo.group(1)}{colorize('status_online' if mo.group(2) == 'Yes' else 'status_offline', mo.group(2))}", line)
 
     # Highlight proxy information
     line = _PROXY_IP_RE.sub(lambda mo: colorize('proxy_ip', mo.group(0)), line)
-    line = _IP_ADDRESS_RE.sub(lambda mo: colorize('ip_address', mo.group(0)), line)
+    # A user agent row reports versions rather than addresses, so it keeps its own plain value
+    if not is_summary_line:
+        line = _IP_ADDRESS_RE.sub(lambda mo: colorize('ip_address', mo.group(0)), line)
 
     # Highlight advanced fetch settings for follower/followee
     line = _ACCOUNT_LIMIT_RE.sub(lambda mo: f"{colorize('count_up', mo.group(1))} {colorize('count_up', mo.group(2))}", line)
 
     # If it's a summary line, we return after internal highlights
     if is_summary_line:
+        return line
+
+    # A summary row reports a setting, so a value that happens to read like a log keyword must not paint the whole row
+    if is_settings_row:
         return line
 
     # Block highlighting (activity headers, errors, warnings)
@@ -4422,13 +5347,19 @@ def _colorize_line(line):
     is_warning = any(w in lowered for w in ("* warning:", "caution:")) and "[warnings =" not in lowered
     is_info = any(k in lowered for k in ("* session login:", "* mode:", "session created", "* info:"))
 
-    if any(phrase in lowered for phrase in _ACTIVITY_HEADER_PHRASES) or _STORY_ITEM_ACTIVITY_RE.search(line):
+    # Warnings and signals mark their opening word rather than painting the line, because both are yellow,
+    # which is also the colour of the values that report an address or a change
+    is_marked_only = is_warning or bool(_SIGNAL_LINE_RE.match(line))
+    if is_warning:
+        line = _WARNING_LABEL_RE.sub(lambda mo: f"{mo.group(1)}{colorize('warning', mo.group(2))}", line, count=1)
+    elif is_marked_only:
+        line = _SIGNAL_NAME_RE.sub(lambda mo: f"{mo.group(1)}{colorize('signal', mo.group(2))}", line, count=1)
+
+    if not is_marked_only and (any(phrase in lowered for phrase in _ACTIVITY_HEADER_PHRASES) or _STORY_ITEM_ACTIVITY_RE.search(line)):
         line = _apply_style_nested(line, "status_change")
     elif is_error:
         line = _apply_style_nested(line, "error")
-    elif is_warning:
-        line = _apply_style_nested(line, "warning")
-    elif is_info:
+    elif not is_marked_only and is_info:
         line = _apply_style_nested(line, "info")
 
     return line
@@ -4454,6 +5385,16 @@ def apply_color_to_text(text):
     return "".join(parts)
 
 
+# Colours every link in a line, for the screens printed before the output stream colouriser is installed
+def colorize_links(text):
+    return _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), text)
+
+
+# Colours one line of a fix block the way the output stream colours it, keeping its guide line a link
+def colorize_fix_line(line):
+    return colorize_links(line) if line.lstrip().startswith("Guide: ") else colorize("info", line)
+
+
 # Reports whether separator-only log lines should use ASCII on this system
 def ascii_log_separators_enabled():
     mode = str(ASCII_LOG_SEPARATORS).strip().lower()
@@ -4469,6 +5410,56 @@ def normalize_log_separators(message):
     return re.sub(r"(?m)^─+$", lambda match: match.group(0).replace("─", "-"), message)
 
 
+# Truncates each line to a display width, expanding tabs and counting double-width characters correctly
+def truncate_string_per_line(message, truncate_width, tabsize=8):
+    try:
+        from wcwidth import wcwidth
+    except ImportError:
+        # Without wcwidth every character costs one column, so truncation still applies and only wide characters are measured short
+        wcwidth = len
+    truncated_lines = []
+    for line in message.split("\n"):
+        expanded_line = line.expandtabs(tabsize)
+        current_width = 0
+        truncated = []
+        position = 0
+        style_open = False
+        while position < len(expanded_line):
+            # A colour sequence is copied through free of charge, so styling never eats into the visible width
+            escape = SGR_SEQUENCE_RE.match(expanded_line, position)
+            if escape:
+                truncated.append(escape.group(0))
+                style_open = escape.group(0) not in ("\x1b[0m", "\x1b[m")
+                position = escape.end()
+                continue
+            char = expanded_line[position]
+            char_width = wcwidth(char)
+            if char_width is None or char_width < 0:
+                char_width = 0
+            if current_width + char_width > truncate_width:
+                # The cut may have dropped the reset, which would leave the colour running into every later line
+                if style_open:
+                    truncated.append(ANSI_RESET)
+                break
+            truncated.append(char)
+            current_width += char_width
+            position += 1
+        truncated_lines.append("".join(truncated))
+    return "\n".join(truncated_lines)
+
+
+# Resolves CLI and configured truncation settings while expanding the terminal-width sentinel
+def resolve_truncate_chars(cli_value, configured_value, logging_disabled):
+    truncate_chars = configured_value if cli_value is None else cli_value
+    if logging_disabled:
+        return 0
+    if truncate_chars == 999:
+        terminal_size = shutil.get_terminal_size()
+        print(f"The detected terminal screen width is: {terminal_size.columns} characters\n")
+        return terminal_size.columns
+    return truncate_chars
+
+
 # Logger class to output messages to stdout and log files
 class Logger(object):
     def __init__(self, main_filename=None):
@@ -4480,7 +5471,7 @@ class Logger(object):
             try:
                 self.main_log = open(main_filename, "a", buffering=1, encoding="utf-8")
             except Exception as e:
-                print(f"* Error: Could not open main log file '{main_filename}': {e}", file=sys.stderr)
+                print(render_recovery_advice(classify_recovery_error(e, "file_write"), summary=f"Could not open main log file '{main_filename}': {e}"), file=sys.stderr)
 
     # Adds or replaces the lazy log destination for one target
     def add_target_log(self, target, filename):
@@ -4513,7 +5504,7 @@ class Logger(object):
                 self.target_logs[target] = handle
                 return handle
             except Exception as e:
-                print(f"* Error: Could not open log file '{filename}' for target '{target}': {e}", file=sys.stderr)
+                print(render_recovery_advice(classify_recovery_error(e, "file_write"), summary=f"Could not open log file '{filename}' for target '{target}': {e}"), file=sys.stderr)
         return None
 
     def _get_current_target(self):
@@ -4528,7 +5519,6 @@ class Logger(object):
         with STDOUT_LOCK:
             # Apply color for terminal
             message = sanitize_terminal_text(apply_privacy_substitutions(message))
-            colorized_message = apply_color_to_text(message)
 
             if message != '\n':
                 last_output.append(message)
@@ -4541,11 +5531,12 @@ class Logger(object):
             if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
                 # Suppress terminal writes only for the thread that currently owns a progress bar
                 if (getattr(_thread_local, 'pbar', None) is None) and not pbar:
-                    self.terminal.write(colorized_message)
+                    self.terminal.write(apply_color_to_text(self._truncate_terminal(message)))
                     self.terminal.flush()
 
-            # Expand tabs for file output and ensure ANSI codes are stripped
-            clean_message = normalize_log_separators(ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8))
+            # Expand tabs for file output and ensure ANSI codes are stripped. Taken from the full message rather than
+            # from the terminal copy, so TRUNCATE_CHARS narrows the screen while the log file keeps the whole line
+            clean_message = normalize_log_separators(ANSI_ESCAPE_RE.sub("", message).expandtabs(8))
 
             # Always log to main log if available
             if self.main_log:
@@ -4570,7 +5561,7 @@ class Logger(object):
     def terminal_only(self, message):
         with STDOUT_LOCK:
             message = sanitize_terminal_text(apply_privacy_substitutions(message))
-            colorized_message = apply_color_to_text(message)
+            colorized_message = apply_color_to_text(self._truncate_terminal(message))
             self.terminal.write(colorized_message)
             self.terminal.flush()
 
@@ -4610,6 +5601,42 @@ class Logger(object):
     def isatty(self):
         return self.terminal.isatty()
 
+    # Limits the terminal line across separate writes while leaving the log complete
+    def _truncate_terminal(self, message):
+        # The limit is fixed once at startup, so with truncation off there is no column to keep track of
+        if not TRUNCATE_CHARS:
+            return message
+        try:
+            from wcwidth import wcwidth
+        except ImportError:
+            wcwidth = len
+        column = getattr(self, "_terminal_column", 0)
+        clipped = getattr(self, "_terminal_clipped", False)
+        output = []
+        position = 0
+        while position < len(message):
+            escape = ANSI_ESCAPE_RE.match(message, position)
+            if escape:
+                output.append(escape.group(0))
+                position = escape.end()
+                continue
+            char = message[position]
+            position += 1
+            if char in ("\n", "\r"):
+                output.append(char)
+                column, clipped = 0, False
+                continue
+            width = 8 - column % 8 if char == "\t" else max(0, wcwidth(char))
+            if char == "\t" and TRUNCATE_CHARS:
+                width = min(width, max(0, TRUNCATE_CHARS - column))
+            if TRUNCATE_CHARS and (clipped or column + width > TRUNCATE_CHARS):
+                clipped = True
+                continue
+            output.append(" " * width if char == "\t" and TRUNCATE_CHARS else char)
+            column += width
+        self._terminal_column, self._terminal_clipped = column, clipped
+        return "".join(output)
+
 
 # Simple colour-aware stdout wrapper used when logging is disabled
 # Applies the same line-based colouring rules as Logger, but does not write anything to a log file
@@ -4618,7 +5645,8 @@ class ColorStream(object):
         self.terminal = stream
 
     def write(self, message):
-        coloured = apply_color_to_text(sanitize_terminal_text(apply_privacy_substitutions(message)))
+        message = sanitize_terminal_text(apply_privacy_substitutions(message))
+        coloured = apply_color_to_text(truncate_string_per_line(message, TRUNCATE_CHARS) if TRUNCATE_CHARS else message)
         self.terminal.write(coloured)
         self.terminal.flush()
 
@@ -4632,6 +5660,125 @@ class ColorStream(object):
 
     def flush(self):
         self.terminal.flush()
+
+
+# Help screen parts. argparse measures its column layout on the plain text, so the palette is applied to the
+# finished help screen rather than to the pieces argparse assembles and the layout stays identical
+_HELP_USAGE_LABEL = "usage:"
+_HELP_HEADING_RE = re.compile(r"^\S.*:$")
+# The character after the leading dashes excludes a dash itself, so the dash count and the name that follows
+# cannot both claim the same character. Without that the repeated alternative backtracks exponentially
+_HELP_OPTION_ROW_RE = re.compile(r"^( {2,})(-{1,2}[^\s,-][^\s,]*(?:, *-{1,2}[^\s,-][^\s,]*)*)(.*)$")
+_HELP_POSITIONAL_ROW_RE = re.compile(r"^( {2,})([A-Z][A-Z0-9_]*)( {2,}.*)$")
+_HELP_COLUMN_GAP_RE = re.compile(r" {2,}")
+# A value placeholder is an upper-case metavar, a choice list or an angle-bracket name, including a
+# colon-joined pair of them
+_HELP_METAVAR_RE = re.compile(r"\{[^}]*\}|<[^>]+>|\b[A-Z][A-Z0-9_]*(?::[A-Z][A-Z0-9_]*)*\b")
+_HELP_OPTION_RE = re.compile(r"(?<![\w-])(--?[A-Za-z][\w-]*)")
+_HELP_PLACEHOLDER_RE = re.compile(r"<[^>]+>")
+_HELP_DEFAULT_RE = re.compile(r"\(default:[^)]*\)")
+
+
+# Returns the terminal behind any number of colouring stream wrappers
+def _help_output_stream(stream):
+    while isinstance(stream, ColorStream):
+        stream = stream.terminal
+    return stream
+
+
+# Colours the links and the default notes inside one line of help prose
+def _colorize_help_prose(line):
+    line = _URL_RE.sub(lambda match: colorize("link", match.group(1)), line)
+    return _HELP_DEFAULT_RE.sub(lambda match: colorize("help_default", match.group(0)), line)
+
+
+# Colours the option names and the value placeholders of one usage line or option column
+def _colorize_help_signature(text):
+    text = _HELP_METAVAR_RE.sub(lambda match: colorize("help_metavar", match.group(0)), text)
+    return _sub_outside_color(_HELP_OPTION_RE, lambda match: colorize("help_option", match.group(1)), text)
+
+
+# Colours the usage block, the group headings and the option rows of the help screen
+def _colorize_help_body(text):
+    lines = []
+    in_usage = False
+    for line in text.split("\n"):
+        if line.startswith(_HELP_USAGE_LABEL):
+            in_usage = True
+            lines.append(colorize("help_usage", _HELP_USAGE_LABEL) + _colorize_help_signature(line[len(_HELP_USAGE_LABEL):]))
+            continue
+        if in_usage:
+            if line.strip():
+                lines.append(_colorize_help_signature(line))
+                continue
+            in_usage = False
+        if _HELP_HEADING_RE.match(line):
+            lines.append(colorize("help_heading", line))
+            continue
+        option_row = _HELP_OPTION_ROW_RE.match(line)
+        if option_row:
+            indent, names, remainder = option_row.groups()
+            gap = _HELP_COLUMN_GAP_RE.search(remainder)
+            metavars, description = (remainder[:gap.start()], remainder[gap.start():]) if gap else (remainder, "")
+            lines.append(indent + _colorize_help_signature(names + metavars) + _colorize_help_prose(description))
+            continue
+        positional_row = _HELP_POSITIONAL_ROW_RE.match(line)
+        if positional_row:
+            indent, name, description = positional_row.groups()
+            lines.append(indent + colorize("help_metavar", name) + _colorize_help_prose(description))
+            continue
+        lines.append(_colorize_help_prose(line))
+    return "\n".join(lines)
+
+
+# Colours the examples of the help epilog: the task headings, the comments and the commands to run
+def _colorize_help_epilog(text):
+    lines = []
+    for line in text.split("\n"):
+        if _HELP_HEADING_RE.match(line):
+            lines.append(colorize("help_heading", line))
+            continue
+        if not line.strip() or not line.startswith(" "):
+            lines.append(_colorize_help_prose(line))
+            continue
+        if line.lstrip().startswith("#"):
+            comment = _apply_style_nested(_colorize_help_prose(line), "help_comment")
+            lines.append(comment)
+            continue
+        placeholders = _HELP_PLACEHOLDER_RE.sub(lambda match: colorize("help_placeholder", match.group(0)), line)
+        command = _apply_style_nested(placeholders, "help_command")
+        lines.append(command)
+    return "\n".join(lines)
+
+
+# Colours one finished help screen, leaving its column layout untouched
+def colorize_help_text(text, epilog=None):
+    if not COLOR_ENABLED or not isinstance(text, str) or not text:
+        return text
+    examples = (epilog or "").strip("\n")
+    start = text.rfind(examples) if examples else -1
+    if start == -1:
+        return _colorize_help_body(text)
+    return _colorize_help_body(text[:start]) + _colorize_help_epilog(text[start:])
+
+
+# Parser that colours its own help screen and writes it past the output colouriser, which would otherwise
+# repaint the finished help with the rules meant for monitoring output
+class ColoredHelpParser(argparse.ArgumentParser):
+    # Returns the help screen with the help palette already applied
+    def format_help(self) -> str:
+        return colorize_help_text(super().format_help(), self.epilog)
+
+    # Writes one parser message straight to the terminal behind any colouring wrapper
+    def _print_message(self, message, file=None) -> None:
+        if not message:
+            return
+        stream = sys.stderr if file is None else file
+        target = _help_output_stream(stream)
+        target.write(sanitize_terminal_text(message))
+        flush = getattr(target, "flush", None)
+        if callable(flush):
+            flush()
 
 
 # Terminal attributes saved before the dashboard input handler switched the terminal out of line mode
@@ -4683,25 +5830,36 @@ def signal_handler(sig, frame, message=None):
         os._exit(0)
 
 
+# The last connectivity failure, so a quiet caller can classify it instead of the check printing it
+LAST_CONNECTIVITY_ERROR = None
+
+
 # Checks internet connectivity
-def check_internet(url=None, timeout=None):
+def check_internet(url=None, timeout=None, quiet=False):
     # Resolve at call time so config file and dotenv overrides take effect (these globals change after import)
     url = CHECK_INTERNET_URL if url is None else url
     timeout = CHECK_INTERNET_TIMEOUT if timeout is None else timeout
     try:
-        # Certificate verification is always True or an existing CA bundle selected by the local operator
+        # Certificate verification follows VERIFY_SSL, which the local operator turns off only for an intercepting network
 
         # codeql[py/request-without-cert-validation]
         _ = req.get(url, headers={'User-Agent': USER_AGENT}, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
         return True
     except req.RequestException as e:
-        print(f"* No connectivity, please check your network:\n\n{e}")
+        global LAST_CONNECTIVITY_ERROR
+        LAST_CONNECTIVITY_ERROR = e
+        # Quiet callers render the failure themselves, which doctor needs so nothing lands on its progress line
+        if not quiet:
+            print(f"* No connectivity, please check your network:\n\n{e}")
         return False
 
 
 # Clears the terminal screen
 def clear_screen(enabled=True):
     if not enabled:
+        return
+    # Don't clear screen if stdout is redirected (not a TTY)
+    if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
         return
     try:
         if platform.system() == 'Windows':
@@ -4710,6 +5868,15 @@ def clear_screen(enabled=True):
             os.system('clear')
     except Exception:
         print("* Cannot clear the screen contents")
+
+
+# Commands that print a one-shot result and exit, so the screen keeps whatever is already on it
+KEEP_HISTORY_FLAGS = (*SECRET_ACTION_FLAGS, "--import-browser-session", "--import-firefox-session", "--analyze-follows", "--doctor", "--send-test-email", "--send-test-webhook", "--help", "-h")
+
+
+# Returns True when the running command is a one-shot whose output has to stay scrollable
+def keep_terminal_history():
+    return any(flag in sys.argv for flag in KEEP_HISTORY_FLAGS)
 
 
 # Converts absolute value of seconds to human readable format
@@ -4829,10 +5996,17 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
 def is_valid_email_address(value) -> bool:
     if not isinstance(value, str):
         return False
-    separator = value.rfind("@")
+    # A display name may carry spaces, but the mailbox itself may not, since the server would read it as two
+    # arguments. The mailbox is therefore taken out of the 'display name <mailbox>' form and judged on its own
+    mailbox = value.strip()
+    if mailbox.endswith(">") and "<" in mailbox:
+        mailbox = mailbox[mailbox.rindex("<") + 1:-1]
+    if not mailbox or any(character.isspace() for character in mailbox):
+        return False
+    separator = mailbox.rfind("@")
     if separator <= 0:
         return False
-    domain = value[separator + 1:]
+    domain = mailbox[separator + 1:]
     dot = domain.find(".")
     return dot > 0 and dot < len(domain) - 1
 
@@ -4848,51 +6022,64 @@ def is_valid_fqdn(value) -> bool:
     return all(1 <= len(label) <= 63 and label[0] != "-" and label[-1] != "-" and all(character.isascii() and (character.isalnum() or character == "-") for character in label) for label in labels)
 
 
+# Closes an SMTP session without changing the result of an accepted or failed message
+def smtp_quit_quietly(smtp_object):
+    if smtp_object is None:
+        return
+    try:
+        smtp_object.quit()
+    except Exception as quit_error:
+        debug_print("SMTP quit", outcome="failed", error=f"{type(quit_error).__name__}: {quit_error}")
+        try:
+            smtp_object.close()
+        except Exception as close_error:
+            debug_print("SMTP close", outcome="failed", error=f"{type(close_error).__name__}: {close_error}")
+
+
 # Sends email notification
-def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15):
+def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15, report_delivery=True):
     subject = apply_privacy_substitutions(subject)
     body = apply_privacy_substitutions(body)
-    body_html = apply_privacy_substitutions(body_html)
+    # Alert bodies are built as fragments in many places, so the shared document is applied once here
+    body_html = html_email_body(apply_privacy_substitutions(body_html))
 
-    try:
-        ipaddress.ip_address(str(SMTP_HOST))
-    except ValueError:
-        if not is_valid_fqdn(SMTP_HOST):
-            print("Error sending email - SMTP settings are incorrect (invalid IP address/FQDN in SMTP_HOST)")
-            return 1
+    if not smtp_host_is_usable(SMTP_HOST):
+        print_recovery_error("Cannot send email because SMTP_HOST is not a valid IP address or hostname", context="smtp_config")
+        return 1
 
     try:
         port = int(SMTP_PORT)
         if not (1 <= port <= 65535):
             raise ValueError
     except ValueError:
-        print("Error sending email - SMTP settings are incorrect (invalid port number in SMTP_PORT)")
+        print_recovery_error("Cannot send email because SMTP_PORT is not a port number between 1 and 65535", context="smtp_config")
         return 1
 
     if not is_valid_email_address(SENDER_EMAIL) or not is_valid_email_address(RECEIVER_EMAIL):
-        print("Error sending email - SMTP settings are incorrect (invalid email in SENDER_EMAIL or RECEIVER_EMAIL)")
+        print_recovery_error("Cannot send email because SENDER_EMAIL or RECEIVER_EMAIL is not a valid address", context="smtp_config")
         return 1
 
     if not SMTP_USER or not isinstance(SMTP_USER, str) or SMTP_USER == "your_smtp_user" or not SMTP_PASSWORD or not isinstance(SMTP_PASSWORD, str) or SMTP_PASSWORD == "your_smtp_password":
-        print("Error sending email - SMTP settings are incorrect (check SMTP_USER & SMTP_PASSWORD variables)")
+        print_recovery_error("Cannot send email because SMTP_USER or SMTP_PASSWORD is unset or still a placeholder", context="smtp_config")
         return 1
 
     if not subject or not isinstance(subject, str):
-        print("Error sending email - SMTP settings are incorrect (subject is not a string or is empty)")
+        print_recovery_error("Cannot send email because the message has no subject")
         return 1
 
     if not body and not body_html:
-        print("Error sending email - SMTP settings are incorrect (body and body_html cannot be empty at the same time)")
+        print_recovery_error("Cannot send email because the message has no body")
         return 1
 
+    smtpObj = None
     try:
         if use_ssl:
-            ssl_context = ssl.create_default_context()
+            ssl_context = smtp_ssl_context()
             smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
             smtpObj.starttls(context=ssl_context)
         else:
             smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
-        smtpObj.login(SMTP_USER, SMTP_PASSWORD)
+        smtp_login(smtpObj, SMTP_USER, SMTP_PASSWORD)
         email_msg = MIMEMultipart('alternative')
         email_msg["From"] = SENDER_EMAIL
         email_msg["To"] = RECEIVER_EMAIL
@@ -4904,8 +6091,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
             email_msg.attach(part1)
 
         if body_html:
-            part2 = MIMEText(body_html, 'html')
-            part2 = MIMEText(body_html.encode('utf-8'), 'html', _charset='utf-8')
+            part2 = MIMEText(body_html, 'html', _charset='utf-8')
             email_msg.attach(part2)
 
         if image_file:
@@ -4915,13 +6101,23 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
             email_msg.attach(img_part)
 
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
-        smtpObj.quit()
     except Exception as e:
-        print(f"Error sending email: {e}")
-        print(colorize("info", "To fix: verify SMTP_HOST, SMTP_PORT and SMTP_SSL plus SMTP_USER / SMTP_PASSWORD. For Gmail and similar providers use an app password, not your normal login password. Test with --send-test-email."))
-        print(f"Guide: {SMTP_GUIDE_URL}")
+        print_recovery_error(e, context="email", summary=f"Error sending email: {e}")
         return 1
+    finally:
+        smtp_quit_quietly(smtpObj)
+    if report_delivery:
+        verbose_delivery_print(f"Email sent to {RECEIVER_EMAIL}")
     return 0
+
+
+# Returns whether SMTP_HOST is something a mail connection can be opened to at all
+def smtp_host_is_usable(host) -> bool:
+    try:
+        ipaddress.ip_address(str(host))
+        return True
+    except ValueError:
+        return is_valid_fqdn(host)
 
 
 # Returns whether a setting is empty or still holds the placeholder value shipped in the sample configuration
@@ -4938,6 +6134,8 @@ def validate_webhook_url(url):
         return False
     try:
         parsed = urlsplit(url.strip())
+        if parsed.port is not None and not 1 <= parsed.port <= 65535:
+            return False
     except ValueError:
         return False
     return parsed.scheme.casefold() == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password and (parsed.path in ("", "/") or bool(parsed.path.strip("/")))
@@ -4964,6 +6162,35 @@ def validate_proxy_url(url):
     except ValueError:
         return False
     return parsed.scheme.casefold() in ("https", "http") and bool(parsed.hostname)
+
+
+# Names what is wrong with a proxy URL without quoting it, since PROXY_URL is a private value and is redacted
+# from any message that repeats it, which would leave the reader nothing to act on
+def describe_proxy_url_shape(url) -> str:
+    text = str(url or "").strip()
+    # urlsplit reads a bare 'host:port' as a scheme, so the prefix is judged on the text rather than on the parse
+    scheme, separator, _ = text.partition("://")
+    if not separator:
+        return "it has no http:// or https:// prefix"
+    if scheme.casefold() not in ("http", "https"):
+        return f"its scheme is '{scheme}', not http or https"
+    try:
+        hostname = urlsplit(text).hostname
+    except ValueError:
+        return "it cannot be read as a URL"
+    return "it names no host" if not hostname else "it is not a complete proxy address"
+
+
+# Describes where proxied traffic goes, with any credentials left out
+def proxy_destination_display() -> str:
+    try:
+        parsed = urlsplit(str(PROXY_URL or ""))
+    except ValueError:
+        return "not a readable URL"
+    host = parsed.hostname or ""
+    if not host:
+        return "not a readable URL"
+    return f"{parsed.scheme or 'http'}://{host}" + (f":{parsed.port}" if parsed.port else "")
 
 
 # Converts a complete ntfy URL or valid ntfy.sh topic name into a complete topic URL
@@ -5018,8 +6245,12 @@ def apply_webhook_provider_autodetection(explicit_provider=False, announce=True)
     configured_provider = normalized_webhook_provider()
     if detected_provider and detected_provider != configured_provider:
         WEBHOOK_PROVIDER = detected_provider
-        if announce:
+        # The built-in default is not a choice anyone made, so detection there is the documented behaviour
+        # rather than a mismatch. Only a provider the configuration actually sets is worth warning about
+        if announce and "WEBHOOK_PROVIDER" in CONFIGURED_SETTING_NAMES:
             print(f"* Warning: Configured webhook provider did not match the URL. Using {webhook_provider_display_name(detected_provider)}.")
+        elif announce:
+            verbose_print(f"Webhook provider detected from the URL: {webhook_provider_display_name(detected_provider)}")
     return normalized_webhook_provider()
 
 
@@ -5065,12 +6296,24 @@ def escape_discord_markdown(text: str) -> str:
     return "".join(escape_map.get(ch, ch) for ch in text)
 
 
+# Removes the Discord markdown from alert text, since every ntfy client shows the markers instead of rendering them
+def strip_discord_markdown(text: str) -> str:
+    if not text:
+        return ""
+    # Emphasis and code spans go first, while the escapes from escape_discord_markdown still protect literal markers
+    plain = re.sub(r"(?s)\*\*(.+?)\*\*", r"\1", str(text))
+    plain = re.sub(r"`([^`]+)`", r"\1", plain)
+    # Discord suppresses a link preview for a bracketed URL, which ntfy would show as part of the address
+    plain = re.sub(r"<(https?://[^<>\s]+)>", r"\1", plain)
+    return re.sub(r"\\([\\*_~`|])", r"\1", plain)
+
+
 # Helper function to compare follower/following lists and log changes
 def show_follow_info(followers_reported: int, followers_actual: int, followings_reported: int, followings_actual: int) -> None:
     if VERBOSE_MODE:
-        print(f"* Followers: reported ({followers_reported}) actual ({followers_actual}). Followings: reported ({followings_reported}) actual ({followings_actual})")
+        verbose_print(f"Followers: reported ({followers_reported}) actual ({followers_actual}). Followings: reported ({followings_reported}) actual ({followings_actual})")
     elif DEBUG_MODE:
-        debug_print(f"* Followers: reported ({followers_reported}) actual ({followers_actual}). Followings: reported ({followings_reported}) actual ({followings_actual})")
+        debug_print("Follow counts", followers_reported=followers_reported, followers_actual=followers_actual, followings_reported=followings_reported, followings_actual=followings_actual)
 
 
 # Compares follower or following lists, logs changes and returns formatted notification fragments
@@ -5116,7 +6359,7 @@ def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), f"Removed {change_type.capitalize()}", item, "")
                 except Exception as e:
-                    print(f"* Error: {e}")
+                    print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
             print()
 
         if added:
@@ -5134,7 +6377,7 @@ def compare_and_log_follower_changes(user, change_type, old_list, new_list, csv_
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), f"Added {change_type.capitalize()}", "", item)
                 except Exception as e:
-                    print(f"* Error: {e}")
+                    print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
             print()
 
     return (added_list, removed_list, added_list_html, removed_list_html, added_list_webhook, removed_list_webhook, added_mbody, removed_mbody)
@@ -5146,8 +6389,8 @@ def should_notify_follow_change(count_changed, added_list, removed_list, list_co
     return list_changed if list_comparison_complete else bool(count_changed or list_changed)
 
 
-# Helper function to send follower/following change webhooks
-def send_follower_change_webhook(user, change_type, old_count, new_count, added_list_webhook, removed_list_webhook):
+# Shapes the webhook embed of one follower or following change for send_notification_channels
+def follower_change_embed(user, change_type, old_count, new_count, added_list_webhook, removed_list_webhook):
     diff = new_count - old_count
     diff_str = f"+{diff}" if diff > 0 else str(diff)
 
@@ -5181,15 +6424,7 @@ def send_follower_change_webhook(user, change_type, old_count, new_count, added_
 
     title = f"{emoji} {user} {change_type.capitalize()} Changed"
     description = f"User **{user}** {change_type} changed from **{old_count}** to **{new_count}**"
-    notification_type = "followers" if change_type == "followers" else "status"
-
-    return send_webhook(
-        title,
-        description,
-        color=color,
-        fields=webhook_fields,
-        notification_type=notification_type
-    )
+    return {"webhook_title": title, "webhook_description": description, "webhook_color": color, "webhook_fields": webhook_fields}
 
 
 # Applies configured placeholders recursively to a webhook template
@@ -5207,10 +6442,28 @@ def format_payload(template, payload):
             return payload.get("color", 0x7289DA)
         try:
             return template.format(**payload)
-        except KeyError:
-            # Return template as-is if placeholder key is missing from payload
-            return template
+        # A placeholder the payload cannot fill, such as {title[9]} or the positional {0}, is a setting
+        # to correct rather than a delivery failure, so it names the template text that could not render
+        except Exception as exc:
+            raise ValueError(f"WEBHOOK_TEMPLATE cannot render '{template}': {type(exc).__name__}: {exc}. Use plain placeholders such as {{title}} and {{description}}") from exc
     return template
+
+
+# Parses legacy and current Discord templates before validating their object shape
+def render_discord_template(template, values):
+    if isinstance(template, str):
+        try:
+            template = json.loads(template)
+        except json.JSONDecodeError:
+            try:
+                # Legacy templates doubled JSON braces for str.format, while quoted values remain templates
+                unescaped = re.sub(r'("(?:\\.|[^"\\])*")|(\{\{|\}\})', lambda match: match.group(1) if match.group(1) is not None else match.group(2)[0], template)
+                template = json.loads(unescaped)
+            except json.JSONDecodeError as exc:
+                raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string") from exc
+    if not isinstance(template, dict):
+        raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string")
+    return format_payload(template, values)
 
 
 # Returns a configuration error for unsafe or unsupported webhook customization
@@ -5223,8 +6476,8 @@ def validate_webhook_customization(provider=None) -> Optional[str]:
             return "WEBHOOK_AVATAR_URL must be a string"
         if WEBHOOK_AVATAR_URL.strip() and not validate_webhook_url(WEBHOOK_AVATAR_URL):
             return "WEBHOOK_AVATAR_URL must contain a complete HTTPS link without embedded credentials"
-        if not isinstance(WEBHOOK_TEMPLATE, (dict, list, str)):
-            return "WEBHOOK_TEMPLATE must be a dictionary, list or string"
+        if not isinstance(WEBHOOK_TEMPLATE, (dict, str)):
+            return "WEBHOOK_TEMPLATE must be a dictionary or a JSON object string"
     if not isinstance(WEBHOOK_TRANSFORMS, (list, tuple)):
         return "WEBHOOK_TRANSFORMS must be a list or tuple"
     for index, transform in enumerate(WEBHOOK_TRANSFORMS):
@@ -5232,6 +6485,14 @@ def validate_webhook_customization(provider=None) -> Optional[str]:
             return f"WEBHOOK_TRANSFORMS entry {index + 1} must contain a field name and string method name"
         if transform[1].startswith("_") or not callable(getattr("", transform[1], None)):
             return f"WEBHOOK_TRANSFORMS entry {index + 1} uses an unsupported string method"
+    if selected_provider == "discord":
+        try:
+            render_discord_template(WEBHOOK_TEMPLATE, {"title": "", "description": "", "username": "", "avatar_url": "", "image_url": "", "fields_str": "", "fields": [], "color": 0, "timestamp": "", "version": VERSION})
+        # The rendering error names the placeholder to correct, which the shape message cannot
+        except ValueError as exc:
+            return str(exc)
+        except TypeError:
+            return "WEBHOOK_TEMPLATE must be a dictionary or a JSON object string"
     return None
 
 
@@ -5263,10 +6524,10 @@ def truncate_utf8_bytes(text: str, max_bytes: int, suffix: str = "") -> str:
 
 # Builds one bounded ntfy title and message pair from the shared webhook content
 def build_ntfy_webhook_message(title: str, description: str, fields=None, image_url: str = "") -> tuple[str, str]:
-    safe_title = str(title)[:WEBHOOK_EMBED_TITLE_LIMIT] or "Instagram Monitor"
-    message_parts = [str(description)] if description else []
+    safe_title = strip_discord_markdown(str(title))[:WEBHOOK_EMBED_TITLE_LIMIT] or "Instagram Monitor"
+    message_parts = [strip_discord_markdown(str(description))] if description else []
     if fields:
-        message_parts.extend(f"{field['name']}: {field['value']}" for field in fields)
+        message_parts.extend(f"{strip_discord_markdown(str(field['name'])).rstrip(':')}: {strip_discord_markdown(str(field['value']))}" for field in fields)
     if image_url:
         message_parts.append(f"Image: {image_url}")
     safe_message = truncate_utf8_bytes("\n\n".join(message_parts), NTFY_MESSAGE_LIMIT_BYTES, NTFY_TRUNCATION_SUFFIX)
@@ -5333,7 +6594,7 @@ def build_webhook_headers(provider: str, payload: dict) -> dict[str, str]:
 # Returns webhook diagnostic text with configured private values removed
 def sanitize_webhook_error_text(value) -> str:
     sanitized = apply_privacy_substitutions(str(value or ""))
-    for private_value in (WEBHOOK_URL, NTFY_ACCESS_TOKEN):
+    for private_value in (WEBHOOK_URL, NTFY_ACCESS_TOKEN, *_DELIVERY_SECRET_VALUES.get()):
         if isinstance(private_value, str) and private_value:
             sanitized = sanitized.replace(private_value, "[private value]")
     return sanitized
@@ -5358,22 +6619,23 @@ def build_ntfy_local_image(local_image_file=None):
         content_types = {".gif": "image/gif", ".png": "image/png", ".webp": "image/webp"}
         return image_bytes, filename, content_types.get(image_path.suffix.casefold(), "image/jpeg")
     except Exception as exc:
-        debug_print(f"NTFY image preparation failed, sending text only: {sanitize_webhook_error_text(exc)}")
+        debug_print("NTFY image preparation", outcome="failed", fallback="text only", error=sanitize_webhook_error_text(exc))
         return None
 
 
-# Posts to an operator-configured HTTPS webhook while preserving certificate checks and refusing redirects
+# Posts to an operator-configured HTTPS webhook with the selected TLS verification policy and no redirects
 def post_webhook_request(webhook_url, verify, proxies, **request_kwargs):
     destination = str(webhook_url or "").strip()
     if not validate_webhook_url(destination):
         raise ValueError("webhook destination must be a complete HTTPS URL")
-    if verify is not True:
+    if verify not in (True, False):
         verify = resolve_existing_file_path(verify, "proxy certificate")
     # The destination is intentionally operator-configurable and dashboard writes are restricted to the trusted local UI
 
     # A caller that forgets the deadline would hang the delivery, so the configured one is the floor
     request_kwargs.setdefault("timeout", WEBHOOK_TIMEOUT_SECONDS)
-    # codeql[py/full-ssrf, py/request-without-cert-validation]
+    # VERIFY_SSL defaults to True and only the local operator can disable certificate verification
+    # codeql[py/full-ssrf] codeql[py/request-without-cert-validation]
     return WEBHOOK_SESSION.post(destination, verify=verify, proxies=proxies, allow_redirects=False, **request_kwargs)
 
 
@@ -5383,31 +6645,90 @@ def encode_ntfy_header_text(message: str) -> str:
 
 
 # Sends one webhook notification through the selected provider
-def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status"):
+# Returns whether one configured webhook alert is enabled independently of email settings
+def webhook_event_enabled(notification_type):
+    settings = {"status": WEBHOOK_STATUS_NOTIFICATION, "followers": WEBHOOK_FOLLOWERS_NOTIFICATION, "error": WEBHOOK_ERROR_NOTIFICATION}
+    return bool(WEBHOOK_ENABLED and settings.get(notification_type, False))
+
+
+# Sends one alert through the enabled email and webhook channels, the webhook as the embed the caller shaped
+def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, email_image_file="", email_image_name="image1", webhook_title=None, webhook_description=None, webhook_color=0x7289DA, webhook_fields=None, image_url=None, local_image_file=None):
+    email_attempted = bool(email_enabled)
+    webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    email_delivered = False
+    webhook_delivered = False
+    if email_attempted:
+        print(f"Sending email notification to {RECEIVER_EMAIL}")
+        email_delivered = send_email(subject, body, body_html, SMTP_SSL, image_file=email_image_file, image_name=email_image_name) == 0
+        debug_print("Email channel", event=notification_type, outcome="OK" if email_delivered else "failed")
+    if webhook_attempted:
+        print(f"Sending webhook notification via {webhook_provider_display_name()}")
+        webhook_delivered = send_webhook(subject if webhook_title is None else webhook_title, body if webhook_description is None else webhook_description, color=webhook_color, fields=webhook_fields, image_url=image_url, local_image_file=local_image_file, notification_type=notification_type, force=True) == 0
+        debug_print("Webhook channel", event=notification_type, outcome="OK" if webhook_delivered else "failed")
+    # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
+    return email_delivered, webhook_delivered
+
+
+_DELIVERY_SECRET_VALUES: contextvars.ContextVar[tuple] = contextvars.ContextVar("delivery_secret_values", default=())
+
+
+# Keeps in-flight credentials available to error redaction across settings reloads
+def _retain_webhook_secrets(deliver):
+    @functools.wraps(deliver)
+    # Restores the previous redaction scope after this delivery finishes
+    def retained(*args, **kwargs):
+        settings = globals().copy()
+        values = [settings.get(name) for name in SECRET_KEYS]
+        headers = settings.get("WEBHOOK_HEADERS")
+        if isinstance(headers, dict):
+            for name, value in headers.items():
+                if isinstance(name, str) and name.casefold() == "authorization" and isinstance(value, str):
+                    values.append(value)
+                    parts = value.split(None, 1)
+                    if len(parts) == 2 and parts[0].casefold() in ("bearer", "basic"):
+                        values.append(parts[1])
+        # The same minimum length every other redaction path applies, so a short secret cannot blank out ordinary words
+        secrets = tuple(value for value in values if isinstance(value, str) and len(value) > 4 and not value.startswith("your_"))
+        token = _DELIVERY_SECRET_VALUES.set(_DELIVERY_SECRET_VALUES.get() + secrets)
+        try:
+            return deliver(*args, **kwargs)
+        finally:
+            _DELIVERY_SECRET_VALUES.reset(token)
+    return retained
+
+
+@_retain_webhook_secrets
+# Sends a notification with bounded retries and a fixed destination for each delivery
+def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None, local_image_file=None, notification_type="status", force=False, report_delivery=True, discord_description=""):
     if not WEBHOOK_ENABLED or is_placeholder_setting(WEBHOOK_URL):
         return 1
 
     title = apply_privacy_substitutions(title)
     description = apply_privacy_substitutions(description)
 
-    if not validate_webhook_url(WEBHOOK_URL):
-        print("* Webhook error: WEBHOOK_URL must contain a complete HTTPS link without embedded credentials")
+    destination = str(WEBHOOK_URL or "").strip()
+    if not validate_webhook_url(destination):
+        print_recovery_error("WEBHOOK_URL must contain a complete HTTPS link without embedded credentials", context="webhook_config")
         return 1
 
     provider = normalized_webhook_provider()
     if not provider:
-        print("* Webhook error: WEBHOOK_PROVIDER must be discord or ntfy")
+        print_recovery_error("WEBHOOK_PROVIDER must be discord or ntfy", context="webhook_config")
         return 1
     customization_error = validate_webhook_customization(provider)
     if customization_error is not None:
-        print(f"* Webhook error: {customization_error}")
+        print_recovery_error(str(customization_error), context="webhook_config")
         return 1
 
-    # Event categories follow their configured switch. Operator-requested delivery tests are never gated,
-    # otherwise --send-test-webhook would report a failure without explaining that a switch suppressed it
-    event_switches = {"status": WEBHOOK_STATUS_NOTIFICATION, "followers": WEBHOOK_FOLLOWERS_NOTIFICATION, "error": WEBHOOK_ERROR_NOTIFICATION}
-    if notification_type in event_switches and not event_switches[notification_type]:
-        debug_print(f"Webhook for '{notification_type}' suppressed because its notification switch is disabled")
+    # Discord renders markdown, so it gets the email's formatting while ntfy keeps the plain body it can display
+    if provider == "discord" and discord_description:
+        description = discord_description
+
+    # Event categories follow their configured switch unless the caller already applied it. Operator-requested
+    # delivery tests are never gated, otherwise --send-test-webhook would report a failure without explaining
+    # that a switch suppressed it
+    if not force and notification_type in ("status", "followers", "error") and not webhook_event_enabled(notification_type):
+        debug_print("Webhook delivery", event=notification_type, outcome="skipped", reason="its notification switch is disabled")
         return 1
 
     sanitized_fields = []
@@ -5448,11 +6769,13 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
     try:
         payload = apply_webhook_transforms(payload)
         final_headers = build_webhook_headers(provider, payload)
-        final_payload = format_payload(WEBHOOK_TEMPLATE, payload) if provider == "discord" else None  # type: ignore
+        final_payload = render_discord_template(WEBHOOK_TEMPLATE, payload) if provider == "discord" else None
+        if provider == "discord" and not isinstance(final_payload, dict):
+            raise ValueError("WEBHOOK_TEMPLATE must be a JSON object or a dictionary")
         if isinstance(final_payload, dict):
             final_payload["allowed_mentions"] = {"parse": []}
     except Exception as exc:
-        print(f"* Webhook error: {sanitize_webhook_error_text(exc)}")
+        print_recovery_error(exc, context="webhook", summary=f"The webhook payload could not be built: {sanitize_webhook_error_text(exc)}")
         return 1
 
     if PROXY_ENABLED and PROXY_WEBHOOKS:
@@ -5460,11 +6783,14 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
         final_post_proxy_ssl = get_proxies_ssl()
     else:
         final_post_proxy = {}
-        final_post_proxy_ssl = True
+        final_post_proxy_ssl = VERIFY_SSL
 
     ntfy_title, ntfy_message = build_ntfy_webhook_message(str(payload["title"]), str(payload["description"]), payload["fields"], webhook_image_url) if provider == "ntfy" else ("", "")
     ntfy_image = build_ntfy_local_image(local_image_file) if provider == "ntfy" else None
     use_ntfy_image = ntfy_image is not None
+    if destination != str(WEBHOOK_URL or "").strip():
+        print_recovery_error(context="webhook_config", detail="Webhook settings changed while preparing the delivery. Retry the notification with the current settings")
+        return 1
     last_error = None
     for attempt in range(WEBHOOK_MAX_ATTEMPTS):
         try:
@@ -5474,9 +6800,9 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                 if use_ntfy_image and ntfy_image is not None:
                     image_bytes, image_filename, image_content_type = ntfy_image
                     attachment_headers = {**final_headers, "Content-Type": image_content_type, "X-Filename": image_filename, "X-Title": ntfy_title, "X-Message": encode_ntfy_header_text(ntfy_message)}
-                    response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers=attachment_headers, data=image_bytes, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers=attachment_headers, data=image_bytes, timeout=WEBHOOK_TIMEOUT_SECONDS)
                 else:
-                    response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers={**final_headers, "X-Title": ntfy_title}, data=ntfy_message.encode("utf-8"), timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers={**final_headers, "X-Title": ntfy_title}, data=ntfy_message.encode("utf-8"), timeout=WEBHOOK_TIMEOUT_SECONDS)
             else:
                 if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
                     filename = os.path.basename(local_image_file)
@@ -5489,20 +6815,21 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                             "file": (filename, f, "image/jpeg"),
                             "payload_json": (None, json.dumps(final_payload))
                         }
-                        response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers=final_headers, files=files, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                        response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers=final_headers, files=files, timeout=WEBHOOK_TIMEOUT_SECONDS)
                 elif isinstance(final_payload, str):
-                    response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers=final_headers, data=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers=final_headers, data=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS)
                 else:
-                    response = post_webhook_request(WEBHOOK_URL, final_post_proxy_ssl, final_post_proxy, headers=final_headers, json=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers=final_headers, json=final_payload, timeout=WEBHOOK_TIMEOUT_SECONDS)
 
             if 200 <= response.status_code <= 299:
-                print("* Webhook notification sent successfully")
+                if report_delivery:
+                    verbose_delivery_print(f"Webhook sent through {webhook_provider_display_name(provider)}")
                 return 0
             last_error = response
             if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
                 use_ntfy_image = False
                 delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS if response.status_code >= 500 else 0.0
-                debug_print(f"NTFY attachment returned HTTP {response.status_code}. Falling back to a text-only alert")
+                debug_print("NTFY attachment", status=response.status_code, outcome="failed", fallback="text-only alert")
                 if delay:
                     time.sleep(delay)
                 continue
@@ -5511,30 +6838,30 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                 response_text = sanitize_webhook_error_text(getattr(response, "text", ""))[:200]
                 suffix = f" - {response_text}" if response_text else ""
                 print(f"* Webhook error: HTTP {response.status_code}{suffix}")
-                print(colorize("info", "To fix: check that WEBHOOK_PROVIDER matches the saved Discord or ntfy URL then test it with --send-test-webhook."))
+                print(colorize("info", "To fix: Check that WEBHOOK_PROVIDER matches the saved Discord or ntfy URL then test it with --send-test-webhook"))
                 print(f"Guide: {WEBHOOK_GUIDE_URL}")
                 return 1
             delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS
-            debug_print(f"Webhook delivery returned HTTP {response.status_code}. Retrying once in {delay:g} seconds")
+            debug_print("Webhook delivery", status=response.status_code, retry_in=f"{delay:g}s")
             time.sleep(delay)
         except req.exceptions.RequestException as exc:
             last_error = exc
             if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
                 use_ntfy_image = False
-                debug_print(f"NTFY attachment delivery failed. Falling back to a text-only alert: {sanitize_webhook_error_text(exc)}")
+                debug_print("NTFY attachment", outcome="failed", fallback="text-only alert", error=sanitize_webhook_error_text(exc))
                 time.sleep(WEBHOOK_FALLBACK_RETRY_SECONDS)
                 continue
             if attempt == WEBHOOK_MAX_ATTEMPTS - 1:
-                print(f"* Error sending webhook: {sanitize_webhook_error_text(exc)}")
+                print_recovery_error(exc, context="webhook", summary=f"Sending the webhook failed: {sanitize_webhook_error_text(exc)}")
                 return 1
-            debug_print(f"Webhook delivery failed. Retrying once in {WEBHOOK_FALLBACK_RETRY_SECONDS:g} seconds: {sanitize_webhook_error_text(exc)}")
+            debug_print("Webhook delivery", outcome="failed", retry_in=f"{WEBHOOK_FALLBACK_RETRY_SECONDS:g}s", error=sanitize_webhook_error_text(exc))
             time.sleep(WEBHOOK_FALLBACK_RETRY_SECONDS)
         except Exception as exc:
-            print(f"* Unexpected error sending webhook: {sanitize_webhook_error_text(exc)}")
+            print_recovery_error(exc, context="webhook", summary=f"Sending the webhook failed: {sanitize_webhook_error_text(exc)}")
             return 1
 
     if last_error is not None:
-        print(f"* Error sending webhook: {sanitize_webhook_error_text(last_error)}")
+        print_recovery_error(last_error, context="webhook", summary=f"Sending the webhook failed: {sanitize_webhook_error_text(last_error)}")
     return 1
 
 
@@ -5610,7 +6937,10 @@ def get_ip_address(max_retries=3, timeout=10, retry_delay=5, long_retry=120, lon
         if not isinstance(long_retry_attempts, int) or long_retry_attempts < 1:
             raise ValueError("long_retry_attempts must be at least 1")
     except ValueError as exc:
-        debug_print(f"get_ip_address configuration error: {exc}")
+        if is_too_many_open_files(exc):
+            print_recovery_advice(classify_recovery_error(exc))
+            raise SystemExit(1)
+        debug_print("get_ip_address configuration", outcome="failed", error=f"{type(exc).__name__}: {exc}")
         return f"(unavailable: {format_error_message(exc)})"
 
     last_err = None
@@ -5621,15 +6951,18 @@ def get_ip_address(max_retries=3, timeout=10, retry_delay=5, long_retry=120, lon
                 return f"(unavailable: {format_error_message(last_err) if last_err else 'stopped'})"
             url = urls[attempt_index % len(urls)]
             try:
-                # Certificate verification is always True or an existing CA bundle selected by the local operator
+                # Certificate verification follows VERIFY_SSL, which the local operator turns off only for an intercepting network
 
                 # codeql[py/request-without-cert-validation]
                 ip_response = req.get(url, timeout=timeout, verify=get_proxies_ssl(), proxies=get_proxies())
                 ip_response.raise_for_status()
                 return _extract_ip_address_response(ip_response)
             except Exception as exc:
+                if is_too_many_open_files(exc):
+                    print_recovery_advice(classify_recovery_error(exc))
+                    raise SystemExit(1)
                 last_err = exc
-                debug_print(f"get_ip_address endpoint failed at {mask_url_credentials(url)}: {format_error_message(exc)}")
+                debug_print("IP address lookup", url=mask_url_credentials(url), outcome="failed", error=format_error_message(exc))
 
             next_attempt = attempt_index + 1
             completed_endpoint_pass = next_attempt % len(urls) == 0
@@ -5637,11 +6970,11 @@ def get_ip_address(max_retries=3, timeout=10, retry_delay=5, long_retry=120, lon
                 return f"(unavailable: {format_error_message(last_err)})"
 
         if long_attempt < long_retry_attempts:
-            debug_print(f"get_ip_address: all {attempts_per_cycle} endpoint attempts failed in cycle {long_attempt}/{long_retry_attempts}, retrying in {long_retry} seconds: {last_err}")
+            debug_print("IP address lookup", attempts=attempts_per_cycle, cycle=f"{long_attempt}/{long_retry_attempts}", outcome="failed", retry_in=f"{long_retry}s", error=last_err)
             if interruptible_sleep(long_retry, stop_event):
                 return f"(unavailable: {format_error_message(last_err) if last_err else 'stopped'})"
         else:
-            debug_print(f"get_ip_address failed after {long_retry_attempts} cycles of {attempts_per_cycle} endpoint attempts: {last_err}")
+            debug_print("IP address lookup", cycles=long_retry_attempts, attempts=attempts_per_cycle, outcome="failed", error=last_err)
     return f"(unavailable: {format_error_message(last_err) if last_err else 'unknown error'})"
 
 
@@ -5684,18 +7017,48 @@ def resolve_existing_file_path(value, label) -> str:
     return candidate
 
 
-# Returns the requests verify arg: cert path when PROXY_CERT_PATH is set under an enabled proxy, else True
+# Silences the repeated certificate warning once verification is off, so the choice is reported by the summary and the doctor instead of on every request
+def apply_tls_verification_setting():
+    if not VERIFY_SSL:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+# Returns the TLS context SMTP uses, unverified while VERIFY_SSL is off so email follows the same switch as every other connection
+def smtp_ssl_context():
+    context = ssl.create_default_context()
+    if not VERIFY_SSL:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    return context
+
+
+# Returns the requests verify arg every outbound request shares: False while VERIFY_SSL is off, the proxy cert path when one is configured, else True
 def get_proxies_ssl():
+    if not VERIFY_SSL:
+        return False
     if PROXY_ENABLED and PROXY_CERT_PATH:
         return resolve_existing_file_path(PROXY_CERT_PATH, "proxy certificate")
     return True
 
 
-# Applies current proxy and SSL-verify settings to the instaloader bot's underlying requests session
+# Applies the current proxy and TLS verification settings to the instaloader bot's underlying requests session
 def set_instaloader_proxies(instabot):
-    instabot.context._session.proxies.clear()
-    instabot.context._session.proxies.update(get_proxies())
-    instabot.context._session.verify = get_proxies_ssl()
+    # A future instaloader that moves its session should still start, verifying, rather than fail on the missing attribute
+    try:
+        session = instabot.context._session
+        session.proxies.clear()
+        session.proxies.update(get_proxies())
+        session.verify = get_proxies_ssl()
+    except AttributeError as exc:
+        debug_print("TLS verification could not be applied to the instaloader session", outcome="failed", error=f"{type(exc).__name__}: {exc}")
+
+
+# Returns an Instaloader whose session honours the configured proxy and TLS verification settings before its first request
+def instaloader_client(**kwargs):
+    # Constructed through the module attribute, which is the seam the offline tests replace
+    bot = instaloader.Instaloader(**kwargs)
+    set_instaloader_proxies(bot)
+    return bot
 
 
 # Reapplies proxy settings on the bot when runtime configuration has bumped PROXY_REFRESH_VERSION
@@ -5714,7 +7077,7 @@ def refresh_proxy_if_needed(bot, user):
             set_instaloader_proxies(bot)
         except Exception as e:
             error_msg = format_error_message(e)
-            print(f"* Error refreshing proxies for {user}: {error_msg}")
+            print_recovery_error(e, context="proxy", summary=f"Error refreshing proxies for {user}: {error_msg}")
             log_activity(f"Proxy refresh failed: {error_msg}", user=user, level='error')
 
 
@@ -5761,8 +7124,15 @@ def apply_privacy_substitutions(content: TPrivacyContent) -> TPrivacyContent:
 
 
 # Debug print helper - only prints if DEBUG_MODE is enabled
-def debug_print(message):
+def format_diagnostic_line(operation, fields):
+    rendered = ", ".join(f"{key}={value}" for key, value in fields.items() if value is not None)
+    return f"{operation}: {rendered}" if rendered else str(operation)
+
+
+# Prints one timestamped diagnostic line only when debug mode is enabled
+def debug_print(_operation, **fields):
     if DEBUG_MODE:
+        message = format_diagnostic_line(_operation, fields)
         timestamp = get_hour_min_from_ts(now_local(), show_seconds=True)
         user = getattr(_thread_local, 'user', None)
         user_prefix = f" [{user}]" if user else ""
@@ -5772,7 +7142,38 @@ def debug_print(message):
             print()
             _thread_local.in_partial_line = False
 
+        # Secret-resolution fields contain setting names, source labels and presence flags only
+        # codeql[py/clear-text-logging-sensitive-data]
         print(f"[DEBUG {timestamp}]{user_prefix} {message}")  # substitution applied in LOGGER.write
+
+
+# Prints one operational event only when verbose mode is enabled
+def verbose_print(message):
+    if VERBOSE_MODE:
+        print(f"* {message}")  # substitution applied in LOGGER.write
+
+
+# Prints one delivery confirmation in verbose mode unless DELIVERY_CONFIRMATIONS turns them off
+def verbose_delivery_print(message):
+    if DELIVERY_CONFIRMATIONS:
+        verbose_print(message)
+
+
+# Prints verbose-only notices as one block, so a standalone line is not left without the timestamp trailer
+def verbose_notice(*messages):
+    if not VERBOSE_MODE or not messages:
+        return
+    for message in messages:
+        verbose_print(message)
+    # Before monitoring starts the notice belongs to the startup screen, which the monitoring header closes
+    if MONITORING_ACTIVE:
+        print_cur_ts()
+
+
+# Records that the monitoring screen has started, so a later verbose notice closes with its own timestamp
+def mark_monitoring_started():
+    global MONITORING_ACTIVE
+    MONITORING_ACTIVE = True
 
 
 # Prefixes one CSV value so spreadsheet software cannot evaluate Instagram-supplied text as a formula
@@ -5804,7 +7205,7 @@ def write_csv_entry(csv_file_name, timestamp, object_type, old, new):
         # Lazily initialize CSV file if it doesn't exist or is empty
         init_csv_file(csv_file_name)
 
-        debug_print(f"Writing CSV entry to {csv_file_name}: Type={object_type}, Old={old}, New={new}")
+        debug_print("CSV write", path=csv_file_name, record_type=object_type, old=old, new=new)
         # CSV destinations are intentional local CLI/config choices, while dashboard changes accept plain names only
 
         # codeql[py/path-injection]
@@ -5826,7 +7227,7 @@ def randomize_number(number, diff_low, diff_high):
 
 # Converts a datetime to local timezone and removes timezone info (naive)
 def convert_to_local_naive(dt: Optional[datetime] = None):
-    tz = pytz.timezone(LOCAL_TIMEZONE)
+    tz = local_timezone()
 
     if dt is not None:
         if dt.tzinfo is None:
@@ -5841,12 +7242,12 @@ def convert_to_local_naive(dt: Optional[datetime] = None):
 
 # Returns current local time without timezone info (naive)
 def now_local_naive():
-    return datetime.now(pytz.timezone(LOCAL_TIMEZONE)).replace(microsecond=0, tzinfo=None)
+    return now_local().replace(microsecond=0, tzinfo=None)
 
 
 # Returns current local time with timezone info (aware)
 def now_local():
-    return datetime.now(pytz.timezone(LOCAL_TIMEZONE))
+    return datetime.now(local_timezone())
 
 
 # Converts UTC datetime object returned by Instagram API to datetime object in specified timezone
@@ -5857,7 +7258,7 @@ def convert_utc_datetime_to_tz_datetime(dt_utc):
     try:
         if dt_utc.tzinfo is None:
             dt_utc = pytz.utc.localize(dt_utc)
-        return dt_utc.astimezone(pytz.timezone(LOCAL_TIMEZONE))
+        return dt_utc.astimezone(local_timezone())
     except Exception:
         return None
 
@@ -5873,7 +7274,7 @@ def convert_utc_str_to_tz_datetime(dt_str):
         if dt.tzinfo is None:
             dt = pytz.utc.localize(dt)
 
-        return dt.astimezone(pytz.timezone(LOCAL_TIMEZONE))
+        return dt.astimezone(local_timezone())
 
     except Exception:
         return None
@@ -5889,6 +7290,8 @@ def get_cur_ts(ts_str=""):
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str="Timestamp:\t\t\t\t", newline=False):
     # Always print; Logger handles terminal suppression while ensuring file logging
+    global REPORTS_PRINTED
+    REPORTS_PRINTED += 1
     print(get_cur_ts(("\n" if newline else "") + str(ts_str)))
     print("─" * HORIZONTAL_LINE)
 
@@ -5923,18 +7326,15 @@ def format_hour_range(h_min, h_max):
         return f"{h_min:02d}:00 - {h_max:02d}:59"
 
 
-# Recomputes cycle-based liveness counter after INSTA_CHECK_INTERVAL changes
-def recompute_liveness_check_counter() -> None:
-    global LIVENESS_CHECK_COUNTER
-    if LIVENESS_CHECK_INTERVAL and INSTA_CHECK_INTERVAL > 0:
-        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / INSTA_CHECK_INTERVAL
-    else:
-        LIVENESS_CHECK_COUNTER = 0
+# Recomputes the liveness reminder after LIVENESS_CHECK_INTERVAL changes
+def recompute_liveness_reminder() -> None:
+    global LIVENESS_REMINDER_SECONDS
+    LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL and INSTA_CHECK_INTERVAL > 0 else 0
 
 
 # Returns the timestamp/datetime object in human readable format (long version); eg. Sun 21 Apr 2024, 15:08:45
 def get_date_from_ts(ts):
-    tz = pytz.timezone(LOCAL_TIMEZONE)
+    tz = local_timezone()
 
     if isinstance(ts, str):
         try:
@@ -5969,7 +7369,7 @@ def get_date_from_ts(ts):
 # Sun 21 Apr 15:08:32 (if show_seconds == True)
 # 21 Apr 15:08 (if show_weekday == False)
 def get_short_date_from_ts(ts, show_year=False, show_hour=True, show_weekday=True, show_seconds=False, always_show_year=False):
-    tz = pytz.timezone(LOCAL_TIMEZONE)
+    tz = local_timezone()
     if always_show_year:
         show_year = True
 
@@ -6016,7 +7416,7 @@ def get_short_date_from_ts(ts, show_year=False, show_hour=True, show_weekday=Tru
 # - Tom. HH:MM if tomorrow
 # - DD MMM HH:MM if other
 def get_squeezed_date_from_ts(ts, show_seconds: bool = True):
-    tz = pytz.timezone(LOCAL_TIMEZONE)
+    tz = local_timezone()
     now = datetime.now(tz)
     today = now.date()
     tomorrow = today + timedelta(days=1)
@@ -6062,7 +7462,7 @@ def get_squeezed_date_from_ts(ts, show_seconds: bool = True):
 
 # Returns the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
 def get_hour_min_from_ts(ts, show_seconds=False):
-    tz = pytz.timezone(LOCAL_TIMEZONE)
+    tz = local_timezone()
 
     if isinstance(ts, str):
         try:
@@ -6094,7 +7494,7 @@ def get_hour_min_from_ts(ts, show_seconds=False):
 
 # Returns the range between two timestamps/datetime objects; eg. Sun 21 Apr 14:09 - 14:15
 def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
-    tz = pytz.timezone(LOCAL_TIMEZONE)
+    tz = local_timezone()
 
     if isinstance(ts1, datetime):
         ts1_new = int(round(ts1.timestamp()))
@@ -6131,9 +7531,65 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
     return str(out_str)
 
 
+# Returns how long the window a change was observed in lasted and when it ended, falling back to the configured
+# interval until the run has a previous check to measure from
+def observed_window():
+    ended = int(time.time())
+    return max(1, ended - LAST_CHECK_TS if LAST_CHECK_TS else INSTA_CHECK_INTERVAL), ended
+
+
+# Returns the window a change was observed in, as a duration followed by the dates it spans
+def check_window_text():
+    lasted, ended = observed_window()
+    return f"{display_time(lasted)} ({get_range_of_dates_from_tss(ended - lasted, ended, short=True)})"
+
+
+# Returns the same window with the duration emphasized, for an HTML notification body
+def check_window_html():
+    lasted, ended = observed_window()
+    return f"<b>{escape(display_time(lasted))}</b> ({escape(get_range_of_dates_from_tss(ended - lasted, ended, short=True))})"
+
+
 # Checks if the timezone name is correct
 def is_valid_timezone(tz_name):
     return tz_name in pytz.all_timezones
+
+
+# Returns the timezone every timestamp is rendered in, falling back to system local time while LOCAL_TIMEZONE still holds the
+# unresolved 'Auto' sentinel, so a line printed before the timezone is resolved cannot end the run
+def local_timezone():
+    return pytz.timezone(LOCAL_TIMEZONE) if is_valid_timezone(LOCAL_TIMEZONE) else datetime.now().astimezone().tzinfo
+
+
+TIMEZONE_CHECK_LABELS = {"config": "Local timezone is valid", "auto": "Local timezone can be detected", "auto_unavailable": "Automatic timezone detection is unavailable", "auto_failed": "Automatic timezone detection failed", "invalid": "Local timezone is invalid"}
+
+
+# Resolves LOCAL_TIMEZONE and the state doctor reports it with, returning advice when no zone could be determined
+def resolve_local_timezone():
+    global LOCAL_TIMEZONE, LOCAL_TIMEZONE_STATE
+
+    LOCAL_TIMEZONE_STATE = "config"
+    timezone_advice = None
+    local_tz = None
+    if LOCAL_TIMEZONE == "Auto":
+        if get_localzone is not None:
+            try:
+                local_tz = get_localzone()
+            except Exception as exc:
+                debug_print("Local timezone detection", outcome="failed", error=f"{type(exc).__name__}: {exc}")
+        if local_tz and is_valid_timezone(str(local_tz)):
+            LOCAL_TIMEZONE = str(local_tz)
+            LOCAL_TIMEZONE_STATE = "auto"
+        elif get_localzone is None:
+            LOCAL_TIMEZONE_STATE = "auto_unavailable"
+            timezone_advice = make_recovery_advice("dependency.missing", "The local timezone could not be detected", recovery_fix_with_guide("Install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone", INSTALLATION_GUIDE_URL), False, "LOCAL_TIMEZONE is Auto but tzlocal is unavailable")
+        else:
+            LOCAL_TIMEZONE_STATE = "auto_failed"
+            timezone_advice = make_recovery_advice("config.invalid", "The local timezone could not be detected", recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_GUIDE_URL), False, "tzlocal did not return a supported timezone")
+    elif not is_valid_timezone(LOCAL_TIMEZONE):
+        LOCAL_TIMEZONE_STATE = "invalid"
+        timezone_advice = make_recovery_advice("config.invalid", f"Configured LOCAL_TIMEZONE '{LOCAL_TIMEZONE}' is not valid", recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_GUIDE_URL), False, f"Time zone: {LOCAL_TIMEZONE}")
+    return timezone_advice
 
 
 # Signal handler for SIGUSR1 allowing to switch email notifications for new posts/reels/stories/followings/bio
@@ -6160,7 +7616,7 @@ def toggle_followers_notifications_signal_handler(sig, frame):
 def increase_check_signal_handler(sig, frame):
     global INSTA_CHECK_INTERVAL
     INSTA_CHECK_INTERVAL = INSTA_CHECK_INTERVAL + INSTA_CHECK_SIGNAL_VALUE
-    recompute_liveness_check_counter()
+    recompute_liveness_reminder()
     if INSTA_CHECK_INTERVAL <= RANDOM_SLEEP_DIFF_LOW:
         check_interval_low = INSTA_CHECK_INTERVAL
     else:
@@ -6176,7 +7632,7 @@ def decrease_check_signal_handler(sig, frame):
     global INSTA_CHECK_INTERVAL
     if (INSTA_CHECK_INTERVAL - RANDOM_SLEEP_DIFF_LOW - INSTA_CHECK_SIGNAL_VALUE) > 0:
         INSTA_CHECK_INTERVAL = INSTA_CHECK_INTERVAL - INSTA_CHECK_SIGNAL_VALUE
-    recompute_liveness_check_counter()
+    recompute_liveness_reminder()
     if INSTA_CHECK_INTERVAL <= RANDOM_SLEEP_DIFF_LOW:
         check_interval_low = INSTA_CHECK_INTERVAL
     else:
@@ -6185,6 +7641,52 @@ def decrease_check_signal_handler(sig, frame):
     print(f"* Signal {sig_name} received")
     print(f"* Instagram timers: [check interval: {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)}]")
     print_cur_ts()
+
+
+DOTENV_RELOAD_STATE = {}
+
+
+# Names the effective source after a file-owned secret is reloaded or removed
+def dotenv_reload_source(key):
+    if key in DOTENV_RELOAD_STATE.get("managed", ()):
+        return "dotenv file reload" if "dotenv file reload" in SECRET_SOURCE_ORDER else "dotenv file"
+    return DOTENV_RELOAD_STATE.get("base_sources", {}).get(key, "environment" if key in DOTENV_RELOAD_STATE.get("exported", ()) else SECRET_SOURCE_ORDER[0])
+
+
+# Returns the secrets explicitly supplied on the command line
+def command_line_secret_keys():
+    return frozenset(globals().get("COMMAND_LINE_SECRET_KEYS", ())) | frozenset(key for key, source in globals().get("SECRET_SOURCES", {}).items() if source == "command line")
+
+
+# Reloads file-owned credentials while preserving startup exports and command-line choices
+def load_managed_dotenv(path, override=False, interpolate=True, protected_keys=()):
+    from io import StringIO
+    from dotenv.main import DotEnv
+    from dotenv.parser import parse_stream
+    if not override and not Path(path).is_file():
+        return False
+    content = Path(path).read_text(encoding="utf-8")
+    if override:
+        malformed = next((binding for binding in parse_stream(StringIO(content)) if binding.error), None)
+        if malformed is not None:
+            raise ValueError(f"Dotenv syntax error near line {malformed.original.line}. Correct the assignment and reload again")
+    state: dict = DOTENV_RELOAD_STATE if override and DOTENV_RELOAD_STATE else dict(base={key: os.environ.get(key) or globals().get(key, "") for key in SECRET_KEYS}, exported={key for key, value in os.environ.items() if value}, managed=set())
+    command_keys = command_line_secret_keys()
+    protected = set(protected_keys) | state["exported"] | command_keys
+    values = DotEnv(dotenv_path=None, stream=StringIO(content), override=False, interpolate=interpolate).dict()
+    applied = {key for key, value in values.items() if value is not None and key not in protected and (override or not os.environ.get(key))}
+    removed = state["managed"] - applied - protected
+    for key in removed:
+        value = state["base"].get(key)
+        os.environ[key] = "" if value is None else str(value)
+    for key in applied:
+        os.environ[key] = str(values[key])
+    state["managed"] = applied.intersection(SECRET_KEYS)
+    state["loaded"] = set(state.get("loaded", ())) | applied
+    if state is not DOTENV_RELOAD_STATE:
+        DOTENV_RELOAD_STATE.clear()
+        DOTENV_RELOAD_STATE.update(state)
+    return bool(values)
 
 
 # Signal handler for SIGHUP allowing to reload secrets from .env
@@ -6199,23 +7701,29 @@ def reload_secrets_signal_handler(sig, frame):
     else:
         # Reload .env if python-dotenv is installed
         try:
-            from dotenv import load_dotenv, find_dotenv
+            from dotenv import find_dotenv
             if DOTENV_FILE:
                 env_path = DOTENV_FILE
             else:
                 env_path = find_dotenv()
             if env_path:
-                load_dotenv(env_path, override=True, interpolate=False)
+                load_managed_dotenv(env_path, override=True, interpolate=False)
             else:
                 print("* No .env file found, skipping env-var reload")
         except ImportError:
             env_path = None
             print("* python-dotenv not installed, skipping env-var reload")
 
+        except (OSError, UnicodeError, ValueError) as exc:
+            print_recovery_advice(make_recovery_advice("config.invalid", "The dotenv reload failed. Existing secrets were kept", recovery_fix_with_guide("Check the dotenv file path, UTF-8 encoding and assignment syntax, then reload again", SECRETS_GUIDE_URL), False, str(exc)))
+            return
+
     proxy_url_changed = False
     webhook_url_changed = False
     if env_path:
         for secret in SECRET_KEYS:
+            if secret in command_line_secret_keys():
+                continue
             old_val = globals().get(secret)
             val = os.getenv(secret)
             if val is not None and val != old_val:
@@ -6224,6 +7732,7 @@ def reload_secrets_signal_handler(sig, frame):
                     proxy_url_changed = True
                 if secret == "WEBHOOK_URL":
                     webhook_url_changed = True
+                record_secret_source(secret, dotenv_reload_source(secret), val)
                 # This prints the setting name and environment-file path, never the secret value
 
                 # codeql[py/clear-text-logging-sensitive-data]
@@ -6267,7 +7776,7 @@ def save_pic_video(image_video_url, image_video_file_name, custom_mdate_ts=0):
     image_video_response = None
     expected_bytes = None
     try:
-        # Certificate verification is always True or an existing CA bundle selected by the local operator
+        # Certificate verification follows VERIFY_SSL, which the local operator turns off only for an intercepting network
 
         # codeql[py/request-without-cert-validation]
         image_video_response = req.get(image_video_url, headers={'User-Agent': USER_AGENT}, timeout=FUNCTION_TIMEOUT, stream=True, verify=get_proxies_ssl(), proxies=get_proxies())
@@ -6357,7 +7866,7 @@ def compare_images(file1, file2):
                     return False
             return True
     except Exception as e:
-        print(f"* Error while comparing profile pictures: {e}")
+        print_recovery_error(e, summary=f"Error while comparing profile pictures: {e}")
         return False
 
 
@@ -6375,7 +7884,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
     # Profile pic does not exist in the filesystem
     if not os.path.isfile(profile_pic_file):
         if save_pic_video(profile_image_url, profile_pic_file):
-            profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
+            profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), local_timezone())
 
             if profile_pic_file_empty and os.path.isfile(profile_pic_file_empty):
                 is_empty_profile_pic = compare_images(profile_pic_file, profile_pic_file_empty)
@@ -6404,12 +7913,12 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 if csv_file_name and not is_empty_profile_pic:
                     write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Created", "", convert_to_local_naive(profile_pic_mdate_dt))
             except Exception as e:
-                print(f"* Error: {e}")
+                print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
         else:
             print(f"* Error saving profile picture !{new_line}")
 
         if func_ver == 2:
-            print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+            print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
             print_cur_ts()
         else:
             print_cur_ts(newline=True)
@@ -6421,10 +7930,10 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
         m_body = ""
         m_body_html = ""
         m_body_html_pic_saved_text = ""
-        profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
+        profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), local_timezone())
         profile_pic_mdate = get_short_date_from_ts(profile_pic_mdate_dt, True)
         if save_pic_video(profile_image_url, profile_pic_file_tmp):
-            profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)), pytz.timezone(LOCAL_TIMEZONE))
+            profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)), local_timezone())
             if profile_pic_file_empty and os.path.isfile(profile_pic_file_empty):
                 debug_print("Comparing current profile picture with empty template...")
                 is_empty_profile_pic = compare_images(profile_pic_file, profile_pic_file_empty)
@@ -6440,11 +7949,10 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     log_activity("Profile picture removed", user=user)
                     csv_text = "Profile Picture Removed"
 
-                    if send_email_notification:
-                        m_subject = f"Instagram user {user} has removed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
+                    m_subject = f"Instagram user {user} has removed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
 
-                        m_body = f"Instagram user {user} has removed profile picture added on {profile_pic_mdate} (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"Instagram user <b>{user}</b> has removed profile picture added on <b>{profile_pic_mdate}</b> (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                    m_body = f"Instagram user {user} has removed profile picture added on {profile_pic_mdate} (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body_html = f"Instagram user <b>{user}</b> has removed profile picture added on <b>{profile_pic_mdate}</b> (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
                 # User has set profile picture
                 elif is_empty_profile_pic and not is_empty_profile_pic_tmp:
@@ -6454,12 +7962,11 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago){new_line}")
                     csv_text = "Profile Picture Created"
 
-                    if send_email_notification:
-                        m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
-                        m_subject = f"Instagram user {user} has set profile picture ! ({get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)})"
+                    m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
+                    m_subject = f"Instagram user {user} has set profile picture ! ({get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)})"
 
-                        m_body = f"Instagram user {user} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"Instagram user <b>{user}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                    m_body = f"Instagram user {user} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body_html = f"Instagram user <b>{user}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
                 # User has changed profile picture
                 elif not is_empty_profile_pic_tmp and not is_empty_profile_pic:
@@ -6468,12 +7975,11 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago){new_line}")
                     csv_text = "Profile Picture Changed"
 
-                    if send_email_notification:
-                        m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
-                        m_subject = f"Instagram user {user} has changed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
+                    m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
+                    m_subject = f"Instagram user {user} has changed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
 
-                        m_body = f"Instagram user {user} has changed profile picture !\n\nPrevious one added on {profile_pic_mdate} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"Instagram user <b>{user}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{profile_pic_mdate}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                    m_body = f"Instagram user {user} has changed profile picture !\n\nPrevious one added on {profile_pic_mdate} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body_html = f"Instagram user <b>{user}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{profile_pic_mdate}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
                 try:
                     if csv_file_name:
@@ -6484,7 +7990,7 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                         else:
                             write_csv_entry(csv_file_name, now_local_naive(), csv_text, convert_to_local_naive(profile_pic_mdate_dt), convert_to_local_naive(profile_pic_tmp_mdate_dt))
                 except Exception as e:
-                    print(f"* Error: {e}")
+                    print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
                 try:
                     if imgcat_exe and not is_empty_profile_pic_tmp and not (DASHBOARD_ENABLED and RICH_AVAILABLE):
@@ -6501,45 +8007,20 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                         os.replace(profile_pic_file, profile_pic_file_old)
                     os.replace(profile_pic_file_tmp, profile_pic_file)
                 except Exception as e:
-                    print(f"* Error while replacing/copying files: {e}")
+                    print_recovery_error(e, context="file_write", summary=f"Error while replacing/copying files: {e}")
 
-                if send_email_notification and m_subject and m_body:
-                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                    if not m_body_html:
-                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                # One alert through both channels, each carrying the saved picture when there is one
+                if m_subject and m_body:
+                    if csv_text == "Profile Picture Removed":
+                        webhook_title, webhook_description, webhook_color = f"🖼️ {user} Profile Picture Removed", f"User **{user}** has removed their profile picture (was set on {profile_pic_mdate})", 0xe74c3c
+                    elif csv_text == "Profile Picture Created":
+                        webhook_title, webhook_description, webhook_color = f"🖼️ {user} Profile Picture Set", f"User **{user}** has set a new profile picture", 0x2ecc71
                     else:
-                        if m_body_html_pic_saved_text:
-                            send_email(m_subject, m_body, m_body_html, SMTP_SSL, profile_pic_file, "profile_pic")
-                        else:
-                            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-
-                # Send webhook notification for profile picture changes
-                if csv_text == "Profile Picture Removed":
-                    send_webhook(
-                        f"🖼️ {user} Profile Picture Removed",
-                        f"User **{user}** has removed their profile picture (was set on {profile_pic_mdate})",
-                        color=0xe74c3c,  # Red
-                        notification_type="status"
-                    )
-                elif csv_text == "Profile Picture Created":
-                    send_webhook(
-                        f"🖼️ {user} Profile Picture Set",
-                        f"User **{user}** has set a new profile picture",
-                        color=0x2ecc71,  # Green
-                        local_image_file=profile_pic_file,
-                        notification_type="status"
-                    )
-                elif csv_text == "Profile Picture Changed":
-                    send_webhook(
-                        f"🖼️ {user} Profile Picture Changed",
-                        f"User **{user}** has changed their profile picture",
-                        color=0x3498db,  # Blue
-                        local_image_file=profile_pic_file,
-                        notification_type="status"
-                    )
+                        webhook_title, webhook_description, webhook_color = f"🖼️ {user} Profile Picture Changed", f"User **{user}** has changed their profile picture", 0x3498db
+                    send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=send_email_notification, email_image_file=profile_pic_file if m_body_html_pic_saved_text else "", email_image_name="profile_pic", webhook_title=webhook_title, webhook_description=webhook_description, webhook_color=webhook_color, local_image_file=None if csv_text == "Profile Picture Removed" else profile_pic_file)
 
                 if func_ver == 2:
-                    print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                    print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                     print_cur_ts()
 
             else:
@@ -6561,9 +8042,9 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                     except Exception:
                         pass
         else:
-            print(f"* Error while checking if the profile picture has changed !")
+            print_recovery_error("Error while checking if the profile picture has changed !")
             if func_ver == 2:
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
         if func_ver == 1:
             print_cur_ts(newline=True)
@@ -6592,14 +8073,177 @@ def _profile_from_web_profile_info(bot: instaloader.Instaloader, username: str) 
     return instaloader.Profile(bot.context, normalized)
 
 
-# Resolves a profile by username by trying web_profile_info first in anonymous mode then Instaloader
+# Numeric user ids already resolved, so a monitored target is looked up once rather than once a cycle. They survive
+# a restart in a file beside the other state this run writes, since a name keeps its id for as long as the account does
+USER_ID_CACHE: Dict[str, str] = {}
+USER_ID_CACHE_LOCK = threading.Lock()
+USER_ID_CACHE_FILENAME = "instagram_monitor_user_ids.json"
+USER_ID_CACHE_VERSION = 1
+USER_ID_CACHE_LOADED = False
+
+
+# Returns the path of the file holding resolved user ids
+def user_id_cache_path() -> str:
+    base = OUTPUT_DIR if OUTPUT_DIR else "."
+    return os.path.abspath(os.path.join(base, USER_ID_CACHE_FILENAME))
+
+
+# Reads stored ids into the cache once per run, with the lock already held. The file only saves a lookup, so an
+# unreadable or malformed one is ignored rather than reported and this run resolves the names it needs
+def _load_user_id_cache() -> None:
+    global USER_ID_CACHE_LOADED
+    if USER_ID_CACHE_LOADED:
+        return
+    USER_ID_CACHE_LOADED = True
+    try:
+        with open(user_id_cache_path(), 'r', encoding='utf-8') as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return
+    if not isinstance(data, dict) or data.get('version') != USER_ID_CACHE_VERSION:
+        return
+    for name, identifier in (data.get('ids') or {}).items() if isinstance(data.get('ids'), dict) else ():
+        if isinstance(name, str) and name and isinstance(identifier, str) and identifier.isdigit():
+            USER_ID_CACHE.setdefault(name, identifier)
+
+
+# Writes the cache so the next run starts with the ids this one resolved, with the lock already held. Saving is best
+# effort, since a name the next run has to resolve again costs one request rather than anything it cannot recover from
+def _save_user_id_cache() -> None:
+    destination = user_id_cache_path()
+    temporary_path = None
+    try:
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=os.path.dirname(destination), prefix=f".{os.path.basename(destination)}.", suffix='.tmp', delete=False) as handle:
+            temporary_path = handle.name
+            json.dump({'version': USER_ID_CACHE_VERSION, 'ids': dict(USER_ID_CACHE)}, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, destination)
+        temporary_path = None
+    except Exception as error:
+        debug_print("Resolved user ids could not be saved", path=destination, error=type(error).__name__)
+    finally:
+        if temporary_path and os.path.exists(temporary_path):
+            try:
+                os.remove(temporary_path)
+            except OSError:
+                pass
+
+
+# Returns an id already resolved for this name, by this run or by one before it
+def stored_user_id(username: str) -> Optional[str]:
+    with USER_ID_CACHE_LOCK:
+        _load_user_id_cache()
+        return USER_ID_CACHE.get(username.strip().lower())
+
+
+# Stores one resolved id for this run and the next
+def remember_user_id(username: str, user_id: str) -> None:
+    key = username.strip().lower()
+    with USER_ID_CACHE_LOCK:
+        _load_user_id_cache()
+        if USER_ID_CACHE.get(key) == user_id:
+            return
+        USER_ID_CACHE[key] = user_id
+        _save_user_id_cache()
+
+
+# Drops a stored id that no longer answers to the name it was stored for
+def forget_user_id(username: str) -> None:
+    with USER_ID_CACHE_LOCK:
+        _load_user_id_cache()
+        if USER_ID_CACHE.pop(username.strip().lower(), None) is None:
+            return
+        _save_user_id_cache()
+
+
+# Returns the numeric user id Instagram's search reports for a username, or None when the search does not list that
+# exact account. Search answers with near matches too, so only the name that was asked for is accepted
+def user_id_from_search(ctx, username: str) -> Optional[str]:
+    data = ctx.get_json("web/search/topsearch/", {'context': 'blended', 'query': username, 'include_reel': False})
+    wanted = username.strip().lower()
+    for entry in (data.get('users') or []) if isinstance(data, dict) else []:
+        user = entry.get('user') if isinstance(entry, dict) else None
+        if not isinstance(user, dict) or str(user.get('username') or "").strip().lower() != wanted:
+            continue
+        identifier = user.get('pk') or user.get('id')
+        if identifier is not None and str(identifier).strip():
+            return str(identifier).strip()
+    return None
+
+
+# Returns the id of the account the session is signed in as when that is the name being resolved, or None for any
+# other name. Instagram writes it into the session's ds_user_id cookie, so searching for it would spend a request
+# on an answer already on hand
+def own_user_id(ctx, username: str) -> Optional[str]:
+    if username.strip().lower() != str(getattr(ctx, 'username', None) or "").strip().lower():
+        return None
+    cookies = getattr(getattr(ctx, '_session', None), 'cookies', None)
+    if cookies is None:
+        return None
+    try:
+        identifier = str(cookies.get('ds_user_id') or "").strip()
+    except Exception:
+        return None
+    return identifier if identifier.isdigit() else None
+
+
+# Returns the user id for a username, reusing a stored answer and searching only when there is none
+def resolve_user_id(ctx, username: str) -> Optional[str]:
+    stored = stored_user_id(username)
+    if stored:
+        return stored
+
+    resolved = own_user_id(ctx, username)
+    source = "session"
+    if not resolved:
+        resolved = user_id_from_search(ctx, username.strip().lower())
+        source = "search"
+    if resolved:
+        remember_user_id(username, resolved)
+        debug_print("Resolved Instagram user id", username=username.strip().lower(), source=source)
+    return resolved
+
+
+# Builds a profile from a user id and reads its metadata, returning None when Instagram answers with another name.
+# A freed username can be taken by another account and a rename leaves a stored id pointing at a name this run is not
+# monitoring, so an id is trusted only for as long as it still answers to the name it was stored for
+def _profile_by_user_id(ctx, username: str, user_id: str) -> Optional[instaloader.Profile]:
+    profile = instaloader.Profile(ctx, {'username': username, 'id': user_id})
+    # Read now rather than on first attribute access, so a refused lookup is reported where the profile is resolved
+    # and the flag probe keeps making a request it can fail on
+    profile._obtain_metadata()
+    return profile if str(profile.username or "").strip().lower() == username.strip().lower() else None
+
+
+# Resolves a profile by username. Instagram retired web_profile_info for accounts that are signed in, answering
+# feedback_required however healthy the account is, so a signed-in run resolves the id through search and reads the
+# profile with the GraphQL query Instaloader already uses. Anonymous runs keep the mobile endpoint, which still works
 def profile_from_username_resilient(bot: instaloader.Instaloader, username: str) -> instaloader.Profile:
     ctx = bot.context
     if not ctx.is_logged_in:
         fallback_profile = _profile_from_web_profile_info(bot, username)
         if fallback_profile is not None:
             return fallback_profile
+        return instaloader.Profile.from_username(ctx, username)
 
+    user_id = resolve_user_id(ctx, username)
+    if user_id is not None:
+        profile = _profile_by_user_id(ctx, username, user_id)
+        if profile is not None:
+            return profile
+        # The id answers to another name now, so it is dropped and the name looked up again
+        forget_user_id(username)
+        refreshed = user_id_from_search(ctx, username.strip().lower())
+        if refreshed is not None and refreshed != user_id:
+            remember_user_id(username, refreshed)
+            profile = _profile_by_user_id(ctx, username, refreshed)
+            if profile is not None:
+                return profile
+
+    # Search does not list every account, so the retired endpoint stays as the last resort. Its refusal is
+    # classified as an endpoint failure, which is why reaching it cannot stop the session account
     return instaloader.Profile.from_username(ctx, username)
 
 
@@ -6611,7 +8255,7 @@ def latest_post_reel(user: str, bot: instaloader.Instaloader) -> Optional[Tuple[
         # Max 3 pinned posts + the latest one
         posts = [(p, "post") for p in islice(profile.get_posts(), 4)]
 
-        reels = [(r, "reel") for r in islice(profile.get_reels(), 4)]
+        reels = [(r, "reel") for r in islice(profile.get_reels(), 4)] if FETCH_REELS else []
     except TypeError as e:
         # Instaloader subscripts a null GraphQL "data" field when Instagram deprecates a doc_id or
         # temporarily blocks the session/IP; surface a clean, actionable error instead of a raw TypeError
@@ -6680,9 +8324,9 @@ def latest_post_mobile(user: str, bot: instaloader.Instaloader):
         return None
 
     if DEBUG_MODE:
-        debug_print(f"[{user}] latest_post_mobile raw data keys: {list(data.keys())}")
+        debug_print("Latest post (mobile)", user=user, raw_keys=list(data.keys()))
         if "data" in data and isinstance(data["data"], dict) and "user" in data["data"]:
-            debug_print(f"[{user}] latest_post_mobile user keys: {list(data['data']['user'].keys())}")
+            debug_print("Latest post (mobile)", user=user, user_keys=list(data["data"]["user"].keys()))
 
     p = P()
     p.mediaid = best_node.get("id", "")
@@ -6806,7 +8450,7 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
             if save_pic_video(post["video_url"], video_filename, ts):
                 print(f"Collab {source} video saved for {user} to '{video_filename}'")
             else:
-                print(f"Error saving collab {source} video !")
+                print_recovery_error(f"Error saving collab {source} video !", context="file_write")
 
     pic_saved_html = ""
     if DOWNLOAD_THUMBNAILS and post.get("display_url"):
@@ -6823,27 +8467,20 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
                 except Exception:
                     pass
 
-    if is_new and STATUS_NOTIFICATION:
-        m_subject = f"Instagram private user {user} has a leaked collab {source} - {get_short_date_from_ts(post_dt)}"
-        m_body = f"Leaked collab {source} detected for private Instagram user {user} (revealed via a public collaborator)\n\nDate: {get_date_from_ts(post_dt)}\n{source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nOwner: https://www.instagram.com/{owner}/\nCollaborators: {collab_str}\nLikes: {likes}\nComments: {comments}\nDescription:\n\n{caption}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-        safe_post_url = escape(post_url, quote=True)
-        safe_profile_url = escape(f"https://www.instagram.com/{insta_username}/", quote=True)
-        safe_owner = escape(str(owner), quote=True)
-        safe_owner_url = escape(f"https://www.instagram.com/{owner}/", quote=True)
-        m_body_html = f"Leaked collab {source} detected for private Instagram user <b>{user}</b> (revealed via a public collaborator){pic_saved_html}<br><br>Date: <b>{get_date_from_ts(post_dt)}</b><br>{source.capitalize()} URL: <a href=\"{safe_post_url}\">{safe_post_url}</a><br>Profile URL: <a href=\"{safe_profile_url}\">{safe_profile_url}</a><br>Owner: <a href=\"{safe_owner_url}\">{safe_owner}</a><br>Collaborators: {escape(collab_str)}<br>Likes: {likes}<br>Comments: {comments}<br>Description:<br><br>{escape(str(caption))}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-        print(f"\n* Sending email notification to {RECEIVER_EMAIL}")
-        if pic_saved_html and image_filename and os.path.isfile(image_filename):
-            send_email(m_subject, m_body, m_body_html, SMTP_SSL, image_filename, "collab_pic")
-        else:
-            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-
     if is_new and csv_file_name:
         try:
             write_csv_entry(csv_file_name, convert_to_local_naive(post_dt), f"New Leaked Collab {source.capitalize()}", "", caption if caption != "(empty)" else post_url)
         except Exception as e:
-            print(f"* Error: {e}")
+            print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
     if is_new:
+        m_subject = f"Instagram private user {user} has a leaked collab {source} - {get_short_date_from_ts(post_dt)}"
+        m_body = f"Leaked collab {source} detected for private Instagram user {user} (revealed via a public collaborator)\n\nDate: {get_date_from_ts(post_dt)}\n{source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nOwner: https://www.instagram.com/{owner}/\nCollaborators: {collab_str}\nLikes: {likes}\nComments: {comments}\nDescription:\n\n{caption}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+        safe_post_url = escape(post_url, quote=True)
+        safe_profile_url = escape(f"https://www.instagram.com/{insta_username}/", quote=True)
+        safe_owner = escape(str(owner), quote=True)
+        safe_owner_url = escape(f"https://www.instagram.com/{owner}/", quote=True)
+        m_body_html = f"Leaked collab {source} detected for private Instagram user <b>{user}</b> (revealed via a public collaborator){pic_saved_html}<br><br>Date: <b>{get_date_from_ts(post_dt)}</b><br>{source.capitalize()} URL: <a href=\"{safe_post_url}\">{safe_post_url}</a><br>Profile URL: <a href=\"{safe_profile_url}\">{safe_profile_url}</a><br>Owner: <a href=\"{safe_owner_url}\">{safe_owner}</a><br>Collaborators: {escape(collab_str)}<br>Likes: {likes}<br>Comments: {comments}<br>Description:<br><br>{escape(str(caption))}<br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
         webhook_fields = [
             {"name": "Date", "value": f"**{get_date_from_ts(post_dt)}**", "inline": True},
             {"name": "Likes", "value": f"**{likes}**", "inline": True},
@@ -6857,15 +8494,7 @@ def report_leaked_collab_post(user: str, insta_username: str, post: Dict[str, An
             webhook_fields.append({"name": "Description", "value": (caption[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(caption) > WEBHOOK_FIELD_VALUE_LIMIT else caption})  # type: ignore
 
         has_local_image = bool(image_filename and os.path.isfile(image_filename))
-        send_webhook(
-            f"🕵️ {user} Leaked Collab {source.capitalize()}",
-            f"Private user **{user}** has a leaked collab **{source}** (revealed via a public collaborator)",
-            color=0x9b59b6,  # Purple
-            fields=webhook_fields,
-            local_image_file=image_filename if has_local_image else None,
-            image_url=post.get("display_url") if (post.get("display_url") and not has_local_image) else None,
-            notification_type="status"
-        )
+        send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, email_image_file=image_filename if pic_saved_html and has_local_image else "", email_image_name="collab_pic", webhook_title=f"🕵️ {user} Leaked Collab {source.capitalize()}", webhook_description=f"Private user **{user}** has a leaked collab **{source}** (revealed via a public collaborator)", webhook_color=0x9b59b6, webhook_fields=webhook_fields, local_image_file=image_filename if has_local_image else None, image_url=post.get("display_url") if (post.get("display_url") and not has_local_image) else None)
 
     dashboard_media = get_dashboard_media_metadata(post.get("display_url", ""), image_filename, video_filename)
 
@@ -6901,15 +8530,57 @@ def get_reels_count_mobile(user: str, bot: instaloader.Instaloader):
     return reels_count
 
 
-# Return the total number of reels (clips) for the user (two methods)
-def get_total_reels_count(user: str, bot: instaloader.Instaloader, skip_session=False):
+# Reels counts already established, keyed by target, each holding the posts count it was established at. Instagram
+# stopped answering the endpoint that reports the count directly, so the fallback walks the whole reel list, which is
+# far more requests than a number that cannot have changed is worth. A reel counts towards the posts number, so that
+# number moving is what says the list is worth reading again
+REELS_COUNT_CACHE: Dict[str, Tuple[int, int]] = {}
+REELS_COUNT_CACHE_LOCK = threading.Lock()
+
+
+# Returns a reels count already established for this posts count, or None when it has to be counted again
+def cached_reels_count(user: str, posts_count: Optional[int]) -> Optional[int]:
+    if posts_count is None:
+        return None
+    with REELS_COUNT_CACHE_LOCK:
+        entry = REELS_COUNT_CACHE.get(user)
+    return entry[1] if entry is not None and entry[0] == int(posts_count) else None
+
+
+# Remembers one reels count against the posts count it was established at
+def remember_reels_count(user: str, posts_count: Optional[int], reels_count: Optional[int]) -> None:
+    if posts_count is None or reels_count is None:
+        return
+    with REELS_COUNT_CACHE_LOCK:
+        REELS_COUNT_CACHE[user] = (int(posts_count), int(reels_count))
+
+
+# Return the total number of reels (clips) for the user, reusing a count already established for this posts count
+def get_total_reels_count(user: str, bot: instaloader.Instaloader, skip_session=False, posts_count: Optional[int] = None):
+    reused = cached_reels_count(user, posts_count)
+    if reused is not None:
+        debug_print("Reels count reused", user=user, value=reused, posts=posts_count)
+        return reused
+
+    counted = _count_total_reels(user, bot, skip_session)
+    remember_reels_count(user, posts_count, counted)
+    return counted
+
+
+# Counts the user's reels (two methods)
+def _count_total_reels(user: str, bot: instaloader.Instaloader, skip_session=False):
 
     # Try iPhone mobile API path if sessions are allowed
     if not skip_session:
         try:
             return get_reels_count_mobile(user, bot)
-        except Exception:
-            pass
+        except Exception as mobile_error:
+            # A challenge or an expired session is about the account rather than this endpoint. Falling back
+            # would send another request while Instagram is already refusing the session, so it is reported
+            mobile_error_msg = format_error_message(mobile_error)
+            if is_account_level_failure(classify_failure_class(mobile_error_msg)):
+                raise
+            debug_print("Reels count over the mobile API failed", user=user, error=mobile_error_msg)
 
     # Anonymous fallback: count every reel in the feed, might be API intensive
     try:
@@ -6928,30 +8599,21 @@ def check_posts_counts(user, posts_count, posts_count_old, r_sleep_time):
     if posts_count != posts_count_old:
         print(f"* Posts number changed for user {user} from {posts_count_old} to {posts_count}\n")
 
-        if STATUS_NOTIFICATION:
-            m_subject = f"Instagram user {user} posts number has changed! ({posts_count_old} -> {posts_count})"
+        m_subject = f"Instagram user {user} posts number has changed! ({posts_count_old} -> {posts_count})"
 
-            m_body = f"Posts number changed for user {user} from {posts_count_old} to {posts_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-            print(f"* Sending email notification to {RECEIVER_EMAIL}")
-            m_body_html = f"Posts number changed for user <b>{user}</b> from <b>{posts_count_old}</b> to <b>{posts_count}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+        m_body = f"Posts number changed for user {user} from {posts_count_old} to {posts_count}\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+        m_body_html = f"Posts number changed for user <b>{user}</b> from <b>{posts_count_old}</b> to <b>{posts_count}</b><br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
-        # Send webhook notification for posts count change
         if posts_count is not None and posts_count_old is not None:
             diff = posts_count - posts_count_old
             diff_str = f" ({'+' if diff > 0 else ''}{diff})"
         else:
             diff_str = ""
 
-        send_webhook(
-            f"📮 {user} Posts Count Changed",
-            f"User **{user}** posts count changed from **{posts_count_old}** to **{posts_count}**{diff_str}",
-            color=0x34495e,  # Dark Blue
-            notification_type="status"
-        )
+        send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"📮 {user} Posts Count Changed", webhook_description=f"User **{user}** posts count changed from **{posts_count_old}** to **{posts_count}**{diff_str}", webhook_color=0x34495e)
 
         log_activity(f"Posts changed: {posts_count_old} -> {posts_count}", user=user, level='update')
-        print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+        print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
         print_cur_ts()
         return 1
     else:
@@ -6964,25 +8626,16 @@ def check_reels_counts(user, reels_count, reels_count_old, r_sleep_time):
     if reels_count != reels_count_old:
         print(f"* Reels number changed for user {user} from {reels_count_old} to {reels_count}\n")
 
-        if STATUS_NOTIFICATION:
-            m_subject = f"Instagram user {user} reels number has changed! ({reels_count_old} -> {reels_count})"
+        m_subject = f"Instagram user {user} reels number has changed! ({reels_count_old} -> {reels_count})"
 
-            m_body = f"Reels number changed for user {user} from {reels_count_old} to {reels_count}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-            print(f"* Sending email notification to {RECEIVER_EMAIL}")
-            m_body_html = f"Reels number changed for user <b>{user}</b> from <b>{reels_count_old}</b> to <b>{reels_count}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+        m_body = f"Reels number changed for user {user} from {reels_count_old} to {reels_count}\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+        m_body_html = f"Reels number changed for user <b>{user}</b> from <b>{reels_count_old}</b> to <b>{reels_count}</b><br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
-        # Send webhook notification for reels count change
         diff = reels_count - reels_count_old
         diff_str = f"+{diff}" if diff > 0 else str(diff)
-        send_webhook(
-            f"🎬 {user} Reels Count Changed",
-            f"User **{user}** reels count changed from **{reels_count_old}** to **{reels_count}** ({diff_str})",
-            color=0x34495e,  # Dark Blue
-            notification_type="status"
-        )
+        send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"🎬 {user} Reels Count Changed", webhook_description=f"User **{user}** reels count changed from **{reels_count_old}** to **{reels_count}** ({diff_str})", webhook_color=0x34495e)
 
-        print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+        print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
         print_cur_ts()
         return 1
     else:
@@ -7023,16 +8676,16 @@ def get_real_reel_code(bot: instaloader.Instaloader, username: str) -> Optional[
         data = ctx.get_iphone_json(f"api/v1/users/web_profile_info/?username={username}", {})
 
         if isinstance(data, dict) and data.get("status") == "fail":
-            debug_print(f"[{username}] get_real_reel_code failed: Instagram API error - {data.get('message', 'unknown')}")
+            debug_print("Reel code lookup", user=username, outcome="failed", error=f"Instagram API error: {data.get('message', 'unknown')}")
             return None
 
         if not isinstance(data, dict) or "data" not in data:
-            debug_print(f"[{username}] get_real_reel_code failed: malformed response")
+            debug_print("Reel code lookup", user=username, outcome="failed", reason="malformed response")
             return None
 
         user = data["data"].get("user")
         if not user:
-            debug_print(f"[{username}] get_real_reel_code failed: empty user data")
+            debug_print("Reel code lookup", user=username, outcome="failed", reason="empty user data")
             return None
 
         edges = user.get("edge_reels_media", {}).get("edges", [])
@@ -7040,18 +8693,73 @@ def get_real_reel_code(bot: instaloader.Instaloader, username: str) -> Optional[
             return None
         return edges[0]["node"].get("shortcode")
     except Exception as e:
-        debug_print(f"[{username}] get_real_reel_code exception: {e}")
+        if is_too_many_open_files(e):
+            print_recovery_advice(classify_recovery_error(e))
+            raise SystemExit(1)
+        debug_print("Reel code lookup", user=username, outcome="failed", error=f"{type(e).__name__}: {e}")
         return None
 
 
-# Returns Firefox cookie patterns for the active platform including Linux package variants
+# Returns Firefox cookie patterns for the active platform, including Linux package and Windows Store installations
 def firefox_cookie_patterns():
     selected_system = system()
     configured_pattern = {"Windows": FIREFOX_WINDOWS_COOKIE, "Darwin": FIREFOX_MACOS_COOKIE}.get(selected_system, FIREFOX_LINUX_COOKIE)
     patterns = [configured_pattern]
-    if selected_system == "Linux":
-        patterns.extend(("~/snap/firefox/common/.mozilla/firefox/*/cookies.sqlite", "~/.var/app/org.mozilla.firefox/.mozilla/firefox/*/cookies.sqlite"))
-    return tuple(dict.fromkeys(patterns))
+    if selected_system == "Windows":
+        # A roaming or redirected user profile moves these roots off the home directory, so both what the
+        # environment reports and the home-relative location are searched
+        for roaming_root in windows_data_roots("APPDATA", "~/AppData/Roaming"):
+            patterns.append(os.path.join(roaming_root, "Mozilla", "Firefox", "Profiles", "*", "cookies.sqlite"))
+        # A Store or MSIX build keeps its profiles inside the package's redirected application data rather
+        # than in the ordinary roaming location
+        for local_root in windows_data_roots("LOCALAPPDATA", "~/AppData/Local"):
+            patterns.append(os.path.join(local_root, "Packages", "Mozilla.Firefox_*", "LocalCache", "Roaming", "Mozilla", "Firefox", "Profiles", "*", "cookies.sqlite"))
+    elif selected_system == "Linux":
+        # The last pattern covers a container given the Windows Firefox root, where the profiles sit one level
+        # deeper in a Profiles folder. It matches nothing on an ordinary Linux host
+        patterns.extend(("~/snap/firefox/common/.mozilla/firefox/*/cookies.sqlite", "~/.var/app/org.mozilla.firefox/.mozilla/firefox/*/cookies.sqlite", "~/.mozilla/firefox/Profiles/*/cookies.sqlite"))
+    return dedupe_cookie_patterns(patterns)
+
+
+# Returns the Windows application-data roots for one environment variable, the environment's answer first
+def windows_data_roots(variable: str, home_relative: str) -> Tuple[str, ...]:
+    roots = (os.environ.get(variable), expanduser(home_relative))
+    return tuple(dict.fromkeys(root for root in roots if root))
+
+
+# Drops patterns that resolve to the same location, since the configured pattern and the ones added for a
+# platform routinely spell one directory differently and would otherwise be globbed twice
+def dedupe_cookie_patterns(patterns) -> Tuple[str, ...]:
+    kept: Dict[str, str] = {}
+    for pattern in patterns:
+        kept.setdefault(os.path.normcase(os.path.normpath(expanduser(pattern))), pattern)
+    return tuple(kept.values())
+
+
+# Names the Firefox packaging a profile belongs to, since Snap, Flatpak, Microsoft Store and distribution
+# builds keep separate profile trees that routinely contain the same friendly name
+def firefox_install_label(profile_path) -> str:
+    # Backslashes are normalized rather than os.sep, since the path classified here comes from whichever
+    # platform's pattern matched and not necessarily from the host running the check
+    lowered = str(profile_path).replace("\\", "/").lower()
+    if "/snap/firefox/" in lowered:
+        return "Snap"
+    if "/org.mozilla.firefox/" in lowered:
+        return "Flatpak"
+    if "/packages/mozilla.firefox_" in lowered:
+        return "Microsoft Store"
+    return ""
+
+
+# Describes one Firefox profile for a message, tagging the packaging when it is not the distribution build
+def firefox_profile_description(profile) -> str:
+    return f"{profile['name']} ({profile['install']})" if profile.get("install") else str(profile["name"])
+
+
+# Warns that the only profile available holds no Instagram session, since there is no other one to choose instead
+def warn_when_profile_is_signed_out(cookie_file, description: str, firefox: bool = False) -> None:
+    if cookie_file_has_instagram_session(cookie_file, firefox=firefox) is False:
+        print(f"* Warning: {description} is not signed in to Instagram, so the import will most likely fail. To fix: open https://www.instagram.com/ in that browser, sign in, then run the import again")
 
 
 # Lists available Firefox profiles with their directory, friendly name and cookies.sqlite path
@@ -7067,7 +8775,7 @@ def list_firefox_profiles():
             profile_dir = basename(dirname(path))
             # Firefox profile dirs look like "<random>.default-release"; the part after the first dot is the friendly name
             friendly = profile_dir.split(".", 1)[1] if "." in profile_dir else profile_dir
-            profiles.append({"dir": profile_dir, "name": friendly, "path": path})
+            profiles.append({"dir": profile_dir, "name": friendly, "path": path, "install": firefox_install_label(path)})
     return profiles
 
 
@@ -7079,30 +8787,25 @@ def get_firefox_cookiefile():
         raise SystemExit("No Firefox cookies.sqlite file found, use --cookie-file COOKIEFILE flag")
 
     if len(profiles) == 1:
+        warn_when_profile_is_signed_out(profiles[0]["path"], f"the only Firefox profile, '{firefox_profile_description(profiles[0])}',", firefox=True)
         return profiles[0]["path"]
 
-    print()
-    print("Multiple Firefox profiles found:")
-
-    for idx, p in enumerate(profiles, start=1):
-        print(f"  {idx}) {p['name']}  -  {p['path']}")
-
-    try:
-        choice = int(input("Select profile number (0 to exit): "))
-        if choice == 0:
-            raise SystemExit("No profile selected, aborting ...")
-        return profiles[choice - 1]["path"]
-    except (ValueError, IndexError):
-        raise SystemExit("Invalid profile selection !")
+    choices = [{"label": f"{firefox_profile_description(p)}  -  {p['path']}", "signed_in": cookie_file_has_instagram_session(p["path"], firefox=True), "value": p["path"]} for p in profiles]
+    return select_profile_interactively("Multiple Firefox profiles found:", choices)
 
 
 # Resolves a Firefox profile name (directory or friendly name) to its cookies.sqlite path
 def resolve_firefox_profile(name):
     profiles = list_firefox_profiles()
-    for p in profiles:
-        if name.lower() in (p["dir"].lower(), p["name"].lower()):
-            return p["path"]
-    available = ", ".join(p["name"] for p in profiles) or "none found"
+    matches = [p for p in profiles if name.lower() in (p["dir"].lower(), p["name"].lower())]
+    if len(matches) == 1:
+        return matches[0]["path"]
+    # Separate Firefox installs share friendly names, and silently importing from whichever was globbed first
+    # would hand the user a session from a browser they did not name
+    if matches:
+        directories = ", ".join(p["dir"] for p in matches)
+        raise CookieImportError(f"Firefox profile '{name}' matches {len(matches)} profiles from different Firefox installs, pass the full profile directory instead (one of: {directories})")
+    available = ", ".join(firefox_profile_description(p) for p in profiles) or "none found"
     raise CookieImportError(f"Firefox profile '{name}' not found (available: {available})")
 
 
@@ -7129,8 +8832,101 @@ class CookieImportError(Exception):
 
 # Returns the SQLite URI that opens one cookie database read-only, with the path encoded rather than interpolated
 def sqlite_immutable_uri(database_path) -> str:
-    # A raw '?' or '#' in the path would otherwise start URI parameters and could displace immutable=1
-    return "file:" + quote(PurePosixPath(Path(database_path).as_posix()).as_posix()) + "?immutable=1"
+    return sqlite_cookie_uri(database_path, "immutable=1")
+
+
+# Returns the plain read-only URI for a cookie database, which unlike the immutable one sees rows a running
+# browser has written only to the write-ahead log
+def sqlite_readonly_uri(database_path) -> str:
+    return sqlite_cookie_uri(database_path, "mode=ro")
+
+
+# Builds a SQLite URI for a cookie database with the given parameters
+def sqlite_cookie_uri(database_path, parameters: str) -> str:
+    # A raw '?' or '#' in the path would otherwise start URI parameters and could displace the ones asked for
+    return "file:" + quote(PurePosixPath(Path(database_path).as_posix()).as_posix()) + "?" + parameters
+
+
+# A running browser holds its cookie database locked, so a plain read-only open waits out the busy timeout before
+# failing. Kept short because that wait is paid once per profile while listing them
+COOKIE_DATABASE_BUSY_TIMEOUT = 0.25
+
+
+# Opens a cookie database read-only. Browsers keep recent cookies in a write-ahead log until they check it in, and
+# an immutable open ignores that log, so a session saved moments ago would look absent. The read-only open that
+# does see the log is only attempted when a log is actually present, since it is the slower of the two and fails
+# outright on read-only media such as the container's mounted Firefox profile
+def open_cookie_database(database_path):
+    uris = [sqlite_immutable_uri(database_path)]
+    # Cookie databases come from discovered browser profiles or an explicit local operator choice
+    # codeql[py/path-injection]
+    if os.path.exists(f"{database_path}-wal"):
+        uris.insert(0, sqlite_readonly_uri(database_path))
+    first_error: Optional[sqlite3.DatabaseError] = None
+    for uri in uris:
+        conn = None
+        try:
+            conn = connect(uri, uri=True, timeout=COOKIE_DATABASE_BUSY_TIMEOUT)
+            conn.execute("PRAGMA schema_version").fetchone()
+            return conn
+        except sqlite3.DatabaseError as error:
+            if conn is not None:
+                conn.close()
+            first_error = first_error or error
+    raise first_error if first_error is not None else sqlite3.DatabaseError(f"could not open '{database_path}'")
+
+
+# Cookie host keys an Instagram session is stored under, matched exactly so a lookalike domain such as
+# evilinstagram.com can never satisfy the check
+INSTAGRAM_COOKIE_HOSTS = ("instagram.com", ".instagram.com", "www.instagram.com", ".www.instagram.com")
+INSTAGRAM_SESSION_COOKIE = "sessionid"
+
+
+# Reports whether a cookie database holds an Instagram session cookie, returning None when it cannot be read.
+# Only the cookie name and host are read, so a Chromium database answers this without being decrypted
+def cookie_file_has_instagram_session(cookie_file, firefox: bool = False) -> Optional[bool]:
+    if not cookie_file or not os.path.isfile(os.path.expanduser(str(cookie_file))):
+        return None
+    table, column = ("moz_cookies", "host") if firefox else ("cookies", "host_key")
+    placeholders = ", ".join("?" * len(INSTAGRAM_COOKIE_HOSTS))
+    try:
+        conn = open_cookie_database(os.path.expanduser(str(cookie_file)))
+    except sqlite3.DatabaseError:
+        return None
+    try:
+        return conn.execute(f"SELECT 1 FROM {table} WHERE name = ? AND {column} IN ({placeholders}) LIMIT 1", (INSTAGRAM_SESSION_COOKIE, *INSTAGRAM_COOKIE_HOSTS)).fetchone() is not None
+    except sqlite3.DatabaseError:
+        return None
+    finally:
+        conn.close()
+
+
+# Prompts for one profile, re-asking on invalid input instead of aborting and defaulting to the only one signed in
+def select_profile_interactively(heading: str, choices: List[Dict[str, Any]]):
+    signed_in = [index for index, choice in enumerate(choices) if choice["signed_in"]]
+    default_index = signed_in[0] if len(signed_in) == 1 else None
+    width = len(str(len(choices)))
+    print()
+    print(heading)
+    # Only the profiles worth choosing are marked. Labelling the rest as well buries the few that matter in a
+    # long list, and a profile whose database could not be read is left unmarked rather than called signed out
+    if signed_in:
+        print(f"  {colorize('status_online', '*')} marks a profile signed in to Instagram")
+    for index, choice in enumerate(choices, start=1):
+        marker = f"{colorize('status_online', '*')} " if choice["signed_in"] else ("  " if signed_in else "")
+        default_note = "  (default)" if index - 1 == default_index else ""
+        print(f"  {str(index).rjust(width)}) {marker}{choice['label']}{default_note}")
+    prompt = f"Select profile number (0 to exit{', Enter for default' if default_index is not None else ''}): "
+    while True:
+        raw = input(prompt).strip()
+        if not raw and default_index is not None:
+            return choices[default_index]["value"]
+        if raw == "0":
+            raise SystemExit("No profile selected, aborting ...")
+        # isdigit also rejects a negative number, which would otherwise index backwards and silently pick another profile
+        if raw.isdigit() and 1 <= int(raw) <= len(choices):
+            return choices[int(raw) - 1]["value"]
+        print(f"  Enter a number between 1 and {len(choices)}, or 0 to exit.")
 
 
 # Returns the cookie database for one enumerated Firefox profile, refusing paths the tool did not offer
@@ -7153,7 +8949,7 @@ def get_firefox_cookie_dict(cookiefile):
         raise CookieImportError(f"Firefox cookie file '{cookiefile}' not found")
     try:
         # sqlite3's context manager only wraps a transaction, so the connection is closed explicitly
-        conn = connect(sqlite_immutable_uri(cookiefile), uri=True)
+        conn = open_cookie_database(cookiefile)
     except sqlite3.DatabaseError:
         raise CookieImportError(f"'{cookiefile}' is not a valid Firefox cookies.sqlite file")
     try:
@@ -7165,32 +8961,54 @@ def get_firefox_cookie_dict(cookiefile):
             cookie_iter = conn.execute(
                 "SELECT name, value FROM moz_cookies WHERE host = 'instagram.com' OR host LIKE '%.instagram.com'"
             )
-        return dict(cookie_iter)
+        cookie_dict = dict(cookie_iter)
     except sqlite3.DatabaseError:
         raise CookieImportError(f"'{cookiefile}' is not a valid Firefox cookies.sqlite file")
     finally:
         conn.close()
+    # Reported here rather than after a login attempt, so choosing a profile that is not signed in costs no
+    # Instagram request, which is what the Chromium reader already does
+    if not cookie_dict:
+        raise CookieImportError(f"No Instagram cookies found in the Firefox profile at '{cookiefile}'{firefox_profile_alternatives(cookiefile)} - are you logged in to Instagram in Firefox?")
+    return cookie_dict
 
 
-# Reads Instagram session cookies from a Chromium-based browser via pycookiecheat and returns them as a name to value dict
+# Names the other enumerated Firefox profiles, so a failure says where else the session might be.
+# Paths are compared as real paths, since the reader resolves the one it was given
+def firefox_profile_alternatives(cookiefile) -> str:
+    try:
+        used = os.path.realpath(os.path.expanduser(str(cookiefile)))
+        others = [firefox_profile_description(p) for p in list_firefox_profiles() if os.path.realpath(os.path.expanduser(p["path"])) != used]
+    except Exception:
+        return ""
+    return f" (other profiles: {', '.join(others)})" if others else ""
+
+
 # Default Chromium-family user-data directories (parent of the per-profile folders) by OS and browser
 CHROMIUM_USER_DATA_DIRS = {
     "Darwin": {
-        "chrome": "~/Library/Application Support/Google/Chrome",
-        "chromium": "~/Library/Application Support/Chromium",
-        "brave": "~/Library/Application Support/BraveSoftware/Brave-Browser",
+        "chrome": ("~/Library/Application Support/Google/Chrome",),
+        "chromium": ("~/Library/Application Support/Chromium",),
+        "brave": ("~/Library/Application Support/BraveSoftware/Brave-Browser",),
     },
     "Linux": {
-        "chrome": "~/.config/google-chrome",
-        "chromium": "~/.config/chromium",
-        "brave": "~/.config/BraveSoftware/Brave-Browser",
+        "chrome": ("~/.config/google-chrome",),
+        "chromium": ("~/.config/chromium", "~/snap/chromium/common/chromium", "~/.var/app/org.chromium.Chromium/config/chromium"),
+        "brave": ("~/.config/BraveSoftware/Brave-Browser", "~/snap/brave/current/.config/BraveSoftware/Brave-Browser", "~/.var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser"),
     },
 }
 
 
-# Returns the user-data directory for a Chromium-based browser on this OS, or None if unsupported
+# Returns the user-data directory for a Chromium-based browser on this OS, or None if unsupported. Snap and
+# Flatpak builds keep their own profile trees, so the first root that exists wins and a packaged build is used
+# only when no distribution install is present
 def get_chromium_user_data_dir(browser):
-    return CHROMIUM_USER_DATA_DIRS.get(system(), {}).get(browser)
+    candidates = CHROMIUM_USER_DATA_DIRS.get(system(), {}).get(browser) or ()
+    for candidate in candidates:
+        if os.path.isdir(expanduser(candidate)):
+            return candidate
+    # Naming the conventional root keeps a failure readable when the browser is not installed at all
+    return candidates[0] if candidates else None
 
 
 # Resolves the cookie database path for a Chromium profile dir, preferring the modern Network layout over the legacy one
@@ -7203,6 +9021,14 @@ def chromium_profile_cookie_file(base_path, profile_dir):
         if os.path.isfile(candidate):
             return candidate
     return None
+
+
+# Lists the profile directories inside a Chromium user-data root, including ones holding no cookie database yet
+def chromium_profile_dirs(base_path) -> List[str]:
+    try:
+        return [entry for entry in sorted(os.listdir(base_path)) if entry == "Default" or entry.startswith("Profile ")]
+    except OSError:
+        return []
 
 
 # Lists available profiles for a Chromium-based browser with their directory and friendly display name
@@ -7224,13 +9050,49 @@ def list_chromium_profiles(browser):
         pass
 
     profiles = []
-    for entry in sorted(os.listdir(base_path)):
-        if entry != "Default" and not entry.startswith("Profile "):
-            continue
+    for entry in chromium_profile_dirs(base_path):
         cookie_file = chromium_profile_cookie_file(base_path, entry)
         if cookie_file:
             profiles.append({"dir": entry, "name": names.get(entry, entry), "cookie_file": cookie_file})
     return profiles
+
+
+# Explains why no Chromium profile can be offered. A profile that has never stored a cookie is dropped from the
+# listing, so an installed browser with a brand new profile must not be reported as a browser that is not installed
+def chromium_no_profiles_message(browser) -> str:
+    label = browser_label(browser)
+    base = get_chromium_user_data_dir(browser)
+    base_path = expanduser(base) if base else ""
+    if not base_path or not os.path.isdir(base_path):
+        return f"No {label} profiles found - looked in '{base_path or 'no known location for this system'}'. To fix: install {label}, sign in to Instagram in it, then run the import again"
+    without_cookies = chromium_profile_dirs(base_path)
+    if without_cookies:
+        return f"{label} is installed but none of its profiles ({', '.join(without_cookies)}) has a cookie database yet. To fix: open https://www.instagram.com/ in {label}, sign in, then run the import again"
+    return f"No {label} profiles found in '{base_path}'. To fix: open {label} once to create a profile, sign in to Instagram, then run the import again"
+
+
+# Describes one Chromium profile for a message, adding the display name when it differs from the directory
+def chromium_profile_description(profile) -> str:
+    return f"{profile['dir']} ({profile['name']})" if str(profile.get("name")) != profile["dir"] else str(profile["dir"])
+
+
+# Resolves a requested Chromium profile to one the tool enumerated, accepting either the profile directory or the
+# display name the picker shows. Resolving against that list also keeps a submitted value from reaching a cookie
+# database outside the browser's own profiles
+def resolve_chromium_profile(browser, requested):
+    wanted = str(requested or "").strip()
+    profiles = list_chromium_profiles(browser)
+    for profile in profiles:
+        if wanted.lower() == profile["dir"].lower():
+            return profile["dir"]
+    matches = [p for p in profiles if wanted.lower() == str(p["name"]).lower()]
+    if len(matches) == 1:
+        return matches[0]["dir"]
+    if matches:
+        directories = ", ".join(p["dir"] for p in matches)
+        raise CookieImportError(f"{browser_label(browser)} display name '{wanted}' is used by {len(matches)} profiles, pass the profile directory instead (one of: {directories})")
+    available = ", ".join(chromium_profile_description(p) for p in profiles) or "none found"
+    raise CookieImportError(f"{browser_label(browser)} profile '{wanted}' not found (available: {available})")
 
 
 # Reads Instagram session cookies from a Chromium-based browser via pycookiecheat and returns them as a name to value dict
@@ -7243,7 +9105,7 @@ def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
     try:
         from pycookiecheat import BrowserType, get_cookies
     except (ImportError, ModuleNotFoundError):
-        executable = sys.executable or ("python" if system() == "Windows" else "python3")
+        executable = ("python" if system() == "Windows" else "python3")
         install_command = _wizard_render_command([executable, "-m", "pip", "install", "pycookiecheat>=0.8"])
         raise CookieImportError(
             f"Importing {label} cookies requires the 'pycookiecheat' library !\n\n"
@@ -7268,15 +9130,21 @@ def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
         base = get_chromium_user_data_dir(browser)
         if base:
             base_path = expanduser(base)
-            cookie_file = chromium_profile_cookie_file(base_path, profile or "Default")
+            cookie_file = chromium_profile_cookie_file(base_path, resolve_chromium_profile(browser, profile) if profile else "Default")
             if cookie_file is None and profile:
-                available = ", ".join(p["dir"] for p in list_chromium_profiles(browser)) or "none found"
+                available = ", ".join(chromium_profile_description(p) for p in list_chromium_profiles(browser)) or "none found"
                 raise CookieImportError(f"{label} profile '{profile}' not found (available: {available})")
         # if base is unknown or Default is missing, leave cookie_file None and let pycookiecheat try its own default
 
     try:
         cookies = get_cookies("https://www.instagram.com", browser=browser_type, cookie_file=cookie_file)
     except Exception as e:
+        # Chromium encrypts its cookies with a key held in the OS keyring, so a denied prompt or a locked keyring
+        # fails here for a reason that has nothing to do with being signed in
+        if "Safe Storage" in str(e) or "keychain" in str(e).lower() or "keyring" in str(e).lower():
+            raise CookieImportError(
+                f"Could not read the {label} encryption key: {e}\nTo fix: allow the keychain or keyring prompt, unlock it if it is locked, then run the import again"
+            )
         raise CookieImportError(
             f"Could not read {label} cookies: {e}\nMake sure {label} is installed and you are logged in to Instagram in it"
         )
@@ -7286,7 +9154,9 @@ def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
 
     if not cookie_dict:
         where = f" (profile '{profile}')" if profile else ""
-        raise CookieImportError(f"No Instagram cookies found in {label}{where} - are you logged in to Instagram in {label}?")
+        others = [p["dir"] for p in list_chromium_profiles(browser) if p["dir"] != profile]
+        alternatives = f" (other profiles: {', '.join(others)})" if others else ""
+        raise CookieImportError(f"No Instagram cookies found in {label}{where}{alternatives} - are you logged in to Instagram in {label}?")
 
     return cookie_dict
 
@@ -7307,37 +9177,26 @@ def select_chromium_profile_cli(browser, explicit_profile):
 
     profiles = list_chromium_profiles(browser)
     if not profiles:
-        raise SystemExit(f"No {browser_label(browser)} profiles found - is it installed and are you logged in to Instagram?")
+        raise SystemExit(chromium_no_profiles_message(browser))
     if len(profiles) == 1:
+        warn_when_profile_is_signed_out(profiles[0].get("cookie_file"), f"the only {browser_label(browser)} profile, '{profiles[0]['dir']}',")
         return profiles[0]["dir"]
 
-    print()
-    print(f"Multiple {browser_label(browser)} profiles found:")
-    for idx, p in enumerate(profiles, start=1):
-        print(f"  {idx}) {p['dir']}  -  {p['name']}")
-
-    try:
-        choice = int(input("Select profile number (0 to exit): "))
-        if choice == 0:
-            raise SystemExit("No profile selected, aborting ...")
-        return profiles[choice - 1]["dir"]
-    except (ValueError, IndexError):
-        raise SystemExit("Invalid profile selection !")
+    choices = [{"label": f"{p['dir']}  -  {p['name']}", "signed_in": cookie_file_has_instagram_session(p.get("cookie_file")), "value": p["dir"]} for p in profiles]
+    return select_profile_interactively(f"Multiple {browser_label(browser)} profiles found:", choices)
 
 
 # Imports a browser session for the web dashboard, saves it via Instaloader and returns the logged-in username
 def import_browser_session_dashboard(browser, cookiefile=None, profile=None):
     cookie_dict = get_browser_cookie_dict(browser, cookiefile, profile=profile)
 
-    L = Instaloader(user_agent=USER_AGENT, max_connection_attempts=1)
+    L = instaloader_client(user_agent=USER_AGENT, max_connection_attempts=1, request_timeout=30, sleep=False)
     L.context._session.cookies.update(cookie_dict)
-    username = L.test_login()
+    username = save_checked_browser_session(L)
 
     if not username:
         raise CookieImportError(f"Not logged in - are you logged in successfully in {browser_label(browser)}?")
 
-    L.context.username = username
-    L.save_session_to_file()
     return username
 
 
@@ -7357,21 +9216,14 @@ def import_session(browser, cookiefile, sessionfile, profile=None):
     except CookieImportError as e:
         raise SystemExit(f"Error: {e}")
 
-    instaloader = Instaloader(user_agent=USER_AGENT, max_connection_attempts=1)
+    instaloader = instaloader_client(user_agent=USER_AGENT, max_connection_attempts=1, request_timeout=30, sleep=False)
     instaloader.context._session.cookies.update(cookie_dict)
-    username = instaloader.test_login()
+    username = save_checked_browser_session(instaloader, sessionfile)
 
     if not username:
         raise SystemExit(f"Not logged in - are you logged in successfully in {label}?")
 
     print(f"Imported session cookies for {username}")
-
-    instaloader.context.username = username
-
-    if sessionfile:
-        instaloader.save_session_to_file(sessionfile)
-    else:
-        instaloader.save_session_to_file()
 
     # Emit the warning in red only when colour output is enabled and supported, otherwise plain text
     RED = f"\033[{_STYLE_CODES['red']}m" if COLOR_ENABLED else ""
@@ -7390,6 +9242,12 @@ def import_session(browser, cookiefile, sessionfile, profile=None):
         print(f"{RED}{line.ljust(len(border))}{RESET}")
     print(f"{RED}{border}{RESET}")
     return username
+
+
+# Keeps argparse from colouring its own help, so the help screen is coloured by this tool alone and --no-color is
+# not left with a second palette to silence. From Python 3.14 argparse colours the help by default on a terminal
+def argparse_color_kwargs() -> dict[str, Any]:
+    return {"color": False} if sys.version_info >= (3, 14) else {}
 
 
 # Finds an optional config file
@@ -7432,9 +9290,12 @@ def early_config_file_argument(arguments=None):
 
 # Applies the config settings that take effect before argument parsing, leaving errors to the later load
 def apply_early_output_config() -> None:
-    global CLEAR_SCREEN, COLORED_OUTPUT
+    global CLEAR_SCREEN, COLORED_OUTPUT, COLOR_THEME
     try:
         cli_path = early_config_file_argument()
+        if cli_path is not None and cli_path.casefold() == "none":
+            # Config discovery is disabled for this run, so there is nothing to peek at
+            return
         config_path = find_config_file(os.path.expanduser(cli_path) if cli_path else None)
         if not config_path:
             return
@@ -7447,6 +9308,10 @@ def apply_early_output_config() -> None:
         CLEAR_SCREEN = values["CLEAR_SCREEN"]
     if isinstance(values.get("COLORED_OUTPUT"), bool):
         COLORED_OUTPUT = values["COLORED_OUTPUT"]
+    # --help is printed and exited from inside argparse, long before the config load, so the help_* overrides
+    # have to be here or they could never colour the one screen they name. Unusable styles are dropped downstream
+    if isinstance(values.get("COLOR_THEME"), dict):
+        COLOR_THEME = values["COLOR_THEME"]
 
 
 # Reads one UTF-8 config file into the given namespace, reporting why it was rejected
@@ -7463,17 +9328,23 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
             for line in lines:
                 print(line)
             print(colorize("info", f"To fix: {fix}"))
-            print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
+            print(f"Guide: {CONFIG_GUIDE_URL}")
         return False
 
     try:
         content = Path(config_path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        return reject(f"* Error loading config file '{config_path}': {format_error_message(exc)}", (), "verify the file is readable and saved as UTF-8. You can regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'.")
+        return reject(f"* Error loading config file '{config_path}': {format_error_message(exc)}", (), "Verify the file is readable and saved as UTF-8. You can regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'")
 
     retired_settings = []
     try:
-        target_namespace.update(parse_config_content(content, str(config_path), retired_settings))
+        parsed_values = parse_config_content(content, str(config_path), retired_settings)
+        target_namespace.update(parsed_values)
+        # Only a load that reaches the module settings records a choice, not a copy read for the wizard or a report
+        if target_namespace is globals():
+            CONFIGURED_SETTING_NAMES.update(parsed_values)
+        if report_errors:
+            debug_print("Configuration applied", path=config_path, settings=len(parsed_values))
         if retired_out is not None:
             retired_out.extend(retired_settings)
         if retired_settings and report_errors:
@@ -7494,11 +9365,11 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
                 pass
         details = []
         if exc.lineno:
-            details.append(f"Line {exc.lineno}: {(exc.text or '').rstrip()}")
+            details.append(f"Line {exc.lineno}")
         details.append(f"Parser: {exc.msg}")
-        return reject(f"* Error loading config file '{config_path}':", details, "check that line. Text values need matching quotes and Windows paths need forward slashes (/) or doubled backslashes (\\\\). You can also regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'.")
+        return reject(f"* Error loading config file '{config_path}':", details, "Check that line. Text values need matching quotes and Windows paths need forward slashes (/) or doubled backslashes (\\\\). You can also regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'")
     except ValueError as exc:
-        return reject(f"* Error loading config file '{config_path}': {exc}", (), "a config file may only assign settings, such as INSTA_CHECK_INTERVAL = 5400. It cannot import modules, call functions or run other code. Regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'.")
+        return reject(f"* Error loading config file '{config_path}': {exc}", (), "A config file may only assign settings, such as INSTA_CHECK_INTERVAL = 5400. It cannot import modules, call functions or run other code. Regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'")
 
 
 # Resolves an executable path by checking if it's a valid file or searching in $PATH
@@ -7513,129 +9384,132 @@ def resolve_executable(path):
     raise FileNotFoundError(f"Could not find executable '{path}'")
 
 
-# Returns random web browser user agent string
-def get_random_user_agent() -> str:
-    browser = random.choice(['chrome', 'firefox', 'edge', 'safari'])
+# Browser versions the random desktop agents advertise when the impersonated version cannot be read
+# from curl_cffi, current as of September 2026. Refresh them when they fall behind: an agent claiming
+# a version that was retired years ago is itself a signal
+USER_AGENT_CHROME_VERSIONS = (140, 151)
+USER_AGENT_FIREFOX_VERSIONS = (140, 147)
+USER_AGENT_SAFARI_VERSIONS = (18, 26)
+
+# Chrome, Edge and Safari all report this frozen macOS version rather than the real one, and Firefox
+# reports its own frozen form, so neither is randomised
+USER_AGENT_MAC_OS = "10_15_7"
+USER_AGENT_MAC_OS_FIREFOX = "10.15"
+
+# Exact Chromium and Edge builds curl_cffi sends for each Edge target it ships, read from the requests
+# it actually makes. Edge targets predate the zeroed build convention, so the real numbers are needed
+EDGE_AGENT_BUILDS = {99: ("99.0.4844.51", "99.0.1150.30"), 101: ("101.0.4951.64", "101.0.1210.47")}
+
+# Platform curl_cffi pins in sec-ch-ua-platform for each Chromium family. A User-Agent override does
+# not change that header, so naming a different platform in the agent contradicts it on every request
+CURL_CFFI_AGENT_PLATFORMS = {'chrome': f"Macintosh; Intel Mac OS X {USER_AGENT_MAC_OS}", 'edge': "Windows NT 10.0; Win64; x64"}
+
+
+# Returns the major version the bare curl_cffi alias for a family impersonates, or None when it cannot be read
+def curl_cffi_alias_version(family: str) -> Optional[int]:
+    # curl_cffi's unversioned alias points at its newest numbered target for that family, and only the
+    # plain name is considered so chrome131_android and chrome133a cannot be mistaken for desktop Chrome
+    versions = [int(found.group(1)) for target in curl_cffi_supported_impersonate_targets() if (found := re.fullmatch(rf"{family}(\d+)", target))]
+    return max(versions) if versions else None
+
+
+# Returns the Chromium version and platform to advertise, matching what curl_cffi would present
+def chromium_agent_identity(family: str) -> Tuple[str, str]:
+    impersonated = curl_cffi_alias_version(family) if curl_cffi_backend_active() else None
+    random_platform = f"Macintosh; Intel Mac OS X {USER_AGENT_MAC_OS}" if random.choice([True, False]) else "Windows NT 10.0; Win64; x64"
+    if impersonated is None:
+        return f"{random.randint(*USER_AGENT_CHROME_VERSIONS)}.0.0.0", random_platform
+    builds = EDGE_AGENT_BUILDS.get(impersonated) if family == 'edge' else None
+    return (builds[0] if builds else f"{impersonated}.0.0.0"), CURL_CFFI_AGENT_PLATFORMS[family]
+
+
+# Returns one random desktop user agent, optionally pinned to chrome, firefox, edge or safari
+def get_random_user_agent(family: Optional[str] = None) -> str:
+    requested = str(family or "").strip().lower()
+    # Edge is offered only when asked for. curl_cffi's newest Edge target is years behind its Chrome one,
+    # so an Edge agent has to advertise that old version to stay consistent with the handshake it presents
+    browser = requested if requested in ('chrome', 'firefox', 'edge', 'safari') else random.choice(['chrome', 'firefox', 'safari'])
 
     if browser == 'chrome':
-        os_choice = random.choice(['mac', 'windows'])
-        if os_choice == 'mac':
-            return (
-                f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_{random.randrange(11, 15)}_{random.randrange(4, 9)}) "
-                f"AppleWebKit/{random.randrange(530, 537)}.{random.randrange(30, 37)} (KHTML, like Gecko) "
-                f"Chrome/{random.randrange(80, 105)}.0.{random.randrange(3000, 4500)}.{random.randrange(60, 125)} "
-                f"Safari/{random.randrange(530, 537)}.{random.randrange(30, 36)}"
-            )
-        else:
-            chrome_version = random.randint(80, 105)
-            build = random.randint(3000, 4500)
-            patch = random.randint(60, 125)
-            return (
-                f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                f"AppleWebKit/537.36 (KHTML, like Gecko) "
-                f"Chrome/{chrome_version}.0.{build}.{patch} Safari/537.36"
-            )
+        # Chrome has reported a zeroed build and patch since it reduced user agent granularity
+        version, platform_part = chromium_agent_identity('chrome')
+        return f"Mozilla/5.0 ({platform_part}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36"
 
-    elif browser == 'firefox':
-        os_choice = random.choice(['windows', 'mac', 'linux'])
-        version = random.randint(90, 110)
-        if os_choice == 'windows':
-            return (
-                f"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:{version}.0) "
-                f"Gecko/20100101 Firefox/{version}.0"
-            )
-        elif os_choice == 'mac':
-            return (
-                f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_{random.randrange(11, 15)}_{random.randrange(0, 10)}; rv:{version}.0) "
-                f"Gecko/20100101 Firefox/{version}.0"
-            )
-        else:
-            return (
-                f"Mozilla/5.0 (X11; Linux x86_64; rv:{version}.0) "
-                f"Gecko/20100101 Firefox/{version}.0"
-            )
+    if browser == 'firefox':
+        version = random.randint(*USER_AGENT_FIREFOX_VERSIONS)
+        platform_part = random.choice([f"Macintosh; Intel Mac OS X {USER_AGENT_MAC_OS_FIREFOX}", "Windows NT 10.0; Win64; x64", "X11; Linux x86_64"])
+        return f"Mozilla/5.0 ({platform_part}; rv:{version}.0) Gecko/20100101 Firefox/{version}.0"
 
-    elif browser == 'edge':
-        os_choice = random.choice(['windows', 'mac'])
-        chrome_version = random.randint(80, 105)
-        build = random.randint(3000, 4500)
-        patch = random.randint(60, 125)
-        version_str = f"{chrome_version}.0.{build}.{patch}"
-        if os_choice == 'windows':
-            return (
-                f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                f"AppleWebKit/537.36 (KHTML, like Gecko) "
-                f"Chrome/{version_str} Safari/537.36 Edg/{version_str}"
-            )
-        else:
-            return (
-                f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_{random.randrange(11, 15)}_{random.randrange(0, 10)}) "
-                f"AppleWebKit/605.1.15 (KHTML, like Gecko) "
-                f"Version/{random.randint(13, 16)}.0 Safari/605.1.15 Edg/{version_str}"
-            )
+    if browser == 'edge':
+        # Edge is Chromium on every platform, so it reports the Chrome engine and appends its own build,
+        # which carries a different number from the Chrome one it is built on
+        version, platform_part = chromium_agent_identity('edge')
+        builds = EDGE_AGENT_BUILDS.get(int(version.split(".")[0]))
+        edge_version = builds[1] if builds else version
+        return f"Mozilla/5.0 ({platform_part}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36 Edg/{edge_version}"
 
-    elif browser == 'safari':
-        os_choice = 'mac'
-        if os_choice == 'mac':
-            mac_major = random.randrange(11, 16)
-            mac_minor = random.randrange(0, 10)
-            webkit_major = random.randint(600, 610)
-            webkit_minor = random.randint(1, 20)
-            webkit_patch = random.randint(1, 20)
-            safari_version = random.randint(13, 16)
-            return (
-                f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_{mac_major}_{mac_minor}) "
-                f"AppleWebKit/{webkit_major}.{webkit_minor}.{webkit_patch} (KHTML, like Gecko) "
-                f"Version/{safari_version}.0 Safari/{webkit_major}.{webkit_minor}.{webkit_patch}"
-            )
-        else:
-            return ""
-    else:
-        return ""
+    if browser == 'safari':
+        version = f"{random.randint(*USER_AGENT_SAFARI_VERSIONS)}.{random.randint(0, 2)}"
+        return f"Mozilla/5.0 (Macintosh; Intel Mac OS X {USER_AGENT_MAC_OS}) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/{version} Safari/605.1.15"
+
+    return ""
+
+
+# Instagram for iOS releases still in circulation, taken from the App Store listing in September 2026
+# App Store versions are always major.0.0, and the agent appends a build and patch to that
+MOBILE_APP_VERSIONS = (430, 445)
+
+# iOS majors that actually shipped, listed rather than ranged because Apple went straight from 18 to 26
+MOBILE_IOS_MAJORS = (17, 18, 26)
+
+# iPhone and iPad models with their portrait resolutions, limited to hardware that runs every iOS
+# version above, so the device and the OS it claims are never an impossible pair
+MOBILE_IPHONE_MODELS = (
+    ("13,2", (1170, 2532)),   # 12
+    ("13,3", (1170, 2532)),   # 12 Pro
+    ("13,4", (1284, 2778)),   # 12 Pro Max
+    ("14,5", (1170, 2532)),   # 13
+    ("14,2", (1170, 2532)),   # 13 Pro
+    ("14,3", (1284, 2778)),   # 13 Pro Max
+    ("15,2", (1179, 2556)),   # 14 Pro
+    ("15,3", (1290, 2796)),   # 14 Pro Max
+    ("16,1", (1179, 2556)),   # 15 Pro
+    ("16,2", (1290, 2796)),   # 15 Pro Max
+    ("17,1", (1206, 2622)),   # 16 Pro
+    ("17,2", (1320, 2868)),   # 16 Pro Max
+)
+MOBILE_IPAD_MODELS = (
+    ("13,4", (1668, 2388)),   # Pro 11" 3rd gen
+    ("13,8", (2048, 2732)),   # Pro 12.9" 5th gen
+    ("13,16", (1640, 2360)),  # Air 5th gen
+    ("14,3", (1668, 2388)),   # Pro 11" 4th gen
+    ("14,5", (2048, 2732)),   # Pro 12.9" 6th gen
+)
 
 
 # Returns random mobile user agent string (iPhone / iPad)
 def get_random_mobile_user_agent() -> str:
-    app_major = random.randint(240, 300)
-    app_minor = random.randint(0, 9)
-    app_patch = random.randint(0, 9)
-    app_revision = random.randint(100, 999)
+    app_version = f"{random.randint(*MOBILE_APP_VERSIONS)}.0.0.{random.randint(10, 60)}.{random.randint(100, 999)}"
 
     if random.choice([True, False]):
         device = "iPhone"
-        model, (width, height) = random.choice([
-            ("10,3", (1125, 2436)),  # X
-            ("11,2", (1125, 2436)),  # XS
-            ("12,5", (1242, 2688)),  # 11 Pro Max
-            ("13,4", (1284, 2778)),  # 12 Pro Max
-            ("14,2", (1179, 2532)),  # 13 Pro
-            ("14,4", (1080, 2340)),  # 13 mini
-            ("15,2", (1170, 2532)),  # 15
-            ("15,3", (1179, 2556)),  # 15 Pro
-            ("16,1", (1290, 2796)),  # 15 Pro Max
-        ])
+        model, (width, height) = random.choice(MOBILE_IPHONE_MODELS)
+        # Every iPhone listed above has a 3x display and every iPad a 2x one, so the scale follows the device
+        scale = 3.00
     else:
         device = "iPad"
-        model, (width, height) = random.choice([
-            ("7,11", (1620, 2160)),  # 7th Gen
-            ("13,4", (1668, 2388)),  # Pro 11"
-            ("13,8", (2048, 2732)),  # Pro 12.9"
-            ("14,5", (2360, 1640)),  # Air 5th Gen
-            ("15,1", (2048, 2732)),  # Pro 12.9 Gen 6
-            ("15,8", (1668, 2388)),  # Pro 11 3rd Gen
-        ])
+        model, (width, height) = random.choice(MOBILE_IPAD_MODELS)
+        scale = 2.00
 
-    os_major = random.randint(12, 17)
+    os_major = random.choice(MOBILE_IOS_MAJORS)
     os_minor = random.randint(0, 5)
 
     language = "en_US"
     locale = "en-US"
 
-    scale = random.choice([2.00, 3.00])
-
     device_id = random.randint(10**14, 10**15 - 1)
 
-    return (f"Instagram {app_major}.{app_minor}.{app_patch}.{app_revision} ({device}{model}; iOS {os_major}_{os_minor}; {language}; {locale}; scale={scale:.2f}; {width}x{height}; {device_id}) AppleWebKit/420+")
+    return (f"Instagram {app_version} ({device}{model}; iOS {os_major}_{os_minor}; {language}; {locale}; scale={scale:.2f}; {width}x{height}; {device_id}) AppleWebKit/420+")
 
 
 # Extracts usernames from a follower or following JSON response and returns [] for malformed shapes
@@ -7648,6 +9522,17 @@ def extract_usernames_safely(data_dict):
 
     if not isinstance(data_dict, dict):
         return []
+
+    # The web REST follower and following endpoints answer with a flat user list instead of GraphQL edges
+    rest_users = data_dict.get('users')
+    if isinstance(rest_users, list):
+        for entry in rest_users:
+            if not isinstance(entry, dict):
+                continue
+            rest_username = entry.get('username')
+            if isinstance(rest_username, str):
+                usernames.append(rest_username)
+        return usernames
 
     data = data_dict.get('data')
     if not isinstance(data, dict):
@@ -7816,7 +9701,7 @@ def dashboard_input_handler():
             except (EOFError, OSError):
                 break
             except Exception as e:
-                debug_print(f"Error in dashboard input handler: {e}")
+                debug_print("Error in dashboard input handler", outcome="failed", error=f"{type(e).__name__}: {e}")
                 pass
     finally:
         # Restore terminal settings (Unix only)
@@ -7849,7 +9734,6 @@ def print_status_summary():
 
 
 # Update global tracking for last/next check times
-
 def update_check_times(last_time=None, next_time=None, user=None, increment_count=True):
     global LAST_CHECK_TIME, NEXT_CHECK_TIME, NEXT_CHECK_DISPLAY, CHECK_COUNT, DASHBOARD_DATA, WEB_DASHBOARD_DATA
 
@@ -8286,6 +10170,7 @@ def generate_config_dashboard(target_data, config_data):
         ("Skip Follow Changes", str(config_data.get('skip_follow_changes', '-'))),
         ("Skip Stories Details", str(config_data.get('skip_stories', '-'))),
         ("Get More Post Details", str(config_data.get('get_more_post_details', '-'))),
+        ("Fetch Reels", str(config_data.get('fetch_reels', '-'))),
         ("Detect Collab Posts", str(config_data.get('detect_collab_posts', '-'))),
         ("Liveness Check", str(config_data.get('liveness_check', '-'))),
         ("Display Profile Pics", config_data.get('imgcat', '-')),
@@ -8314,6 +10199,9 @@ def generate_config_dashboard(target_data, config_data):
         ("Skip Post Details", str(config_data.get('skip_posts', '-'))),
         ("Follower Churn Detection", str(config_data.get('followers_churn', '-'))),
         ("HTTP Jitter", str(config_data.get('enable_jitter', '-'))),
+        ("HTTP Backend", config_data.get('http_backend', '-')),
+        ("Impersonated Browser", config_data.get('impersonate', '-') if config_data.get('http_backend') == 'curl_cffi' else '-'),
+        ("Follower List Source", config_data.get('follow_list_source', '-')),
         ("Profile Pic Detect", str(config_data.get('profile_pic_changes', '-'))),
         ("Empty Pic Template", config_data.get('empty_profile_pic', '-')),
         ("Web Dashboard", config_data.get('web_dashboard_status', '-')),
@@ -8331,10 +10219,13 @@ def generate_config_dashboard(target_data, config_data):
 
     # UA footer (mini panel)
     ua_text = Text()
+    # Read the sanitized snapshot rather than the globals, so the agents get the privacy substitutions every other row gets
+    browser_agent = str(config_data.get('user_agent') or "")
+    mobile_agent = str(config_data.get('user_agent_mobile') or "")
     ua_text.append("Browser UA: ", style="cyan")
-    ua_text.append(f"{USER_AGENT[:70]}..." if len(USER_AGENT) > 70 else (USER_AGENT or "Auto"), style="dim")
+    ua_text.append(f"{browser_agent[:70]}..." if len(browser_agent) > 70 else (browser_agent or "Auto"), style="dim")
     ua_text.append("\nMobile UA:  ", style="cyan")
-    ua_text.append(f"{USER_AGENT_MOBILE[:70]}..." if len(USER_AGENT_MOBILE) > 70 else (USER_AGENT_MOBILE or "Auto"), style="dim")
+    ua_text.append(f"{mobile_agent[:70]}..." if len(mobile_agent) > 70 else (mobile_agent or "Auto"), style="dim")
     ua_text.append("\nConfig file: ", style="cyan")
     ua_text.append(f"{config_data.get('config_file', 'None')}", style="dim")
     ua_text.append("\nDotenv file: ", style="cyan")
@@ -8553,14 +10444,14 @@ def stop_dashboard():
         DASHBOARD_LIVE = None
 
 
-# Prints remaining sleep time message
+# Prints the check schedule once per cycle, in debug only, since one block per check buries the events worth reading
 def print_check_timing(r_sleep_time, prefix="", user=None):
-    global VERBOSE_MODE, DEBUG_MODE
+    global DEBUG_MODE
 
     if DASHBOARD_ENABLED and RICH_AVAILABLE:
         return
 
-    if DEBUG_MODE or VERBOSE_MODE:
+    if DEBUG_MODE:
         # Calculate next check time from now + sleep time
         now = now_local_naive()
         next_check = now + timedelta(seconds=r_sleep_time)
@@ -8571,7 +10462,7 @@ def print_check_timing(r_sleep_time, prefix="", user=None):
             print(f"{prefix}Target:\t\t\t\t\t{user}")
         print(f"{prefix}Last check:\t\t\t\t{get_date_from_ts(LAST_CHECK_TIME) if LAST_CHECK_TIME else 'N/A'}")
         print(f"{prefix}Next check:\t\t\t\t{next_check_str} (in {display_time(r_sleep_time)})")
-        print(f"{prefix}Check interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+        print(f"{prefix}Check interval:\t\t\t\t{check_window_text()}")
         print_cur_ts(newline=True)
 
 
@@ -8666,7 +10557,7 @@ def close_pbar():
     global pbar
     # Use thread-local storage for multi-target safety
     thread_pbar = getattr(_thread_local, 'pbar', None)
-    debug_print(f"[close_pbar] ENTRY - thread_pbar is None: {thread_pbar is None}")
+    debug_print("Progress bar close", stage="entry", thread_pbar_missing=thread_pbar is None)
     try:
         if thread_pbar is not None:
             final_str = None
@@ -8721,13 +10612,13 @@ def close_pbar():
                     final_str = f"{percentage}|{bar}| {n_fmt}/{total_fmt} [{unit}]"
             except Exception as e:
                 # Never crash on formatting issues; just skip writing final_str to logs
-                debug_print(f"[close_pbar] error while formatting final progress bar string: {e}")
+                debug_print("[close_pbar] error while formatting final progress bar string", outcome="failed", error=f"{type(e).__name__}: {e}")
 
             # Close the progress bar (writes to terminal)
             try:
                 thread_pbar.close()
             except Exception as e:
-                debug_print(f"[close_pbar] error while closing tqdm progress bar: {e}")
+                debug_print("[close_pbar] error while closing tqdm progress bar", outcome="failed", error=f"{type(e).__name__}: {e}")
 
             # Best-effort: write final state to log files if logging is enabled
             if final_str is not None:
@@ -8740,7 +10631,7 @@ def close_pbar():
                         # FilteredWriter wraps the Logger in .original
                         logger_instance = sys.stdout.original  # type: ignore[union-attr]
 
-                    debug_print(f"[close_pbar] logger_instance found: {logger_instance is not None}, type: {type(sys.stdout).__name__}")
+                    debug_print("Progress bar close", logger_found=logger_instance is not None, stdout_type=type(sys.stdout).__name__)
                     if logger_instance is not None:
                         # We want to write to logs but NOT the terminal again (pbar.close already did that), so we strip colors and
                         # write to main/target logs manually
@@ -8749,39 +10640,39 @@ def close_pbar():
 
                         with STDOUT_LOCK:
                             if logger_instance.main_log:
-                                debug_print(f"[close_pbar] Writing to main_log")
+                                debug_print("Progress bar close", target="main log")
                                 logger_instance.main_log.write(clean_final)
                                 logger_instance.main_log.flush()
                             else:
-                                debug_print(f"[close_pbar] main_log is None")
+                                debug_print("Progress bar close", target="main log", outcome="skipped", reason="main log is not open")
 
                             target = logger_instance._get_current_target()
-                            debug_print(f"[close_pbar] target: {target}, target_paths: {list(logger_instance.target_paths.keys())}")
+                            debug_print("Progress bar close", target=target, target_paths=list(logger_instance.target_paths.keys()))
                             if target:
                                 handle = logger_instance._ensure_log_open(target)
                                 if handle:
-                                    debug_print(f"[close_pbar] Writing to target log for {target}")
+                                    debug_print("Progress bar close", target=target, action="writing to target log")
                                     handle.write(clean_final)
                                     handle.flush()
                                 else:
-                                    debug_print(f"[close_pbar] Failed to open handle for {target}")
+                                    debug_print("Progress bar close", target=target, outcome="failed", reason="cannot open the log handle")
                             else:
                                 # Common message (e.g. from MainThread): log to ALL target logs, matching Logger.write behavior
-                                debug_print(f"[close_pbar] No target, writing to all logs")
+                                debug_print("Progress bar close", target="none", action="writing to all logs")
                                 for t in list(logger_instance.target_paths.keys()):
                                     handle = logger_instance._ensure_log_open(t)
                                     if handle:
                                         handle.write(clean_final)
                                         handle.flush()
                 except Exception as e:
-                    debug_print(f"[close_pbar] error while writing final progress state to logs: {e}")
+                    debug_print("[close_pbar] error while writing final progress state to logs", outcome="failed", error=f"{type(e).__name__}: {e}")
 
             # Always clear pbar references (best effort)
             _thread_local.pbar = None  # type: ignore[misc]
             pbar = None
     except Exception as e:
         # Ultimate safety net: close_pbar must never raise
-        debug_print(f"[close_pbar] unexpected error suppressed: {e}")
+        debug_print("[close_pbar] unexpected error suppressed", outcome="failed", error=f"{type(e).__name__}: {e}")
     finally:
         if getattr(_thread_local, 'pbar_lock_acquired', False):
             _thread_local.pbar_lock_acquired = False  # type: ignore[misc]
@@ -8803,13 +10694,32 @@ def instagram_wrap_request(orig_request):
         url = kwargs.get("url") or (args[1] if len(args) > 1 else None)
         if not is_instagram_request_url(url):
             return orig_request(*args, **kwargs)
+        recovery = getattr(_thread_local, 'account_recovery', None)
+        if recovery is not None:
+            if not recovery['remaining']:
+                raise instaloader.exceptions.AbortDownloadException("The account recovery check allows only one request")
+            recovery['remaining'] = 0
+            kwargs['allow_redirects'] = False
+            try:
+                response = orig_request(*args, **kwargs)
+            except Exception as error:
+                recovery['error'] = error
+                raise
+            if response.status_code >= 300:
+                recovery['error'] = instaloader.exceptions.ConnectionException(f"HTTP {response.status_code}: {response.text[:500]}")
+            return response
+        breaker_state = _account_breaker_memory_state() if CIRCUIT_BREAKER else None
+        if breaker_state:
+            raise instaloader.exceptions.AbortDownloadException(f"Account circuit breaker is open ({breaker_state.get('failure_class', 'unknown')})")
         if not SKIP_WRAP_MESSAGES:
             if DEBUG_MODE:
-                debug_print(f"[WRAP-REQ] {method} {url}")
+                debug_print("HTTP request", method=method, url=url)
             elif JITTER_VERBOSE:
                 print(f"* [WRAP-REQ] {method} {url}")
 
         def _do_request():
+            if CIRCUIT_BREAKER and _account_breaker_memory_state():
+                raise instaloader.exceptions.AbortDownloadException("Monitoring is paused for this account")
             # If jitter is disabled, just perform the request (but still optionally serialized by the outer lock)
             if not ENABLE_JITTER:
                 resp = orig_request(*args, **kwargs)
@@ -8827,28 +10737,33 @@ def instagram_wrap_request(orig_request):
             attempt = 0
             backoff = 60
             while True:
+                if CIRCUIT_BREAKER and _account_breaker_memory_state():
+                    raise instaloader.exceptions.AbortDownloadException("Monitoring is paused for this account")
                 resp = orig_request(*args, **kwargs)
 
                 # Update progress bar for follower/following requests
                 _update_progress_bar(resp)
 
-                # Back-off on any 429 (Too Many Requests) or 400 with "checkpoint"
-                if resp.status_code == 429 or (resp.status_code == 400 and "checkpoint" in resp.text):
+                # A checkpoint needs account recovery rather than another request
+                if resp.status_code == 400 and "checkpoint" in resp.text:
+                    raise instaloader.exceptions.AbortDownloadException("400 checkpoint_required")
+                if resp.status_code == 429:
                     attempt += 1
                     if attempt > 3:
                         thread_pbar = getattr(_thread_local, 'pbar', None)
                         if thread_pbar is not None:
                             close_pbar()
-                        raise instaloader.exceptions.QueryReturnedNotFoundException(
-                            "Giving up after multiple 429/checkpoint"
-                        )
+                        # A spent back-off budget is still a rate limit or a challenge, never a missing endpoint.
+                        # Reporting it as one sends every reader down the path for an Instagram API change, which
+                        # for the follow list means retrying the whole scan on the other surface
+                        raise instaloader.exceptions.TooManyRequestsException(f"Giving up after {attempt - 1} back-offs on HTTP 429")
                     wait = backoff + random.uniform(0, 30)
                     if JITTER_VERBOSE or DEBUG_MODE:
                         thread_pbar = getattr(_thread_local, 'pbar', None)
                         if thread_pbar:
                             tqdm.write(f"* Back-off {wait:.0f}s after {resp.status_code}")
                         if DEBUG_MODE:
-                            debug_print(f"* Back-off {wait:.0f}s after {resp.status_code}")
+                            debug_print("HTTP back-off", wait=f"{wait:.0f}s", status=resp.status_code)
                         elif JITTER_VERBOSE and not thread_pbar:
                             print(f"* Back-off {wait:.0f}s after {resp.status_code}")
                     time.sleep(wait)
@@ -9059,16 +10974,20 @@ def get_dashboard_config_data(final_log_path=None, imgcat_exe=None, profile_pic_
         'session_mode': mode_val,
         'profile_pic_changes': DETECT_CHANGED_PROFILE_PIC,
         'skip_session_login': SKIP_SESSION,
-        'http_backend': HTTP_BACKEND,
-        'impersonate': CURL_CFFI_IMPERSONATE,
+        'http_backend': http_backend_display(),
+        'follow_list_source': follow_list_source_display(),
+        'impersonate': _curl_cffi_impersonate_display(),
         'skip_followers': SKIP_FOLLOWERS,
         'skip_followings': SKIP_FOLLOWINGS,
         'skip_follow_changes': SKIP_FOLLOW_CHANGES,
         'skip_stories': SKIP_GETTING_STORY_DETAILS,
         'skip_posts': SKIP_GETTING_POSTS_DETAILS,
         'get_more_post_details': GET_MORE_POST_DETAILS,
+        'fetch_reels': FETCH_REELS,
         'detect_collab_posts': DETECT_COLLAB_POSTS,
         'followers_churn': FOLLOWERS_CHURN_DETECTION,
+        'identity_budget': IDENTITY_BUDGET_PER_DAY,
+        'circuit_breaker': bool(circuit_breaker_state()) if CIRCUIT_BREAKER else None,
         'verbose_mode': VERBOSE_MODE,
         'debug_mode': DEBUG_MODE,
         'hours_verbose': HOURS_VERBOSE,
@@ -9136,7 +11055,7 @@ def strip_curl_noise(error_str: str) -> str:
 
 
 # Formats error messages to be more informative, especially for Instagram detection/challenge errors
-def format_error_message(e: Exception) -> str:
+def format_error_message(e: Exception, *private_candidates: str) -> str:
     error_str = str(e)
     error_type = type(e).__name__
 
@@ -9144,78 +11063,620 @@ def format_error_message(e: Exception) -> str:
     if error_type == "KeyError" and ("'data'" in error_str or '"data"' in error_str or error_str == "data"):
         return "Instagram may have detected automated checks and requires a challenge or re-login (if session is used) or has temporarily shadow banned the IP. The API response is missing expected data."
 
-    return f"{error_type}: {strip_curl_noise(error_str)}"
+    # Redacted here rather than at each caller, since this is the text every surface prints and a provider reply
+    # can quote back the credential it rejected. A candidate no global holds yet is passed in by the caller
+    return sanitize_error_text(f"{error_type}: {strip_curl_noise(error_str)}", *private_candidates)
+
+
+# Returns the dotenv path this run was given when a file was named and discovery is on, otherwise None
+def active_dotenv_path():
+    return None if not DOTENV_FILE or str(DOTENV_FILE).casefold() == "none" else DOTENV_FILE
+
+
+# Returns the config path this run was given, or the "none" sentinel when discovery was switched off
+def active_config_path():
+    return CLI_CONFIG_PATH or ("none" if CONFIG_DISCOVERY_DISABLED else None)
 
 
 # Returns the browser session import command matching the current installation
 def session_recovery_command() -> str:
-    return _firefox_import_cmd(_wizard_install_method())
+    # The import reads the config and writes the dotenv, so the config sentinel is carried while the dotenv one is not
+    return _firefox_import_cmd(_wizard_install_method(), active_dotenv_path(), config_path=active_config_path())
 
 
-# Returns a short actionable next-step hint for a known error message or an empty string when none applies
-def error_fix_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[str, str]:
+# Names the other browsers the import accepts. Nothing records which browser a session came from, so a message built
+# around the Firefox command names the alternatives rather than sending a Chrome or Brave user to Firefox
+def session_recovery_browser_hint() -> str:
+    others = [browser for browser in IMPORT_BROWSERS if browser != "firefox"]
+    return f" (use --browser {', '.join(others[:-1])} or {others[-1]} to import from one of those instead)" if len(others) > 1 else ""
+
+
+# Ordered match terms for every recognized failure, shared by the message and the failure-class lookups so the two cannot drift
+FAILURE_TERMS = {
+    'rate_limit': ("429", "too many requests", "wait a few minutes", "rate limit", "please wait"),
+    'endpoint_retired': RETIRED_ENDPOINT_TERMS,
+    'action_block': ("feedback_required",),
+    'challenge': ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data"),
+    'session_missing': ("session file",),
+    'auth_expired': ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required"),
+    'target_unavailable': ("profilenotexists", "does not exist", "not found", "404"),
+    'impersonate_unsupported': ("impersonat",),
+    'proxy_unresolved': ("could not resolve proxy",),
+    'dns_failure': ("could not resolve host", "temporary failure in name resolution", "name or service not known", "nodename nor servname", "curl: (6)"),
+    'network': ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl"),
+    'schema_change': ("empty data for posts", "fetching post metadata failed", "not subscriptable", "unexpected follower list reply", "follower list dialog"),
+}
+
+# Evaluation order of FAILURE_TERMS, matching the branch order in classify_error_parts
+FAILURE_CLASS_ORDER = ('rate_limit', 'endpoint_retired', 'action_block', 'challenge', 'session_missing', 'auth_expired', 'target_unavailable', 'impersonate_unsupported', 'proxy_unresolved', 'dns_failure', 'network', 'schema_change')
+
+# Reliability group each failure class belongs to: A blocks the transport, B breaks on an Instagram API change, C acts against the session account
+FAILURE_CLASS_GROUPS = {
+    'rate_limit': 'A',
+    'schema_change': 'B',
+    'endpoint_retired': 'B',
+    'action_block': 'C',
+    'challenge': 'C',
+    'auth_expired': 'C',
+}
+
+# Short label for each reliability group, used in logs and the exposure summary
+FAILURE_GROUP_LABELS = {
+    'A': "transport blocked",
+    'B': "Instagram API changed",
+    'C': "account challenged",
+}
+
+
+# Reports whether one match term occurs in a lowercased error message, reading a bare status code as a whole number so
+# the 403 inside a user id such as api/v1/friendships/4030/ or the 401 in a username cannot classify the error
+def failure_term_matches(term: str, message: str) -> bool:
+    if term.isdigit():
+        return re.search(rf"(?<![\w/]){term}(?!\w)", message) is not None
+    return term in message
+
+
+# Returns True when a failure came from an endpoint Instagram retired, which reports the endpoint rather than
+# anything about the session account. Both halves are required, because the retired endpoint answers
+# feedback_required however healthy the account is while a 401 or a timeout on that same path still means what it
+# usually means
+def is_retired_endpoint_error(error_msg) -> bool:
+    m = (error_msg or "").lower()
+    return any(term in m for term in RETIRED_ENDPOINT_TERMS) and any(term in m for term in FAILURE_TERMS['action_block'])
+
+
+# Returns the stable failure class for one error message, or 'unknown' when nothing matches
+def classify_failure_class(error_msg: str) -> str:
+    m = (error_msg or "").lower()
+    for name in FAILURE_CLASS_ORDER:
+        # The retired endpoint is the one class a single term cannot name, since its terms have to occur together
+        if name == 'endpoint_retired':
+            if is_retired_endpoint_error(m):
+                return name
+            continue
+        if any(failure_term_matches(t, m) for t in FAILURE_TERMS[name]):
+            return name
+    return 'unknown'
+
+
+# Returns the reliability group (A, B or C) for one failure class, or an empty string when it belongs to none
+def failure_class_group(failure_class: str) -> str:
+    return FAILURE_CLASS_GROUPS.get(failure_class, "")
+
+
+# Returns True when a failure means Instagram acted against the session account rather than against one request or target
+def is_account_level_failure(failure_class: str) -> bool:
+    return failure_class_group(failure_class) == 'C'
+
+
+# Every recovery category the tool can report, kept closed so a message is testable, deduplicable and translatable later
+RECOVERY_CODES = frozenset({
+    "instagram.rate_limited", "instagram.endpoint_retired", "instagram.action_blocked", "instagram.challenge", "instagram.empty_data", "instagram.browser_dialog",
+    "session.missing", "session.expired",
+    "target.missing", "target.not_found",
+    "config.missing", "config.invalid", "config.insecure", "config.impersonate_unsupported",
+    "dependency.missing",
+    "secret.missing",
+    "proxy.unresolved",
+    "network.dns", "network.unavailable",
+    "smtp.invalid", "smtp.authentication", "smtp.connection",
+    "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
+    "file.unreadable", "file.unwritable", "file.exists",
+    "dashboard.unavailable",
+    "resource.exhausted",
+    "unknown",
+})
+
+# Matches a secret assignment so error text quoting a configuration line cannot carry the value with it
+SECRET_ASSIGNMENT_RE = re.compile(r"(?im)(\b(?:" + "|".join(SECRET_KEYS) + r")\b\s*=\s*)[^\r\n]*")
+
+
+# Removes private values and secret assignments from error text before it reaches the console, a log or an alert
+def sanitize_error_text(text: Any, *extra_private_values: str) -> str:
+    sanitized = apply_privacy_substitutions(str(text or ""))
+    # A value being checked before it is saved is held by the caller and by no global, so it is passed in instead
+    for private_value in [globals().get(name) for name in SECRET_KEYS] + list(extra_private_values) + list(_DELIVERY_SECRET_VALUES.get()):
+        # A short value would match unrelated words, and no real secret this tool stores is that short
+        if isinstance(private_value, str) and len(private_value) > 4:
+            sanitized = sanitized.replace(private_value, "[private value]")
+    return SECRET_ASSIGNMENT_RE.sub(r"\1<redacted>", sanitized)
+
+
+@dataclass(frozen=True)
+class RecoveryAdvice:
+    code: str
+    summary: str
+    fix: str
+    retryable: bool = False
+    detail: str = ""
+
+
+# Carries structured recovery advice across an exception boundary without exposing technical detail
+class RecoveryError(Exception):
+    # Initializes a structured recovery exception, keeping the original cause attached for debug output
+    def __init__(self, advice: RecoveryAdvice, cause: Optional[BaseException] = None) -> None:
+        self.advice = advice
+        self.cause = cause
+        if cause is not None:
+            self.__cause__ = cause
+        super().__init__(advice.summary)
+
+
+# Builds one piece of recovery advice, refusing any code outside the closed set and sanitizing every field
+def make_recovery_advice(code: str, summary: str, fix: str, retryable: bool = False, detail: str = "") -> RecoveryAdvice:
+    if code not in RECOVERY_CODES:
+        raise ValueError(f"Unsupported recovery code: {code}")
+    return RecoveryAdvice(code, sanitize_error_text(summary), sanitize_error_text(fix), bool(retryable), sanitize_error_text(detail) if detail else "")
+
+
+# Adds a directly relevant documentation link on its own line
+def recovery_fix_with_guide(fix: str, guide_url: str) -> str:
+    return f"{fix}\nGuide: {guide_url}"
+
+
+# Escapes text for an HTML email body and keeps its line breaks, which HTML would otherwise collapse into spaces
+def html_text(text: str) -> str:
+    return escape(text).replace("\n", "<br>")
+
+
+# Returns one value escaped for use inside an HTML attribute
+def escape_html_attr(value: Any) -> str:
+    return escape(str(value or ""), quote=True)
+
+
+# Wraps one rendered fragment in the document every HTML alert body shares, leaving an absent body absent
+def html_email_body(content: str) -> str:
+    return f"<html><head></head><body>{content}</body></html>" if content else ""
+
+
+# Turns a bare URL inside already escaped HTML text into a link, so an alert that prints a guide link is clickable
+def html_autolink_urls(content: str) -> str:
+    return re.sub(r"(?<![\"'=])(https?://[^\s<>\"']+[^\s<>\"'.,;:!?)\]])", r'<a href="\1">\1</a>', str(content))
+
+
+# Converts one HTML anchor to Discord markdown, leaving a self-labeled link bare so Discord turns it into a link itself
+def anchor_to_discord_markdown(url: str, inner_html: str) -> str:
+    target = unescape(str(url or "")).strip()
+    label = " ".join(unescape(re.sub(r"(?s)<[^>]+>", "", str(inner_html or ""))).split())
+    # Discord prints a masked link as plain text when its label repeats the destination, while a bare URL always links
+    if not target or not label or label == target:
+        return target or label
+    return f"[{inner_html}]({target})"
+
+
+# Converts one HTML alert body to the Discord markdown subset, so a webhook alert reads like the email
+def html_body_to_discord_markdown(body_html: str) -> str:
+    text = re.sub(r"(?is)</?(?:html|head|body)\s*>", "", str(body_html or ""))
+    text = re.sub(r"(?is)<a\s[^>]*?href=[\"']([^\"']*)[\"'][^>]*>(.*?)</a>", lambda match: anchor_to_discord_markdown(match.group(1), match.group(2)), text)
+    text = re.sub(r"(?is)<b\s*>(.*?)</b\s*>", lambda match: f"**{match.group(1)}**" if match.group(1).strip() else match.group(1), text)
+    text = re.sub(r"(?is)<i\s*>(.*?)</i\s*>", lambda match: f"*{match.group(1)}*" if match.group(1).strip() else match.group(1), text)
+    text = re.sub(r"(?is)<br\s*/?>", "\n", text)
+    # Anything still tag-shaped is layout the markdown body has no use for, such as a stray paragraph or list wrapper
+    text = re.sub(r"(?s)<[^>]+>", "", text)
+    return unescape(text).strip()
+
+
+# Yields the exception and each cause or context up to max_depth, to walk an exception chain
+def iter_exc_chain(error: Any, max_depth: int = 8):
+    current = error
+    for _ in range(max_depth):
+        if current is None:
+            return
+        yield current
+        current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
+
+
+# Names the transport failure behind an exception chain, since a timeout raised with no message leaves the text rules nothing to read
+def network_failure_code(error: Any) -> str:
+    timed_out = False
+    unreachable = False
+    for current in iter_exc_chain(error):
+        name = type(current).__name__
+        # A TLS failure has its own advice, so a chain that names one is left to the rules that recognize it
+        if "SSL" in name or "Certificate" in name:
+            return ""
+        if isinstance(current, TimeoutError) or "Timeout" in name:
+            timed_out = True
+        elif isinstance(current, ConnectionError) or name in ("gaierror", "herror") or any(term in name for term in ("Connect", "ProxyError", "NameResolution", "Unreachable")):
+            unreachable = True
+    if timed_out:
+        return "network.timeout"
+    return "network.unavailable" if unreachable else ""
+
+
+# Reports whether this process hit the local file descriptor limit rather than a remote failure
+def is_too_many_open_files(error: Any) -> bool:
+    for current in iter_exc_chain(error):
+        if isinstance(current, OSError) and getattr(current, "errno", None) == 24:
+            return True
+        # A server controls the wording of its own reply, so its text never proves a local limit here
+        if getattr(current, "response", None) is not None:
+            continue
+        message = str(current).lower()
+        if "too many open files" in message or re.search(r"\berrno 24\b", message):
+            return True
+    return False
+
+
+# Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
+def unknown_failure_fix():
+    return "Open an issue with this output if the failure continues" if DEBUG_MODE else "Re-run with --debug to see the technical cause"
+
+
+# Classifies one failure into code-carrying advice, so every surface explains the same problem the same way
+def classify_recovery_error(error: Any = None, context: str = "runtime", detail: str = "", is_logged_in: Optional[bool] = None) -> RecoveryAdvice:
+    if isinstance(error, RecoveryError):
+        return error.advice
+    # Both parts are read, since a call site that adds context must not hide the text the rules match on
+    message = " ".join(part for part in (str(detail or ""), str(error or "")) if part).casefold()
+    safe_detail = sanitize_error_text(detail or error)
+
+    # Builds one row of this table, attaching the page that covers it where one exists
+    def advice(code: str, summary: str, fix: str, retryable: bool = False, guide_url: str = "") -> RecoveryAdvice:
+        return make_recovery_advice(code, summary, recovery_fix_with_guide(fix, guide_url) if guide_url else fix, retryable, safe_detail)
+
+    # Checked ahead of every context, since a local descriptor limit is not a failure of whatever call hit it
+    if error is not None and is_too_many_open_files(error):
+        return advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not an Instagram problem", "Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", False, DESCRIPTOR_LIMIT_GUIDE_URL)
+
+    if context == "config_missing":
+        return advice("config.missing", "A required setting has no value", "Set it in the configuration file, in the environment or with its command-line flag, then re-run the tool", False, CONFIG_GUIDE_URL)
+
+    if context == "config":
+        return advice("config.invalid", "A configured value cannot be used", "Correct the value in the configuration file or on the command line, then re-run the tool", False, CONFIG_GUIDE_URL)
+
+    if context == "dotenv_missing":
+        return advice("secret.missing", "The named dotenv file does not exist", "Create it with --setup, point --env-file at the right path, or set the private values in the environment instead", False, SECRETS_GUIDE_URL)
+
+    if context == "secret":
+        return advice("secret.missing", "A private value could not be stored", "Check that the dotenv file is writable, or set the value in the environment instead", False, SECRETS_GUIDE_URL)
+
+    if context == "file_exists":
+        return advice("file.exists", "The destination file already exists", "Re-run with --force to replace it after a timestamped backup, or write to a different path", False, CONFIG_GUIDE_URL)
+
+    if context == "file_read":
+        return advice("file.unreadable", "A file the tool reads could not be opened", "Check the path and its permissions, and that the file is readable UTF-8 text", False, OUTPUT_GUIDE_URL)
+
+    if context == "file_write":
+        return advice("file.unwritable", "A file the tool writes could not be opened", "Check that the output directory exists and is writable, or choose another with --output-dir", False, OUTPUT_GUIDE_URL)
+
+    if context == "config_write":
+        return advice("file.unwritable", "The configuration file could not be written", "Check that the directory exists and is writable, or choose another path with --config-file", False, CONFIG_GUIDE_URL)
+
+    if context == "smtp_config":
+        return advice("smtp.invalid", "The SMTP configuration is incomplete or invalid", "Check SMTP_HOST, SMTP_PORT, SENDER_EMAIL and RECEIVER_EMAIL in the configuration file", False, SMTP_GUIDE_URL)
+
+    if context == "email":
+        code, summary, fix, retryable = classify_smtp_parts(error, message)
+        return advice(code, summary, fix, retryable, SMTP_GUIDE_URL)
+
+    if context == "webhook_config":
+        return advice("webhook.invalid", "The webhook settings cannot be used", "Check WEBHOOK_URL and WEBHOOK_PROVIDER, using a complete HTTPS link with no embedded credentials", False, WEBHOOK_GUIDE_URL)
+
+    if context == "webhook":
+        if "429" in message or "rate limit" in message or "too many requests" in message:
+            return advice("webhook.rate_limited", "The webhook service is rate limiting deliveries", "Reduce how many alert types are enabled, or wait for the service to accept deliveries again", True, WEBHOOK_GUIDE_URL)
+        if any(term in message for term in ("connection", "timed out", "timeout", "name resolution", "unreachable", "max retries")):
+            return advice("webhook.connection", "The webhook service could not be reached", "Check connectivity and any proxy, then confirm the webhook host is reachable from this machine", True, WEBHOOK_GUIDE_URL)
+        return advice("webhook.rejected", "The webhook service rejected the delivery", "Check that WEBHOOK_URL is current and still accepted by the service", False, WEBHOOK_GUIDE_URL)
+
+    if context == "proxy":
+        if "resolve" in message:
+            return advice("proxy.unresolved", "The configured proxy hostname could not be resolved", "Check PROXY_URL for a typo and confirm the proxy host is reachable from this machine", False, PROXY_GUIDE_URL)
+        return advice("config.invalid", "The proxy settings cannot be used", "Check PROXY_URL and any proxy certificate path, then re-run the tool", False, PROXY_GUIDE_URL)
+
+    if context == "dashboard":
+        return advice("dashboard.unavailable", "The Web Dashboard could not start", "Free the configured port or start the server on a different one with --web-dashboard-port, then confirm the installation is complete", False, WEB_DASHBOARD_GUIDE_URL)
+
+    if context == "setup":
+        return advice("config.invalid", "Setup cannot run with the current settings", "Correct the named setting or path, then run --setup again", False, QUICK_START_GUIDE_URL)
+
+    # Runtime, which is the monitoring loop and every Instagram request it makes
+    logged_in = (bool(SESSION_USERNAME) and not SKIP_SESSION) if is_logged_in is None else is_logged_in
+    code, summary, fix, guide, retryable = classify_error_parts(str(error or detail or ""), logged_in)
+    # Read only once the text rules found nothing, so a DNS or proxy failure keeps its own advice while a
+    # transport error raised with an empty message still reaches the connection guide rather than the debug one
+    if code == "unknown" and network_failure_code(error):
+        return advice("network.unavailable", "Instagram could not be reached", "Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings. Check the proxy first if --enable-proxy is set", True, CONNECTION_GUIDE_URL)
+    return advice(code, summary, fix, retryable, guide)
+
+
+# Maps one error message to the stable code behind its summary, fix and guide, and to whether retrying can clear it
+def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[str, str, str, str, bool]:
     m = (error_msg or "").lower()
 
     # Rate limiting or TLS-fingerprint blocks
-    if any(t in m for t in ("429", "too many requests", "wait a few minutes", "rate limit", "please wait")):
-        return "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users.", ANTI_DETECTION_INTERVAL_GUIDE_URL
+    if any(t in m for t in FAILURE_TERMS['rate_limit']):
+        return "instagram.rate_limited", "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
+
+    # An endpoint Instagram retired answers feedback_required whatever the account is doing, so its reply describes
+    # the endpoint. Reading it as an account block would stop a session every other endpoint still answers
+    if is_retired_endpoint_error(m):
+        return "instagram.endpoint_retired", "Instagram no longer answers the profile endpoint this lookup used", "Instagram retired 'api/v1/users/web_profile_info/' for accounts that are signed in. Your account is not blocked and there is nothing to clear. Profiles are read over GraphQL instead, and this endpoint is tried only for a target the search does not list, so check that the target name is spelled correctly and still exists", RETIRED_ENDPOINT_GUIDE_URL, False
+
+    # A temporary limit, which Instagram reports as feedback_required with a "Try Again Later" notice. Only time
+    # clears it, so the checkpoint advice would send the reader to clear something that is not there
+    if any(t in m for t in FAILURE_TERMS['action_block']):
+        return "instagram.action_blocked", "Instagram is temporarily limiting this account or IP", "Instagram answered feedback_required, its 'Try Again Later' notice that limits what this account or this IP address may do for a while. It is not a checkpoint, so there is nothing to clear in the browser and re-importing the session does not lift it. Make no requests from this account and this network for several hours, then run --doctor again. If it works from another network, the limit is on your IP address. Once it passes, raise the check interval and monitor fewer users", ACTION_BLOCK_GUIDE_URL, False
 
     # Challenge, checkpoint or shadowban
-    if any(t in m for t in ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data")):
-        return f"Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'. Also raise the check interval.", ANTI_DETECTION_SESSION_GUIDE_URL
+    if any(t in m for t in FAILURE_TERMS['challenge']):
+        return "instagram.challenge", "Instagram is asking this session or IP to pass a challenge", f"Instagram wants this session or IP to pass a challenge. Open Instagram in your browser, clear any checkpoint then re-import the session with '{session_recovery_command()}'{session_recovery_browser_hint()}. Also raise the check interval", ANTI_DETECTION_SESSION_GUIDE_URL, False
 
     # Missing session file
-    if "session file" in m:
-        return f"no saved session was found for this account. Create one with '{session_recovery_command()}' after logging in via Firefox or with 'instaloader -l <your_user>'. In the Web Dashboard you can import from the Session page.", SESSION_IMPORT_GUIDE_URL
+    if any(t in m for t in FAILURE_TERMS['session_missing']):
+        return "session.missing", "No saved Instagram session was found", f"No saved session was found for this account. Create one with '{session_recovery_command()}'{session_recovery_browser_hint()} after signing in to Instagram in that browser, or with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can import from the Session page", SESSION_IMPORT_GUIDE_URL, False
 
     # Invalid or expired session
-    if any(t in m for t in ("login_required", "loginrequired", "not logged in", "redirected", "forbidden", "401", "403", "bad credentials", "badcredentials", "wrong password", "checkpoint_required", "bad request")):
-        return f"your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}' after logging in via Firefox or recreate it with 'instaloader -l <your_user>'. In the Web Dashboard you can re-import from the Session page.", SESSION_IMPORT_GUIDE_URL
+    if any(t in m for t in FAILURE_TERMS['auth_expired']):
+        return "session.expired", "The saved Instagram session is invalid or expired", f"Your Instagram session looks invalid or expired. Re-import it with '{session_recovery_command()}'{session_recovery_browser_hint()} after signing in to Instagram in that browser, or recreate it with 'instaloader -l <your_insta_user>'. In the Web Dashboard you can re-import from the Session page", SESSION_IMPORT_GUIDE_URL, False
 
     # Profile not found
-    if any(t in m for t in ("profilenotexists", "does not exist", "not found", "404")):
-        fix = "check the target username is spelled correctly and the account still exists and is reachable."
+    if any(t in m for t in FAILURE_TERMS['target_unavailable']):
+        fix = "Check the target username is spelled correctly and the account still exists and is reachable"
         if is_logged_in:
-            fix += " If the username is correct, your session or IP may be temporarily flagged."
-        return fix, ""
+            fix += ". If the username is correct, your session or IP may be temporarily flagged"
+        return "target.not_found", "Instagram could not find the requested profile", fix, MONITORING_GUIDE_URL, False
 
     # An unsupported impersonation target surfaces as a connection error, so name the real cause before the network hint
-    if "impersonat" in m:
-        return "the configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto', or pick a supported target such as chrome, safari, edge or firefox.", ""
+    if any(t in m for t in FAILURE_TERMS['impersonate_unsupported']):
+        return "config.impersonate_unsupported", "The configured browser profile cannot be impersonated", "The configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto' or pick a supported target such as chrome, safari, edge or firefox", HTTP_BACKEND_GUIDE_URL, False
 
     # An unresolvable proxy hostname is a proxy configuration problem, so it is the one resolution failure the proxy guide fits
-    if "could not resolve proxy" in m:
-        return "the proxy hostname you configured cannot be resolved. Check PROXY_URL for a typo and confirm the proxy host is reachable from this machine.", PROXY_GUIDE_URL
+    if any(t in m for t in FAILURE_TERMS['proxy_unresolved']):
+        return "proxy.unresolved", "The configured proxy hostname could not be resolved", "The proxy hostname you configured cannot be resolved. Check PROXY_URL for a typo and confirm the proxy host is reachable from this machine", PROXY_GUIDE_URL, False
 
     # DNS failures are resolver-side, so they need their own fix before the generic network branch swallows them
-    if any(t in m for t in ("could not resolve host", "temporary failure in name resolution", "name or service not known", "nodename nor servname", "curl: (6)")):
-        return "your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com'), and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again.", CONNECTION_ERRORS_GUIDE_URL
+    if any(t in m for t in FAILURE_TERMS['dns_failure']):
+        return "network.dns", "Instagram's address could not be resolved", "Your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com') and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again", CONNECTION_GUIDE_URL, True
 
     # Network or connectivity problems
-    if any(t in m for t in ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl")):
-        return "this looks like a network problem. Check your internet connection, then your proxy settings if --enable-proxy is set, then try again.", CONNECTION_ERRORS_GUIDE_URL
+    if any(t in m for t in FAILURE_TERMS['network']):
+        return "network.unavailable", "Instagram could not be reached", "Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings. Check the proxy first if --enable-proxy is set", CONNECTION_GUIDE_URL, True
+
+    if "follower list dialog" in m:
+        return "instagram.browser_dialog", "Instagram's browser follower list dialog could not be read", "Set FOLLOW_LIST_BROWSER_HEADLESS to False to inspect the page. If the list loads slowly, raise FOLLOW_LIST_BROWSER_TIMEOUT. If it opens normally but the tool still fails, update instagram_monitor and report the browser layout error if it persists", BROWSER_FOLLOW_LIST_GUIDE_URL, True
 
     # Deprecated GraphQL doc_id returning null data, or a temporary block
-    if any(t in m for t in ("empty data for posts", "fetching post metadata failed", "not subscriptable")):
-        return "Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version; if you are already current, report it at https://github.com/misiektoja/instagram_monitor/issues).", ""
+    if any(t in m for t in FAILURE_TERMS['schema_change']):
+        return "instagram.empty_data", "Instagram returned empty data for this query", "Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version and report it at https://github.com/misiektoja/instagram_monitor/issues if you are already current)", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
 
-    return "", ""
+    return "unknown", "An unexpected error stopped the requested action", unknown_failure_fix(), DIAGNOSTICS_GUIDE_URL, True
+
+
+# Maps one SMTP failure to a stable summary plus the matching fix, keeping the technical text for the detail line
+def classify_smtp_error(error: Exception) -> Tuple[str, str]:
+    return classify_smtp_parts(error)[1:3]
+
+
+# Maps one SMTP failure to the stable code behind its summary and fix, and to whether retrying can clear it
+def classify_smtp_parts(error: Any, message: str = "") -> Tuple[str, str, str, bool]:
+    message = message or str(error or "").casefold()
+    if isinstance(error, smtplib.SMTPAuthenticationError) or any(term in message for term in ("authentication", "auth", "username and password", "535")):
+        return "smtp.authentication", "The SMTP server rejected the sign-in", "Check SMTP_USER and SMTP_PASSWORD, and use an app password if the provider requires one", False
+    if any(term in message for term in ("settings are incorrect", "invalid")):
+        return "smtp.invalid", "The SMTP settings are incomplete or invalid", "Check SMTP_HOST, SMTP_PORT, SENDER_EMAIL and RECEIVER_EMAIL in the configuration file", False
+    return "smtp.connection", "The SMTP server could not be reached", "Check SMTP_HOST, SMTP_PORT and SMTP_SSL, then confirm the host is reachable from this machine", True
 
 
 # Formats the actionable fix for one error as the console block callers already print
 def error_fix_hint(error_msg: str, is_logged_in: bool = False) -> str:
-    fix, guide = error_fix_parts(error_msg, is_logged_in)
-    if not fix:
+    advice = classify_recovery_error(error_msg, is_logged_in=is_logged_in)
+    return f"To fix: {advice.fix}" if advice.fix else ""
+
+
+# Suppresses a repeated fix paragraph until the failure category changes or a check succeeds
+class RecoveryHintTracker:
+    # Starts with no category recorded, so the first failure is always reported in full
+    def __init__(self) -> None:
+        self.last_code: Optional[str] = None
+
+    # Reports whether this category is new and therefore worth printing the fix for again
+    def should_render(self, advice: RecoveryAdvice) -> bool:
+        if advice.code == self.last_code:
+            return False
+        self.last_code = advice.code
+        return True
+
+    # Clears the suppression after a successful check
+    def reset(self) -> None:
+        self.last_code = None
+
+
+# Decides how a lasting failure is reported: in full when it is new, then on the liveness cadence while it lasts
+# How long a reported failure may go on before the run reminds about it, whatever the liveness banner is set to
+OUTAGE_REMINDER_SECONDS = 3600  # 1 hour
+# How long a failure the tool can retry away must last before it is alerted, a failure it cannot is alerted at once
+ERROR_ALERT_AFTER_SECONDS = 300  # 5 minutes
+# How long a channel that could not deliver an error alert waits before the next attempt, doubled on every further failure up to the cap
+ERROR_ALERT_RETRY_SECONDS = 300  # 5 minutes
+ERROR_ALERT_RETRY_MAX_SECONDS = 3600  # 1 hour
+
+# When the run last read the data a change is compared against. The polling interval is randomized and the run can
+# pause outside the monitoring hours, so the configured interval is not the window a change was observed in
+LAST_CHECK_TS = 0
+
+
+# Returns the family a failure code belongs to, so the DNS and timeout failures of one internet outage count as one
+def outage_family(code: Optional[str]) -> str:
+    return "network" if str(code or "").startswith("network.") else str(code or "")
+
+
+class OutageReporter:
+    # Starts with no failure recorded and reports a new retryable failure once confirm_checks checks in a row failed
+    def __init__(self, confirm_checks: int = 1) -> None:
+        self.confirm_checks = max(1, confirm_checks)
+        self.code: Optional[str] = None
+        self.since: int = 0
+        self.reported_at: int = 0
+        self.failures: int = 0
+        self.reported: bool = False
+
+    # Records one failed check and returns "full" when the failure is to be reported in full, "changed" when a
+    # reported outage moved to another failure family, "reminder" once OUTAGE_REMINDER_SECONDS passed since the
+    # last report or "" while nothing new is to be said
+    def failed(self, advice: RecoveryAdvice) -> str:
+        now = int(time.time())
+        if not self.code:
+            self.since = now
+        self.failures += 1
+        changed = self.code is not None and outage_family(advice.code) != outage_family(self.code)
+        self.code = advice.code
+        if not self.reported:
+            # A failure the tool cannot retry away is reported at once, one it can waits for the next check to confirm it
+            if advice.retryable and self.failures < self.confirm_checks:
+                return ""
+            self.reported = True
+            self.reported_at = now
+            return "full"
+        if changed:
+            self.reported_at = now
+            return "changed" if advice.retryable else "full"
+        # Timed rather than counted, because a failing run usually retries on a different interval than a healthy one
+        if now - self.reported_at >= OUTAGE_REMINDER_SECONDS:
+            self.reported_at = now
+            return "reminder"
         return ""
-    return f"To fix: {fix}" + (f"\nGuide: {guide}" if guide else "")
+
+    # Clears the failure after a successful check and returns how long it lasted, or None when nothing was reported
+    def recovered(self) -> Optional[int]:
+        lasted = int(time.time()) - self.since if self.code and self.reported else None
+        self.code: Optional[str] = None
+        self.since: int = 0
+        self.reported_at: int = 0
+        self.failures: int = 0
+        self.reported: bool = False
+        return lasted
 
 
-# Prints an actionable fix hint for the given error to the console when one is available
-def print_fix_hint(error_msg: str) -> None:
+# Reports that nothing changed, so a quiet run still says it is alive on the liveness cadence
+def print_liveness_banner(message: str) -> None:
+    print(f"* {message}")  # substitution applied in LOGGER.write
+    print_cur_ts("Liveness check, timestamp:\t")
+
+
+# Reminds about a lasting failure once an hour, so a broken run still says it is alive without repeating itself
+def print_outage_liveness(target: str, advice: RecoveryAdvice, since: int, failures: int = 0, close: bool = True) -> None:
+    count = f", {failures} failed {'check' if failures == 1 else 'checks'}" if failures else ""
+    print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}{count}")
+    # A caller with an alert still to deliver closes the report itself, so the delivery lines stay inside it
+    if close:
+        print_cur_ts("Liveness check, timestamp:\t")
+
+
+# Notes that a reported outage now fails differently, in one line rather than a second full report
+def print_outage_change(target: str, advice: RecoveryAdvice) -> None:
+    print(f"* Monitoring failure changed for {target}. {advice.summary}")
+
+
+# Reports that a failure cleared, since a throttled failure no longer stops printing when it is over
+def print_outage_recovery(target: str, lasted: int, alert_state=None) -> None:
+    print(f"* Monitoring recovered for {target} after {display_time(max(1, lasted))}")
+    # Sent before the report closes so the delivery lines stay inside it, as the failure alert's own lines do
+    if alert_state is not None:
+        notify_monitoring_recovery(target, alert_state)
+    print_cur_ts()
+
+
+# Prints an actionable fix hint for the given error to the console when one is available and not already shown
+def print_fix_hint(error_msg: str, tracker: Optional[RecoveryHintTracker] = None) -> bool:
     is_logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
+    if tracker is not None and not tracker.should_render(classify_recovery_error(error_msg, is_logged_in=is_logged_in)):
+        return False
     hint = error_fix_hint(error_msg, is_logged_in)
     if hint:
         print(colorize("info", hint))
+    return bool(hint)
+
+
+# Returns the headline a caller supplied as text, so a raw exception still falls back to the classified summary
+def caller_summary(error: Any) -> str:
+    return sanitize_error_text(error) if isinstance(error, str) else ""
+
+
+# Renders one built advice as the shared Error, To fix and optional Technical detail block
+def render_recovery_advice(advice: RecoveryAdvice, debug: Optional[bool] = None, retry_note: str = "", with_fix: bool = True, label: str = "Error", summary: str = "") -> str:
+    headline = sanitize_error_text(summary) if summary else advice.summary
+    lines = [f"* {label}: {headline}" + (f" ({retry_note})" if retry_note else "")]
+    if with_fix and advice.fix:
+        lines.extend(colorize_fix_line(fix_line) for fix_line in f"To fix: {advice.fix}".splitlines())
+    # A detail that only repeats a line already printed spends a line saying nothing
+    if with_fix and (DEBUG_MODE if debug is None else debug) and advice.detail and advice.detail not in (headline, advice.summary):
+        lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
+    return "\n".join(lines)
+
+
+# Classifies one failure and renders it through the shared recovery block
+def render_recovery_error(error: Any = None, context: str = "runtime", debug: Optional[bool] = None, detail: str = "", retry_note: str = "", with_fix: bool = True, label: str = "Error", summary: str = "", is_logged_in: Optional[bool] = None) -> str:
+    return render_recovery_advice(classify_recovery_error(error, context, detail, is_logged_in), debug, retry_note, with_fix, label, summary or caller_summary(error))
+
+
+# True once anything has been printed since the startup banner, whose own trailing blank line is otherwise still the
+# last thing on screen. A block that has to stand apart from a preceding notice reads this instead of adding a blank
+# line that would double the banner one
+CONSOLE_OUTPUT_PRINTED = False
+
+
+# Records that something has been printed since the startup banner
+def note_console_output() -> None:
+    global CONSOLE_OUTPUT_PRINTED
+    CONSOLE_OUTPUT_PRINTED = True
+
+
+# Prints one built advice through the shared recovery block and returns it
+def print_recovery_advice(advice: RecoveryAdvice, debug: Optional[bool] = None, retry_note: str = "", with_fix: bool = True, label: str = "Error", summary: str = "") -> RecoveryAdvice:
+    note_console_output()
+    print(render_recovery_advice(advice, debug, retry_note, with_fix, label, summary))
+    return advice
+
+
+# Classifies one failure, prints it through the shared recovery block and returns its stable advice
+def print_recovery_error(error: Any = None, context: str = "runtime", debug: Optional[bool] = None, detail: str = "", retry_note: str = "", with_fix: bool = True, label: str = "Error", summary: str = "", is_logged_in: Optional[bool] = None) -> RecoveryAdvice:
+    advice = classify_recovery_error(error, context, detail, is_logged_in)
+    note_console_output()
+    print(render_recovery_advice(advice, debug, retry_note, with_fix, label, summary or caller_summary(error)))
+    return advice
+
+
+# Prints the action that clears one classified failure, for a surface that printed its own summary line
+def print_recovery_fix(error: Any = None, context: str = "runtime", detail: str = "") -> RecoveryAdvice:
+    advice = classify_recovery_error(error, context, detail)
+    if advice.fix:
+        note_console_output()
+        print(colorize("info", f"To fix: {advice.fix}"))
+        if DEBUG_MODE and advice.detail and advice.detail != advice.summary:
+            print(f"Technical detail: {sanitize_error_text(advice.detail)}")
+    return advice
+
+
+# Returns the advice an optional library that is missing carries, naming what the run loses and how to install it
+def missing_dependency_advice(package: str, effect: str, install_command: str, alternative: str = "") -> RecoveryAdvice:
+    return make_recovery_advice("dependency.missing", f"{effect} because the optional '{package}' library is missing", recovery_fix_with_guide(f"Install it with: {install_command}" + (f". {alternative}" if alternative else ""), INSTALLATION_GUIDE_URL), False)
+
+
+# Returns the command that installs one package through the active Python environment
+def pip_install_command(requirement: str) -> str:
+    return _wizard_render_command([("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", requirement])
 
 
 # Returns True when the formatted error indicates a profile could not be found (deleted/renamed target or a flagged session masking every profile)
@@ -9230,6 +11691,8 @@ def _run_flagged_probe(bot):
         return False
     except Exception as probe_err:
         probe_msg = format_error_message(probe_err)
+        if is_retired_endpoint_error(probe_msg):
+            return False
         return is_profile_not_found_error(probe_msg) or any(t in probe_msg for t in FLAGGED_TRIGGERS)
 
 
@@ -9261,12 +11724,14 @@ def probe_session_flagged(bot):
             FLAGGED_PROBE_LOCK.notify_all()
 
     verdict = "also unresolved, treating session as flagged" if flagged else "resolved, treating target as genuinely gone"
-    debug_print(f"Flag probe: canonical account '{FLAGGED_PROBE_USERNAME}' {verdict}")
+    debug_print("Flag probe", account=FLAGGED_PROBE_USERNAME, verdict=verdict)
     return flagged
 
 
 # Returns True when an error indicates the session account or IP itself is flagged rather than a single target being gone
 def is_session_flagged(error_msg, bot):
+    if is_retired_endpoint_error(error_msg):
+        return False
     if any(t in error_msg for t in FLAGGED_TRIGGERS):
         return True
     if is_profile_not_found_error(error_msg):
@@ -9274,34 +11739,189 @@ def is_session_flagged(error_msg, bot):
     return False
 
 
-# Sends enabled email and webhook alerts exactly when a monitoring error streak reaches the configured threshold
-def notify_monitoring_error(user, error_msg, failure_count, check_interval):
-    if failure_count != ERROR_FAILURE_THRESHOLD:
+# Tracks the error alert of one monitored target: which channel has delivered it and how long a channel that failed waits before the next attempt
+@dataclass
+class ErrorAlertState:
+    email_sent: bool = False
+    webhook_sent: bool = False
+    email_failures: int = 0
+    webhook_failures: int = 0
+    email_retry_at: int = 0
+    webhook_retry_at: int = 0
+    summary: str = ""
+    failing_since: int = 0
+
+    # Forgets the delivered alert, so the next failure earns each channel a new one
+    def reset(self):
+        self.email_sent = False
+        self.webhook_sent = False
+        self.email_failures = 0
+        self.webhook_failures = 0
+        self.email_retry_at = 0
+        self.webhook_retry_at = 0
+        self.summary = ""
+        self.failing_since = 0
+
+    # Keeps what this outage failed with and when it started, so the recovery alert can name the failure it clears
+    def remember(self, advice: RecoveryAdvice, failed_since: int) -> None:
+        self.summary = advice.summary
+        self.failing_since = int(failed_since)
+
+    # Tells whether a channel still owes the alert and its wait after a failed attempt, if any, has passed
+    def pending(self, channel: str, enabled, now: int) -> bool:
+        return bool(enabled) and not getattr(self, f"{channel}_sent") and now >= getattr(self, f"{channel}_retry_at")
+
+    # Tells whether a channel was owed the failure alert but never received it, so the recovery can tell it the whole story
+    def missed(self, channel: str, enabled) -> bool:
+        return bool(enabled) and not getattr(self, f"{channel}_sent") and getattr(self, f"{channel}_failures") > 0
+
+    # Records one attempt, holding a channel that failed for a growing wait so a broken server is not dialled on every check
+    def record(self, channel: str, attempted: bool, delivered: bool, now: int) -> None:
+        if not attempted:
+            return
+        if delivered:
+            setattr(self, f"{channel}_sent", True)
+            setattr(self, f"{channel}_failures", 0)
+            setattr(self, f"{channel}_retry_at", 0)
+            return
+        failures = getattr(self, f"{channel}_failures") + 1
+        delay = min(ERROR_ALERT_RETRY_SECONDS * 2 ** (failures - 1), ERROR_ALERT_RETRY_MAX_SECONDS)
+        setattr(self, f"{channel}_failures", failures)
+        setattr(self, f"{channel}_retry_at", now + delay)
+        print(f"* The {channel} alert is on hold for {display_time(delay)} after {failures} {'attempt' if failures == 1 else 'attempts'}, then tried again")
+
+
+# Builds the subject every failure alert shares, so an inbox fed by several monitors sorts them by tool
+def recovery_alert_subject(advice: RecoveryAdvice, target: str) -> str:
+    return f"Instagram Monitor error: {advice.summary} (user: {target})"
+
+
+# Returns the failure alert body as groups of (label, value, emphasized) rows, so the plain and HTML forms cannot drift apart
+def recovery_alert_rows(advice: RecoveryAdvice, retry_seconds: int, failed_checks: int = 0, failing_since: int = 0) -> List[List[Tuple[str, str, bool]]]:
+    groups: List[List[Tuple[str, str, bool]]] = [[("", advice.summary, True)]]
+    if advice.fix:
+        groups.append([("To fix: ", advice.fix, False)])
+    counters: List[Tuple[str, str, bool]] = []
+    # A single failure has no streak to report, and the outage start it would name is the timestamp below it
+    if failed_checks > 1:
+        counters.append(("Failed checks in a row: ", str(failed_checks), True))
+        if failing_since:
+            counters.append(("Failing since: ", get_date_from_ts(failing_since), True))
+    # The retry delay is configured rather than observed, so it carries no emphasis
+    counters.append(("Next retry in: ", display_time(max(1, int(retry_seconds))), False))
+    groups.append(counters)
+    # A detail repeating the summary spends a line saying nothing, and it names internal library errors rather than anything actionable
+    if DEBUG_MODE and advice.detail and advice.detail != advice.summary:
+        groups.append([("Technical detail: ", advice.detail, False)])
+    return groups
+
+
+# Builds the plain text failure alert body, leaving the timestamp to the caller so the webhook copy can go without one
+def recovery_alert_body(advice: RecoveryAdvice, retry_seconds: int, failed_checks: int = 0, failing_since: int = 0) -> str:
+    return "\n\n".join("\n".join(f"{label}{value}" for label, value, _ in group) for group in recovery_alert_rows(advice, retry_seconds, failed_checks, failing_since))
+
+
+# Renders one alert row as HTML, keeping the line breaks HTML would otherwise collapse into spaces
+def recovery_alert_row_html(label: str, value: str, emphasized: bool) -> str:
+    rendered = f"<b>{html_text(str(value))}</b>" if emphasized else html_text(str(value))
+    return f"{escape(label)}{rendered}"
+
+
+# Builds the HTML failure alert body, leaving the timestamp to the caller as the plain form does
+def recovery_alert_body_html(advice: RecoveryAdvice, retry_seconds: int, failed_checks: int = 0, failing_since: int = 0) -> str:
+    return html_autolink_urls("<br><br>".join("<br>".join(recovery_alert_row_html(*row) for row in group) for group in recovery_alert_rows(advice, retry_seconds, failed_checks, failing_since)))
+
+
+# Builds the subject of the alert that says an outage ended, matching the failure alert its reader already has
+def monitoring_recovery_subject(target: str, lasted: int) -> str:
+    return f"Instagram Monitor recovered: monitoring {target} resumed after {display_time(max(1, lasted))}"
+
+
+# Builds the plain text recovery alert body, leaving the timestamp to the caller as the failure body does
+def monitoring_recovery_body(target: str, lasted: int, summary: str = "") -> str:
+    return f"Monitoring recovered for {target} after {display_time(max(1, lasted))}." + (f"\n\nThe failure was: {summary}" if summary else "")
+
+
+# Builds the HTML recovery alert body, emphasizing how long the outage lasted
+def monitoring_recovery_body_html(target: str, lasted: int, summary: str = "") -> str:
+    return f"Monitoring recovered for <b>{escape(str(target))}</b> after <b>{escape(display_time(max(1, lasted)))}</b>." + (f"<br><br>The failure was: {html_text(str(summary))}" if summary else "")
+
+
+# Tells a channel that never received the failure alert about the whole outage, since a bare recovery would close
+# a failure it was never told about
+def monitoring_missed_body(target: str, lasted: int, summary: str = "") -> str:
+    lasted = max(1, lasted)
+    return f"Monitoring failed for {target} at {get_date_from_ts(int(time.time()) - lasted)} and recovered after {display_time(lasted)}." + (f"\n\nThe failure was: {summary}" if summary else "") + "\n\nThe failure alert could not be delivered here while the failure lasted."
+
+
+# Builds the HTML body of the combined failure and recovery alert, matching the plain text
+def monitoring_missed_body_html(target: str, lasted: int, summary: str = "") -> str:
+    lasted = max(1, lasted)
+    return f"Monitoring failed for <b>{escape(str(target))}</b> at <b>{escape(get_date_from_ts(int(time.time()) - lasted))}</b> and recovered after <b>{escape(display_time(lasted))}</b>." + (f"<br><br>The failure was: {html_text(str(summary))}" if summary else "") + "<br><br>The failure alert could not be delivered here while the failure lasted."
+
+
+# Tells every channel that carried the failure alert that the outage is over and tells a channel that never got one
+# about the whole outage at once, so nobody is left acting on a run that recovered
+def notify_monitoring_recovery(user, alert_state) -> bool:
+    email_pending = bool(alert_state.email_sent) and bool(ERROR_NOTIFICATION)
+    webhook_pending = bool(alert_state.webhook_sent) and webhook_event_enabled("error")
+    # A channel whose failure alert never got through hears about the outage and its end together, rather than
+    # nothing at all, which is what a channel blocked for the length of the outage would otherwise receive
+    email_missed = alert_state.missed("email", ERROR_NOTIFICATION)
+    webhook_missed = alert_state.missed("webhook", webhook_event_enabled("error"))
+    if not (email_pending or webhook_pending or email_missed or webhook_missed):
         return False
-
-    notified = False
-    if ERROR_NOTIFICATION:
-        alert_subject = f"instagram_monitor: error for {user} (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD})"
-        alert_body = f"An error occurred for user {user} (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(check_interval)} ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-        alert_body_html = f"An error occurred for user <b>{user}</b> (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: <b>{display_time(check_interval)}</b> ({get_range_of_dates_from_tss(int(time.time()) - check_interval, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-        print(f"* Sending error notification to {RECEIVER_EMAIL} (failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD})")
-        send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
-        notified = True
-
-    if WEBHOOK_ENABLED and WEBHOOK_ERROR_NOTIFICATION:
-        send_webhook(
-            title=f"Error for {user}",
-            description=f"{error_msg}\n(failure #{failure_count}, threshold: {ERROR_FAILURE_THRESHOLD})",
-            color=0xFF0000,
-            notification_type="error"
-        )
-        notified = True
-
-    return notified
+    lasted = max(0, int(time.time()) - alert_state.failing_since) if alert_state.failing_since else 0
+    alert_subject = monitoring_recovery_subject(user, lasted)
+    email_text, email_html = (monitoring_missed_body, monitoring_missed_body_html) if email_missed else (monitoring_recovery_body, monitoring_recovery_body_html)
+    webhook_html = monitoring_missed_body_html if webhook_missed else monitoring_recovery_body_html
+    alert_body = email_text(user, lasted, alert_state.summary)
+    alert_body_html = email_html(user, lasted, alert_state.summary)
+    email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, f"{alert_body}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}", f"{alert_body_html}{get_cur_ts('<br><br>Timestamp: ')}", email_enabled=email_pending or email_missed, webhook_enabled=webhook_pending or webhook_missed, webhook_title=alert_subject, webhook_description=html_body_to_discord_markdown(webhook_html(user, lasted, alert_state.summary)), webhook_color=0x2ECC71)
+    return email_delivered or webhook_delivered
 
 
-# Sends a one-off email and webhook alert when the session account or IP is flagged, bypassing ERROR_FAILURE_THRESHOLD since a flag is terminal and operator-actionable
+# Alerts both channels once a failure has lasted ERROR_ALERT_AFTER_SECONDS or at once when it cannot clear on its own, once per channel and per outage
+def notify_monitoring_error(user, advice, failed_since, failure_count, check_interval, alert_state):
+    # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
+    lasted = max(0, int(time.time()) - failed_since)
+    if advice.retryable and lasted < ERROR_ALERT_AFTER_SECONDS:
+        return False
+    # Attempted again on a later failing check rather than only once the alert is due, so a channel that failed is
+    # tried again, after a wait that grows with each failed attempt
+    now = int(time.time())
+    email_pending = alert_state.pending("email", ERROR_NOTIFICATION, now)
+    webhook_pending = alert_state.pending("webhook", webhook_event_enabled("error"), now)
+    # Recorded on every due check rather than only on a delivery, so a channel still retrying its alert still earns a recovery notice
+    alert_state.remember(advice, failed_since)
+    if not (email_pending or webhook_pending):
+        return False
+    alert_subject = recovery_alert_subject(advice, user)
+    alert_body = recovery_alert_body(advice, check_interval, failure_count, failed_since)
+    alert_body_html = recovery_alert_body_html(advice, check_interval, failure_count, failed_since)
+    email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, f"{alert_body}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}", f"{alert_body_html}{get_cur_ts('<br><br>Timestamp: ')}", email_enabled=email_pending, webhook_enabled=webhook_pending, webhook_title=alert_subject, webhook_description=html_body_to_discord_markdown(alert_body_html), webhook_color=0xFF0000)
+    alert_state.record("email", email_pending, email_delivered, now)
+    alert_state.record("webhook", webhook_pending, webhook_delivered, now)
+    return email_delivered or webhook_delivered
+
+
+# Describes the client identity behind an account-level alert, since a flag is worth little to diagnose without
+# the transport and agent that produced it. Kept to account-level alerts because these notifications leave the machine
+def alert_identity_rows() -> List[Tuple[str, str]]:
+    transport = f"curl_cffi impersonating {_curl_cffi_impersonate_target()}" if curl_cffi_backend_active() else http_backend_display()
+    rows = [("Transport", transport)]
+    if USER_AGENT:
+        rows.append(("Browser agent", USER_AGENT))
+    return rows
+
+
+# Sends a one-off email and webhook alert when the session account or IP is flagged, bypassing the error alert delay since a flag is terminal and operator-actionable
 def notify_session_flagged(user, err_str, error_msg):
+    # A flag is an account-level action, so stop every target durably before the alerting de-dupe below can return early.
+    # A probe-confirmed flag counts as a challenge even when the triggering message only said the profile was missing
+    flag_class = classify_failure_class(error_msg)
+    record_failure_event(flag_class if is_account_level_failure(flag_class) else 'challenge', user, error_msg)
+
     # One shared session flag trips every target thread, so de-dupe within the flag-probe window to alert once instead of once per target
     now = time.time()
     with FLAGGED_NOTIFY_LOCK:
@@ -9310,19 +11930,775 @@ def notify_session_flagged(user, err_str, error_msg):
             return
         FLAGGED_NOTIFY_STATE['ts'] = now
 
-    if ERROR_NOTIFICATION:
-        alert_subject = f"instagram_monitor: session account flagged (target: {user})"
-        alert_body = f"{err_str}\n\nTriggering error: {error_msg}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-        alert_body_html = f"{escape(str(err_str))}<br><br>Triggering error: <b>{escape(str(error_msg))}</b>{get_cur_ts('<br><br>Timestamp: ')}"
-        print(f"* Sending session flagged notification to {RECEIVER_EMAIL}")
-        send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
+    identity_rows = alert_identity_rows()
+    identity_text = "".join(f"\n{label}: {value}" for label, value in identity_rows)
+    identity_html = "".join(f"<br>{label}: <b>{escape(str(value))}</b>" for label, value in identity_rows)
 
-    send_webhook(
-        title=f"🚩 Session account flagged (target: {user})",
-        description=f"{err_str}\n\nTriggering error: `{error_msg}`",
-        color=0xFF0000,
-        notification_type="error"
-    )
+    alert_subject = f"Instagram Monitor error: The session account is flagged (user: {user})"
+    alert_body = f"{err_str}\n\nTriggering error: {error_msg}\n{identity_text}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+    alert_body_html = f"{escape(str(err_str))}<br><br>Triggering error: <b>{escape(str(error_msg))}</b><br>{identity_html}{get_cur_ts('<br><br>Timestamp: ')}"
+    send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=ERROR_NOTIFICATION, webhook_title=f"🚩 Session account flagged (user: {user})", webhook_description=f"{err_str}\n\nTriggering error: `{error_msg}`\n{identity_text}", webhook_color=0xFF0000)
+
+
+# Reloads the session file into the bot after a Web Dashboard session or mode change, or clears it in No-login mode
+def reload_session_after_refresh(bot, user):
+    with SESSION_FILE_LOCK:
+        try:
+            if SKIP_SESSION:
+                bot.context._session.cookies.clear()
+                with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                    WEB_DASHBOARD_DATA['session']['active'] = False
+                log_activity("Session cleared for No-login mode", user=user)
+            else:
+                bot.load_session_from_file(SESSION_USERNAME)
+                with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
+                    WEB_DASHBOARD_DATA['session']['active'] = True
+                log_activity("Session reloaded successfully", user=user)
+        except Exception as se:
+            log_activity(f"Error updating session state: {se}", user=user)
+
+
+# Runs the flagged-session flow shared by every surface of a check: alerts the operator, pauses the other targets, then
+# exits without the Web Dashboard or waits for a session refresh with it, returning True when this target may resume
+def handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation, reload_session=True):
+    global NEXT_CHECK_TIME, NEXT_CHECK_DISPLAY
+    err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
+    update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
+    print_recovery_error(error_msg, summary=err_str)
+
+    # A flag is terminal for every target, so alert the operator immediately regardless of the error alert delay
+    notify_session_flagged(user, err_str, error_msg)
+
+    # Pause all other threads once the session account is flagged
+    if WEB_DASHBOARD_ENABLED or DASHBOARD_ENABLED:
+        for other_user in list(WEB_DASHBOARD_STOP_EVENTS.keys()):
+            if other_user != user:
+                log_activity(err_str, user=other_user)
+                update_check_times(next_time="Paused", user=other_user, increment_count=False)
+                if not CIRCUIT_BREAKER:
+                    stop_monitoring_for_target(other_user)
+                update_ui_data(targets={other_user: {'status': f'Paused: {err_str}'}})
+        NEXT_CHECK_TIME = None
+        NEXT_CHECK_DISPLAY = "Paused"
+        update_check_times(next_time="Paused", user=user, increment_count=False)
+        log_activity("Stopping monitoring", user=user)
+    print_cur_ts(newline=True)
+
+    # Without the Web Dashboard there is no in-place session recovery so exit since the flagged session is dead for every target
+    if not WEB_DASHBOARD_ENABLED:
+        signal_handler(signal.SIGINT, None, message='')
+        return False
+
+    # The Web Dashboard can re-import a session and resume, so wait for that or a stop event
+    while not (stop_event and stop_event.is_set()):
+        if wait_for_session_refresh(session_refresh_generation, timeout=1.0) != session_refresh_generation:
+            log_activity("Session/Mode change detected, resuming monitoring...", user=user)
+            print(f"* Session/Mode change detected for {user}, resuming...")
+            print_cur_ts(newline=True)
+            if reload_session:
+                reload_session_after_refresh(bot, user)
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Identity exposure ledger and account circuit breaker
+#
+# Instagram scores automated collection by how much user-identifiable
+# information a response returns, not by how many requests were sent (Meta,
+# "Predictive Response Optimization", USENIX Security 2025). Follower and
+# following enumeration therefore costs far more than a profile check even
+# though both are one request. This ledger counts identities returned per
+# session account per local day so a budget can cap them, and it records the
+# reliability group of every failure so an account-level action stops all work
+# instead of being retried into a suspension.
+#
+# Everything here is local. The ledger is a file on this machine and it is
+# never transmitted anywhere. Monitors sharing an output directory share the
+# file, so every change to it is made under a lock the operating system holds.
+# ---------------------------------------------------------------------------
+
+EXPOSURE_LOCK = threading.Lock()
+IDENTITY_SCAN_LOCK = threading.Lock()
+ACCOUNT_BREAKER_MEMORY_LOCK = threading.Lock()
+ACCOUNT_BREAKER_MEMORY: Dict[str, Dict[str, Any]] = {}
+ACCOUNT_RECOVERY_LOCK = threading.RLock()
+ACCOUNT_RECOVERY_ATTEMPTED: set[str] = set()
+ACCOUNT_PAUSED_TARGETS: Dict[str, set[str]] = {}
+EXPOSURE_STATE_FILENAME = "instagram_monitor_exposure.json"
+EXPOSURE_STATE_VERSION = 1
+EXPOSURE_FILE_LOCK_TIMEOUT = 10.0
+
+
+# Raised when the account safety ledger cannot be read or persisted
+class ExposureLedgerError(RuntimeError):
+    pass
+
+
+# Returns the absolute path of the local exposure ledger, honoring OUTPUT_DIR when one is configured
+def exposure_state_path() -> str:
+    base = OUTPUT_DIR if OUTPUT_DIR else "."
+    return os.path.abspath(os.path.join(base, EXPOSURE_STATE_FILENAME))
+
+
+# Returns the ledger key for the account whose exposure is being tracked, or the anonymous marker when no session is used
+def exposure_account_name() -> str:
+    return SESSION_USERNAME if (SESSION_USERNAME and not SKIP_SESSION) else "<anonymous>"
+
+
+# Returns today's date in the configured local timezone as an ISO day string
+def _exposure_today() -> str:
+    try:
+        return datetime.now(local_timezone()).strftime("%Y-%m-%d")
+    except Exception:
+        return datetime.now().strftime("%Y-%m-%d")
+
+
+# Builds the error for a stored ledger value no reader can trust, naming the account, the field and the repair. One
+# bad record stops every account in the file, so the reader has to be told which of them to repair
+def _exposure_field_error(field: str, detail: str, account: str = "") -> ExposureLedgerError:
+    owner = f" for account '{account}'" if account else ""
+    return ExposureLedgerError(f"The account safety ledger has an invalid '{field}' field{owner} ({detail}). Repair that field or move the file aside to start a fresh ledger")
+
+
+# Rejects a stored counter that is not a whole number of events, since a negative or non-numeric one silently grants budget
+def _validate_exposure_count(field: str, value: Any, account: str = "") -> None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise _exposure_field_error(field, f"expected a whole number, found {type(value).__name__}", account)
+    if value < 0:
+        raise _exposure_field_error(field, f"expected a count of zero or more, found {value}", account)
+
+
+# Rejects timestamps that the exposure report cannot render
+def _validate_exposure_timestamp(field: str, value: Any, account: str = "") -> None:
+    _validate_exposure_count(field, value, account)
+    try:
+        datetime.fromtimestamp(value, local_timezone())
+    except (OverflowError, OSError, ValueError):
+        raise _exposure_field_error(field, "expected a timestamp within the supported date range", account) from None
+
+
+# Checks one stored account record against what every reader assumes, leaving fields this version does not know in place
+def _validate_exposure_record(record: Any, account: str = "") -> None:
+    if not isinstance(record, dict):
+        raise _exposure_field_error("accounts", f"expected one object per account, found {type(record).__name__}", account)
+    if not isinstance(record.get('date', ""), str):
+        raise _exposure_field_error("date", f"expected a date string, found {type(record['date']).__name__}", account)
+    _validate_exposure_count("identities", record.get('identities', 0), account)
+    failures = record.get('failures', {})
+    if not isinstance(failures, dict):
+        raise _exposure_field_error("failures", f"expected one count per failure class, found {type(failures).__name__}", account)
+    for failure_class, count in failures.items():
+        _validate_exposure_count(f"failures.{failure_class}", count, account)
+    breaker = record.get('breaker')
+    if breaker is not None:
+        if not isinstance(breaker, dict):
+            raise _exposure_field_error("breaker", f"expected a stop record or null, found {type(breaker).__name__}", account)
+        _validate_exposure_timestamp("breaker.tripped_ts", breaker.get('tripped_ts'), account)
+        if not breaker.get('tripped_ts'):
+            raise _exposure_field_error("breaker.tripped_ts", "expected the time the account was stopped, found zero", account)
+    last_failure = record.get('last_account_failure')
+    if last_failure is not None and not isinstance(last_failure, dict):
+        raise _exposure_field_error("last_account_failure", f"expected a failure record or null, found {type(last_failure).__name__}", account)
+    if isinstance(last_failure, dict) and last_failure.get('ts') is not None:
+        _validate_exposure_timestamp("last_account_failure.ts", last_failure['ts'], account)
+
+
+# Reads the ledger from disk and rejects state that cannot be trusted
+def _load_exposure_file() -> Dict[str, Any]:
+    try:
+        with open(exposure_state_path(), 'r', encoding="utf-8") as handle:
+            data = json.load(handle)
+        if isinstance(data, dict) and isinstance(data.get('accounts'), dict):
+            # Validated here rather than at each reader, so a stored value no reader can trust stops the account
+            # once instead of granting budget in one place and raising an unhandled error in another
+            for name, record in data['accounts'].items():
+                _validate_exposure_record(record, str(name))
+            return data
+        raise ExposureLedgerError("The account safety ledger has an invalid structure")
+    except FileNotFoundError:
+        return {'version': EXPOSURE_STATE_VERSION, 'accounts': {}}
+    except ExposureLedgerError:
+        raise
+    except Exception as e:
+        raise ExposureLedgerError(f"The account safety ledger cannot be read: {type(e).__name__}") from e
+
+
+# Atomically replaces the ledger on disk so a crash mid-write cannot corrupt it
+def _write_exposure_file(data: Dict[str, Any]) -> None:
+    destination = exposure_state_path()
+    destination_dir = os.path.dirname(destination)
+    temporary_path = None
+    try:
+        os.makedirs(destination_dir, exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=destination_dir, prefix=f".{os.path.basename(destination)}.", suffix='.tmp', delete=False) as handle:
+            temporary_path = handle.name
+            json.dump(data, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, destination)
+    except Exception as e:
+        raise ExposureLedgerError(f"The account safety ledger cannot be saved: {type(e).__name__}") from e
+    finally:
+        if temporary_path and os.path.exists(temporary_path):
+            try:
+                os.remove(temporary_path)
+            except OSError:
+                pass
+
+
+# Returns the current account's ledger record, rolling the daily counters over when the local date changed
+def _exposure_record(data: Dict[str, Any], account: str) -> Dict[str, Any]:
+    record = data['accounts'].get(account)
+    if not isinstance(record, dict):
+        record = {}
+    today = _exposure_today()
+    if record.get('date') != today:
+        record = {'date': today, 'identities': 0, 'failures': {}, 'breaker': record.get('breaker'), 'last_account_failure': record.get('last_account_failure')}
+    record.setdefault('identities', 0)
+    record.setdefault('failures', {})
+    data['accounts'][account] = record
+    return record
+
+
+# Returns the path of the lock file guarding the ledger, kept beside it so both live in the output directory
+def exposure_lock_path() -> str:
+    return exposure_state_path() + ".lock"
+
+
+# Takes the operating system lock guarding the ledger and returns the open file to release, or None when this machine
+# cannot provide one. Monitors sharing an output directory otherwise each read the same daily total and write back a
+# count that lost the other's identities, so a budget meant to cap the day is silently doubled
+def _acquire_exposure_file_lock(timeout: float = EXPOSURE_FILE_LOCK_TIMEOUT):
+    if fcntl is None and msvcrt is None:
+        return None
+    try:
+        os.makedirs(os.path.dirname(exposure_lock_path()), exist_ok=True)
+        handle = open(exposure_lock_path(), 'a+b')
+    except OSError:
+        # A lock that cannot be created must not stop the write, since the write itself reports an unusable directory
+        return None
+    deadline = time.time() + max(0.0, timeout)
+    while True:
+        try:
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            else:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
+            return handle
+        except OSError:
+            if time.time() >= deadline:
+                # Waiting forever would hang monitoring on a stale lock, so the cycle proceeds as it did before locking
+                handle.close()
+                return None
+            time.sleep(0.05)
+
+
+# Releases the operating system lock guarding the ledger
+def _release_exposure_file_lock(handle) -> None:
+    if handle is None:
+        return
+    try:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        else:
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
+    except OSError:
+        pass
+    finally:
+        handle.close()
+
+
+# Applies a mutation to one account's ledger record under the ledger locks and persists the result
+def _update_exposure(mutate: Callable[[Dict[str, Any]], Any], account: str = "") -> Any:
+    with EXPOSURE_LOCK:
+        handle = _acquire_exposure_file_lock()
+        try:
+            data = _load_exposure_file()
+            record = _exposure_record(data, account or exposure_account_name())
+            outcome = mutate(record)
+            _write_exposure_file(data)
+            return outcome
+        finally:
+            _release_exposure_file_lock(handle)
+
+
+# Returns a read-only copy of the current account's ledger record
+def exposure_snapshot() -> Dict[str, Any]:
+    # Reads take no operating system lock. Every write replaces the file in one step, so a reader sees either the
+    # previous ledger or the next one, and locking here would queue the report behind a running monitor
+    with EXPOSURE_LOCK:
+        data = _load_exposure_file()
+        return dict(_exposure_record(data, exposure_account_name()))
+
+
+# Returns how many other accounts this ledger tracks and how many of them are stopped, without naming any of them
+def exposure_other_account_counts() -> Tuple[int, int]:
+    try:
+        data = _load_exposure_file()
+    except ExposureLedgerError:
+        return (0, 0)
+    current = exposure_account_name()
+    others = [record for name, record in data.get('accounts', {}).items() if name != current and isinstance(record, dict)]
+    return (len(others), sum(1 for record in others if isinstance(record.get('breaker'), dict) and record['breaker'].get('tripped_ts')))
+
+
+# Returns whether this run could save the ledger. The file is replaced through a temporary file in its own directory,
+# so a writable file inside a directory this user cannot write to still cannot be saved
+def exposure_ledger_is_writable() -> bool:
+    path = exposure_state_path()
+    if os.path.exists(path) and not os.access(path, os.W_OK):
+        return False
+    directory = os.path.dirname(path) or "."
+    if os.path.isdir(directory):
+        return os.access(directory, os.W_OK | os.X_OK)
+    return output_destination_is_writable(path)
+
+
+# Describes whether the ledger exists yet and whether this run could save it, since a report built by reading a file
+# this user cannot write otherwise looks healthy while monitoring stops the account on its first identity scan
+def exposure_ledger_status() -> str:
+    path = exposure_state_path()
+    found = "in use" if os.path.isfile(path) else "not created yet (nothing recorded)"
+    return f"{found}, writable" if exposure_ledger_is_writable() else f"{found}, NOT writable (monitoring stops this account when it cannot be saved)"
+
+
+# Verifies that the current account safety state can be read and durably written
+def verify_exposure_ledger_writable() -> None:
+    _update_exposure(lambda _record: None)
+
+
+# Returns the in-memory stop state for the current session account
+def _account_breaker_memory_state() -> Optional[Dict[str, Any]]:
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        state = ACCOUNT_BREAKER_MEMORY.get(exposure_account_name())
+        return dict(state) if isinstance(state, dict) else None
+
+
+# Stops every target event after the shared session account becomes unsafe
+def _stop_account_target_events() -> None:
+    with WEB_DASHBOARD_MONITOR_LOCK:
+        targets = dict(WEB_DASHBOARD_STOP_EVENTS)
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        ACCOUNT_PAUSED_TARGETS.setdefault(exposure_account_name(), set()).update(user for user, event in targets.items() if not event.is_set())
+    for event in targets.values():
+        event.set()
+
+
+# Stores an account stop in memory before any fallible disk write
+def _remember_account_breaker(state: Dict[str, Any]) -> bool:
+    account = exposure_account_name()
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        was_absent = account not in ACCOUNT_BREAKER_MEMORY
+        ACCOUNT_BREAKER_MEMORY[account] = dict(state)
+    _stop_account_target_events()
+    return was_absent
+
+
+# Fails closed when the durable account safety state becomes unavailable
+def _mark_account_safety_unavailable(error: BaseException) -> Dict[str, Any]:
+    state = {'tripped_ts': int(time.time()), 'failure_class': 'ledger_unavailable', 'error': type(error).__name__}
+    account = exposure_account_name()
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        existing = ACCOUNT_BREAKER_MEMORY.get(account)
+        if isinstance(existing, dict) and existing.get('failure_class') != 'ledger_unavailable':
+            state = dict(existing)
+        else:
+            ACCOUNT_BREAKER_MEMORY[account] = dict(state)
+    _stop_account_target_events()
+    return state
+
+
+# Adds identities returned by a completed fetch batch to today's total and returns the new total
+def record_identities_returned(count: int) -> int:
+    if count <= 0:
+        return exposure_snapshot().get('identities', 0)
+
+    def mutate(record):
+        record['identities'] = int(record.get('identities', 0)) + int(count)
+        return record['identities']
+
+    return _update_exposure(mutate)
+
+
+# Returns how many identities today's budget still allows, or None when no budget is configured
+def identity_budget_remaining() -> Optional[int]:
+    if not IDENTITY_BUDGET_PER_DAY or IDENTITY_BUDGET_PER_DAY <= 0:
+        return None
+    return max(0, int(IDENTITY_BUDGET_PER_DAY) - int(exposure_snapshot().get('identities', 0)))
+
+
+# Returns True when a configured identity budget is already spent for today
+def identity_budget_exhausted() -> bool:
+    remaining = identity_budget_remaining()
+    return remaining is not None and remaining <= 0
+
+
+# Maps a tripped breaker to the one action that resolves its failure class, so every surface gives the same remedy
+def breaker_recovery_hint(failure_class: str) -> str:
+    if failure_class == 'auth_expired':
+        return f"Log in to Instagram again and re-import the session with '{session_recovery_command()}'{session_recovery_browser_hint()}, or restart after replacing the saved session"
+    if failure_class == 'ledger_unavailable':
+        return f"Repair the account safety ledger at {exposure_state_path()} and restore read and write access, then restart"
+    if failure_class == 'action_block':
+        return "Make no requests from this account and this network for several hours, then restart. There is nothing to clear in the browser and re-importing the session does not lift the limit"
+    if failure_class == 'challenge':
+        return "Open Instagram in a browser and complete the account verification, then restart or re-import the session"
+    return "Resolve the account issue on Instagram, then restart or re-import the session"
+
+
+# Checks one session with a single request while all ordinary account requests remain stopped
+def check_account_login(bot) -> Optional[str]:
+    previous = getattr(_thread_local, 'account_recovery', None)
+    recovery: Dict[str, Any] = {'remaining': 1, 'error': None}
+    _thread_local.account_recovery = recovery
+    try:
+        username = bot.test_login()
+        if not username and recovery['error'] is not None:
+            raise recovery['error']
+        return username
+    finally:
+        _thread_local.account_recovery = previous
+
+
+# Clears only the successfully checked account stop without discarding counters or a newer failure
+def finish_account_recovery(account: str, expected_state: Optional[Dict[str, Any]]) -> bool:
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        if ACCOUNT_BREAKER_MEMORY.get(account) is not expected_state:
+            return False
+        with EXPOSURE_LOCK:
+            handle = _acquire_exposure_file_lock()
+            try:
+                data = _load_exposure_file()
+                record = _exposure_record(data, account)
+                if record.get('breaker') is not None or expected_state is not None:
+                    record['breaker'] = None
+                    _write_exposure_file(data)
+            finally:
+                _release_exposure_file_lock(handle)
+        ACCOUNT_BREAKER_MEMORY.pop(account, None)
+    with FLAGGED_PROBE_LOCK:
+        FLAGGED_PROBE_CACHE['ts'] = 0.0
+        FLAGGED_PROBE_CACHE['flagged'] = False
+    with FLAGGED_NOTIFY_LOCK:
+        FLAGGED_NOTIFY_STATE['ts'] = 0.0
+    return True
+
+
+# Saves a verified browser session before releasing that account's existing stop
+def save_checked_browser_session(bot, sessionfile=None) -> Optional[str]:
+    with ACCOUNT_RECOVERY_LOCK:
+        with ACCOUNT_BREAKER_MEMORY_LOCK:
+            previous_stops = dict(ACCOUNT_BREAKER_MEMORY)
+        username = check_account_login(bot)
+        if not username:
+            return None
+        bot.context.username = username
+        with SESSION_FILE_LOCK:
+            if sessionfile:
+                bot.save_session_to_file(sessionfile)
+            else:
+                bot.save_session_to_file()
+        if CIRCUIT_BREAKER and not finish_account_recovery(username, previous_stops.get(username)):
+            raise CookieImportError("The session was saved but another account failure occurred during import. Restart to check the account again")
+        return username
+
+
+# Checks a persisted account stop once before this process starts any target workers
+def recover_account_on_startup(retry: bool = False) -> bool:
+    if not CIRCUIT_BREAKER or SKIP_SESSION or not SESSION_USERNAME:
+        return True
+    with ACCOUNT_RECOVERY_LOCK:
+        account = exposure_account_name()
+        state = circuit_breaker_state()
+        if not state:
+            return True
+        if account in ACCOUNT_RECOVERY_ATTEMPTED and not retry:
+            return False
+        ACCOUNT_RECOVERY_ATTEMPTED.add(account)
+        with ACCOUNT_BREAKER_MEMORY_LOCK:
+            expected_state = ACCOUNT_BREAKER_MEMORY.get(account)
+        bot = None
+        print(f"* Checking the saved session for {account} before resuming monitoring")
+        try:
+            verify_exposure_ledger_writable()
+            bot = instaloader_client(user_agent=USER_AGENT, max_connection_attempts=1, request_timeout=30, sleep=False, quiet=True)
+            with SESSION_FILE_LOCK:
+                bot.load_session_from_file(account)
+            username = check_account_login(bot)
+            if not username or username.casefold() != account.casefold():
+                raise instaloader.exceptions.LoginRequiredException("The saved session does not sign in as the configured account")
+            if exposure_account_name() != account or not finish_account_recovery(account, expected_state):
+                print("* Monitoring remains paused because the session or account stop changed during the check")
+                return False
+        except Exception as error:
+            message = format_error_message(error)
+            failure_class = classify_failure_class(message)
+            if isinstance(error, ExposureLedgerError):
+                _mark_account_safety_unavailable(error)
+                fix = breaker_recovery_hint('ledger_unavailable')
+            elif is_account_level_failure(failure_class):
+                fix = breaker_recovery_hint(failure_class)
+            elif isinstance(error, FileNotFoundError):
+                fix = breaker_recovery_hint('auth_expired')
+            else:
+                fix = classify_recovery_error(error, is_logged_in=True).fix
+            print(f"* Monitoring remains paused for {account}: {message}")
+            print(f"* To fix: {fix}")
+            return False
+        finally:
+            if bot is not None:
+                try:
+                    bot.close()
+                except Exception as error:
+                    debug_print("Account recovery client cleanup", error=type(error).__name__)
+        print(f"* Session verified for {account}. Monitoring can resume")
+        return True
+
+
+# Restarts account-paused dashboard targets once their previous workers have exited
+def resume_recovered_account_targets() -> Optional[threading.Thread]:
+    account = exposure_account_name()
+    if not WEB_DASHBOARD_ENABLED:
+        return
+
+    # Waits for stopped workers without blocking the dashboard's session-import response
+    def resume():
+        while exposure_account_name() == account:
+            with ACCOUNT_BREAKER_MEMORY_LOCK:
+                pending = set(ACCOUNT_PAUSED_TARGETS.get(account, ()))
+                if not pending or account in ACCOUNT_BREAKER_MEMORY:
+                    return
+            for user in pending:
+                with WEB_DASHBOARD_MONITOR_LOCK:
+                    worker = WEB_DASHBOARD_MONITOR_THREADS.get(user)
+                    if worker is not None and worker.is_alive():
+                        continue
+                with ACCOUNT_BREAKER_MEMORY_LOCK:
+                    if user not in ACCOUNT_PAUSED_TARGETS.get(account, ()):
+                        continue
+                    ACCOUNT_PAUSED_TARGETS[account].discard(user)
+                with WEB_DASHBOARD_DATA_LOCK:
+                    configured = user in WEB_DASHBOARD_DATA.get('targets', {})
+                if configured:
+                    start_monitoring_for_target(user)
+            time.sleep(0.1)
+
+    thread = threading.Thread(target=resume, daemon=True, name="account-recovery")
+    thread.start()
+    return thread
+
+
+# Returns the stored circuit breaker record when the session account is stopped, otherwise None
+def circuit_breaker_state() -> Optional[Dict[str, Any]]:
+    if not CIRCUIT_BREAKER:
+        return None
+    memory_state = _account_breaker_memory_state()
+    if memory_state:
+        return memory_state
+    try:
+        breaker = exposure_snapshot().get('breaker')
+    except ExposureLedgerError as error:
+        return _mark_account_safety_unavailable(error)
+    if isinstance(breaker, dict) and breaker.get('tripped_ts'):
+        _remember_account_breaker(breaker)
+        return dict(breaker)
+    return None
+
+
+# Returns True when the session account is stopped by the circuit breaker
+def circuit_breaker_tripped() -> bool:
+    return circuit_breaker_state() is not None
+
+
+# Stops all further Instagram work for the session account after an account-level action, returning True when this call tripped it
+def trip_circuit_breaker(failure_class: str, user: str = "", error_msg: str = "") -> bool:
+    if not CIRCUIT_BREAKER:
+        return False
+    ACCOUNT_RECOVERY_ATTEMPTED.add(exposure_account_name())
+
+    breaker_state = {'tripped_ts': int(time.time()), 'failure_class': failure_class, 'target': user, 'error': (error_msg or "")[:500]}
+    activated = _remember_account_breaker(breaker_state)
+
+    def mutate(record):
+        if isinstance(record.get('breaker'), dict) and record['breaker'].get('tripped_ts'):
+            return False
+        record['breaker'] = breaker_state
+        return True
+
+    try:
+        tripped = _update_exposure(mutate)
+    except ExposureLedgerError as error:
+        _mark_account_safety_unavailable(error)
+        tripped = activated
+    if tripped:
+        account = exposure_account_name()
+        print(f"\n* Circuit breaker: Instagram acted against session account {account} ({failure_class}). Stopping all Instagram requests for this account")
+        print(f"* {breaker_recovery_hint(failure_class)}")
+        log_activity(f"Circuit breaker tripped for {account}: {failure_class}", user=user or account, level='system')
+    return bool(tripped)
+
+
+# Clears the circuit breaker so monitoring can resume, returning the record that was cleared
+def clear_circuit_breaker() -> Optional[Dict[str, Any]]:
+    def mutate(record):
+        previous = record.get('breaker')
+        record['breaker'] = None
+        return previous if isinstance(previous, dict) and previous.get('tripped_ts') else None
+
+    account = exposure_account_name()
+    try:
+        previous = _update_exposure(mutate)
+    except ExposureLedgerError as ledger_error:
+        with EXPOSURE_LOCK:
+            handle = _acquire_exposure_file_lock()
+            try:
+                data = {'version': EXPOSURE_STATE_VERSION, 'accounts': {}}
+                record = _exposure_record(data, account)
+                record['breaker'] = None
+                _write_exposure_file(data)
+            finally:
+                _release_exposure_file_lock(handle)
+        # The unusable file is what stopped the account, so clearing reports it as the state that was removed
+        previous = _account_breaker_memory_state() or {'tripped_ts': int(time.time()), 'failure_class': 'ledger_unavailable', 'target': '', 'error': str(ledger_error)}
+        previous['ledger_reset'] = str(ledger_error)
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        ACCOUNT_BREAKER_MEMORY.pop(account, None)
+    return previous
+
+
+# Records one classified failure against the session account and trips the circuit breaker on account-level actions,
+# unless the caller could not confirm that the account itself was acted on
+def record_failure_event(failure_class: str, user: str = "", error_msg: str = "", confirmed: bool = True) -> None:
+    if not failure_class:
+        return
+
+    account_failure = is_account_level_failure(failure_class) and confirmed
+    if account_failure:
+        trip_circuit_breaker(failure_class, user, error_msg)
+
+    def mutate(record):
+        failures = record.setdefault('failures', {})
+        failures[failure_class] = int(failures.get(failure_class, 0)) + 1
+        if account_failure:
+            record['last_account_failure'] = {'ts': int(time.time()), 'failure_class': failure_class, 'target': user}
+        return None
+
+    try:
+        _update_exposure(mutate)
+    except ExposureLedgerError as error:
+        _mark_account_safety_unavailable(error)
+        return
+
+
+# Checks whether the session still answers, since 401, 403 and redirect wording also appears on transient and
+# target-level errors. Returns True when the probe confirms the session is gone, False when it still works and
+# None when the probe itself failed for a reason that says nothing about the account
+def confirm_session_expired(bot) -> Optional[bool]:
+    try:
+        profile_from_username_resilient(bot, FLAGGED_PROBE_USERNAME)
+    except Exception as probe_error:
+        probe_class = classify_failure_class(format_error_message(probe_error))
+        debug_print("Session probe", account=FLAGGED_PROBE_USERNAME, outcome="failed", failure_class=probe_class)
+        return True if is_account_level_failure(probe_class) else None
+    debug_print("Session probe", account=FLAGGED_PROBE_USERNAME, outcome="ok")
+    return False
+
+
+# Classifies one error message, records it against the session account and returns its failure class. An expired
+# session read from the message alone is confirmed against Instagram first when a client is available, so one
+# mislabelled request cannot stop every target
+def note_instagram_failure(error_msg: str, user: str = "", bot=None) -> str:
+    failure_class = classify_failure_class(error_msg)
+    confirmed = True
+    if failure_class == 'auth_expired' and bot is not None and CIRCUIT_BREAKER:
+        verdict = confirm_session_expired(bot)
+        confirmed = verdict is True
+        if not confirmed:
+            reason = "still signs in" if verdict is False else "check did not complete"
+            print(f"* Instagram rejected a request for {user or 'the target'} as not logged in, but the session {reason}, so the circuit breaker stays armed")
+    record_failure_event(failure_class, user, error_msg, confirmed=confirmed)
+    return failure_class
+
+
+# Records one failed authenticated request against the session account and returns True when Instagram acted against
+# the session itself rather than against one target. Every authenticated failure path goes through here, so an
+# account-level failure arms the circuit breaker wherever it surfaces instead of only inside the follow list fetch
+def note_authenticated_failure(error_msg: str, user: str = "", bot=None) -> bool:
+    if is_session_flagged(error_msg, bot):
+        # The caller hands a flag to handle_flagged_session, which records it through notify_session_flagged
+        # under the class the probe established. Recording it here as well would count one challenge twice
+        return True
+    note_instagram_failure(error_msg, user, bot)
+    return False
+
+
+# Formats one report row so its value starts in the shared column whatever the label length
+def _exposure_row(label: str, value: str, column: int = 40) -> str:
+    prefix = f"{label}:"
+    return prefix + ("\t" * max(1, column // 8 - len(prefix) // 8)) + str(value)
+
+
+# Formats the circuit breaker rows of the exposure report. A stop stored by an earlier run outlives the setting that
+# made it, so it is reported as kept rather than as enforced once the breaker is off
+def _exposure_breaker_lines(state) -> List[str]:
+    tripped = state.get('tripped_ts') if isinstance(state, dict) else None
+    if not CIRCUIT_BREAKER:
+        return [_exposure_row("Circuit breaker", "disabled (a stop recorded earlier is kept but not enforced)" if tripped else "disabled")]
+    if not tripped:
+        return [_exposure_row("Circuit breaker", "armed")]
+    with ACCOUNT_BREAKER_MEMORY_LOCK:
+        paused = len(ACCOUNT_PAUSED_TARGETS.get(exposure_account_name(), ()))
+    return [
+        _exposure_row("Circuit breaker", f"TRIPPED at {get_date_from_ts(int(tripped))} ({state.get('failure_class', 'unknown')})"),
+        _exposure_row("Monitored targets", f"{paused} paused" if paused else "every target using this account is paused"),
+        _exposure_row("Resume with", "Restart or re-import the session after resolving the account issue"),
+    ]
+
+
+# Returns a redacted support report describing today's local account exposure
+def exposure_summary_lines() -> List[str]:
+    session_mode = "authenticated (account redacted)" if exposure_account_name() != "<anonymous>" else "anonymous"
+    # A report pasted into an issue has to distinguish a chosen stock transport from an impersonation that
+    # never happened, and building it must not print the fallback warning into the report itself
+    backend = f"curl_cffi (impersonate: {_curl_cffi_impersonate_display()})" if curl_cffi_backend_active() else http_backend_display()
+    lines = [_exposure_row("Version", VERSION), _exposure_row("Generated", get_date_from_ts(int(time.time()))), _exposure_row("Platform", f"{platform.system()} / Python {sys.version_info.major}.{sys.version_info.minor}"), _exposure_row("Session mode", session_mode), _exposure_row("HTTP backend", backend), _exposure_row("Follow list source", follow_list_source_display())]
+
+    # An unreadable ledger still reports the breaker, since that is the state the reader most needs
+    breaker = _account_breaker_memory_state()
+    try:
+        record = exposure_snapshot()
+    except ExposureLedgerError:
+        lines.append(_exposure_row("Account safety ledger", "unavailable (authenticated identity scans blocked)"))
+        lines.extend(_exposure_breaker_lines(breaker))
+        return lines
+
+    lines.append(_exposure_row("Account safety ledger", exposure_ledger_status()))
+    others, others_stopped = exposure_other_account_counts()
+    lines.append(_exposure_row("Other accounts in this ledger", f"{others} ({others_stopped} stopped)" if others else "none"))
+
+    identities = int(record.get('identities', 0))
+    # The number spent is what a budget decision needs, and the reset time is what makes a full budget readable as a
+    # wait rather than a fault
+    budget = f"{identities} of {IDENTITY_BUDGET_PER_DAY} ({max(0, IDENTITY_BUDGET_PER_DAY - identities)} left)" if IDENTITY_BUDGET_PER_DAY else f"{identities} (no budget set)"
+    lines.extend([_exposure_row("Date", record.get('date', _exposure_today())), _exposure_row("Identities returned today", f"{budget}, resets at local midnight")])
+
+    failures = record.get('failures') or {}
+    if failures:
+        for name in sorted(failures):
+            group = failure_class_group(name)
+            group_str = f" [{group}: {FAILURE_GROUP_LABELS[group]}]" if group else ""
+            lines.append(_exposure_row(f"  {name}", f"{failures[name]}{group_str}"))
+    else:
+        lines.append(_exposure_row("Failures today", "none"))
+
+    lines.extend(_exposure_breaker_lines(breaker or record.get('breaker')))
+    last_failure = record.get('last_account_failure')
+    if isinstance(last_failure, dict) and last_failure.get('ts'):
+        lines.append(_exposure_row("Last account failure", f"{get_date_from_ts(int(last_failure['ts']))} ({last_failure.get('failure_class', 'unknown')})"))
+    return lines
 
 
 # Returns unique, validated hours (0-23) from the configured ranges
@@ -9432,7 +12808,7 @@ def probability_for_cycle(sleep_seconds: int) -> float:
     else:
         day_seconds = 86400  # 1 day
     calculation = DAILY_HUMAN_HITS * sleep_seconds / day_seconds
-    debug_print(f"Probability Calculation: {calculation:.7f}")
+    debug_print("Probability calculation", value=f"{calculation:.7f}")
     return min(1.0, DAILY_HUMAN_HITS * sleep_seconds / day_seconds)
 
 
@@ -9442,7 +12818,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
     prob = probability_for_cycle(sleep_seconds)
 
     if DEBUG_MODE:
-        debug_print(f"BeHuman: simulation start with probability {prob:.7f} for sleep_seconds of {sleep_seconds}")
+        debug_print("BeHuman simulation", stage="start", probability=f"{prob:.7f}", sleep_seconds=sleep_seconds)
     elif BE_HUMAN_VERBOSE:
         print("* BeHuman: simulation start")
 
@@ -9460,7 +12836,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
             if "429" in str(e) or "checkpoint" in str(e) or "challenge" in str(e):
                 raise e
             if DEBUG_MODE:
-                debug_print(f"BeHuman #1 error: explore peek failed ({e})")
+                debug_print("BeHuman action #1", action="explore peek", outcome="failed", error=f"{type(e).__name__}: {e}")
             elif BE_HUMAN_VERBOSE:
                 print(f"* BeHuman #1 error: explore peek failed ({e})")
 
@@ -9477,7 +12853,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
             if "429" in str(e) or "checkpoint" in str(e) or "challenge" in str(e):
                 raise e
             if DEBUG_MODE:
-                debug_print(f"BeHuman #2 error: cannot view own profile: {e}")
+                debug_print("BeHuman #2 error: cannot view own profile", outcome="failed", error=f"{type(e).__name__}: {e}")
             elif BE_HUMAN_VERBOSE:
                 print(f"* BeHuman #2 error: cannot view own profile: {e})")
 
@@ -9489,20 +12865,20 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
             posts = bot.get_hashtag_posts(tag)
             next(posts)
             if DEBUG_MODE:
-                debug_print(f"BeHuman #3: browsed one post from #{tag} OK")
+                debug_print("BeHuman action #3", action="browse one post", tag=tag, outcome="OK")
             elif BE_HUMAN_VERBOSE:
                 print(f"* BeHuman #3: browsed one post from #{tag} OK")
             time.sleep(random.uniform(2, 5))
         except StopIteration:
             if DEBUG_MODE:
-                debug_print(f"BeHuman #3 warning: no posts for #{tag}")
+                debug_print("BeHuman action #3", action="browse one post", tag=tag, outcome="skipped", reason="no posts for the tag")
             elif BE_HUMAN_VERBOSE:
                 print(f"* BeHuman #3 warning: no posts for #{tag}")
         except Exception as e:
             if "429" in str(e) or "checkpoint" in str(e) or "challenge" in str(e):
                 raise e
             if DEBUG_MODE:
-                debug_print(f"BeHuman #3 error: cannot browse #{tag}: {e}")
+                debug_print("BeHuman action #3", action="browse one post", tag=tag, outcome="failed", error=f"{type(e).__name__}: {e}")
             elif BE_HUMAN_VERBOSE:
                 print(f"* BeHuman #3 error: cannot browse #{tag}: {e}")
 
@@ -9522,7 +12898,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
                 someone = random.choice(followees)
                 _ = profile_from_username_resilient(bot, someone.username)
                 if DEBUG_MODE:
-                    debug_print(f"BeHuman #4: visited followee {someone.username} OK")
+                    debug_print("BeHuman action #4", action="visit followee", user=someone.username, outcome="OK")
                 elif BE_HUMAN_VERBOSE:
                     print(f"* BeHuman #4: visited followee {someone.username} OK")
                 time.sleep(random.uniform(2, 5))
@@ -9530,7 +12906,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
             if "429" in str(e) or "checkpoint" in str(e) or "challenge" in str(e):
                 raise e
             if DEBUG_MODE:
-                debug_print(f"BeHuman #4 error: cannot visit followee: {e}")
+                debug_print("BeHuman #4 error: cannot visit followee", outcome="failed", error=f"{type(e).__name__}: {e}")
             elif BE_HUMAN_VERBOSE:
                 print(f"* BeHuman #4 error: cannot visit followee: {e}")
 
@@ -9554,6 +12930,627 @@ def build_follow_string(enabled, limit, batch, delay, alt_format=False):
     return follow_str
 
 
+# ----------------------------
+# Follower and following enumeration
+# ----------------------------
+#
+# Instagram serves the same follower and following lists on two surfaces: the legacy web GraphQL query
+# hashes instaloader uses, and the /api/v1/friendships/ REST endpoints the current web app calls. Both
+# run over the same logged-in web session, so this is a second endpoint surface for the operation that
+# breaks most often, not a second transport and not a second runtime.
+#
+# The paths, headers and response shape below were written from observed web traffic. No third-party
+# code is reused. Two projects document the same endpoint family and are useful when Instagram changes
+# it: instagrapi (MIT) calls friendships/<id>/followers/ on the mobile API host, and gallery-dl calls
+# the identical www.instagram.com/api/v1 paths this code uses. gallery-dl is GPL-2.0-only, which cannot
+# be combined with this GPL-3.0-or-later project, so read it for behaviour but never copy from it.
+
+# Sources FOLLOW_LIST_SOURCE accepts
+FOLLOW_LIST_SOURCES = ('auto', 'rest', 'graphql', 'browser')
+
+# Names banked per ledger write on sources that hand back one profile at a time, matching the REST page size
+IDENTITY_LEDGER_GROUP_SIZE = 25
+
+# Accounts asked for per REST page, matching what the web app requests while a follower list is scrolled
+FOLLOW_LIST_REST_PAGE_SIZE = 25
+
+# Web app identifiers Instagram expects on requests its own front end makes
+INSTAGRAM_WEB_APP_ID = "936619743392459"
+INSTAGRAM_WEB_ASBD_ID = "129477"
+
+# Claim token attribute stored on each source session so accounts never share a token
+_WEB_CLAIM_LOCK = threading.Lock()
+_WEB_CLAIM_ATTRIBUTE = "_instagram_monitor_web_claim_token"
+
+
+# Raised when a follower or following REST reply does not carry the fields this code reads
+class InstagramRestSchemaError(RuntimeError):
+    pass
+
+
+# Returns the claim token to send for one Instaloader session
+def web_claim_token(source_session) -> str:
+    with _WEB_CLAIM_LOCK:
+        token = getattr(source_session, _WEB_CLAIM_ATTRIBUTE, "0")
+        return token if isinstance(token, str) and token else "0"
+
+
+# Stores a web reply claim token on the Instaloader session that received it
+def remember_web_claim_token(source_session, response_headers) -> None:
+    if not response_headers:
+        return
+
+    issued = ""
+    try:
+        for key, value in dict(response_headers).items():
+            if isinstance(key, str) and key.lower() == 'x-ig-set-www-claim' and isinstance(value, str):
+                issued = value.strip()
+                break
+    except Exception:
+        return
+
+    if not issued:
+        return
+
+    with _WEB_CLAIM_LOCK:
+        if issued == getattr(source_session, _WEB_CLAIM_ATTRIBUTE, "0"):
+            return
+        setattr(source_session, _WEB_CLAIM_ATTRIBUTE, issued)
+
+    debug_print("Instagram web claim token updated")
+
+
+# Returns the headers the web app adds to a follower or following list request
+def rest_follow_list_headers(target_username: str, source_session) -> Dict[str, str]:
+    return {
+        'Accept': '*/*',
+        'Referer': f"https://www.instagram.com/{target_username}/",
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+        'X-ASBD-ID': INSTAGRAM_WEB_ASBD_ID,
+        'X-IG-App-ID': INSTAGRAM_WEB_APP_ID,
+        'X-IG-WWW-Claim': web_claim_token(source_session),
+        'X-Requested-With': 'XMLHttpRequest',
+    }
+
+
+# Duplicates instaloader's session through the module attribute, so the proxy and TLS patch installed at import applies
+def instaloader_copy_session(session, request_timeout=None):
+    from instaloader import instaloadercontext as _ilc
+    return _ilc.copy_session(session, request_timeout)
+
+
+# Builds a Profile from one REST list entry, returning None when the entry carries no usable identity
+def profile_from_rest_node(context, node) -> Optional[instaloader.Profile]:
+    if not isinstance(node, dict):
+        return None
+
+    username = node.get('username')
+    if not isinstance(username, str) or not username:
+        return None
+
+    identifier = node.get('pk') or node.get('id')
+    if identifier is None:
+        return None
+
+    normalized = dict(node)
+    normalized['id'] = str(identifier)
+    normalized['pk'] = str(identifier)
+
+    return instaloader.Profile(context, normalized)
+
+
+# Yields profiles from REST while exposing each complete response page to the governor
+def iter_rest_follow_list(bot, profile, kind: str, record_exposure: bool = False, page_observer=None):
+    if kind not in ('followers', 'following'):
+        raise ValueError(f"unsupported follow list kind '{kind}'")
+
+    context = bot.context
+    if not context.is_logged_in:
+        raise instaloader.exceptions.LoginRequiredException(f"Login required to get a profile's {kind}.")
+
+    path = f"api/v1/friendships/{profile.userid}/{kind}/"
+    source_session = context._session
+    session = instaloader_copy_session(source_session, context.request_timeout)
+    cursor = ""
+
+    try:
+        session.headers.update(rest_follow_list_headers(profile.username, source_session))
+        while True:
+            page_size = FOLLOW_LIST_REST_PAGE_SIZE
+            if record_exposure:
+                budget_left = identity_budget_remaining()
+                if budget_left is not None and budget_left <= 0:
+                    return
+                if budget_left is not None:
+                    page_size = min(page_size, budget_left)
+            params: Dict[str, Any] = {'count': page_size}
+            if cursor:
+                params['max_id'] = cursor
+
+            # Instagram rotates the claim token, so send the newest one and record whatever this reply carries
+            session.headers['X-IG-WWW-Claim'] = web_claim_token(source_session)
+            response_headers: Dict[str, Any] = {}
+            data = context.get_json(path, params, session=session, response_headers=response_headers)
+            remember_web_claim_token(source_session, response_headers)
+
+            if not isinstance(data, dict) or not isinstance(data.get('users'), list):
+                # No user list in a 200 reply means the endpoint changed shape, never that the account is in trouble
+                raise InstagramRestSchemaError(f"Unexpected follower list reply while reading {kind} (no user list)")
+
+            entries = data['users']
+            if page_observer is not None:
+                page_observer(len(entries))
+            if record_exposure:
+                record_identities_returned(len(entries))
+            debug_print("Instagram REST follow list page", kind=kind, accounts=len(entries))
+
+            for node in entries:
+                candidate = profile_from_rest_node(context, node)
+                if candidate is not None:
+                    yield candidate
+
+            previous_cursor = cursor
+            cursor = str(data.get('next_max_id') or "")
+            if cursor and cursor == previous_cursor:
+                # A cursor that does not advance would page for ever, so stop with an error rather
+                # than loop or hand back a partial list that looks complete
+                raise InstagramRestSchemaError(f"Unexpected follower list reply while reading {kind} (the page cursor stopped advancing)")
+            if not entries or not cursor:
+                return
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
+
+
+# Records the identities yielded by a source that cannot expose its raw response pages. Names are banked in the
+# ledger in groups the size of a REST page rather than one durable write per name, and a group shrinks to what
+# the daily budget still allows so the ledger is exact at the point the budget runs out
+def _iter_accounted_follow_list(candidates):
+    budget = int(IDENTITY_BUDGET_PER_DAY) if IDENTITY_BUDGET_PER_DAY and IDENTITY_BUDGET_PER_DAY > 0 else 0
+
+    # Returns how many names may be yielded before the next ledger write
+    def group_size(total_recorded):
+        return max(1, min(IDENTITY_LEDGER_GROUP_SIZE, budget - total_recorded)) if budget else IDENTITY_LEDGER_GROUP_SIZE
+
+    limit = group_size(int(exposure_snapshot().get('identities', 0)))
+    pending = 0
+    try:
+        for candidate in candidates:
+            pending += 1
+            if pending >= limit:
+                count, pending = pending, 0
+                limit = group_size(record_identities_returned(count))
+            yield candidate
+    except BaseException:
+        # Names already returned still cost the account, and a ledger that dies here must not replace the
+        # Instagram error the caller needs to see
+        if pending:
+            try:
+                record_identities_returned(pending)
+            except ExposureLedgerError as safety_error:
+                _mark_account_safety_unavailable(safety_error)
+        raise
+    else:
+        if pending:
+            record_identities_returned(pending)
+
+
+# Returns instaloader's own GraphQL follower or following iterator for one target
+def iter_graphql_follow_list(profile, kind: str, record_exposure: bool = False):
+    candidates = profile.get_followers() if kind == 'followers' else profile.get_followees()
+    return _iter_accounted_follow_list(candidates) if record_exposure else candidates
+
+
+# ----------------------------
+# Browser follow list provider (experimental)
+# ----------------------------
+#
+# Reads follower and following lists by driving a real Chromium build through Instagram's own web app:
+# open the profile, click the followers link, scroll the dialog and read the names the page renders.
+# It exists to test the one open question behind the reliability reports, whether Instagram scores the
+# client as well as the volume, so it navigates the interface rather than calling the API from a page.
+#
+# This is not a way around a challenge and makes no promise of avoiding one. When Instagram answers
+# with a challenge or the login page the scan stops and asks you to clear it in your own browser. No
+# password is ever typed into this browser and no verification step is ever answered by it.
+#
+# The identity budget and the circuit breaker apply exactly as they do to the HTTP sources, so a
+# browser scan can never return more names in a day than the account is allowed to spend.
+
+# Root directory name for the per-account browser profile kept between runs
+BROWSER_PROFILE_DIRNAME = "instagram_monitor_browser_profile"
+
+# Consecutive scrolls that may add no new name before the list is treated as fully rendered
+BROWSER_STALL_LIMIT = 3
+
+# Shortfall against the reported count that is tolerated before a scan is rejected as truncated
+BROWSER_SHORTFALL_TOLERANCE = 10
+
+# URL fragments meaning Instagram answered with something other than the requested profile
+BROWSER_INTERRUPTION_PAGES = (
+    ("/challenge", "a challenge page"),
+    ("/accounts/suspended", "a suspended account page"),
+    ("/accounts/disabled", "a disabled account page"),
+    ("/accounts/login", "the login page, so this session is not logged in"),
+)
+
+# Collects the usernames currently rendered in the open follow list dialog
+BROWSER_DIALOG_NAMES_JS = """() => {
+  const dialog = document.querySelector('div[role="dialog"]');
+  if (!dialog) return null;
+  const suggestions = [...dialog.querySelectorAll('h2, h3, h4, [role="heading"]')]
+    .find(element => /^suggested for you$/i.test(element.textContent.trim()));
+  const names = [];
+  const seen = new Set();
+  for (const anchor of dialog.querySelectorAll('a[href^="/"]')) {
+    // Recommendations below the list are unrelated accounts with the same profile-link markup
+    if (suggestions && (suggestions.compareDocumentPosition(anchor) & Node.DOCUMENT_POSITION_FOLLOWING)) break;
+    const match = (anchor.getAttribute('href') || '').match(/^\\/([A-Za-z0-9._]+)\\/$/);
+    if (match && !seen.has(match[1])) { seen.add(match[1]); names.push(match[1]); }
+  }
+  return names;
+}"""
+
+# Scrolls the tallest scrollable box inside the dialog, which is the list itself whatever it is called today
+BROWSER_DIALOG_SCROLL_JS = """() => {
+  const dialog = document.querySelector('div[role="dialog"]');
+  if (!dialog) return false;
+  let target = null, best = 0;
+  for (const element of dialog.querySelectorAll('*')) {
+    const delta = element.scrollHeight - element.clientHeight;
+    if (delta > best && element.clientHeight > 100) { best = delta; target = element; }
+  }
+  if (!target) return false;
+  target.scrollTop = target.scrollHeight;
+  return true;
+}"""
+
+
+# Raised when the browser provider cannot run or Instagram interrupted the scan
+class BrowserFollowListError(RuntimeError):
+    pass
+
+
+# Carries one username harvested from the rendered page, which is all the dialog exposes
+class BrowserFollowListEntry:
+    __slots__ = ('username',)
+
+    # Stores the harvested username
+    def __init__(self, username: str):
+        self.username = username
+
+
+# Returns whether the optional Playwright package can be imported
+def playwright_available() -> bool:
+    try:
+        return importlib.util.find_spec("playwright") is not None
+    except (AttributeError, ImportError, ValueError):
+        return False
+
+
+# Returns the persistent browser profile directory for the session account, kept apart per account
+def browser_profile_dir() -> str:
+    if FOLLOW_LIST_BROWSER_PROFILE_DIR:
+        base = os.path.abspath(os.path.expanduser(str(FOLLOW_LIST_BROWSER_PROFILE_DIR)))
+    else:
+        base = os.path.abspath(os.path.join(OUTPUT_DIR if OUTPUT_DIR else ".", BROWSER_PROFILE_DIRNAME))
+    account = re.sub(r'[^A-Za-z0-9._-]', '_', exposure_account_name())
+    if account in ("", ".", ".."):
+        raise ValueError("Browser profile account must name a subdirectory")
+    return os.path.join(base, account)
+
+
+# Returns the logged-in Instagram cookies in the shape Playwright's add_cookies expects
+# The element type is Playwright's own SetCookieParam, which cannot be named here without making an
+# optional dependency a required import
+def browser_session_cookies(bot) -> List[Any]:
+    jar = req.utils.dict_from_cookiejar(bot.context._session.cookies)
+    return [{'name': name, 'value': str(value), 'domain': ".instagram.com", 'path': "/", 'secure': True, 'sameSite': "Lax"} for name, value in jar.items() if name and value]
+
+
+# Returns the proxy settings for the browser, keeping any credentials out of the server URL
+def browser_proxy_settings() -> Optional[Dict[str, str]]:
+    if not PROXY_ENABLED or not PROXY_URL:
+        return None
+    parts = urlsplit(str(PROXY_URL))
+    host = parts.hostname or ""
+    if not host:
+        return None
+    server = f"{parts.scheme or 'http'}://{host}" + (f":{parts.port}" if parts.port else "")
+    settings = {'server': server}
+    if parts.username:
+        settings['username'] = parts.username
+        settings['password'] = parts.password or ""
+    return settings
+
+
+# Returns the launch options for the persistent browser context
+def browser_launch_options() -> Dict[str, Any]:
+    options: Dict[str, Any] = {
+        'headless': bool(FOLLOW_LIST_BROWSER_HEADLESS),
+        'channel': str(FOLLOW_LIST_BROWSER_CHANNEL or "chromium"),
+        'locale': "en-US",
+        # The question this provider tests is whether the client matters, so it does not announce
+        # itself as automation. It is still an ordinary Chromium, not an anti-detect build
+        'args': ["--disable-blink-features=AutomationControlled"],
+    }
+    if USER_AGENT:
+        options['user_agent'] = USER_AGENT
+    proxy = browser_proxy_settings()
+    if proxy:
+        options['proxy'] = proxy
+    if not VERIFY_SSL:
+        options['ignore_https_errors'] = True
+    return options
+
+
+# Stops the scan when Instagram answered with a challenge, a login page or an account notice
+def guard_browser_page_state(page) -> None:
+    url = str(getattr(page, 'url', "") or "")
+    lowered = url.lower()
+    for marker, description in BROWSER_INTERRUPTION_PAGES:
+        if marker in lowered:
+            raise BrowserFollowListError(f"Instagram answered with {description}. Open Instagram in your own browser, resolve it there, then restart or re-import the session")
+
+
+# Yields each new batch of names the open dialog renders, scrolling until it stops growing
+def harvest_follow_list_dialog(page, scroll_delay: float, stall_limit: int = BROWSER_STALL_LIMIT, stop_event=None):
+    seen: set = set()
+    stalls = 0
+
+    while True:
+        if stop_event is not None and stop_event.is_set():
+            return
+
+        rendered = page.evaluate(BROWSER_DIALOG_NAMES_JS)
+        if rendered is None:
+            raise BrowserFollowListError("Instagram's follower list dialog closed before the list was read")
+
+        fresh = []
+        for name in rendered:
+            if isinstance(name, str) and name and name not in seen:
+                seen.add(name)
+                fresh.append(name)
+
+        if fresh:
+            stalls = 0
+            yield fresh
+        else:
+            stalls += 1
+            if stalls >= stall_limit:
+                return
+
+        if not page.evaluate(BROWSER_DIALOG_SCROLL_JS):
+            return
+        page.wait_for_timeout(max(0, int(float(scroll_delay) * 1000)))
+
+
+# The curl_cffi impersonation family each Playwright browser channel presents on the wire
+BROWSER_CHANNEL_FAMILIES = {'chromium': 'chrome', 'chrome': 'chrome', 'msedge': 'edge'}
+
+
+# Returns the browser family the configured channel presents, since Playwright only drives Chromium builds
+def browser_channel_family() -> str:
+    return BROWSER_CHANNEL_FAMILIES.get(str(FOLLOW_LIST_BROWSER_CHANNEL or "chromium").strip().lower(), "chrome")
+
+
+# Returns the browser family a curl_cffi impersonation target belongs to, so chrome131 and chrome are one family
+def impersonate_family(target) -> str:
+    match = re.match(r'[a-z]+', str(target or "").strip().lower())
+    return match.group(0) if match else ""
+
+
+# Reports why the browser source and the HTTP path would reach Instagram as different clients, or None when they agree
+def browser_identity_mismatch(backend: Optional[str] = None, impersonate: Optional[str] = None) -> Optional[Tuple[str, str]]:
+    channel = str(FOLLOW_LIST_BROWSER_CHANNEL or "chromium").strip().lower()
+    family = browser_channel_family()
+    if not curl_cffi_backend_active(backend):
+        return (f"The browser source runs a {family} browser, but every other request uses the 'requests' backend, which cannot present a browser TLS fingerprint. One session would reach Instagram as two different clients", "Set HTTP_BACKEND to curl_cffi, or set FOLLOW_LIST_SOURCE back to auto")
+    agent_family = _impersonate_target_from_ua(USER_AGENT)
+    if agent_family != family:
+        return (f"The browser source runs a {family} browser through the '{channel}' channel, but USER_AGENT claims {agent_family}, so it would announce itself as a browser it is not", f"Set USER_AGENT to a {family} browser, or set FOLLOW_LIST_BROWSER_CHANNEL to a channel that matches it")
+    target_family = impersonate_family(_curl_cffi_impersonate_target(impersonate))
+    if target_family != family:
+        return (f"The browser source runs a {family} browser, but CURL_CFFI_IMPERSONATE pins {target_family} for every other request. One session would reach Instagram as two different clients", f"Set CURL_CFFI_IMPERSONATE to auto or to a {family} target")
+    return None
+
+
+BROWSER_PROBE_TIMEOUT = 60
+BROWSER_PROBE_SCRIPT = "from playwright.sync_api import sync_playwright\nwith sync_playwright() as driver:\n    print(driver.chromium.executable_path)\n"
+
+
+# Returns the bundled Chromium path and an error string, probing in a child process because stopping the
+# Playwright driver logs asyncio shutdown noise into whatever process started it
+def browser_chromium_executable() -> Tuple[str, str]:
+    try:
+        probe = subprocess.run([sys.executable, "-c", BROWSER_PROBE_SCRIPT], capture_output=True, text=True, timeout=BROWSER_PROBE_TIMEOUT)
+    except Exception as probe_error:
+        return "", format_error_message(probe_error)
+    if probe.returncode != 0:
+        reported = (probe.stderr or "").strip().splitlines()
+        return "", reported[-1] if reported else f"the probe exited with code {probe.returncode}"
+    return probe.stdout.strip(), ""
+
+
+# Returns whether the browser provider can run here, plus a detail line and the action that fixes it
+def browser_follow_list_readiness() -> Tuple[bool, str, str]:
+    if not playwright_available():
+        return False, "The 'playwright' package is not installed", "Install it with: pip install playwright, then run: playwright install chromium"
+
+    channel = str(FOLLOW_LIST_BROWSER_CHANNEL or "chromium")
+    detail = f"Channel: {channel}, {'headless' if FOLLOW_LIST_BROWSER_HEADLESS else 'windowed'}, profile: {browser_profile_dir()}"
+    if channel != "chromium":
+        return True, f"{detail}. A '{channel}' installation on this machine is used, which is only checked when a scan runs", ""
+
+    executable, probe_error = browser_chromium_executable()
+    if probe_error:
+        return False, f"Playwright could not be started: {probe_error}", "Reinstall it with: pip install --upgrade playwright"
+
+    if not executable or not os.path.isfile(executable):
+        return False, "Playwright is installed but its Chromium build is missing", "Download it with: playwright install chromium"
+    return True, detail, ""
+
+
+# Opens the requested follow list and waits for its first rendered profile link
+def open_browser_follow_list_dialog(page, target: str, kind: str) -> None:
+    detail = f"the profile's {kind} control could not be clicked"
+    try:
+        direct_link = page.locator(f'a[href="/{target}/{kind}/"]')
+        # Newer layouts use href="#" for count links, so their accessible names identify the list
+        count_link = page.get_by_role("link", name=re.compile(rf"^\d[\d.,\s]*[KMB]?\s+{kind}$", re.IGNORECASE))
+        direct_link.or_(count_link).first.click()
+        detail = f"no profile links appeared after clicking the {kind} control"
+        page.wait_for_selector('div[role="dialog"] a[href^="/"]')
+    except Exception as dialog_error:
+        # Account interruptions take priority over a missing control or an unreadable dialog
+        guard_browser_page_state(page)
+        raise BrowserFollowListError(f"Instagram's follower list dialog could not be read for {target}: {detail}") from dialog_error
+    guard_browser_page_state(page)
+
+
+# Drives a real browser through Instagram's web app and yields each new batch of rendered names
+def browser_follow_list_batches(bot, profile, kind: str, stop_event=None):
+    if kind not in ('followers', 'following'):
+        raise ValueError(f"unsupported follow list kind '{kind}'")
+    if not playwright_available():
+        raise BrowserFollowListError("The browser follow list source needs the optional 'playwright' package. Install it with: pip install playwright, then run: playwright install chromium")
+
+    from playwright.sync_api import sync_playwright
+
+    target = profile.username
+    user_data_dir = browser_profile_dir()
+    # The operator selects the base directory and browser_profile_dir rejects traversal components
+    # codeql[py/path-injection]
+    os.makedirs(user_data_dir, exist_ok=True)
+
+    with sync_playwright() as driver:
+        try:
+            browser_context = driver.chromium.launch_persistent_context(user_data_dir, **browser_launch_options())
+        except Exception as launch_error:
+            raise BrowserFollowListError(f"The browser could not start: {format_error_message(launch_error)}. Run 'playwright install chromium' or set FOLLOW_LIST_BROWSER_CHANNEL to a browser installed here") from launch_error
+
+        try:
+            browser_context.set_default_timeout(max(1, int(FOLLOW_LIST_BROWSER_TIMEOUT)) * 1000)
+            browser_context.add_cookies(browser_session_cookies(bot))
+            page = browser_context.pages[0] if browser_context.pages else browser_context.new_page()
+
+            page.goto(f"https://www.instagram.com/{target}/", wait_until="domcontentloaded")
+            guard_browser_page_state(page)
+
+            open_browser_follow_list_dialog(page, target, kind)
+            yield from harvest_follow_list_dialog(page, FOLLOW_LIST_BROWSER_SCROLL_DELAY, stop_event=stop_event)
+        finally:
+            try:
+                browser_context.close()
+            except Exception:
+                pass
+
+
+# Yields rendered follow list entries, counting each batch against the account before it is handed on
+def iter_browser_follow_list(bot, profile, kind: str, record_exposure: bool = False, stop_event=None):
+    if not bot.context.is_logged_in:
+        raise instaloader.exceptions.LoginRequiredException(f"Login required to get a profile's {kind}.")
+
+    expected = int(getattr(profile, 'followers' if kind == 'followers' else 'followees', 0) or 0)
+    harvested = 0
+
+    for batch in browser_follow_list_batches(bot, profile, kind, stop_event=stop_event):
+        if record_exposure:
+            budget_left = identity_budget_remaining()
+            if budget_left is not None:
+                if budget_left <= 0:
+                    return
+                batch = batch[:budget_left]
+            record_identities_returned(len(batch))
+
+        harvested += len(batch)
+        debug_print("Instagram browser follow list batch", kind=kind, accounts=len(batch), total=harvested)
+
+        for name in batch:
+            yield BrowserFollowListEntry(name)
+
+    # A dialog that stops rendering early looks the same as a finished list, so a large shortfall is
+    # reported instead of returned. Saving it would drop the missing accounts from the next comparison
+    if expected > 0 and (expected - harvested) > max(BROWSER_SHORTFALL_TOLERANCE, expected // 10):
+        raise BrowserFollowListError(f"The browser rendered only {harvested} of about {expected} {kind} before the dialog stopped growing, so the list is incomplete")
+
+
+# Returns True when a REST failure describes the endpoint rather than the account, the only case worth a second attempt
+def rest_failure_is_recoverable(error: BaseException) -> bool:
+    # A 404 means the path is gone and a schema error means the reply changed, both Instagram API changes.
+    # Everything else, including a challenge, a rate limit, an expired session or a network fault, is either
+    # about the account or would fail the same way on the other surface, so it is reported rather than retried
+    return isinstance(error, (InstagramRestSchemaError, instaloader.exceptions.QueryReturnedNotFoundException))
+
+
+# Yields REST results and falls back before exposure only when the endpoint itself changed
+def iter_auto_follow_list(bot, profile, kind: str, record_exposure: bool = False):
+    returned_any = False
+    returned_identity_pages: List[int] = []
+
+    try:
+        for candidate in iter_rest_follow_list(bot, profile, kind, record_exposure=record_exposure, page_observer=returned_identity_pages.append):
+            returned_any = True
+            yield candidate
+        return
+    except Exception as rest_error:
+        # Names already returned cost the account whatever happens next, so a partial scan is never repeated
+        # on the other surface. Only an endpoint that is gone or answers in an unknown shape is retried
+        if returned_any or any(returned_identity_pages) or not rest_failure_is_recoverable(rest_error):
+            raise
+        reason = format_error_message(rest_error)
+        print(f"* Instagram's REST {kind} endpoint is unavailable ({reason}), reading the list over GraphQL instead")
+        log_activity(f"REST {kind} endpoint unavailable ({reason}), falling back to GraphQL", user=profile.username, level='system')
+
+    yield from iter_graphql_follow_list(profile, kind, record_exposure=record_exposure)
+
+
+# Returns the configured follow list source, falling back to auto when the setting names something unknown
+def active_follow_list_source() -> str:
+    source = str(FOLLOW_LIST_SOURCE).strip().lower()
+    return source if source in FOLLOW_LIST_SOURCES else 'auto'
+
+
+# Returns the configured FOLLOW_LIST_SOURCE value when it names no known source, so the fallback to auto is reported rather than silent
+def unrecognised_follow_list_source() -> Optional[str]:
+    source = str(FOLLOW_LIST_SOURCE).strip().lower()
+    return None if source in FOLLOW_LIST_SOURCES else str(FOLLOW_LIST_SOURCE)
+
+
+# Describes the follow list source for the startup summary
+def follow_list_source_display() -> str:
+    source = active_follow_list_source()
+    if source == 'auto':
+        return "auto (REST, GraphQL on failure)"
+    if source == 'browser':
+        return f"browser (experimental, {'headless' if FOLLOW_LIST_BROWSER_HEADLESS else 'windowed'} {FOLLOW_LIST_BROWSER_CHANNEL})"
+    return "REST" if source == 'rest' else "GraphQL"
+
+
+# Returns the follower or following iterator selected for one target
+def follow_list_generator(bot, profile, kind: str, record_exposure: bool = False, stop_event=None):
+    source = active_follow_list_source()
+
+    # The REST endpoints answer only for a logged-in session, and anonymous mode already fails with
+    # instaloader's own message, so leave that path exactly as it was
+    if source == 'graphql' or not bot.context.is_logged_in:
+        return iter_graphql_follow_list(profile, kind, record_exposure=record_exposure)
+
+    if source == 'rest':
+        return iter_rest_follow_list(bot, profile, kind, record_exposure=record_exposure)
+
+    # The browser source is never chosen by auto. It is slower, heavier and experimental, so it runs
+    # only when it was asked for by name
+    if source == 'browser':
+        return iter_browser_follow_list(bot, profile, kind, record_exposure=record_exposure, stop_event=stop_event)
+
+    return iter_auto_follow_list(bot, profile, kind, record_exposure=record_exposure)
+
+
 # Carries fetched usernames plus whether the source generator was fully exhausted
 class PaginatedUsernameResult(list):
     complete = False
@@ -9562,6 +13559,21 @@ class PaginatedUsernameResult(list):
 # Returns whether a fetched username list is safe to compare or persist
 def is_complete_username_baseline(result, reported_count):
     return bool(getattr(result, 'complete', False) and (result or reported_count == 0))
+
+
+# Marks a freshly fetched list unusable as a baseline when it came in short of Instagram's own count and would
+# also shrink the saved list. A browser dialog that stops rendering looks exactly like a finished one, so the
+# reported count and the saved baseline are the two witnesses that tell a stalled render apart from accounts
+# that really went away. Clearing the complete flag is what already stops a truncated list being saved or compared
+def reject_shrinking_username_baseline(result, reported_count, previous, kind: str, user: str = "") -> None:
+    if not getattr(result, 'complete', False) or not previous:
+        return
+    if int(reported_count or 0) <= len(result) or len(previous) <= len(result):
+        return
+    result.complete = False
+    msg = f"The {kind} list came back with {len(result)} of about {reported_count} while {len(previous)} were already saved, so the saved list is kept"
+    print(f"* {msg}")
+    log_activity(msg, user=user, level='system')
 
 
 # Atomically replaces a complete follower or following baseline file
@@ -9582,8 +13594,36 @@ def save_username_baseline(filename, reported_count, usernames):
             os.remove(temporary_path)
 
 
-# Fetches usernames in batches and marks whether the returned baseline is complete
-def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user, stop_event=None):
+# Latches the account safety stop and ends the scan with whatever it had already fetched
+def _stop_fetch_for_unavailable_ledger(error: BaseException, results, user: str):
+    _mark_account_safety_unavailable(error)
+    msg = "Stopping name fetch: account safety ledger became unavailable"
+    print(f"* {msg}")
+    log_activity(msg, user=user, level='system')
+    return results
+
+
+# Serializes account-wide identity scans so budget checks and accounting cannot race
+def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user, stop_event=None, identities_counted_at_source=False, record_failures=True):
+    while not IDENTITY_SCAN_LOCK.acquire(timeout=0.2):
+        if stop_event is not None and stop_event.is_set():
+            return PaginatedUsernameResult()
+        memory_state = _account_breaker_memory_state()
+        if memory_state:
+            return PaginatedUsernameResult()
+    try:
+        return _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user, stop_event, identities_counted_at_source)
+    except Exception as fetch_error:
+        # Monitoring handlers also cover failures during the profile refresh after fetching
+        if record_failures:
+            note_instagram_failure(format_error_message(fetch_error), user, bot)
+        raise
+    finally:
+        IDENTITY_SCAN_LOCK.release()
+
+
+# Fetches one serialized username scan and marks whether its baseline is complete
+def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user, stop_event=None, identities_counted_at_source=False):
     """Fetch usernames in batches using a fresh generator per call.
 
     Args:
@@ -9602,9 +13642,53 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
     """
     results = PaginatedUsernameResult()
     results.complete = False
-    gen = get_generator_fn()  # single generator — keeps cursor position across batches
 
     thread_pbar = getattr(_thread_local, 'pbar', None)
+
+    # Name fetching is the most expensive operation against the account, so it is the one place the
+    # breaker and the daily budget are enforced. Both leave the result incomplete on purpose, which
+    # stops save_username_baseline from overwriting a good baseline with a truncated one
+    breaker = circuit_breaker_state()
+    if breaker:
+        msg = f"Skipping name fetch: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')}). {breaker_recovery_hint(breaker.get('failure_class', ''))}"
+        print(f"* {msg}")
+        log_activity(msg, user=user, level='system')
+        return results
+
+    memory_state = _account_breaker_memory_state()
+    if memory_state and memory_state.get('failure_class') == 'ledger_unavailable':
+        msg = f"Skipping name fetch: account safety ledger is unavailable. {breaker_recovery_hint('ledger_unavailable')}"
+        print(f"* {msg}")
+        log_activity(msg, user=user, level='system')
+        return results
+
+    try:
+        verify_exposure_ledger_writable()
+        budget_spent = identity_budget_exhausted()
+        budget_available = identity_budget_remaining()
+    except ExposureLedgerError as error:
+        _mark_account_safety_unavailable(error)
+        msg = "Skipping name fetch: account safety ledger cannot be read and saved, so identity collection is blocked"
+        print(f"* {msg}")
+        log_activity(msg, user=user, level='system')
+        return results
+
+    if budget_spent:
+        msg = f"Skipping name fetch: daily identity budget of {IDENTITY_BUDGET_PER_DAY} is spent for {exposure_account_name()}. Counts and posts keep being monitored"
+        print(f"* {msg}")
+        log_activity(msg, user=user, level='system')
+        return results
+
+    # A scan that cannot finish inside the remaining budget would spend it on a list that is then discarded
+    # as incomplete, and would repeat that every day without ever saving a baseline, so it is never started
+    needed = int(estimated_limit or 0)
+    if budget_available is not None and needed and budget_available < needed:
+        msg = f"Skipping name fetch: {needed} names are needed but only {budget_available} of the daily identity budget of {IDENTITY_BUDGET_PER_DAY} is left, and a partial list is never saved. Counts and posts keep being monitored"
+        print(f"* {msg}")
+        log_activity(msg, user=user, level='system')
+        return results
+
+    gen = get_generator_fn()  # single generator — keeps cursor position across batches
     if advanced_fetch:
         msg = f"Fetching {build_follow_string(advanced_fetch, estimated_limit, max_per_batch, fetch_delay, alt_format=True)}"
         if thread_pbar:
@@ -9618,24 +13702,56 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
         if stop_event is not None and stop_event.is_set():
             return results
 
+        try:
+            budget_left = identity_budget_remaining()
+        except ExposureLedgerError as safety_error:
+            return _stop_fetch_for_unavailable_ledger(safety_error, results, user)
+
+        if budget_left is not None and budget_left <= 0:
+            print(f"* Daily identity budget of {IDENTITY_BUDGET_PER_DAY} reached, stopping the name fetch here")
+            log_activity(f"Daily identity budget reached after {len(results)} names", user=user, level='system')
+            break
+
         batch = []
         generator_exhausted = False
-        for f in gen:
-            batch.append(f.username)
-            if advanced_fetch and max_per_batch and (len(batch) >= max_per_batch):
-                break  # pause; generator retains its position
-            # Stop mid-batch if the overall total_limit would be exceeded, otherwise a per_batch
-            # larger than total_limit (e.g. limit=30, per_batch=50) over-fetches by a full batch
-            if advanced_fetch and total_limit and (len(results) + len(batch) >= total_limit):
-                break
-        else:
-            generator_exhausted = True
+        try:
+            for f in gen:
+                batch.append(f.username)
+                # The budget counts names returned, so it caps the batch even mid-flight
+                if budget_left is not None and len(batch) >= budget_left:
+                    break
+                if advanced_fetch and max_per_batch and (len(batch) >= max_per_batch):
+                    break  # pause; generator retains its position
+                # Stop mid-batch if the overall total_limit would be exceeded, otherwise a per_batch
+                # larger than total_limit (e.g. limit=30, per_batch=50) over-fetches by a full batch
+                if advanced_fetch and total_limit and (len(results) + len(batch) >= total_limit):
+                    break
+            else:
+                generator_exhausted = True
+        except ExposureLedgerError as safety_error:
+            results.extend(batch)
+            return _stop_fetch_for_unavailable_ledger(safety_error, results, user)
+        except Exception:
+            # Names already returned still cost the account, so bank them before the error propagates
+            results.extend(batch)
+            if not identities_counted_at_source:
+                # A ledger that dies here must not replace the Instagram error the caller needs to see
+                try:
+                    record_identities_returned(len(batch))
+                except ExposureLedgerError as safety_error:
+                    _mark_account_safety_unavailable(safety_error)
+            raise
 
         if not batch:
             results.complete = True
             break  # generator fully exhausted
 
         results.extend(batch)
+        if not identities_counted_at_source:
+            try:
+                record_identities_returned(len(batch))
+            except ExposureLedgerError as safety_error:
+                return _stop_fetch_for_unavailable_ledger(safety_error, results, user)
 
         if generator_exhausted:
             results.complete = True
@@ -9692,26 +13808,20 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
     return results
 
 
-# Sends independent email and webhook notifications for one new story item
+# Sends one new story item alert through the enabled email and webhook channels
 def send_story_item_notifications(user, story_type, local_ts, expire_ts, story_mentions, story_hashtags, story_caption, r_sleep_time, story_thumbnail_url, story_image_filename=None):
     local_image_file = str(story_image_filename) if story_image_filename and os.path.isfile(story_image_filename) else ""
     has_local_image = bool(local_image_file)
     story_mentions_text = f"\nMentions: {story_mentions}" if story_mentions else ""
     story_hashtags_text = f"\nHashtags: {story_hashtags}" if story_hashtags else ""
     story_caption_text = f"\nDescription:\n\n{story_caption}" if story_caption else ""
-    if STATUS_NOTIFICATION:
-        m_subject = f"Instagram user {user} has a new story item ({get_short_date_from_ts(int(local_ts))})"
-        m_body = f"Instagram user {user} has a new story item\n\nDate: {get_date_from_ts(int(local_ts))}\nExpiry: {get_date_from_ts(int(expire_ts))}\nType: {story_type}{story_mentions_text}{story_hashtags_text}{story_caption_text}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-        mentions_html = f"<br>Mentions: {escape(str(story_mentions))}" if story_mentions else ""
-        hashtags_html = f"<br>Hashtags: {escape(str(story_hashtags))}" if story_hashtags else ""
-        caption_html = f"<br>Description:<br><br>{escape(str(story_caption)).replace(chr(10), '<br>')}" if story_caption else ""
-        image_html = '<br><br><img src="cid:story_pic" width="50%">' if has_local_image else ""
-        m_body_html = f"Instagram user <b>{user}</b> has a new story item{image_html}<br><br>Date: <b>{get_date_from_ts(int(local_ts))}</b><br>Expiry: {get_date_from_ts(int(expire_ts))}<br>Type: {story_type}{mentions_html}{hashtags_html}{caption_html}<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-        print(f"* Sending email notification to {RECEIVER_EMAIL}")
-        if has_local_image:
-            send_email(m_subject, m_body, m_body_html, SMTP_SSL, local_image_file, "story_pic")
-        else:
-            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+    m_subject = f"Instagram user {user} has a new story item ({get_short_date_from_ts(int(local_ts))})"
+    m_body = f"Instagram user {user} has a new story item\n\nDate: {get_date_from_ts(int(local_ts))}\nExpiry: {get_date_from_ts(int(expire_ts))}\nType: {story_type}{story_mentions_text}{story_hashtags_text}{story_caption_text}\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+    mentions_html = f"<br>Mentions: {escape(str(story_mentions))}" if story_mentions else ""
+    hashtags_html = f"<br>Hashtags: {escape(str(story_hashtags))}" if story_hashtags else ""
+    caption_html = f"<br>Description:<br><br>{escape(str(story_caption)).replace(chr(10), '<br>')}" if story_caption else ""
+    image_html = '<br><br><img src="cid:story_pic" width="50%">' if has_local_image else ""
+    m_body_html = f"Instagram user <b>{user}</b> has a new story item{image_html}<br><br>Date: <b>{get_date_from_ts(int(local_ts))}</b><br>Expiry: {get_date_from_ts(int(expire_ts))}<br>Type: {story_type}{mentions_html}{hashtags_html}{caption_html}<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
     story_webhook_fields = [
         {"name": "Date", "value": get_date_from_ts(int(local_ts)), "inline": True},
@@ -9724,7 +13834,7 @@ def send_story_item_notifications(user, story_type, local_ts, expire_ts, story_m
         story_webhook_fields.append({"name": "Hashtags", "value": str(story_hashtags)})
     if story_caption:
         story_webhook_fields.append({"name": "Description", "value": (story_caption[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(story_caption) > WEBHOOK_FIELD_VALUE_LIMIT else story_caption})
-    return send_webhook(f"📖 {user} New Story Item", f"User **{user}** posted a new story item!", color=0xe91e63, fields=story_webhook_fields, local_image_file=local_image_file or None, image_url=story_thumbnail_url if story_thumbnail_url and not has_local_image else None, notification_type="status")
+    return send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, email_image_file=local_image_file, email_image_name="story_pic", webhook_title=f"📖 {user} New Story Item", webhook_description=f"User **{user}** posted a new story item!", webhook_color=0xe91e63, webhook_fields=story_webhook_fields, local_image_file=local_image_file or None, image_url=story_thumbnail_url if story_thumbnail_url and not has_local_image else None)
 
 
 # Carries the values one monitoring pass must hand to its replacement when live settings change
@@ -9751,12 +13861,24 @@ def instagram_monitor_user(user, csv_file_name, skip_session, skip_followers, sk
 
 # Runs one monitoring pass for the specified Instagram user until it stops or needs a fresh context
 def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_followers, skip_followings, skip_getting_story_details, skip_getting_posts_details, get_more_post_details, wait_for_prev_user=None, signal_loading_complete=None, stop_event=None, user_root_path=None, manual_recheck=False, skip_follow_changes=False):  # type: ignore[reportComplexity]
+    global LAST_CHECK_TS
     global pbar, DASHBOARD_DATA, VERBOSE_MODE, CHECK_COUNT, NEXT_CHECK_TIME, NEXT_CHECK_DISPLAY
     user = normalize_instagram_username(user)
     session_refresh_generation = get_session_refresh_generation()
     _thread_local.user = user  # Store user in thread-local storage for debug_print
     _thread_local.in_partial_line = False  # Track partial line prints
     update_ui_data(targets={user: {'status': 'Starting'}})
+
+    # A persisted account stop must be checked before a client, session or target request is created
+    if not skip_session and SESSION_USERNAME:
+        breaker = circuit_breaker_state()
+        if breaker:
+            update_ui_data(targets={user: {'status': 'Stopped (breaker)'}})
+            print(f"* Monitoring paused for {user}: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')})")
+            print(f"* {breaker_recovery_hint(breaker.get('failure_class', ''))}")
+            if signal_loading_complete is not None:
+                signal_loading_complete.set()
+            return
 
     # When True, bypass CHECK_POSTS_IN_HOURS_RANGE for exactly one cycle (Web Dashboard recheck override)
     manual_recheck_active = bool(manual_recheck)
@@ -9800,11 +13922,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
     bot = None
 
     try:
-        bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True, quiet=True)
-
-        # Inject proxy and cert into Instaloader's session
-        if PROXY_ENABLED:
-            set_instaloader_proxies(bot)
+        # The session carries the proxy and the TLS verification setting before the first request is made
+        bot = instaloader_client(user_agent=USER_AGENT, iphone_support=True, quiet=True)
 
         ctx = bot.context
         session = ctx._session
@@ -9816,25 +13935,25 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 with SESSION_FILE_LOCK:
                     if SESSION_PASSWORD:
                         try:
-                            debug_print(f"Loading session for {SESSION_USERNAME} from file...")
+                            debug_print("Instagram session", user=SESSION_USERNAME, action="loading from file")
                             bot.load_session_from_file(SESSION_USERNAME)
                             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                 WEB_DASHBOARD_DATA['session']['active'] = True
                         except FileNotFoundError:
-                            debug_print(f"Session file for {SESSION_USERNAME} not found, logging in...")
+                            debug_print("Instagram session", user=SESSION_USERNAME, action="logging in", reason="session file not found")
                             bot.login(SESSION_USERNAME, SESSION_PASSWORD)
                             bot.save_session_to_file()
                             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                 WEB_DASHBOARD_DATA['session']['active'] = True
                         except instaloader.exceptions.BadCredentialsException:
-                            debug_print(f"Bad credentials for {SESSION_USERNAME}, logging in again...")
+                            debug_print("Instagram session", user=SESSION_USERNAME, action="logging in again", reason="bad credentials")
                             bot.login(SESSION_USERNAME, SESSION_PASSWORD)
                             bot.save_session_to_file()
                             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                 WEB_DASHBOARD_DATA['session']['active'] = True
                     else:
                         try:
-                            debug_print(f"Loading session for {SESSION_USERNAME} from file (no password provided)...")
+                            debug_print("Instagram session", user=SESSION_USERNAME, action="loading from file", reason="no password provided")
                             bot.load_session_from_file(SESSION_USERNAME)
                             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                                 WEB_DASHBOARD_DATA['session']['active'] = True
@@ -9962,8 +14081,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         insta_username = profile.username
         insta_userid = profile.userid
 
-        debug_print(f"Profile loaded: ID {insta_userid}")
-        debug_print(f"Metadata: followers={profile.followers}, followees={profile.followees}, posts={profile.mediacount}, private={profile.is_private}")
+        debug_print("Profile loaded", user_id=insta_userid)
+        debug_print("Metadata", followers=profile.followers, followees=profile.followees, posts=profile.mediacount, private=profile.is_private)
 
         print(f"     OK: {insta_username}")
         _thread_local.in_partial_line = False
@@ -9976,11 +14095,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         followed_by_viewer = profile.followed_by_viewer
         can_view = (not is_private) or followed_by_viewer
         posts_count = profile.mediacount
-        if not skip_session and can_view:
+        if not skip_session and can_view and FETCH_REELS:
             update_ui_data(targets={user: {'status': 'Fetching Reels'}})
             _thread_local.in_partial_line = True
             print("- fetching reels count...", end=" ", flush=True)
-            reels_count = get_total_reels_count(user, bot, skip_session)
+            reels_count = get_total_reels_count(user, bot, skip_session, posts_count)
 
             print("              OK")
             _thread_local.in_partial_line = False
@@ -10027,7 +14146,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         error_msg = format_error_message(e)
         print(f"* Error: {error_msg}")
         # Detect a flagged session/IP up front so the specific flagged guidance below replaces the generic fix hint
-        session_flagged = is_session_flagged(error_msg, bot)
+        session_flagged = note_authenticated_failure(error_msg, user, bot)
         if not session_flagged:
             print_fix_hint(error_msg)
         print_cur_ts(newline=True)
@@ -10035,54 +14154,10 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
         # Handle session recovery for automated checks/challenge errors
         if session_flagged:
-            err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
-            update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
-            print(f"* Error: {err_str}")
-
-            # A flag is terminal for every target, so alert the operator immediately regardless of ERROR_FAILURE_THRESHOLD
-            notify_session_flagged(user, err_str, error_msg)
-
-            # Pause all other threads once the session account is flagged.
-            if WEB_DASHBOARD_ENABLED or DASHBOARD_ENABLED:
-                for other_user in list(WEB_DASHBOARD_STOP_EVENTS.keys()):
-                    if other_user != user:
-                        log_activity(err_str, user=other_user)
-                        update_check_times(next_time="Paused", user=other_user, increment_count=False)
-                        stop_monitoring_for_target(other_user)
-                        update_ui_data(targets={other_user: {'status': f'Paused: {err_str}'}})
-                # Update next_check status for this thread
-                NEXT_CHECK_TIME = None
-                NEXT_CHECK_DISPLAY = "Paused"
-                update_check_times(next_time="Paused", user=user, increment_count=False)
-                log_activity("Stopping monitoring", user=user)
-            print_cur_ts(newline=True)
-
-            # Without the Web Dashboard there is no in-place session recovery so exit since the flagged session is dead for every target
-            if not WEB_DASHBOARD_ENABLED:
-                signal_handler(signal.SIGINT, None, message='')
-
-            # Web Dashboard can re-import a session and resume, so wait for that or a stop event
-            if WEB_DASHBOARD_ENABLED:
-                while not (stop_event and stop_event.is_set()):
-                    if wait_for_session_refresh(session_refresh_generation, timeout=1.0) != session_refresh_generation:
-                        # Session refreshed! Reload and retry
-                        log_activity("Session/Mode change detected, resuming monitoring...", user=user)
-                        print(f"* Session/Mode change detected for {user}, resuming...")
-                        print_cur_ts(newline=True)
-
-                        # Refresh configuration from global settings
-                        skip_session = SKIP_SESSION
-                        skip_followers = SKIP_FOLLOWERS
-                        skip_followings = SKIP_FOLLOWINGS
-                        skip_getting_story_details = SKIP_GETTING_STORY_DETAILS
-                        skip_getting_posts_details = SKIP_GETTING_POSTS_DETAILS
-                        get_more_post_details = GET_MORE_POST_DETAILS
-
-                        # Re-run the function from the beginning to reset state with new settings
-                        return _MonitorRestart(csv_file_name, manual_recheck)
-
-                if stop_event and stop_event.is_set():
-                    return
+            # A refreshed session starts a fresh pass, so it is not reloaded in place here
+            if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation, reload_session=False):
+                return
+            return _MonitorRestart(csv_file_name, manual_recheck)
         else:
             print_cur_ts(newline=True)
 
@@ -10120,7 +14195,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         print(f"Can view all contents:\t\t\t{'Yes' if can_view else 'No'}")
 
         print(f"\nPosts:\t\t\t\t\t{posts_count}")
-        if not skip_session and can_view:
+        if not skip_session and can_view and FETCH_REELS:
             print(f"Reels:\t\t\t\t\t{reels_count}")
 
         if FOLLOWERS_CHURN_DETECTION:
@@ -10182,17 +14257,17 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
     if os.path.isfile(insta_followers_file):
         try:
-            with open(insta_followers_file, 'r', encoding="utf-8") as f:
-                followers_read = json.load(f)
+            followers_read = read_follow_record(insta_followers_file)
         except Exception as e:
-            print(f"* Cannot load followers list from '{insta_followers_file}' file: {e}")
+            print_recovery_error(e, context="file_read", summary=f"Cannot load followers list from '{insta_followers_file}': {e}. Correct the file or move it aside to start a new baseline")
+            raise SystemExit(1) from None
         if followers_read:
             followers_old_count = followers_read[0]
             followers_old = followers_read[1]
             followers_baseline_available = True
             if followers_count == followers_old_count:
                 followers = followers_old
-            followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file)), pytz.timezone(LOCAL_TIMEZONE))
+            followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followers_file)), local_timezone())
             update_ui_data(targets={user: {'status': 'Loading Followers'}})
 
             if FOLLOWERS_CHURN_DETECTION:
@@ -10221,7 +14296,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 if csv_file_name:
                     write_csv_entry(csv_file_name, now_local_naive(), "Followers Count", followers_old_count, followers_count)
             except Exception as e:
-                print(f"* Error: {e}")
+                print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
     if ((followers_count != followers_old_count) or (followers_count > 0 and not followers) or FOLLOWERS_CHURN_DETECTION) and not skip_session and not skip_followers and can_view:
         # Fetch followers if count changed, list is empty or detailed logging is enabled
@@ -10240,7 +14315,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             _thread_local.FETCH_TYPE = 'follower'
             followers = fetch_usernames_paginated(
                 bot,
-                get_generator_fn=lambda: profile.get_followers(),
+                get_generator_fn=lambda: follow_list_generator(bot, profile, 'followers', record_exposure=True, stop_event=stop_event),
                 max_per_batch=FOLLOWERS_PER_BATCH,
                 total_limit=FOLLOWER_LIMIT_TO_FETCH,
                 fetch_delay=FOLLOWER_DELAY_PER_BATCH,
@@ -10248,6 +14323,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 estimated_limit=follower_limit,
                 user=user,
                 stop_event=stop_event,
+                identities_counted_at_source=True,
+                record_failures=False,
             )
             _thread_local.FETCH_TYPE = None
             end_time_dl = time.time()
@@ -10255,9 +14332,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             duration_dl = end_time_dl - start_time_dl
             log_activity(f"Finished downloading followers: {len(followers)}, fetched in {display_time(duration_dl)}", user=user)
             followers_count = profile.followers
+            reject_shrinking_username_baseline(followers, followers_count, followers_old, "followers", user)
         except Exception as e:
             close_pbar()
             error_msg = format_error_message(e)
+            note_instagram_failure(error_msg, user, bot)
             print(f"* Error while getting followers: {error_msg}")
             print_fix_hint(error_msg)
             update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
@@ -10279,7 +14358,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 else:
                     print(f"* Followers ({followers_count}) actual ({len(followers)}) saved to file '{insta_followers_file}'")
             except Exception as e:
-                print(f"* Cannot save list of followers to '{insta_followers_file}' file: {e}")
+                print_recovery_error(e, context="file_write", summary=f"Cannot save list of followers to '{insta_followers_file}' file: {e}")
 
     # Compare followers: either count changed OR detailed logging detected a difference
     should_compare_followers = is_complete_username_baseline(followers, followers_count) and followers_baseline_available and ((followers_count != followers_old_count) or (FOLLOWERS_CHURN_DETECTION and followers != followers_old))
@@ -10289,8 +14368,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 user, "followers", followers_old, followers, csv_file_name
             )
 
-            # Send email notification for followers change detected at startup
-            if STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION and (added_followers_list or removed_followers_list):
+            # Alerts both channels about the followers change detected at startup
+            if added_followers_list or removed_followers_list:
                 followers_diff = followers_count - followers_old_count
                 if followers_diff > 0:
                     followers_diff_str = "+" + str(followers_diff)
@@ -10312,18 +14391,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     m_body_html_parts.append(f"<br><br><b>{added_followers_mbody.strip()}</b><br>{added_followers_list_html.strip().replace(chr(10), '<br>')}")
                 m_body_html_parts.append(f"<br><br><i>Note: Change detected at startup</i>{get_cur_ts('<br>Timestamp: ')}")
                 m_body_html = "".join(m_body_html_parts)
-
-                print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-
-            # Send webhook notification for followers change detected at startup
-            if added_followers_list_webhook or removed_followers_list_webhook:
-                webhook_result = send_follower_change_webhook(
-                    user, "followers", followers_old_count, followers_count,
-                    added_followers_list_webhook, removed_followers_list_webhook
-                )
-                if webhook_result != 0 and DEBUG_MODE:
-                    print(f"* Warning: Webhook notification for followers change failed")
+                send_notification_channels("followers", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION, **follower_change_embed(user, "followers", followers_old_count, followers_count, added_followers_list_webhook, removed_followers_list_webhook))
 
     # Establish baseline after first successful fetch if it wasn't available
     if is_complete_username_baseline(followers, followers_count) and not skip_follow_changes and not followers_baseline_available and not skip_session and not skip_followers and can_view:
@@ -10331,17 +14399,17 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
     if os.path.isfile(insta_followings_file):
         try:
-            with open(insta_followings_file, 'r', encoding="utf-8") as f:
-                followings_read = json.load(f)
+            followings_read = read_follow_record(insta_followings_file)
         except Exception as e:
-            print(f"* Cannot load followings list from '{insta_followings_file}' file: {e}")
+            print_recovery_error(e, context="file_read", summary=f"Cannot load followings list from '{insta_followings_file}': {e}. Correct the file or move it aside to start a new baseline")
+            raise SystemExit(1) from None
         if followings_read:
             followings_old_count = followings_read[0]
             followings_old = followings_read[1]
             followings_baseline_available = True
             if followings_count == followings_old_count:
                 followings = followings_old
-            following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file)), pytz.timezone(LOCAL_TIMEZONE))
+            following_mdate = datetime.fromtimestamp(int(os.path.getmtime(insta_followings_file)), local_timezone())
             update_ui_data(targets={user: {'status': 'Loading Followings'}})
 
             if FOLLOWERS_CHURN_DETECTION:
@@ -10369,7 +14437,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 if csv_file_name:
                     write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
             except Exception as e:
-                print(f"* Error: {e}")
+                print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
     if ((followings_count != followings_old_count) or (followings_count > 0 and not followings) or FOLLOWERS_CHURN_DETECTION) and not skip_session and not skip_followings and can_view:
         # Fetch followings if count changed, list is empty or detailed logging is enabled
@@ -10388,7 +14456,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             _thread_local.FETCH_TYPE = 'followee'
             followings = fetch_usernames_paginated(
                 bot,
-                get_generator_fn=lambda: profile.get_followees(),
+                get_generator_fn=lambda: follow_list_generator(bot, profile, 'following', record_exposure=True, stop_event=stop_event),
                 max_per_batch=FOLLOWEES_PER_BATCH,
                 total_limit=FOLLOWEE_LIMIT_TO_FETCH,
                 fetch_delay=FOLLOWEE_DELAY_PER_BATCH,
@@ -10396,6 +14464,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 estimated_limit=followee_limit,
                 user=user,
                 stop_event=stop_event,
+                identities_counted_at_source=True,
+                record_failures=False,
             )
             _thread_local.FETCH_TYPE = None
             end_time_dl = time.time()
@@ -10403,9 +14473,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             duration_dl = end_time_dl - start_time_dl
             log_activity(f"Finished downloading followings: {len(followings)}, fetched in {display_time(duration_dl)}", user=user)
             followings_count = profile.followees
+            reject_shrinking_username_baseline(followings, followings_count, followings_old, "followings", user)
         except Exception as e:
             close_pbar()
             error_msg = format_error_message(e)
+            note_instagram_failure(error_msg, user, bot)
             print(f"* Error while getting followings: {error_msg}")
             print_fix_hint(error_msg)
             update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
@@ -10427,7 +14499,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 else:
                     print(f"* Followings ({followings_count}) actual ({len(followings)}) saved to file '{insta_followings_file}'")
             except Exception as e:
-                print(f"* Cannot save list of followings to '{insta_followings_file}' file: {e}")
+                print_recovery_error(e, context="file_write", summary=f"Cannot save list of followings to '{insta_followings_file}' file: {e}")
 
     should_compare_followings = is_complete_username_baseline(followings, followings_count) and followings_baseline_available and ((followings_count != followings_old_count) or (FOLLOWERS_CHURN_DETECTION and followings != followings_old))
     if should_compare_followings and (followings != followings_old) and not skip_session and not skip_followings and can_view and ((followings and followings_count > 0) or (not followings and followings_count == 0)):
@@ -10436,8 +14508,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 user, "followings", followings_old, followings, csv_file_name
             )
 
-            # Send email notification for followings change detected at startup
-            if STATUS_NOTIFICATION and (added_followings_list or removed_followings_list):
+            # Alerts both channels about the followings change detected at startup
+            if added_followings_list or removed_followings_list:
                 followings_diff = followings_count - followings_old_count
                 if followings_diff > 0:
                     followings_diff_str = "+" + str(followings_diff)
@@ -10459,18 +14531,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     m_body_html_parts.append(f"<br><br><b>{added_followings_mbody.strip()}</b><br>{added_followings_list_html.strip().replace(chr(10), '<br>')}")
                 m_body_html_parts.append(f"<br><br><i>Note: Change detected at startup</i>{get_cur_ts('<br>Timestamp: ')}")
                 m_body_html = "".join(m_body_html_parts)
-
-                print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-
-            # Send webhook notification for followings change detected at startup
-            if added_followings_list_webhook or removed_followings_list_webhook:
-                webhook_result = send_follower_change_webhook(
-                    user, "followings", followings_old_count, followings_count,
-                    added_followings_list_webhook, removed_followings_list_webhook
-                )
-                if webhook_result != 0 and DEBUG_MODE:
-                    print(f"* Warning: Webhook notification for followings change failed")
+                send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, **follower_change_embed(user, "followings", followings_old_count, followings_count, added_followings_list_webhook, removed_followings_list_webhook))
 
     # Establish baseline after first successful fetch if it wasn't available
     if is_complete_username_baseline(followings, followings_count) and not skip_follow_changes and not followings_baseline_available and not skip_session and not skip_followings and can_view:
@@ -10502,7 +14563,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         try:
             detect_changed_profile_picture(user, profile_image_url, profile_pic_file, profile_pic_file_tmp, profile_pic_file_old, PROFILE_PIC_FILE_EMPTY, csv_file_name, r_sleep_time, False, 1)
         except Exception as e:
-            print(f"* Error while processing changed profile picture: {e}")
+            print_recovery_error(e, summary=f"Error while processing changed profile picture: {e}")
 
     # Stories
 
@@ -10554,6 +14615,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             'caption': story_item.caption[:50] + "..." if story_item.caption and len(story_item.caption) > 50 else (story_item.caption or ""),
                             'url': story_item.url,
                             'post_url': f"https://www.instagram.com/stories/{user}/",
+                            'is_story': True,
                             'timestamp': get_short_date_from_ts(local_dt, show_year=True),
                             'timestamp_ts': int(local_dt.timestamp()) if isinstance(local_dt, datetime) else None
                         }
@@ -10613,7 +14675,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             if csv_file_name:
                                 write_csv_entry(csv_file_name, convert_to_local_naive(local_dt), "New Story Item", "", story_type)
                         except Exception as e:
-                            print(f"* Error: {e}")
+                            print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
                         # Update last_story for dashboard (this loop runs from oldest to newest usually, so we update on each)
                         dashboard_media = get_dashboard_media_metadata(story_thumbnail_url, story_image_filename, story_video_filename)
@@ -10625,6 +14687,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             'video_url': dashboard_media['video_url'],
                             'file_path': dashboard_media['file_path'],
                             'post_url': f"https://www.instagram.com/stories/{user}/",
+                            'is_story': True,
                             'timestamp': get_short_date_from_ts(local_dt),
                             'timestamp_ts': int(local_dt.timestamp()) if isinstance(local_dt, datetime) else None
                         }
@@ -10642,8 +14705,13 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
             except Exception as e:
                 error_msg = format_error_message(e)
-                print(f"* Error while processing story items: {error_msg}")
-                print_fix_hint(error_msg)
+                session_flagged = note_authenticated_failure(error_msg, user, bot)
+                print_recovery_error(error_msg, summary=f"Error while processing story items: {error_msg}", with_fix=not session_flagged)
+                # A challenge can arrive on any endpoint, so a flag here alerts and pauses like one on the profile lookup
+                if session_flagged:
+                    if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation, reload_session=False):
+                        return
+                    return _MonitorRestart(csv_file_name, manual_recheck)
                 update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
                 if threading.current_thread() is threading.main_thread():
                     sys.exit(1)
@@ -10715,8 +14783,13 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
         except Exception as e:
             error_msg = format_error_message(e)
-            print(f"* Error while processing posts/reels: {error_msg}")
-            print_fix_hint(error_msg)
+            session_flagged = note_authenticated_failure(error_msg, user, bot)
+            print_recovery_error(error_msg, summary=f"Error while processing posts/reels: {error_msg}", with_fix=not session_flagged)
+            # A challenge can arrive on any endpoint, so a flag here alerts and pauses like one on the profile lookup
+            if session_flagged:
+                if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation, reload_session=False):
+                    return
+                return _MonitorRestart(csv_file_name, manual_recheck)
             update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
             if threading.current_thread() is threading.main_thread():
                 sys.exit(1)
@@ -10736,7 +14809,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
         except Exception as e:
             error_msg = format_error_message(e)
-            print(f"* Error while getting post's likes list / comments list: {error_msg}")
+            print_recovery_error(error_msg, summary=f"Error while getting post's likes list / comments list: {error_msg}")
 
         post_url = f"https://www.instagram.com/{'reel' if last_source == 'reel' else 'p'}/{shortcode}/"
         print(f"* Newest {last_source.lower()} for user {user}:\n")
@@ -10774,7 +14847,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 if save_pic_video(video_url, video_filename, highestinsta_ts):
                     print(f"{last_source.capitalize()} video saved for {user} to '{video_filename}'")
                 else:
-                    print(f"Error saving {last_source.lower()} video !")
+                    print_recovery_error(f"Error saving {last_source.lower()} video !", context="file_write")
 
         if DOWNLOAD_THUMBNAILS and thumbnail_url:
             if highestinsta_dt:
@@ -10825,7 +14898,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             leaked_baseline = fetch_leaked_collab_posts(user, bot)
         except Exception as e:
             leaked_baseline = []
-            debug_print(f"[{user}] initial collab probe failed: {format_error_message(e)}")
+            debug_print("Collab probe", user=user, stage="initial", outcome="failed", error=format_error_message(e))
         if leaked_baseline:
             highest_collab_ts_old = max(p.get("ts", 0) for p in leaked_baseline)
             latest_collab = max(leaked_baseline, key=lambda item: item.get("ts", 0))
@@ -10914,7 +14987,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
     if HOURS_VERBOSE or DEBUG_MODE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE):
         sleep_message(r_sleep_time, user)
-        debug_print(f"Next check scheduled for: {get_date_from_ts(NEXT_CHECK_TIME)}")
+        debug_print("Next check scheduled", next=get_date_from_ts(NEXT_CHECK_TIME))
 
     # Use interruptible sleep if stop_event is provided (allows immediate stop)
     if stop_event or DEBUG_MODE or WEB_DASHBOARD_ENABLED:
@@ -10957,13 +15030,24 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         if interruptible_sleep(r_sleep_time, stop_event):
             return
 
-    alive_counter = 0
+    # The initial snapshot is what the first check compares against, so the window a change is reported in starts here
+    LAST_CHECK_TS = int(time.time())
+
+    alive_since = int(time.time())
+    mark_monitoring_started()
 
     # Primary loop
     consecutive_main_errors = 0
     consecutive_behuman_errors = 0
+    behuman_failed_since = 0
+    error_alert = ErrorAlertState()
+    behuman_alert = ErrorAlertState()
+    recovery_hint_tracker = RecoveryHintTracker()
+    outage = OutageReporter()
     debug_print("Entering primary loop")
     while True:
+        reports_before_check = REPORTS_PRINTED
+
         # Check stop event at the start of each loop iteration
         if stop_event and stop_event.is_set():
             print(f"* Monitoring stopped for {user}\n")
@@ -10974,6 +15058,16 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         if current_refresh_generation != session_refresh_generation:
             log_activity("Live settings changed, rebuilding monitor context", user=user)
             return _MonitorRestart(get_target_paths(user)[0], manual_recheck_active)
+
+        # One account-level action stops every target, not just the one that hit it. The check is made here
+        # rather than once at startup so a flag raised by another thread halts this one on its next cycle
+        breaker = circuit_breaker_state()
+        if breaker:
+            update_ui_data(targets={user: {'status': 'Stopped (breaker)'}})
+            print(f"* Monitoring paused for {user}: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')})")
+            print(f"* {breaker_recovery_hint(breaker.get('failure_class', ''))}\n")
+            print_cur_ts()
+            return
 
         skip_session = SKIP_SESSION
         skip_followers = SKIP_FOLLOWERS
@@ -11004,14 +15098,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
         # Debug/Verbose: show check start
         ip_str = ""
-        if PROXY_ENABLED and (VERBOSE_MODE or DEBUG_MODE):
+        if PROXY_ENABLED and DEBUG_MODE:
             ipaddr = get_ip_address(stop_event=stop_event)
             ip_str = f" with proxy IP address of {ipaddr}"
-        if VERBOSE_MODE:
-            print(f"* Starting check #{CHECK_COUNT} for {user} ...{ip_str}")
-            print_cur_ts(newline=True)
-        elif DEBUG_MODE:
-            debug_print(f"Starting check #{CHECK_COUNT}{ip_str}")
+        if DEBUG_MODE:
+            debug_print("Starting check", check=f"#{CHECK_COUNT}", user=user, proxy_ip=ipaddr if ip_str else None)
 
         cur_h = now_local_naive().strftime("%H")
 
@@ -11029,7 +15120,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 print_cur_ts(newline=True)
                 log_activity(f"Fetching updates (hour: {int(cur_h)})", user=user)
 
-            debug_print(f"Fetching profile data from Instagram API...")
+            debug_print("Fetching profile data", source="Instagram API")
 
             try:
                 profile = profile_from_username_resilient(bot, user)
@@ -11043,11 +15134,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 can_view = (not is_private) or followed_by_viewer
                 posts_count = profile.mediacount
 
-                debug_print(f"Profile loaded: followers={followers_count}, following={followings_count}, posts={posts_count}")
-                debug_print(f"Previous load : followers={followers_old_count}, following={followings_old_count}, posts={posts_count_old}")
-                if not skip_session and can_view:
-                    reels_count = get_total_reels_count(user, bot, skip_session)
-                    debug_print(f"Reels count: {reels_count}")
+                debug_print("Profile loaded", followers=followers_count, following=followings_count, posts=posts_count)
+                debug_print("Previous load", followers=followers_old_count, following=followings_old_count, posts=posts_count_old)
+                if not skip_session and can_view and FETCH_REELS:
+                    reels_count = get_total_reels_count(user, bot, skip_session, posts_count)
+                    debug_print("Reels count", value=reels_count)
 
                 if not is_private:
                     if bot.context.is_logged_in:
@@ -11060,7 +15151,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 else:
                     has_story = False
 
-                debug_print(f"Story available: {has_story}")
+                debug_print("Story availability", value=has_story)
 
                 profile_image_url = profile.profile_pic_url_no_iphone
                 # Prepare target data for both Dashboard and Web Dashboard
@@ -11115,94 +15206,51 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             except Exception as e:
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
                 error_msg = format_error_message(e)
-                print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
+                advice = classify_recovery_error(error_msg, is_logged_in=bool(SESSION_USERNAME) and not skip_session)
+
+                # A failure that has not changed is left to the liveness cadence rather than repeated every check
+                outage_outcome = outage.failed(advice)
+                if outage_outcome == "full":
+                    print(f"* Error: {error_msg} (retrying in {display_time(r_sleep_time)})")
+                elif outage_outcome == "changed":
+                    print_outage_change(user, advice)
+                elif outage_outcome == "reminder":
+                    print_outage_liveness(user, advice, outage.since, outage.failures, close=False)
                 log_activity(f"Error: {error_msg}", user=user)
-                debug_print(f"Full exception: {type(e).__name__}: {e}")
+                debug_print("Full exception", outcome="failed", error=f"{type(e).__name__}: {e}")
 
                 consecutive_main_errors += 1
+                fix_hint_printed = False
 
                 # A flagged session/IP is terminal and operator-actionable, so detect it up front to alert immediately and skip the generic threshold alert below
-                session_flagged = is_session_flagged(error_msg, bot)
+                session_flagged = note_authenticated_failure(error_msg, user, bot)
 
                 if not session_flagged:
-                    print_fix_hint(error_msg)
-                    notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
+                    if outage_outcome == "full":
+                        fix_hint_printed = print_fix_hint(error_msg, recovery_hint_tracker)
+                    notify_monitoring_error(user, advice, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
 
                 # Handle session recovery for automated checks/challenge errors
                 if session_flagged:
-                    err_str = f"Session account '{SESSION_USERNAME or '<anonymous>'}' has been flagged. Log into Instagram and clear warnings."
-                    update_ui_data(targets={user: {'status': f'Paused: {err_str}'}})
-                    print(f"* Error: {err_str}")
-
-                    # A flag is terminal for every target, so alert the operator immediately regardless of ERROR_FAILURE_THRESHOLD
-                    notify_session_flagged(user, err_str, error_msg)
-
-                    # Pause all other threads once the session account is flagged.
-                    if WEB_DASHBOARD_ENABLED or DASHBOARD_ENABLED:
-                        for other_user in list(WEB_DASHBOARD_STOP_EVENTS.keys()):
-                            if other_user != user:
-                                log_activity(err_str, user=other_user)
-                                update_check_times(next_time="Paused", user=other_user, increment_count=False)
-                                stop_monitoring_for_target(other_user)
-                                update_ui_data(targets={other_user: {'status': f'Paused: {err_str}'}})
-                        # Update next_check status for this thread
-                        NEXT_CHECK_TIME = None
-                        NEXT_CHECK_DISPLAY = "Paused"
-                        update_check_times(next_time="Paused", user=user, increment_count=False)
-                        log_activity("Stopping monitoring", user=user)
-                    print_cur_ts(newline=True)
-
-                    # Without the Web Dashboard there is no in-place session recovery so exit since the flagged session is dead for every target
-                    if not WEB_DASHBOARD_ENABLED:
-                        signal_handler(signal.SIGINT, None, message='')
-
-                    # Web Dashboard can re-import a session and resume, so wait for that or a stop event
-                    while not (stop_event and stop_event.is_set()):
-                        if wait_for_session_refresh(session_refresh_generation, timeout=1.0) != session_refresh_generation:
-                            # Session refreshed!
-                            log_activity("Session/Mode change detected, resuming monitoring...", user=user)
-                            print(f"* Session/Mode change detected for {user}, resuming...")
-                            print_cur_ts(newline=True)
-
-                            # Refresh configuration from global settings
-                            skip_session = SKIP_SESSION
-                            skip_followers = SKIP_FOLLOWERS
-                            skip_followings = SKIP_FOLLOWINGS
-                            skip_getting_story_details = SKIP_GETTING_STORY_DETAILS
-                            skip_getting_posts_details = SKIP_GETTING_POSTS_DETAILS
-                            get_more_post_details = GET_MORE_POST_DETAILS
-
-                            # Reload session into bot context or clear in No-login mode
-                            with SESSION_FILE_LOCK:
-                                try:
-                                    if skip_session:
-                                        # Clear session context for No-login mode
-                                        bot.context._session.cookies.clear()
-                                        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-                                            WEB_DASHBOARD_DATA['session']['active'] = False
-                                        log_activity("Session cleared for No-login mode", user=user)
-                                    else:
-                                        bot.load_session_from_file(SESSION_USERNAME)
-                                        with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
-                                            WEB_DASHBOARD_DATA['session']['active'] = True
-                                        log_activity("Session reloaded successfully", user=user)
-                                except Exception as se:
-                                    log_activity(f"Error updating session state: {se}", user=user)
-                            # Break inner loop to retry profile fetch
-                            break
-
-                    if stop_event and stop_event.is_set():
+                    if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation):
                         return
                     continue  # Retry the main loop
 
-                if 'Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e):
-                    print("* Session might not be valid anymore! Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page.")
+                # A redirect or a rejected request usually means the session, so name it when the classifier had no fix of its own
+                # A generic fix is not an answer for a failure whose text points at the session, so the specific advice still follows it
+                if (not fix_hint_printed or advice.code == "unknown") and outage_outcome == "full" and ('Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e)):
+                    print(colorize("info", f"To fix: The saved session may no longer be valid. Re-import it with '{session_recovery_command()}'{session_recovery_browser_hint()} or from the Web Dashboard Session page"))
 
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
                 r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
                 update_check_times(next_time=next_check_val, user=user, increment_count=False)
-                print_cur_ts(newline=True)
+                # The reminder closes last so the delivery lines it carries stay inside the report rather than
+                # landing under the separator that ended it
+                if outage_outcome == "reminder":
+                    print_cur_ts("Liveness check, timestamp:\t")
+                elif outage_outcome in ("full", "changed"):
+                    print_cur_ts(newline=True)
                 if interruptible_sleep(r_sleep_time, stop_event):
                     return
                 continue
@@ -11211,9 +15259,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 r_sleep_time = randomize_number(INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH)
                 consecutive_main_errors += 1
                 error_msg = f"HTTP redirect while checking {user}: {get_thread_output()}"
-                print("* Session might not be valid anymore! Re-import it with --import-browser-session --browser firefox or from the Web Dashboard Session page.")
-                print(f"Retrying in {display_time(r_sleep_time)}")
-                notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
+                redirect_advice = classify_recovery_error(error_msg, is_logged_in=bool(SESSION_USERNAME) and not skip_session)
+                outage.failed(redirect_advice)
+                print(f"* Error: The saved Instagram session may no longer be valid (retrying in {display_time(r_sleep_time)})")
+                print(colorize("info", f"To fix: Re-import the session with '{session_recovery_command()}'{session_recovery_browser_hint()} or from the Web Dashboard Session page"))
+                notify_monitoring_error(user, redirect_advice, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
                 r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
@@ -11245,7 +15295,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             if csv_file_name:
                                 write_csv_entry(csv_file_name, now_local_naive(), "Followings Count", followings_old_count, followings_count)
                         except Exception as e:
-                            print(f"* Error: {e}")
+                            print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
                 added_followings_list = ""
                 removed_followings_list = ""
@@ -11267,7 +15317,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         _thread_local.FETCH_TYPE = 'followee'
                         followings = fetch_usernames_paginated(
                             bot,
-                            get_generator_fn=lambda bound_profile=profile: bound_profile.get_followees(),
+                            get_generator_fn=lambda bound_profile=profile: follow_list_generator(bot, bound_profile, 'following', record_exposure=True, stop_event=stop_event),
                             max_per_batch=FOLLOWEES_PER_BATCH,
                             total_limit=FOLLOWEE_LIMIT_TO_FETCH,
                             fetch_delay=FOLLOWEE_DELAY_PER_BATCH,
@@ -11275,6 +15325,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             estimated_limit=followee_limit,
                             user=user,
                             stop_event=stop_event,
+                            identities_counted_at_source=True,
+                            record_failures=False,
                         )
                         _thread_local.FETCH_TYPE = None
                         end_time_dl = time.time()
@@ -11284,6 +15336,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         # Refresh profile to get current reported counts for comparison
                         profile = profile_from_username_resilient(bot, user)
                         followings_count = profile.followees
+                        reject_shrinking_username_baseline(followings, followings_count, followings_old, "followings", user)
                         followers_count_reported = profile.followers
                         if not FOLLOWERS_CHURN_DETECTION:
                             show_follow_info(followers_count_reported, len(followers), followings_count, len(followings))
@@ -11301,7 +15354,13 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         close_pbar()
                         followings = followings_old
                         error_msg = format_error_message(e)
-                        print(f"* Error while processing followings: {error_msg}")
+                        session_flagged = note_authenticated_failure(error_msg, user, bot)
+                        print_recovery_error(error_msg, summary=f"Error while processing followings: {error_msg}", with_fix=not session_flagged)
+                        # A challenge can arrive on any endpoint, so a flag here pauses or exits like one on the profile lookup
+                        if session_flagged:
+                            if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation):
+                                return
+                            continue
 
                     if not getattr(followings, 'complete', False) or (not followings and followings_count > 0):
                         followings = followings_old
@@ -11325,7 +15384,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                 if not skip_follow_changes:
                     notify_followings_change = should_notify_follow_change(followings_count != followings_old_count, added_followings_list, removed_followings_list, followings_list_comparison_complete)
-                    if STATUS_NOTIFICATION and notify_followings_change:
+                    if notify_followings_change:
                         if followings_count != followings_old_count:
                             m_subject = f"Instagram user {user} followings number has changed! ({followings_diff_str}, {followings_old_count} -> {followings_count})"
                         else:
@@ -11333,13 +15392,12 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                         if not skip_session and not skip_followings and can_view:
                             if followings_count != followings_old_count:
-                                m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
                             else:
-                                m_body = f"Followings list changed for user {user} (count: {followings_count})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                m_body = f"Followings list changed for user {user} (count: {followings_count})\n{removed_followings_mbody}{removed_followings_list}{added_followings_mbody}{added_followings_list}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
                         else:
-                            m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                            m_body = f"Followings number changed by user {user} from {followings_old_count} to {followings_count} ({followings_diff_str})\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
 
-                        print(f"* Sending email notification to {RECEIVER_EMAIL}")
                         if not skip_session and not skip_followings and can_view:
                             if followings_count != followings_old_count:
                                 m_body_html_parts = [f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})"]
@@ -11350,24 +15408,15 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                                 m_body_html_parts.append(f"<br><br><b>{removed_followings_mbody.strip()}</b><br>{removed_followings_list_html.strip().replace(chr(10), '<br>')}")
                             if added_followings_list_html:
                                 m_body_html_parts.append(f"<br><br><b>{added_followings_mbody.strip()}</b><br>{added_followings_list_html.strip().replace(chr(10), '<br>')}")
-                            m_body_html_parts.append(f"<br><br>Check interval: <b>{display_time(r_sleep_time) if r_sleep_time else 'N/A'}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}")
+                            m_body_html_parts.append(f"<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}")
                             m_body_html = "".join(m_body_html_parts)
                         else:
-                            m_body_html = f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-
-                    # Send webhook notification for followings change (independent of email notifications) only if something changed
-                    if notify_followings_change:
-                        webhook_result = send_follower_change_webhook(
-                            user, "followings", followings_old_count, followings_count,
-                            added_followings_list_webhook, removed_followings_list_webhook
-                        )
-                        if webhook_result != 0 and DEBUG_MODE:
-                            print(f"* Warning: Webhook notification for followings change failed")
+                            m_body_html = f"Followings number changed by user <b>{user}</b> from <b>{followings_old_count}</b> to <b>{followings_count}</b> ({followings_diff_str})<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
+                        send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, **follower_change_embed(user, "followings", followings_old_count, followings_count, added_followings_list_webhook, removed_followings_list_webhook))
 
                 followings_old_count = followings_count
 
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
 
             if int(followers_count) != int(followers_old_count) or FOLLOWERS_CHURN_DETECTION:
@@ -11393,7 +15442,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             if csv_file_name:
                                 write_csv_entry(csv_file_name, now_local_naive(), "Followers Count", followers_old_count, followers_count)
                         except Exception as e:
-                            print(f"* Error: {e}")
+                            print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
                 added_followers_list = ""
                 removed_followers_list = ""
@@ -11415,7 +15464,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         _thread_local.FETCH_TYPE = 'follower'
                         followers = fetch_usernames_paginated(
                             bot,
-                            get_generator_fn=lambda bound_profile=profile: bound_profile.get_followers(),
+                            get_generator_fn=lambda bound_profile=profile: follow_list_generator(bot, bound_profile, 'followers', record_exposure=True, stop_event=stop_event),
                             max_per_batch=FOLLOWERS_PER_BATCH,
                             total_limit=FOLLOWER_LIMIT_TO_FETCH,
                             fetch_delay=FOLLOWER_DELAY_PER_BATCH,
@@ -11423,6 +15472,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             estimated_limit=follower_limit,
                             user=user,
                             stop_event=stop_event,
+                            identities_counted_at_source=True,
+                            record_failures=False,
                         )
                         _thread_local.FETCH_TYPE = None
                         end_time_dl = time.time()
@@ -11432,6 +15483,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         # Refresh profile to get current reported counts for comparison
                         profile = profile_from_username_resilient(bot, user)
                         followers_count = profile.followers
+                        reject_shrinking_username_baseline(followers, followers_count, followers_old, "followers", user)
                         followings_count_reported = profile.followees
                         if not FOLLOWERS_CHURN_DETECTION:
                             show_follow_info(followers_count, len(followers), followings_count_reported, len(followings))
@@ -11449,7 +15501,13 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         close_pbar()
                         followers = followers_old
                         error_msg = format_error_message(e)
-                        print(f"* Error while processing followers: {error_msg}")
+                        session_flagged = note_authenticated_failure(error_msg, user, bot)
+                        print_recovery_error(error_msg, summary=f"Error while processing followers: {error_msg}", with_fix=not session_flagged)
+                        # A challenge can arrive on any endpoint, so a flag here pauses or exits like one on the profile lookup
+                        if session_flagged:
+                            if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation):
+                                return
+                            continue
 
                     if not getattr(followers, 'complete', False) or (not followers and followers_count > 0):
                         followers = followers_old
@@ -11473,7 +15531,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                 if not skip_follow_changes:
                     notify_followers_change = should_notify_follow_change(followers_count != followers_old_count, added_followers_list, removed_followers_list, followers_list_comparison_complete)
-                    if STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION and notify_followers_change:
+                    if notify_followers_change:
                         if followers_count != followers_old_count:
                             m_subject = f"Instagram user {user} followers number has changed! ({followers_diff_str}, {followers_old_count} -> {followers_count})"
                         else:
@@ -11481,13 +15539,12 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                         if not skip_session and not skip_followers and can_view:
                             if followers_count != followers_old_count:
-                                m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
                             else:
-                                m_body = f"Followers list changed for user {user} (count: {followers_count})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                m_body = f"Followers list changed for user {user} (count: {followers_count})\n{removed_followers_mbody}{removed_followers_list}{added_followers_mbody}{added_followers_list}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
                         else:
-                            m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                            m_body = f"Followers number changed for user {user} from {followers_old_count} to {followers_count} ({followers_diff_str})\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
 
-                        print(f"* Sending email notification to {RECEIVER_EMAIL}")
                         if not skip_session and not skip_followers and can_view:
                             if followers_count != followers_old_count:
                                 m_body_html_parts = [f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})"]
@@ -11498,24 +15555,15 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                                 m_body_html_parts.append(f"<br><br><b>{removed_followers_mbody.strip()}</b><br>{removed_followers_list_html.strip().replace(chr(10), '<br>')}")
                             if added_followers_list_html:
                                 m_body_html_parts.append(f"<br><br><b>{added_followers_mbody.strip()}</b><br>{added_followers_list_html.strip().replace(chr(10), '<br>')}")
-                            m_body_html_parts.append(f"<br><br>Check interval: <b>{display_time(r_sleep_time) if r_sleep_time else 'N/A'}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}")
+                            m_body_html_parts.append(f"<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}")
                             m_body_html = "".join(m_body_html_parts)
                         else:
-                            m_body_html = f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-
-                    # Send webhook notification for followers change (independent of email notifications) only if something changed
-                    if notify_followers_change:
-                        webhook_result = send_follower_change_webhook(
-                            user, "followers", followers_old_count, followers_count,
-                            added_followers_list_webhook, removed_followers_list_webhook
-                        )
-                        if webhook_result != 0 and DEBUG_MODE:
-                            print(f"* Warning: Webhook notification for followers change failed")
+                            m_body_html = f"Followers number changed for user <b>{user}</b> from <b>{followers_old_count}</b> to <b>{followers_count}</b> ({followers_diff_str})<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
+                        send_notification_channels("followers", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION and FOLLOWERS_NOTIFICATION, **follower_change_embed(user, "followers", followers_old_count, followers_count, added_followers_list_webhook, removed_followers_list_webhook))
 
                 followers_old_count = followers_count
 
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
 
             # Profile pic
@@ -11525,7 +15573,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 try:
                     detect_changed_profile_picture(user, profile_image_url, profile_pic_file, profile_pic_file_tmp, profile_pic_file_old, PROFILE_PIC_FILE_EMPTY, csv_file_name, r_sleep_time, STATUS_NOTIFICATION, 2)
                 except Exception as e:
-                    print(f"* Error while processing changed profile picture: {e}")
+                    print_recovery_error(e, summary=f"Error while processing changed profile picture: {e}")
 
             if bio != bio_old:
                 print(f"* Bio changed for user {user} !\n")
@@ -11540,32 +15588,21 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "Bio Changed", bio_old, bio)
                 except Exception as e:
-                    print(f"* Error: {e}")
+                    print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
-                if STATUS_NOTIFICATION:
-                    m_subject = f"Instagram user {user} bio has changed!"
+                m_subject = f"Instagram user {user} bio has changed!"
 
-                    m_body = f"Instagram user {user} bio has changed\n\nOld bio:\n\n{bio_old}\n\nNew bio:\n\n{bio}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"Instagram user <b>{user}</b> bio has changed<br><br><b>Old bio:</b><br><br>{escape(str(bio_old)).replace(chr(10), '<br>')}<br><br><b>New bio:</b><br><br>{escape(str(bio)).replace(chr(10), '<br>')}<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                m_body = f"Instagram user {user} bio has changed\n\nOld bio:\n\n{bio_old}\n\nNew bio:\n\n{bio}\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                m_body_html = f"Instagram user <b>{user}</b> bio has changed<br><br><b>Old bio:</b><br><br>{escape(str(bio_old)).replace(chr(10), '<br>')}<br><br><b>New bio:</b><br><br>{escape(str(bio)).replace(chr(10), '<br>')}<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
-                # Send webhook notification for bio change
-                webhook_result = send_webhook(
-                    f"📝 {user} Bio Changed",
-                    f"User **{user}** has updated their bio",
-                    color=0x9b59b6,  # Purple
-                    fields=[
-                        {"name": "Old Bio", "value": (bio_old[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(bio_old) > WEBHOOK_FIELD_VALUE_LIMIT else bio_old or "(empty)"},
-                        {"name": "New Bio", "value": (bio[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(bio) > WEBHOOK_FIELD_VALUE_LIMIT else bio or "(empty)"},
-                    ],
-                    notification_type="status"
-                )
-                if webhook_result != 0 and DEBUG_MODE:
-                    print(f"* Warning: Webhook notification for bio change failed")
+                bio_webhook_fields = [
+                    {"name": "Old Bio", "value": (bio_old[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(bio_old) > WEBHOOK_FIELD_VALUE_LIMIT else bio_old or "(empty)"},
+                    {"name": "New Bio", "value": (bio[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(bio) > WEBHOOK_FIELD_VALUE_LIMIT else bio or "(empty)"},
+                ]
+                send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"📝 {user} Bio Changed", webhook_description=f"User **{user}** has updated their bio", webhook_color=0x9b59b6, webhook_fields=bio_webhook_fields)
 
                 bio_old = bio
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
 
             if is_private != is_private_old:
@@ -11584,33 +15621,22 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "Profile Visibility", profile_visibility_old, profile_visibility)
                 except Exception as e:
-                    print(f"* Error: {e}")
+                    print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
-                if STATUS_NOTIFICATION:
-                    m_subject = f"Instagram user {user} profile visibility has changed to {profile_visibility} !"
+                m_subject = f"Instagram user {user} profile visibility has changed to {profile_visibility} !"
 
-                    m_body = f"Instagram user {user} profile visibility has changed to {profile_visibility}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"Instagram user <b>{user}</b> profile visibility has changed to <b>{profile_visibility}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                m_body = f"Instagram user {user} profile visibility has changed to {profile_visibility}\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                m_body_html = f"Instagram user <b>{user}</b> profile visibility has changed to <b>{profile_visibility}</b><br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
-                # Send webhook notification for visibility change
                 emoji = "🔒" if is_private else "🔓"
-                webhook_result = send_webhook(
-                    f"{emoji} {user} Profile Visibility Changed",
-                    f"User **{user}** profile is now **{profile_visibility}**",
-                    color=0xe67e22,  # Orange
-                    fields=[
-                        {"name": "Old", "value": f"**{profile_visibility_old}**", "inline": True},
-                        {"name": "New", "value": f"**{profile_visibility}**", "inline": True},
-                    ],
-                    notification_type="status"
-                )
-                if webhook_result != 0 and DEBUG_MODE:
-                    print(f"* Warning: Webhook notification for visibility change failed")
+                visibility_webhook_fields = [
+                    {"name": "Old", "value": f"**{profile_visibility_old}**", "inline": True},
+                    {"name": "New", "value": f"**{profile_visibility}**", "inline": True},
+                ]
+                send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"{emoji} {user} Profile Visibility Changed", webhook_description=f"User **{user}** profile is now **{profile_visibility}**", webhook_color=0xe67e22, webhook_fields=visibility_webhook_fields)
 
                 is_private_old = is_private
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
 
             if followed_by_viewer != followed_by_viewer_old:
@@ -11621,27 +15647,18 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "Followed By Viewer", followed_by_viewer_old, followed_by_viewer)
                 except Exception as e:
-                    print(f"* Error: {e}")
+                    print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
-                if STATUS_NOTIFICATION:
-                    m_subject = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user} !"
+                m_subject = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user} !"
 
-                    m_body = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"Your account <b>{'started following' if followed_by_viewer else 'stopped following'}</b> the user <b>{user}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                m_body = f"Your account {'started following' if followed_by_viewer else 'stopped following'} the user {user}\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                m_body_html = f"Your account <b>{'started following' if followed_by_viewer else 'stopped following'}</b> the user <b>{user}</b><br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
-                # Send webhook notification for following status change
                 emoji = "✅" if followed_by_viewer else "❌"
-                send_webhook(
-                    f"{emoji} {user} Following Status Changed",
-                    f"Your account {'started following' if followed_by_viewer else 'stopped following'} **{user}**",
-                    color=0x95a5a6,  # Gray
-                    notification_type="status"
-                )
+                send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"{emoji} {user} Following Status Changed", webhook_description=f"Your account {'started following' if followed_by_viewer else 'stopped following'} **{user}**", webhook_color=0x95a5a6)
 
                 followed_by_viewer_old = followed_by_viewer
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
 
             if has_story and not story_flag:
@@ -11654,30 +15671,16 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "New Story", "", "")
                 except Exception as e:
-                    print(f"* Error: {e}")
+                    print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
-                if STATUS_NOTIFICATION:
-                    m_subject = f"Instagram user {user} has a new story!"
+                m_subject = f"Instagram user {user} has a new story!"
 
-                    m_body = f"Instagram user {user} has a new story\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"Instagram user <b>{user}</b> has a new story<br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-                    print(f"* Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                m_body = f"Instagram user {user} has a new story\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                m_body_html = f"Instagram user <b>{user}</b> has a new story<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
-                # Send webhook notification for new story
-                webhook_result = send_webhook(
-                    f"📖 {user} New Story",
-                    f"User **{user}** has posted a new story!",
-                    color=0xe91e63,  # Pink
-                    fields=[
-                        {"name": "Profile URL", "value": f"https://www.instagram.com/{user}/", "inline": True},
-                    ],
-                    notification_type="status"
-                )
-                if webhook_result != 0 and DEBUG_MODE:
-                    print(f"* Warning: Webhook notification for new story failed")
+                send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, webhook_title=f"📖 {user} New Story", webhook_description=f"User **{user}** has posted a new story!", webhook_color=0xe91e63, webhook_fields=[{"name": "Profile URL", "value": f"https://www.instagram.com/{user}/", "inline": True}])
 
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
 
             if not has_story and story_flag:
@@ -11685,7 +15688,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 stories_count = 0
                 print(f"* Story for user {user} disappeared !")
                 log_activity("Story disappeared", user=user)
-                print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
                 story_flag = False
 
@@ -11789,11 +15792,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                                 if csv_file_name:
                                     write_csv_entry(csv_file_name, convert_to_local_naive(local_dt), "New Story Item", "", story_type)
                             except Exception as e:
-                                print(f"* Error: {e}")
+                                print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
                             send_story_item_notifications(user, story_type, local_ts, expire_ts, story_mentions, story_hashtags, story_caption, r_sleep_time, story_thumbnail_url, story_image_filename)
 
-                            print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                            print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                             print_cur_ts()
 
                             # Update web dashboard with the new story
@@ -11820,8 +15823,14 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
                 except Exception as e:
                     error_msg = format_error_message(e)
-                    print(f"* Error while processing story items: {error_msg}")
+                    session_flagged = note_authenticated_failure(error_msg, user, bot)
+                    print_recovery_error(error_msg, summary=f"Error while processing story items: {error_msg}", with_fix=not session_flagged)
                     print_cur_ts(newline=True)
+                    # A challenge can arrive on any endpoint, so a flag here pauses or exits like one on the profile lookup
+                    if session_flagged:
+                        if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation):
+                            return
+                        continue
 
             new_post = False
 
@@ -11909,11 +15918,30 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     r_sleep_time, next_check_val = compute_next_check_with_hours_range(now, r_sleep_time)
                     error_msg = format_error_message(e)
                     consecutive_main_errors += 1
-                    print(f"* Error, retrying in {display_time(r_sleep_time)}: {error_msg}")
-                    print_fix_hint(error_msg)
-                    notify_monitoring_error(user, error_msg, consecutive_main_errors, r_sleep_time)
+                    # A flag is terminal and operator-actionable, so it replaces the generic outage report and alert
+                    if note_authenticated_failure(error_msg, user, bot):
+                        if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation):
+                            return
+                        continue
+                    posts_advice = classify_recovery_error(error_msg, is_logged_in=bool(SESSION_USERNAME) and not skip_session)
 
-                    print_cur_ts()
+                    # A failure that has not changed is left to the liveness cadence rather than repeated every check
+                    outage_outcome = outage.failed(posts_advice)
+                    if outage_outcome == "full":
+                        print(f"* Error: {error_msg} (retrying in {display_time(r_sleep_time)})")
+                        print_fix_hint(error_msg, recovery_hint_tracker)
+                    elif outage_outcome == "changed":
+                        print_outage_change(user, posts_advice)
+                    elif outage_outcome == "reminder":
+                        print_outage_liveness(user, posts_advice, outage.since, outage.failures, close=False)
+                    notify_monitoring_error(user, posts_advice, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
+
+                    # The reminder closes last so the delivery lines it carries stay inside the report rather
+                    # than landing under the separator that ended it
+                    if outage_outcome == "reminder":
+                        print_cur_ts("Liveness check, timestamp:\t")
+                    elif outage_outcome in ("full", "changed"):
+                        print_cur_ts()
 
                     update_check_times(next_time=next_check_val, user=user, increment_count=False)
                     if interruptible_sleep(r_sleep_time, stop_event):
@@ -11932,7 +15960,13 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                                 post_comments_list += "\n[ " + get_short_date_from_ts(comment_created_at) + " - " + "https://www.instagram.com/" + comment.owner.username + "/ ]\n" + comment.text + "\n"
                 except Exception as e:
                     error_msg = format_error_message(e)
-                    print(f"* Error while getting post's likes list / comments list: {error_msg}")
+                    session_flagged = note_authenticated_failure(error_msg, user, bot)
+                    print_recovery_error(error_msg, summary=f"Error while getting post's likes list / comments list: {error_msg}", with_fix=not session_flagged)
+                    # A challenge can arrive on any endpoint, so a flag here pauses or exits like one on the profile lookup
+                    if session_flagged:
+                        if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation):
+                            return
+                        continue
 
                 video_filename = None
                 image_filename = None
@@ -11985,7 +16019,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             if save_pic_video(video_url, video_filename, highestinsta_ts):
                                 print(f"{last_source.capitalize()} video saved for {user} to '{video_filename}'")
                             else:
-                                print(f"Error saving {last_source.lower()} video !")
+                                print_recovery_error(f"Error saving {last_source.lower()} video !", context="file_write")
 
                     m_body_html_pic_saved_text = ""
                     if DOWNLOAD_THUMBNAILS:
@@ -12011,23 +16045,15 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         if csv_file_name:
                             write_csv_entry(csv_file_name, convert_to_local_naive(highestinsta_dt), f"New {last_source.capitalize()}", "", pcaption)
                     except Exception as e:
-                        print(f"* Error: {e}")
+                        print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
-                    if STATUS_NOTIFICATION:
-                        m_subject = f"Instagram user {user} has a new {last_source.lower()} - {get_short_date_from_ts(highestinsta_dt)} (after {calculate_timespan(highestinsta_dt, highestinsta_dt_old, show_seconds=False)} - {get_short_date_from_ts(highestinsta_dt_old)})"
+                    m_subject = f"Instagram user {user} has a new {last_source.lower()} - {get_short_date_from_ts(highestinsta_dt)} (after {calculate_timespan(highestinsta_dt, highestinsta_dt_old, show_seconds=False)} - {get_short_date_from_ts(highestinsta_dt_old)})"
 
-                        m_body = f"Instagram user {user} has a new {last_source.lower()} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n\nDate: {get_date_from_ts(highestinsta_dt)}\n{last_source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nLikes: {likes}\nComments: {comments}\nTagged: {tagged_users}{location_mbody}{location_mbody_str}\nDescription:\n\n{caption}\n{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{post_comments_list}\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        safe_post_url = escape(post_url, quote=True)
-                        safe_profile_url = escape(f"https://www.instagram.com/{insta_username}/", quote=True)
-                        m_body_html = f"Instagram user <b>{user}</b> has a new {last_source.lower()} after <b>{calculate_timespan(highestinsta_dt, highestinsta_dt_old)}</b> ({get_date_from_ts(highestinsta_dt_old)}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(highestinsta_dt)}</b><br>{last_source.capitalize()} URL: <a href=\"{safe_post_url}\">{safe_post_url}</a><br>Profile URL: <a href=\"{safe_profile_url}\">{safe_profile_url}</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {escape(str(tagged_users))}{location_mbody_html}{escape(str(location_mbody_str))}<br>Description:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{escape(likes_users_list)}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                    m_body = f"Instagram user {user} has a new {last_source.lower()} after {calculate_timespan(highestinsta_dt, highestinsta_dt_old)} ({get_date_from_ts(highestinsta_dt_old)})\n\nDate: {get_date_from_ts(highestinsta_dt)}\n{last_source.capitalize()} URL: {post_url}\nProfile URL: https://www.instagram.com/{insta_username}/\nLikes: {likes}\nComments: {comments}\nTagged: {tagged_users}{location_mbody}{location_mbody_str}\nDescription:\n\n{caption}\n{likes_users_list_mbody}{likes_users_list}{post_comments_list_mbody}{post_comments_list}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    safe_post_url = escape(post_url, quote=True)
+                    safe_profile_url = escape(f"https://www.instagram.com/{insta_username}/", quote=True)
+                    m_body_html = f"Instagram user <b>{user}</b> has a new {last_source.lower()} after <b>{calculate_timespan(highestinsta_dt, highestinsta_dt_old)}</b> ({get_date_from_ts(highestinsta_dt_old)}){m_body_html_pic_saved_text}<br><br>Date: <b>{get_date_from_ts(highestinsta_dt)}</b><br>{last_source.capitalize()} URL: <a href=\"{safe_post_url}\">{safe_post_url}</a><br>Profile URL: <a href=\"{safe_profile_url}\">{safe_profile_url}</a><br>Likes: {likes}<br>Comments: {comments}<br>Tagged: {escape(str(tagged_users))}{location_mbody_html}{escape(str(location_mbody_str))}<br>Description:<br><br>{escape(str(caption))}<br>{likes_users_list_mbody}{escape(likes_users_list)}{post_comments_list_mbody}{escape(post_comments_list)}<br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
 
-                        print(f"\n* Sending email notification to {RECEIVER_EMAIL}")
-                        if m_body_html_pic_saved_text:
-                            send_email(m_subject, m_body, m_body_html, SMTP_SSL, image_filename, f"{last_source.lower()}_pic")
-                        else:
-                            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-
-                    # Send webhook notification for new post/reel
                     emoji = "🎬" if last_source == "reel" else "📸"
                     webhook_fields = [
                         {"name": "Date", "value": f"**{get_date_from_ts(highestinsta_dt)}**", "inline": True},
@@ -12042,17 +16068,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     if caption:
                         webhook_fields.append({"name": "Description", "value": (caption[:WEBHOOK_FIELD_VALUE_LIMIT - 4] + "...") if len(caption) > WEBHOOK_FIELD_VALUE_LIMIT else caption})
 
-                    webhook_result = send_webhook(
-                        f"{emoji} {user} New {last_source.capitalize()}",
-                        f"User **{user}** posted a new **{last_source.lower()}**!",
-                        color=0x1da1f2 if last_source == "post" else 0xff6b6b,  # Blue for post, coral for reel
-                        fields=webhook_fields,
-                        local_image_file=image_filename if image_filename and os.path.isfile(image_filename) else None,
-                        image_url=thumbnail_url if thumbnail_url and not (image_filename and os.path.isfile(image_filename)) else None,
-                        notification_type="status"
-                    )
-                    if webhook_result != 0 and DEBUG_MODE:
-                        print(f"* Warning: Webhook notification for new {last_source} failed")
+                    has_local_image = bool(image_filename and os.path.isfile(image_filename))
+                    send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION, email_image_file=(image_filename or "") if m_body_html_pic_saved_text else "", email_image_name=f"{last_source.lower()}_pic", webhook_title=f"{emoji} {user} New {last_source.capitalize()}", webhook_description=f"User **{user}** posted a new **{last_source.lower()}**!", webhook_color=0x1da1f2 if last_source == "post" else 0xff6b6b, webhook_fields=webhook_fields, local_image_file=image_filename if has_local_image else None, image_url=thumbnail_url if thumbnail_url and not has_local_image else None)
 
                     # Update web dashboard with the new post
                     if WEB_DASHBOARD_ENABLED:
@@ -12078,7 +16095,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     highestinsta_ts_old = highestinsta_ts
                     highestinsta_dt_old = highestinsta_dt
 
-                    print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                    print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                     print_cur_ts()
 
                 elif not new_post and (posts_count != posts_count_old or reels_count != reels_count_old):
@@ -12103,33 +16120,44 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                         leaked = fetch_leaked_collab_posts(user, bot)
                     except Exception as e:
                         leaked = []
-                        debug_print(f"[{user}] collab probe failed: {format_error_message(e)}")
+                        debug_print("Collab probe", user=user, outcome="failed", error=format_error_message(e))
                     new_leaked = sorted([p for p in leaked if p.get("ts", 0) > highest_collab_ts_old], key=lambda item: item.get("ts", 0))
                     for p in new_leaked:
                         leaked_update = report_leaked_collab_post(user, insta_username, p, r_sleep_time, images_dir, videos_dir, user_root_path, csv_file_name=csv_file_name)
                         if leaked_update:
                             update_ui_data(targets={user: {'new_update': leaked_update, 'last_post': leaked_update, 'posts': posts_count, 'reels': reels_count}})
                     if new_leaked:
-                        print(f"\nCheck interval:\t\t\t\t{display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)})")
+                        print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                         print_cur_ts("Timestamp:\t\t\t\t")
                     if leaked:
                         highest_collab_ts_old = max(highest_collab_ts_old, max(p.get("ts", 0) for p in leaked))
 
         else:
-            if HOURS_VERBOSE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE) or DEBUG_MODE:
-                print(f"* Skipping updates for {user}, current hour: {int(cur_h)}, allowed: [{format_hours_as_ranges(hours_to_check())}]")
-                # print("─" * HORIZONTAL_LINE)
-
-        alive_counter += 1
+            # Reached only while the hours range is on, so verbose mode alone decides the quiet form of this notice
+            skip_notice = f"Skipping updates for {user}, current hour: {int(cur_h)}, allowed: [{format_hours_as_ranges(hours_to_check())}]"
+            if HOURS_VERBOSE or DEBUG_MODE:
+                print(f"* {skip_notice}")
+                print_cur_ts()
+            else:
+                verbose_notice(skip_notice)
 
         if in_allowed_hours:
             consecutive_main_errors = 0
+            recovery_hint_tracker.reset()
+            outage_lasted = outage.recovered()
+            # Reset after the report, since the recovery alert is routed by the channels the failure alert reached
+            if outage_lasted is not None:
+                print_outage_recovery(user, outage_lasted, error_alert)
+            error_alert.reset()
 
-        if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
-            print_cur_ts("Liveness check, timestamp:\t")
-            alive_counter = 0
+        # The banner speaks for a quiet check, so anything this one reported restarts the clock instead of being contradicted by it
+        if REPORTS_PRINTED != reports_before_check:
+            alive_since = int(time.time())
+        elif LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
+            print_liveness_banner(f"Monitoring healthy for {user}. No tracked change since the last check")
+            alive_since = int(time.time())
 
-        debug_print(f"After check: manual_recheck_active={manual_recheck_active}")
+        debug_print("After check", manual_recheck_active=manual_recheck_active)
 
         if manual_recheck_active:
             print(f"* Check #{CHECK_COUNT} completed for {user} ...\n")
@@ -12137,8 +16165,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             log_activity("Check completed", user=user)
             manual_recheck_active = False
             manual_override_active = False
-        elif VERBOSE_MODE or DEBUG_MODE:
-            print(f"* Check #{CHECK_COUNT} completed for {user} ...\n")
+        elif DEBUG_MODE:
+            debug_print("Completed check", check=f"#{CHECK_COUNT}", user=user)
             print_cur_ts()
 
         if WEB_DASHBOARD_ENABLED:
@@ -12153,38 +16181,42 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
         # Print timing information (includes last check and next check in debug mode)
         print_check_timing(r_sleep_time, user=user)
-        debug_print(f"Check #{CHECK_COUNT} completed")
+        debug_print("Completed check", check=f"#{CHECK_COUNT}")
 
         # Be human please
         try:
             if BE_HUMAN and in_allowed_hours:
                 simulate_human_actions(bot, target_sleep_time)
                 consecutive_behuman_errors = 0
+                behuman_failed_since = 0
+                behuman_alert.reset()
         except Exception as e:
 
             consecutive_behuman_errors += 1
+            behuman_failed_since = behuman_failed_since or int(time.time())
             print(f"* Warning: It is not easy to be a human, our simulation failed: {e}")
-            if ERROR_NOTIFICATION and consecutive_behuman_errors == ERROR_FAILURE_THRESHOLD:
+            # A failed simulation is alerted once it has lasted ERROR_ALERT_AFTER_SECONDS, the same rule as a failed check
+            if int(time.time()) - behuman_failed_since >= ERROR_ALERT_AFTER_SECONDS:
                 error_msg = format_error_message(e)
-                alert_subject = f"instagram_monitor: BeHuman mode error for {user} (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD})"
-                alert_body = f"A BeHuman simulation error occurred for user {user} (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):\n{error_msg}\n\nCheck interval: {display_time(r_sleep_time)} ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                alert_body_html = f"A BeHuman simulation error occurred for user <b>{user}</b> (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: <b>{display_time(r_sleep_time)}</b> ({get_range_of_dates_from_tss(int(time.time()) - r_sleep_time, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
-
-                print(f"* Sending BeHuman error notification to {RECEIVER_EMAIL} (failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD})")
-                send_email(alert_subject, alert_body, alert_body_html, SMTP_SSL)
-
-                if WEBHOOK_ENABLED and WEBHOOK_ERROR_NOTIFICATION:
-                    send_webhook(
-                        title=f"BeHuman Error for {user}",
-                        description=f"{error_msg}\n(failure #{consecutive_behuman_errors}, threshold: {ERROR_FAILURE_THRESHOLD})",
-                        color=0xFF0000,
-                        notification_type="error"
-                    )
+                streak = f"failure #{consecutive_behuman_errors}, failing for {display_time(int(time.time()) - behuman_failed_since)}"
+                alert_subject = f"Instagram Monitor error: The BeHuman simulation failed (user: {user})"
+                alert_body = f"A BeHuman simulation error occurred for user {user} ({streak}):\n{error_msg}\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                alert_body_html = f"A BeHuman simulation error occurred for user <b>{escape(str(user))}</b> ({escape(streak)}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
+                # Tried again on a later failing simulation once the alert is due, after a wait that grows with each failed attempt
+                now = int(time.time())
+                behuman_email_pending = behuman_alert.pending("email", ERROR_NOTIFICATION, now)
+                behuman_webhook_pending = behuman_alert.pending("webhook", webhook_event_enabled("error"), now)
+                email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=behuman_email_pending, webhook_enabled=behuman_webhook_pending, webhook_title=f"BeHuman Error for {user}", webhook_description=f"{error_msg}\n({streak})", webhook_color=0xFF0000)
+                behuman_alert.record("email", behuman_email_pending, email_delivered, now)
+                behuman_alert.record("webhook", behuman_webhook_pending, webhook_delivered, now)
             print_cur_ts(newline=True)
 
         if HOURS_VERBOSE or DEBUG_MODE or (VERBOSE_MODE and CHECK_POSTS_IN_HOURS_RANGE):
             sleep_message(r_sleep_time, user)
-            debug_print(f"Next check scheduled for: {get_date_from_ts(NEXT_CHECK_TIME)}")
+            debug_print("Next check scheduled", next=get_date_from_ts(NEXT_CHECK_TIME))
+
+        # Only a check that got this far advanced the baselines, so a failing check leaves the window where it was
+        LAST_CHECK_TS = int(time.time())
 
         # Sleep with manual check support in debug mode (or stop event support in Web Dashboard mode)
         if DEBUG_MODE or stop_event or WEB_DASHBOARD_ENABLED:
@@ -12267,7 +16299,7 @@ def get_target_paths(user):
                 # Single target: OUTPUT_DIR/logs/monitor.log
                 target_log = os.path.join(OUTPUT_DIR, "logs", f"{Path(INSTA_LOGFILE).stem}.log")
         else:
-            # Traditional behavior: monitor_<user>.log
+            # Traditional behavior: monitor_<username>.log
             log_path = Path(os.path.expanduser(INSTA_LOGFILE))
             suffix = f"_{user}"
             if log_path.suffix == "":
@@ -12281,11 +16313,16 @@ def get_target_paths(user):
 # Checks whether the runtime can create or update one resolved output file
 def output_destination_is_writable(destination) -> bool:
     path = Path(os.path.expanduser(str(destination)))
+    # This read-only probe checks operator-selected paths or dashboard-validated plain filenames
+    # codeql[py/path-injection]
     if path.exists():
+        # codeql[py/path-injection]
         return path.is_file() and os.access(path, os.W_OK)
     parent = path.parent
+    # codeql[py/path-injection]
     while not parent.exists() and parent != parent.parent:
         parent = parent.parent
+    # codeql[py/path-injection]
     return parent.is_dir() and os.access(parent, os.W_OK)
 
 
@@ -12299,9 +16336,16 @@ def _wizard_install_method() -> str:
     if _running_in_container():
         return "compose" if os.environ.get("INSTAGRAM_MONITOR_COMPOSE") else "docker"
     prog = os.path.basename(sys.argv[0] or "")
-    if prog.endswith(".py"):
+    # 'python -m instagram_monitor' runs the installed package's __main__.py, which is not a downloaded script
+    if prog.endswith(".py") and prog != "__main__.py":
         return "manual"
     return "pip"
+
+
+# Returns a readable name for the detected install method
+def install_method_display_name(method: Optional[str] = None) -> str:
+    selected = _wizard_install_method() if method is None else method
+    return {"pip": "PyPI install", "manual": "downloaded script", "docker": "Docker container", "compose": "Docker Compose container"}.get(selected, selected)
 
 
 # Returns local command arguments using friendly names or exact runtime paths
@@ -12312,26 +16356,31 @@ def _wizard_local_command_args(method: str, exact: bool = False) -> List[str]:
             return [executable, "-m", "instagram_monitor"]
         return [executable, str(Path(__file__).resolve())]
     path_class = PureWindowsPath if system() == "Windows" else Path
-    executable_name = path_class(sys.executable).name or ("python" if system() == "Windows" else "python3")
-    if system() == "Windows" and executable_name.casefold().endswith(".exe"):
-        executable_name = executable_name[:-4]
+    executable_name = "python" if system() == "Windows" else "python3"
     script_name = path_class(__file__).name
     return [executable_name, script_name] if method == "manual" else ["instagram_monitor"]
 
 
 # Renders command arguments for the active host shell
 def _wizard_render_command(arguments) -> str:
-    values = [str(argument) for argument in arguments]
-    return subprocess.list2cmdline(values) if system() == "Windows" else shlex.join(values)
+    return " ".join(_wizard_quote_argument(argument) for argument in arguments)
 
 
-# Quotes one command argument for the active host shell
+# The documentation placeholders a printed command carries unquoted, because the reader replaces them before running it
+COMMAND_PLACEHOLDERS = frozenset(("<target_insta_user>",))
+
+
+# Quotes one command argument for the active host shell, leaving a <placeholder> as documentation for the reader
 def _wizard_quote_argument(value) -> str:
-    return _wizard_render_command([str(value)])
+    text = str(value)
+    # Matched exactly rather than by shape, since any other angle-bracket value is user-derived and would otherwise reach the shell unquoted
+    if text in COMMAND_PLACEHOLDERS:
+        return text
+    return subprocess.list2cmdline([text]) if system() == "Windows" else shlex.quote(text)
 
 
 # Returns the command prefix used to invoke the tool for the detected install method
-def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, exact: bool = False, host_os: Optional[str] = None, web_dashboard_port: Optional[int] = None) -> str:
+def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, host_os: Optional[str] = None, web_dashboard_port: Optional[int] = None) -> str:
     selected_web_port = web_dashboard_port if web_dashboard_port is not None else WEB_DASHBOARD_PORT
     if method == "compose":
         port_flag = ""
@@ -12344,7 +16393,7 @@ def _wizard_cmd_prefix(method: str, web_dashboard: bool = False, exact: bool = F
         user_flag = ' --user "$(id -u):$(id -g)"' if linux_user_mapping else ""
         current_directory = "%cd%" if host_os == "windows-cmd" else "${PWD}"
         return (f'docker run --rm -it --init{user_flag} -v "{current_directory}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader{web_port_flag} misiektoja/instagram-monitor')
-    return _wizard_render_command(_wizard_local_command_args(method, exact=exact))
+    return _wizard_render_command(_wizard_local_command_args(method, exact=False))
 
 
 # Rejects container setup destinations that would disappear with the temporary container
@@ -12359,7 +16408,18 @@ def _wizard_validate_destination(method: str, path, label: str) -> Path:
         if ".." in relative.parts:
             raise ValueError(f"{label} must be inside /data so it remains on the host after the setup container exits")
         return Path(PurePosixPath("/data", *relative.parts).as_posix())
-    return Path(path).expanduser().resolve()
+    # Inside the setup container /data is the mount itself, so the filesystem checks apply only to a host destination
+    destination = Path(path).expanduser().resolve()
+    if destination.exists() and destination.is_dir():
+        raise ValueError(f"{label} must be a file path, not a directory")
+    parent = destination.parent
+    while not parent.exists() and parent != parent.parent:
+        parent = parent.parent
+    if not parent.is_dir():
+        raise ValueError(f"{label} does not have a usable parent directory")
+    if not os.access(str(parent), os.W_OK):
+        raise ValueError(f"{label} is not writable through parent '{parent}'")
+    return destination
 
 
 # Converts a wizard destination into the matching path inside the data container mount
@@ -12380,14 +16440,82 @@ def _wizard_container_path(path) -> str:
     return str(PurePosixPath("/data") / PurePosixPath(relative.as_posix()))
 
 
+# The theme part each setup summary row draws its value in, for rows whose value has a known kind
+WIZARD_SUMMARY_VALUE_STYLES = {"Targets": "username", "Polling interval": "duration"}
+
+
+# Colours one setup summary value from its row label
+def _wizard_summary_value(label, value):
+    text = str(value)
+    part = WIZARD_SUMMARY_VALUE_STYLES.get(label)
+    if part:
+        return colorize(part, text)
+    if text.startswith("enabled") or text == "complete":
+        return colorize("boolean_true", text)
+    if text in ("disabled", "incomplete"):
+        return colorize("boolean_false", text)
+    return text
+
+
+# Prints one aligned label and value block, so every summary row lines up
+def _wizard_print_summary_rows(rows) -> None:
+    width = max(len(label) for label, _ in rows) + 1
+    for label, value in rows:
+        print(f"  {(label + ':'):<{width}} {_wizard_summary_value(label, value)}")
+
+
+# Returns the alert categories one answer set enables, falling back to the loaded configuration for untouched settings
+def _wizard_notification_categories(config_values, prefix: str = "") -> List[str]:
+    labels = (("STATUS_NOTIFICATION", "status/profile changes"), ("FOLLOWERS_NOTIFICATION", "followers"), ("ERROR_NOTIFICATION", "errors"))
+    return [label for name, label in labels if config_values.get(prefix + name, globals().get(prefix + name))]
+
+
+# Prints one labelled next-step command indented under its label
+def _wizard_print_command(label: str, command: str, suffix: str = "") -> None:
+    print(label)
+    print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
+
+
+# Prints the command that starts monitoring with the files this run checked, so a report read on its own
+# ends with the next action rather than leaving the reader to assemble the command
+def print_doctor_next_steps(targets=(), config_path=None, env_path=None, saved_targets=(), doctor_exit: int = 0) -> None:
+    command = _wizard_action_command(_wizard_install_method(), "", config_path, env_path, _wizard_command_targets(targets, saved_targets)[1], web_dashboard=WEB_DASHBOARD_ENABLED)
+    print(colorize("header", "\nNext steps\n"))
+    _wizard_print_command("After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:", command)
+    print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}")
+
+
+# Reads only the persisted targets from a config file, so a printed command can omit ones the config already supplies
+def _config_file_targets(config_path):
+    if not config_path or str(config_path).casefold() == "none":
+        return []
+    namespace: dict = {}
+    if not load_config_file(config_path, namespace=namespace, report_errors=False):
+        return []
+    return [str(target) for target in (namespace.get("TARGET_USERNAMES") or [])]
+
+
+# Returns the targets for the printed doctor and monitoring commands, dropping ones the effective config already supplies
+def _wizard_command_targets(explicit_targets=(), saved_targets=(), placeholder="<target_insta_user>"):
+    explicit = [str(target) for target in explicit_targets or ()]
+    saved = [str(target) for target in saved_targets or ()]
+    known = explicit or saved
+    if not known:
+        # Monitoring needs a target unless the web dashboard adds one later, so the placeholder fills that gap
+        return (), (() if WEB_DASHBOARD_ENABLED else (placeholder,))
+    printed = () if known == saved else tuple(known)
+    return printed, printed
+
+
 # Builds one install-aware action command with safe paths and optional targets
 def _wizard_action_command(method: str, action: str, config_path, env_path, targets=(), web_dashboard: bool = False, host_os: Optional[str] = None) -> str:
-    parts = [_wizard_cmd_prefix(method, web_dashboard=web_dashboard, exact=True, host_os=host_os)]
+    parts = [_wizard_cmd_prefix(method, web_dashboard=web_dashboard, host_os=host_os)]
     if action:
         parts.append(action)
     parts.extend(_wizard_quote_argument(target) for target in targets)
     if config_path is not None:
-        selected_config = _wizard_container_path(config_path) if method in ("docker", "compose") else str(Path(config_path).expanduser().resolve())
+        # The sentinel is passed through rather than resolved, since resolving it would name a file called "none"
+        selected_config = "none" if str(config_path).casefold() == "none" else _wizard_container_path(config_path) if method in ("docker", "compose") else str(Path(config_path).expanduser().resolve())
         parts.extend(("--config-file", _wizard_quote_argument(selected_config)))
     if env_path is not None:
         selected_env = "none" if str(env_path).casefold() == "none" else _wizard_container_path(env_path) if method in ("docker", "compose") else str(Path(env_path).expanduser().resolve())
@@ -12395,23 +16523,16 @@ def _wizard_action_command(method: str, action: str, config_path, env_path, targ
     return " ".join(parts)
 
 
-# Prints the install-aware monitoring command after a successful Doctor run
-def _wizard_print_monitor_after_doctor(config_path, env_path, targets=(), web_dashboard: bool = False) -> None:
-    method = _wizard_install_method()
-    command = _wizard_action_command(method, "", config_path, env_path, targets, web_dashboard=web_dashboard)
-    print(colorize("header", "\nNext steps\n"))
-    print("After Doctor passes, start monitoring:")
-    print(colorize("section", f"    {command}\n"))
-    if web_dashboard:
-        print(f"Then open {colorize('link', _web_dashboard_browser_url())} in your browser.\n")
-
-
 # Returns the full Firefox import command with an optional exact dotenv destination
-def _firefox_import_cmd(method: str, env_path=None, exact: bool = False, host_os: Optional[str] = None, config_path=None, targets=()) -> str:
+def _firefox_import_cmd(method: str, env_path=None, host_os: Optional[str] = None, config_path=None, targets=()) -> str:
     selected_host = host_os or "linux"
-    prefix = _wizard_cmd_prefix(method, exact=exact, host_os=selected_host if method in ("docker", "compose") else host_os)
+    prefix = _wizard_cmd_prefix(method, host_os=selected_host if method in ("docker", "compose") else host_os)
     if method not in ("docker", "compose"):
         command = f"{prefix} --import-browser-session --browser firefox"
+        if config_path is not None:
+            # The sentinel is passed through rather than resolved, since resolving it would name a file called "none"
+            selected_config = "none" if str(config_path).casefold() == "none" else str(Path(config_path).expanduser().resolve())
+            command += f" --config-file {_wizard_quote_argument(selected_config)}"
         if env_path is not None:
             command += f" --env-file {_wizard_quote_argument(str(Path(env_path).expanduser().resolve()))}"
         return command
@@ -12424,7 +16545,8 @@ def _firefox_import_cmd(method: str, env_path=None, exact: bool = False, host_os
     command = f"{with_mount} --import-browser-session --browser firefox"
     command += "".join(f" {_wizard_quote_argument(target)}" for target in targets)
     if config_path is not None:
-        selected_config = _wizard_container_path(config_path) if method in ("docker", "compose") else str(Path(config_path).expanduser().resolve())
+        # The sentinel is passed through rather than resolved, since resolving it would name a file called "none"
+        selected_config = "none" if str(config_path).casefold() == "none" else _wizard_container_path(config_path) if method in ("docker", "compose") else str(Path(config_path).expanduser().resolve())
         command += f" --config-file {_wizard_quote_argument(selected_config)}"
     if env_path is not None:
         command += f" --env-file {_wizard_quote_argument(_wizard_container_path(env_path))}"
@@ -12436,6 +16558,50 @@ def _wizard_import_browsers(method: str) -> list:
     if system() == "Windows" or method in ("docker", "compose"):
         return ["firefox"]
     return list(IMPORT_BROWSERS)
+
+
+# Cached per wizard run, since the login menu re-renders on every retry and each answer costs a cookie database read
+_WIZARD_BROWSER_SESSION_COUNTS: Dict[str, Optional[Tuple[int, int]]] = {}
+
+
+# Counts one browser's profiles and how many hold an Instagram session, or None when they could not be read.
+# Reading the cookie name needs no decryption key, so this works before pycookiecheat is installed
+def _wizard_browser_session_counts(browser: str) -> Optional[Tuple[int, int]]:
+    if browser not in _WIZARD_BROWSER_SESSION_COUNTS:
+        try:
+            if browser == "firefox":
+                states = [cookie_file_has_instagram_session(p["path"], firefox=True) for p in list_firefox_profiles()]
+            else:
+                states = [cookie_file_has_instagram_session(p.get("cookie_file")) for p in list_chromium_profiles(browser)]
+            _WIZARD_BROWSER_SESSION_COUNTS[browser] = (len([state for state in states if state]), len(states))
+        except Exception:
+            _WIZARD_BROWSER_SESSION_COUNTS[browser] = None
+    return _WIZARD_BROWSER_SESSION_COUNTS[browser]
+
+
+# Returns whether any profile of one browser holds an Instagram session
+def _wizard_browser_is_signed_in(browser: str) -> bool:
+    counts = _wizard_browser_session_counts(browser)
+    return bool(counts and counts[0])
+
+
+# Describes what setup can see of one browser's profiles, so the login menu is not a blind choice between browsers
+def _wizard_browser_session_note(browser: str) -> str:
+    counts = _wizard_browser_session_counts(browser)
+    if counts is None:
+        return ""
+    signed_in, total = counts
+    if not total:
+        return f" No {browser_label(browser)} profiles were found on this machine."
+    if not signed_in:
+        return f" No {browser_label(browser)} profile here is signed in to Instagram yet."
+    return f" {signed_in} of {total} profiles here are signed in to Instagram." if total > 1 else " This profile is signed in to Instagram."
+
+
+# Describes one Chromium browser in the import menu, preferring what its own profiles show over the generic line
+def _wizard_chromium_option_desc(browser: str, local_profiles: bool) -> str:
+    note = _wizard_browser_session_note(browser) if local_profiles else ""
+    return note.strip() or _wizard_browser_desc(browser)
 
 
 # One-line wizard menu description for an import browser choice
@@ -12458,11 +16624,12 @@ def _wizard_install_chromium_dependency(method: str) -> bool:
     requirement = "pycookiecheat>=0.8"
     executable = sys.executable or ("python" if system() == "Windows" else "python3")
     command = [executable, "-m", "pip", "install", requirement]
-    print(f"Installing Chromium browser support with:\n    {_wizard_render_command(command)}\n")
+    display_command = ["python" if platform.system() == "Windows" else "python3", *command[1:]]
+    print(f"Installing Chromium browser support with:\n    {_wizard_render_command(display_command)}\n")
     try:
         result = subprocess.run(command, check=False)
     except OSError as exc:
-        print(colorize("warning", f"  Installation could not start: {exc}"))
+        print(f"  Installation could not start: {exc}")
         return False
     importlib.invalidate_caches()
     if result.returncode == 0 and _wizard_chromium_dependency_available():
@@ -12472,43 +16639,63 @@ def _wizard_install_chromium_dependency(method: str) -> bool:
     return False
 
 
-# Builds the --help examples epilog using commands that match the detected install method (manual, pip, docker, compose)
+# Renders the --help examples: one heading per task, then a comment and the command it describes
+def _render_help_examples(groups, guide_url: str) -> str:
+    blocks = []
+    for title, entries in groups:
+        block = [f"{title}:"]
+        for comment, command in entries:
+            if len(block) > 1:
+                block.append("")
+            block.extend(f"  # {line}" for line in comment.split("\n"))
+            if command:
+                block.append(f"  {command}")
+        blocks.append("\n".join(block))
+    return "Examples:\n\n" + "\n\n".join(blocks) + f"\n\nGuide: {guide_url}\n"
+
+
+# Returns the --help epilog, with commands that match the detected install method (manual, pip, docker, compose)
 def _build_help_epilog() -> str:
     method = _wizard_install_method()
     prefix = _wizard_cmd_prefix(method)
     web_prefix = _wizard_cmd_prefix(method, web_dashboard=True)
     # Inside a container the host OS is not knowable (the container is always Linux), so the Firefox mount example assumes a Linux host and is labelled as such
     if method in ("docker", "compose"):
-        ff_comment = "  # Logged in via Firefox - full detail (Linux host shown; mount your Firefox profile)\n"
+        import_comment = "Import an Instagram session from Firefox (Linux host shown; mount your Firefox profile)"
     else:
-        ff_comment = "  # Logged in via Firefox - full detail (stories, reels, follower churn)\n"
-    return (
-        "Examples:\n"
-        "  # Guided setup (recommended for the first run)\n"
-        f"  {prefix} --setup\n"
-        "\n"
-        "  # No login (new posts, bio and follower counts)\n"
-        f"  {prefix} <username>\n"
-        "\n"
-        f"{ff_comment}"
-        f"  {_firefox_import_cmd(method)}\n"
-        f"  {prefix} -u <your_user> <username>\n"
-        "\n"
-        "  # Point-and-click web dashboard (add targets in the browser)\n"
-        f"  {web_prefix} --web-dashboard\n"
-        "\n"
-        "  # Save a Discord or ntfy webhook URL through a hidden prompt\n"
-        f"  {prefix} --set-webhook-url\n"
+        import_comment = "Import an Instagram session from Firefox"
+    groups = (
+        ("Getting started", (
+            ("Guided setup, recommended for the first run", f"{prefix} --setup"),
+            ("Check the setup before relying on it", f"{prefix} --doctor <target_insta_user>"),
+            ("Start monitoring without login (new posts, bio and follower counts)", f"{prefix} <target_insta_user>"),
+        )),
+        ("Full detail (stories, reels, follower churn)", (
+            (import_comment, _firefox_import_cmd(method)),
+            ("Then monitor with that session", f"{prefix} -u <your_insta_user> <target_insta_user>"),
+        )),
+        ("Notifications", (
+            ("Email on new posts, stories and profile changes", f"{prefix} <target_insta_user> -s"),
+            ("Send one test email", f"{prefix} --send-test-email"),
+            ("Send one test webhook", f"{prefix} --send-test-webhook"),
+        )),
+        ("Information and diagnostics", (
+            ("Point-and-click web dashboard (add targets in the browser)", f"{web_prefix} --web-dashboard"),
+            ("Trace what the tool is doing", f"{prefix} <target_insta_user> --debug"),
+        )),
     )
+    return _render_help_examples(groups, QUICK_START_GUIDE_URL)
 
 
-# Reads a single line of input, exiting cleanly if the user aborts with Ctrl+C or Ctrl+D
+# Reads one input line, letting a cancelled prompt reach the handler that knows what was written
 def _wizard_input(prompt_text: str) -> str:
+    note_console_output()
     try:
-        return input(prompt_text)
+        return read_interactively(input, prompt_text)
     except (EOFError, KeyboardInterrupt):
-        print("\n" + colorize("warning", "Setup cancelled."))
-        sys.exit(1)
+        # The interrupted prompt owns the line break, so every handler prints its message alone
+        print()
+        raise
 
 
 # Prompts for a line of text, returning the default on empty input and re-asking when a required value is blank
@@ -12520,7 +16707,39 @@ def _wizard_ask_text(question: str, default: str = "", required: bool = False) -
             raw = default
         if raw or not required:
             return raw
-        print(colorize("warning", "  This value is required."))
+        print("  This value is required.")
+        if not _wizard_offer_retry(question):
+            return ""
+
+
+# Returns a saved value fit to show as a prompt default, so shipped placeholders are never offered back
+def _wizard_default(value) -> str:
+    return str(value) if doctor_secret_is_set(value if isinstance(value, str) else str(value or "")) else ""
+
+
+# Trims the parenthetical hint from a question, so the retry offer that repeats it stays one readable line
+def _wizard_retry_label(question: str) -> str:
+    return question.split(" (")[0].strip()
+
+
+# Prompts until the answer is a positive whole number
+def _wizard_ask_positive_int(question: str, default: int, maximum: Optional[int] = None) -> int:
+    while True:
+        answer = _wizard_ask_text(question, default=str(default), required=True)
+        # An empty answer means the retry offer was declined, so the default stands instead of asking again
+        if not answer:
+            return int(default)
+        try:
+            parsed = int(answer)
+        except ValueError:
+            parsed = 0
+        if parsed > 0 and (maximum is None or parsed <= maximum):
+            return parsed
+        print(f"  Enter a whole number from 1 through {maximum}." if maximum is not None else "  Enter a positive whole number.")
+        # A value the helper cannot use is a rejected entry, so it gets the same way out an empty one gets
+        if not _wizard_offer_retry(_wizard_retry_label(question)):
+            print(f"  Keeping {default}.")
+            return int(default)
 
 
 # Converts a duration to a compact seconds plus human-readable wizard label
@@ -12568,20 +16787,19 @@ def _wizard_ask_duration(question: str, default: int) -> int:
         parsed = _wizard_parse_duration(value)
         if parsed is not None:
             return parsed
-        print(colorize("warning", "  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d."))
+        print("  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d.")
+        if not _wizard_offer_retry(_wizard_retry_label(question)):
+            print(f"  Keeping {_wizard_format_duration(default)}.")
+            return default
 
 
-# Reads a required secret through getpass without echoing the entered value
+# Reads one secret through getpass without echoing it, coloured like the visible prompts and with debug output off
 def _wizard_ask_secret(question: str) -> str:
-    while True:
-        try:
-            value = getpass.getpass(f"{question}: ")
-        except (EOFError, KeyboardInterrupt):
-            print("\n" + colorize("warning", "Setup cancelled."))
-            raise SystemExit(1) from None
-        if value:
-            return value
-        print(colorize("warning", "  This secret is required and cannot be empty."))
+    try:
+        return str(read_secret_privately(getpass.getpass, colorize("info", f"{question}: ")))
+    except (EOFError, KeyboardInterrupt):
+        print()
+        raise
 
 
 # Prompts a yes/no question and returns the boolean answer
@@ -12595,7 +16813,14 @@ def _wizard_ask_yes_no(question: str, default: bool = True) -> bool:
             return True
         if raw in ("n", "no"):
             return False
-        print(colorize("warning", "  Please answer 'y' or 'n'."))
+        print("  Please answer 'y' or 'n'.")
+
+
+# Offers the one way out after an entry the wizard cannot use, so declining keeps every answer already given
+def _wizard_offer_retry(label: str, consequence: str = "") -> bool:
+    if consequence:
+        return not _wizard_ask_yes_no(f"Continue without the {label}? {consequence}", default=False)
+    return _wizard_ask_yes_no(f"Try entering the {label} again?", default=True)
 
 
 # Prints a numbered menu and returns the zero-based index the user selected
@@ -12614,7 +16839,7 @@ def _wizard_ask_choice(question: str, options, default_index: int = 0) -> int:
             return default_index
         if raw.isdigit() and 1 <= int(raw) <= len(options):
             return int(raw) - 1
-        print(colorize("warning", f"  Enter a number between 1 and {len(options)}."))
+        print(f"  Enter a number between 1 and {len(options)}.")
 
 
 # Returns a secret from the selected dotenv file or environment without displaying it
@@ -12631,15 +16856,61 @@ def _wizard_secret_value(key: str, env_path: Path) -> Optional[str]:
     return value if isinstance(value, str) else None
 
 
-# Returns whether a non-placeholder secret exists in the selected dotenv file or environment
-def _wizard_existing_secret(key: str, env_path: Path, placeholders=()) -> bool:
-    value = _wizard_secret_value(key, env_path)
-    return value is not None and bool(value.strip()) and value not in placeholders
+# Returns the effective credential and whether a startup export supplies it
+def effective_secret_after_setup(key: str, env_path: Path, secret_updates: Dict[str, str]) -> Tuple[str, bool]:
+    if key in command_line_secret_keys():
+        return str(globals().get(key) or ""), False
+    exported = _wizard_exported_secrets().get(key)
+    if exported:
+        return exported, True
+    if key in secret_updates:
+        return str(secret_updates[key] or ""), False
+    saved = read_private_settings(env_path).get(key)
+    if saved is not None:
+        return saved, False
+    # Nothing private holds it, so the configuration file is what a restart would read
+    return str(globals().get(key) or ""), False
+
+
+# Puts the values setup just saved into effect, so doctor checks the written files instead of the earlier state.
+# Each secret records where it came from, so the report names the source a restart would name
+def _wizard_apply_saved_values(state):
+    exported = {key: os.environ.get(key) for key in SECRET_KEYS if SECRET_SOURCES.get(key) not in ("dotenv file", "dotenv file reload")}
+    try:
+        from dotenv import dotenv_values
+        saved = dotenv_values(state.env_path, interpolate=False) if state.env_path.exists() else {}
+    except (OSError, UnicodeError, ValueError) as exc:
+        print_recovery_error(exc, "secret")
+        raise SystemExit(1) from None
+    saved_config = config_template_defaults()
+    if not load_config_file(state.config_path, namespace=saved_config):
+        raise SystemExit(1)
+    globals().update(saved_config)
+    for key in SECRET_KEYS:
+        if exported.get(key):
+            value, source = exported[key], "environment"
+        elif saved.get(key) is not None:
+            value, source = saved[key], "dotenv file"
+        else:
+            value, source = saved_config.get(key), "configuration file or command line"
+        globals()[key] = value
+        record_secret_source(key, source)
+    return resolve_local_timezone()
+
+
+# Reports whether setup will retain a usable credential from the selected file or pending answers
+def _wizard_existing_secret(key: str, env_path: Path, placeholders=(), secret_updates=None) -> bool:
+    value = _wizard_exported_secrets().get(key)
+    if value is None:
+        value = (secret_updates or {}).get(key)
+    if value is None:
+        value = read_private_settings(env_path).get(key)
+    return isinstance(value, str) and bool(value.strip()) and value not in placeholders
 
 
 # Collects an optional ntfy access token without displaying or contacting the service
 def _wizard_collect_ntfy_access_token(secret_updates: dict, env_path: Path) -> None:
-    existing_token = _wizard_existing_secret("NTFY_ACCESS_TOKEN", env_path)
+    existing_token = _wizard_existing_secret("NTFY_ACCESS_TOKEN", env_path, secret_updates=secret_updates)
     if existing_token:
         choice = _wizard_ask_choice("Which ntfy authentication should be used?", [("Keep the saved access token", "Keeps the private value without displaying or changing it."), ("Paste a new access token", "Uses a hidden prompt then saves the replacement in .env."), ("Do not use an access token", "Disables the saved token. Authentication in the topic URL still works.")])
         if choice == 0:
@@ -12653,17 +16924,32 @@ def _wizard_collect_ntfy_access_token(secret_updates: dict, env_path: Path) -> N
         return
     while True:
         token = _wizard_ask_secret("Paste the ntfy access token only").strip()
-        if token and "\r" not in token and "\n" not in token and not token.casefold().startswith(("bearer ", "basic ")):
-            break
+        if not token or ("\r" not in token and "\n" not in token and not token.casefold().startswith(("bearer ", "basic "))):
+            if token:
+                secret_updates["NTFY_ACCESS_TOKEN"] = token
+            return
         print("  Paste only the access token without a Bearer or Basic prefix.")
-    secret_updates["NTFY_ACCESS_TOKEN"] = token
+        if not _wizard_offer_retry("ntfy access token"):
+            return
 
 
 # Config values reset before one setup section is collected again
 WIZARD_LOGIN_CONFIG_KEYS = ("SESSION_USERNAME", "SKIP_SESSION")
 WIZARD_INTERFACE_CONFIG_KEYS = ("WEB_DASHBOARD_ENABLED", "DASHBOARD_ENABLED", "WEB_DASHBOARD_HOST")
-WIZARD_WEBHOOK_CONFIG_KEYS = ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_STATUS_NOTIFICATION")
-WIZARD_EMAIL_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL", "STATUS_NOTIFICATION")
+WIZARD_WEBHOOK_CONFIG_KEYS = ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_FOLLOWERS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
+WIZARD_EMAIL_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL", "STATUS_NOTIFICATION", "FOLLOWERS_NOTIFICATION", "ERROR_NOTIFICATION")
+WIZARD_OUTPUT_CONFIG_KEYS = ("DISABLE_LOGGING", "CSV_FILE")
+WIZARD_CONNECTION_CONFIG_KEYS = ("HTTP_BACKEND", "CURL_CFFI_IMPERSONATE", "FOLLOW_LIST_SOURCE", "SKIP_FOLLOWERS", "SKIP_FOLLOWINGS", "IDENTITY_BUDGET_PER_DAY", "FETCH_REELS")
+
+
+# The mail server settings the wizard collects, and how long its sign-in check waits for the server
+WIZARD_SMTP_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL")
+WIZARD_SMTP_TIMEOUT = 5
+
+
+# The alert settings each channel owns, so one preset answer can switch the whole channel on
+WIZARD_EMAIL_NOTIFICATION_KEYS = ("STATUS_NOTIFICATION", "FOLLOWERS_NOTIFICATION", "ERROR_NOTIFICATION")
+WIZARD_WEBHOOK_NOTIFICATION_KEYS = ("WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_FOLLOWERS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
 
 
 # Holds editable setup answers until the user explicitly saves them
@@ -12685,6 +16971,17 @@ class WizardSetupState:
     want_terminal: bool
     want_webhook: bool
     want_email: bool
+    retained_secrets: dict = field(default_factory=dict)
+
+
+# Leaves the tool in no-login mode, so an abandoned sign-in answer cannot save half a session
+def _wizard_fall_back_to_no_login(state: WizardSetupState, reason: str) -> None:
+    print(f"  {reason}")
+    state.login_method = "no-login"
+    state.logged_in = False
+    state.import_browser = None
+    state.session_username = ""
+    state.config_values.update({"SKIP_SESSION": True, "SESSION_USERNAME": ""})
 
 
 # Selects one supported Docker host and Firefox profile layout for deferred import
@@ -12694,8 +16991,8 @@ def _wizard_select_container_firefox_host() -> Optional[str]:
         ("Linux with a standard Firefox package", "Use the profiles under ~/.mozilla/firefox."),
         ("Linux with Firefox from Snap", "Use the profiles under ~/snap/firefox."),
         ("Linux with Firefox from Flatpak", "Use the profiles under ~/.var/app/org.mozilla.firefox."),
-        ("Windows PowerShell", "Use the Firefox profiles under $env:APPDATA."),
-        ("Windows Command Prompt", "Use the Firefox profiles under %APPDATA%."),
+        ("Windows PowerShell", "Use the profiles under $env:APPDATA\\Mozilla\\Firefox\\Profiles."),
+        ("Windows Command Prompt", "Use the profiles under %APPDATA%\\Mozilla\\Firefox\\Profiles."),
         ("Another system", "Firefox import after Docker setup is not currently available for this host."),
     ]
     selected = _wizard_ask_choice("Which host environment runs Docker?", options)
@@ -12707,6 +17004,18 @@ def _wizard_select_container_firefox_host() -> Optional[str]:
     return ("macos", "linux", "linux-snap", "linux-flatpak", "windows-powershell", "windows-cmd")[selected]
 
 
+# Returns one declined section to the built-in template values, so nothing the user turned down is written
+def _wizard_clear_section(state: WizardSetupState, config_keys, secret_keys=()) -> None:
+    defaults = config_template_defaults()
+    for key in config_keys:
+        if key in defaults:
+            state.config_values[key] = defaults[key]
+        else:
+            state.config_values.pop(key, None)
+    for key in secret_keys:
+        state.secret_updates.pop(key, None)
+
+
 # Restores one editable section to its setup-start values and drops pending secrets
 def _wizard_reset_section(state: WizardSetupState, config_keys, secret_keys) -> None:
     for key in config_keys:
@@ -12716,18 +17025,58 @@ def _wizard_reset_section(state: WizardSetupState, config_keys, secret_keys) -> 
             state.config_values.pop(key, None)
     for key in secret_keys:
         state.secret_updates.pop(key, None)
+        if key in state.retained_secrets:
+            state.secret_updates[key] = state.retained_secrets[key]
+
+
+# Preserves a saved dotenv destination unless setup received an explicit override
+def _wizard_saved_env_destination(values: dict, env_file, fallback: Path, method: str) -> Path:
+    selected = env_file if env_file is not None else values.get("DOTENV_FILE") or fallback
+    if str(selected).casefold() == "none":
+        raise ValueError("Setup needs a writable dotenv destination. Pass --env-file PATH to choose one.")
+    return _wizard_validate_destination(method, selected, "Dotenv destination")
+
+
+# Seeds the proposed answers from the configuration the wizard is about to rebuild, which is what the rebuild question offers
+def _wizard_seed_saved_settings(values: dict, config_path: Path) -> dict:
+    if not config_path.is_file():
+        return {}
+    saved: dict = {}
+    if not load_config_file(config_path, namespace=saved):
+        raise ValueError(f"Configuration file '{config_path}' could not be read. Correct it before retrying setup.")
+    values.update({key: value for key, value in saved.items() if key not in SENSITIVE_CONFIG_KEYS})
+    return saved
 
 
 # Confirms replacement or selects another config destination before answers are collected
-def _wizard_choose_config_destination(config_path: Path) -> Path:
+def _wizard_choose_config_destination(config_path: Path, method: str) -> Path:
     selected = config_path.expanduser().resolve()
-    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. Replace it with a fresh configuration built from defaults and create a timestamped backup?", default=False):
+    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. A timestamped backup is kept. Rebuild it from your answers, starting from its current settings?", default=False):
         alternative = _wizard_ask_text("Another config destination or leave empty to cancel")
         if not alternative:
-            print(colorize("warning", "Setup cancelled. Destination files were not changed."))
+            print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
             raise SystemExit(1)
-        selected = Path(alternative).expanduser().resolve()
+        # The alternative gets the same checks as the destinations shown before the first question, so a bad path is refused here rather than at the save
+        try:
+            selected = _wizard_validate_destination(method, alternative, "Configuration destination")
+        except ValueError as exc:
+            print(f"  {exc}.")
     return selected
+
+
+# Splits one setup answer into target names, applying the rule the next run applies. A target setup accepts and
+# monitoring refuses turns a finished setup into a command that stops before it starts
+def _wizard_parse_targets(answer: str) -> Tuple[List[str], str]:
+    names: List[str] = []
+    for part in str(answer).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            names.append(normalize_instagram_username(part))
+        except ValueError as exc:
+            return [], f"'{part}' cannot be monitored: {exc}"
+    return list(dict.fromkeys(names)), ""
 
 
 # Collects monitored targets and allows an empty list only for Web Dashboard setup
@@ -12738,17 +17087,32 @@ def _wizard_collect_target_section(state: WizardSetupState, allow_empty: bool = 
         question += " (leave empty to add them in the Web Dashboard)"
     while True:
         targets_raw = _wizard_ask_text(question, default=default_targets, required=not allow_empty)
-        targets = [target.strip().lstrip("@") for target in targets_raw.split(",") if target.strip()]
+        targets, problem = _wizard_parse_targets(targets_raw)
+        if problem:
+            # This response contains target names from visible input, never a password
+            # codeql[py/clear-text-logging-sensitive-data]
+            print(f"  {problem}.")
+            # Declining leaves the list empty, which the section below reports, rather than looping on a bad answer
+            if not _wizard_offer_retry("Instagram target", "Nothing can be monitored until one is added"):
+                targets = []
+                break
+            default_targets = ""
+            continue
         if targets or allow_empty:
             break
+        print("  Enter one or more Instagram usernames or profile URLs separated by commas.")
+        # Leaving the list empty has to be a decision rather than a loop the user can only leave with Ctrl+C
+        if not _wizard_offer_retry("Instagram target", "Nothing can be monitored until one is added"):
+            break
+        default_targets = ""
     state.targets = targets
     if not targets:
         state.persist_targets = False
         state.config_values["TARGET_USERNAMES"] = []
-        print(colorize("info", "  No initial targets selected. Add them later in the Web Dashboard."))
+        later = "Add them later in the Web Dashboard." if allow_empty else "Add them later by running --setup again."
+        print(colorize("info", f"  No initial targets selected. {later}"))
         return
-    print()
-    state.persist_targets = _wizard_ask_yes_no("Save the target(s) in the config file too?", default=state.persist_targets)
+    state.persist_targets = _wizard_ask_yes_no("Persist these targets in the generated config?", default=state.persist_targets)
     state.config_values["TARGET_USERNAMES"] = list(targets) if state.persist_targets else []
 
 
@@ -12758,17 +17122,66 @@ def _wizard_collect_polling_section(state: WizardSetupState) -> None:
     state.config_values["INSTA_CHECK_INTERVAL"] = _wizard_ask_duration("Instagram polling interval (seconds or use s/m/h/d)", current_interval)
 
 
+# Asks for the account to sign in with until the answer is one the tool accepts, returning None when the prompt was
+# abandoned. A name monitoring refuses is otherwise saved and fails at the first Instagram request instead of here
+def _wizard_ask_session_username(question: str, required: bool) -> Optional[str]:
+    while True:
+        answer = _wizard_ask_text(question, required=required).strip()
+        if not answer:
+            return ""
+        try:
+            return normalize_instagram_username(answer)
+        except ValueError as exc:
+            print(f"  {exc}.")
+        if not _wizard_offer_retry("Instagram username"):
+            return None
+
+
+# Confirms an Instaloader session file exists for the chosen account, since setup does not create one for this login
+# method and a missing file otherwise surfaces only when monitoring first tries to sign in
+def _wizard_confirm_existing_session(state: WizardSetupState) -> bool:
+    try:
+        candidates = get_session_file_candidates(state.session_username)
+    except ValueError as exc:
+        # Reached only when a username skipped the prompt's own check, and a name no session file can exist for
+        # must not be reported as a session that was found
+        print()
+        # The shared reader returns a visible username here, never a password
+        # codeql[py/clear-text-logging-sensitive-data]
+        print(colorize("warning", f"'{state.session_username}' cannot be used as an Instagram username: {exc}."))
+        print(colorize("info", "  To fix: Enter a valid Instagram username or profile URL."))
+        return False
+    if any(os.path.isfile(candidate) for candidate in candidates):
+        return True
+    print()
+    # The shared reader returns a visible username here, never a password
+    # codeql[py/clear-text-logging-sensitive-data]
+    print(colorize("warning", f"No Instaloader session file was found for '{state.session_username}'."))
+    print(colorize("info", f"  Looked in: {', '.join(candidates)}"))
+    # The shared reader returns a visible username here, never a password
+    # codeql[py/clear-text-logging-sensitive-data]
+    print(colorize("info", f"  To fix: run 'instaloader --login {state.session_username}' to create one, or choose a browser import instead."))
+    return _wizard_ask_yes_no("Keep using an existing Instaloader session anyway?", default=False)
+
+
 # Collects one login method with separate Firefox and Chromium paths
 def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
     _wizard_reset_section(state, WIZARD_LOGIN_CONFIG_KEYS, ("SESSION_PASSWORD",))
     supported_browsers = _wizard_import_browsers(method)
     chromium_browsers = [browser for browser in supported_browsers if browser in CHROMIUM_IMPORT_BROWSERS]
+    _WIZARD_BROWSER_SESSION_COUNTS.clear()
+    # A container reads the host's profiles through a mount that is not attached yet, so nothing local describes them
+    local_profiles = method not in ("docker", "compose")
     while True:
         firefox_label = "Import from Firefox after setup, recommended" if method in ("docker", "compose") else "Import from Firefox, recommended"
-        options = [("No login", "Sees new posts, bio and follower counts."), (firefox_label, "Reuses a signed-in host Firefox profile through one read-only import command." if method in ("docker", "compose") else "Reuses a signed-in Firefox session with no additional package.")]
+        firefox_description = "Reuses a signed-in host Firefox profile through one read-only import command." if not local_profiles else f"Reuses your Firefox session with no additional package.{_wizard_browser_session_note('firefox')}"
+        options = [("No login", "Sees new posts, bio and follower counts."), (firefox_label, firefox_description)]
         actions = ["no-login", "firefox"]
         if chromium_browsers:
             chromium_description = "Import from a signed-in Chrome, Brave or Chromium profile." if _wizard_chromium_dependency_available() else "Setup can install the required pycookiecheat package now."
+            if local_profiles:
+                ready = [browser_label(browser) for browser in chromium_browsers if _wizard_browser_is_signed_in(browser)]
+                chromium_description += f" Signed in here: {', '.join(ready)}." if ready else " None of them has a signed-in profile on this machine."
             options.append(("Import from Chrome, Brave or Chromium", chromium_description))
             actions.append("chromium")
         options.extend((("Use an existing Instaloader session", "You previously created a session with Instaloader."), ("Username and password", "Least safe. The password is stored in .env and never in the config.")))
@@ -12787,31 +17200,55 @@ def _wizard_collect_login_section(state: WizardSetupState, method: str) -> None:
             container_host = _wizard_select_container_firefox_host()
             if container_host is None:
                 continue
-        break
+        state.login_method = action
+        state.logged_in = action != "no-login"
+        state.import_browser = None
+        state.container_host = container_host
+        state.session_username = ""
+        if action == "no-login":
+            state.config_values.update({"SKIP_SESSION": True, "SESSION_USERNAME": ""})
+            return
+        if action == "firefox":
+            state.import_browser = "firefox"
+        elif action == "chromium":
+            chromium_options = [(browser_label(browser), _wizard_chromium_option_desc(browser, local_profiles)) for browser in chromium_browsers]
+            # The browser that already holds a session is the one the import can succeed with, so it leads
+            ready_indexes = [index for index, browser in enumerate(chromium_browsers) if local_profiles and _wizard_browser_is_signed_in(browser)]
+            browser_index = _wizard_ask_choice("Which Chromium browser should be imported?", chromium_options, default_index=ready_indexes[0] if ready_indexes else 0)
+            state.import_browser = chromium_browsers[browser_index]
 
-    state.login_method = action
-    state.logged_in = action != "no-login"
-    state.import_browser = None
-    state.container_host = container_host
-    state.session_username = ""
-    if action == "no-login":
-        state.config_values.update({"SKIP_SESSION": True, "SESSION_USERNAME": ""})
+        print()
+        can_detect_username = state.import_browser is not None and method not in ("docker", "compose")
+        if can_detect_username:
+            collected = _wizard_ask_session_username(f"Your Instagram username (leave empty to detect it from {browser_label(state.import_browser)} import)", required=False)
+        else:
+            collected = _wizard_ask_session_username("Your Instagram username (the account you log in WITH)", required=True)
+        if collected is None or (not collected and not can_detect_username):
+            _wizard_fall_back_to_no_login(state, "Sign-in stays off until the username is given.")
+            return
+        state.session_username = collected
+        # The session file this method relies on is created by Instaloader, not by setup, so a missing one is
+        # caught here instead of at the first monitoring run
+        if action == "existing" and not _wizard_confirm_existing_session(state):
+            state.login_method = ""
+            continue
+        # Asked before the hidden prompt, so a password that is already saved is never retyped only to be discarded
+        if action == "password" and (not _wizard_existing_secret("SESSION_PASSWORD", state.env_path, secret_updates=state.secret_updates) or _wizard_ask_yes_no("Replace the Instagram password already configured?", default=False)):
+            password = _wizard_ask_secret("Instagram password")
+            if not password:
+                if not _wizard_offer_retry("Instagram password", "Sign-in stays off until one is set"):
+                    _wizard_fall_back_to_no_login(state, "Sign-in stays off until the password is given.")
+                    return
+                password = _wizard_ask_secret("Instagram password")
+            if password:
+                state.secret_updates["SESSION_PASSWORD"] = password
+            else:
+                _wizard_fall_back_to_no_login(state, "Sign-in stays off until the password is given.")
+                return
+        elif action == "password":
+            print("  Existing SESSION_PASSWORD will be retained without being displayed or rewritten.")
+        state.config_values.update({"SKIP_SESSION": False, "SESSION_USERNAME": state.session_username})
         return
-    if action == "firefox":
-        state.import_browser = "firefox"
-    elif action == "chromium":
-        browser_index = _wizard_ask_choice("Which Chromium browser should be imported?", [(browser_label(browser), _wizard_browser_desc(browser)) for browser in chromium_browsers])
-        state.import_browser = chromium_browsers[browser_index]
-
-    print()
-    can_detect_username = state.import_browser is not None and method not in ("docker", "compose")
-    if can_detect_username:
-        state.session_username = _wizard_ask_text(f"Your Instagram username (leave empty to detect it from {browser_label(state.import_browser)} import)").lstrip("@")
-    else:
-        state.session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
-    if action == "password":
-        state.secret_updates["SESSION_PASSWORD"] = _wizard_ask_secret("Instagram password")
-    state.config_values.update({"SKIP_SESSION": False, "SESSION_USERNAME": state.session_username})
 
 
 # Collects the preferred monitoring interface
@@ -12823,12 +17260,20 @@ def _wizard_collect_interface_section(state: WizardSetupState, method: str) -> N
     state.want_terminal = interface == 1
     state.config_values.update({"WEB_DASHBOARD_ENABLED": state.want_web, "DASHBOARD_ENABLED": state.want_terminal})
     if not state.want_web and not state.targets:
-        print(colorize("warning", "  Terminal and plain-text monitoring need at least one target."))
+        print("  Terminal and plain-text monitoring need at least one target.")
         _wizard_collect_target_section(state, allow_empty=False)
     if state.want_web and not FLASK_AVAILABLE:
-        print(colorize("warning", "  Note: flask is not installed, so the web dashboard will remain unavailable until it is installed."))
+        print("  Note: flask is not installed, so the web dashboard will remain unavailable until it is installed.")
     if state.want_terminal and not RICH_AVAILABLE:
-        print(colorize("warning", "  Note: rich is not installed, so the terminal dashboard will remain unavailable until it is installed."))
+        print("  Note: rich is not installed, so the terminal dashboard will remain unavailable until it is installed.")
+
+
+# Switches the channel and every alert it owns off together, so a half-configured webhook cannot be written
+def _wizard_disable_webhook(state: WizardSetupState) -> None:
+    state.want_webhook = False
+    _wizard_clear_section(state, ("WEBHOOK_PROVIDER",), ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN"))
+    state.config_values.update({"WEBHOOK_ENABLED": False})
+    state.config_values.update({name: False for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS})
 
 
 # Collects webhook settings and hidden secrets
@@ -12836,8 +17281,7 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
     _wizard_reset_section(state, WIZARD_WEBHOOK_CONFIG_KEYS, ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN"))
     print()
     if not _wizard_ask_yes_no("Set up webhook alerts (Discord, ntfy etc.)?", default=state.want_webhook):
-        state.want_webhook = False
-        state.config_values.update({"WEBHOOK_ENABLED": False, "WEBHOOK_STATUS_NOTIFICATION": False})
+        _wizard_disable_webhook(state)
         return
     provider_choice = _wizard_ask_choice("Which webhook service should receive alerts?", [("Discord", "Sends a Discord embed with supported image attachments."), ("ntfy", "Sends a native notification to one ntfy topic URL.")], default_index=0 if state.config_values.get("WEBHOOK_PROVIDER", "discord") == "discord" else 1)
     provider = "discord" if provider_choice == 0 else "ntfy"
@@ -12846,9 +17290,9 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
         print(colorize("info", "  In Discord: Edit Channel > Integrations > Webhooks > New Webhook > Copy Webhook URL."))
         webhook_prompt = "Paste the Discord webhook URL"
     else:
-        print(colorize("info", "  In ntfy: choose a hard-to-guess topic. Paste its name for ntfy.sh or use the complete HTTPS URL for a self-hosted server."))
+        print(colorize("info", "  In ntfy: choose a hard-to-guess topic. Paste its complete topic URL, or just the topic name when it is hosted on ntfy.sh."))
         webhook_prompt = "Paste the ntfy topic URL or ntfy.sh topic name"
-    existing_webhook = _wizard_existing_secret("WEBHOOK_URL", state.env_path, ("your_webhook_url",))
+    existing_webhook = _wizard_existing_secret("WEBHOOK_URL", state.env_path, ("your_webhook_url",), secret_updates=state.secret_updates)
     replace_webhook = True
     if existing_webhook:
         replace_webhook = _wizard_ask_choice("Which webhook URL should be used?", [("Keep the saved URL", "Keeps the private value without displaying or changing it."), ("Paste a new URL", "Uses a hidden prompt then saves the new private value in .env.")]) == 1
@@ -12858,69 +17302,351 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
             webhook_url = normalize_ntfy_topic_url(webhook_input) if provider == "ntfy" else webhook_input.strip()
             if validate_webhook_url(webhook_url):
                 break
+            # Nothing can be delivered without a destination, so giving up has to stay reachable from the prompt
+            if not webhook_input.strip():
+                if not _wizard_offer_retry("webhook URL", "Webhook alerts stay off until one is set"):
+                    _wizard_disable_webhook(state)
+                    return
+                continue
             if provider == "ntfy":
-                print(colorize("warning", "  Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores."))
+                print("  Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores.")
             else:
-                print(colorize("warning", "  That does not look like a complete HTTPS webhook URL. Copy it from the webhook service and try again."))
+                print("  That does not look like a complete HTTPS webhook URL. Copy it from the webhook service and try again.")
+            if not _wizard_offer_retry("webhook URL"):
+                _wizard_disable_webhook(state)
+                return
         state.secret_updates["WEBHOOK_URL"] = webhook_url
     if provider == "ntfy":
         _wizard_collect_ntfy_access_token(state.secret_updates, state.env_path)
     state.want_webhook = True
-    state.config_values.update({"WEBHOOK_ENABLED": True, "WEBHOOK_STATUS_NOTIFICATION": True})
+    state.config_values["WEBHOOK_ENABLED"] = True
+    preset = _wizard_ask_choice("Which webhook alerts should be sent?", [
+        ("Status and errors, recommended", "New posts, reels, stories, followings, bio and picture changes, plus monitoring errors."),
+        ("Every supported alert", "Also alerts when someone follows or unfollows the target."),
+        ("Custom", "Choose each webhook alert separately."),
+    ])
+    if preset == 0:
+        selected = {"WEBHOOK_STATUS_NOTIFICATION": True, "WEBHOOK_FOLLOWERS_NOTIFICATION": False, "WEBHOOK_ERROR_NOTIFICATION": True}
+    elif preset == 1:
+        selected = {name: True for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS}
+    else:
+        print()
+        questions = (
+            ("WEBHOOK_STATUS_NOTIFICATION", "Send a webhook alert on new posts, reels, stories, followings, bio and picture changes?"),
+            ("WEBHOOK_FOLLOWERS_NOTIFICATION", "Send a webhook alert when someone follows or unfollows the target?"),
+            ("WEBHOOK_ERROR_NOTIFICATION", "Send a webhook alert on monitoring errors?"),
+        )
+        selected = {name: _wizard_ask_yes_no(question, default=False) for name, question in questions}
+    state.config_values.update(selected)
 
 
-# Collects email settings and the hidden SMTP password
+# Switches every email alert off together, so an abandoned answer cannot leave half a mail server configured
+def _wizard_disable_email(state: WizardSetupState) -> None:
+    state.want_email = False
+    _wizard_clear_section(state, WIZARD_SMTP_CONFIG_KEYS, ("SMTP_PASSWORD",))
+    state.config_values.update({name: False for name in WIZARD_EMAIL_NOTIFICATION_KEYS})
+
+
+# Reports whether one required mail server answer was abandoned, switching the channel off when it was
+def _wizard_email_answer_missing(state: WizardSetupState, answer: str) -> bool:
+    if answer:
+        return False
+    print("  Email notifications stay off until every mail server setting is answered.")
+    _wizard_disable_email(state)
+    return True
+
+
+# Signs in to the collected mail server without sending anything, so a refused login is caught during setup
+def _wizard_verify_smtp(values: dict, password: str) -> Optional[Tuple[str, str, str, bool]]:
+    names = WIZARD_SMTP_CONFIG_KEYS + ("SMTP_PASSWORD",)
+    previous = {name: globals()[name] for name in names}
+    smtp = None
+    try:
+        globals().update(values)
+        # Exactly what the caller resolved, since that is the value the next run will use
+        globals()["SMTP_PASSWORD"] = password
+        smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=WIZARD_SMTP_TIMEOUT)
+        if SMTP_SSL:
+            smtp.starttls(context=smtp_ssl_context())
+        smtp_login(smtp, SMTP_USER, SMTP_PASSWORD)
+        return None
+    except Exception as exc:
+        summary, fix = classify_smtp_error(exc)
+        # A rejected sign-in cannot start working on its own, unlike an unreachable server
+        retryable = not isinstance(exc, smtplib.SMTPAuthenticationError)
+        return summary, format_error_message(exc, password), fix, retryable
+    finally:
+        if smtp is not None:
+            try:
+                smtp.quit()
+            except Exception:
+                pass
+        globals().update(previous)
+
+
+# Reports the outcome of the sign-in check: True to continue, False to ask again, None to switch email off
+def _wizard_smtp_sign_in_accepted(values: dict, password: str) -> Optional[bool]:
+    print("  Checking the sign-in with the mail server ...")
+    problem = _wizard_verify_smtp(values, password)
+    if problem is None:
+        print("  The mail server accepted the sign-in. No email was sent.")
+        return True
+    summary, detail, fix, retryable = problem
+    print(f"  {summary}: {detail}" if detail else f"  {summary}")
+    print(f"  To fix: {fix}")
+    if _wizard_offer_retry("mail server settings"):
+        return False
+    if retryable:
+        # Being offline is the usual reason a correct setup fails here, so the answers are kept rather than discarded
+        print("  The settings were kept without being checked. Run --doctor to check the sign-in again.")
+        return True
+    print("  Email notifications stay off until the mail server accepts the settings.")
+    return None
+
+
+# Asks one required mail server answer until it is one the sender itself would accept. A value only this prompt
+# collects is otherwise saved, reported as a working setup by the sign-in check and refused by the first alert
+def _wizard_ask_mail_value(state: WizardSetupState, label: str, key: str, accepts, requirement: str) -> bool:
+    while True:
+        answer = _wizard_ask_text(label, default=_wizard_default(state.config_values.get(key)), required=True)
+        if _wizard_email_answer_missing(state, answer):
+            return False
+        if accepts(answer):
+            state.config_values[key] = answer
+            return True
+        print(f"  {requirement}")
+        if not _wizard_offer_retry(label):
+            _wizard_disable_email(state)
+            return False
+
+
+# Collects email settings, the hidden SMTP password and the alerts email should send
 def _wizard_collect_email_section(state: WizardSetupState) -> None:
     _wizard_reset_section(state, WIZARD_EMAIL_CONFIG_KEYS, ("SMTP_PASSWORD",))
     print()
-    if not _wizard_ask_yes_no("Set up email (SMTP) alerts now?", default=state.want_email):
-        state.want_email = False
-        state.config_values["STATUS_NOTIFICATION"] = False
+    if not _wizard_ask_yes_no("Configure email notifications?", default=state.want_email):
+        _wizard_disable_email(state)
         return
-    host = _wizard_ask_text("SMTP server host (e.g. smtp.gmail.com)", required=True)
-    port_text = _wizard_ask_text("SMTP port", default=str(state.config_values.get("SMTP_PORT") or 587))
-    try:
-        port = int(port_text)
-    except ValueError:
-        port = 587
-    use_ssl = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(state.config_values.get("SMTP_SSL", True)))
-    user = _wizard_ask_text("SMTP username", required=True)
-    state.secret_updates["SMTP_PASSWORD"] = _wizard_ask_secret("SMTP password")
-    sender = _wizard_ask_text("Sender email (From)", required=True)
-    receiver = _wizard_ask_text("Recipient email (To)", required=True)
-    state.config_values.update({"SMTP_HOST": host, "SMTP_PORT": port, "SMTP_SSL": use_ssl, "SMTP_USER": user, "SENDER_EMAIL": sender, "RECEIVER_EMAIL": receiver, "STATUS_NOTIFICATION": True})
+    while True:
+        if not _wizard_ask_mail_value(state, "SMTP host", "SMTP_HOST", smtp_host_is_usable, "Enter a hostname such as smtp.example.com, or an IP address."):
+            return
+        state.config_values["SMTP_PORT"] = _wizard_ask_positive_int("SMTP port", int(state.config_values.get("SMTP_PORT") or 587), maximum=65535)
+        state.config_values["SMTP_SSL"] = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(state.config_values.get("SMTP_SSL")))
+        state.config_values["SMTP_USER"] = _wizard_ask_text("SMTP username", default=_wizard_default(state.config_values.get("SMTP_USER")), required=True)
+        if _wizard_email_answer_missing(state, state.config_values["SMTP_USER"]):
+            return
+        if not _wizard_ask_mail_value(state, "Sender email", "SENDER_EMAIL", is_valid_email_address, "Enter a complete address such as name@example.com."):
+            return
+        if not _wizard_ask_mail_value(state, "Receiver email", "RECEIVER_EMAIL", is_valid_email_address, "Enter a complete address such as name@example.com."):
+            return
+        # Asked before the hidden prompt, so a password that is already saved is never retyped only to be discarded
+        password = ""
+        if not _wizard_existing_secret("SMTP_PASSWORD", state.env_path, secret_updates=state.secret_updates) or _wizard_ask_yes_no("Replace the SMTP password already configured?", default=False):
+            password = _wizard_ask_secret("SMTP password")
+            if password:
+                state.secret_updates["SMTP_PASSWORD"] = password
+        else:
+            print("  Existing SMTP_PASSWORD will be retained without being displayed or rewritten.")
+        # The sign-in has to prove the value the next run resolves rather than the one just typed. A declined
+        # replacement and an exported variable both leave setup reporting success for a password nothing will use
+        effective_password, supplied_by_export = effective_secret_after_setup("SMTP_PASSWORD", state.env_path, state.secret_updates)
+        if supplied_by_export and password:
+            print("  SMTP_PASSWORD is exported in this environment and an export wins at startup, so the next run uses that value rather than the one just entered.")
+            print("  The check below signs in with the exported value. Unset it to use the one saved here.")
+        outcome = _wizard_smtp_sign_in_accepted({name: state.config_values[name] for name in WIZARD_SMTP_CONFIG_KEYS}, effective_password)
+        if outcome is None:
+            _wizard_disable_email(state)
+            return
+        if outcome:
+            break
+    preset = _wizard_ask_choice("Which email notifications should be enabled?", [
+        ("Status and errors, recommended", "New posts, reels, stories, followings, bio and picture changes, plus monitoring errors."),
+        ("Every supported event", "Also emails when someone follows or unfollows the target."),
+        ("Custom", "Choose each notification type separately."),
+    ])
+    if preset == 0:
+        selected = {"STATUS_NOTIFICATION": True, "FOLLOWERS_NOTIFICATION": False, "ERROR_NOTIFICATION": True}
+    elif preset == 1:
+        selected = {name: True for name in WIZARD_EMAIL_NOTIFICATION_KEYS}
+    else:
+        print()
+        questions = (
+            ("STATUS_NOTIFICATION", "Email on new posts, reels, stories, followings, bio and picture changes?"),
+            ("FOLLOWERS_NOTIFICATION", "Also email when someone follows or unfollows the target?"),
+            ("ERROR_NOTIFICATION", "Email on monitoring errors?"),
+        )
+        selected = {name: _wizard_ask_yes_no(question, default=False) for name, question in questions}
+    state.config_values.update(selected)
     state.want_email = True
 
 
-# Lets the user change output files and recollects secret-dependent sections when needed
+# Adds the .csv extension when the answer carries none, so a bare name still names a CSV file
+def _wizard_normalize_csv_path(answer: str) -> str:
+    text = str(answer).strip()
+    if not text or Path(text).suffix:
+        return text
+    return text + ".csv"
+
+
+# Collects the log and CSV output destinations monitoring would write
+def _wizard_collect_output_section(state: WizardSetupState) -> None:
+    _wizard_reset_section(state, WIZARD_OUTPUT_CONFIG_KEYS, ())
+    print()
+    state.config_values["DISABLE_LOGGING"] = not _wizard_ask_yes_no("Write the normal per-target log file?", default=not bool(state.config_values.get("DISABLE_LOGGING")))
+    saved_csv = str(state.config_values.get("CSV_FILE") or "")
+    # Asked as its own question, since Enter on the path prompt takes the shown default and so could never clear a saved one
+    if _wizard_ask_yes_no("Write a CSV file of the changes?", default=bool(saved_csv)):
+        state.config_values["CSV_FILE"] = _wizard_normalize_csv_path(_wizard_ask_text("CSV output path", default=saved_csv, required=True))
+    else:
+        state.config_values["CSV_FILE"] = ""
+
+
+# Collects the surface follower lists are read from. The HTTP transport and its impersonated browser keep their
+# saved values: their defaults suit almost everyone and the configuration file explains them for the few who care
+def _wizard_collect_connection_section(state: WizardSetupState) -> None:
+    _wizard_reset_section(state, WIZARD_CONNECTION_CONFIG_KEYS, ())
+    # No API surface lists followers without a session, so the question is only worth asking in login mode, and a
+    # setup that turned the session off records what will happen rather than the answers it collected with one
+    if not state.logged_in:
+        state.config_values.update({"SKIP_FOLLOWERS": True, "SKIP_FOLLOWINGS": True})
+    if state.logged_in:
+        # Names are the most expensive thing the tool asks Instagram for and the operation Instagram acts
+        # against, so the first question is whether to collect them at all rather than how, and the
+        # option that never requests a name is the default
+        # The cap governs both name options, so it belongs with the question rather than inside one answer
+        budget_note = f"Instagram counts every name it returns, so name collection is capped by IDENTITY_BUDGET_PER_DAY (currently {IDENTITY_BUDGET_PER_DAY})" if IDENTITY_BUDGET_PER_DAY else "Instagram counts every name it returns and IDENTITY_BUDGET_PER_DAY is 0 here, so nothing caps how many are collected"
+        collect_options = [("Counts only, no names", "Follower and following numbers are still tracked, just never the names behind them.\nThe safest choice for the account, since names are what Instagram acts against."), ("Followers only", "See who followed and unfollowed, at about half the names per check that both lists cost."), ("Followers and following", "See who followed and unfollowed, and who the account started and stopped following.\nCosts the most names and is the likeliest to reach the daily cap.")]
+        collect = _wizard_ask_choice(f"Which follower and following lists should be collected?\n{budget_note}", collect_options, default_index=0)
+        state.config_values["SKIP_FOLLOWERS"] = collect == 0
+        state.config_values["SKIP_FOLLOWINGS"] = collect <= 1
+        if collect == 0:
+            _wizard_collect_reels(state)
+            return
+
+        _wizard_collect_identity_budget(state)
+
+        browser_note = "Needs the playwright package and a downloaded browser, is much slower and risks the logged-in account."
+        if not playwright_available():
+            browser_note = "The playwright package is not installed here, so install it before monitoring starts: pip install playwright, then playwright install chromium."
+        source_options = [("Auto", "Read over the REST endpoints Instagram's own web app calls.\nRetry over GraphQL only when REST is missing or unreadable and nothing was returned yet."), ("REST only", "Report the error instead of retrying on the other surface."), ("GraphQL only", "The older queries, which is what versions before 4.0 used."), ("Browser (experimental)", f"Drive a real browser through Instagram's web pages instead of calling its API.\n{browser_note}")]
+        source = ("auto", "rest", "graphql", "browser")[_wizard_ask_choice("Where should follower and following lists be read from?", source_options, default_index=0)]
+        state.config_values["FOLLOW_LIST_SOURCE"] = source
+        if source == "browser":
+            _wizard_align_transport_with_browser_source(state)
+
+        _wizard_collect_reels(state)
+
+
+# Asks whether reels should be monitored, which is off because Instagram stopped answering the endpoint reporting
+# the count. Asked rather than assumed, since a run that needs reel notifications should be able to accept the cost
+def _wizard_collect_reels(state: WizardSetupState) -> None:
+    options = [("No, leave reels alone", "Instagram stopped answering the endpoint that reports a reel count, so the whole reel list has to be read instead.\nPosts and stories are still monitored, and a reel counts towards the posts number either way."), ("Yes, monitor reels", "Reads the whole reel list on every check. That is many requests and Instagram often refuses it,\nwhich shows up as repeated errors rather than as missing reels.")]
+    state.config_values["FETCH_REELS"] = _wizard_ask_choice("Should reels be monitored as well as posts and stories?", options, default_index=0) == 1
+
+
+# Asks what the daily name cap should be, which the question above names but no answer there changes. Only a setup
+# that collects names reaches this, since the cap governs nothing when no name is ever requested
+def _wizard_collect_identity_budget(state: WizardSetupState) -> None:
+    budget = int(state.config_values.get("IDENTITY_BUDGET_PER_DAY") or 0)
+    options = [(f"Keep the cap at {budget} names a day" if budget else "Keep name collection uncapped", "Instagram counts every name it returns, and a spent cap stops name collection for the day while counts, posts and stories carry on."), ("Set a different number", "Around 500 to 1000 is the safer figure if this account has been challenged before.")]
+    if budget:
+        options.append(("Remove the cap", "Names are still counted and reported, but nothing stops collecting them."))
+
+    answer = _wizard_ask_choice("How many names a day may Instagram return for this account?", options, default_index=0)
+    if answer == 1:
+        state.config_values["IDENTITY_BUDGET_PER_DAY"] = _wizard_ask_positive_int("Names a day", default=budget or 2000)
+    elif answer == 2:
+        state.config_values["IDENTITY_BUDGET_PER_DAY"] = 0
+
+
+# Keeps the transport answers consistent with the browser source, which reaches Instagram as a Chromium browser
+def _wizard_align_transport_with_browser_source(state: WizardSetupState) -> None:
+    family = browser_channel_family()
+    changes = []
+    if state.config_values.get("HTTP_BACKEND") != "curl_cffi":
+        state.config_values["HTTP_BACKEND"] = "curl_cffi"
+        changes.append("the transport is set to curl_cffi")
+    pinned = str(state.config_values.get("CURL_CFFI_IMPERSONATE") or "auto").strip().lower()
+    if pinned != "auto" and impersonate_family(pinned) != family:
+        state.config_values["CURL_CFFI_IMPERSONATE"] = "auto"
+        changes.append(f"the impersonated browser is set back to auto instead of {pinned}")
+    # Monitoring refuses to start when the browser and the HTTP path would reach Instagram as two different clients
+    if changes:
+        print(f"  The browser source runs a {family} browser, so {' and '.join(changes)} to keep one client identity.")
+
+
+# Returns genuine environment credentials without treating previously loaded file values as exports
+def _wizard_exported_secrets():
+    state = globals().get("DOTENV_RELOAD_STATE", {})
+    owned = set(globals().get("DOTENV_MANAGED_KEYS", ())) | set(globals().get("DOTENV_BASE_VALUES", ())) | set(state.get("base", ()))
+    exported = set(globals().get("EXPORTED_ENVIRONMENT_KEYS", ())) | set(globals().get("EXPORTED_SECRET_KEYS", ())) | set(state.get("exported", ()))
+    sources = globals().get("SECRET_SOURCES", {})
+    return {key: os.environ[key] for key in SECRET_KEYS if os.environ.get(key) and key not in command_line_secret_keys() and (key in exported or (key not in owned and sources.get(key) not in ("dotenv file", "dotenv file reload")))}
+
+
+# Reads the selected private file before setup changes paths or pending answers
+def read_private_settings(env_path):
+    path = Path(env_path)
+    if not path.exists():
+        return {}
+    content = path.read_text(encoding="utf-8")
+    bindings = list(_dotenv_bindings(content))
+    invalid = next((binding for binding in bindings if binding.error), None)
+    if invalid is not None:
+        raise ValueError(f"Dotenv file '{path}' has invalid syntax near line {invalid.original.line}. Correct that assignment before retrying.")
+    return {binding.key: binding.value for binding in bindings if binding.key is not None}
+
+
+# Rechecks retained answers against the new destination before collecting replacement choices
+def _wizard_move_private_settings(state, selected_env):
+    retained = read_private_settings(state.env_path)
+    retained.update(state.secret_updates)
+    selected = read_private_settings(selected_env)
+    carried = {key: value for key, value in retained.items() if key in SECRET_KEYS and isinstance(value, str) and selected.get(key) is None}
+    state.retained_secrets = dict(carried)
+    state.secret_updates = dict(carried)
+    state.env_path = selected_env
+    for key in SECRET_KEYS:
+        value = selected.get(key, carried.get(key))
+        if isinstance(value, str):
+            state.config_values[key] = value
+
+
+# Lets the user change file destinations and recollects secret-dependent sections when needed
 def _wizard_collect_destination_section(state: WizardSetupState, method: str) -> None:
+    new_config_path = state.config_path
     while True:
         config_text = _wizard_ask_text("Configuration file destination", default=str(state.config_path), required=True)
         try:
             selected_config = _wizard_validate_destination(method, config_text, "Configuration destination")
             break
         except ValueError as exc:
-            print(colorize("warning", f"  {exc}."))
+            print(f"  {exc}.")
     if selected_config != state.config_path:
-        state.config_path = _wizard_choose_config_destination(selected_config)
+        new_config_path = _wizard_choose_config_destination(selected_config, method)
     while True:
         env_text = _wizard_ask_text("Dotenv file destination", default=str(state.env_path), required=True)
         if env_text.casefold() == "none":
-            print(colorize("warning", "  Setup needs a writable dotenv file and cannot use 'none'."))
+            print("  Setup needs a writable dotenv file and cannot use 'none'.")
             continue
         try:
             selected_env = _wizard_validate_destination(method, env_text, "Dotenv destination")
             break
         except ValueError as exc:
-            print(colorize("warning", f"  {exc}."))
-    state.config_values["DOTENV_FILE"] = str(selected_env)
-    if selected_env == state.env_path:
+            print(f"  {exc}.")
+    if selected_env == Path(state.env_path).expanduser().resolve():
+        state.config_path = new_config_path
+        state.config_values["DOTENV_FILE"] = str(selected_env)
         return
-    state.env_path = selected_env
-    print(colorize("info", "  The dotenv destination changed. Re-enter login and notification settings that may contain secrets."))
+    _wizard_move_private_settings(state, selected_env)
+    state.config_path = new_config_path
+    state.config_values["DOTENV_FILE"] = str(selected_env)
+    print(colorize("info", "  The dotenv destination changed. Review login and notification settings. Values in the selected file are kept unless you replace them."))
     _wizard_collect_login_section(state, method)
     _wizard_collect_email_section(state)
     _wizard_collect_webhook_section(state)
+    for key, value in state.retained_secrets.items():
+        state.secret_updates.setdefault(key, value)
 
 
 # Prints the current editable setup answers without exposing secrets
@@ -12928,27 +17654,44 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
     interface = "web dashboard" if state.want_web else "terminal dashboard" if state.want_terminal else "plain text logs"
     session_summary = state.session_username if state.logged_in and state.session_username else "detect during browser import" if state.logged_in else "none"
     target_summary = ", ".join(state.targets) if state.targets else "none - add them in the Web Dashboard"
-    print(colorize("header", "\nSetup summary\n"))
-    print(f"  Targets: {target_summary}")
-    print(f"  Persist targets: {'yes' if state.persist_targets else 'no'}")
-    print(f"  Polling interval: {_wizard_format_duration(int(state.config_values['INSTA_CHECK_INTERVAL']))}")
-    print(f"  Login: {state.login_method}")
-    print(f"  Session username: {session_summary}")
+    email_categories = _wizard_notification_categories(state.config_values) if state.want_email else []
+    webhook_categories = _wizard_notification_categories(state.config_values, "WEBHOOK_") if state.want_webhook else []
+    webhook_state = f"enabled ({webhook_provider_display_name(state.config_values.get('WEBHOOK_PROVIDER'))})" if state.want_webhook else "disabled"
+    rows = [
+        ("Targets", target_summary),
+        ("Persist targets", "yes" if state.persist_targets else "no"),
+        ("Polling interval", _wizard_format_duration(int(state.config_values["INSTA_CHECK_INTERVAL"]))),
+        ("Login", state.login_method),
+        ("Session username", session_summary),
+    ]
     if state.import_browser:
-        print(f"  Browser: {browser_label(state.import_browser)}")
+        rows.append(("Browser", browser_label(state.import_browser)))
     if state.container_host:
-        print(f"  Docker host: {CONTAINER_FIREFOX_HOSTS[state.container_host][0]}")
-    print(f"  Interface: {interface}")
-    print(f"  Email: {'enabled' if state.want_email else 'disabled'}")
-    print(f"  Webhook: {'enabled' if state.want_webhook else 'disabled'}")
-    print(f"  Config destination: {state.config_path}")
-    print(f"  Dotenv destination: {state.env_path}")
-    print(f"  Install method: {method}")
+        rows.append(("Docker host", CONTAINER_FIREFOX_HOSTS[state.container_host][0]))
+    if state.logged_in:
+        collects_names = not state.config_values.get("SKIP_FOLLOWERS")
+        rows.append(("Follower lists", ("followers only" if state.config_values.get("SKIP_FOLLOWINGS") else "followers and following") if collects_names else "counts only, no names"))
+        if collects_names:
+            rows.append(("Follower list source", str(state.config_values.get("FOLLOW_LIST_SOURCE") or "auto")))
+    rows.extend([
+        ("Interface", interface),
+        ("Email", "enabled" if state.want_email else "disabled"),
+        ("Email notifications", ", ".join(email_categories) if email_categories else "none"),
+        ("Webhook", webhook_state),
+        ("Webhook alerts", ", ".join(webhook_categories) if webhook_categories else "none"),
+        ("Output log", "disabled" if state.config_values.get("DISABLE_LOGGING") else "enabled"),
+        ("CSV output", state.config_values.get("CSV_FILE") or "disabled"),
+        ("Config destination", str(state.config_path)),
+        ("Dotenv destination", str(state.env_path)),
+        ("Install method", method),
+    ])
+    print(colorize("header", "\nSetup summary\n"))
+    _wizard_print_summary_rows(rows)
 
 
 # Opens one selected setup section then returns to the summary
 def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
-    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets and persistence", "Change monitored accounts and whether they are saved."), ("Polling interval", "Change how often Instagram is checked."), ("Login and session", "Change no-login, browser or credential settings."), ("Interface", "Change the dashboard or plain text mode."), ("Email alerts", "Change SMTP settings."), ("Webhook alerts", "Change Discord or ntfy settings."), ("File destinations", "Change the config or dotenv path."), ("Return to summary", "Keep every current answer.")])
+    section = _wizard_ask_choice("Which setup section should be changed?", [("Targets", "Change the Instagram accounts that are monitored."), ("Polling interval", "Change how often Instagram is checked."), ("Login and session", "Change no-login, browser or credential settings."), ("Instagram connection", "Change where follower and following lists are read from."), ("Interface", "Change the dashboard or plain text mode."), ("Email notifications", "Change SMTP details and email events."), ("Webhook alerts", "Change Discord or ntfy details and events."), ("Output files", "Change log and CSV output settings."), ("File destinations", "Change the configuration or dotenv output path."), ("Return to summary", "Keep every current answer.")])
     if section == 0:
         print()
         _wizard_collect_target_section(state, allow_empty=state.want_web)
@@ -12956,14 +17699,23 @@ def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
         print()
         _wizard_collect_polling_section(state)
     elif section == 2:
+        was_logged_in = state.logged_in
         _wizard_collect_login_section(state, method)
+        # The list questions are their own section here, so a session enabled from this menu would otherwise write
+        # the shipped defaults, which collect every name, without the question that exists to prevent that
+        if state.logged_in != was_logged_in:
+            _wizard_collect_connection_section(state)
     elif section == 3:
-        _wizard_collect_interface_section(state, method)
+        _wizard_collect_connection_section(state)
     elif section == 4:
-        _wizard_collect_email_section(state)
+        _wizard_collect_interface_section(state, method)
     elif section == 5:
-        _wizard_collect_webhook_section(state)
+        _wizard_collect_email_section(state)
     elif section == 6:
+        _wizard_collect_webhook_section(state)
+    elif section == 7:
+        _wizard_collect_output_section(state)
+    elif section == 8:
         print()
         _wizard_collect_destination_section(state, method)
 
@@ -12971,6 +17723,7 @@ def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
 # Reviews editable answers until the user saves or confirms a discard
 def _wizard_review_setup(state: WizardSetupState, method: str) -> bool:
     while True:
+        state.secret_updates = {**state.retained_secrets, **state.secret_updates}
         _wizard_print_setup_summary(state, method)
         action = _wizard_ask_choice("What would you like to do?", [("Save settings", "Write the displayed settings to the selected files."), ("Review or change settings", "Edit one section without losing the other answers."), ("Discard answers and exit", "Leave the destination files unchanged.")])
         if action == 0:
@@ -12984,43 +17737,97 @@ def _wizard_review_setup(state: WizardSetupState, method: str) -> bool:
         print(colorize("info", "  Setup answers retained."))
 
 
+# Names the command that imports a browser session outside setup, shown as a retry hint and in the next steps
+def _wizard_browser_import_command(state: WizardSetupState, method: str) -> str:
+    # The config is carried like the Firefox command carries it, since the import prints the next steps for the
+    # configuration it was given and finds the wrong one, or none, when setup wrote to a destination of its own
+    return f"{_wizard_cmd_prefix(method, host_os=state.container_host)} --import-browser-session --browser {state.import_browser} --config-file {_wizard_quote_argument(str(state.config_path))} --env-file {_wizard_quote_argument(str(state.env_path))}"
+
+
+# Offers the other browsers setup can import from, so a failed import is not a dead end when the session lives in
+# another browser. Returns whether the browser was changed
+def _wizard_switch_import_browser(state: WizardSetupState, method: str, others: List[str]) -> bool:
+    options = [(browser_label(browser), _wizard_browser_session_note(browser).strip() or _wizard_browser_desc(browser)) for browser in others]
+    options.append(("Keep trying the current browser", "Returns to the import with the browser unchanged."))
+    choice = _wizard_ask_choice("Which browser should setup import from instead?", options, default_index=0)
+    if choice == len(others):
+        return False
+    selected = others[choice]
+    if selected in CHROMIUM_IMPORT_BROWSERS and not _wizard_chromium_dependency_available():
+        print()
+        if not _wizard_ask_yes_no("Chromium browser import requires pycookiecheat. Install it now?", default=True):
+            return False
+        if not _wizard_install_chromium_dependency(method):
+            return False
+    state.import_browser = selected
+    # The saved login method and the summary name the family, not the browser, so both follow the switch
+    state.login_method = "firefox" if selected == "firefox" else "chromium"
+    return True
+
+
 # Completes a confirmed browser import before the final config is rendered
 def _wizard_finish_browser_import(state: WizardSetupState, method: str) -> bool:
     if not state.import_browser:
         return True
     label = browser_label(state.import_browser)
-    retry_hint = f"{_wizard_cmd_prefix(method, exact=True, host_os=state.container_host)} --import-browser-session --browser {state.import_browser} --env-file {_wizard_quote_argument(str(state.env_path))}"
+    retry_hint = _wizard_browser_import_command(state, method)
     if method in ("docker", "compose"):
         state.config_values["SESSION_USERNAME"] = state.session_username
         return False
     import_completed = False
     if _wizard_ask_yes_no(f"Import the {label} session now? (log in to Instagram in {label} first)", default=True):
-        try:
-            imported_username = None
-            if state.import_browser == "firefox":
-                cookie_path = os.path.expanduser(get_firefox_cookiefile())
-                if not os.path.isfile(cookie_path):
-                    print(colorize("warning", f"Could not find Firefox cookies at '{cookie_path}'. You can import later with: {retry_hint}"))
+        # A wrong profile or a browser not signed in yet is the common failure and both are fixable on the
+        # spot, so the attempt is repeatable instead of dropping the user into setup with no session
+        while True:
+            try:
+                imported_username = None
+                if state.import_browser == "firefox":
+                    cookie_path = os.path.expanduser(get_firefox_cookiefile())
+                    if not os.path.isfile(cookie_path):
+                        print(colorize("warning", f"Could not find Firefox cookies at '{cookie_path}'."))
+                    else:
+                        imported_username = import_session("firefox", cookie_path, None)
                 else:
-                    imported_username = import_session("firefox", cookie_path, None)
-            else:
-                profile = select_chromium_profile_cli(state.import_browser, None)
-                imported_username = import_session(state.import_browser, None, None, profile=profile)
-            if imported_username:
-                if state.session_username and imported_username != state.session_username:
-                    print(colorize("warning", f"Imported session belongs to '{imported_username}', updating SESSION_USERNAME in the generated config."))
-                elif not state.session_username:
-                    print(colorize("info", f"Detected username '{imported_username}' from the imported session."))
-                state.session_username = imported_username
-                import_completed = True
-        except (SystemExit, Exception) as exc:
-            print(colorize("warning", f"{label} import failed: {exc}"))
-            print(f"You can retry later with: {retry_hint}")
+                    profile = select_chromium_profile_cli(state.import_browser, None)
+                    imported_username = import_session(state.import_browser, None, None, profile=profile)
+                if imported_username:
+                    if state.session_username and imported_username != state.session_username:
+                        print(colorize("warning", f"Imported session belongs to '{imported_username}', updating SESSION_USERNAME in the generated config."))
+                    elif not state.session_username:
+                        print(colorize("info", f"Detected username '{imported_username}' from the imported session."))
+                    state.session_username = imported_username
+                    import_completed = True
+            except (SystemExit, Exception) as exc:
+                print(colorize("warning", f"{label} import failed: {exc}"))
+            if import_completed:
+                break
+            print()
+            # The session often lives in a different browser, so switching is offered before giving up. The
+            # cached counts are dropped first, since the user may have signed in while the prompt was waiting
+            _WIZARD_BROWSER_SESSION_COUNTS.clear()
+            others = [browser for browser in _wizard_import_browsers(method) if browser != state.import_browser]
+            retry_options = [(f"Try the {label} import again", f"Pick another profile, or sign in to Instagram in {label} first.")]
+            retry_actions = ["retry"]
+            if others:
+                retry_options.append(("Import from a different browser", f"Setup can import from {' or '.join(browser_label(browser) for browser in others)} instead."))
+                retry_actions.append("switch")
+            retry_options.append(("Skip the import for now", "Setup continues and shows the import command at the end."))
+            retry_actions.append("skip")
+            retry_action = retry_actions[_wizard_ask_choice(f"The {label} import did not complete. What next?", retry_options, default_index=0)]
+            if retry_action == "skip":
+                print(colorize("info", f"You can import later with: {retry_hint}"))
+                break
+            if retry_action == "switch" and _wizard_switch_import_browser(state, method, others):
+                label = browser_label(cast(str, state.import_browser))
+                retry_hint = _wizard_browser_import_command(state, method)
     else:
         print(colorize("info", f"You can import later with: {retry_hint}"))
     if not state.session_username:
         print(colorize("warning", "No username was detected from the browser session."))
-        state.session_username = _wizard_ask_text("Your Instagram username (the account you log in WITH)", required=True).lstrip("@")
+        state.session_username = _wizard_ask_session_username("Your Instagram username (the account you log in WITH)", required=True) or ""
+        if not state.session_username:
+            _wizard_fall_back_to_no_login(state, "Sign-in stays off until the username is given.")
+            return import_completed
     state.config_values["SESSION_USERNAME"] = state.session_username
     return import_completed
 
@@ -13045,12 +17852,19 @@ def _wizard_launch_monitor(arguments) -> int:
     return 0
 
 
+# Returns the address the Web Dashboard is reachable at on this machine, which is the configured port rather than
+# the default whenever WEB_DASHBOARD_PORT was changed
+def web_dashboard_local_url() -> str:
+    return f"http://127.0.0.1:{WEB_DASHBOARD_PORT}/"
+
+
 # Runs the interactive first-run setup with staged answers and safe persistence
 def run_setup_wizard(config_file=None, env_file=None) -> None:
     global CLI_CONFIG_PATH, DOTENV_FILE
     if not sys.stdin.isatty():
-        print(colorize("warning", "The setup wizard needs an interactive terminal (TTY)."))
-        print("Run it from an interactive shell or use --generate-config and edit the config file by hand.")
+        print("The setup wizard needs an interactive terminal (TTY).")
+        print("Run --setup from an interactive shell or use --generate-config and edit the files manually.")
+        print(colorize_links(f"Guide: {QUICK_START_GUIDE_URL}"))
         raise SystemExit(1)
 
     method = _wizard_install_method()
@@ -13058,6 +17872,7 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
         config_path, env_path = _wizard_destinations(method, config_file, env_file)
     except ValueError as exc:
         print(colorize("error", f"Setup cannot start: {exc}."))
+        print_recovery_fix(exc, "setup")
         raise SystemExit(1) from None
 
     print(colorize("header", "Setup Wizard\n"))
@@ -13066,67 +17881,83 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     print("Secrets go to the dotenv file. Non-secret settings go to the config file.")
     print("No-login mode is simplest. Firefox session import is recommended for full monitoring.\n")
     print("Use a dedicated Instagram account for session login mode and follow the anti-detection guidance.")
-    print(f"Session login guide: {SESSION_IMPORT_GUIDE_URL}\n")
+    print(colorize_links(f"Session login guide: {SESSION_IMPORT_GUIDE_URL}\n"))
     print(f"Detected install method: {colorize('username', method)}")
     print(f"Configuration:          {config_path}")
     print(f"Dotenv:                 {env_path}")
 
-    config_path = _wizard_choose_config_destination(config_path)
-    for secret_key in SECRET_KEYS:
-        existing_secret = _wizard_secret_value(secret_key, env_path)
-        if existing_secret is not None:
-            globals()[secret_key] = existing_secret
-    baseline_values = dict(globals())
-    config_values = dict(baseline_values)
-    config_values["DOTENV_FILE"] = str(env_path)
-    state = WizardSetupState(config_path, env_path, baseline_values, config_values, {}, [], True, False, "no-login", "", None, None, True, False, False, False)
+    try:
+        config_path = _wizard_choose_config_destination(config_path, method)
+        baseline_values = dict(globals())
+        saved_settings = _wizard_seed_saved_settings(baseline_values, config_path)
+        env_path = _wizard_saved_env_destination(saved_settings, env_file, env_path, method)
+        if env_path == config_path.resolve():
+            raise ValueError("Configuration and dotenv destinations must be different files. Pass --env-file with another path.")
+        config_values = dict(baseline_values)
+        config_values["DOTENV_FILE"] = str(env_path)
+        state = WizardSetupState(config_path, env_path, baseline_values, config_values, {}, list(baseline_values.get("TARGET_USERNAMES") or []), True, False, "no-login", "", None, None, True, False, False, False)
 
-    print()
-    _wizard_collect_target_section(state, allow_empty=True)
-    _wizard_collect_polling_section(state)
-    _wizard_collect_login_section(state, method)
-    _wizard_collect_interface_section(state, method)
-    _wizard_collect_email_section(state)
-    _wizard_collect_webhook_section(state)
-    if not _wizard_review_setup(state, method):
+        print()
+        _wizard_collect_target_section(state, allow_empty=True)
+        print()
+        _wizard_collect_polling_section(state)
+        _wizard_collect_login_section(state, method)
+        _wizard_collect_connection_section(state)
+        _wizard_collect_interface_section(state, method)
+        _wizard_collect_email_section(state)
+        _wizard_collect_webhook_section(state)
+        _wizard_collect_output_section(state)
+        if not _wizard_review_setup(state, method):
+            print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
+            raise SystemExit(1)
+
+        print()
+        browser_import_complete = _wizard_finish_browser_import(state, method)
+    except (OSError, UnicodeError, ValueError) as exc:
+        print_recovery_error(exc, "setup")
+        print("Correct the selected file or pass --env-file with a writable destination.")
+        raise SystemExit(1) from None
+    except (EOFError, KeyboardInterrupt):
         print(colorize("warning", "Setup cancelled. Destination files were not changed."))
-        raise SystemExit(1)
-
-    print()
-    browser_import_complete = _wizard_finish_browser_import(state, method)
-    state.config_values.update({"TARGET_USERNAMES": list(state.targets) if state.persist_targets else [], "SESSION_USERNAME": state.session_username, "SKIP_SESSION": not state.logged_in, "DOTENV_FILE": str(state.env_path)})
+        raise SystemExit(1) from None
+    # Setup never creates a dotenv with nothing in it, so the config names one only when the file will be there.
+    # Naming a file that does not exist opens every later run with a warning about a file the setup does not need
+    dotenv_setting = str(state.env_path) if state.secret_updates or state.env_path.exists() else ""
+    state.config_values.update({"TARGET_USERNAMES": list(state.targets) if state.persist_targets else [], "SESSION_USERNAME": state.session_username, "SKIP_SESSION": not state.logged_in, "DOTENV_FILE": dotenv_setting})
     config_content = generate_config_with_current_values(state.config_values)
     try:
-        write_status = write_config_file(state.config_path, config_content)
+        preserve_inline_config_secrets(state.config_path, state.env_path)
+        write_status = write_config_file(state.config_path, config_content, redact_secrets=True)
     except Exception as exc:
         print(colorize("error", f"Could not write config file '{state.config_path}': {exc}"))
+        print_recovery_fix(exc, "config_write")
         raise SystemExit(1) from None
 
-    if state.secret_updates or not state.env_path.exists():
+    # A dotenv with nothing in it is noise beside the config, so an empty one is never created
+    if state.secret_updates:
         try:
             update_status = update_dotenv_file(state.env_path, state.secret_updates)
         except Exception as exc:
             print(colorize("error", f"Configuration was saved but secrets could not be written to '{state.env_path}': {exc}"))
+            print_recovery_fix(exc, "secret")
             print(colorize("warning", "Setup is incomplete and monitoring was not started."))
             raise SystemExit(1) from None
     else:
         update_status = None
 
-    globals().update(state.config_values)
-    for secret_key in SECRET_KEYS:
-        saved_secret = _wizard_secret_value(secret_key, state.env_path)
-        globals()[secret_key] = saved_secret if saved_secret is not None else ""
-    globals().update(state.secret_updates)
+    # A dotenv that was never written does not exist, so no command names it
+    env_argument = state.env_path if update_status is not None else None
+
+    wizard_timezone_advice = _wizard_apply_saved_values(state)
     CLI_CONFIG_PATH = str(state.config_path)
-    DOTENV_FILE = str(state.env_path)
+    DOTENV_FILE = dotenv_setting
 
     print(colorize("header", "\nSaved files\n"))
     print(f"  Configuration: {write_status['path']}")
     if write_status["backup_path"]:
         print(f"  Backup:        {write_status['backup_path']}")
     if update_status is not None:
-        label = "Secrets" if state.secret_updates else "Dotenv"
-        print(f"  {label + ':':<15}{update_status['path']}")
+        print(f"  {'Secrets:':<15}{update_status['path']}")
 
     container_browser_import_pending = method in ("docker", "compose") and state.import_browser == "firefox" and state.container_host is not None and not browser_import_complete
     local_browser_import_pending = method not in ("docker", "compose") and bool(state.import_browser) and not browser_import_complete
@@ -13135,39 +17966,52 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
     doctor_offered = not container_browser_import_pending
     if doctor_offered:
         print()
-    if doctor_offered and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
-        doctor_ran = True
-        doctor_failures = run_doctor(state.targets, env_path=state.env_path)
+    try:
+        if doctor_offered and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
+            doctor_ran = True
+            doctor_failures = run_doctor(state.targets, env_path=env_argument, timezone_advice=wizard_timezone_advice)
+    except (EOFError, KeyboardInterrupt):
+        # The files are already written, so an interrupt here only skips the optional check
+        print(colorize("warning", "Setup is saved. Use the commands below when ready."))
 
     command_targets = [] if state.persist_targets else state.targets
-    run_command = _wizard_action_command(method, "", state.config_path, state.env_path, command_targets, web_dashboard=state.want_web, host_os=state.container_host)
-    doctor_command = _wizard_action_command(method, "--doctor", state.config_path, state.env_path, command_targets, host_os=state.container_host)
+    run_command = _wizard_action_command(method, "", state.config_path, env_argument, command_targets, web_dashboard=state.want_web, host_os=state.container_host)
+    doctor_command = _wizard_action_command(method, "--doctor", state.config_path, env_argument, command_targets, host_os=state.container_host)
     print(colorize("header", "\nNext steps\n"))
     if container_browser_import_pending:
         selected_host = cast(str, state.container_host)
         host_label = CONTAINER_FIREFOX_HOSTS[selected_host][0]
-        print("Before import, open https://www.instagram.com/ in Firefox on the host and sign in to the Instagram account used for monitoring.\n")
-        print(f"Import Instagram login from Firefox on {host_label}:")
-        print(colorize("section", f"    {_firefox_import_cmd(method, state.env_path, exact=True, host_os=selected_host, config_path=state.config_path, targets=command_targets)}\n"))
-        print("After the import succeeds, check setup:")
-    else:
-        print("Check setup again:")
-    print(colorize("section", f"    {doctor_command}\n"))
-    print("After Doctor passes, start monitoring:" if container_browser_import_pending or local_browser_import_pending else "Start monitoring:")
-    print(colorize("section", f"    {run_command}\n"))
+        print(colorize_links("Before import, open https://www.instagram.com/ in Firefox on the host and sign in to the Instagram account used for monitoring.\n"))
+        _wizard_print_command(f"Import Instagram login from Firefox on {host_label}:", _firefox_import_cmd(method, state.env_path, host_os=selected_host, config_path=state.config_path, targets=command_targets))
+    if local_browser_import_pending:
+        # The configuration says login mode either way, so the missing session is stated rather than left to doctor
+        print(colorize("warning", f"The configuration was saved for login mode, but the {browser_label(cast(str, state.import_browser))} session was not imported, so no session file exists yet.\n"))
+        _wizard_print_command(f"Import the {browser_label(cast(str, state.import_browser))} session:", _wizard_browser_import_command(state, method))
+    _wizard_print_command("After the import succeeds, check setup:" if container_browser_import_pending or local_browser_import_pending else "Check setup again:", doctor_command)
+    _wizard_print_command("After Doctor passes, start monitoring:" if container_browser_import_pending or local_browser_import_pending else "Start monitoring:", run_command)
     if state.want_web:
-        print(f"Then open {colorize('link', 'http://127.0.0.1:8000/')} in your browser.\n")
+        print(f"Then open {colorize('link', web_dashboard_local_url())} in your browser.\n")
     if state.want_email:
-        print(f"Test email anytime with: {colorize('section', _wizard_action_command(method, '--send-test-email', state.config_path, state.env_path, host_os=state.container_host))}")
+        _wizard_print_command("Send a test email:", _wizard_action_command(method, "--send-test-email", state.config_path, env_argument, host_os=state.container_host))
     if state.want_webhook:
-        print(f"Test webhook anytime with: {colorize('section', _wizard_action_command(method, '--send-test-webhook', state.config_path, state.env_path, host_os=state.container_host))}")
+        _wizard_print_command("Send a test webhook:", _wizard_action_command(method, "--send-test-webhook", state.config_path, env_argument, host_os=state.container_host))
+    print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}\n")
 
+    try:
+        # Only a doctor run that passed proves the saved setup can monitor, so the launch offer waits for it
+        start_monitoring = bool(doctor_ran and not doctor_failures and method not in ("docker", "compose") and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True))
+    except (EOFError, KeyboardInterrupt):
+        # The files are already written, so an interrupt here only skips the optional launch
+        print(colorize("warning", "Setup is saved. Start monitoring with the command above when ready."))
+        raise SystemExit(0) from None
     if doctor_failures:
         print(colorize("warning", "Setup was saved but doctor found failures. Fix them before starting monitoring."))
-    elif method not in ("docker", "compose") and (not local_browser_import_pending or doctor_ran) and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True):
+    elif start_monitoring:
         launch_arguments = _wizard_local_command_args(method, exact=True)
         launch_arguments.extend(command_targets)
-        launch_arguments.extend(("--config-file", str(state.config_path), "--env-file", str(state.env_path)))
+        launch_arguments.extend(("--config-file", str(state.config_path)))
+        if env_argument is not None:
+            launch_arguments.extend(("--env-file", str(env_argument)))
         sys.stdout.flush()
         raise SystemExit(_wizard_launch_monitor(launch_arguments))
     elif local_browser_import_pending and not doctor_ran:
@@ -13176,21 +18020,28 @@ def run_setup_wizard(config_file=None, env_file=None) -> None:
 
 
 # Prints a short welcome with the most common commands and offers to launch the setup wizard
-def _wizard_welcome(parser) -> None:
+def print_welcome_screen(parser) -> None:
     method = _wizard_install_method()
     prefix = _wizard_cmd_prefix(method)
     web_prefix = _wizard_cmd_prefix(method, web_dashboard=True)
     interactive = sys.stdin.isatty()
-    print("Quickest start (no setup, no login):")
-    print(colorize("section", f"    {prefix} <username>\n"))
-    print("Easiest start (guided setup wizard):")
-    setup_hint = colorize("info", "   (or just answer Y below)") if interactive else ""
-    print(colorize("section", f"    {prefix} --setup") + setup_hint + "\n")
-    print("Point-and-click (no command line):")
-    print(colorize("section", f"    {web_prefix} --web-dashboard      then open http://127.0.0.1:8000\n"))
+    print("For <target_insta_user>, use an Instagram username or complete profile URL.\n")
+    _wizard_print_command("Quickest start (no setup, no login):", f"{prefix} <target_insta_user>")
+    setup_suffix = "   (or just answer Y below)" if interactive else ""
+    _wizard_print_command("Easiest start (guided setup wizard):", f"{prefix} --setup", setup_suffix)
+    _wizard_print_command("Point-and-click (no command line):", f"{web_prefix} --web-dashboard", f"      then open {web_dashboard_local_url()}")
+    _wizard_print_command("Check setup before monitoring:", f"{prefix} --doctor <target_insta_user>")
     print(f"Full options: {colorize('section', prefix + ' --help')}")
     print(f"\nGuide:        {colorize('link', QUICK_START_GUIDE_URL)}\n")
-    if interactive and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
+    if not interactive:
+        return
+    try:
+        start_setup = _wizard_ask_yes_no("Run the guided setup wizard now?", default=True)
+    except (EOFError, KeyboardInterrupt):
+        # This prompt sits outside the wizard, which reports what happened to the destination files
+        print(colorize("warning", "Setup cancelled."))
+        raise SystemExit(1) from None
+    if start_setup:
         print()
         run_setup_wizard()
 
@@ -13200,6 +18051,24 @@ def _wizard_should_offer_first_run(arguments, configured_targets, web_dashboard_
     return len(arguments) == 1 and not configured_targets and not web_dashboard_enabled
 
 
+# The four shared status markers. A fifth neutral marker is the single biggest source of drift between these
+# tools, because every state it would cover is a state the others already call PASS
+DOCTOR_STATUSES = ("PASS", "WARN", "FAIL", "SKIP")
+
+# The documented minimum polling interval, below which Instagram is far more likely to challenge the account
+DOCTOR_MIN_SAFE_CHECK_INTERVAL = 3600
+
+# The fixed section order the report renders in, chosen so each section depends only on the ones above it.
+# Two headers differ from the siblings on purpose: Session is the Instagram term for the saved login the
+# check reads, and Targets is plural because this tool monitors a list rather than one account
+DOCTOR_SECTIONS = ("Environment", "Configuration", "Session", "Connectivity", "Targets", "Notifications")
+
+# Delivery results are printed as they happen rather than inside a section, but they still count in the summary
+DOCTOR_DELIVERY_SECTION = "Optional delivery tests"
+
+DOCTOR_MARK_STYLES = {"PASS": "boolean_true", "WARN": "warning", "FAIL": "error", "SKIP": "info"}
+
+
 # Stores one doctor result before the report is rendered, keeping the check separate from its presentation
 @dataclass(frozen=True)
 class DoctorCheck:
@@ -13207,8 +18076,7 @@ class DoctorCheck:
     status: str
     label: str
     detail: str = ""
-    fix: str = ""
-    guide: str = ""
+    advice: Optional[RecoveryAdvice] = None
 
 
 # Collects doctor checks plus the shared state that later checks depend on
@@ -13224,38 +18092,48 @@ class DoctorReport:
         return sum(check.status == status for check in self.checks)
 
 
-# Creates one validated doctor check
-def make_doctor_check(section: str, status: str, label: str, detail: str = "", fix: str = "", guide: str = "") -> DoctorCheck:
-    if status not in ("ok", "warn", "fail", "info"):
+# Creates one validated doctor check, carrying the advice whose fix a row that is not a pass is printed with
+def make_doctor_check(section: str, status: str, label: str, detail: str = "", advice: Optional[RecoveryAdvice] = None) -> DoctorCheck:
+    if status not in DOCTOR_STATUSES:
         raise ValueError(f"Unsupported doctor status: {status}")
-    return DoctorCheck(section, status, label, detail, fix, guide)
+    # A row the user has to act on is useless without an action, so the row is rejected rather than printed bare
+    if status in ("WARN", "FAIL") and (advice is None or not advice.fix):
+        raise ValueError(f"Doctor {status} rows require a fix")
+    # Several advice objects carry the same text as their summary and printing it twice reads as two problems
+    return DoctorCheck(section, status, label, "" if detail.strip() == label.strip() else detail, advice)
 
 
-# Builds one doctor check from an error, reusing the shared fix hints so advice stays consistent
+# Builds one doctor check from an error, classifying it through the shared table so advice stays consistent
 def doctor_check_from_error(section: str, status: str, label: str, error_message: str, is_logged_in: bool = False, detail: str = "") -> DoctorCheck:
-    fix, guide = error_fix_parts(error_message, is_logged_in)
-    return make_doctor_check(section, status, label, detail, fix, guide)
+    advice = classify_recovery_error(error_message, is_logged_in=is_logged_in)
+    return make_doctor_check(section, status, label or advice.summary, detail, advice)
 
 
-# Prints one doctor check line with a status marker and an optional detail or hint
+# Prints one doctor check line with a status marker and an optional detail
 def _doctor_line(status: str, label: str, detail: str = "") -> None:
-    marks = {"ok": ("[PASS]", "boolean_true"), "warn": ("[WARN]", "warning"), "fail": ("[FAIL]", "error"), "skip": ("[SKIP]", "info"), "info": ("[ -- ]", "info")}
-    mark, theme = marks.get(status, ("[ -- ]", "info"))
-    print(f"{colorize(theme, mark)} {label}")
+    print(f"{colorize(DOCTOR_MARK_STYLES[status], f'[{status}]')} {label}")
     if detail:
-        print(f"  {detail}")
+        # The report is printed before the colour stream is installed, so the link colour every other line gets from it is applied here
+        print(f"  {colorize_links(detail)}")
+
+
+# Prints one plain value row for a report that states findings rather than check results
+def _report_value_line(text: str) -> None:
+    print(f"* {text}")
 
 
 # Prints an inline 'doing X...' status that the upcoming result line overwrites, on interactive terminals only
+# The line stays uncoloured on purpose: it is erased by writing exactly len(line) spaces, and escape
+# sequences would make that width wrong and leave a styled remnant behind
 def _doctor_progress(text: str) -> None:
     if not sys.stdout.isatty():
         return
     previous_width = getattr(_doctor_progress, "width", 0)
     if previous_width:
         sys.stdout.write("\r" + " " * previous_width + "\r")
-    line = f"{text} ..."
+    line = f"* Checking {ANSI_ESCAPE_RE.sub('', sanitize_terminal_text(text))} ..."
     _doctor_progress.width = len(line)  # type: ignore[attr-defined]
-    sys.stdout.write("\r" + colorize("info", line))
+    sys.stdout.write("\r" + line)
     sys.stdout.flush()
 
 
@@ -13272,15 +18150,19 @@ def _doctor_progress_clear() -> None:
 def _doctor_ask_yes_no(question: str) -> bool:
     while True:
         try:
-            raw = input(colorize("info", f"{question} [y/N]: ")).strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            print("\n" + colorize("info", "Delivery test skipped."))
+            raw = read_interactively(input, colorize("info", f"{question} [y/N]: ")).strip().lower()
+        except EOFError:
+            print("\nDelivery test skipped.")
             return False
+        except KeyboardInterrupt:
+            # Ctrl+C ends the run here the way it does anywhere else, rather than only declining this one test
+            signal_handler(signal.SIGINT, None)
+            raise
         if not raw or raw in ("n", "no"):
             return False
         if raw in ("y", "yes"):
             return True
-        print(colorize("warning", "  Please answer 'y' or 'n'."))
+        print("  Please answer 'y' or 'n'.")
 
 
 # Sends one approved doctor webhook while restoring its configured enabled state
@@ -13289,39 +18171,42 @@ def _doctor_send_test_webhook() -> int:
     previous_enabled = WEBHOOK_ENABLED
     try:
         WEBHOOK_ENABLED = True
-        return send_webhook("Instagram Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE)
+        return send_webhook("Instagram Monitor doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE, report_delivery=False)
     finally:
         WEBHOOK_ENABLED = previous_enabled
 
 
 # Offers separate real delivery tests only after interactive confirmation
-def _doctor_offer_notification_tests(smtp_ready: bool, webhook_ready: bool) -> int:
-    if not sys.stdin.isatty() or not sys.stdout.isatty() or not (smtp_ready or webhook_ready):
-        return 0
-    print(colorize("section", "\nOptional delivery tests\n"))
+def _doctor_offer_notification_tests(report: DoctorReport) -> None:
+    if not sys.stdin.isatty() or not sys.stdout.isatty() or not (report.smtp_ready or report.webhook_ready):
+        return
+    print("\n" + colorize("section", "Optional delivery tests") + "\n")
     print("Doctor will not write files. Each approved test sends one real message.\n")
-    failures = 0
-    if smtp_ready:
+    if report.smtp_ready:
         if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
-            result = send_email("instagram_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "This test email was sent after approval in <b>--doctor</b>. Your SMTP delivery settings work.", SMTP_SSL, smtp_timeout=5)
+            result = send_email("Instagram Monitor doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "This test email was sent after approval in <b>--doctor</b>. Your SMTP delivery settings work.", SMTP_SSL, smtp_timeout=5, report_delivery=False)
             if result == 0:
-                _doctor_line("ok", "Doctor test email delivered", "One real test email was sent after confirmation")
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", "Doctor test email delivered", "One real test email was sent after confirmation")
             else:
-                failures += 1
-                _doctor_line("fail", "Doctor test email delivery failed", "The approved test email could not be delivered")
+                advice = make_recovery_advice("smtp.connection", "Doctor test email delivery failed", recovery_fix_with_guide("Review the SMTP error above and correct the email settings", SMTP_GUIDE_URL), True)
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", advice.summary, "The approved test email could not be delivered", advice)
         else:
-            _doctor_line("skip", "Test email skipped", "No email was sent")
-    if webhook_ready:
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent", "You declined the real delivery test. Run doctor again and approve the email test when ready")
+        # Recorded on the report so the summary sentence and the exit code cannot disagree about the same run
+        report.checks.append(check)
+        _doctor_line(check.status, check.label, check.detail)
+    if report.webhook_ready:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
             if _doctor_send_test_webhook() == 0:
-                _doctor_line("ok", "Doctor test webhook delivered", "One real test webhook was sent after confirmation")
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", f"Doctor test webhook through {provider} delivered", "One real test webhook was sent after confirmation")
             else:
-                failures += 1
-                _doctor_line("fail", "Doctor test webhook delivery failed", "The approved test webhook could not be delivered")
+                advice = make_recovery_advice("webhook.connection", f"Doctor test webhook through {provider} delivery failed", recovery_fix_with_guide("Review the webhook error above and correct the destination settings", WEBHOOK_GUIDE_URL), True)
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", advice.summary, "The approved test webhook could not be delivered", advice)
         else:
-            _doctor_line("skip", "Test webhook skipped", "No webhook was sent")
-    return failures
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", f"Test webhook through {provider} was not sent", "You declined the real delivery test. Run doctor again and approve the webhook test when ready")
+        report.checks.append(check)
+        _doctor_line(check.status, check.label, check.detail)
 
 
 # Resolves the saved follower and following JSON list paths for a validated target
@@ -13491,20 +18376,20 @@ def run_follow_analysis(targets: Sequence[str]) -> int:
 
         if not result["available"]:
             for note in result["notes"]:
-                _doctor_line("warn", masked(note))
+                _doctor_line("WARN", masked(note))
             if result.get("searched_directory"):
-                _doctor_line("info", masked(f"Searched directory: {result['searched_directory']}"))
+                _report_value_line(masked(f"Searched directory: {result['searched_directory']}"))
             print("")
             continue
 
         analyzed += 1
-        _doctor_line("info", f"Followers: {result['followers_fetched']}")
-        _doctor_line("info", f"Followings: {result['followings_fetched']}")
-        _doctor_line("info", f"Mutual (follow each other): {result['mutual_count']}")
-        _doctor_line("info", f"Follower snapshot: {result['followers_saved_at']}")
-        _doctor_line("info", f"Following snapshot: {result['followings_saved_at']}")
+        _report_value_line(f"Followers: {result['followers_fetched']}")
+        _report_value_line(f"Followings: {result['followings_fetched']}")
+        _report_value_line(f"Mutual (follow each other): {result['mutual_count']}")
+        _report_value_line(f"Follower snapshot: {result['followers_saved_at']}")
+        _report_value_line(f"Following snapshot: {result['followings_saved_at']}")
         for note in result["notes"]:
-            _doctor_line("warn", masked(note))
+            _doctor_line("WARN", masked(note))
 
         not_back = result["not_following_back"]
         fans = result["fans"]
@@ -13536,11 +18421,12 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
     checks: List[DoctorCheck] = []
     selected_version = sys.version_info if version_info is None else version_info
     version_text = ".".join(str(part) for part in tuple(selected_version)[:3])
+    minimum_detail = f"Minimum supported version: {MINIMUM_PYTHON_VERSION_TEXT}"
     if tuple(selected_version)[:2] >= MINIMUM_PYTHON_VERSION:
-        checks.append(make_doctor_check("Environment", "ok", f"Python {version_text} is supported"))
+        checks.append(make_doctor_check("Environment", "PASS", f"Python {version_text} is supported", minimum_detail))
     else:
-        minimum_text = ".".join(str(part) for part in MINIMUM_PYTHON_VERSION)
-        checks.append(make_doctor_check("Environment", "fail", f"Python {version_text} is unsupported", "", f"install Python {minimum_text} or newer then retry.", INSTALLATION_GUIDE_URL))
+        advice = make_recovery_advice("dependency.missing", f"Python {version_text} is unsupported", recovery_fix_with_guide(f"Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer then retry", INSTALLATION_GUIDE_URL), False)
+        checks.append(make_doctor_check("Environment", "FAIL", advice.summary, minimum_detail, advice))
 
     find_spec = importlib.util.find_spec if spec_finder is None else spec_finder
 
@@ -13554,9 +18440,10 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
     required = (("instaloader", "instaloader"), ("requests", "requests"), ("dateutil", "python-dateutil"), ("pytz", "pytz"), ("tqdm", "tqdm"))
     for module_name, package_name in required:
         if module_present(module_name):
-            checks.append(make_doctor_check("Environment", "ok", f"Required dependency {package_name} is installed"))
+            checks.append(make_doctor_check("Environment", "PASS", f"Required dependency {package_name} is installed"))
         else:
-            checks.append(make_doctor_check("Environment", "fail", f"Required dependency {package_name} is missing", "", f"install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
+            advice = make_recovery_advice("dependency.missing", f"Required dependency {package_name} is missing", recovery_fix_with_guide(f'Install it with: pip3 install "{package_name}"', INSTALLATION_GUIDE_URL), False)
+            checks.append(make_doctor_check("Environment", "FAIL", advice.summary, "", advice))
 
     optional = (
         ("curl_cffi", "curl_cffi", _CURL_CFFI_AVAILABLE, "Used for browser TLS impersonation that avoids first-request 429 blocks", "Normal monitoring works without it, but Instagram is more likely to answer the first request with 429"),
@@ -13564,12 +18451,17 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         ("flask", "flask", FLASK_AVAILABLE, "Used only for the Web Dashboard", "Normal monitoring is unaffected when the Web Dashboard is unused"),
         ("dotenv", "python-dotenv", module_present("dotenv"), "Used only for loading secrets from a dotenv file", "Secrets in a dotenv file are ignored. Export them as environment variables instead"),
         ("pycookiecheat", "pycookiecheat", module_present("pycookiecheat"), "Used only for importing sessions from Chromium-based browsers. Firefox session import does not need it", "Required only for importing sessions from Chromium-based browsers. Firefox session import is unaffected"),
+        ("wcwidth", "wcwidth", module_present("wcwidth"), "Used only to measure display width for screen truncation", "Wide characters count as one column, so a line holding them can run past the limit. Normal monitoring is unaffected"),
     )
+    # The classic Command Prompt is the only place this library changes anything, so a machine it cannot affect is not warned about a package it does not need
+    if platform.system() == "Windows":
+        optional += (("colorama", "colorama", module_present("colorama"), "Used only for coloured output in the classic Windows Command Prompt", "Coloured output may not render in the classic Windows Command Prompt. Normal monitoring is unaffected. Windows Terminal needs nothing extra"),)
     for _, package_name, present, purpose, missing_purpose in optional:
         if present:
-            checks.append(make_doctor_check("Environment", "ok", f"Optional dependency {package_name} is installed", purpose))
+            checks.append(make_doctor_check("Environment", "PASS", f"Optional dependency {package_name} is installed", purpose))
         else:
-            checks.append(make_doctor_check("Environment", "warn", f"Optional dependency {package_name} is not installed", missing_purpose, f"install it with: pip install {package_name}", INSTALLATION_GUIDE_URL))
+            advice = make_recovery_advice("dependency.missing", f"Optional dependency {package_name} is not installed", recovery_fix_with_guide(f'Install it with: pip3 install "{package_name}"', INSTALLATION_GUIDE_URL), False)
+            checks.append(make_doctor_check("Environment", "WARN", advice.summary, missing_purpose, advice))
     return checks
 
 
@@ -13578,206 +18470,623 @@ def doctor_secret_is_set(value) -> bool:
     return isinstance(value, str) and bool(value.strip()) and not value.strip().startswith("your_")
 
 
+# Returns the diagnostic fields describing one secret, reporting presence alone since no secret here has a provider-issued length
+def secret_fields(value) -> Dict[str, Any]:
+    return {"value": "set" if doctor_secret_is_set(value) else "not set"}
+
+
+# Records where one secret resolved from and traces it, so a later layer overwrites the earlier answer instead of adding to it
+def record_secret_source(name: str, source: str, value: Any = None) -> None:
+    if source == "command line" and DOTENV_RELOAD_STATE:
+        DOTENV_RELOAD_STATE["base"][name] = globals().get(name) if value is None else value
+        DOTENV_RELOAD_STATE.setdefault("base_sources", {})[name] = source
+    if source not in SECRET_SOURCE_ORDER:
+        raise ValueError(f"Unsupported secret source: {source}")
+    resolved = globals().get(name) if value is None else value
+    # A placeholder is not a value, so it earns neither a source nor a row
+    if not doctor_secret_is_set(resolved):
+        SECRET_SOURCES.pop(name, None)
+        return
+    SECRET_SOURCES[name] = source
+    debug_print("Secret resolution", name=name, source=source, **secret_fields(resolved))
+
+
+# Reports that no layer supplied a secret, called once the command line has had its say so the answer is final
+def trace_unresolved_secrets() -> None:
+    if not SECRET_SOURCES:
+        debug_print("No private settings were resolved from config, dotenv, environment or the command line")
+
+
 # Groups configured secret names by the source each value actually came from
-def doctor_secret_sources(env_path=None) -> Tuple[List[str], List[str], List[str]]:
-    file_keys = set()
-    if env_path:
-        try:
-            from dotenv import dotenv_values
-            file_keys = {key for key, value in dotenv_values(env_path, interpolate=False).items() if value}
-        except Exception:
-            file_keys = set()
+def doctor_secret_sources(env_path=None) -> Tuple[List[str], List[str], List[str], List[str]]:
     from_file: List[str] = []
     from_environment: List[str] = []
     from_settings: List[str] = []
+    from_command_line: List[str] = []
     for key in SECRET_KEYS:
         if not doctor_secret_is_set(globals().get(key)):
             continue
-        if key in file_keys:
+        source = SECRET_SOURCES.get(key, "configuration file or command line")
+        if source.startswith("dotenv file"):
             from_file.append(key)
-        elif os.environ.get(key):
+        elif source == "environment":
             from_environment.append(key)
+        # A secret passed as an argument is known exactly, unlike one that only defaulted to the settings bucket
+        elif source == "command line":
+            from_command_line.append(key)
         else:
             from_settings.append(key)
-    return from_file, from_environment, from_settings
+    return from_file, from_environment, from_settings, from_command_line
 
 
 # Reports which secrets are in effect and where each one was read from
 def doctor_secret_checks(env_path=None) -> List[DoctorCheck]:
-    from_file, from_environment, from_settings = doctor_secret_sources(env_path)
+    from_file, from_environment, from_settings, from_command_line = doctor_secret_sources(env_path)
     checks: List[DoctorCheck] = []
     if from_file:
-        checks.append(make_doctor_check("Configuration", "ok", "Secrets loaded from the dotenv file", ", ".join(from_file)))
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the dotenv file", ", ".join(from_file)))
     if from_environment:
-        checks.append(make_doctor_check("Configuration", "ok", "Secrets loaded from the environment", ", ".join(from_environment)))
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the environment", ", ".join(from_environment)))
     if from_settings:
-        checks.append(make_doctor_check("Configuration", "ok", "Secrets loaded from the configuration file or command line", ", ".join(from_settings)))
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the configuration file", ", ".join(from_settings)))
+    if from_command_line:
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the command line", ", ".join(from_command_line)))
     if not checks:
-        checks.append(make_doctor_check("Configuration", "ok", "No secrets loaded", "Nothing was read from a dotenv file, the environment or the command line"))
+        checks.append(make_doctor_check("Configuration", "PASS", "No secrets loaded", "Nothing was read from a dotenv file, the environment, the configuration file or the command line"))
+    return checks
+
+
+# Turns one startup error line into a doctor label, since the printed "* Error:" prefix is not part of the finding
+def doctor_label_from_error(summary) -> str:
+    label = str(summary).lstrip("* ").rstrip(":")
+    return label[len("Error:"):].strip() if label.startswith("Error:") else label
+
+
+# Names every setting controlling runtime timing or counts whose value breaks what its consumers require
+def runtime_configuration_problems() -> Dict[str, str]:
+    problems: Dict[str, str] = {}
+    positive_numbers = (("INSTA_CHECK_INTERVAL", INSTA_CHECK_INTERVAL), ("CHECK_INTERNET_TIMEOUT", CHECK_INTERNET_TIMEOUT), ("FOLLOW_LIST_BROWSER_TIMEOUT", FOLLOW_LIST_BROWSER_TIMEOUT))
+    nonnegative_numbers = (("RANDOM_SLEEP_DIFF_LOW", RANDOM_SLEEP_DIFF_LOW), ("RANDOM_SLEEP_DIFF_HIGH", RANDOM_SLEEP_DIFF_HIGH), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL), ("NEXT_OPERATION_DELAY", NEXT_OPERATION_DELAY), ("FOLLOWER_DELAY_PER_BATCH", FOLLOWER_DELAY_PER_BATCH), ("FOLLOWEE_DELAY_PER_BATCH", FOLLOWEE_DELAY_PER_BATCH), ("FOLLOW_LIST_BROWSER_SCROLL_DELAY", FOLLOW_LIST_BROWSER_SCROLL_DELAY), ("MULTI_TARGET_STAGGER", MULTI_TARGET_STAGGER), ("MULTI_TARGET_STAGGER_JITTER", MULTI_TARGET_STAGGER_JITTER))
+    nonnegative_integers = (("DAILY_HUMAN_HITS", DAILY_HUMAN_HITS), ("FOLLOWERS_PER_BATCH", FOLLOWERS_PER_BATCH), ("FOLLOWEES_PER_BATCH", FOLLOWEES_PER_BATCH), ("FOLLOWER_LIMIT_TO_FETCH", FOLLOWER_LIMIT_TO_FETCH), ("FOLLOWEE_LIMIT_TO_FETCH", FOLLOWEE_LIMIT_TO_FETCH), ("IDENTITY_BUDGET_PER_DAY", IDENTITY_BUDGET_PER_DAY))
+    hours = (("MIN_H1", MIN_H1), ("MAX_H1", MAX_H1), ("MIN_H2", MIN_H2), ("MAX_H2", MAX_H2))
+    ports = (("SMTP_PORT", SMTP_PORT), ("WEB_DASHBOARD_PORT", WEB_DASHBOARD_PORT))
+    for name, value in positive_numbers:
+        if not finite_number(value) or value <= 0:
+            problems[name] = f"must be a number greater than zero, not {value!r}"
+    for name, value in nonnegative_numbers:
+        if not finite_number(value) or value < 0:
+            problems[name] = f"must be a number zero or greater, not {value!r}"
+    for name, value in nonnegative_integers:
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            problems[name] = f"must be an integer zero or greater, not {value!r}"
+    for name, value in hours:
+        if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 23:
+            problems[name] = f"must be an integer from 0 through 23, not {value!r}"
+    for name, value in ports:
+        if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 65535:
+            problems[name] = f"must be an integer from 1 through 65535, not {value!r}"
+    return problems
+
+
+# Returns all type and range errors in settings that control runtime timing or counts, one message per setting
+def runtime_configuration_errors() -> List[str]:
+    return [f"{name} {requirement}" for name, requirement in runtime_configuration_problems().items()]
+
+
+# Names every on/off setting holding something other than True or False, since a string such as "false" would count as on
+def runtime_boolean_errors() -> List[str]:
+    booleans = [name for name, value in config_template_defaults().items() if isinstance(value, bool)]
+    return [f"{name} must be True or False, not {globals().get(name)!r}" for name in booleans if not isinstance(globals().get(name), bool)]
+
+
+# Names every proxy setting that would stop traffic reaching Instagram, as one detail and action per problem
+def proxy_configuration_problems() -> List[Tuple[str, str]]:
+    if not PROXY_ENABLED:
+        return []
+    problems: List[Tuple[str, str]] = []
+    if not PROXY_URL:
+        problems.append(("Proxies are enabled but PROXY_URL has no value", "Set PROXY_URL to the proxy address, or set PROXY_ENABLED to False"))
+    elif not validate_proxy_url(PROXY_URL):
+        problems.append((f"PROXY_URL is not a usable proxy address, {describe_proxy_url_shape(PROXY_URL)}", "Set PROXY_URL to a complete address such as http://host:port, or set PROXY_ENABLED to False"))
+    if PROXY_CERT_PATH:
+        try:
+            resolve_existing_file_path(PROXY_CERT_PATH, "proxy certificate")
+        except ValueError:
+            problems.append((f"The proxy certificate file '{PROXY_CERT_PATH}' does not exist", "Point PROXY_CERT_PATH at an existing certificate file, or leave it empty"))
+    return problems
+
+
+# The values this file defines for the settings checked below, so a configuration file that makes one
+# unusable can be reported and then ignored instead of stopping the commands that exist to correct it
+BUILT_IN_SHAPE_SETTINGS = {name: globals()[name] for name in ('INSTA_LOGFILE', 'CSV_FILE', 'DOTENV_FILE', 'COLOR_THEME', 'TRUNCATE_CHARS', 'OUTPUT_DIR', 'WEB_DASHBOARD_TEMPLATE_DIR', 'PROFILE_PIC_FILE_EMPTY') if name in globals()}
+
+# Shape errors whose settings were replaced with the built-in values, so doctor still names them
+DISCARDED_SETTING_ERRORS = []
+
+DOTENV_STARTUP_ERRORS = {}
+
+# Proxy problems the run reported instead of exiting on, so a reporting command still names them after
+# continuing with the proxy switched off
+PROXY_STARTUP_ERRORS: List[Tuple[str, str]] = []
+
+
+# Names the cause of a dotenv file the run could not load, so startup and doctor word the same failure the same way
+def dotenv_load_problem(path, error):
+    if isinstance(error, UnicodeError):
+        return f"Dotenv file '{path}' is not valid UTF-8 text", "Save the dotenv file as UTF-8"
+    if isinstance(error, OSError):
+        return f"Dotenv file '{path}' could not be opened", "Check the dotenv file path and its read permissions"
+    return f"Dotenv file '{path}' could not be read", "Check that the dotenv file is readable UTF-8 text"
+
+
+# True when the selected command exists to correct the configuration, so a malformed setting is reported
+# there instead of stopping the one run that could repair it
+def command_reports_configuration(args=None):
+    # Read from the parsed namespace rather than the raw words, since argparse also accepts abbreviations
+    return any(getattr(args, name, False) for name in ("doctor", "setup", "set_smtp_password", "set_webhook_url"))
+
+
+# True when the selected command only reads or repairs local state, or exists to explain the configuration, so a
+# proxy it never uses is reported rather than allowed to stop it
+def command_runs_without_proxy(args=None):
+    return command_reports_configuration(args) or any(getattr(args, name, False) for name in ("clear_breaker", "show_exposure", "analyze_follows"))
+
+
+# Validates effective path settings before startup expands or opens them
+def prepare_configured_paths(args):
+    overrides = {'DOTENV_FILE': 'env_file', 'CSV_FILE': 'csv_file'}
+    overrides.update({'OUTPUT_DIR': 'output_dir', 'WEB_DASHBOARD_TEMPLATE_DIR': 'web_dashboard_template_dir'})
+    settings = globals().copy()
+    for name, argument in overrides.items():
+        value = getattr(args, argument, None)
+        if value:
+            settings[name] = value
+    if getattr(args, "truncate", None) is not None:
+        settings["TRUNCATE_CHARS"] = args.truncate
+        globals()["TRUNCATE_CHARS"] = args.truncate
+    errors = configuration_shape_errors(settings)
+    if not errors:
+        # Cleared here so a run that starts with usable settings cannot inherit an earlier run's report
+        DISCARDED_SETTING_ERRORS.clear()
+        return
+    advice = make_recovery_advice("config.invalid", "Invalid settings: " + ". ".join(errors), recovery_fix_with_guide("Correct the named settings in the configuration file or command line", CONFIG_GUIDE_URL), False)
+    # A monitoring run cannot continue on a value this broken, but doctor, the setup wizard and the secret
+    # commands are how it gets corrected, so they fall back to the built-in values and report the setting
+    if not command_reports_configuration(args):
+        print_recovery_advice(advice)
+        raise SystemExit(1)
+    DISCARDED_SETTING_ERRORS[:] = errors
+    # Only the values that are broken after command-line overrides are replaced, so an override still wins
+    for name, built_in in BUILT_IN_SHAPE_SETTINGS.items():
+        if name in settings and configuration_shape_errors({name: settings[name]}):
+            globals()[name] = built_in
+    # Doctor lists the same settings as report rows, so a warning above it would only say them twice
+    if not getattr(args, "doctor", False):
+        print_recovery_advice(advice, label="Warning")
+        print()
+
+
+# Names malformed path and color settings before diagnostics consume their values
+def configuration_shape_errors(settings=None):
+    errors = list(DISCARDED_SETTING_ERRORS) if settings is None else []
+    settings = globals() if settings is None else settings
+    for name in ('INSTA_LOGFILE', 'CSV_FILE', 'DOTENV_FILE', 'OUTPUT_DIR', 'WEB_DASHBOARD_TEMPLATE_DIR', 'PROFILE_PIC_FILE_EMPTY'):
+        if name in settings and not isinstance(settings[name], (str, os.PathLike)):
+            errors.append(f"{name} must be a path string")
+    width = settings.get("TRUNCATE_CHARS", 0)
+    if not isinstance(width, int) or isinstance(width, bool) or width < 0:
+        errors.append("TRUNCATE_CHARS must be an integer zero or greater")
+    theme = settings.get("COLOR_THEME", {})
+    if not isinstance(theme, dict):
+        errors.append("COLOR_THEME must be a dictionary of style strings")
+    else:
+        errors.extend(f"COLOR_THEME[{key!r}] must be a style string" for key, value in theme.items() if not isinstance(value, str))
+    return errors
+
+
+# Replaces every setting still holding a value this file cannot use with the built-in one, so a report reached
+# from any entry point reads a usable value after it has named the setting
+def discard_invalid_shape_settings():
+    for name, built_in in BUILT_IN_SHAPE_SETTINGS.items():
+        if configuration_shape_errors({name: globals().get(name)}):
+            globals()[name] = built_in
+
+
+# Reports whether Instagram traffic is routed through a proxy, and every proxy setting that would stop it.
+# The recorded startup problems win, since a run that reported them continued with the proxy switched off
+def doctor_proxy_checks() -> List[DoctorCheck]:
+    problems = list(PROXY_STARTUP_ERRORS) or proxy_configuration_problems()
+    if problems:
+        return [make_doctor_check("Configuration", "FAIL", detail, "", make_recovery_advice("config.invalid", detail, recovery_fix_with_guide(fix, PROXY_GUIDE_URL), False)) for detail, fix in problems]
+    if not PROXY_ENABLED:
+        return [make_doctor_check("Configuration", "PASS", "Proxy is disabled", "Instagram requests leave this machine directly")]
+    detail = f"Destination: {proxy_destination_display()}. Webhooks: {'through the proxy' if PROXY_WEBHOOKS else 'sent directly'}"
+    if PROXY_CERT_PATH:
+        detail += f". Certificate: {PROXY_CERT_PATH}"
+    return [make_doctor_check("Configuration", "PASS", "Instagram requests go through a proxy", detail)]
+
+
+# Reports an interface the configuration switches on that this machine cannot start, since the optional dependency
+# warning states the general case and says the opposite of what an enabled interface means
+def doctor_interface_checks() -> List[DoctorCheck]:
+    checks: List[DoctorCheck] = []
+    for enabled, available, name, package in ((WEB_DASHBOARD_ENABLED, FLASK_AVAILABLE, "Web Dashboard", "flask"), (DASHBOARD_ENABLED, RICH_AVAILABLE, "Terminal Dashboard", "rich")):
+        if not enabled:
+            continue
+        if available:
+            checks.append(make_doctor_check("Configuration", "PASS", f"The {name} is enabled"))
+            continue
+        advice = make_recovery_advice("dependency.missing", f"The {name} is enabled but cannot start", recovery_fix_with_guide(f"Install it with: {pip_install_command(package)}, or turn the {name} off", INSTALLATION_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, f"The {package} package is not installed, so monitoring runs without it", advice))
+    return checks
+
+
+# Reports the paths a run writes whatever the log and CSV settings say: the account safety ledger, whose loss stops
+# the account rather than one output file, and the saved follower and following lists
+def doctor_state_path_checks(targets) -> List[DoctorCheck]:
+    ledger = exposure_state_path()
+    if output_destination_is_writable(ledger):
+        checks = [make_doctor_check("Configuration", "PASS", "Account safety ledger appears writable", f"Path: {ledger}")]
+    else:
+        advice = make_recovery_advice("file.unwritable", "Account safety ledger is not writable", recovery_fix_with_guide("Choose a writable location with --output-dir or OUTPUT_DIR", OUTPUT_GUIDE_URL), False)
+        checks = [make_doctor_check("Configuration", "FAIL", advice.summary, f"Path: {ledger}. Monitoring stops the account when this file cannot be maintained", advice)]
+    if SKIP_FOLLOWERS and SKIP_FOLLOWINGS:
+        return checks
+    reported = set()
+    for target in targets or []:
+        try:
+            followers_file = get_follow_list_paths(target, is_multi=len(targets) > 1)[0]
+        except ValueError:
+            continue
+        directory = os.path.dirname(os.path.abspath(followers_file))
+        if directory in reported:
+            continue
+        reported.add(directory)
+        if output_destination_is_writable(followers_file):
+            checks.append(make_doctor_check("Configuration", "PASS", "Saved follower list directory appears writable", f"Path: {directory}"))
+        else:
+            advice = make_recovery_advice("file.unwritable", "Saved follower list directory is not writable", recovery_fix_with_guide("Choose a writable location with --output-dir or OUTPUT_DIR", OUTPUT_GUIDE_URL), False)
+            checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, f"Path: {directory}. Follower and following changes cannot be compared without it", advice))
     return checks
 
 
 # Reports the selected configuration, any startup rejection, known secrets and the final log destinations
-def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None) -> List[DoctorCheck]:
-    checks: List[DoctorCheck] = []
-    cfg = find_config_file(CLI_CONFIG_PATH)
+def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None, timezone_advice=None) -> List[DoctorCheck]:
+    # Read before the unusable values are replaced, so each row names the value the user configured
+    # Reported as ordinary rows so one malformed setting cannot hide the rest of the configuration report
+    checks: List[DoctorCheck] = [make_doctor_check("Configuration", "FAIL", detail, advice=make_recovery_advice("config.invalid", detail, recovery_fix_with_guide("Correct the named setting in the configuration file", CONFIG_GUIDE_URL), False)) for detail in configuration_shape_errors()]
+    discard_invalid_shape_settings()
+    cfg = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
     if config_errors:
         for config_error in config_errors:
-            checks.append(make_doctor_check("Configuration", "fail", config_error["summary"].lstrip("* ").rstrip(":"), config_error.get("detail", ""), config_error.get("fix", ""), CONFIG_FILE_GUIDE_URL))
+            advice = make_recovery_advice("config.invalid", doctor_label_from_error(config_error["summary"]), recovery_fix_with_guide(config_error.get("fix", ""), CONFIG_GUIDE_URL), False, config_error.get("detail", ""))
+            checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, config_error.get("detail", ""), advice))
     elif cfg:
-        checks.append(make_doctor_check("Configuration", "ok", "Configuration file loaded", f"Path: {cfg}"))
+        checks.append(make_doctor_check("Configuration", "PASS", "Configuration file loaded", f"Path: {cfg}"))
     else:
-        checks.append(make_doctor_check("Configuration", "ok", "No configuration file selected", "Using built-in defaults and command-line overrides. Create one with --setup"))
+        checks.append(make_doctor_check("Configuration", "PASS", "No configuration file selected", "Using built-in defaults and command-line overrides"))
     if retired_settings:
-        checks.append(make_doctor_check("Configuration", "warn", "Config file contains removed settings", describe_retired_settings(retired_settings, cfg), "delete the reported settings, or regenerate the file with --generate-config.", CONFIG_FILE_GUIDE_URL))
+        advice = make_recovery_advice("config.invalid", "Config file contains removed settings", recovery_fix_with_guide("Delete the reported settings or regenerate the file with --generate-config", CONFIG_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "WARN", advice.summary, describe_retired_settings(retired_settings, cfg), advice))
 
-    if env_path:
-        checks.append(make_doctor_check("Configuration", "ok", "Dotenv file loaded", f"Path: {env_path}"))
+    if env_path and str(env_path) in DOTENV_STARTUP_ERRORS:
+        detail, fix = DOTENV_STARTUP_ERRORS[str(env_path)]
+        advice = make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(f"{fix}, then run Doctor again", SECRETS_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "FAIL", "Dotenv file could not be loaded", detail, advice))
+    elif env_path and os.path.isfile(str(env_path)):
+        checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
+    elif env_path:
+        advice = make_recovery_advice("config.missing", "The requested dotenv file was not found", recovery_fix_with_guide("Create the file or select an existing path with --env-file", SECRETS_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "WARN", advice.summary, f"Path: {env_path}", advice))
     else:
-        checks.append(make_doctor_check("Configuration", "ok", "No dotenv file selected", "Using environment variables and other configured sources"))
+        checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file selected", "Using environment variables and other configured sources"))
     checks.extend(doctor_secret_checks(env_path))
 
+    timezone_label = TIMEZONE_CHECK_LABELS[LOCAL_TIMEZONE_STATE]
+    if timezone_advice is not None:
+        checks.append(make_doctor_check("Configuration", "FAIL", timezone_label, timezone_advice.detail, timezone_advice))
+    else:
+        checks.append(make_doctor_check("Configuration", "PASS", timezone_label, f"Time zone: {LOCAL_TIMEZONE}"))
+
+    # Reported before the rows that read one of these settings, since formatting or comparing a value of the wrong
+    # type raises out of the one command whose job is to explain a broken configuration
+    numeric_problems = runtime_configuration_problems()
+    if numeric_problems:
+        advice = make_recovery_advice("config.invalid", "One or more numeric settings are invalid", recovery_fix_with_guide("Correct the reported settings in the configuration file", CONFIG_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, "Invalid numeric settings: " + "; ".join(f"{name} {requirement}" for name, requirement in numeric_problems.items()), advice))
+    boolean_errors = runtime_boolean_errors()
+    if boolean_errors:
+        advice = make_recovery_advice("config.invalid", "One or more on/off settings are invalid", recovery_fix_with_guide("Set the reported settings to True or False in the configuration file", CONFIG_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, "Invalid on/off settings: " + "; ".join(boolean_errors), advice))
+
+    if 'INSTA_CHECK_INTERVAL' not in numeric_problems:
+        intervals = f"{display_time(INSTA_CHECK_INTERVAL)} between checks"
+        if INSTA_CHECK_INTERVAL < DOCTOR_MIN_SAFE_CHECK_INTERVAL:
+            advice = make_recovery_advice("instagram.rate_limited", "Check intervals are short", recovery_fix_with_guide(f"Raise INSTA_CHECK_INTERVAL to at least {DOCTOR_MIN_SAFE_CHECK_INTERVAL} seconds", ANTI_DETECTION_INTERVAL_GUIDE_URL), True)
+            checks.append(make_doctor_check("Configuration", "WARN", advice.summary, intervals, advice))
+
+    if VERIFY_SSL:
+        checks.append(make_doctor_check("Configuration", "PASS", "TLS certificate verification is on", "Every outbound request checks the server certificate"))
+    else:
+        advice = make_recovery_advice("config.insecure", "TLS certificate verification is off", recovery_fix_with_guide("Set VERIFY_SSL back to True unless this network intercepts TLS with its own certificate authority", TLS_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "WARN", advice.summary, "VERIFY_SSL is False, so an intercepted connection cannot be told apart from the real service", advice))
+    checks.extend(doctor_proxy_checks())
+
+    agents = ". ".join(f"{label}: {agent}" for label, agent in (("Browser agent", USER_AGENT), ("Mobile agent", USER_AGENT_MOBILE)) if agent)
+    if _curl_cffi_backend_active():
+        checks.append(make_doctor_check("Configuration", "PASS", f"Requests reach Instagram as {_curl_cffi_impersonate_target()}", f"Backend: curl_cffi, impersonating {_curl_cffi_impersonate_display()}. {agents}".strip()))
+    else:
+        advice = make_recovery_advice("config.invalid", "Requests reach Instagram as a Python client", recovery_fix_with_guide("Set HTTP_BACKEND to curl_cffi to present a real browser handshake", HTTP_BACKEND_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "WARN", advice.summary, f"Backend: requests, which presents this machine's own TLS fingerprint whatever USER_AGENT claims. {agents}".strip(), advice))
+
+    follow_source = active_follow_list_source()
+    unknown_source = unrecognised_follow_list_source()
+    if unknown_source is not None:
+        advice = make_recovery_advice("config.invalid", "FOLLOW_LIST_SOURCE names no known source", recovery_fix_with_guide(f"Set FOLLOW_LIST_SOURCE to {join_setting_names(list(FOLLOW_LIST_SOURCES), 'or')}", FOLLOW_LIST_SOURCE_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "WARN", advice.summary, f"{unknown_source!r} is ignored and follower lists are read over {follow_list_source_display()}", advice))
+    elif follow_source != 'browser':
+        checks.append(make_doctor_check("Configuration", "PASS", f"Follower lists are read over {follow_list_source_display()}"))
+    else:
+        browser_ready, browser_detail, browser_fix = browser_follow_list_readiness()
+        identity_mismatch = browser_identity_mismatch()
+        if identity_mismatch is not None:
+            advice = make_recovery_advice("config.invalid", "The browser follower list source would not match the rest of the session", recovery_fix_with_guide(identity_mismatch[1], FOLLOW_LIST_SOURCE_GUIDE_URL), False)
+            checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, identity_mismatch[0], advice))
+        elif browser_ready:
+            advice = make_recovery_advice("config.invalid", "Follower lists are read by a real browser", recovery_fix_with_guide("Set FOLLOW_LIST_SOURCE back to auto if a check takes too long or the machine is small", FOLLOW_LIST_SOURCE_GUIDE_URL), False)
+            checks.append(make_doctor_check("Configuration", "WARN", advice.summary, f"{browser_detail}. This source is experimental and uses far more CPU and memory than the HTTP sources", advice))
+        else:
+            advice = make_recovery_advice("dependency.missing", "The browser follower list source cannot run", recovery_fix_with_guide(browser_fix, FOLLOW_LIST_SOURCE_GUIDE_URL), False)
+            checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, browser_detail, advice))
+
+    checks.extend(doctor_interface_checks())
+
+    if not CSV_FILE:
+        checks.append(make_doctor_check("Configuration", "PASS", "CSV logging is disabled"))
+    else:
+        for target in targets or [""]:
+            target_csv = get_target_paths(target)[0] if target else CSV_FILE
+            label = f"CSV destination for '{target}'" if target else "CSV destination"
+            if output_destination_is_writable(target_csv):
+                checks.append(make_doctor_check("Configuration", "PASS", f"{label} appears writable", f"Path: {target_csv}"))
+            else:
+                advice = make_recovery_advice("file.unwritable", f"{label} is not writable", "Choose a writable path with --csv-file or CSV_FILE", False)
+                checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, f"Path: {target_csv}", advice))
+
     if DISABLE_LOGGING:
-        checks.append(make_doctor_check("Configuration", "ok", "Output logging is disabled", "No log file will be written"))
+        checks.append(make_doctor_check("Configuration", "PASS", "Output logging is disabled"))
     elif targets:
         for target in targets:
             _, target_log = get_target_paths(target)
             if output_destination_is_writable(target_log):
-                checks.append(make_doctor_check("Configuration", "ok", f"Log destination for '{target}' appears writable", f"Path: {target_log}"))
+                checks.append(make_doctor_check("Configuration", "PASS", f"Log destination for '{target}' appears writable", f"Path: {target_log}"))
             else:
-                checks.append(make_doctor_check("Configuration", "fail", f"Log destination for '{target}' is not writable", f"Path: {target_log}", "choose a writable path with --output-dir or INSTA_LOGFILE, or disable logging with -d."))
+                advice = make_recovery_advice("file.unwritable", f"Log destination for '{target}' is not writable", "Choose a writable path with --output-dir or INSTA_LOGFILE. Disable logging with -d when no log file is wanted", False)
+                checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, f"Path: {target_log}", advice))
     else:
-        checks.append(make_doctor_check("Configuration", "ok", "Log destination will be finalized after a target is selected", f"Base path: {INSTA_LOGFILE}"))
+        checks.append(make_doctor_check("Configuration", "PASS", "Log destination will be finalized after a target is selected", f"Base path: {INSTA_LOGFILE}"))
+    checks.extend(doctor_state_path_checks(targets))
     return checks
 
 
 # Builds the single Instaloader instance the live checks share and reports a failure to create it
 def doctor_prepare_bot(report: DoctorReport) -> List[DoctorCheck]:
     try:
-        report.bot = instaloader.Instaloader(user_agent=USER_AGENT, iphone_support=True, quiet=True)
-        if PROXY_ENABLED:
-            set_instaloader_proxies(report.bot)
+        report.bot = instaloader_client(user_agent=USER_AGENT, iphone_support=True, quiet=True)
     except Exception as exc:
-        return [make_doctor_check("Configuration", "fail", "Could not initialise Instaloader", format_error_message(exc))]
+        advice = make_recovery_advice("dependency.missing", "Could not initialise Instaloader", recovery_fix_with_guide("Reinstall the instaloader package then run --doctor again", INSTALLATION_GUIDE_URL), False)
+        return [make_doctor_check("Configuration", "FAIL", advice.summary, format_error_message(exc), advice)]
     return []
+
+
+# Maps a circuit breaker failure class to the recovery code and guide the rest of the tool uses for that cause
+def breaker_recovery_classification(failure_class: str) -> Tuple[str, str]:
+    if failure_class == "auth_expired":
+        return "session.expired", SESSION_IMPORT_GUIDE_URL
+    if failure_class == "ledger_unavailable":
+        return "file.unreadable", CIRCUIT_BREAKER_GUIDE_URL
+    if failure_class == "challenge":
+        return "instagram.challenge", CIRCUIT_BREAKER_GUIDE_URL
+    if failure_class == "action_block":
+        return "instagram.action_blocked", ACTION_BLOCK_GUIDE_URL
+    return "instagram.action_blocked", CIRCUIT_BREAKER_GUIDE_URL
+
+
+# Reports an account the circuit breaker has stopped, since every other check can pass while monitoring stays paused.
+# A session that still signs in only warns, because the next start re-checks it and resumes without anything to clear
+def doctor_breaker_checks(session_valid: bool) -> List[DoctorCheck]:
+    state = circuit_breaker_state()
+    if not state:
+        return []
+    account = exposure_account_name()
+    failure_class = str(state.get("failure_class") or "unknown")
+    code, guide = breaker_recovery_classification(failure_class)
+    stopped_at = get_date_from_ts(state.get("tripped_ts")) if state.get("tripped_ts") else "an earlier run"
+    detail = f"Instagram acted against {account} ({failure_class}) at {stopped_at}. No Instagram request is made for this account until it recovers"
+    advice = make_recovery_advice(code, f"Monitoring is paused for {account}", recovery_fix_with_guide(breaker_recovery_hint(failure_class), guide), False, detail)
+    return [make_doctor_check("Session", "WARN" if session_valid else "FAIL", advice.summary, detail, advice)]
 
 
 # Validates the saved Instagram session, or explains that no-login mode needs none
 def doctor_check_session(report: DoctorReport, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
     if not logged_in:
-        return [make_doctor_check("Session", "ok", "No-login mode", "No session needed. Stories, reels and follower churn require Logged-in mode.")]
+        return [make_doctor_check("Session", "PASS", "No-login mode", "Stories, reels and follower churn require Logged-in mode")]
     if report.bot is None:
-        return [make_doctor_check("Session", "warn", "Skipped session check", "Instaloader could not be initialised")]
+        return [make_doctor_check("Session", "SKIP", "The saved session was not checked", "Instaloader could not be initialised, so no sign-in was attempted")] + doctor_breaker_checks(False)
     if progress is not None:
-        progress(f"Validating session for {SESSION_USERNAME}")
+        progress(f"the session for {SESSION_USERNAME}")
     try:
         report.bot.load_session_from_file(SESSION_USERNAME)
         who = report.bot.test_login()
-        if who:
-            return [make_doctor_check("Session", "ok", f"Session valid for {who}")]
-        return [doctor_check_from_error("Session", "warn", f"Session for {SESSION_USERNAME} is not logged in", "login_required", True)]
+        if who and str(who).casefold() != str(SESSION_USERNAME).casefold():
+            # Monitoring refuses to resume an account whose saved session signs in as somebody else, so a pass here
+            # would promise something the next run will not do
+            advice = make_recovery_advice("session.expired", f"The saved session signs in as {who}, not {SESSION_USERNAME}", recovery_fix_with_guide(f"Set SESSION_USERNAME to {who}, or re-import the session for {SESSION_USERNAME} with '{session_recovery_command()}'{session_recovery_browser_hint()}", SESSION_IMPORT_GUIDE_URL), False)
+            checks = [make_doctor_check("Session", "FAIL", advice.summary, "Monitoring stops an account whose saved session belongs to another account", advice)]
+        elif who:
+            checks = [make_doctor_check("Session", "PASS", f"Session valid for {who}")]
+        else:
+            checks = [doctor_check_from_error("Session", "WARN", f"Session for {SESSION_USERNAME} is not logged in", "login_required", True)]
     except FileNotFoundError:
-        return [doctor_check_from_error("Session", "fail", f"No saved session for {SESSION_USERNAME}", "session file not found", True)]
+        checks = [doctor_check_from_error("Session", "FAIL", f"No saved session for {SESSION_USERNAME}", "session file not found", True)]
     except Exception as exc:
         message = format_error_message(exc)
-        return [doctor_check_from_error("Session", "fail", f"Session check failed: {message}", message, True)]
+        checks = [doctor_check_from_error("Session", "FAIL", "", message, True, message)]
+    return checks + doctor_breaker_checks(checks[0].status == "PASS")
+
+
+# Confirms the endpoint the tool checks at startup answers, using the configured URL and timeout
+def doctor_connectivity_endpoint_check() -> DoctorCheck:
+    global LAST_CONNECTIVITY_ERROR
+    LAST_CONNECTIVITY_ERROR = None
+    if check_internet(quiet=True):
+        return make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", f"Endpoint: {CHECK_INTERNET_URL}")
+    advice = make_recovery_advice("network.unavailable", "The connectivity endpoint could not be reached", "Check network, DNS, proxy and CHECK_INTERNET_URL settings", True)
+    return make_doctor_check("Connectivity", "FAIL", advice.summary, f"Endpoint: {CHECK_INTERNET_URL}", advice)
 
 
 # Confirms Instagram answers a public profile request through the configured transport
 def doctor_check_connectivity(report: DoctorReport, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
+    checks = [doctor_connectivity_endpoint_check()]
     if report.bot is None:
-        return [make_doctor_check("Connectivity", "warn", "Skipped connectivity check", "Instaloader could not be initialised")]
+        return checks + [make_doctor_check("Connectivity", "SKIP", "Instagram connectivity check was skipped", "Instaloader could not be initialised, so no request was attempted")]
     if progress is not None:
-        progress("Contacting Instagram")
+        progress("connectivity")
     try:
         profile_from_username_resilient(report.bot, FLAGGED_PROBE_USERNAME)
-        return [make_doctor_check("Connectivity", "ok", "Instagram reachable", f"Fetched public account '{FLAGGED_PROBE_USERNAME}'")]
+        return checks + [make_doctor_check("Connectivity", "PASS", "Instagram reachable", f"Fetched public account '{FLAGGED_PROBE_USERNAME}'")]
     except Exception as exc:
         message = format_error_message(exc)
         logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
-        return [doctor_check_from_error("Connectivity", "fail", "Instagram not reachable or blocked", message, logged_in, message)]
+        return checks + [doctor_check_from_error("Connectivity", "FAIL", "Instagram not reachable or blocked", message, logged_in, message)]
 
 
 # Confirms each configured target profile can be fetched
 def doctor_check_targets(report: DoctorReport, targets, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     if not targets:
+        if WEB_DASHBOARD_ENABLED and FLASK_AVAILABLE:
+            return [make_doctor_check("Targets", "PASS", "No targets configured yet", "The Web Dashboard is enabled, so targets can be added there")]
         if WEB_DASHBOARD_ENABLED:
-            return [make_doctor_check("Targets", "ok", "No targets configured yet", "The Web Dashboard is enabled, so targets can be added there")]
-        return [make_doctor_check("Targets", "warn", "No targets configured", "Nothing will be monitored", "pass a target on the command line, set TARGET_USERNAMES in the config, or enable the Web Dashboard.", QUICK_START_GUIDE_URL)]
+            advice = make_recovery_advice("dependency.missing", "No targets configured and the Web Dashboard cannot start", recovery_fix_with_guide(f"Install Flask with: {pip_install_command('flask')}, or pass a target on the command line or set TARGET_USERNAMES in the config", INSTALLATION_GUIDE_URL), False)
+            return [make_doctor_check("Targets", "FAIL", advice.summary, "Nothing will be monitored and there is no dashboard to add a target in", advice)]
+        advice = make_recovery_advice("target.missing", "No targets configured", recovery_fix_with_guide(NO_TARGET_FIX, QUICK_START_GUIDE_URL), False)
+        return [make_doctor_check("Targets", "WARN", advice.summary, "Nothing will be monitored", advice)]
     if report.bot is None:
-        return [make_doctor_check("Targets", "warn", "Skipped target checks", "Instaloader could not be initialised")]
+        return [make_doctor_check("Targets", "SKIP", "The monitored profiles were not checked", "Instaloader could not be initialised, so no lookup was attempted")]
     checks: List[DoctorCheck] = []
+    # Matches the connectivity check, so a no-login run is never told its session may be flagged
+    logged_in = bool(SESSION_USERNAME) and not SKIP_SESSION
     for target in targets:
         if progress is not None:
-            progress(f"Looking up '{target}'")
+            progress(f"the monitored profile '{target}'")
         try:
             profile_from_username_resilient(report.bot, target)
-            checks.append(make_doctor_check("Targets", "ok", f"Target '{target}' found"))
+            checks.append(make_doctor_check("Targets", "PASS", f"Target '{target}' found"))
         except Exception as exc:
             message = format_error_message(exc)
-            checks.append(doctor_check_from_error("Targets", "warn", f"Target '{target}' could not be fetched", message, True, message))
+            checks.append(doctor_check_from_error("Targets", "FAIL", f"Target '{target}' could not be fetched", message, logged_in, message))
     return checks
+
+
+# Joins setting names the way every doctor detail and action in this family lists them
+def join_setting_names(names: Sequence[str], conjunction: str) -> str:
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} {conjunction} {names[-1]}"
+
+
+# Reports the first unusable email setting as a doctor detail and an action that names the same settings
+def email_settings_problem() -> Optional[Tuple[str, str]]:
+    unset = [name for name, value in (("SMTP_HOST", SMTP_HOST), ("SMTP_USER", SMTP_USER), ("SMTP_PASSWORD", SMTP_PASSWORD)) if is_placeholder_setting(value)]
+    if unset:
+        return (f"{join_setting_names(unset, 'or')} is empty or still set to its placeholder", f"Set {join_setting_names(unset, 'and')} or turn the email alerts off")
+    # Named here rather than attempted, since the connection would otherwise raise on int(SMTP_PORT) and report a
+    # Python error, or resolve a host name the sender itself refuses
+    if "SMTP_PORT" in runtime_configuration_problems():
+        return ("SMTP_PORT is not a port number from 1 through 65535", "Correct SMTP_PORT or turn the email alerts off")
+    if not smtp_host_is_usable(SMTP_HOST):
+        return ("SMTP_HOST is not an IP address or hostname", "Correct SMTP_HOST or turn the email alerts off")
+    if not is_valid_email_address(SENDER_EMAIL) or not is_valid_email_address(RECEIVER_EMAIL):
+        return ("SENDER_EMAIL or RECEIVER_EMAIL is not an email address", "Correct SENDER_EMAIL and RECEIVER_EMAIL or turn the email alerts off")
+    return None
+
+
+# Returns the doctor row for email alerts whose settings cannot deliver, worded the same way by every sibling monitor
+def doctor_email_unusable_check(detail: str, fix: str) -> DoctorCheck:
+    advice = make_recovery_advice("smtp.invalid", EMAIL_UNUSABLE_CHECK_LABEL, recovery_fix_with_guide(fix, SMTP_GUIDE_URL), False, detail)
+    return make_doctor_check("Notifications", "WARN", advice.summary, detail, advice)
 
 
 # Checks SMTP login and webhook configuration without sending anything
 def doctor_check_notifications(report: DoctorReport, progress: Optional[Callable[[str], None]] = None) -> List[DoctorCheck]:
     checks: List[DoctorCheck] = []
-    smtp_configured = not is_placeholder_setting(SMTP_HOST) and not is_placeholder_setting(SMTP_USER) and not is_placeholder_setting(SMTP_PASSWORD)
-    invalid_addresses = [name for name, value in (("SENDER_EMAIL", SENDER_EMAIL), ("RECEIVER_EMAIL", RECEIVER_EMAIL)) if not is_valid_email_address(value)]
-    if not email_notifications_enabled():
-        checks.append(make_doctor_check("Notifications", "ok", "Email notifications are disabled", "No SMTP connection was attempted and no email was sent"))
-    elif not smtp_configured:
-        checks.append(make_doctor_check("Notifications", "warn", "Email alerts are on but SMTP is not configured", "No SMTP connection was attempted and no email was sent", "set SMTP_HOST, SMTP_USER and SMTP_PASSWORD, or turn the email alerts off.", SMTP_GUIDE_URL))
-    elif invalid_addresses:
-        checks.append(make_doctor_check("Notifications", "fail", f"Email address is not set in {' and '.join(invalid_addresses)}", "", f"set {' and '.join(invalid_addresses)} to a real email address.", SMTP_GUIDE_URL))
+    problem = email_settings_problem()
+    if not _startup_email_notification_categories() and problem is None:
+        advice = make_recovery_advice("smtp.invalid", "Email is configured but no alert types are selected", recovery_fix_with_guide("Turn on at least one email alert in the configuration file", SMTP_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be emailed", advice))
+    elif not email_notifications_enabled():
+        checks.append(make_doctor_check("Notifications", "PASS", "Email notifications are disabled", "No SMTP connection was attempted and no email was sent"))
+    elif problem is not None:
+        checks.append(doctor_email_unusable_check(*problem))
     else:
         if progress is not None:
-            progress(f"Connecting to SMTP server {SMTP_HOST}")
+            progress(f"the mail server {SMTP_HOST}")
         try:
-            context = ssl.create_default_context()
+            context = smtp_ssl_context()
             smtp = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=5)
             if SMTP_SSL:
                 smtp.starttls(context=context)
-            smtp.login(SMTP_USER, SMTP_PASSWORD)
+            smtp_login(smtp, SMTP_USER, SMTP_PASSWORD)
             smtp.quit()
             report.smtp_ready = True
-            checks.append(make_doctor_check("Notifications", "ok", "Email (SMTP) login works", "No email was sent during this passive check"))
+            checks.append(make_doctor_check("Notifications", "PASS", SMTP_READY_CHECK_LABEL, f"Alerts: {', '.join(_startup_email_notification_categories())}. No email was sent during this passive check"))
         except Exception as exc:
-            checks.append(make_doctor_check("Notifications", "fail", f"Email (SMTP) check failed: {exc}", "", "verify SMTP_HOST, SMTP_PORT and SMTP_SSL, and SMTP_USER/SMTP_PASSWORD. Gmail and similar need an app password.", SMTP_GUIDE_URL))
+            advice = classify_recovery_error(exc, "email")
+            checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, format_error_message(exc), advice))
 
+    # The error alert ships on by default, so it alone cannot mean the channel was meant to be on
+    deliberate_webhook_types = WEBHOOK_STATUS_NOTIFICATION or WEBHOOK_FOLLOWERS_NOTIFICATION
+    if not WEBHOOK_ENABLED and not deliberate_webhook_types:
+        checks.append(make_doctor_check("Notifications", "PASS", "Webhook alerts are disabled"))
+        return checks
     if not WEBHOOK_ENABLED:
-        checks.append(make_doctor_check("Notifications", "ok", "Webhook alerts are disabled", "No webhook was sent"))
+        advice = make_recovery_advice("webhook.invalid", "Webhook alert types are selected but webhooks are switched off", recovery_fix_with_guide("Set WEBHOOK_ENABLED to True, or turn the alert types off", WEBHOOK_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be delivered", advice))
         return checks
     if is_placeholder_setting(WEBHOOK_URL):
-        checks.append(make_doctor_check("Notifications", "warn", "Webhook enabled but WEBHOOK_URL is not set", "No webhook was sent", "set WEBHOOK_URL (or via .env), or disable webhooks.", WEBHOOK_GUIDE_URL))
+        advice = make_recovery_advice("webhook.invalid", "Webhook enabled but WEBHOOK_URL is not set", recovery_fix_with_guide("Set WEBHOOK_URL (or via .env) or disable webhooks", WEBHOOK_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, "No webhook was sent", advice))
         return checks
     if not normalized_webhook_provider():
-        checks.append(make_doctor_check("Notifications", "fail", "Webhook provider is invalid", "", "set WEBHOOK_PROVIDER to 'discord' or 'ntfy'.", WEBHOOK_GUIDE_URL))
+        advice = make_recovery_advice("webhook.invalid", "Webhook provider is invalid", recovery_fix_with_guide("Set WEBHOOK_PROVIDER to 'discord' or 'ntfy'", WEBHOOK_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, "", advice))
         return checks
     if not validate_webhook_url(WEBHOOK_URL):
-        checks.append(make_doctor_check("Notifications", "fail", "Webhook URL is not a complete HTTPS URL", "", "use a complete HTTPS destination with a path and no embedded credentials.", WEBHOOK_GUIDE_URL))
+        advice = make_recovery_advice("webhook.invalid", "WEBHOOK_URL must contain a complete HTTPS link", recovery_fix_with_guide("Use a complete HTTPS destination with a path and no embedded credentials", WEBHOOK_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, "", advice))
         return checks
 
     customization_error = validate_webhook_customization(normalized_webhook_provider())
     header_error = validate_webhook_headers(normalized_webhook_provider())
     if customization_error is not None:
-        checks.append(make_doctor_check("Notifications", "fail", "Webhook customization is invalid", customization_error, "correct the reported webhook customization setting.", WEBHOOK_GUIDE_URL))
+        advice = make_recovery_advice("webhook.invalid", "Webhook customization is invalid", recovery_fix_with_guide("Correct the reported webhook customization setting", WEBHOOK_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, customization_error, advice))
     elif header_error is not None:
-        checks.append(make_doctor_check("Notifications", "fail", "Webhook headers are invalid", header_error, "correct the reported WEBHOOK_HEADERS entry.", WEBHOOK_GUIDE_URL))
+        advice = make_recovery_advice("webhook.invalid", "Webhook headers are invalid", recovery_fix_with_guide("Correct the reported WEBHOOK_HEADERS entry", WEBHOOK_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, header_error, advice))
     elif not webhook_notifications_enabled():
-        checks.append(make_doctor_check("Notifications", "warn", "Webhook alerts are on but no alert types are selected", "No webhook was sent during this passive check", "turn on at least one webhook alert, or set WEBHOOK_ENABLED to False.", WEBHOOK_GUIDE_URL))
+        advice = make_recovery_advice("webhook.invalid", "Webhook alerts are on but no alert types are selected", recovery_fix_with_guide("Turn on at least one webhook alert in the configuration file, or set WEBHOOK_ENABLED to False", WEBHOOK_GUIDE_URL), False)
+        checks.append(make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be delivered", advice))
     else:
         report.webhook_ready = True
-        checks.append(make_doctor_check("Notifications", "ok", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", "The private link was not displayed. No webhook was sent during this passive check"))
+        checks.append(make_doctor_check("Notifications", "PASS", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", f"Alerts: {', '.join(_startup_webhook_notification_categories())}. The private link was not displayed. No webhook was sent during this passive check"))
     return checks
 
 
 # Runs every preflight check in order and returns them with the shared state they produced
-def build_doctor_report(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), progress: Optional[Callable[[str], None]] = None, env_path=None) -> DoctorReport:
+def build_doctor_report(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), progress: Optional[Callable[[str], None]] = None, env_path=None, timezone_advice=None) -> DoctorReport:
     report = DoctorReport()
     report.checks.extend(doctor_check_environment())
-    report.checks.extend(doctor_check_configuration(targets, config_errors, retired_settings, env_path))
+    report.checks.extend(doctor_check_configuration(targets, config_errors, retired_settings, env_path, timezone_advice))
     report.checks.extend(doctor_prepare_bot(report))
     report.checks.extend(doctor_check_session(report, progress))
     report.checks.extend(doctor_check_connectivity(report, progress))
@@ -13787,24 +19096,35 @@ def build_doctor_report(targets, config_errors: Sequence[dict] = (), retired_set
 
 
 # Prints what Doctor will and will not do, before the checks start
-def render_doctor_notice() -> None:
-    print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.\n")
+def render_doctor_notice(targets=(), separate: Optional[bool] = None) -> None:
+    # The banner already ends with a blank line, so one is added here only when a startup notice came after it
+    if separate is None:
+        separate = CONSOLE_OUTPUT_PRINTED
+    if separate:
+        print()
+    print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.")
+    # Doctor is reached for when Instagram is already refusing requests, so what it costs is stated before it runs
+    live_requests = 1 + (1 if bool(SESSION_USERNAME) and not SKIP_SESSION else 0) + len(targets or ())
+    print(f"It makes about {live_requests} Instagram request(s): one connectivity check, one for the saved session and one for each monitored profile.\n")
 
 
-# Prints one sectioned doctor report, keeping the marker and indent format scripts and users already read
-def render_doctor_report(report: DoctorReport) -> None:
-    print(colorize("header", "Doctor\n"))
-    for index, section in enumerate(("Environment", "Configuration", "Session", "Connectivity", "Targets", "Notifications")):
+# Prints the heading and every non-empty section, keeping the marker and indent format scripts and users already read
+def render_doctor_sections(report: DoctorReport) -> None:
+    print(colorize("header", "Doctor"))
+    # The install method is context rather than a check: it cannot fail, so it is stated once here
+    # instead of taking a result row that no marker describes
+    print(f"Detected install method: {colorize('username', _wizard_install_method())}\n")
+    for index, section in enumerate(DOCTOR_SECTIONS):
         section_checks = [check for check in report.checks if check.section == section]
         if not section_checks:
             continue
         print(colorize("section", section if index == 0 else f"\n{section}"))
         for check in section_checks:
             _doctor_line(check.status, check.label, check.detail)
-            if check.fix and check.status in ("fail", "warn"):
-                print(f"To fix: {check.fix}")
-                if check.guide:
-                    print(f"Guide: {check.guide}")
+            if check.status != "PASS" and check.advice is not None:
+                # The fix carries its own guide line, so each line is indented and styled on its own
+                for advice_line in f"To fix: {check.advice.fix}".splitlines():
+                    print(f"  {colorize_fix_line(advice_line)}")
 
 
 # Prints the closing summary for one rendered report
@@ -13816,32 +19136,72 @@ def render_doctor_summary(fails: int, warns: int) -> None:
         print(colorize("warning", f"  All critical checks passed with {warns} warning(s). Review the warnings above."))
     else:
         print(colorize("boolean_true", "  All checks passed. You are good to go!"))
-    print(f"\nGuide: {DOCTOR_GUIDE_URL}")
+    print("\n" + colorize_links(f"Guide: {DOCTOR_GUIDE_URL}"))
 
 
 # Runs doctor preflight plus approved delivery tests and returns the number of failed checks
-def run_doctor(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None) -> int:
+def run_doctor(targets, config_errors: Sequence[dict] = (), retired_settings: Sequence[str] = (), env_path=None, timezone_advice=None) -> int:
     progress = _doctor_progress if sys.stdout.isatty() else None
-    render_doctor_notice()
+    render_doctor_notice(targets)
     try:
-        report = build_doctor_report(targets, config_errors, retired_settings, progress, env_path)
+        report = build_doctor_report(targets, config_errors, retired_settings, progress, env_path, timezone_advice)
     finally:
         _doctor_progress_clear()
 
-    render_doctor_report(report)
-    fails = report.count("fail") + _doctor_offer_notification_tests(report.smtp_ready, report.webhook_ready)
-    render_doctor_summary(fails, report.count("warn"))
-    return fails
+    render_doctor_sections(report)
+    _doctor_offer_notification_tests(report)
+    render_doctor_summary(report.count("FAIL"), report.count("WARN"))
+    return report.count("FAIL")
+
+
+# Applies diagnostic flags both before config error reporting and after config precedence resolution
+def apply_diagnostic_cli_overrides(args: argparse.Namespace) -> None:
+    global DEBUG_MODE, VERBOSE_MODE
+    if args.debug_mode is not None:
+        DEBUG_MODE = args.debug_mode
+    if args.verbose_mode is not None:
+        VERBOSE_MODE = args.verbose_mode
+
+
+# Applies the command line's timing settings over the configured ones, early enough that the checks and combinations
+# reading them judge the values the run will actually use
+def apply_timing_cli_overrides(args: argparse.Namespace) -> None:
+    global INSTA_CHECK_INTERVAL, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH
+    if args.check_interval:
+        if args.check_interval <= 0:
+            print_recovery_error("The check interval must be greater than 0", context="config")
+            sys.exit(1)
+        INSTA_CHECK_INTERVAL = args.check_interval
+    if args.check_interval_random_diff_low:
+        RANDOM_SLEEP_DIFF_LOW = args.check_interval_random_diff_low
+    if args.check_interval_random_diff_high:
+        RANDOM_SLEEP_DIFF_HIGH = args.check_interval_random_diff_high
+
+
+# Applies the command line's session account and mode over the configured ones, early enough that every action
+# reporting on or clearing state held per account acts on the account the user named rather than the configured one
+def apply_session_identity_cli_overrides(args: argparse.Namespace) -> None:
+    global SESSION_USERNAME, SESSION_PASSWORD, SKIP_SESSION
+    if args.session_username:
+        SESSION_USERNAME = args.session_username
+    if args.session_password:
+        SESSION_PASSWORD = args.session_password
+        record_secret_source("SESSION_PASSWORD", "command line")
+    if args.skip_session is True:
+        SKIP_SESSION = True
+    if not SESSION_USERNAME:
+        SKIP_SESSION = True
 
 
 # Parses configuration and command-line options then starts the selected operation
 def run_main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
+    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_REMINDER_SECONDS, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, FETCH_REELS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE, IDENTITY_BUDGET_PER_DAY, CIRCUIT_BREAKER, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
-    global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H
+    global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H, TRUNCATE_CHARS
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
+    global SECRET_SOURCES, EXPORTED_SECRET_KEYS
 
-    if "--generate-config" in sys.argv and "--set-webhook-url" not in sys.argv:
+    if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
         # Check if a filename was provided after --generate-config
         try:
@@ -13849,9 +19209,23 @@ def run_main():
             if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("-"):
                 # Write directly to file (bypasses PowerShell UTF-16 encoding issue on Windows)
                 output_file = sys.argv[idx + 1]
-                with open(output_file, "w", encoding="utf-8") as f:
-                    f.write(config_content)
-                print(f"Config written to: {output_file}")
+                # Routed through the shared writer so an existing config is confirmed and backed up rather
+                # than truncated. Caught here because the outer handler treats a ValueError as "no filename
+                # given" and would otherwise fall through to stdout after the requested file failed to be written.
+                try:
+                    backup_path, written = write_generated_config(output_file, config_content, force="--force" in sys.argv)
+                except ConfigExistsError as exc:
+                    print_recovery_error(exc, context="file_exists", summary=str(exc))
+                    sys.exit(1)
+                except (OSError, ValueError) as exc:
+                    print_recovery_error(exc, context="config_write", summary=f"Could not write config file '{output_file}': {type(exc).__name__}: {exc}")
+                    sys.exit(1)
+                if not written:
+                    print("Config was not replaced. The existing file is unchanged")
+                    sys.exit(1)
+                print(f"Config written to: {Path(output_file).expanduser()}")
+                if backup_path:
+                    print(f"Backup written to: {backup_path}")
                 sys.exit(0)
         except (ValueError, IndexError):
             pass
@@ -13860,7 +19234,7 @@ def run_main():
         sys.stdout.buffer.flush()
         sys.exit(0)
 
-    if "--version" in sys.argv and "--set-webhook-url" not in sys.argv:
+    if "--version" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         print(f"{os.path.basename(sys.argv[0])} v{VERSION}")
         sys.exit(0)
 
@@ -13881,8 +19255,12 @@ def run_main():
     early_dashboard_enabled = "--dashboard" in sys.argv and "--no-dashboard" not in sys.argv
 
     # Clear screen BEFORE printing the header
-    keep_cli_history = any(flag in sys.argv for flag in ("--import-browser-session", "--import-firefox-session", "--set-webhook-url", "--doctor", "--analyze-follows"))
-    clear_screen(CLEAR_SCREEN and not keep_cli_history)
+    # Read straight from sys.argv because argparse has not run yet, and the screen is cleared before it does
+    if "--debug" in sys.argv:
+        DEBUG_MODE = True
+    if CLEAR_SCREEN and DEBUG_MODE:
+        debug_print("Terminal screen clear skipped because debug mode is active")
+    clear_screen(CLEAR_SCREEN and not keep_terminal_history() and not DEBUG_MODE)
 
     if not (early_dashboard_enabled and RICH_AVAILABLE):
         print_startup_banner()
@@ -13890,10 +19268,10 @@ def run_main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    parser = argparse.ArgumentParser(
+    parser = ColoredHelpParser(
         prog="instagram_monitor",
         description=("Monitor Instagram activity and send customizable email or webhook alerts [ https://github.com/misiektoja/instagram_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter,
-        epilog=_build_help_epilog()
+        epilog=_build_help_epilog(), **argparse_color_kwargs()
     )
 
     # Positional targets (one or more)
@@ -13918,7 +19296,7 @@ def run_main():
         "--config-file",
         dest="config_file",
         metavar="PATH",
-        help="Location of the optional config file",
+        help="Location of the optional config file (auto-search if not set, disable with 'none')",
     )
     conf.add_argument(
         "--generate-config",
@@ -13927,6 +19305,12 @@ def run_main():
         const=True,
         metavar="FILENAME",
         help="Print default config template and exit (on Windows PowerShell, specify a filename to avoid redirect encoding issues)",
+    )
+    conf.add_argument(
+        "--force",
+        dest="force",
+        action="store_true",
+        help="Replace an existing file with --generate-config without asking",
     )
     conf.add_argument(
         "--env-file",
@@ -13938,19 +19322,25 @@ def run_main():
         "--setup",
         dest="setup",
         action="store_true",
-        help="Run the interactive first-run setup wizard and exit",
+        help="Run the guided setup and write a ready-to-run configuration",
     )
     conf.add_argument(
         "--doctor",
         dest="doctor",
         action="store_true",
-        help="Run preflight checks with separately approved notification delivery tests and exit",
+        help="Run read-only preflight checks and report what is ready and what is not",
     )
     conf.add_argument(
         "--set-webhook-url",
         dest="set_webhook_url",
         action="store_true",
         help="Save a Discord or ntfy webhook URL through a hidden prompt",
+    )
+    conf.add_argument(
+        "--set-smtp-password",
+        dest="set_smtp_password",
+        action="store_true",
+        help="Enter the SMTP password privately, check it against the mail server and save it to the dotenv file",
     )
 
     # Session login credentials
@@ -13971,7 +19361,44 @@ def run_main():
     )
 
     # Notifications
-    notify = parser.add_argument_group("Email Notifications")
+    import_grp = parser.add_argument_group("Browser session import")
+    import_grp.add_argument(
+        "--import-browser-session",
+        action="store_true",
+        help="Import browser session cookies into Instaloader (use --browser to pick the source)"
+    )
+    import_grp.add_argument(
+        "--browser",
+        dest="browser",
+        choices=list(IMPORT_BROWSERS),
+        default="firefox",
+        help="Browser to import the session from: firefox (default, all platforms), chrome (Google Chrome), brave or chromium (the standalone open-source Chromium browser, not Chrome). chrome, brave and chromium require the 'pycookiecheat' package and work only on macOS and Linux; Edge, Opera, Vivaldi and Arc are not supported"
+    )
+    import_grp.add_argument(
+        "--browser-profile",
+        dest="browser_profile",
+        metavar="PROFILE",
+        help="Profile to import from, for any browser: a Firefox profile name (e.g. 'default-release') or a Chromium profile directory (e.g. 'Default' or 'Profile 1'); if omitted and several exist, it will list them to choose from"
+    )
+    import_grp.add_argument(
+        "--import-firefox-session",
+        action="store_true",
+        help="Deprecated alias for --import-browser-session --browser firefox"
+    )
+    import_grp.add_argument(
+        "--cookie-file",
+        dest="cookie_file",
+        metavar="COOKIEFILE",
+        help="Advanced: explicit path to the cookie database (Firefox cookies.sqlite or a Chromium Cookies DB); overrides --browser-profile"
+    )
+    import_grp.add_argument(
+        "--session-file",
+        dest="session_file",
+        metavar="SESSIONFILE",
+        help="Path to save Instaloader session; if omitted, it will save to the default one"
+    )
+
+    notify = parser.add_argument_group("Email notifications")
     notify.add_argument(
         "-s", "--notify-status",
         dest="status_notification",
@@ -13991,7 +19418,7 @@ def run_main():
         dest="error_notification",
         action="store_false",
         default=None,
-        help="Disable email on errors (e.g. invalid session)"
+        help="Disable email on errors and the recovery alert that follows"
     )
     notify.add_argument(
         "--send-test-email",
@@ -14001,6 +19428,58 @@ def run_main():
     )
 
     # Intervals & timers
+    webhook_grp = parser.add_argument_group("Webhook notifications")
+    webhook_grp.add_argument(
+        "--webhook",
+        dest="webhook_enabled",
+        action="store_true",
+        default=None,
+        help="Enable webhook notification system (individual types like --webhook-status must still be enabled)"
+    )
+    webhook_grp.add_argument(
+        "--no-webhook",
+        dest="no_webhook",
+        action="store_true",
+        default=None,
+        help="Disable webhook notifications"
+    )
+    webhook_grp.add_argument(
+        "--webhook-url",
+        dest="webhook_url",
+        metavar="URL",
+        type=str,
+        help="Discord webhook or ntfy topic URL for notifications"
+    )
+    webhook_grp.add_argument("--webhook-provider", choices=("discord", "ntfy"), help="Webhook request format (default: discord)")
+    webhook_grp.add_argument(
+        "--webhook-status",
+        dest="webhook_status",
+        action="store_true",
+        default=None,
+        help="Send webhook on status changes (posts/reels/stories/bio/profile pic)"
+    )
+    webhook_grp.add_argument(
+        "--webhook-followers",
+        dest="webhook_followers",
+        action="store_true",
+        default=None,
+        help="Send webhook on follower changes"
+    )
+    webhook_grp.add_argument(
+        "--webhook-errors",
+        dest="webhook_errors",
+        action="store_true",
+        default=None,
+        help="Send webhook alerts when monitoring has a problem and the recovery alert that follows"
+    )
+    webhook_grp.add_argument(
+        "--send-test-webhook",
+        dest="send_test_webhook",
+        action="store_true",
+        help="Send one test webhook without starting monitoring"
+    )
+
+    # Browser session import options
     times = parser.add_argument_group("Intervals & timers")
     times.add_argument(
         "-c", "--check-interval",
@@ -14138,6 +19617,33 @@ def run_main():
         help="Browser profile curl_cffi impersonates when --http-backend is curl_cffi: 'auto' (match the user agent, default) or a pinned target like chrome, safari, safari_ios, edge, firefox"
     )
     session_opts.add_argument(
+        "--follow-list-source",
+        dest="follow_list_source",
+        metavar="SOURCE",
+        type=str,
+        choices=["auto", "rest", "graphql", "browser"],
+        help="Instagram surface follower and following lists are read from: 'auto' (REST with a GraphQL retry, default), 'rest', 'graphql' or 'browser' (experimental, needs playwright)"
+    )
+    session_opts.add_argument(
+        "--identity-budget",
+        dest="identity_budget",
+        metavar="NAMES_PER_DAY",
+        type=int,
+        help="Maximum follower and following names to fetch per day for the logged-in account, shared by all targets (0 disables the budget)"
+    )
+    session_opts.add_argument(
+        "--clear-breaker",
+        dest="clear_breaker",
+        action='store_true',
+        help="Clear local account-stop state and exit. Normally restart or re-import the session to check recovery automatically"
+    )
+    session_opts.add_argument(
+        "--exposure",
+        dest="show_exposure",
+        action='store_true',
+        help="Show a redacted support report with today's identity exposure and failure counts, then exit"
+    )
+    session_opts.add_argument(
         "--be-human",
         dest="be_human",
         action="store_true",
@@ -14181,78 +19687,6 @@ def run_main():
     )
 
     # Features & output
-    opts = parser.add_argument_group("Features & output")
-    opts.add_argument(
-        "-k", "--no-profile-pic-detect",
-        dest="do_not_detect_changed_profile_pic",
-        action="store_false",
-        default=None,
-        help="Disable detection of changed profile picture"
-    )
-    opts.add_argument(
-        "--no-detect-collab-posts",
-        dest="detect_collab_posts",
-        action="store_false",
-        default=None,
-        help="Disable detection of collab posts leaking from private accounts via the public web_profile_info endpoint"
-    )
-    opts.add_argument(
-        "-b", "--csv-file",
-        dest="csv_file",
-        metavar="CSV_FILENAME",
-        type=str,
-        help="Write all activities and profile changes to CSV file"
-    )
-    opts.add_argument(
-        "-o", "--output-dir",
-        dest="output_dir",
-        metavar="PATH",
-        help="Root directory for saving all generated files (logs, images, videos, json)",
-    )
-    opts.add_argument(
-        "-d", "--disable-logging",
-        dest="disable_logging",
-        action="store_true",
-        default=None,
-        help="Disable logging to instagram_monitor_<username>.log"
-    )
-    opts.add_argument(
-        "--no-color",
-        dest="no_color",
-        action="store_true",
-        default=None,
-        help="Disable coloured output in the terminal"
-    )
-    opts.add_argument(
-        "--verbose",
-        dest="verbose_mode",
-        action="store_true",
-        default=None,
-        help="Enable verbose mode (shows timing details, next check schedule and interval info)"
-    )
-    opts.add_argument(
-        "--debug",
-        dest="debug_mode",
-        action="store_true",
-        default=None,
-        help="Enable debug mode (full API traces, internal logic logs)"
-    )
-    opts.add_argument(
-        "--error-threshold",
-        dest="error_threshold",
-        metavar="NUM",
-        type=int,
-        default=None,
-        help="Number of consecutive errors required to trigger an alert (default: 2)"
-    )
-    opts.add_argument(
-        "--analyze-follows",
-        dest="analyze_follows",
-        action="store_true",
-        help="Analyze follow relationships (mutual, not-following-back, fans) for the target(s) from the already-saved follower/following lists and exit; makes no network requests"
-    )
-
-    # Terminal dashboard options
     term_opts = parser.add_argument_group("Terminal dashboard")
     term_opts.add_argument(
         "--dashboard",
@@ -14301,106 +19735,122 @@ def run_main():
     )
 
     # Webhook options
-    webhook_grp = parser.add_argument_group("Webhook notifications")
-    webhook_grp.add_argument(
-        "--webhook",
-        dest="webhook_enabled",
+    opts = parser.add_argument_group("Features & output")
+    opts.add_argument(
+        "-k", "--no-profile-pic-detect",
+        dest="do_not_detect_changed_profile_pic",
+        action="store_false",
+        default=None,
+        help="Disable detection of changed profile picture"
+    )
+    opts.add_argument(
+        "--fetch-reels",
+        dest="fetch_reels",
         action="store_true",
         default=None,
-        help="Enable webhook notification system (individual types like --webhook-status must still be enabled)"
+        help="Monitor reels, which reads the whole reel list on every check and is often refused"
     )
-    webhook_grp.add_argument(
-        "--no-webhook",
-        dest="no_webhook",
-        action="store_true",
+    opts.add_argument(
+        "--no-fetch-reels",
+        dest="fetch_reels",
+        action="store_false",
         default=None,
-        help="Disable webhook notifications"
+        help="Do not monitor reels (the default)"
     )
-    webhook_grp.add_argument(
-        "--webhook-url",
-        dest="webhook_url",
-        metavar="URL",
+    opts.add_argument(
+        "--no-detect-collab-posts",
+        dest="detect_collab_posts",
+        action="store_false",
+        default=None,
+        help="Disable detection of collab posts leaking from private accounts via the public web_profile_info endpoint"
+    )
+    opts.add_argument(
+        "-b", "--csv-file",
+        dest="csv_file",
+        metavar="CSV_FILENAME",
         type=str,
-        help="Discord webhook or ntfy topic URL for notifications"
+        help="Write all activities and profile changes to CSV file"
     )
-    webhook_grp.add_argument("--webhook-provider", choices=("discord", "ntfy"), help="Webhook request format (default: discord)")
-    webhook_grp.add_argument(
-        "--webhook-status",
-        dest="webhook_status",
+    opts.add_argument(
+        "-o", "--output-dir",
+        dest="output_dir",
+        metavar="PATH",
+        help="Root directory for saving all generated files (logs, images, videos, json)",
+    )
+    opts.add_argument(
+        "-d", "--disable-logging",
+        dest="disable_logging",
         action="store_true",
         default=None,
-        help="Send webhook on status changes (posts/reels/stories/bio/profile pic)"
+        help="Disable logging to instagram_monitor_<username>.log"
     )
-    webhook_grp.add_argument(
-        "--webhook-followers",
-        dest="webhook_followers",
+    opts.add_argument(
+        "--no-color",
+        dest="no_color",
         action="store_true",
         default=None,
-        help="Send webhook on follower changes"
+        help="Disable coloured output in the terminal"
     )
-    webhook_grp.add_argument(
-        "--webhook-errors",
-        dest="webhook_errors",
+    opts.add_argument(
+        "--truncate",
+        dest="truncate",
+        metavar="N",
+        type=int,
+        help="Max characters per screen line (not log), use 999 to auto-detect terminal width, ignored if -d is set"
+    )
+    opts.add_argument(
+        "--verbose",
+        dest="verbose_mode",
         action="store_true",
         default=None,
-        help="Send webhook on errors"
+        help="Enable verbose mode (shows operational events such as follow counts and where each alert was delivered)"
     )
-    webhook_grp.add_argument(
-        "--send-test-webhook",
-        dest="send_test_webhook",
+    opts.add_argument(
+        "--debug",
+        dest="debug_mode",
         action="store_true",
-        help="Send test webhook notification to verify settings"
+        default=None,
+        help="Enable debug mode (full API traces, internal logic logs)"
+    )
+    opts.add_argument(
+        "--error-threshold",
+        dest="error_threshold",
+        metavar="NUM",
+        type=int,
+        default=None,
+        # Retired, still accepted so an existing command line keeps starting the run
+        help=argparse.SUPPRESS
+    )
+    opts.add_argument(
+        "--analyze-follows",
+        dest="analyze_follows",
+        action="store_true",
+        help="Analyze follow relationships (mutual, not-following-back, fans) for the target(s) from the already-saved follower/following lists and exit; makes no network requests"
     )
 
-    # Browser session import options
-    import_grp = parser.add_argument_group("Browser session import")
-    import_grp.add_argument(
-        "--import-browser-session",
-        action="store_true",
-        help="Import browser session cookies into Instaloader (use --browser to pick the source)"
-    )
-    import_grp.add_argument(
-        "--browser",
-        dest="browser",
-        choices=list(IMPORT_BROWSERS),
-        default="firefox",
-        help="Browser to import the session from: firefox (default, all platforms), chrome (Google Chrome), brave or chromium (the standalone open-source Chromium browser, not Chrome). chrome, brave and chromium require the 'pycookiecheat' package and work only on macOS and Linux; Edge, Opera, Vivaldi and Arc are not supported"
-    )
-    import_grp.add_argument(
-        "--browser-profile",
-        dest="browser_profile",
-        metavar="PROFILE",
-        help="Profile to import from, for any browser: a Firefox profile name (e.g. 'default-release') or a Chromium profile directory (e.g. 'Default' or 'Profile 1'); if omitted and several exist, it will list them to choose from"
-    )
-    import_grp.add_argument(
-        "--import-firefox-session",
-        action="store_true",
-        help="Deprecated alias for --import-browser-session --browser firefox"
-    )
-    import_grp.add_argument(
-        "--cookie-file",
-        dest="cookie_file",
-        metavar="COOKIEFILE",
-        help="Advanced: explicit path to the cookie database (Firefox cookies.sqlite or a Chromium Cookies DB); overrides --browser-profile"
-    )
-    import_grp.add_argument(
-        "--session-file",
-        dest="session_file",
-        metavar="SESSIONFILE",
-        help="Path to save Instaloader session; if omitted, it will save to the default one"
-    )
-
+    # Terminal dashboard options
     args = parser.parse_args()
+    DOTENV_STARTUP_ERRORS.clear()
+    env_path = None
+
+    apply_diagnostic_cli_overrides(args)
 
     import_requested = bool(args.import_firefox_session or args.import_browser_session)
-    requested_actions = [label for label, enabled in (("--setup", args.setup), ("--set-webhook-url", args.set_webhook_url), ("--doctor", args.doctor), ("--analyze-follows", args.analyze_follows), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--generate-config", args.generate_config is not None)) if enabled]
+    requested_actions = [label for label, enabled in (("--setup", args.setup), ("--set-webhook-url", args.set_webhook_url), ("--set-smtp-password", args.set_smtp_password), ("--doctor", args.doctor), ("--analyze-follows", args.analyze_follows), ("--import-browser-session", import_requested), ("--send-test-email", args.send_test_email), ("--send-test-webhook", args.send_test_webhook), ("--clear-breaker", args.clear_breaker), ("--exposure", args.show_exposure), ("--generate-config", args.generate_config is not None)) if enabled]
     if len(requested_actions) > 1:
         parser.error("standalone actions cannot be combined: " + ", ".join(requested_actions))
+    # --generate-config with a filename exits before argparse runs, so reaching here with --force means it was passed alone
+    if args.force:
+        parser.error("--force only applies to --generate-config")
     if args.setup:
         if args.usernames or args.targets:
             parser.error("--setup cannot be combined with monitoring targets")
+        if args.config_file and str(args.config_file).casefold() == "none":
+            print("Setup cannot start: --setup requires a config destination. Replace '--config-file none' with a writable path.")
+            sys.exit(1)
         if args.env_file and str(args.env_file).casefold() == "none":
-            parser.error("--setup requires a dotenv destination and cannot use --env-file none")
+            print("Setup cannot start: --setup requires a dotenv destination. Replace '--env-file none' with a writable path.")
+            sys.exit(1)
         run_setup_wizard(config_file=args.config_file, env_file=args.env_file)
         sys.exit(0)
     if args.set_webhook_url:
@@ -14414,14 +19864,18 @@ def run_main():
         try:
             run_set_webhook_url(env_file=args.env_file, config_path=args.config_file)
         except WebhookConfigurationError as exc:
-            print(f"* Error: {exc}")
+            print_secret_command_error(exc)
             sys.exit(1)
         sys.exit(0)
 
-    if args.config_file:
+    # "none" is the documented sentinel that switches discovery off, so it is a selection rather than a missing file
+    CONFIG_DISCOVERY_DISABLED = args.config_file is not None and str(args.config_file).casefold() == "none"
+    if CONFIG_DISCOVERY_DISABLED:
+        CLI_CONFIG_PATH = None
+    elif args.config_file:
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
 
-    cfg_path = find_config_file(CLI_CONFIG_PATH)
+    cfg_path = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
 
     if cfg_path:
         CLI_CONFIG_PATH = cfg_path  # Update global for dashboard display
@@ -14433,21 +19887,28 @@ def run_main():
     doctor_config_retired: List[str] = []
 
     if not cfg_path and CLI_CONFIG_PATH:
-        summary = f"* Error: Config file '{CLI_CONFIG_PATH}' does not exist"
-        fix = "To fix: check the path passed to --config-file or create a config with 'instagram_monitor --setup' or 'instagram_monitor --generate-config instagram_monitor.conf'."
+        summary = f"Config file '{CLI_CONFIG_PATH}' does not exist"
+        fix = "Check the path passed to --config-file or create a config with 'instagram_monitor --setup' or 'instagram_monitor --generate-config instagram_monitor.conf'"
         if doctor_mode:
             doctor_config_errors.append({"summary": summary, "detail": "", "fix": fix})
         else:
-            print(summary)
-            print(colorize("info", fix))
-            print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
+            print(f"* Error: {summary}")
+            print(colorize("info", f"To fix: {fix}"))
+            print(f"Guide: {CONFIG_GUIDE_URL}")
             sys.exit(1)
 
     if cfg_path and not load_config_file(cfg_path, error_out=doctor_config_errors, report_errors=not doctor_mode, retired_out=doctor_config_retired) and not doctor_mode:
         sys.exit(1)
 
+    # Config loading can replace these globals, so reapply explicit flags to preserve CLI precedence
+    apply_diagnostic_cli_overrides(args)
+
+    apply_tls_verification_setting()
+
     if args.output_dir:
         OUTPUT_DIR = os.path.expanduser(args.output_dir)
+
+    prepare_configured_paths(args)
 
     if args.env_file:
         DOTENV_FILE = os.path.expanduser(args.env_file)
@@ -14455,39 +19916,63 @@ def run_main():
         if DOTENV_FILE:
             DOTENV_FILE = os.path.expanduser(DOTENV_FILE)
 
+    # An empty export is a shell-profile leftover rather than a value, so it is dropped before the dotenv load,
+    # which would otherwise keep it and leave the file's value unused
+    for secret in SECRET_KEYS:
+        if os.environ.get(secret) == "":
+            os.environ.pop(secret)
+    EXPORTED_SECRET_KEYS = frozenset(secret for secret in SECRET_KEYS if os.getenv(secret))
+    SECRET_SOURCES.clear()
+    for secret in SECRET_KEYS:
+        if doctor_secret_is_set(globals().get(secret)):
+            record_secret_source(secret, "configuration file or command line")
+
     if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
         env_path = None
     else:
         try:
-            from dotenv import load_dotenv, find_dotenv
+            from dotenv import find_dotenv
 
+            # Startup exports retain priority over file entries at startup and reload
             if DOTENV_FILE:
                 env_path = DOTENV_FILE
                 if not os.path.isfile(env_path):
-                    print(f"* Warning: dotenv file '{env_path}' does not exist\n")
+                    print_recovery_error(f"dotenv file '{env_path}' does not exist", context="dotenv_missing", label="Warning")
                 else:
-                    load_dotenv(env_path, override=True, interpolate=False)
+                    load_managed_dotenv(env_path, override=False, interpolate=False)
             else:
                 env_path = find_dotenv() or None
                 if env_path:
-                    load_dotenv(env_path, override=True, interpolate=False)
+                    load_managed_dotenv(env_path, override=False, interpolate=False)
         except ImportError:
             env_path = DOTENV_FILE if DOTENV_FILE else None
             if env_path:
-                print(f"* Warning: Cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n\nTo install it, run:\n    pip3 install python-dotenv\n\nOnce installed, re-run this tool\n")
+                print(render_recovery_advice(missing_dependency_advice("python-dotenv", f"The dotenv file '{env_path}' cannot be loaded", pip_install_command("python-dotenv")), label="Warning"))
+        except (OSError, UnicodeError, ValueError) as exc:
+            detail, fix = dotenv_load_problem(env_path, exc)
+            DOTENV_STARTUP_ERRORS[str(env_path)] = (detail, fix)
+            if not args.doctor:
+                print_recovery_advice(make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(fix, SECRETS_GUIDE_URL), False))
+                if not command_reports_configuration(args):
+                    sys.exit(1)
 
     # Environment variables are a documented alternative to a dotenv file, so they apply even when no file was loaded
     for secret in SECRET_KEYS:
         val = os.getenv(secret)
         if val is not None:
             globals()[secret] = val
+            record_secret_source(secret, "environment" if secret in EXPORTED_SECRET_KEYS else "dotenv file")
 
     # The shipped WEBHOOK_URL placeholder means 'not configured', so it must not reach code that treats it as a destination
     if is_placeholder_setting(WEBHOOK_URL):
         WEBHOOK_URL = ""
 
+    # Resolved here rather than with the rest of the flags below, because --clear-breaker and --exposure act on one
+    # account's safety record and exit before that point, and would otherwise read the configured account or none
+    apply_session_identity_cli_overrides(args)
+
     if _wizard_should_offer_first_run(sys.argv, TARGET_USERNAMES, WEB_DASHBOARD_ENABLED):
-        _wizard_welcome(parser)
+        print_welcome_screen(parser)
         sys.exit(0 if sys.stdin.isatty() else 1)
 
     if args.import_firefox_session or args.import_browser_session:
@@ -14530,46 +20015,22 @@ def run_main():
         if cfg_path:
             method = _wizard_install_method()
             selected_env = env_path or Path.cwd() / ".env"
-            doctor_command = _wizard_action_command(method, "--doctor", cfg_path, selected_env, args.usernames)
-            monitor_command = _wizard_action_command(method, "", cfg_path, selected_env, args.usernames, web_dashboard=WEB_DASHBOARD_ENABLED)
+            doctor_targets, monitor_targets = _wizard_command_targets(args.usernames, TARGET_USERNAMES)
+            doctor_command = _wizard_action_command(method, "--doctor", cfg_path, selected_env, doctor_targets)
+            monitor_command = _wizard_action_command(method, "", cfg_path, selected_env, monitor_targets, web_dashboard=WEB_DASHBOARD_ENABLED)
             print(colorize("header", "\nNext steps\n"))
-            print("Check the imported session and setup:")
-            print(colorize("section", f"    {doctor_command}\n"))
-            print("After Doctor passes, start monitoring:")
-            print(colorize("section", f"    {monitor_command}\n"))
+            _wizard_print_command("Check setup again:", doctor_command)
+            _wizard_print_command("After Doctor passes, start monitoring:", monitor_command)
         sys.exit(0)
 
-    local_tz = None
-    if LOCAL_TIMEZONE == "Auto":
-        # Ensure we update the global variable so API sees it
-        if get_localzone is not None:
-            try:
-                local_tz = get_localzone()
-            except Exception:
-                pass
-        if local_tz:
-            LOCAL_TIMEZONE = str(local_tz)
-        else:
-            print("* Error: Cannot detect local timezone.")
-            print("* Hint: This can happen if the optional 'tzlocal' library is missing. Install it with: pip install tzlocal")
-            print("* Or set LOCAL_TIMEZONE to your local timezone manually.")
+    timezone_advice = resolve_local_timezone()
+
+    if timezone_advice is not None:
+        if not doctor_mode:
+            print_recovery_advice(timezone_advice)
             sys.exit(1)
-    else:
-        if not is_valid_timezone(LOCAL_TIMEZONE):
-            print(f"* Error: Configured LOCAL_TIMEZONE '{LOCAL_TIMEZONE}' is not valid. Please use a valid pytz timezone name.")
-            sys.exit(1)
-
-    if args.user_agent:
-        USER_AGENT = args.user_agent
-
-    if not USER_AGENT:
-        USER_AGENT = get_random_user_agent()
-
-    if args.user_agent_mobile:
-        USER_AGENT_MOBILE = args.user_agent_mobile
-
-    if not USER_AGENT_MOBILE:
-        USER_AGENT_MOBILE = get_random_mobile_user_agent()
+        # The report still stamps timestamps, so it falls back rather than stopping before the diagnosis
+        LOCAL_TIMEZONE = "UTC"
 
     if args.http_backend:
         HTTP_BACKEND = args.http_backend
@@ -14577,19 +20038,53 @@ def run_main():
     if args.impersonate:
         CURL_CFFI_IMPERSONATE = args.impersonate
 
+    if args.follow_list_source:
+        FOLLOW_LIST_SOURCE = args.follow_list_source
+
+    if args.user_agent:
+        USER_AGENT = args.user_agent
+
+    if not USER_AGENT:
+        # The browser source can only drive a Chromium build, so a random Firefox or Safari agent
+        # would make it announce itself as a browser it is not
+        USER_AGENT = get_random_user_agent(browser_channel_family() if active_follow_list_source() == 'browser' else None)
+
+    if args.user_agent_mobile:
+        USER_AGENT_MOBILE = args.user_agent_mobile
+
+    if not USER_AGENT_MOBILE:
+        USER_AGENT_MOBILE = get_random_mobile_user_agent()
+
+    if args.identity_budget is not None:
+        if args.identity_budget < 0:
+            print_recovery_error("--identity-budget cannot be negative", context="config")
+            sys.exit(1)
+        IDENTITY_BUDGET_PER_DAY = args.identity_budget
+
     impersonate_error = validate_impersonate_target(CURL_CFFI_IMPERSONATE)
     if impersonate_error is not None:
-        print(f"* Error: CURL_CFFI_IMPERSONATE {impersonate_error}")
+        print_recovery_error(f"CURL_CFFI_IMPERSONATE {impersonate_error}", context="config")
         sys.exit(1)
 
     if str(HTTP_BACKEND).strip().lower() == "curl_cffi" and not _CURL_CFFI_AVAILABLE:
+        note_console_output()
         print("* Warning: HTTP_BACKEND is 'curl_cffi' but the 'curl_cffi' package is not installed, using the 'requests' backend instead (run: pip3 install curl_cffi)")
+
+    # Only a run that will monitor can present two clients, and --doctor has to report this rather than die on it
+    if not requested_actions and active_follow_list_source() == 'browser':
+        identity_mismatch = browser_identity_mismatch()
+        if identity_mismatch is not None:
+            print(f"* Error: {identity_mismatch[0]}")
+            print(f"* To fix: {identity_mismatch[1]}")
+            print(f"Guide: {FOLLOW_LIST_SOURCE_GUIDE_URL}")
+            sys.exit(1)
 
     if args.proxy_enabled is True:
         PROXY_ENABLED = True
 
     if args.proxy_url:
         PROXY_URL = str(args.proxy_url or "")
+        record_secret_source("PROXY_URL", "command line")
 
     if args.proxy_cert_path:
         PROXY_CERT_PATH = str(args.proxy_cert_path or "")
@@ -14597,43 +20092,90 @@ def run_main():
     if args.proxy_webhooks is True:
         PROXY_WEBHOOKS = True
 
-    if PROXY_ENABLED:
-        if not PROXY_URL:
-            print(f"* Error: Proxies are enabled but PROXY_URL is missing! Please set it in config file or via --proxy-url flag")
+    PROXY_STARTUP_ERRORS[:] = proxy_configuration_problems()
+    if PROXY_STARTUP_ERRORS:
+        # Doctor, the setup wizard and the local reports are how a broken proxy gets corrected, so they name it
+        # and carry on with the proxy switched off rather than being stopped by the setting they exist to explain
+        if not command_runs_without_proxy(args):
+            for detail, fix in PROXY_STARTUP_ERRORS:
+                print_recovery_advice(make_recovery_advice("config.invalid", detail, recovery_fix_with_guide(fix, PROXY_GUIDE_URL), False))
             sys.exit(1)
-        if not validate_proxy_url(PROXY_URL):
-            print(f"* Error: Invalid proxy URL format. Must be HTTPS or HTTP URL. '{mask_url_credentials(PROXY_URL)}'")
-            sys.exit(1)
-        if PROXY_CERT_PATH:
-            try:
-                PROXY_CERT_PATH = resolve_existing_file_path(PROXY_CERT_PATH, "proxy certificate")
-            except ValueError:
-                print(f"* Error: Proxy certificate file does not exist. '{PROXY_CERT_PATH}'")
-                sys.exit(1)
+        PROXY_ENABLED = False
+    elif PROXY_ENABLED and PROXY_CERT_PATH:
+        PROXY_CERT_PATH = resolve_existing_file_path(PROXY_CERT_PATH, "proxy certificate")
 
-    if not args.doctor and not args.analyze_follows and not check_internet():
+    # Dispatched before the connectivity check, since both only read or repair the local safety record and an
+    # internet outage is exactly when a user reaches for them
+    if args.clear_breaker:
+        try:
+            cleared = clear_circuit_breaker()
+        except ExposureLedgerError as ledger_error:
+            print(f"* Error: {ledger_error}")
+            print(f"* The account stop stays in place until the ledger can be saved: {exposure_state_path()}")
+            print("* To fix: Restore write access to that file and the directory holding it, or delete the file to start a new ledger")
+            sys.exit(1)
+        if cleared:
+            if cleared.get('ledger_reset'):
+                print(f"* The account safety ledger at {exposure_state_path()} could not be used ({cleared['ledger_reset']}) and was replaced with a fresh one")
+            print(f"* Circuit breaker cleared for {exposure_account_name()}")
+            print(f"* It was tripped at {get_date_from_ts(int(cleared.get('tripped_ts', 0)))} by: {cleared.get('failure_class', 'unknown')}")
+            print("* Monitoring will resume on the next run. Raise your check interval or lower --identity-budget if it trips again")
+        else:
+            print(f"* Circuit breaker is not tripped for {exposure_account_name()}, nothing to clear")
+        sys.exit(0)
+
+    if args.show_exposure:
+        print("\nExposure report (account names and local paths omitted)")
+        print("─" * HORIZONTAL_LINE)
+        for line in exposure_summary_lines():
+            print(line)
+        # The pasteable block omits local paths, so the ledger path and anything that would stop monitoring from
+        # maintaining it are reported under the block, and reported as a failing command rather than a clean report
+        ledger_path = exposure_state_path()
+        print(f"\n* Ledger path: {ledger_path}")
+        try:
+            exposure_snapshot()
+        except ExposureLedgerError as ledger_error:
+            print(f"* Error: {ledger_error}")
+            print("To fix: Repair the file or restore access, then restart. Use --clear-breaker only to reset unusable state")
+            sys.exit(1)
+        if not exposure_ledger_is_writable():
+            print("* Error: The account safety ledger cannot be saved, so monitoring stops this account on its first identity scan")
+            print("To fix: Restore write access to that path, or choose a writable location with --output-dir")
+            sys.exit(1)
+        sys.exit(0)
+
+    apply_timing_cli_overrides(args)
+
+    # Checked here because the settings below are the first to read one, and a value of the wrong type raises or
+    # decides wrongly where it is consumed rather than where it was set. Doctor mode reports them as rows instead,
+    # so the one command meant to explain a broken configuration still runs on one
+    numeric_problems = runtime_configuration_problems()
+    if numeric_problems and not doctor_mode:
+        print("* Error: One or more numeric settings are invalid")
+        for name, requirement in numeric_problems.items():
+            print(f"  - {name} {requirement}")
+        print(colorize("info", "To fix: Correct the reported settings in the configuration file"))
+        print(f"Guide: {CONFIG_GUIDE_URL}")
         sys.exit(1)
 
-    # Advanced Follower/Followee Fetching Settings
-    if any([FOLLOWERS_PER_BATCH, FOLLOWER_LIMIT_TO_FETCH, FOLLOWER_DELAY_PER_BATCH]):
-        ADVANCED_FOLLOWER_FETCH = bool((FOLLOWERS_PER_BATCH and FOLLOWER_DELAY_PER_BATCH) or (FOLLOWER_LIMIT_TO_FETCH and not FOLLOWERS_PER_BATCH and not FOLLOWER_DELAY_PER_BATCH))
-        if not ADVANCED_FOLLOWER_FETCH:
-            print(f"* Error: Invalid configuration for advanced follower fetching: FOLLOWER_LIMIT_TO_FETCH: {FOLLOWER_LIMIT_TO_FETCH}, FOLLOWERS_PER_BATCH: {FOLLOWERS_PER_BATCH}, FOLLOWER_DELAY_PER_BATCH: {FOLLOWER_DELAY_PER_BATCH}")
-            sys.exit(1)
+    # Both combinations below are read from settings the check above may have rejected, and only doctor mode gets
+    # here with one. A combination judged from a value that is not a number would stop the report about to name it
+    if not numeric_problems:
+        # Advanced Follower/Followee Fetching Settings
+        if any([FOLLOWERS_PER_BATCH, FOLLOWER_LIMIT_TO_FETCH, FOLLOWER_DELAY_PER_BATCH]):
+            ADVANCED_FOLLOWER_FETCH = bool((FOLLOWERS_PER_BATCH and FOLLOWER_DELAY_PER_BATCH) or (FOLLOWER_LIMIT_TO_FETCH and not FOLLOWERS_PER_BATCH and not FOLLOWER_DELAY_PER_BATCH))
+            if not ADVANCED_FOLLOWER_FETCH:
+                print_recovery_error(f"Advanced follower fetching cannot use FOLLOWER_LIMIT_TO_FETCH: {FOLLOWER_LIMIT_TO_FETCH}, FOLLOWERS_PER_BATCH: {FOLLOWERS_PER_BATCH}, FOLLOWER_DELAY_PER_BATCH: {FOLLOWER_DELAY_PER_BATCH}", context="config")
+                sys.exit(1)
 
-    if any([FOLLOWEES_PER_BATCH, FOLLOWEE_LIMIT_TO_FETCH, FOLLOWEE_DELAY_PER_BATCH]):
-        ADVANCED_FOLLOWEE_FETCH = bool((FOLLOWEES_PER_BATCH and FOLLOWEE_DELAY_PER_BATCH) or (FOLLOWEE_LIMIT_TO_FETCH and not FOLLOWEES_PER_BATCH and not FOLLOWEE_DELAY_PER_BATCH))
-        if not ADVANCED_FOLLOWEE_FETCH:
-            print(f"* Error: Invalid configuration for advanced followee fetching: FOLLOWEE_LIMIT_TO_FETCH: {FOLLOWEE_LIMIT_TO_FETCH}, FOLLOWEES_PER_BATCH: {FOLLOWEES_PER_BATCH}, FOLLOWEE_DELAY_PER_BATCH: {FOLLOWEE_DELAY_PER_BATCH}")
-            sys.exit(1)
+        if any([FOLLOWEES_PER_BATCH, FOLLOWEE_LIMIT_TO_FETCH, FOLLOWEE_DELAY_PER_BATCH]):
+            ADVANCED_FOLLOWEE_FETCH = bool((FOLLOWEES_PER_BATCH and FOLLOWEE_DELAY_PER_BATCH) or (FOLLOWEE_LIMIT_TO_FETCH and not FOLLOWEES_PER_BATCH and not FOLLOWEE_DELAY_PER_BATCH))
+            if not ADVANCED_FOLLOWEE_FETCH:
+                print_recovery_error(f"Advanced followee fetching cannot use FOLLOWEE_LIMIT_TO_FETCH: {FOLLOWEE_LIMIT_TO_FETCH}, FOLLOWEES_PER_BATCH: {FOLLOWEES_PER_BATCH}, FOLLOWEE_DELAY_PER_BATCH: {FOLLOWEE_DELAY_PER_BATCH}", context="config")
+                sys.exit(1)
 
-    # Handle new debug, dashboard, and webhook arguments
-    if args.debug_mode is True:
-        DEBUG_MODE = True
-
-    if args.verbose_mode is True:
-        VERBOSE_MODE = True
-
+    # Handle dashboard and webhook arguments
     if args.followers_churn is True:
         FOLLOWERS_CHURN_DETECTION = True
 
@@ -14641,17 +20183,16 @@ def run_main():
         SKIP_FOLLOW_CHANGES = True
 
     if args.error_threshold is not None:
-        ERROR_FAILURE_THRESHOLD = int(args.error_threshold)
-        if ERROR_FAILURE_THRESHOLD < 1:
-            print("* Warning: Error threshold must be at least 1, setting to 1")
-            ERROR_FAILURE_THRESHOLD = 1
+        note_console_output()
+        print(f"* Note: --error-threshold was removed in a later version and is ignored. An error alert now goes out once a failure has lasted {display_time(ERROR_ALERT_AFTER_SECONDS)}, or at once when it cannot clear on its own")
 
     # Webhook configuration
     if args.webhook_url:
         if not validate_webhook_url(args.webhook_url):
-            print("* Error: Invalid webhook URL format. Must be a complete HTTPS URL without embedded credentials.")
+            print_recovery_error("Invalid webhook URL format. It must be a complete HTTPS URL without embedded credentials", context="webhook_config")
             sys.exit(1)
         WEBHOOK_URL = str(args.webhook_url or "")
+        record_secret_source("WEBHOOK_URL", "command line")
         WEBHOOK_ENABLED = True
 
     if args.webhook_provider:
@@ -14677,29 +20218,39 @@ def run_main():
         WEBHOOK_ERROR_NOTIFICATION = True
         WEBHOOK_ENABLED = True
 
+    if args.set_smtp_password:
+        try:
+            run_set_smtp_password(env_file=args.env_file, config_path=args.config_file)
+        except SmtpConfigurationError as exc:
+            print_secret_command_error(exc)
+            sys.exit(1)
+        sys.exit(0)
+
     if args.send_test_email:
         print("* Sending test email notification ...\n")
-        m_subject = "instagram_monitor: test email"
-        m_body = "This is test email - your SMTP settings seems to be correct !"
-        m_body_html = "This is <b>test email</b> - your SMTP settings seems to be <b>correct</b> !"
-        if send_email(m_subject, m_body, m_body_html, SMTP_SSL, smtp_timeout=5) == 0:
+        m_subject = "Instagram Monitor test email"
+        m_body = "This test email was sent by --send-test-email. Your SMTP settings work."
+        m_body_html = "This test email was sent by <b>--send-test-email</b>. Your SMTP settings work."
+        if send_email(m_subject, m_body, m_body_html, SMTP_SSL, smtp_timeout=5, report_delivery=False) == 0:
             print("* Email sent successfully !")
         else:
             sys.exit(1)
         sys.exit(0)
 
     if args.send_test_webhook:
-        print("* Sending test webhook notification ...")
-        # Ensure we have a URL for the test
         if not WEBHOOK_URL:
-            print("* Error: WEBHOOK_URL is not set. Use --webhook-url or set it in the config file.")
+            print("* Error: No webhook destination is configured")
+            print(colorize("info", "To fix: Save one with --set-webhook-url, pass --webhook-url or set WEBHOOK_URL in the config file"))
+            print(f"Guide: {WEBHOOK_GUIDE_URL}")
             sys.exit(1)
+
+        print("* Sending test webhook notification ...")
 
         # Temporarily enable if we are testing from CLI
         old_webhook_enabled = WEBHOOK_ENABLED
         WEBHOOK_ENABLED = True
 
-        if send_webhook("instagram_monitor: test webhook", "This is **test webhook** - your settings seems to be **correct** !", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE) == 0:
+        if send_webhook("Instagram Monitor test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", color=0x7289DA, notification_type=WEBHOOK_TEST_NOTIFICATION_TYPE, report_delivery=False) == 0:
             print("* Webhook sent successfully !")
         else:
             print("* Error: Test webhook notification failed. Check the error message above.")
@@ -14728,7 +20279,7 @@ def run_main():
         try:
             u = normalize_instagram_username(u)
         except ValueError as e:
-            print(f"* Error: {e}: {u!r}")
+            print_recovery_error(f"{e}: {u!r}", context="config")
             sys.exit(1)
         if u not in seen:
             seen.add(u)
@@ -14743,6 +20294,9 @@ def run_main():
 
     if args.disable_dashboard is True:
         DASHBOARD_ENABLED = False
+
+    if not doctor_mode:
+        retain_retired_settings_in_dashboard(doctor_config_retired, cfg_path)
 
     # Web Dashboard handling
     if args.web_dashboard is True:
@@ -14766,20 +20320,10 @@ def run_main():
 
     # Allow empty targets with specific flags
     if not targets and not WEB_DASHBOARD_ENABLED and not args.doctor and not args.analyze_follows:
-        utility_flags = {
-            "--no-color", "-h", "--help",
-            "--web-dashboard", "--version"
-        }
-        complex_args = [a for a in sys.argv[1:] if a not in utility_flags]
-
-        if complex_args:
-            print("\n* Error: At least one TARGET_USERNAME argument is required !\n", flush=True)
-
-        parser.print_help(sys.stderr)
+        print("* Error: At least one TARGET_USERNAME argument is required")
+        print(colorize("info", f"To fix: {NO_TARGET_FIX}"))
+        print(f"Guide: {QUICK_START_GUIDE_URL}")
         sys.exit(1)
-
-    if args.skip_session is True:
-        SKIP_SESSION = True
 
     if args.skip_followers is True:
         SKIP_FOLLOWERS = True
@@ -14796,6 +20340,9 @@ def run_main():
     if args.get_more_post_details is True:
         GET_MORE_POST_DETAILS = True
 
+    if args.fetch_reels is not None:
+        FETCH_REELS = args.fetch_reels
+
     if args.detect_collab_posts is False:
         DETECT_COLLAB_POSTS = False
 
@@ -14805,34 +20352,12 @@ def run_main():
     if args.enable_jitter is True:
         ENABLE_JITTER = True
 
-    if args.check_interval:
-        if args.check_interval <= 0:
-            print("* Error: Check interval must be greater than 0")
-            sys.exit(1)
-        INSTA_CHECK_INTERVAL = args.check_interval
+    trace_unresolved_secrets()
 
-    if args.check_interval_random_diff_low:
-        RANDOM_SLEEP_DIFF_LOW = args.check_interval_random_diff_low
-
-    if args.check_interval_random_diff_high:
-        RANDOM_SLEEP_DIFF_HIGH = args.check_interval_random_diff_high
-
-    if args.session_username:
-        SESSION_USERNAME = args.session_username
-
-    if args.session_password:
-        SESSION_PASSWORD = args.session_password
-
-    if not SESSION_USERNAME:
-        SKIP_SESSION = True
-
-    # Validate INSTA_CHECK_INTERVAL to prevent division by zero
-    if INSTA_CHECK_INTERVAL <= 0:
-        print("* Error: INSTA_CHECK_INTERVAL must be greater than 0. Please set it in config file or via -c flag")
-        sys.exit(1)
-
-    # Finalize liveness cadence after config/env/CLI have been applied
-    recompute_liveness_check_counter()
+    # Finalize liveness cadence after config/env/CLI have been applied, unless a setting it reads is one the
+    # doctor is about to report, since only doctor mode gets this far with an unusable value
+    if 'INSTA_CHECK_INTERVAL' not in numeric_problems and 'LIVENESS_CHECK_INTERVAL' not in numeric_problems:
+        recompute_liveness_reminder()
 
     if SKIP_SESSION is True:
         SKIP_FOLLOWERS = True
@@ -14846,18 +20371,26 @@ def run_main():
 
     # Run preflight checks once the effective session mode and targets are resolved
     if getattr(args, "doctor", False):
-        doctor_failures = run_doctor(targets, doctor_config_errors, doctor_config_retired, env_path)
-        if not doctor_failures:
-            explicit_targets = bool(getattr(args, "targets", None) or getattr(args, "usernames", None))
-            command_targets = targets if explicit_targets else ()
-            selected_env = "none" if args.env_file and str(args.env_file).casefold() == "none" else env_path
-            if targets or WEB_DASHBOARD_ENABLED:
-                _wizard_print_monitor_after_doctor(cfg_path, selected_env, command_targets, web_dashboard=WEB_DASHBOARD_ENABLED)
-            else:
-                print(colorize("header", "\nNext steps\n"))
-                print("Doctor passed, but no monitoring target or Web Dashboard is configured.")
-                print(colorize("section", f"    {_wizard_cmd_prefix(_wizard_install_method())} --setup\n"))
+        # Doctor exits before monitoring applies these, so they are resolved here too and the output rows
+        # describe the run that was actually asked for. Nothing is written, only reported
+        if args.csv_file:
+            CSV_FILE = os.path.expanduser(args.csv_file)
+        if args.disable_logging is True:
+            DISABLE_LOGGING = True
+        doctor_failures = run_doctor(targets, doctor_config_errors, doctor_config_retired, env_path, timezone_advice)
+        # Targets already saved in the config file are left out, so the command stays as short as the wizard's
+        # Both "none" sentinels are carried, since the printed command monitors with the setup doctor just checked
+        next_env_path = "none" if DOTENV_FILE and str(DOTENV_FILE).casefold() == "none" else env_path
+        print_doctor_next_steps([] if not args.usernames else targets, cfg_path or active_config_path(), next_env_path, TARGET_USERNAMES, doctor_failures)
         sys.exit(1 if doctor_failures else 0)
+
+    boolean_errors = runtime_boolean_errors()
+    if boolean_errors:
+        print_recovery_error(context="config", summary="Invalid settings: " + ". ".join(boolean_errors))
+        sys.exit(1)
+
+    if not args.analyze_follows and not check_internet():
+        sys.exit(1)
 
     # Offline follow relationship analysis: read the already-saved lists, print the result and exit (no network requests, no monitoring loop)
     if getattr(args, "analyze_follows", False):
@@ -14957,11 +20490,13 @@ def run_main():
     try:
         ascii_log_separators_enabled()
     except ValueError as e:
-        print(f"* Error: {e}")
+        print_recovery_error(str(e), context="config")
         sys.exit(1)
 
     if args.disable_logging is True:
         DISABLE_LOGGING = True
+
+    TRUNCATE_CHARS = resolve_truncate_chars(args.truncate, TRUNCATE_CHARS, DISABLE_LOGGING)
 
     # Re-initialize colour output to pick up any theme changes from config/dotenv
     init_color_output(stdout_bck)
@@ -15008,16 +20543,20 @@ def run_main():
         FOLLOWERS_NOTIFICATION = False
 
     if SMTP_HOST.startswith("your_smtp_server_"):
+        verbose_print("Email notifications are off because SMTP_HOST is still the shipped placeholder")
         STATUS_NOTIFICATION = False
         FOLLOWERS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
+    if WEBHOOK_ENABLED and not validate_webhook_url(WEBHOOK_URL):
+        verbose_print("Webhook notifications are off because WEBHOOK_URL is not a complete HTTPS link")
+        WEBHOOK_ENABLED = False
 
-    # Build the run summary as (text, show_in_concise, show_in_full) rows
+    # Build the run summary as StartupSummaryRow entries, in the order every sibling monitor prints
     # The concise terminal view leads with the targets and hides off/default rows; the full view (every row) is written to the log and also shown on the terminal under --verbose/--debug
-    summary_rows = []
+    summary_rows: List[StartupSummaryRow] = []
 
-    summary_rows.append((f"* Targets:\t\t\t\t{', '.join(targets)}", True, True))
-    summary_rows.append((f"* Instagram polling interval:\t\t[ {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)} ]", True, True))
+    summary_rows.append(StartupSummaryRow("Targets", ", ".join(targets), concise=True))
+    summary_rows.append(StartupSummaryRow("Polling interval", f"[ {display_time(check_interval_low)} - {display_time(INSTA_CHECK_INTERVAL + RANDOM_SLEEP_DIFF_HIGH)} ]", concise=True))
 
     hours_ranges_str = ""
     if CHECK_POSTS_IN_HOURS_RANGE:
@@ -15033,59 +20572,66 @@ def run_main():
             hours_ranges_str = "None (both ranges disabled)"
     else:
         hours_ranges_str = format_hour_range(0, 23)
-    summary_rows.append(("* Hours for fetching updates:\t\t" + hours_ranges_str, bool(CHECK_POSTS_IN_HOURS_RANGE), True))
+    summary_rows.append(StartupSummaryRow("Hours for fetching updates", hours_ranges_str, concise=bool(CHECK_POSTS_IN_HOURS_RANGE)))
 
     # Reuse the same compact per-channel notification rows in every summary view
     summary_rows.extend(_startup_notification_summary_rows())
 
-    summary_rows.append((f"* Session Mode:\t\t\t\t{mode_of_the_tool}", True, True))
-    summary_rows.append((f"* Human mode:\t\t\t\t{BE_HUMAN}" + (f" (Verbose)" if BE_HUMAN_VERBOSE else ""), bool(BE_HUMAN), True))
-    summary_rows.append((f"* Skip session login:\t\t\t{SKIP_SESSION}", bool(SKIP_SESSION), True))
-    summary_rows.append((f"* Skip fetching followers:\t\t{SKIP_FOLLOWERS}", bool(SKIP_FOLLOWERS), True))
-    summary_rows.append((f"* Skip fetching followings:\t\t{SKIP_FOLLOWINGS}", bool(SKIP_FOLLOWINGS), True))
-    summary_rows.append((f"* Skip reporting follows changes:\t{SKIP_FOLLOW_CHANGES}", bool(SKIP_FOLLOW_CHANGES), True))
-    summary_rows.append((f"* Skip stories details:\t\t\t{SKIP_GETTING_STORY_DETAILS}", bool(SKIP_GETTING_STORY_DETAILS), True))
-    summary_rows.append((f"* Skip posts details:\t\t\t{SKIP_GETTING_POSTS_DETAILS}", bool(SKIP_GETTING_POSTS_DETAILS), True))
-    summary_rows.append((f"* Get more posts details:\t\t{GET_MORE_POST_DETAILS}", bool(GET_MORE_POST_DETAILS), True))
-    summary_rows.append((f"* Detect collab posts (private):\t{DETECT_COLLAB_POSTS}", not DETECT_COLLAB_POSTS, True))
+    output_state = FINAL_LOG_PATH if not DISABLE_LOGGING else "Terminal only (logging disabled)"
+    summary_rows.append(StartupSummaryRow("Output", str(output_state), concise=True, full=False))
+    summary_rows.append(StartupSummaryRow("Output logging", str(FINAL_LOG_PATH) if not DISABLE_LOGGING else "Disabled"))
+    summary_rows.append(StartupSummaryRow("Config", str(cfg_path) if cfg_path else ("Discovery disabled" if CONFIG_DISCOVERY_DISABLED else "None"), concise=True))
+    summary_rows.append(StartupSummaryRow("Dotenv", str(env_path) if env_path else "None", concise=True))
+
+    if OUTPUT_DIR:
+        output_dir_desc = "(root for user data & logs)" if len(targets) == 1 else "(container for per-user subdirectories & logs)"
+        summary_rows.append(StartupSummaryRow("Output directory", f"{Path(OUTPUT_DIR).expanduser().resolve()} {output_dir_desc}", concise=True))
+    else:
+        summary_rows.append(StartupSummaryRow("Output directory", str(Path.cwd()), concise=True))
+
+    summary_rows.append(StartupSummaryRow("Session mode", mode_of_the_tool, concise=True))
+    summary_rows.append(StartupSummaryRow("Human mode", f"{BE_HUMAN}" + (" (Verbose)" if BE_HUMAN_VERBOSE else ""), concise=bool(BE_HUMAN)))
+    summary_rows.append(StartupSummaryRow("Skip session login", str(SKIP_SESSION), concise=bool(SKIP_SESSION)))
+    summary_rows.append(StartupSummaryRow("Skip fetching followers", str(SKIP_FOLLOWERS), concise=bool(SKIP_FOLLOWERS)))
+    summary_rows.append(StartupSummaryRow("Skip fetching followings", str(SKIP_FOLLOWINGS), concise=bool(SKIP_FOLLOWINGS)))
+    summary_rows.append(StartupSummaryRow("Skip follow change reports", str(SKIP_FOLLOW_CHANGES), concise=bool(SKIP_FOLLOW_CHANGES)))
+    summary_rows.append(StartupSummaryRow("Skip stories details", str(SKIP_GETTING_STORY_DETAILS), concise=bool(SKIP_GETTING_STORY_DETAILS)))
+    summary_rows.append(StartupSummaryRow("Skip posts details", str(SKIP_GETTING_POSTS_DETAILS), concise=bool(SKIP_GETTING_POSTS_DETAILS)))
+    summary_rows.append(StartupSummaryRow("Get more posts details", str(GET_MORE_POST_DETAILS), concise=bool(GET_MORE_POST_DETAILS)))
+    summary_rows.append(StartupSummaryRow("Fetch reels", str(FETCH_REELS), concise=bool(FETCH_REELS)))
+    summary_rows.append(StartupSummaryRow("Detect collab posts", str(DETECT_COLLAB_POSTS), concise=not DETECT_COLLAB_POSTS))
 
     churn_status = str(FOLLOWERS_CHURN_DETECTION)
     if FOLLOWERS_CHURN_AUTODISABLED:
         churn_status += f" ({FOLLOWERS_CHURN_AUTODISABLED_REASON})"
-    summary_rows.append((f"* Follower churn detection:\t\t{churn_status}", bool(FOLLOWERS_CHURN_DETECTION or FOLLOWERS_CHURN_AUTODISABLED), True))
-
-    summary_rows.append((f"* Browser user agent:\t\t\t{USER_AGENT}", False, True))
-    summary_rows.append((f"* Mobile user agent:\t\t\t{USER_AGENT_MOBILE}", False, True))
-
-    if _curl_cffi_backend_active():
-        impersonate_resolved = _curl_cffi_impersonate_target()
-        impersonate_display = f"auto -> {impersonate_resolved}" if str(CURL_CFFI_IMPERSONATE or "auto").strip().lower() in ("", "auto") else impersonate_resolved
-        summary_rows.append((f"* HTTP backend:\t\t\t\tcurl_cffi (impersonate: {impersonate_display})", True, True))
-    else:
-        summary_rows.append((f"* HTTP backend:\t\t\t\trequests", True, True))
-
-    summary_rows.append((f"* HTTP jitter/back-off:\t\t\t{ENABLE_JITTER}", bool(ENABLE_JITTER), True))
-
-    summary_rows.append((f"* Proxies:\t\t\t\t" + ("Enabled" if PROXY_ENABLED else "Disabled"), bool(PROXY_ENABLED), True))
-    if PROXY_ENABLED:
-        ipaddr = get_ip_address()
-        masked_proxy_url = mask_url_credentials(PROXY_URL)
-        summary_rows.append((f"*   Proxy IP Address:\t\t\t{ipaddr}", True, True))
-        summary_rows.append((f"*   Proxy URL:\t\t\t\t{masked_proxy_url[:50]}", True, True))
-        summary_rows.append((f"*   Proxy Certificate:\t\t\t{PROXY_CERT_PATH or '-'}", True, True))
-        summary_rows.append((f"*   Proxy for Webhooks:\t\t\t" + ("Enabled" if PROXY_WEBHOOKS else "Disabled"), True, True))
+    summary_rows.append(StartupSummaryRow("Follower churn detection", churn_status, concise=bool(FOLLOWERS_CHURN_DETECTION or FOLLOWERS_CHURN_AUTODISABLED)))
 
     follower_str = build_follow_string(ADVANCED_FOLLOWER_FETCH, FOLLOWER_LIMIT_TO_FETCH, FOLLOWERS_PER_BATCH, FOLLOWER_DELAY_PER_BATCH)
     followee_str = build_follow_string(ADVANCED_FOLLOWEE_FETCH, FOLLOWEE_LIMIT_TO_FETCH, FOLLOWEES_PER_BATCH, FOLLOWEE_DELAY_PER_BATCH)
-    summary_rows.append((f"* Advanced Follower Fetching:\t\t{follower_str}", bool(ADVANCED_FOLLOWER_FETCH), True))
-    summary_rows.append((f"* Advanced Followee Fetching:\t\t{followee_str}", bool(ADVANCED_FOLLOWEE_FETCH), True))
-    summary_rows.append((f"* Liveness check:\t\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""), not LIVENESS_CHECK_INTERVAL, True))
-    summary_rows.append((f"* Profile pic changes:\t\t\t{DETECT_CHANGED_PROFILE_PIC}", not DETECT_CHANGED_PROFILE_PIC, True))
-    summary_rows.append((f"* Display profile pics:\t\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""), bool(imgcat_exe), True))
-    summary_rows.append((f"* Empty profile pic template:\t\t{profile_pic_file_exists}" + (f" ({PROFILE_PIC_FILE_EMPTY})" if profile_pic_file_exists else ""), bool(profile_pic_file_exists), True))
+    summary_rows.append(StartupSummaryRow("Advanced follower fetching", follower_str, concise=bool(ADVANCED_FOLLOWER_FETCH)))
+    summary_rows.append(StartupSummaryRow("Advanced followee fetching", followee_str, concise=bool(ADVANCED_FOLLOWEE_FETCH)))
+
+    follow_source_value = follow_list_source_display()
+    if unrecognised_follow_list_source() is not None:
+        follow_source_value += f" (FOLLOW_LIST_SOURCE {unrecognised_follow_list_source()!r} is not a known source)"
+    summary_rows.append(StartupSummaryRow("Follow list source", follow_source_value, concise=True))
+
+    identity_budget_str = f"{IDENTITY_BUDGET_PER_DAY} names/day" if IDENTITY_BUDGET_PER_DAY else "Disabled (counted but not capped)"
+    summary_rows.append(StartupSummaryRow("Identity budget", identity_budget_str, concise=bool(IDENTITY_BUDGET_PER_DAY)))
+
+    breaker_state = circuit_breaker_state()
+    if breaker_state:
+        breaker_str = f"Paused ({breaker_state.get('failure_class', 'unknown')}) - checking the session before monitoring"
+    else:
+        breaker_str = "Armed" if CIRCUIT_BREAKER else "Disabled"
+    summary_rows.append(StartupSummaryRow("Account circuit breaker", breaker_str, concise=bool(CIRCUIT_BREAKER) and not breaker_state))
+
+    summary_rows.append(StartupSummaryRow("Profile picture changes", str(DETECT_CHANGED_PROFILE_PIC), concise=not DETECT_CHANGED_PROFILE_PIC))
+    summary_rows.append(StartupSummaryRow("Profile picture display", imgcat_exe or "Disabled", concise=bool(imgcat_exe)))
+    summary_rows.append(StartupSummaryRow("Empty profile pic template", PROFILE_PIC_FILE_EMPTY if profile_pic_file_exists else "Disabled", concise=bool(profile_pic_file_exists)))
 
     thumbnail_adnotation = " (forced by Web Dashboard)" if THUMBNAILS_FORCED_BY_WEB else ""
-    summary_rows.append((f"* Download thumbnail images:\t\t{DOWNLOAD_THUMBNAILS}{thumbnail_adnotation}", (not DOWNLOAD_THUMBNAILS) or THUMBNAILS_FORCED_BY_WEB, True))
+    summary_rows.append(StartupSummaryRow("Download thumbnail images", f"{DOWNLOAD_THUMBNAILS}{thumbnail_adnotation}", concise=(not DOWNLOAD_THUMBNAILS) or THUMBNAILS_FORCED_BY_WEB))
 
     # Dashboard status
     dashboard_status = DASHBOARD_ENABLED and RICH_AVAILABLE
@@ -15095,7 +20641,7 @@ def run_main():
             dashboard_reason = " (missing rich)"
         elif not DASHBOARD_ENABLED:
             dashboard_reason = " (disabled)"
-    summary_rows.append((f"* Dashboard:\t\t\t\t{dashboard_status}{dashboard_reason}", bool(DASHBOARD_ENABLED), True))
+    summary_rows.append(StartupSummaryRow("Dashboard", f"{dashboard_status}{dashboard_reason}", concise=bool(DASHBOARD_ENABLED)))
 
     # Web Dashboard status
     web_dashboard_status = WEB_DASHBOARD_ENABLED and FLASK_AVAILABLE
@@ -15105,27 +20651,7 @@ def run_main():
             web_dashboard_reason = " (disabled)"
         elif not FLASK_AVAILABLE:
             web_dashboard_reason = " (missing Flask)"
-    summary_rows.append((f"* Web Dashboard:\t\t\t{web_dashboard_status}{web_dashboard_reason}", bool(WEB_DASHBOARD_ENABLED), True))
-
-    if len(targets) == 1:
-        summary_rows.append((f"* CSV logging enabled:\t\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""), bool(CSV_FILE), True))
-    else:
-        if CSV_FILE:
-            summary_rows.append((f"* CSV logging enabled:\t\t\tTrue (per-user files, base: {CSV_FILE})", True, True))
-        else:
-            summary_rows.append((f"* CSV logging enabled:\t\t\tFalse", False, True))
-
-    summary_rows.append((f"* Output logging enabled:\t\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""), bool(DISABLE_LOGGING), True))
-    summary_rows.append((f"* ASCII log separators:\t\t\t{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})", False, True))
-
-    if OUTPUT_DIR:
-        output_dir_desc = "(root for user data & logs)" if len(targets) == 1 else "(container for per-user subdirectories & logs)"
-        summary_rows.append((f"* Output directory:\t\t\t{OUTPUT_DIR} {output_dir_desc}", True, True))
-    else:
-        summary_rows.append((f"* Output directory:\t\t\t{os.getcwd()} (current working directory)", True, True))
-
-    summary_rows.append((f"* Configuration file:\t\t\t{cfg_path}", True, True))
-    summary_rows.append((f"* Dotenv file:\t\t\t\t{env_path or 'None'}", True, True))
+    summary_rows.append(StartupSummaryRow("Web dashboard", f"{web_dashboard_status}{web_dashboard_reason}", concise=bool(WEB_DASHBOARD_ENABLED)))
 
     if WEB_DASHBOARD_ENABLED:
         if WEB_DASHBOARD_TEMPLATE_DIR:
@@ -15133,45 +20659,52 @@ def run_main():
         else:
             detected = _peek_web_dashboard_template_dir_autodetect()
             templates_display = "Auto-detect" + (f" ({detected})" if detected else "")
-        summary_rows.append((f"* Web Dashboard templates:\t\t{templates_display}", False, True))
+        summary_rows.append(StartupSummaryRow("Web dashboard templates", templates_display))
 
-    summary_rows.append((f"* Verbose mode:\t\t\t\t{VERBOSE_MODE}", bool(VERBOSE_MODE), True))
-    summary_rows.append((f"* Debug mode:\t\t\t\t{DEBUG_MODE}", bool(DEBUG_MODE), True))
-    summary_rows.append((f"* Local timezone:\t\t\t{LOCAL_TIMEZONE}", False, True))
-    summary_rows.append((f"* 12h time format:\t\t\t{TIME_FORMAT_12H}", False, True))
+    summary_rows.append(StartupSummaryRow("Liveness output", display_time(LIVENESS_CHECK_INTERVAL) if LIVENESS_CHECK_INTERVAL else "Disabled", concise=bool(LIVENESS_CHECK_INTERVAL)))
 
-    # Concise-only hint pointing at the full settings dump
-    summary_rows.append(("* (run with --verbose to see all settings)", True, False))
+    if len(targets) == 1:
+        summary_rows.append(StartupSummaryRow("CSV output", CSV_FILE or "Disabled", concise=bool(CSV_FILE)))
+    else:
+        summary_rows.append(StartupSummaryRow("CSV output", f"Per-target files, base: {CSV_FILE}" if CSV_FILE else "Disabled", concise=bool(CSV_FILE)))
 
-    # Emit the summary: full rows always go to the log; the terminal shows the full set under --verbose/--debug, otherwise the concise set (suppressed entirely while the terminal dashboard owns the screen)
-    show_full_on_terminal = bool(VERBOSE_MODE or DEBUG_MODE)
-    terminal_suppressed = bool(DASHBOARD_ENABLED and RICH_AVAILABLE)
-    summary_out = sys.stdout
-    for row_text, in_concise, in_full in summary_rows:
-        row_line = row_text + "\n"
-        to_terminal = (in_full if show_full_on_terminal else in_concise) and not terminal_suppressed
-        if in_full and hasattr(summary_out, "log_only"):
-            summary_out.log_only(row_line)
-        if to_terminal:
-            if hasattr(summary_out, "terminal_only"):
-                summary_out.terminal_only(row_line)
-            else:
-                print(row_text)
+    summary_rows.append(StartupSummaryRow("Terminal truncation", f"{TRUNCATE_CHARS} chars" if TRUNCATE_CHARS else "Disabled", concise=bool(TRUNCATE_CHARS)))
+
+    summary_rows.append(StartupSummaryRow("HTTP backend", f"curl_cffi (impersonate: {_curl_cffi_impersonate_display()})" if _curl_cffi_backend_active() else "requests", concise=True))
+    summary_rows.append(StartupSummaryRow("HTTP jitter/back-off", str(ENABLE_JITTER), concise=bool(ENABLE_JITTER)))
+    summary_rows.append(StartupSummaryRow("Browser user agent", USER_AGENT))
+    summary_rows.append(StartupSummaryRow("Mobile user agent", USER_AGENT_MOBILE))
+
+    summary_rows.append(StartupSummaryRow("Proxies", "Enabled" if PROXY_ENABLED else "Disabled", concise=bool(PROXY_ENABLED)))
+    if PROXY_ENABLED:
+        summary_rows.append(StartupSummaryRow("  Proxy IP Address", str(get_ip_address()), concise=True))
+        summary_rows.append(StartupSummaryRow("  Proxy URL", str(mask_url_credentials(PROXY_URL))[:50], concise=True))
+        summary_rows.append(StartupSummaryRow("  Proxy Certificate", PROXY_CERT_PATH or "-", concise=True))
+        summary_rows.append(StartupSummaryRow("  Proxy for Webhooks", "Enabled" if PROXY_WEBHOOKS else "Disabled", concise=True))
+
+    summary_rows.extend(_startup_environment_rows(env_path))
+
+    summary_rows.append(StartupSummaryRow("Verbose mode", str(VERBOSE_MODE), concise=bool(VERBOSE_MODE)))
+    summary_rows.append(StartupSummaryRow("Debug mode", str(DEBUG_MODE), concise=bool(DEBUG_MODE)))
+
+    # Points at the two modes for a reader who does not know they exist, so the full view drops it
+    summary_rows.append(StartupSummaryRow("More details", "use --verbose or --debug", concise=True, full=False))
+
+    # Full rows always go to the log; the terminal shows the full set under --verbose/--debug, otherwise the concise set (suppressed entirely while the terminal dashboard owns the screen)
+    emit_startup_summary(summary_rows, show_full=bool(VERBOSE_MODE or DEBUG_MODE), suppress_terminal=bool(DASHBOARD_ENABLED and RICH_AVAILABLE))
 
     # More visible warnings if requested features are missing (still only printed to terminal when dashboard is not active)
     if not (DASHBOARD_ENABLED and RICH_AVAILABLE):
         if DASHBOARD_ENABLED and not RICH_AVAILABLE:
             print("\n" + "*" * HORIZONTAL_LINE)
-            print("* WARNING: Terminal Dashboard is enabled, but 'rich' library is missing!")
-            print("* To fix this, please run: pip install rich")
+            print(render_recovery_advice(missing_dependency_advice("rich", "The Terminal Dashboard cannot start", pip_install_command("rich")), label="WARNING"))
             print("* Reverting to original text console...")
             print("*" * HORIZONTAL_LINE)
             DASHBOARD_ENABLED = False
 
         if WEB_DASHBOARD_ENABLED and not FLASK_AVAILABLE:
             print("\n" + "*" * HORIZONTAL_LINE)
-            print("* WARNING: Web Dashboard is enabled, but 'Flask' library is missing!")
-            print("* To fix this, please run: pip install flask")
+            print(render_recovery_advice(missing_dependency_advice("Flask", "The Web Dashboard cannot start", pip_install_command("flask")), label="WARNING"))
             print("* Web Dashboard will NOT be available!")
             print("*" * HORIZONTAL_LINE)
 
@@ -15261,9 +20794,18 @@ def run_main():
         signal.signal(signal.SIGABRT, decrease_check_signal_handler)
         signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
 
+    recovery_ready = recover_account_on_startup()
+    if not recovery_ready:
+        if not WEB_DASHBOARD_ENABLED:
+            sys.exit(1)
+        with ACCOUNT_BREAKER_MEMORY_LOCK:
+            ACCOUNT_PAUSED_TARGETS.setdefault(exposure_account_name(), set()).update(targets)
+        for user in targets:
+            update_ui_data(targets={user: {'status': 'Paused: account recovery required'}})
+
     # Print monitoring message after all setup is complete
     # Note: If Dashboard is enabled, this will be shown in the dashboard instead
-    if targets:
+    if targets and recovery_ready:
         if len(targets) == 1:
             out = f"\nMonitoring Instagram user {targets[0]}"
         else:
@@ -15272,14 +20814,15 @@ def run_main():
         print("─" * len(out))
 
     # Multi-target mode: run multiple monitors in one process, with configurable staggering
-    if len(targets) == 0:
+    if len(targets) == 0 or not recovery_ready:
         print("\n" + "═" * 80)
         print("     INSTAGRAM MONITOR - WEB DASHBOARD MODE")
         print("═" * 80)
-        print(f"\n* Status: Waiting for targets...")
+        print("\n* Status: Waiting for targets..." if recovery_ready else "\n* Status: Account paused. Re-import or refresh the session to resume monitoring.")
         print(f"* Web UI: {_web_dashboard_browser_url()}")
-        print("\n* Info: No initial targets specified on command line.")
-        print("  Please open the Web UI above to manually add Instagram users for monitoring.")
+        if recovery_ready:
+            print("\n* Info: No initial targets specified on command line.")
+            print("  Please open the Web UI above to manually add Instagram users for monitoring.")
         print("  You can also configure sessions and settings directly from the dashboard.")
         print("\n" + "─" * 80)
         print("Press Ctrl+C to exit\n")
@@ -15300,9 +20843,9 @@ def run_main():
         if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
             with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                 WEB_DASHBOARD_RECHECK_EVENTS[user] = threading.Event()
-            with WEB_DASHBOARD_MONITOR_LOCK:
-                WEB_DASHBOARD_STOP_EVENTS[user] = stop_event
-                WEB_DASHBOARD_MONITOR_THREADS[user] = threading.current_thread()
+        with WEB_DASHBOARD_MONITOR_LOCK:
+            WEB_DASHBOARD_STOP_EVENTS[user] = stop_event
+            WEB_DASHBOARD_MONITOR_THREADS[user] = threading.current_thread()
 
         try:
             instagram_monitor_user(user, csv_files_by_user.get(user, CSV_FILE), SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, user_root_path=OUTPUT_DIR, stop_event=stop_event, skip_follow_changes=SKIP_FOLLOW_CHANGES)
@@ -15310,11 +20853,11 @@ def run_main():
             if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
                 with WEB_DASHBOARD_DATA_LOCK:  # type: ignore
                     WEB_DASHBOARD_RECHECK_EVENTS.pop(user, None)
-                with WEB_DASHBOARD_MONITOR_LOCK:
-                    if WEB_DASHBOARD_STOP_EVENTS.get(user) is stop_event:
-                        WEB_DASHBOARD_STOP_EVENTS.pop(user, None)
-                    if WEB_DASHBOARD_MONITOR_THREADS.get(user) is threading.current_thread():
-                        WEB_DASHBOARD_MONITOR_THREADS.pop(user, None)
+            with WEB_DASHBOARD_MONITOR_LOCK:
+                if WEB_DASHBOARD_STOP_EVENTS.get(user) is stop_event:
+                    WEB_DASHBOARD_STOP_EVENTS.pop(user, None)
+                if WEB_DASHBOARD_MONITOR_THREADS.get(user) is threading.current_thread():
+                    WEB_DASHBOARD_MONITOR_THREADS.pop(user, None)
     else:
         stagger = args.targets_stagger if args.targets_stagger is not None else MULTI_TARGET_STAGGER
         jitter = args.targets_stagger_jitter if args.targets_stagger_jitter is not None else MULTI_TARGET_STAGGER_JITTER
@@ -15325,7 +20868,7 @@ def run_main():
             jitter = 0
 
         if stagger < 0 or jitter < 0:
-            print("* Error: --targets-stagger and --targets-stagger-jitter must be >= 0")
+            print_recovery_error("--targets-stagger and --targets-stagger-jitter cannot be negative", context="config")
             sys.exit(1)
 
         # Auto-spread across the base interval
@@ -15351,7 +20894,7 @@ def run_main():
             planned_actions.append((u, delay, planned))
             msg_time = planned.strftime('%I:%M:%S %p' if TIME_FORMAT_12H else '%H:%M:%S')
             print(f"  - {u} @ ~{msg_time} (in {display_time(delay)})")
-            debug_print(f"Target {u} scheduled with delay_s={delay}")
+            debug_print("Target scheduled", user=u, delay_s=delay)
 
             # Populate initial dashboard check times
             if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
@@ -15401,7 +20944,7 @@ def run_main():
                 # Wait for previous user's loading to complete
                 wait_event = loading_events[idx]
                 if not wait_event.is_set():
-                    debug_print(f"Target {u} waiting for previous user's initial load...")
+                    debug_print("Target waiting", user=u, reason="previous user's initial load")
 
                 # Signal when this user's loading is complete
                 signal_event = loading_events[idx + 1]
@@ -15432,7 +20975,7 @@ def run_main():
             except Exception as e:
                 # Surface thread exceptions so the user sees them
                 error_msg = format_error_message(e)
-                print(f"* Error in target '{u}': {error_msg}")
+                print_recovery_error(error_msg, summary=f"Error in target '{u}': {error_msg}")
                 traceback.print_exc()
                 # Still signal completion even on error, so next user can proceed
                 loading_events[idx + 1].set()
@@ -15452,10 +20995,9 @@ def run_main():
         for idx, (u, delay, _planned) in enumerate(planned_actions):
             stop_event = threading.Event()
             t = threading.Thread(target=_runner, args=(u, delay, idx, stop_event), name=f"instagram_monitor:{u}", daemon=True)
-            if DASHBOARD_ENABLED or WEB_DASHBOARD_ENABLED:
-                with WEB_DASHBOARD_MONITOR_LOCK:
-                    WEB_DASHBOARD_STOP_EVENTS[u] = stop_event
-                    WEB_DASHBOARD_MONITOR_THREADS[u] = t
+            with WEB_DASHBOARD_MONITOR_LOCK:
+                WEB_DASHBOARD_STOP_EVENTS[u] = stop_event
+                WEB_DASHBOARD_MONITOR_THREADS[u] = t
             t.start()
             threads.append(t)
 

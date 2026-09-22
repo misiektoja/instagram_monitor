@@ -16,12 +16,12 @@ Powerful, real-time OSINT suite for tracking every activity on Instagram - from 
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="100%"/>
 </p>
 
-<a id="-quick-install-run"></a>
+<a id="quick-install-run"></a>
 ### 🚀 Quick Install & Run
 
 #### Python from PyPI
 
-New to Python or unsure what is installed? Follow the [Python install walkthrough](https://misiektoja.github.io/instagram_monitor/installation/#new-to-python-install-everything) first.
+New to Python or unsure what is installed? Follow the [Python install walkthrough](https://misiektoja.github.io/instagram_monitor/installation/#new-to-python-check-and-install) first.
 
 ```sh
 pip install instagram_monitor
@@ -32,6 +32,8 @@ Run setup wizard:
 ```sh
 instagram_monitor --setup
 ```
+
+The wizard asks for the targets, the Instagram login, the interface and optional notifications. Review the settings before saving them. See [Setup & First Run](https://misiektoja.github.io/instagram_monitor/setup-and-first-run/) for the Instagram login options and the first monitoring run.
 
 #### Docker image - fastest container setup
 
@@ -76,7 +78,7 @@ Run setup wizard:
 docker compose run --rm --pull=always instagram_monitor --setup
 ```
 
-For the manual single-file method, optional browser support and upgrade commands for every installation method, see [Installation](https://misiektoja.github.io/instagram_monitor/installation/).
+For the manual single-file method, optional extras and upgrade commands, see [Installation](https://misiektoja.github.io/instagram_monitor/installation/).
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_demo.gif" alt="instagram_monitor demo: install, setup wizard and run" width="100%"/>
@@ -106,12 +108,14 @@ For the manual single-file method, optional browser support and upgrade commands
 ### 🔔 Smart Notifications
 - **Multi-Channel**: Instant alerts via **Email**, **Discord webhooks** and native **ntfy** notifications.
 - **Rich Alerts**: Attached media (profile pics, stories, posts) in Discord notifications.
-- **Error Reporting**: Be notified if the monitoring process hits a snag.
+- **Error Reporting**: Be notified when monitoring starts failing, and again when it recovers.
 
 ### 🛡️ Privacy & Detection Avoidance
 - **Be Human Mode**: Simulates random user actions to blend in.
 - **Jitter Mode**: Adds human-like delays to HTTP requests.
 - **Hour-Range Checking**: Limits activity to specific hours of the day.
+- **Identity Budget**: Caps how many follower and following names are fetched per day.
+- **Circuit Breaker**: Stops every target after Instagram challenges your account until a restart or a fresh session clears it.
 - **Account Flexibility**: Works with or without a logged-in Instagram account.
 - **Browser Session Import**: Reuse Firefox, Chrome, Brave or Chromium sessions with profile selection.
 - **Browser TLS Impersonation**: Routes traffic through curl_cffi to mimic a real browser's TLS fingerprint and dodge fingerprint-based blocks.
@@ -124,6 +128,7 @@ For the manual single-file method, optional browser support and upgrade commands
 - **Flexible Config**: Support for files, dotenv and environment variables.
 - **Follower Churn**: Detailed tracking of exactly who followed or unfollowed.
 - **Follow Analysis**: Inspect mutual, not-following-back and fan relationships offline from saved lists with `--analyze-follows` or the Web Dashboard.
+- **Selectable Follower List Source**: Reads follower and following lists from the web REST endpoints Instagram's own app calls, falling back to the older GraphQL queries, with an experimental browser source for when both are broken.
 - **Batched Fetching**: Throttle follower/following downloads into delayed batches.
 - **Remote Control**: Manage tracking features via signals or the web UI.
 - **Docker Ready**: Run via Docker Hub, Docker Compose or local image build with persisted config, dotenv and sessions.
@@ -139,36 +144,53 @@ For the manual single-file method, optional browser support and upgrade commands
 <a id="common-commands"></a>
 ## Common Commands
 
-Use [Quick Install & Run](#-quick-install-run) above for first-time setup. The table uses PyPI commands. For manual script, direct Docker and Docker Compose equivalents, see [Run Individual Commands](https://misiektoja.github.io/instagram_monitor/setup-and-first-run/#run-individual-commands).
+Use [Quick Install & Run](#quick-install-run) above for first-time setup. The table uses PyPI commands. For manual script, direct Docker and Docker Compose equivalents, see [Run Individual Commands](https://misiektoja.github.io/instagram_monitor/setup-and-first-run/#run-individual-commands).
+
+Replace the target placeholders with an Instagram username.
 
 | I want to... | Run this |
 | --- | --- |
-| Try public monitoring without a login | `instagram_monitor <target_insta_user>` |
-| Monitor a target with a logged in session (see stories, reels and follower details) | Import a [browser session](https://misiektoja.github.io/instagram_monitor/configuration/#option-3-session-login-using-browser-cookies-recommended) then run `instagram_monitor -u <your_insta_user> <target_insta_user>` |
-| Monitor targets saved in `TARGET_USERNAMES` | `instagram_monitor --config-file instagram_monitor.conf` |
-| Start a browser control panel without targets | `instagram_monitor --web-dashboard` |
-| Monitor several accounts without login | `instagram_monitor target_1 target_2` or `instagram_monitor --targets target_1,target_2` |
+| Configure the target, credentials and alerts | `instagram_monitor --setup` |
+| Start monitoring a public target without a login | `instagram_monitor <target_insta_user>` |
+| Start monitoring with an existing logged in session (stories, reels and follower details) | Import a [browser session](https://misiektoja.github.io/instagram_monitor/configuration/#option-3-session-login-using-browser-cookies-recommended) then run `instagram_monitor -u <your_insta_user> <target_insta_user>` |
 | Check the selected login, connectivity and targets | `instagram_monitor --doctor` |
-
+| Monitor several accounts without login | `instagram_monitor target_1 target_2` or `instagram_monitor --targets target_1,target_2` |
+| Start a browser control panel without targets | `instagram_monitor --web-dashboard` |
+| Import an Instagram login from Firefox | Sign in at [instagram.com](https://www.instagram.com/) in Firefox then run `instagram_monitor --import-browser-session --browser firefox` |
+| Configure and test webhook alerts | Use the setup wizard or follow [Webhook Notifications](https://misiektoja.github.io/instagram_monitor/usage/#webhook-notifications) |
+| Save an SMTP password for email alerts | `instagram_monitor --set-smtp-password` |
+| Send a test email | `instagram_monitor --send-test-email` |
+| Save a new webhook URL | `instagram_monitor --set-webhook-url` |
+| Send a test webhook | `instagram_monitor --send-test-webhook` |
+| Write every change to a CSV file | `instagram_monitor <target_insta_user> -b changes.csv` |
+| List every supported command-line flag | `instagram_monitor --help` |
 
 Running the tool with no arguments offers the wizard if you have not saved any targets or enabled the Web Dashboard. If targets are already saved, it starts monitoring them.
 
+The tool runs until interrupted (`Ctrl+C`). Use `tmux` or `screen` for persistence. One run can monitor several accounts through `TARGET_USERNAMES` or `--targets`, so a second copy is not needed.
+
 For browser choices, saved targets, configuration backups and setup recovery, see the [full Setup & First Run guide](https://misiektoja.github.io/instagram_monitor/setup-and-first-run/).
 
-For container operation, browser profiles, email alerts, Discord, ntfy and advanced settings, see [Configuration](https://misiektoja.github.io/instagram_monitor/configuration/) and [Usage](https://misiektoja.github.io/instagram_monitor/usage/). Keep private webhook URLs in `.env` by using `instagram_monitor --set-webhook-url` or enter them through the setup wizard. See [Webhook Notifications](https://misiektoja.github.io/instagram_monitor/usage/#webhook-notifications) for complete setup and testing instructions.
+For container operation, browser profiles, email and webhook setup, see [Configuration](https://misiektoja.github.io/instagram_monitor/configuration/). For notification choices, proxy settings and output files, see [Usage](https://misiektoja.github.io/instagram_monitor/usage/).
+
+If a run fails, start with [Doctor Preflight](https://misiektoja.github.io/instagram_monitor/troubleshooting/#doctor-preflight).
 
 <a id="documentation"></a>
 ## Documentation
 
 Full documentation is available at **[misiektoja.github.io/instagram_monitor](https://misiektoja.github.io/instagram_monitor/)**:
 
-- [Installation](https://misiektoja.github.io/instagram_monitor/installation/) - PyPI, manual script, Docker installation and upgrades
-- [Setup & First Run](https://misiektoja.github.io/instagram_monitor/setup-and-first-run/) - setup wizard, login choices and first run
-- [Configuration](https://misiektoja.github.io/instagram_monitor/configuration/) - settings precedence, saved targets, session login, SMTP and secrets
-- [View Modes](https://misiektoja.github.io/instagram_monitor/view-modes/) - text, terminal and web dashboards
-- [Usage](https://misiektoja.github.io/instagram_monitor/usage/) - command formats, monitoring, container operation, notifications, proxy and output
-- [Anti-detection](https://misiektoja.github.io/instagram_monitor/anti-detection/) - avoid challenges and account suspension
-- [Troubleshooting](https://misiektoja.github.io/instagram_monitor/troubleshooting/) - the `--doctor` self-check and logging levels
+| Page | What it covers |
+| --- | --- |
+| [Installation](https://misiektoja.github.io/instagram_monitor/installation/) | Python walkthrough, PyPI, manual script and Docker installation, upgrades |
+| [Setup & First Run](https://misiektoja.github.io/instagram_monitor/setup-and-first-run/) | Setup wizard, login choices, the first monitoring run |
+| [Configuration](https://misiektoja.github.io/instagram_monitor/configuration/) | Settings precedence, saved targets, session login, SMTP, storing secrets, check intervals |
+| [View Modes](https://misiektoja.github.io/instagram_monitor/view-modes/) | Text output, terminal dashboard and web dashboard |
+| [Usage](https://misiektoja.github.io/instagram_monitor/usage/) | Command formats, monitoring, container operation, notifications, proxy, terminal output |
+| [Anti-detection](https://misiektoja.github.io/instagram_monitor/anti-detection/) | Avoiding challenges and account suspension |
+| [Troubleshooting](https://misiektoja.github.io/instagram_monitor/troubleshooting/) | `--doctor` preflight checks, what to do when something fails, `--verbose` and `--debug` output |
+| [Testing](https://misiektoja.github.io/instagram_monitor/testing/) | Running the offline suite, the linter and the docs build |
+| [About](https://misiektoja.github.io/instagram_monitor/about/) | Change log, contributing, security, license, support |
 
 <a id="change-log"></a>
 ## Change Log
@@ -198,5 +220,7 @@ Licensed under GPLv3. See [LICENSE](https://github.com/misiektoja/instagram_moni
 
 <a id="support"></a>
 ## Support
+
+Questions, bug reports and vulnerability reports each have a place, listed in [SUPPORT.md](https://github.com/misiektoja/instagram_monitor/blob/main/SUPPORT.md).
 
 If the project is useful to you, you can support its development through [GitHub Sponsors](https://github.com/sponsors/misiektoja) or [Buy Me a Coffee](https://buymeacoffee.com/misiektoja).

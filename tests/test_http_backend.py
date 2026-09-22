@@ -43,6 +43,18 @@ def echo_server():
 
 
 class TestCurlCffiAdapter:
+    # The Instaloader transport module receives the shim without relying on a publicly typed requests export
+    def test_instaloader_context_receives_the_requests_shim(self, im_module, monkeypatch):
+        from instaloader import instaloadercontext
+
+        monkeypatch.setattr(instaloadercontext, "requests", requests)
+        monkeypatch.setattr(im_module, "_CURL_CFFI_BACKEND_INSTALLED", False)
+
+        im_module._install_http_backend()
+
+        assert isinstance(instaloadercontext.__dict__["requests"], im_module._RequestsBackendShim)
+        assert im_module._CURL_CFFI_BACKEND_INSTALLED is True
+
     # A session mounted with the adapter returns the response shape instaloader relies on
     def test_response_shape_survives_the_adapter(self, im_module, monkeypatch, echo_server):
         if not im_module._CURL_CFFI_AVAILABLE:

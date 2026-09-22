@@ -1,5 +1,7 @@
 """Tests for install-method detection and the command examples it drives."""
 
+from command_expectations import runtime_command
+import shlex
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -39,14 +41,54 @@ class TestInstallMethodDetection:
         assert im_module._wizard_install_method() == "compose"
 
 
+class TestInstallMethodDisplayNames:
+    # Every detected method reaches the startup summary as a readable name
+    def test_every_method_has_a_readable_name(self, im_module):
+        assert im_module.install_method_display_name("manual") == "downloaded script"
+        assert im_module.install_method_display_name("pip") == "PyPI install"
+        assert im_module.install_method_display_name("docker") == "Docker container"
+        assert im_module.install_method_display_name("compose") == "Docker Compose container"
+
+    # Without an explicit method the name follows the detected launch environment
+    def test_detected_method_is_used_by_default(self, im_module, monkeypatch):
+        _force_env(monkeypatch, im_module, dockerenv=False, docker_env=False, compose_env=False, argv0="instagram_monitor.py")
+        assert im_module.install_method_display_name() == "downloaded script"
+
+
+class TestStartupSummaryDiagnostics:
+    # The install method and secret origins belong to the complete view, named and never valued
+    def test_full_summary_reports_install_method_and_secret_origins(self, im_module, monkeypatch, tmp_path, capsys):
+        env_file = tmp_path / ".env"
+        env_file.write_text("SMTP_PASSWORD=from-file\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("WEBHOOK_URL", "https://ntfy.sh/topic")
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--verbose", "--env-file", str(env_file), "--no-color", "--disable-logging"])
+        monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+        monkeypatch.setattr(im_module, "DASHBOARD_ENABLED", False)
+        monkeypatch.setattr(im_module, "WEB_DASHBOARD_ENABLED", False)
+        monkeypatch.setattr(im_module, "find_config_file", lambda path=None: None)
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "check_internet", lambda: True)
+        monkeypatch.setattr(im_module, "start_dashboard_input_handler", Mock(side_effect=SystemExit(0)))
+
+        with pytest.raises(SystemExit):
+            im_module.run_main()
+
+        output = capsys.readouterr().out
+        assert "* Install method:" in output and "downloaded script" in output
+        assert "* Secrets from dotenv:" in output and "SMTP_PASSWORD" in output
+        assert "* Secrets from environment:" in output and "WEBHOOK_URL" in output
+        assert "from-file" not in output and "ntfy.sh/topic" not in output
+
+
 class TestCmdPrefix:
     def test_manual_matches_active_python_name(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "system", lambda: "Linux")
         monkeypatch.setattr(im_module.sys, "executable", "/opt/runtime/python3.13")
-        assert im_module._wizard_cmd_prefix("manual") == "python3.13 instagram_monitor.py"
+        assert im_module._wizard_cmd_prefix("manual") == runtime_command("python3 instagram_monitor.py")
 
     def test_pip(self, im_module):
-        assert im_module._wizard_cmd_prefix("pip") == "instagram_monitor"
+        assert im_module._wizard_cmd_prefix("pip") == runtime_command("instagram_monitor")
 
     def test_docker_only_web_adds_port_publish(self, im_module):
         assert "-p 127.0.0.1:8000:8000" not in im_module._wizard_cmd_prefix("docker")
@@ -103,9 +145,9 @@ class TestWebDashboardBrowserUrl:
 
 class TestFirefoxImportCmd:
     def test_non_container_has_no_mount(self, im_module):
-        assert im_module._firefox_import_cmd("pip") == "instagram_monitor --import-browser-session --browser firefox"
+        assert im_module._firefox_import_cmd("pip") == runtime_command("instagram_monitor --import-browser-session --browser firefox")
 
-    @pytest.mark.parametrize("host_os,source", [("macos", '"${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"'), ("linux", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("windows-powershell", '"$env:APPDATA\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"'), ("windows-cmd", '"%APPDATA%\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"')])
+    @pytest.mark.parametrize("host_os,source", [("macos", '"${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"'), ("linux", '"$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-snap", '"$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("linux-flatpak", '"$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"'), ("windows-powershell", '"$env:APPDATA\\Mozilla\\Firefox\\Profiles:/home/instagram/.mozilla/firefox:ro"'), ("windows-cmd", '"%APPDATA%\\Mozilla\\Firefox\\Profiles:/home/instagram/.mozilla/firefox:ro"')])
     def test_container_commands_mount_selected_host_profile(self, im_module, host_os, source):
         docker = im_module._firefox_import_cmd("docker", host_os=host_os)
         compose = im_module._firefox_import_cmd("compose", host_os=host_os)
@@ -124,7 +166,7 @@ class TestFirefoxImportCmd:
 
 class TestFirefoxProfileDiscovery:
     # Verifies native, Snap and Flatpak Firefox profiles are discovered without duplicate cookie paths
-    def test_linux_discovers_package_variants(self, im_module, monkeypatch):
+    def test_linux_discovers_package_variants(self, im_module, monkeypatch, real_browser_profiles):
         monkeypatch.setattr(im_module, "system", lambda: "Linux")
         monkeypatch.setattr(im_module, "FIREFOX_LINUX_COOKIE", "/native/*/cookies.sqlite")
         matches = {"/native/*/cookies.sqlite": ["/native/a.default-release/cookies.sqlite"], "/home/test/snap/firefox/common/.mozilla/firefox/*/cookies.sqlite": ["/snap/b.default/cookies.sqlite"], "/home/test/.var/app/org.mozilla.firefox/.mozilla/firefox/*/cookies.sqlite": ["/flatpak/c.work/cookies.sqlite", "/native/a.default-release/cookies.sqlite"]}
@@ -134,8 +176,8 @@ class TestFirefoxProfileDiscovery:
         assert [profile["path"] for profile in profiles] == ["/native/a.default-release/cookies.sqlite", "/snap/b.default/cookies.sqlite", "/flatpak/c.work/cookies.sqlite"]
         assert [profile["name"] for profile in profiles] == ["default-release", "default", "work"]
 
-    # Verifies non-Linux platforms keep using only their configured Firefox pattern
-    def test_non_linux_uses_only_configured_pattern(self, im_module, monkeypatch):
+    # Verifies macOS keeps using only its configured Firefox pattern, since it has no packaged install to find
+    def test_macos_uses_only_its_configured_pattern(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "system", lambda: "Darwin")
         monkeypatch.setattr(im_module, "FIREFOX_MACOS_COOKIE", "/custom/firefox/*/cookies.sqlite")
         assert im_module.firefox_cookie_patterns() == ("/custom/firefox/*/cookies.sqlite",)
@@ -213,10 +255,18 @@ class TestPortableWizardCommands:
 
         command = im_module._wizard_action_command("manual", "--doctor", config_path, env_path, ["target.user"])
 
-        assert command.startswith("'/opt/Python Runtime/python3'")
+        assert command.startswith(runtime_command("python3 instagram_monitor.py --doctor"))
         assert f"--config-file '{config_path.resolve()}'" in command
         assert f"--env-file '{env_path.resolve()}'" in command
         assert "target.user" in command
+
+    # A value only shaped like a placeholder is user input, so pasting the rendered command must not run a substitution
+    def test_a_value_shaped_like_a_placeholder_is_quoted(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
+        crafted = "<$(echo>marker)>"
+
+        assert shlex.split(im_module._wizard_quote_argument(crafted)) == [crafted]
+        assert im_module._wizard_quote_argument("<target_insta_user>") == "<target_insta_user>"
 
     def test_windows_renderer_quotes_paths_with_spaces(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "system", lambda: "Windows")
@@ -231,7 +281,6 @@ class TestPortableWizardCommands:
 
         assert im_module._wizard_launch_monitor(arguments) == 7
         run_mock.assert_called_once_with(arguments, check=False)
-
 
     # A Windows parent launch treats duplicate Ctrl+C delivery as clean child termination
     def test_windows_launch_handles_parent_keyboard_interrupt(self, im_module, monkeypatch):
@@ -294,10 +343,146 @@ class TestHelpEpilog:
         _force_env(monkeypatch, im_module, dockerenv=False, docker_env=False, compose_env=False, argv0="instagram_monitor")
         web_line = self._web_dashboard_line(im_module._build_help_epilog())
         assert "<username>" not in web_line
-        assert web_line.strip() == "instagram_monitor --web-dashboard"
+        assert web_line.strip() == runtime_command("instagram_monitor --web-dashboard")
 
     def test_compose_epilog_uses_compose_commands(self, im_module, monkeypatch):
         _force_env(monkeypatch, im_module, dockerenv=True, docker_env=False, compose_env=True, argv0="instagram_monitor.py")
         epilog = im_module._build_help_epilog()
         assert "docker compose run --rm instagram_monitor --setup" in epilog
         assert self._web_dashboard_line(epilog).strip() == "docker compose run --rm --service-ports instagram_monitor --web-dashboard"
+
+
+class TestHiddenPromptPresentation:
+    # Hidden prompts are colorized like the visible ones, so one question does not look different
+    def test_hidden_prompts_are_colorized_like_the_visible_ones(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
+        monkeypatch.setattr(im_module, "_COLOR_STYLES", {name: im_module._build_ansi_sequence(value) for name, value in im_module.DEFAULT_COLOR_THEME.items() if im_module._build_ansi_sequence(value)})
+        prompts = []
+        monkeypatch.setattr(im_module.getpass, "getpass", lambda prompt: prompts.append(prompt) or "secret")
+
+        assert im_module._wizard_ask_secret("Instagram password") == "secret"
+        assert prompts == [im_module.colorize("info", "Instagram password: ")]
+        assert prompts[0].endswith(im_module.ANSI_RESET)
+
+    # Debug output is off while a hidden value is read and restored afterwards
+    def test_a_hidden_value_is_read_with_debug_output_off(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "DEBUG_MODE", True)
+        seen = []
+        monkeypatch.setattr(im_module.getpass, "getpass", lambda prompt: seen.append(im_module.DEBUG_MODE) or "secret")
+
+        assert im_module._wizard_ask_secret("Instagram password") == "secret"
+        assert im_module.read_secret_privately(lambda prompt: seen.append(im_module.DEBUG_MODE) or "value", "Enter it: ") == "value"
+        assert seen == [False, False]
+        assert im_module.DEBUG_MODE is True
+
+
+# Verifies the session recovery command is pasteable as printed and reaches the files this run was given
+def test_the_session_recovery_command_names_the_files_this_run_was_given(im_module, monkeypatch, tmp_path):
+    config_path = tmp_path / "instagram_monitor.conf"
+    env_path = tmp_path / "private.env"
+    monkeypatch.setattr(im_module, "system", lambda: "Linux")
+    monkeypatch.setattr(im_module.sys, "executable", "/opt/runtime/python3")
+    monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py"])
+    monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", str(config_path))
+    monkeypatch.setattr(im_module, "DOTENV_FILE", str(env_path))
+
+    assert im_module.session_recovery_command() == runtime_command(f"python3 instagram_monitor.py --import-browser-session --browser firefox --config-file {shlex.quote(str(config_path))} --env-file {shlex.quote(str(env_path))}")
+
+
+# Verifies a dotenv switched off with the none sentinel is not printed as a file path
+def test_the_session_recovery_command_skips_a_dotenv_switched_off(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "system", lambda: "Linux")
+    monkeypatch.setattr(im_module.sys, "executable", "/opt/runtime/python3")
+    monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py"])
+    monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+    monkeypatch.setattr(im_module, "DOTENV_FILE", "none")
+
+    assert im_module.session_recovery_command() == runtime_command("python3 instagram_monitor.py --import-browser-session --browser firefox")
+
+
+# Verifies the config sentinel is carried, since the import it suggests reads the config rather than writing it
+def test_the_session_recovery_command_carries_the_config_sentinel(im_module, monkeypatch):
+    monkeypatch.setattr(im_module, "system", lambda: "Linux")
+    monkeypatch.setattr(im_module.sys, "executable", "/opt/runtime/python3")
+    monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py"])
+    monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+    monkeypatch.setattr(im_module, "CONFIG_DISCOVERY_DISABLED", True)
+    monkeypatch.setattr(im_module, "DOTENV_FILE", "")
+
+    assert im_module.session_recovery_command() == runtime_command("python3 instagram_monitor.py --import-browser-session --browser firefox --config-file none")
+
+
+class TestContainerFirefoxMounts:
+    # The container globs its own ~/.mozilla/firefox/*/cookies.sqlite, so every host mount has to present the
+    # profile directories themselves. Windows keeps them one level deeper, under a Profiles folder
+    @pytest.mark.parametrize("host_os", sorted(("macos", "linux", "linux-snap", "linux-flatpak", "windows-powershell", "windows-cmd")))
+    def test_every_host_mounts_the_profile_directories(self, im_module, host_os):
+        source = im_module.CONTAINER_FIREFOX_HOSTS[host_os][1].strip('"').rsplit(":/home/instagram", 1)[0]
+
+        if host_os.startswith("windows"):
+            assert source.endswith("\\Mozilla\\Firefox\\Profiles"), "the Windows profile root holds the profiles in a Profiles folder"
+        elif host_os == "macos":
+            assert source.endswith("/Firefox/Profiles")
+        else:
+            assert source.endswith("/.mozilla/firefox")
+
+    # Verifies the generated command carries the corrected Windows source
+    @pytest.mark.parametrize("host_os,expected", [("windows-powershell", "$env:APPDATA\\Mozilla\\Firefox\\Profiles"), ("windows-cmd", "%APPDATA%\\Mozilla\\Firefox\\Profiles")])
+    def test_the_windows_import_command_mounts_the_profiles_folder(self, im_module, host_os, expected):
+        command = im_module._firefox_import_cmd("docker", host_os=host_os)
+
+        assert f'-v "{expected}:/home/instagram/.mozilla/firefox:ro"' in command
+
+    # A container handed the Windows profile root by an older command still finds the profiles one level down
+    def test_a_container_accepts_the_nested_windows_layout(self, im_module, monkeypatch, real_browser_profiles, tmp_path):
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
+        nested = tmp_path / "firefox" / "Profiles" / "abc.default-release"
+        nested.mkdir(parents=True)
+        (nested / "cookies.sqlite").write_text("", encoding="utf-8")
+        monkeypatch.setattr(im_module, "FIREFOX_LINUX_COOKIE", str(tmp_path / "firefox") + "/*/cookies.sqlite")
+        monkeypatch.setattr(im_module, "expanduser", lambda value: value.replace("~/.mozilla/firefox", str(tmp_path / "firefox"), 1))
+
+        assert [profile["name"] for profile in im_module.list_firefox_profiles()] == ["default-release"]
+
+    # The nested pattern must not turn an ordinary Linux host into a duplicate listing
+    def test_an_ordinary_linux_host_is_unaffected(self, im_module, monkeypatch, real_browser_profiles):
+        monkeypatch.setattr(im_module, "system", lambda: "Linux")
+        monkeypatch.setattr(im_module, "FIREFOX_LINUX_COOKIE", "/native/*/cookies.sqlite")
+        monkeypatch.setattr(im_module, "expanduser", lambda value: value.replace("~", "/home/test", 1))
+        monkeypatch.setattr(im_module, "glob", lambda pattern: ["/native/a.default-release/cookies.sqlite"] if pattern == "/native/*/cookies.sqlite" else [])
+
+        assert [profile["path"] for profile in im_module.list_firefox_profiles()] == ["/native/a.default-release/cookies.sqlite"]
+
+
+class TestRecoveryNamesEveryImportBrowser:
+    # Nothing records which browser a session came from, so the Firefox command has to name the alternatives rather
+    # than sending a Chrome, Brave or Chromium user to a browser they do not use
+    def test_the_hint_names_every_other_supported_browser(self, im_module):
+        hint = im_module.session_recovery_browser_hint()
+
+        for browser in im_module.IMPORT_BROWSERS:
+            assert (browser in hint) is (browser != "firefox")
+        assert "--browser" in hint
+
+    @pytest.mark.parametrize("error,code", [("challenge_required", "instagram.challenge"), ("session file not found", "session.missing"), ("login_required", "session.expired")])
+    def test_every_session_advice_carries_the_hint(self, im_module, error, code):
+        built = im_module.classify_recovery_error(error, is_logged_in=True)
+
+        assert built.code == code
+        assert im_module.session_recovery_browser_hint() in built.fix
+
+    # The prose told every reader to log in through Firefox, whatever browser holds their session
+    def test_no_session_advice_sends_the_reader_to_firefox_in_prose(self, im_module):
+        source = Path(im_module.__file__).read_text(encoding="utf-8")
+
+        assert "logging in via Firefox" not in source
+
+    # Every message built around the import command has to name the alternatives, or the ones that do not become
+    # the messages that quietly send a Chrome user to Firefox
+    def test_every_use_of_the_recovery_command_names_the_alternatives(self, im_module):
+        source = Path(im_module.__file__).read_text(encoding="utf-8")
+        uses = [line for line in source.splitlines() if "{session_recovery_command()}" in line]
+
+        assert len(uses) >= 7
+        for line in uses:
+            assert "{session_recovery_browser_hint()}" in line, line

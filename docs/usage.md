@@ -1,6 +1,6 @@
 # Usage
 
-<a id="command-format"></a>
+<a id="command-format-by-installation-method"></a>
 ## Command Format by Installation Method
 
 Most examples on this page use the PyPI command `instagram_monitor`. If you chose another installation, replace only that command with the prefix in this table. Keep the targets and options that follow it.
@@ -19,12 +19,14 @@ For example, the PyPI command `instagram_monitor target1 --doctor` becomes `dock
 
 In Windows Command Prompt replace `${PWD}` with `%cd%`. If your runtime reports that `:z` is invalid, remove only that suffix. A direct Docker run of the Web Dashboard also needs `-p 127.0.0.1:8000:8000` before the image name. The current host directory appears as `/data` inside the container, so container paths to its files must start with `/data`.
 
+Activate the tool's virtual environment before running these commands. For a downloaded script, run them from the directory containing `instagram_monitor.py`.
+
 <a id="monitoring-mode"></a>
 ## Monitoring Mode
 
 A **target** is an Instagram account you want to monitor. Put one or more target usernames directly after the command, pass a comma-separated list through `--targets` or save a list in `TARGET_USERNAMES`. If the command contains targets, they replace the saved list for that run.
 
-To monitor one public account in [No-Login Mode](configuration.md#no-login-mode-without-session-login), pass its username:
+To monitor one public account in [No-Login Mode](configuration.md#no-login-mode-no-session-login), pass its username:
 
 ```sh
 instagram_monitor <target_insta_user>
@@ -79,7 +81,7 @@ For a direct image on Linux:
 docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader misiektoja/instagram-monitor:latest <target_insta_user>
 ```
 
-Launch the [Web Dashboard](view-modes.md#web-dashboard-mode) with targets or by itself as a browser control panel:
+Launch the [Web Dashboard](view-modes.md#web-dashboard) with targets or by itself as a browser control panel:
 
 ```sh
 instagram_monitor <target_insta_user> --web-dashboard
@@ -108,7 +110,6 @@ Then open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) on the same computer.
 
 The configuration file search order and setting precedence are documented under [Configuration File](configuration.md#configuration-file). To select another file explicitly, use `--config-file`:
 
-
 ```sh
 instagram_monitor <target_insta_user> --config-file /path/instagram_monitor_new.conf
 ```
@@ -123,7 +124,7 @@ With several targets, the tool spreads their first checks across `INSTA_CHECK_IN
 instagram_monitor target_user_1 target_user_2 --targets-stagger 300
 ```
 
-The tool saves text output to `instagram_monitor_<suffix>.log`. Change the name through `INSTA_LOGFILE`. Disable file logging through `DISABLE_LOGGING` or `-d`.
+The tool saves text output to `instagram_monitor_<username>.log`. Change the name through `INSTA_LOGFILE`. Disable file logging through `DISABLE_LOGGING` or `-d`.
 
 Set `ASCII_LOG_SEPARATORS` to `"Auto"` (default) to use ASCII separator-only lines on Windows, `"On"` to use them on every operating system or `"Off"` to preserve Unicode separators in logs everywhere. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
 
@@ -138,6 +139,8 @@ In Logged-In Mode, the tool also saves follower and following usernames in these
 These files provide a baseline for the next run. The tool compares the new lists with the saved lists to find added or removed usernames.
 
 Only a complete list download can replace this baseline. A configured maximum, stop request or interrupted download leaves the last complete file unchanged so a partial result cannot appear as a large follower or following removal.
+
+A download that finishes but comes back short of the count Instagram reports is also refused when it would shrink the saved list. Both the count and the saved file say those accounts are still there, so the likely explanation is a list that stopped early rather than people who left. The tool says which counts it compared and keeps the saved file. When people really do unfollow, the reported count drops with them and the smaller list is saved as usual.
 
 When the tool downloads follower or following lists, a terminal progress bar shows request counts, elapsed time and estimated time remaining. Intermediate progress is not written to the log. The final result is.
 
@@ -155,13 +158,12 @@ Downloaded story media use these names:
 - `instagram_<username>_story_YYYYmmdd_HHMMSS.jpg`
 - `instagram_<username>_story_YYYYmmdd_HHMMSS.mp4`
 
-<a id="docker-usage-recommended"></a>
 <a id="container-operation"></a>
 ## Container Operation
 
-See [Docker installation](installation.md#docker-compose) for installation, Linux file ownership, local image builds, upgrades and old volume repair. This section covers everyday use after setup.
+See [Docker installation](installation.md#install-with-docker-compose) for installation, Linux file ownership, local image builds, upgrades and old volume repair. This section covers everyday use after setup.
 
-<a id="docker-compose-easiest"></a>
+<a id="docker-compose"></a>
 ### Docker Compose
 
 Compose makes the current host directory available as `/data` inside the container. The wizard creates or updates `instagram_monitor.conf` and `.env` in that host directory. Logs, JSON files, CSV files and downloaded media are also written there. The Docker volume named `instagram_monitor_session` stores the saved Instagram login separately.
@@ -191,7 +193,7 @@ When the Web Dashboard is enabled, open [http://127.0.0.1:8000/](http://127.0.0.
 
 Compose makes `instagram_monitor.conf` available as `/data/instagram_monitor.conf`. Instagram Monitor also loads `/data/.env` when setup selected it. Do not replace a wizard-created `.env` with `.env.example` because `.env` may contain private login or notification values.
 
-<a id="common-run-scenarios"></a>
+<a id="direct-docker"></a>
 ### Direct Docker
 
 In direct Docker commands, refer to files from the current host directory through `/data`:
@@ -204,11 +206,12 @@ If the saved configuration enables the Web Dashboard, add `-p 127.0.0.1:8000:800
 
 Use the same `instagram_monitor_session` volume during browser import and every later logged-in run. Otherwise the later container cannot find the imported session.
 
+<a id="import-firefox-into-the-container-session"></a>
 ### Import Firefox into the Container Session
 
 Finish the setup wizard first. It asks which host environment runs Docker then prints the matching one-time import command. Run Doctor only after that import succeeds.
 
-On Windows, use Docker Desktop or another Docker-compatible runtime in Linux container mode. PowerShell reads the Firefox profile root from `$env:APPDATA\Mozilla\Firefox`. Command Prompt uses `%APPDATA%\Mozilla\Firefox`.
+On Windows, use Docker Desktop or another Docker-compatible runtime in Linux container mode. PowerShell reads the Firefox profiles from `$env:APPDATA\Mozilla\Firefox\Profiles`. Command Prompt uses `%APPDATA%\Mozilla\Firefox\Profiles`. These mounts cover the regular Firefox installer. Firefox from the Microsoft Store keeps its profiles inside its own package folder, which these commands do not mount, so import that profile with a native install of the tool instead.
 
 Use the direct Docker command that matches the Firefox profile layout on the host:
 
@@ -217,10 +220,10 @@ Use the direct Docker command that matches the Firefox profile layout on the hos
 docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
 
 # Windows PowerShell
-docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$env:APPDATA\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
+docker run --rm -it --init -v "${PWD}:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$env:APPDATA\Mozilla\Firefox\Profiles:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
 
 # Windows Command Prompt
-docker run --rm -it --init -v "%cd%:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "%APPDATA%\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
+docker run --rm -it --init -v "%cd%:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "%APPDATA%\Mozilla\Firefox\Profiles:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
 
 # Linux with a standard Firefox package
 docker run --rm -it --init --user "$(id -u):$(id -g)" -v "$PWD:/data:z" -v instagram_monitor_session:/home/instagram/.config/instaloader -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" misiektoja/instagram-monitor:latest --import-browser-session --browser firefox --env-file /data/.env
@@ -239,10 +242,10 @@ The equivalent Docker Compose commands are:
 docker compose run --rm -v "${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
 
 # Windows PowerShell
-docker compose run --rm -v "$env:APPDATA\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
+docker compose run --rm -v "$env:APPDATA\Mozilla\Firefox\Profiles:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
 
 # Windows Command Prompt
-docker compose run --rm -v "%APPDATA%\Mozilla\Firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
+docker compose run --rm -v "%APPDATA%\Mozilla\Firefox\Profiles:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
 
 # Linux with a standard Firefox package
 docker compose run --rm -v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro" instagram_monitor --import-browser-session --browser firefox --env-file /data/.env
@@ -283,7 +286,7 @@ Follower emails report accounts that followed or unfollowed the target. Enable t
 instagram_monitor <target_insta_user> -m
 ```
 
-Error emails are enabled by default when email is configured. Disable them in one of these ways:
+Error emails are enabled by default when email is configured. They cover both the failure alert and the recovery alert that follows it. Disable both in one of these ways:
 
 - set `ERROR_NOTIFICATION` to `False`
 - or use the `-e` flag
@@ -292,6 +295,10 @@ Error emails are enabled by default when email is configured. Disable them in on
 ```sh
 instagram_monitor <target_insta_user> -e
 ```
+
+Error alerts are sent after **5 minutes** of a continuing failure. Problems that need your action, such as an expired session, alert immediately. Webhooks follow the same rule when `WEBHOOK_ERROR_NOTIFICATION` is enabled. Each kind of failure alerts once per channel. Changing network errors during one outage do not trigger repeated alerts. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour. Alerts can fire again after monitoring recovers.
+
+Every failure alert has the subject `Instagram Monitor error: <what went wrong> (user: <target>)` and a body naming the fix, the guide link, how many checks failed in a row, since when and when the next retry is. When the failure clears, a **recovery alert** with the subject `Instagram Monitor recovered: monitoring <target> resumed after <duration>` goes to the channels the failure alert reached. A channel that could not receive the failure alert while the outage lasted is told about the failure and its recovery together, so a blocked channel is not left without any word of an outage. `-e` for email and `WEBHOOK_ERROR_NOTIFICATION` for webhooks switch off both alerts together.
 
 Email requires [SMTP settings](configuration.md#smtp-settings). Run `instagram_monitor --send-test-email` before a long monitoring session.
 
@@ -304,113 +311,13 @@ Example email:
 <a id="webhook-notifications"></a>
 ## Webhook Notifications
 
-Instagram Monitor can send event notifications to **Discord** or **ntfy**. A webhook is a URL that accepts a message from another application. Webhook settings do not affect email settings.
-
-`WEBHOOK_PROVIDER` tells Instagram Monitor which message format the URL expects. The default is `"discord"`. Standard Discord and public `ntfy.sh` URLs automatically select the matching format if this configured value is stale. Self-hosted ntfy and compatible endpoints still use the configured provider. An explicit `--webhook-provider` override always wins.
-
-<p align="center">
-   <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_discord.png" alt="instagram_monitor_discord_screenshot" width="80%"/>
-</p>
-
-<a id="1-configure-discord-webhook"></a>
-### 1. Choose a Provider
-
-#### Discord
-
-To create a Discord Webhook URL:
-
-1.  **Create a Server**: Click the **+** (Plus) icon on the left sidebar ("Add a Server") -> **Create My Own** -> **For me and my friends**.
-2.  **Create/Edit a Channel**: In your new server, find the **#general** channel (or create a new one). Click the **Edit Channel** icon (⚙️ gear) next to the channel name.
-3.  **Create Webhook**: Go to **Integrations** in the left menu -> **Webhooks** -> **New Webhook**.
-4.  **Copy URL**: Click on the new webhook (often named "Spidey Bot", you can rename it) and click **Copy Webhook URL**.
-
-Keep `WEBHOOK_PROVIDER = "discord"` in `instagram_monitor.conf`. Standard Discord webhook URLs are also recognized automatically.
-
-#### ntfy
-
-For ntfy.sh or a self-hosted ntfy server:
-
-1. Choose a hard-to-guess topic such as `instagram-monitor-long-random-value`.
-2. In the setup wizard, enter either an ntfy.sh topic name or a complete topic URL such as `https://ntfy.sh/instagram-monitor-long-random-value`. The wizard expands a bare topic name to an ntfy.sh URL. For a self-hosted server, the Web Dashboard or manual configuration, enter the complete HTTPS topic URL.
-3. Public `ntfy.sh` URLs are recognized automatically. Set `WEBHOOK_PROVIDER = "ntfy"` in `instagram_monitor.conf` for a self-hosted ntfy server.
-
-Instagram Monitor sends the alert subject as the ntfy title. The alert text and event details become the message. Existing query parameters in the topic URL are preserved, including the ntfy [`auth` query parameter](https://docs.ntfy.sh/publish/#authentication). Long ntfy messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments.
-
-The title and message are sent as request headers or as the request body, never as query parameters. Alert text can contain follower names, captions and biographies, and servers and proxies commonly record full URLs in their access logs. Webhook requests also do not follow redirects, so a moved destination cannot receive headers meant for the address you configured.
-
-For a protected topic, the setup wizard asks for the ntfy access token in a hidden prompt and stores it in `.env`. For manual setup, add:
-
-```ini
-NTFY_ACCESS_TOKEN="tk_your_ntfy_access_token"
-```
-
-The tool sends the token as `Authorization: Bearer <token>`. It replaces any `Authorization` value in `WEBHOOK_HEADERS`.
-
-Advanced integrations can set fixed HTTP headers:
-
-```python
-WEBHOOK_HEADERS = {
-    "Authorization": "Basic your_base64_credentials",
-}
-```
-
-Header values support the same placeholders as `WEBHOOK_TEMPLATE`. Instagram Monitor validates headers before and after placeholder expansion so formatted values cannot introduce invalid names, non-string values or line breaks. For ntfy, Instagram Monitor sets the required plain-text `Content-Type`. Store Bearer tokens in `NTFY_ACCESS_TOKEN` inside `.env`. A token in the regular config is easier to expose or commit accidentally.
-
-When an alert includes a downloaded local image, Instagram Monitor uploads it as a native ntfy attachment up to 5 MiB. If image preparation or upload fails, it sends the alert as text so an image problem cannot suppress the notification. Existing remote image URLs remain links in the message.
-
-Anyone who knows an unprotected ntfy.sh topic name can read or publish to it. Reserve and protect the topic through an ntfy account when possible. Otherwise use a long random name, keep it private and do not copy the example name above.
-
-<a id="2-enable-in-the-tool"></a>
-### 2. Enable in the Tool
-
-Choose one method:
-
-- set `WEBHOOK_ENABLED = True`, select `WEBHOOK_PROVIDER` and put `WEBHOOK_URL` in `.env`
-- use an [environment variable](configuration.md#storing-secrets) for `WEBHOOK_URL`
-- save it through the hidden `--set-webhook-url` prompt
-- pass `--webhook-url` for one run. If the URL is already saved, pass `--webhook`
-- enable it through the **Settings** page in the Web Dashboard
-
-```sh
-# Save a private destination without displaying it
-instagram_monitor --set-webhook-url
-
-# Enable Discord with URL
-instagram_monitor <target_insta_user> --webhook-provider discord --webhook-url "https://discord.com/api/webhooks/..."
-
-# Enable ntfy with a topic URL
-instagram_monitor <target_insta_user> --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-private-topic"
-
-# Enable or disable a URL that is already saved
-instagram_monitor <target_insta_user> --webhook
-instagram_monitor <target_insta_user> --no-webhook
-```
-
-Webhook and avatar URLs must be complete HTTPS links with a hostname and no embedded credentials. Root endpoints work with or without a trailing slash. Known Discord and `ntfy.sh` destinations correct a stale configured provider at runtime. A URL passed through `--webhook-url` may remain visible in shell history or process listings, so prefer `--set-webhook-url` for normal setup.
-
-<a id="3-test-your-settings"></a>
-### 3. Test Your Settings
-
-Send a test notification before starting monitoring:
-
-```sh
-# Verify settings from configuration file
-instagram_monitor --send-test-webhook
-
-# Verify a specific provider and URL from command line
-instagram_monitor --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-private-topic" --send-test-webhook
-```
-
-A test notification is always delivered when the URL and provider are valid. It does not require the event switches below, so you can confirm delivery before deciding which notifications to enable.
-
-<a id="4-advanced-configuration"></a>
-### 4. Advanced Configuration
+Webhook event choices mirror the email controls while remaining independent. For Discord, ntfy, private URL setup and advanced request customization, see [Webhook Settings](configuration.md#webhook-settings).
 
 By default, all webhook notification types (status, followers, errors) are **disabled**. You must explicitly enable what you want the tool to send. Enabling an event flag also enables the webhook master switch:
 
 - Use `--webhook-status` to toggle status notifications (new posts, reels, stories, bio, visibility, profile pic)
 - Use `--webhook-followers` to toggle follower/following change notifications
-- Use `--webhook-errors` to toggle error notifications
+- Use `--webhook-errors` to toggle error notifications, which cover both the failure alert and the recovery alert that follows it
 
 Example:
 ```sh
@@ -430,13 +337,17 @@ WEBHOOK_FOLLOWERS_NOTIFICATION = False
 WEBHOOK_ERROR_NOTIFICATION = False
 ```
 
-`WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` customize Discord-format messages. `WEBHOOK_TEMPLATE` supports `title`, `description`, `version`, `image_url`, `fields`, `fields_str`, `color`, `timestamp`, `username` and `avatar_url` placeholders. A dictionary or list is sent as JSON while a string is sent as the raw body for compatible advanced integrations.
+Send a test notification before starting monitoring:
 
-`WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` apply only to Discord and are ignored when `WEBHOOK_PROVIDER` is `"ntfy"`. The ntfy provider needs no template: it sends the alert body as a native ntfy message with the subject as its title. Customize ntfy delivery through `WEBHOOK_HEADERS` (for example `X-Priority` or `X-Tags`).
+```sh
+# Verify settings from configuration file
+instagram_monitor --send-test-webhook
 
-`WEBHOOK_TRANSFORMS` applies configured string methods before the template and headers are rendered. Invalid templates, avatar URLs, transforms or expanded headers fail before any request is attempted. Dictionary payloads always replace `allowed_mentions` with `{"parse": []}` so notification text cannot trigger `@everyone`, `@here` or user mentions.
+# Verify a specific provider and URL from command line
+instagram_monitor --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-private-topic" --send-test-webhook
+```
 
-Webhook delivery uses an isolated session with a 10-second timeout and at most two attempts. It accepts every HTTP 2xx response, retries HTTP 429 according to a server delay capped at 5 seconds and retries HTTP 5xx once. Other HTTP 4xx responses fail immediately.
+A test notification is always delivered when the URL and provider are valid. It does not require the event switches above, so you can confirm delivery before deciding which notifications to enable.
 
 <a id="follower-churn-detection"></a>
 ## Follower Churn Detection
@@ -497,7 +408,9 @@ The categories are:
 
 Both saved lists are required. The analysis shows each snapshot's save time and warns when the two files are at least one hour apart, since changes between those downloads can be misclassified.
 
-Run it with the `--analyze-follows` flag. It prints the analysis and exits without starting the monitoring loop:
+Unexpected Web Dashboard analysis errors keep local file details private. Run with `--debug` to see the diagnostic in the local output.
+
+Run it via web dashboard (use the **Follow analysis** chart button next to a configured target) or with the `--analyze-follows` flag. It prints the analysis and exits without starting the monitoring loop:
 
 ```sh
 instagram_monitor <target_insta_user> --analyze-follows
@@ -511,13 +424,97 @@ instagram_monitor user1 user2 --analyze-follows
 
 Usable targets are still reported when another target has missing or malformed data. The command exits successfully when at least one target could be analyzed and returns a nonzero status when none could be analyzed.
 
-The analysis needs the saved lists `instagram_<user>_followers.json` and `instagram_<user>_followings.json`. These are produced when the monitor runs in [Logged-In Mode](configuration.md#logged-in-mode-with-session-login) with follower and following fetching enabled. They are read from the JSON directory described in [Output Directory](#output-directory), so they resolve under `OUTPUT_DIR/json/` for a single target, `OUTPUT_DIR/<username>/json/` for multiple targets, or the working directory when no output directory is set. If both output layouts contain a complete pair, the newest coherent pair is used. This keeps analysis correct after changing between single-target and multi-target monitoring or after adding a target through the Web Dashboard.
+The analysis needs the saved lists `instagram_<username>_followers.json` and `instagram_<username>_followings.json`. These are produced when the monitor runs in [Logged-In Mode](configuration.md#logged-in-mode-with-session-login) with follower and following fetching enabled. They are read from the JSON directory described in [Output Directory](#output-directory), so they resolve under `OUTPUT_DIR/json/` for a single target, `OUTPUT_DIR/<username>/json/` for multiple targets, or the working directory when no output directory is set. If both output layouts contain a complete pair, the newest coherent pair is used. This keeps analysis correct after changing between single-target and multi-target monitoring or after adding a target through the Web Dashboard.
 
-If the lists have not been downloaded yet, the command names the directory it searched and explains that the monitor has to run once first. Older saved files may contain partial lists from a private account, an interrupted download or a configured fetch limit. In that case the analysis covers only the saved handles and prints a note. Current monitoring keeps the last complete baseline instead of replacing it with a partial fetch. When the newest output layout is incomplete or malformed, an older complete pair is used when available and the result includes a warning. Otherwise malformed data or invalid usernames make that target unavailable instead of crashing the command.
+<a id="follower-list-source"></a>
+## Follower List Source
 
-The command and Web Dashboard show complete counts for all three categories. Mutual accounts are count-only. The not-following-back and fan categories list at most the first 500 usernames alphabetically. This bounds terminal output, API responses and browser rendering for large accounts.
+Instagram serves follower and following lists on two surfaces: the REST endpoints its own web app calls, and an older set of GraphQL queries. Both use the same logged-in session, return the same accounts and cost the same number of names. REST returns 25 accounts per request against 12 over GraphQL, so it reads a list in under half as many requests. When one of them is retired or starts answering differently, the other usually keeps working, so the source is selectable.
 
-The same analysis is available in the **Web Dashboard**. Use the **Follow analysis** chart button next to a configured target. Privacy substitutions apply to the target and relationship usernames shown in the modal.
+```ini
+FOLLOW_LIST_SOURCE = "auto"
+```
+
+- `auto` (default): read the lists over REST. If the REST endpoint is gone or answers in a shape the tool does not recognise **before it returned anybody**, read them over GraphQL instead and say so in the log.
+- `rest`: always read over REST and report the error instead of retrying.
+- `graphql`: always read over GraphQL. This is what versions before 4.0 did.
+- `browser`: experimental. Do not call the API at all, drive a real browser through Instagram's web pages instead. Never chosen by `auto`. Read [Browser Source](#browser-source-experimental) before turning it on.
+
+Pin the source for one run without editing the configuration file:
+
+```sh
+instagram_monitor <target_insta_user> --follow-list-source graphql
+```
+
+The startup summary names the source in use. Anonymous mode is unaffected, since neither surface lists followers without a session.
+
+### Browser Source (experimental)
+
+`browser` is a third source that does not call Instagram's API at all. It drives a real browser through the ordinary web pages, opens the follower or following dialog and reads the names off the rendered list, the same way a person scrolling that dialog would.
+
+**This is experimental and it can cost you the account.** Instagram's terms forbid automated collection however it is done and a browser session that scrolls follower dialogs for hours does not look like a person. It is never selected by `auto`. Turn it on only if you accept losing the logged-in account.
+
+It needs the optional `playwright` package and a downloaded browser:
+
+```sh
+pip install "instagram_monitor[playwright]"
+```
+
+```sh
+playwright install chromium
+```
+
+Then select it:
+
+```ini
+FOLLOW_LIST_SOURCE = "browser"
+```
+
+```ini
+# Browser Playwright starts: "chromium", or "chrome" / "msedge" to use a copy already installed here
+FOLLOW_LIST_BROWSER_CHANNEL = "chromium"
+
+# Run without a visible window
+FOLLOW_LIST_BROWSER_HEADLESS = True
+
+# Where the browser profile is kept between runs (empty = next to the output directory)
+FOLLOW_LIST_BROWSER_PROFILE_DIR = ""
+
+# Seconds to wait after each scroll of the list
+FOLLOW_LIST_BROWSER_SCROLL_DELAY = 1.5
+
+# Seconds to wait for a page or an element
+FOLLOW_LIST_BROWSER_TIMEOUT = 30
+```
+
+Every Playwright channel is a Chromium build, so the browser source only works when the rest of the session presents the same browser. Monitoring refuses to start otherwise and the Web Dashboard refuses a settings change that would create the mismatch, rather than let one Instagram session arrive as two different clients:
+
+| `FOLLOW_LIST_BROWSER_CHANNEL` | needs `USER_AGENT` and `CURL_CFFI_IMPERSONATE` |
+| --- | --- |
+| `chromium`, `chrome` | Chrome |
+| `msedge` | Edge |
+
+`HTTP_BACKEND` must be `curl_cffi`, since the stock `requests` transport cannot present a browser TLS fingerprint at all. `CURL_CFFI_IMPERSONATE = "auto"` follows `USER_AGENT` and is the simplest way to satisfy this. If you leave `USER_AGENT` empty the tool picks one from the matching family instead of at random.
+
+What to expect:
+
+- It is much slower than REST or GraphQL and uses far more CPU and memory. A list of a few thousand names takes minutes, not seconds.
+- Headless still means a real browser, not the stripped-down headless shell. Set `FOLLOW_LIST_BROWSER_HEADLESS = False` to watch it work, which needs a desktop session.
+- The browser reuses one profile per session account, so cookies and browser state stay stable between runs instead of arriving as a brand new machine every time. Each account gets its own directory.
+- The logged-in session cookies are handed to the browser. It never signs in, and it never asks for your password.
+- Your configured proxy is used if you have one.
+- A challenge, a suspended or disabled account, or a page that is not signed in stops the fetch and is reported. It is not clicked through.
+- If the dialog stops growing well short of the follower count Instagram reports, the fetch fails rather than saving a short list over a complete baseline. A smaller gap is returned, but it still cannot shrink a saved list that agrees with the reported count.
+
+There is no fallback to or from this source. `browser` reads over the browser or reports the error.
+
+Check the setup before a real run:
+
+```sh
+instagram_monitor --doctor
+```
+
+The Configuration check reports the selected source and, for `browser`, whether Playwright and the browser are actually installed.
 
 <a id="advanced-followerfollowing-fetching"></a>
 ## Advanced Follower/Following Fetching
@@ -551,6 +548,37 @@ This feature requires [Logged-In Mode](configuration.md#logged-in-mode-with-sess
 
 A maximum intentionally produces a partial list. Partial lists are not compared with or saved over the last complete baseline. Reported count changes remain available without claiming which usernames changed.
 
+<a id="identity-budget-and-circuit-breaker"></a>
+## Identity Budget and Circuit Breaker
+
+Follower and following names are the most expensive thing the tool asks Instagram for, and a challenge against the account is the most damaging answer it can get back. Two settings bound both.
+
+```ini
+# Maximum follower and following names to fetch per day for the logged-in account (0 = no budget)
+IDENTITY_BUDGET_PER_DAY = 2000
+
+# Stop all Instagram requests for the account after Instagram challenges it
+CIRCUIT_BREAKER = True
+```
+
+The budget is shared by every target and every worker in the process. It resets at local midnight. Identity scans run one at a time so workers cannot spend the same remaining allowance. When the budget is spent, name fetching stops for the day while counts, posts, reels, stories and profile changes carry on. Names are counted even with no budget set, so you can measure first and choose a number afterwards.
+
+The two surfaces are counted differently. A REST page is counted as soon as it arrives, including names the caller does not consume, so the last response can put the recorded total above the limit when Instagram returns more accounts than requested. That records the actual exposure and stops another request. GraphQL names are banked in groups of 25, with the last group cut to what the budget still allows, so the recorded total is exact where the fetch stops.
+
+The circuit breaker stops every target using the account after a confirmed challenge, checkpoint, temporary limit or expired session. Fix the account issue and restart with your usual command. Before target workers start, a stopped account gets one login check with a 30-second timeout and no automatic retries or redirects. Success resumes monitoring. Failure leaves the account paused and explains what to fix. Importing a session reuses that login check and releases the stop only after the session is saved, so in the Web Dashboard importing or successfully refreshing the session also resumes the targets the account stop paused. Targets you stopped by hand stay stopped.
+
+Useful commands:
+
+```
+instagram_monitor --exposure                   # redacted support report with names, failures and runtime context
+instagram_monitor --identity-budget 750        # set the budget for this run
+instagram_monitor --clear-breaker              # optional local-state repair, normally restart instead
+```
+
+Both commands act on the account the run resolved, since the local `instagram_monitor_exposure.json` ledger holds one record per session account. Add `-u <account>` to pick one when you run more than one account from the same directory.
+
+See [Set an Identity Budget](anti-detection.md#set-an-identity-budget) for how to choose a value and why names rather than requests are the unit that matters. [Check Your Exposure](anti-detection.md#check-your-exposure) describes what the report contains.
+
 <a id="routing-traffic-through-a-proxy"></a>
 ## Routing Traffic Through a Proxy
 
@@ -567,11 +595,13 @@ instagram_monitor <target_insta_user> --enable-proxy --proxy-url "http://user:pa
 
 Additional options:
 
-- `PROXY_CERT_PATH` or `--proxy-cert` selects a local certificate used to verify the proxy connection
+- `PROXY_CERT_PATH` or `--proxy-cert` selects a local certificate used to verify the proxy connection. It applies only while [TLS verification](configuration.md#tls-verification) is on
 - `PROXY_WEBHOOKS` or `--enable-proxy-webhooks` also sends webhook requests through the proxy. It is off by default because some proxies do not allow these requests
 - `IP_ADDRESS_URL` selects one trusted IP lookup URL or an ordered non-empty list of fallback URLs
 
 `PROXY_URL` may contain a username and password. The tool masks it in output. Store it through an [environment variable or `.env` file](configuration.md#storing-secrets).
+
+A monitoring run stops when the proxy settings cannot work. `--doctor`, `--setup`, `--exposure`, `--clear-breaker`, `--analyze-follows` and the secret commands report the problem instead and continue with the proxy switched off, so you can use them to correct it. Because `PROXY_URL` is private and removed from messages that repeat it, the report describes what is wrong with the value rather than printing it.
 
 ```ini
 PROXY_ENABLED = True
@@ -629,10 +659,49 @@ PRIVACY_SUBSTITUTIONS = [ ("a.username", "Sarah"), ("some.other.user", "XXX") ]
 
 The replacement happens before output is displayed, logged or sent. Internal keys and file paths do not change, so the tool still uses the original usernames to find data. Invalid entries are ignored with a warning.
 
+<a id="terminal-output"></a>
+## Terminal Output
+
+Use `--help` for examples grouped by task and matched to your installation.
+
+Monitoring mode prints the settings that are actually in effect before the first check.
+
+Optional features appear once you switch them on.
+
+Use `--verbose` or `--debug` for the full startup summary, including output paths, notification settings, secret sources and runtime information.
+
+Use `--truncate N` or `TRUNCATE_CHARS` to limit screen line width. Set it to `999` to detect the terminal width automatically. Truncation does not change log files and is ignored when logging is disabled with `-d`.
+
+The tool clears the terminal when monitoring starts. Set `CLEAR_SCREEN` to `False` to keep whatever is already on the screen.
+
+The screen is never cleared when output is redirected to a file or a pipe, in debug mode or for a command that prints a result and exits, such as `--doctor`, `--help` and the test senders.
+
+Two settings add detail to what a run prints. `VERBOSE_MODE` adds the decisions the run made and `DEBUG_MODE` adds timestamped technical traces. Both are off by default, both are independent of each other and both have a flag that wins over the file, `--verbose` and `--debug`. `DELIVERY_CONFIRMATIONS` is on by default and controls whether verbose mode confirms each delivered email and webhook alert. See [Verbose and Debug Output](troubleshooting.md#verbose-and-debug-output).
+
+<a id="coloured-terminal-output"></a>
+### Coloured Terminal Output
+
+Instagram Monitor colours live terminal output and help by default. Saved log files stay plain text.
+
+Turn colour off for one run with `--no-color` or permanently with `COLORED_OUTPUT = False`. Colour is also disabled for redirected output, `NO_COLOR` or an unsupported terminal. See [Terminal Colours](configuration.md#terminal-colours) for details and Windows support.
+
+Override individual colours with `COLOR_THEME`. It is merged over the built-in theme, so you only name the parts you want to change:
+
+```ini
+COLOR_THEME = { "post": "bright_magenta bold", "username": "green" }
+```
+
+See [Terminal Colours](configuration.md#terminal-colours) for the shipped defaults and how an older configuration file behaves.
+
 <a id="terminal-safe-output"></a>
 ## Terminal-Safe Output
 
 Biographies, captions, story text, comments and usernames come from Instagram and can contain terminal control sequences. Printed unchanged, those could clear your screen, retitle the window or overwrite a line you already read. The tool removes control characters from everything it prints and logs, keeping only tabs, newlines and its own colour codes. Nothing is lost from readable text.
+
+<a id="terminal-line-width"></a>
+## Terminal Line Width
+
+Captions, biographies and long file paths can wrap across several terminal lines. Set `TRUNCATE_CHARS` or use the `--truncate N` flag to cut each screen line to a maximum width. Use `999` to auto-detect the terminal width. The log file always keeps the full line, so the setting is ignored when logging is disabled with `-d`. It is off by default. Install the optional `wcwidth` library for correct widths with wide characters, which otherwise count as one column and can run a line past the limit.
 
 <a id="shadowban-and-flagged-account-detection"></a>
 ## Shadowban and Flagged Account Detection
@@ -640,6 +709,8 @@ Biographies, captions, story text, comments and usernames come from Instagram an
 Instagram may block a session or IP address in a way that makes every profile lookup fail. A single failed lookup cannot show whether the target disappeared or whether the session was blocked.
 
 When a target lookup fails for an unclear reason, the tool also checks a known public account. The default is `instagram`. If both lookups fail, it treats the session or IP address as the likely cause and does not report that the target disappeared. It waits when recovery is possible. Otherwise it exits.
+
+A reply that names a challenge, a checkpoint or a feedback requirement is treated as a flagged session at once, without the probe. Both checks cover every request made for a target: the profile lookup, stories, posts and follower and following lists.
 
 This check runs automatically. Advanced users can change these settings:
 
@@ -716,7 +787,7 @@ The directory layout depends on the number of targets:
 
 Summary messages and errors that apply to the whole process are written to every active target log.
 
-Images and videos are streamed to a temporary file beside the destination with a 100 MiB limit. The monitor accepts only a complete HTTP 200 response with a recognized image or video signature then replaces the destination atomically. A truncated response, an HTML error page or another invalid response leaves an existing saved file untouched.
+Media downloads are limited to 100 MiB. Failed or invalid downloads leave any previously saved file intact.
 
 <a id="detection-of-changed-profile-pictures"></a>
 ## Detection of Changed Profile Pictures
@@ -765,7 +836,7 @@ This feature is enabled by default. To disable it, either:
 - set the `DETECT_COLLAB_POSTS` to `False`
 - or use the `--no-detect-collab-posts` flag
 
-<a id="collab-posts---how-it-works"></a>
+<a id="collab-posts-how-it-works"></a>
 ### Collab Posts - How It Works
 
 The check runs only when the session cannot normally view a target's posts, such as a private account that the session account does not follow.
@@ -790,7 +861,7 @@ The published Docker image does not include `imgcat`. Use a local installation o
 <a id="check-intervals"></a>
 ## Check Intervals
 
-The polling interval is the number of seconds between scheduled checks. Set it through `INSTA_CHECK_INTERVAL` or `-c`:
+If you want to customize the polling interval, use the `-c` flag (or the `INSTA_CHECK_INTERVAL` configuration option):
 
 ```sh
 instagram_monitor <target_insta_user> -c 3600
@@ -798,7 +869,7 @@ instagram_monitor <target_insta_user> -c 3600
 
 **Note**: You can also adjust check intervals and randomization timers live via the **Settings** menu in the **Web Dashboard**.
 
-Use at least 3600 seconds unless you have a specific reason to send more frequent requests. Shorter intervals create more Instagram traffic and may increase the chance of limits.
+Use at least 3600 seconds unless you have a specific reason to send more frequent requests. Shorter intervals create more Instagram traffic and may increase the chance of limits. `--doctor` warns when the configured interval is shorter than that.
 
 By default, the actual wait changes on each cycle. The range is:
 
@@ -816,12 +887,26 @@ The console and email notifications show the wait selected for the current cycle
 
 To restrict checks to selected times of day, set `CHECK_POSTS_IN_HOURS_RANGE = True` and configure `MIN_H1`, `MAX_H1`, `MIN_H2` and `MAX_H2`. See [Use Hour-Range Checking](anti-detection.md#use-hour-range-checking).
 
+<a id="liveness-reminder"></a>
+## Liveness Reminder
+
+While nothing changes, the tool prints one reminder that it is still running:
+
+```
+* Monitoring healthy for <target_insta_user>. No tracked change since the last check
+Liveness check, timestamp:	Mon 08 Sep 2026, 09:15:05
+```
+
+Set `LIVENESS_CHECK_INTERVAL` to change it (default: 86400, i.e. 24 hours) or to 0 to switch it off.
+
+Anything the tool prints about the target restarts the countdown, so a busy run stays quiet.
+
 <a id="signal-controls-macoslinuxunix"></a>
 ## Signal Controls (macOS/Linux/Unix)
 
-On macOS, Linux and Unix, operating system signals can change a running process without restarting it.
+The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new configuration options / flags.
 
-Supported signals:
+List of supported signals:
 
 | Signal | Description |
 | ----------- | ----------- |
@@ -831,7 +916,9 @@ Supported signals:
 | ABRT | Decrease the activity check interval by 5 minutes |
 | HUP | Reload private values from the `.env` file |
 
-Send a signal with `kill` or `pkill`. For example:
+`SIGHUP` keeps command-line credentials and nonempty environment values exported before startup. Change those values and restart to replace them.
+
+Send signals with `kill` or `pkill`, e.g.:
 
 ```sh
 pkill -USR1 -f "instagram_monitor <target_insta_user>"
@@ -850,7 +937,9 @@ A local Windows process supports only a limited signal set. Linux containers can
 <a id="coloring-log-output-with-grc"></a>
 ## Coloring Log Output with GRC
 
-Instagram Monitor can color live terminal output through `COLORED_OUTPUT` and `COLOR_THEME`. To color saved log files when viewing them later, you can use [GRC](https://github.com/garabik/grc).
+Live terminal output is coloured through `COLORED_OUTPUT` and `COLOR_THEME`, described under [Terminal Colours](configuration.md#terminal-colours). To colour saved log files when viewing them later, you can use [GRC](https://github.com/garabik/grc).
+
+The bundled recipe follows the same colors as the live output. It also covers the other monitors in the family, so one copy in `~/.grc/` colors every tool's logs.
 
 Add to your GRC config (`~/.grc/grc.conf`):
 

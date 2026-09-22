@@ -178,3 +178,40 @@ class TestVersionConsistency:
 
         assert newest is not None
         assert newest.group(1) == im_module.VERSION
+
+
+# Verifies both documented install paths pull the same libraries, since only the wheel carries the packaging metadata
+def test_the_requirements_file_matches_the_packaged_dependencies():
+    pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    requirements = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8")
+
+    declared = re.search(r"^dependencies = \[(.*?)^\]", pyproject, re.S | re.M)
+    assert declared is not None
+    packaged = {name.casefold().replace("_", "-") for name in re.findall(r'"([A-Za-z0-9_.-]+)', declared.group(1))}
+    listed = {match.group(0).casefold().replace("_", "-") for line in requirements.splitlines() if line.strip() and not line.lstrip().startswith("#") if (match := re.match(r"[A-Za-z0-9_.-]+", line))}
+
+    assert listed == packaged
+    # The marker is what keeps a Linux or macOS install from pulling a library that only changes the classic Command Prompt
+    assert 'colorama; platform_system == "Windows"' in requirements
+
+
+# Verifies the minimum supported Python version is declared once and matches the packaging metadata
+def test_the_minimum_python_version_is_declared_once(im_module):
+    pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert im_module.MINIMUM_PYTHON_VERSION_TEXT == ".".join(str(part) for part in im_module.MINIMUM_PYTHON_VERSION)
+    assert f'requires-python = ">={im_module.MINIMUM_PYTHON_VERSION_TEXT}"' in pyproject
+    assert f"Programming Language :: Python :: {im_module.MINIMUM_PYTHON_VERSION_TEXT}" in pyproject
+    classifiers = re.findall(r"Programming Language :: Python :: (\d+\.\d+)", pyproject)
+    assert min(tuple(int(part) for part in version.split(".")) for version in classifiers) == im_module.MINIMUM_PYTHON_VERSION
+
+
+# Verifies published rebuilds refresh package updates even when the source is unchanged
+def test_published_images_do_not_reuse_package_update_layers():
+    publishers = []
+    for workflow in (PROJECT_ROOT / ".github" / "workflows").glob("*.yml"):
+        text = workflow.read_text(encoding="utf-8")
+        for match in re.finditer(r"uses: docker/build-push-action@[^\n]+\n(.*?)(?=\n      -|\Z)", text, re.S):
+            publishers.append(workflow.name)
+            assert re.search(r"^          no-cache: true$", match.group(1), re.M), workflow.name
+    assert len(publishers) == 1

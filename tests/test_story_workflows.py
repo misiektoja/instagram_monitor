@@ -2,17 +2,10 @@
 
 import csv
 import threading
-import uuid
 from datetime import datetime, timezone
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
-
-
-# Returns an isolated local artifact directory for one story workflow test
-def _story_artifact_dir() -> Path:
-    artifact_dir = Path("local") / "test_artifacts" / "story_workflows" / uuid.uuid4().hex
-    artifact_dir.mkdir(parents=True, exist_ok=True)
-    return artifact_dir
 
 
 # Returns rows from a CSV file using the monitor's expected encoding
@@ -50,8 +43,8 @@ def _patch_startup_monitor_defaults(im_module, monkeypatch) -> None:
 
 class TestStoryWorkflows:
     # Startup story loading writes one CSV row and publishes last story dashboard metadata
-    def test_startup_story_item_writes_csv_and_ui_update(self, im_module, monkeypatch):
-        artifact_dir = _story_artifact_dir()
+    def test_startup_story_item_writes_csv_and_ui_update(self, im_module, monkeypatch, tmp_path):
+        artifact_dir = tmp_path
         csv_path = artifact_dir / "events.csv"
         updates = []
         story_item = SimpleNamespace(
@@ -74,7 +67,7 @@ class TestStoryWorkflows:
         monkeypatch.setattr(im_module.instaloader, "Instaloader", lambda *args, **kwargs: fake_bot)
         monkeypatch.setattr(im_module.instaloader.Profile, "own_profile", lambda ctx: SimpleNamespace(username="session_user"))
         monkeypatch.setattr(im_module, "profile_from_username_resilient", lambda bot, username: fake_profile)
-        monkeypatch.setattr(im_module, "get_total_reels_count", lambda user, bot, skip_session=False: 0)
+        monkeypatch.setattr(im_module, "get_total_reels_count", lambda user, bot, skip_session=False, posts_count=None: 0)
         monkeypatch.setattr(im_module, "update_ui_data", lambda *args, **kwargs: updates.append((args, kwargs)))
 
         im_module.instagram_monitor_user("target", str(csv_path), skip_session=False, skip_followers=True, skip_followings=True, skip_getting_story_details=False, skip_getting_posts_details=True, get_more_post_details=False, stop_event=stop_event, user_root_path=str(artifact_dir), skip_follow_changes=True)
@@ -87,19 +80,30 @@ class TestStoryWorkflows:
         assert last_story["caption"] == "story caption"
         assert last_story["url"] == "https://example.com/story.jpg"
         assert last_story["post_url"] == "https://www.instagram.com/stories/target/"
+        assert last_story["is_story"] is True
         assert last_story["timestamp_ts"] == 1710000000
+
+        target_data = {"target": {"last_story": last_story}}
+        # Render the real startup record so a missing flag cannot hide the terminal warning
+        monkeypatch.setattr(im_module, "RICH_AVAILABLE", True)
+        rendered = im_module.generate_user_dashboard(target_data)
+        output = StringIO()
+        im_module.Console(file=output, width=400, height=60).print(rendered)
+        assert "may break anonymity" in output.getvalue()
 
     # Story webhooks remain active when email status notifications are disabled
     def test_story_item_webhook_is_independent_from_email(self, im_module, monkeypatch):
         emails = []
         webhooks = []
         monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: emails.append((args, kwargs)))
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: webhooks.append((args, kwargs)) or 0)
 
         result = im_module.send_story_item_notifications("target", "Image", 1710000000, 1710086400, [], [], "caption", 600, "https://example.com/story.jpg")
 
-        assert result == 0
+        assert result == (False, True)
         assert emails == []
         assert len(webhooks) == 1
         assert webhooks[0][1]["notification_type"] == "status"
@@ -111,6 +115,8 @@ class TestStoryWorkflows:
         webhooks = []
         hostile_text = '<img src=x onerror="alert(1)">\nsecond line'
         monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "receiver@example.com")
         monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: emails.append((args, kwargs)) or 0)
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: webhooks.append((args, kwargs)) or 0)

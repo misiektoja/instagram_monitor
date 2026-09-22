@@ -80,5 +80,5 @@ class TestInstagramRequestWrapping:
         source = im_module.req.Session()
         copied = instaloadercontext.copy_session(source)
 
-        assert copied._instagram_monitor_wrapped is True
+        assert copied.__dict__["_instagram_monitor_wrapped"] is True
         assert not hasattr(source, "_instagram_monitor_wrapped")

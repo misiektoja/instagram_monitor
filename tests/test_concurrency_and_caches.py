@@ -4,7 +4,6 @@ import threading
 import time
 
 
-
 class TestFlaggedProbeDeduplication:
     # The probe network call must not run while the shared lock is held, or every other target stalls behind it
     def test_probe_runs_without_holding_the_lock(self, im_module, monkeypatch):

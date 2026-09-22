@@ -1,6 +1,6 @@
 # View Modes
 
-Examples on this page use the PyPI command `instagram_monitor`. If you chose another installation, replace that command with the matching [command prefix](usage.md#command-format). Keep all targets and options after the prefix.
+Examples on this page use the PyPI command `instagram_monitor`. If you chose another installation, replace that command with the matching [command prefix](usage.md#command-format-by-installation-method). Keep all targets and options after the prefix.
 
 Choose one of three ways to view monitoring activity:
 
@@ -21,7 +21,7 @@ Text mode is the default. It works in any terminal and is well suited to backgro
 
 ---
 
-<a id="terminal-dashboard-mode"></a>
+<a id="terminal-dashboard"></a>
 ## Terminal Dashboard
 
 The Terminal Dashboard updates status, statistics and recent events in one terminal screen. It requires the `rich` library, which is included in normal installations.
@@ -55,28 +55,32 @@ instagram_monitor target1 target2 --dashboard
 
 ---
 
-<a id="web-dashboard-mode"></a>
+<a id="web-dashboard"></a>
 ## Web Dashboard
 
 The Web Dashboard runs a small web server on your computer. By default, open `http://127.0.0.1:8000/` in a browser on the same computer. The `127.0.0.1` address is local, so other devices cannot connect unless you change the server and Docker settings.
 
-The dashboard is intentionally designed for loopback use without a login screen. Keep the host port bound to `127.0.0.1` and do not expose it through a public reverse proxy. Dashboard media links can access only files registered by the running monitor. Post, story and media links that come from Instagram are limited to `http` and `https` and escaped before they are displayed, so page content cannot run scripts in the dashboard. Thumbnails are shown only when the monitor has already saved the image locally, so opening the dashboard never makes your browser fetch anything from Instagram's servers. An item whose download failed shows a placeholder instead. Saved webhook and proxy URLs are shown as configured without returning their private values to the browser. Enter a new URL only when you want to replace the saved value.
+The dashboard has no login screen. Keep the host port bound to `127.0.0.1` and do not expose it through a public reverse proxy. Thumbnails and video playback use downloaded files only. Missing downloads show a placeholder. Saved webhook and proxy URLs are hidden. Enter a new URL only to replace the saved value.
 
-<a id="dashboard-request-protection"></a>
+**View Story** and story **View** controls in the activity feeds require confirmation before opening Instagram. The story owner may see the account signed in to Instagram in your browser, which can differ from the monitor's session. Use **View Media** or **Play Video** for downloaded content instead.
+
+If the warning is missing, check **Templates** in the dashboard's Config view. An explicit `WEB_DASHBOARD_TEMPLATE_DIR` or `--web-dashboard-template-dir` takes priority. Otherwise, `templates/index.html` in the working directory takes priority over the installed template. Update that copy with the matching release, restart the dashboard and reload the page.
+
+<a id="request-protection"></a>
 ### Request Protection
 
-Because there is no login, the dashboard protects itself by checking who is asking rather than who is logged in. Two rules apply to every request:
+If a dashboard request is rejected, check these requirements:
 
-- **Accepted addresses.** The server answers only requests addressed to `127.0.0.1`, `localhost`, `::1` or the configured `WEB_DASHBOARD_HOST`. Anything else gets **HTTP 403**. This stops DNS rebinding, where a web page you visit points its own domain at `127.0.0.1` so the browser reaches your dashboard for it. Binding to the loopback interface alone does not stop that attack, because the request arrives from your own browser. Add a name to `WEB_DASHBOARD_ALLOWED_HOSTS` when you deliberately reach the dashboard under another address.
-- **Same-origin changes only.** Anything that changes state (adding targets, starting or stopping monitoring, saving settings, sending test notifications, clearing the activity log) must come from the dashboard page itself and carry `Content-Type: application/json`. A request that another website triggers in your browser is rejected with **HTTP 403**, and a request without a JSON body is rejected with **HTTP 415**. Without this, any page you happened to have open could stop your monitoring or force extra Instagram polling.
+- **Accepted addresses.** Use `127.0.0.1`, `localhost`, `::1` or `WEB_DASHBOARD_HOST`. To use another name, add it to `WEB_DASHBOARD_ALLOWED_HOSTS`. Other addresses receive **HTTP 403**.
+- **Settings and controls.** Changes must come from the dashboard page and use `Content-Type: application/json`. Requests from other websites receive **HTTP 403**. Requests without a JSON body receive **HTTP 415**.
 
 Scripting the API yourself still works: send `Content-Type: application/json` and address the server as `127.0.0.1`.
 
-Settings updates are validated as one operation before live values change. Malformed booleans, non-integer numeric fields, reversed hour ranges, invalid ports and unsafe URLs return an error without applying the rest of the payload. Polling intervals accepted by the dashboard range from 300 to 86400 seconds. Two fields are deliberately narrow:
+Invalid settings are rejected without applying other changes from the same save. Dashboard polling intervals range from 300 to 86400 seconds. When editing settings:
 
-- **CSV file name.** The dashboard names the CSV file but never chooses its location, so a value containing a path is rejected. An absolute path set through `CSV_FILE` or `-b` keeps working and still round-trips through the form unchanged.
-- **SMTP password.** A saved password belongs to the server it was entered for. Changing `SMTP_HOST` or `SMTP_PORT` without typing the password again clears it, so the tool never offers your credential to a different mail server. Re-enter the password in the same save to keep email working.
-- **ntfy access token.** `NTFY_ACCESS_TOKEN` is sent as a bearer credential to whatever `WEBHOOK_URL` points at, so pointing the webhook at a different server clears it. Changing only the topic on the same server keeps it. Set the token again in your dotenv file and reload it with `SIGHUP`, or restart the tool.
+- **CSV file name.** Enter a filename without a directory. An absolute path already set through `CSV_FILE` or `-b` is preserved.
+- **SMTP password.** If you change `SMTP_HOST` or `SMTP_PORT`, re-enter the password in the same save to keep email working.
+- **ntfy access token.** Changing the webhook server clears `NTFY_ACCESS_TOKEN`. Changing only the topic on the same server keeps it. Set the token again in your dotenv file then reload with `SIGHUP` or restart.
 
 In a container the server must bind to `0.0.0.0` so Docker can forward traffic. That value means every container network interface. It is not a browser destination. Use the published host address `http://127.0.0.1:8000/` instead.
 
@@ -87,9 +91,9 @@ In a container the server must bind to `0.0.0.0` so Docker can forward traffic. 
 - **Live Activity Log**: A scrolling view of the last few events.
 - **Manual Trigger**: A "Recheck" button to force an immediate update for specific or all users.
 - **Remote Management**: Start or stop monitoring for specific or all targets with a single click.
-- **Synchronization**: Saved setting and session changes wake active monitors then rebuild their monitoring context before the next check.
+- **Synchronization**: Saved settings and session changes take effect before the next check.
 - **Dynamic Configuration**: Configure sessions and settings without touching the terminal or config files.
-- **Saved Targets**: Targets added or removed in the browser live in memory only until you press **Generate Config** on the Settings page. That writes the current settings and the current target list to `TARGET_USERNAMES` in a `.conf` file created in the working directory the tool was started from, and the toast reports the full path it wrote. Start the tool with `--config-file` pointing at that file to keep the targets across restarts.
+- **Saved Targets**: Press **Generate Config** on the Settings page to save the current targets and settings. The notification shows the generated `.conf` path. Use that path with `--config-file` on later runs. Unsaved target changes are lost on restart.
 
 Enable it with `--web-dashboard` or `WEB_DASHBOARD_ENABLED = True`.
 
@@ -149,6 +153,7 @@ Both dashboards offer two views:
 2. **Config Mode** (`config`):
     - Detailed view showing all internal settings.
     - Displays User Agent strings, Hour Ranges, Jitter status and more.
+    - Reports the identity in effect rather than the raw settings: the transport actually carrying requests, the browser `curl_cffi` impersonates once `Auto` has resolved and the follower list source with its browser channel. A `curl_cffi` selection that fell back because the package is missing is shown as `requests (curl_cffi is not installed)`.
     - Useful for auditing your setup and verifying configuration.
 
 Switch views with the **'m'** key in the Terminal Dashboard or the view button in the Web Dashboard.

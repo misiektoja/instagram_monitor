@@ -9,8 +9,14 @@ from pathlib import Path
 import pytest
 import yaml
 
+import instagram_monitor as monitor
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DOCS_DIRECTORY = PROJECT_ROOT / "docs"
+PROJECT_URL = "https://github.com/misiektoja/instagram_monitor"
+REPOSITORY_MARKDOWN = ("README.md", "SUPPORT.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "THIRD_PARTY_NOTICES.md", ".github/pull_request_template.md")
+ISSUE_TEMPLATES = (".github/ISSUE_TEMPLATE/config.yml", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE/feature_request.yml")
 
 
 # Reads one repository text asset as UTF-8
@@ -33,6 +39,21 @@ def markdown_headings(text: str) -> list[tuple[int, int, str]]:
                 headings.append((offset, len(match.group(1)), match.group(2)))
         offset += len(line)
     return headings
+
+
+# Returns the anchors one Markdown page defines, from its headings and from explicit anchor tags
+def page_anchors(path: Path) -> set[str]:
+    text = path.read_text(encoding="utf-8")
+    anchors = set(re.findall(r'<a id="([^"]+)"></a>', text))
+    for _offset, _level, title in markdown_headings(text):
+        anchors.add("".join(character for character in title.casefold().replace(" ", "-") if character.isalnum() or character in "-_"))
+    return anchors
+
+
+# Returns every local link target in one repository document, including README anchors written as absolute project links
+def repository_link_targets(text: str) -> list[str]:
+    targets = re.findall(r"\]\((?!https?:|mailto:)([^)]+)\)", text)
+    return list(targets) + [f"README.md#{anchor}" for anchor in re.findall(rf"{re.escape(PROJECT_URL)}/?#([^\s)\"']+)", text)]
 
 
 # Returns one Markdown section whose heading contains every requested term
@@ -64,7 +85,7 @@ def assert_concepts(text: str, *concepts: str) -> None:
 def test_installation_docs_cover_delivery_and_upgrade_commands():
     installation = read_asset("docs/installation.md")
     commands = fenced_code_lines(installation)
-    for command in ("pip install instagram_monitor", "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py", "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt", "pip install --upgrade -r requirements.txt", "docker build --pull --tag instagram-monitor:local .", "docker pull misiektoja/instagram-monitor:latest", "docker compose pull"):
+    for command in ("pip install instagram_monitor", "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/instagram_monitor.py", "curl -fsSLO https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/requirements.txt", "pip install --upgrade -r requirements.txt", "docker build --pull --no-cache --tag instagram-monitor:local .", "docker pull misiektoja/instagram-monitor:latest", "docker compose pull"):
         assert command in commands
     assert_concepts(installation, "PyPI", "Docker Hub", "Docker Compose", "Manual")
 
@@ -147,7 +168,9 @@ def test_firefox_docs_cover_container_host_layouts():
     usage = read_asset("docs/usage.md")
     compose = read_asset("docker-compose.yml")
     firefox_section = markdown_section(usage, 3, "Import", "Firefox", "Container")
-    mounts = ('-v "${HOME}/Library/Application Support/Firefox/Profiles:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/snap/firefox/common/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox:/home/instagram/.mozilla/firefox:ro"', '-v "$env:APPDATA\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"', '-v "%APPDATA%\\Mozilla\\Firefox:/home/instagram/.mozilla/firefox:ro"')
+    # Taken from the wizard's own table rather than repeated here, so a corrected mount cannot pass a stale guard
+    mounts = [f"-v {source}" for _label, source in monitor.CONTAINER_FIREFOX_HOSTS.values()]
+    assert len(mounts) == 6
     for mount in mounts:
         assert firefox_section.count(mount) == 2
         assert mount in compose
@@ -161,7 +184,7 @@ def test_firefox_docs_cover_container_host_layouts():
 # Verifies manual quick-start commands link both authentication modes
 def test_quick_start_links_both_authentication_modes():
     quick_start = read_asset("docs/setup-and-first-run.md")
-    assert "(configuration.md#no-login-mode-without-session-login)" in quick_start
+    assert "(configuration.md#no-login-mode-no-session-login)" in quick_start
     assert "(configuration.md#logged-in-mode-with-session-login)" in quick_start
 
 
@@ -184,9 +207,25 @@ def test_compose_defaults_load_dotenv_and_suppress_attached_prefixes():
 # Verifies historical feature links target their current documentation sections
 def test_release_notes_use_current_documentation_links():
     release_notes = read_asset("RELEASE_NOTES.md")
-    for fragment in ("view-modes/#terminal-dashboard-mode", "view-modes/#web-dashboard-mode", "usage/#webhook-notifications", "usage/#follower-churn-detection", "usage/#output-directory", "usage/#skipping-follow-changes", "anti-detection/#use-the-human-mode", "anti-detection/#use-the-jitter-mode", "configuration/#user-agent"):
+    for fragment in ("view-modes/#terminal-dashboard", "view-modes/#web-dashboard", "usage/#webhook-notifications", "usage/#follower-churn-detection", "usage/#output-directory", "usage/#skipping-follow-changes", "anti-detection/#use-the-human-mode", "anti-detection/#use-the-jitter-mode", "configuration/#user-agent"):
         assert f"https://misiektoja.github.io/instagram_monitor/{fragment}" in release_notes
     assert "https://github.com/misiektoja/instagram_monitor#" not in release_notes
+
+
+# The Guide: lines are the only documentation a stuck user is handed, and a renamed section breaks them in silence
+def test_runtime_guide_urls_resolve_to_a_real_page_and_anchor():
+    guide_names = sorted(name for name in vars(monitor) if name.endswith("_GUIDE_URL"))
+    assert guide_names, "no runtime guide constants were found"
+
+    for name in guide_names:
+        url = getattr(monitor, name)
+        assert url.startswith(monitor.DOCS_BASE_URL + "/"), f"{name} does not point at the documentation site: {url}"
+        relative_path, _separator, anchor = url.removeprefix(monitor.DOCS_BASE_URL).lstrip("/").partition("#")
+        slug = relative_path.strip("/")
+        page = DOCS_DIRECTORY / "index.md" if not slug else DOCS_DIRECTORY / f"{slug}.md"
+        assert page.is_file(), f"{name} points at a missing page: {page.name}"
+        if anchor:
+            assert anchor in page_anchors(page), f"{name} points at a missing anchor on {page.name}: #{anchor}"
 
 
 # Parses one repository YAML asset
@@ -228,6 +267,8 @@ def test_issue_templates_are_valid_issue_forms():
             assert element["id"] and element["attributes"]["label"], template.name
             if element["type"] == "dropdown":
                 assert len(element["attributes"]["options"]) >= 2, template.name
+        # A form whose every field is optional collects an empty report the maintainer has to chase
+        assert any(element.get("validations", {}).get("required") for element in form["body"]), template.name
 
 
 # Verifies the issue chooser routes vulnerabilities to private reporting instead of a public issue
@@ -240,6 +281,8 @@ def test_issue_chooser_routes_vulnerabilities_privately():
 
     bug_report = read_asset(".github/ISSUE_TEMPLATE/bug_report.yml")
     assert "SECURITY.md" in bug_report
+    # The form is where a user is most likely to paste a secret, so the instruction itself has to survive a rewording
+    assert "Never paste" in bug_report
 
 
 # Verifies the security policy names the private channel and the secrets a report must never carry
@@ -346,6 +389,9 @@ def test_editor_configuration_declares_the_repository_style():
     assert settings["*.{yml,yaml}"]["indent_size"] == "2"
     # Two trailing spaces are a Markdown line break, so they must stay exempt from trimming
     assert settings["*.md"]["trim_trailing_whitespace"] == "false"
+    # LICENSE is verbatim upstream text, so an editor must leave its ending and its spacing alone
+    assert settings["LICENSE"]["insert_final_newline"] == "unset"
+    assert settings["LICENSE"]["trim_trailing_whitespace"] == "unset"
 
 
 # Verifies tracked text files obey those whitespace rules, since an editor setting only warns on the machine that has it
@@ -354,10 +400,14 @@ def test_tracked_text_files_obey_the_declared_whitespace_rules():
     if listing.returncode != 0:
         pytest.skip("not a git checkout")
 
+    # The binary types are declared once in .gitattributes, so this list cannot drift away from that one
+    binary_suffixes = {suffix.casefold() for suffix in re.findall(r"^\*(\.[A-Za-z0-9]+)\s+binary\b", read_asset(".gitattributes"), re.M)}
+    assert binary_suffixes
+
     offenders = []
     for name in listing.stdout.split():
         asset = PROJECT_ROOT / name
-        if not asset.is_file() or asset.suffix.casefold() in {".png", ".jpg", ".gif"}:
+        if not asset.is_file() or asset.suffix.casefold() in binary_suffixes:
             continue
         content = asset.read_bytes()
         if b"\r\n" in content:
@@ -379,6 +429,25 @@ def test_support_document_routes_every_request_type():
     assert_concepts(support, "session cookies", "webhook URLs", "--debug")
 
 
+# Verifies no repository document points at a missing file or a heading that no longer exists, which is how a docs move leaves dead links behind
+def test_no_repository_document_links_at_a_missing_local_target():
+    broken = []
+    for relative_path in REPOSITORY_MARKDOWN + ISSUE_TEMPLATES:
+        path = PROJECT_ROOT / relative_path
+        if not path.exists():
+            continue
+        for target in repository_link_targets(path.read_text(encoding="utf-8")):
+            page_part, _, anchor = target.partition("#")
+            target_page = path if not page_part else (PROJECT_ROOT / page_part)
+            if page_part and not target_page.exists():
+                broken.append(f"{relative_path} -> {target}")
+                continue
+            if anchor and anchor not in page_anchors(target_page):
+                broken.append(f"{relative_path} -> {target}")
+
+    assert not broken, f"repository documents linking at missing targets: {broken}"
+
+
 # Verifies Git normalizes line endings, since one CRLF commit from a Windows contributor rewrites whole files
 def test_line_ending_policy_is_declared():
     attributes = read_asset(".gitattributes")
@@ -387,19 +456,27 @@ def test_line_ending_policy_is_declared():
         assert pattern in attributes
 
 
-# Verifies the optional local hooks run the same linter version CI installs, or a clean commit still fails CI
-def test_local_hooks_match_the_pinned_linter():
-    pyproject = read_asset("pyproject.toml")
-    pinned = re.search(r'lint = \["ruff==([^"]+)"\]', pyproject)
-    assert pinned is not None
+# Verifies the optional local hooks run the ruff the pinned extra installs, since a second pin here would drift
+# apart from it every time one side is bumped and a locally clean commit would still fail CI
+def test_local_hooks_run_the_pinned_linter():
+    assert re.search(r'lint = \["ruff==([^"]+)"\]', read_asset("pyproject.toml")) is not None
 
-    hooks = read_yaml_asset(".pre-commit-config.yaml")["repos"]
-    ruff_hook = next(entry for entry in hooks if "ruff-pre-commit" in entry["repo"])
-    assert ruff_hook["rev"] == f"v{pinned.group(1)}"
+    repos = read_yaml_asset(".pre-commit-config.yaml")["repos"]
+    assert not any("ruff" in entry["repo"] for entry in repos), "ruff must not be pinned a second time in the hook configuration"
 
-    workflow = read_yaml_asset(".github/workflows/tests.yml")
-    lint_steps = workflow["jobs"]["lint"]["steps"]
-    assert any("ruff check" in step.get("run", "") for step in lint_steps)
+    ruff_hook = next(hook for entry in repos if entry["repo"] == "local" for hook in entry["hooks"] if hook["id"] == "ruff-check")
+    assert ruff_hook["language"] == "system"
+    assert ruff_hook["entry"].split() == ["ruff", "check"]
+
+    lint_steps = read_yaml_asset(".github/workflows/tests.yml")["jobs"]["lint"]["steps"]
+    assert any("[lint]" in step.get("run", "") for step in lint_steps)
+    lint_command = next(step["run"] for step in lint_steps if "ruff check" in step.get("run", ""))
+
+    # Both sides must also reach the same files, or the hook stays quiet about code CI rejects
+    covered = re.compile(ruff_hook["files"])
+    assert covered.match("instagram_monitor.py")
+    assert covered.match("tests/test_documentation.py")
+    assert "instagram_monitor.py tests" in lint_command
 
 
 # Verifies published archives stay verifiable, since an unsigned download cannot be told apart from a tampered one
@@ -420,3 +497,28 @@ def test_release_archives_ship_checksums_and_provenance():
     assert "_SHA256SUMS.txt" in upload["with"]["files"]
     # Offline verifiers need the bundle as an asset, since the attestations API may be unreachable
     assert ".intoto.jsonl" in upload["with"]["files"]
+
+
+# Verifies the documentation build is a step CI runs, rather than only a job name that says so
+def test_the_documentation_build_is_a_ci_gate():
+    commands = [match.strip() for match in re.findall(r"^\s*run:\s*(.+)$", read_asset(".github/workflows/tests.yml"), flags=re.MULTILINE)]
+
+    assert any("mkdocs build --strict" in command for command in commands), "CI does not build the documentation site"
+    assert any("docs/requirements.txt" in command for command in commands), "CI does not install the documentation dependencies"
+
+
+# A guide that lists the test files goes stale the moment one is added and nothing else notices
+def test_the_test_suite_guide_lists_every_test_file():
+    listed = set(re.findall(r"^\| `([^`]+)` \|", (PROJECT_ROOT / "tests" / "README.md").read_text(encoding="utf-8"), re.M))
+    present = {path.name for path in (PROJECT_ROOT / "tests").glob("test_*.py")} | {path.name for path in (PROJECT_ROOT / "tests").glob("conftest.py")}
+
+    assert present - listed == set(), f"test files missing from tests/README.md: {sorted(present - listed)}"
+    assert {name for name in listed if name.endswith(".py")} - present == set(), f"tests/README.md names files that do not exist: {sorted({name for name in listed if name.endswith('.py')} - present)}"
+
+
+# Verifies the documented doctor sections are exactly the ones the report renders
+def test_the_documented_doctor_sections_match_the_code():
+    text = read_asset("docs/troubleshooting.md")
+
+    for section in monitor.DOCTOR_SECTIONS:
+        assert f"**{section}**" in text, f"the {section} doctor section is not documented"

@@ -82,6 +82,49 @@ class TestFetchUsernamesPaginated:
         assert im_module.is_complete_username_baseline(contradictory_empty, 1) is False
         assert im_module.is_complete_username_baseline(contradictory_empty, 0) is True
 
+    # A stalled browser dialog and a real unfollow both come back short. Instagram's own count is what
+    # separates them, and the saved list is the second witness
+    def test_a_list_short_of_the_count_may_not_shrink_the_saved_one(self, im_module, capsys):
+        result = im_module.PaginatedUsernameResult([f"user{index}" for index in range(90)])
+        result.complete = True
+
+        im_module.reject_shrinking_username_baseline(result, 100, [f"user{index}" for index in range(100)], "followers", "target")
+
+        assert result.complete is False
+        assert im_module.is_complete_username_baseline(result, 100) is False
+        assert "came back with 90 of about 100 while 100 were already saved" in capsys.readouterr().out
+
+    # Accounts that really went away move the reported count too, so the smaller list is the truth and is saved
+    def test_a_real_unfollow_the_count_agrees_with_is_saved(self, im_module):
+        result = im_module.PaginatedUsernameResult([f"user{index}" for index in range(80)])
+        result.complete = True
+
+        im_module.reject_shrinking_username_baseline(result, 80, [f"user{index}" for index in range(100)], "followers", "target")
+
+        assert result.complete is True
+
+    # A count that lags behind a growing list is not a shortfall worth keeping the old baseline for
+    def test_a_growing_list_behind_a_stale_count_is_saved(self, im_module):
+        result = im_module.PaginatedUsernameResult([f"user{index}" for index in range(95)])
+        result.complete = True
+
+        im_module.reject_shrinking_username_baseline(result, 100, [f"user{index}" for index in range(90)], "followers", "target")
+
+        assert result.complete is True
+
+    # The first run has nothing to lose, and a list that was already unusable is left as it was
+    def test_a_first_run_and_an_incomplete_list_are_left_alone(self, im_module):
+        first_run = im_module.PaginatedUsernameResult(["a"])
+        first_run.complete = True
+        already_partial = im_module.PaginatedUsernameResult(["a"])
+        already_partial.complete = False
+
+        im_module.reject_shrinking_username_baseline(first_run, 100, [], "followers", "target")
+        im_module.reject_shrinking_username_baseline(already_partial, 100, ["a", "b"], "followers", "target")
+
+        assert first_run.complete is True
+        assert already_partial.complete is False
+
     # Baseline writes replace the final JSON file without leaving a temporary sibling
     def test_save_username_baseline_is_atomic(self, im_module):
         local_dir = os.path.join(os.path.dirname(os.path.abspath(im_module.__file__)), "local")

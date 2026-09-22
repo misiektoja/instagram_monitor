@@ -16,12 +16,12 @@ Powerful, real-time OSINT suite for tracking every activity on Instagram - from 
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_web_dashboard.png" alt="instagram_monitor_web_dashboard_screenshot" width="100%"/>
 </p>
 
-<a id="-quick-install-run"></a>
+<a id="quick-install-run"></a>
 ### 🚀 Quick Install & Run
 
 #### Python from PyPI
 
-New to Python or unsure what is installed? Follow the [Python install walkthrough](https://misiektoja.github.io/instagram_monitor/installation/#new-to-python-install-everything) first.
+New to Python or unsure what is installed? Follow the [Python install walkthrough](https://misiektoja.github.io/instagram_monitor/installation/#new-to-python-check-and-install) first.
 
 ```sh
 pip install instagram_monitor
@@ -32,6 +32,8 @@ Run setup wizard:
 ```sh
 instagram_monitor --setup
 ```
+
+The wizard asks for the targets, the Instagram login, the interface and optional notifications. Review the settings before saving them. See [Setup & First Run](https://misiektoja.github.io/instagram_monitor/setup-and-first-run/) for the Instagram login options and the first monitoring run.
 
 #### Docker image - fastest container setup
 
@@ -76,7 +78,7 @@ Run setup wizard:
 docker compose run --rm --pull=always instagram_monitor --setup
 ```
 
-For the manual single-file method, optional browser support and upgrade commands for every installation method, see [Installation](https://misiektoja.github.io/instagram_monitor/installation/).
+For the manual single-file method, optional extras and upgrade commands, see [Installation](https://misiektoja.github.io/instagram_monitor/installation/).
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/instagram_monitor/refs/heads/main/assets/instagram_monitor_demo.gif" alt="instagram_monitor demo: install, setup wizard and run" width="100%"/>
@@ -113,6 +115,8 @@ For the manual single-file method, optional browser support and upgrade commands
 - **Be Human Mode**: Simulates random user actions to blend in.
 - **Jitter Mode**: Adds human-like delays to HTTP requests.
 - **Hour-Range Checking**: Limits activity to specific hours of the day.
+- **Identity Budget**: Caps how many follower and following names are fetched per day.
+- **Circuit Breaker**: Stops every target after Instagram challenges your account until a restart or a fresh session clears it.
 - **Account Flexibility**: Works with or without a logged-in Instagram account.
 - **Browser Session Import**: Reuse Firefox, Chrome, Brave or Chromium sessions with profile selection.
 - **Browser TLS Impersonation**: Routes traffic through curl_cffi to mimic a real browser's TLS fingerprint and dodge fingerprint-based blocks.
@@ -125,6 +129,7 @@ For the manual single-file method, optional browser support and upgrade commands
 - **Flexible Config**: Support for files, dotenv and environment variables.
 - **Follower Churn**: Detailed tracking of exactly who followed or unfollowed.
 - **Follow Analysis**: Inspect mutual, not-following-back and fan relationships offline from saved lists with `--analyze-follows` or the Web Dashboard.
+- **Selectable Follower List Source**: Reads follower and following lists from the web REST endpoints Instagram's own app calls, falling back to the older GraphQL queries, with an experimental browser source for when both are broken.
 - **Batched Fetching**: Throttle follower/following downloads into delayed batches.
 - **Remote Control**: Manage tracking features via signals or the web UI.
 - **Docker Ready**: Run via Docker Hub, Docker Compose or local image build with persisted config, dotenv and sessions.

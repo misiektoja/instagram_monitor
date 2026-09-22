@@ -47,11 +47,16 @@ def test_webhook_provider_display_name(im_module, provider, expected):
 
 
 # Verifies SIGHUP redetects ntfy and schedules active Instaloader sessions for proxy refresh
-def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, monkeypatch, capsys):
+def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, monkeypatch, capsys, tmp_path):
     if not hasattr(im_module.signal, "SIGHUP"):
         pytest.skip("SIGHUP is unavailable on Windows")
     replacements = {"WEBHOOK_URL": "https://ntfy.sh/new-private-topic", "PROXY_URL": "https://new-user:new-password@proxy.example.test"}
-    monkeypatch.setattr(im_module, "DOTENV_FILE", "test.env")
+    dotenv_path = tmp_path / "test.env"
+    dotenv_path.write_text("".join(key + "=" + repr(value) + "\n" for key, value in replacements.items()), encoding="utf-8")
+    monkeypatch.setattr(im_module, "DOTENV_FILE", str(dotenv_path))
+    monkeypatch.setattr(im_module, "DOTENV_RELOAD_STATE", {})
+    for key in replacements:
+        monkeypatch.setenv(key, "")
     monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/123/old-token")
     monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
     monkeypatch.setattr(im_module, "PROXY_ENABLED", True)
@@ -61,15 +66,15 @@ def test_sighup_reload_updates_webhook_provider_and_proxy_session(im_module, mon
     monkeypatch.setattr(im_module._thread_local, "last_proxy_version", 4, raising=False)
     session = SimpleNamespace(proxies={"https": "https://old-user:old-password@proxy.example.test"}, verify=True)
     bot = SimpleNamespace(context=SimpleNamespace(_session=session))
-    with patch("dotenv.load_dotenv"), patch.object(im_module.os, "getenv", side_effect=replacements.get), patch.object(im_module, "log_activity"):
+    with patch.object(im_module, "log_activity"):
         im_module.reload_secrets_signal_handler(im_module.signal.SIGHUP, None)
         im_module.refresh_proxy_if_needed(bot, "target")
     assert im_module.WEBHOOK_PROVIDER == "ntfy"
     assert im_module.PROXY_REFRESH_VERSION == 5
     assert session.proxies == {"http": replacements["PROXY_URL"], "https": replacements["PROXY_URL"]}
     output = capsys.readouterr().out
-    assert "Reloaded WEBHOOK_URL from test.env" in output
-    assert "Reloaded PROXY_URL from test.env" in output
+    assert f"Reloaded WEBHOOK_URL from {dotenv_path}" in output
+    assert f"Reloaded PROXY_URL from {dotenv_path}" in output
     assert "new-private-topic" not in output
     assert "new-password" not in output
 
@@ -130,8 +135,8 @@ class TestSendWebhook:
         assert calls == []
         assert "Webhook error" not in capsys.readouterr().out
 
-    # A string webhook template is sent as raw data instead of JSON
-    def test_string_template_uses_data_post(self, im_module, monkeypatch):
+    # Rejects a non-JSON Discord template before contacting the service
+    def test_non_json_template_is_refused(self, im_module, monkeypatch):
         calls = []
 
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
@@ -142,11 +147,8 @@ class TestSendWebhook:
 
         rc = im_module.send_webhook("Title", "desc", fields=[{"name": "Name", "value": "Value"}])
 
-        assert rc == 0
-        assert len(calls) == 1
-        _, kwargs = calls[0]
-        assert kwargs["data"] == "Title:Name: Value"
-        assert "json" not in kwargs
+        assert rc == 1
+        assert calls == []
 
     # Disabled notification types return without posting to the webhook URL
     def test_notification_type_gate_blocks_post(self, im_module, monkeypatch):
@@ -229,6 +231,8 @@ class TestSendWebhook:
         calls = []
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+        # Only a provider the configuration actually sets is worth warning about, so the warning needs it named here
+        monkeypatch.setattr(im_module, "CONFIGURED_SETTING_NAMES", {"WEBHOOK_PROVIDER"})
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.sh/private-topic")
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append((args, kwargs)) or _FakeResponse(200))
@@ -370,6 +374,37 @@ class TestSendWebhook:
         assert len(message.encode("utf-8")) < 4096
         assert "\ufffd" not in message
 
+    # ntfy renders no markdown, so the emphasis, code spans and bracketed links the Discord embed carries are removed
+    def test_ntfy_receives_the_alert_text_without_markdown(self, im_module):
+        added = f"- {im_module.escape_discord_markdown('some_user*name')} (<https://www.instagram.com/some_user/>)\n"
+        embed = im_module.follower_change_embed("misiektoja", "followers", 10, 11, added, "")
+
+        title, message = im_module.build_ntfy_webhook_message(embed["webhook_title"], embed["webhook_description"], embed["webhook_fields"])
+
+        assert title == "\U0001f4c8 misiektoja Followers Changed"
+        assert "User misiektoja followers changed from 10 to 11" in message
+        # The escapes that keep a name literal on Discord would reach ntfy as visible backslashes
+        assert "Added followers: - some_user*name (https://www.instagram.com/some_user/)" in message
+        assert "**" not in message and "\\" not in message and "<https" not in message
+
+    # A code span marks the failing call on Discord and reads as stray backticks anywhere else
+    def test_ntfy_drops_the_code_span_around_an_error(self, im_module):
+        _, message = im_module.build_ntfy_webhook_message("Title", "Session flagged\n\nTriggering error: `401 Unauthorized`")
+
+        assert message == "Session flagged\n\nTriggering error: 401 Unauthorized"
+
+    # The Discord embed keeps its markdown, so removing it for ntfy must not reach the other provider
+    def test_the_discord_embed_keeps_its_markdown(self, im_module, monkeypatch):
+        calls = []
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append(kwargs) or _FakeResponse(200))
+
+        assert im_module.send_webhook("Title", "User **misiektoja** posts count changed from **10** to **11**") == 0
+        assert calls[0]["json"]["embeds"][0]["description"] == "User **misiektoja** posts count changed from **10** to **11**"
+
     # An unsupported provider fails before any webhook request is attempted
     def test_invalid_webhook_provider_is_rejected(self, im_module, monkeypatch):
         calls = []
@@ -415,7 +450,7 @@ def test_set_webhook_url_declined_replacement_is_non_destructive(im_module):
     with make_test_directory() as directory_name:
         env_path = Path(directory_name) / ".env"
         env_path.write_text('WEBHOOK_URL="https://example.test/original"\n', encoding="utf-8")
-        with pytest.raises(im_module.WebhookConfigurationError, match="cancelled"):
+        with pytest.raises(im_module.WebhookConfigurationError, match="left as it is"):
             im_module.run_set_webhook_url(env_file=env_path, interactive=True, input_func=lambda prompt: "no", getpass_func=lambda prompt: "https://example.test/replacement")
         assert dotenv_values(env_path, interpolate=False)["WEBHOOK_URL"] == "https://example.test/original"
 
@@ -430,7 +465,7 @@ def test_setup_wizard_persists_ntfy_secrets_privately(im_module, monkeypatch, ca
         topic_url = f"https://ntfy.sh/{topic_name}"
         token = "tk_private_access_token"
         answers = iter([True, False, True, True, False, False])
-        choices = iter([0, 2, 1, 0])
+        choices = iter([0, 2, 1, 0, 0])
         secrets = iter([topic_name, token])
         monkeypatch.delenv("WEBHOOK_URL", raising=False)
         monkeypatch.delenv("NTFY_ACCESS_TOKEN", raising=False)
@@ -440,6 +475,8 @@ def test_setup_wizard_persists_ntfy_secrets_privately(im_module, monkeypatch, ca
         monkeypatch.setattr(im_module, "_wizard_ask_duration", lambda question, default: default)
         monkeypatch.setattr(im_module, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
         monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
+        monkeypatch.setattr(im_module, "_wizard_collect_connection_section", lambda state: None)
+        monkeypatch.setattr(im_module, "_wizard_collect_output_section", lambda state: None)
         monkeypatch.setattr(im_module, "_wizard_ask_secret", lambda *args, **kwargs: next(secrets))
         monkeypatch.setattr(im_module, "run_doctor", Mock(side_effect=AssertionError("doctor called")))
         for name in ("CLI_CONFIG_PATH", "DOTENV_FILE", "SESSION_USERNAME", "SKIP_SESSION", "TARGET_USERNAMES", "WEB_DASHBOARD_ENABLED", "DASHBOARD_ENABLED", "STATUS_NOTIFICATION", "WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_STATUS_NOTIFICATION", "NTFY_ACCESS_TOKEN"):
@@ -494,3 +531,214 @@ class TestWebhookDeliveryTests:
 
         assert im_module.send_webhook("t", "b", notification_type=notification_type) == 1
         assert posts == []
+
+
+# Verifies a webhook receipt names its provider
+def test_a_delivered_webhook_is_reported_in_verbose(im_module, monkeypatch, capsys):
+    monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+    monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
+    monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+    monkeypatch.setattr(im_module, "VERBOSE_MODE", True)
+    monkeypatch.setattr(im_module, "DEBUG_MODE", False)
+    monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", Mock(return_value=_FakeResponse()))
+
+    assert im_module.send_webhook("Profile picture changed", "desc", notification_type="status") == 0
+
+    assert "* Webhook sent through Discord" in capsys.readouterr().out
+
+
+# Verifies the delivery line follows the flag rather than printing on every alert, so an ordinary run stays
+# quiet and --send-test-webhook reports the result once through its own confirmation
+def test_a_delivered_webhook_stays_quiet_without_the_flag(im_module, monkeypatch, capsys):
+    monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+    monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
+    monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+    monkeypatch.setattr(im_module, "VERBOSE_MODE", False)
+    monkeypatch.setattr(im_module, "DEBUG_MODE", False)
+    monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", Mock(return_value=_FakeResponse()))
+
+    assert im_module.send_webhook("Profile picture changed", "desc", notification_type="status") == 0
+
+    assert capsys.readouterr().out == ""
+
+
+# Verifies an email receipt names its recipient
+def test_a_delivered_email_is_reported_in_verbose(im_module, monkeypatch, capsys):
+    monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(im_module, "SMTP_PORT", 587)
+    monkeypatch.setattr(im_module, "SMTP_USER", "sender")
+    monkeypatch.setattr(im_module, "SMTP_PASSWORD", "not-a-real-password")
+    monkeypatch.setattr(im_module, "SENDER_EMAIL", "sender@example.com")
+    monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "receiver@example.com")
+    monkeypatch.setattr(im_module, "VERBOSE_MODE", True)
+    monkeypatch.setattr(im_module, "DEBUG_MODE", False)
+    monkeypatch.setattr(im_module.smtplib, "SMTP", Mock(return_value=Mock()))
+
+    assert im_module.send_email("Profile picture changed", "Body", "", False) == 0
+
+    assert "* Email sent to receiver@example.com" in capsys.readouterr().out
+
+
+# Verifies DELIVERY_CONFIRMATIONS drops both delivery lines without turning the rest of verbose mode off
+def test_delivery_confirmations_can_be_turned_off(im_module, monkeypatch, capsys):
+    monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+    monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
+    monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+    monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(im_module, "SMTP_PORT", 587)
+    monkeypatch.setattr(im_module, "SMTP_USER", "sender")
+    monkeypatch.setattr(im_module, "SMTP_PASSWORD", "not-a-real-password")
+    monkeypatch.setattr(im_module, "SENDER_EMAIL", "sender@example.com")
+    monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "receiver@example.com")
+    monkeypatch.setattr(im_module, "VERBOSE_MODE", True)
+    monkeypatch.setattr(im_module, "DEBUG_MODE", False)
+    monkeypatch.setattr(im_module, "DELIVERY_CONFIRMATIONS", False)
+    monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", Mock(return_value=_FakeResponse()))
+    monkeypatch.setattr(im_module.smtplib, "SMTP", Mock(return_value=Mock()))
+
+    assert im_module.send_webhook("Profile picture changed", "desc", notification_type="status") == 0
+    assert im_module.send_email("Profile picture changed", "Body", "", False) == 0
+
+    output = capsys.readouterr().out
+    assert "Webhook sent through" not in output
+    assert "Email sent to" not in output
+
+
+class TestSendNotificationChannels:
+    # Puts a real webhook destination behind a recording post and a recording email sender, each answering as told
+    def _channels(self, im_module, monkeypatch, email_result=0, post_status=204):
+        calls = {"email": [], "posts": []}
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_FOLLOWERS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "alerts@example.test")
+        monkeypatch.setattr(im_module, "SMTP_SSL", True, raising=False)
+        monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: calls["email"].append((args, kwargs)) or email_result)
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls["posts"].append(kwargs) or _FakeResponse(post_status))
+        return calls
+
+    # The helper starts with the family's parameters in the family's order, so a call written for a sibling works here
+    def test_the_helper_starts_with_the_shared_parameters(self, im_module):
+        import inspect
+        parameters = list(inspect.signature(im_module.send_notification_channels).parameters.values())
+
+        assert [parameter.name for parameter in parameters[:6]] == ["notification_type", "subject", "body", "body_html", "email_enabled", "webhook_enabled"]
+        assert [parameter.default for parameter in parameters[3:6]] == ["", False, None]
+
+    # Each enabled channel receives the alert and the return value reports delivery
+    def test_each_enabled_channel_receives_the_alert(self, im_module, monkeypatch, capsys):
+        calls = self._channels(im_module, monkeypatch)
+
+        delivered = im_module.send_notification_channels("status", "subject", "body", "<b>body</b>", email_enabled=True)
+
+        assert delivered == (True, True)
+        assert calls["email"] == [(("subject", "body", "<b>body</b>", True), {"image_file": "", "image_name": "image1"})]
+        assert len(calls["posts"]) == 1
+        output = capsys.readouterr().out
+        assert "Sending email notification to alerts@example.test" in output
+        assert "Sending webhook notification" in output
+
+    # A channel that failed reports no delivery, so the caller can retry it while leaving the other alone
+    def test_a_failed_channel_reports_no_delivery(self, im_module, monkeypatch):
+        self._channels(im_module, monkeypatch, email_result=1, post_status=400)
+
+        assert im_module.send_notification_channels("status", "subject", "body", email_enabled=True, webhook_enabled=True) == (False, False)
+
+    # A channel the caller switched off is not contacted at all
+    def test_a_channel_the_caller_switched_off_is_not_contacted(self, im_module, monkeypatch):
+        calls = self._channels(im_module, monkeypatch)
+
+        assert im_module.send_notification_channels("status", "subject", "body", email_enabled=False, webhook_enabled=False) == (False, False)
+        assert calls["email"] == []
+        assert calls["posts"] == []
+
+    # The configured switch decides the webhook channel when the caller does not say
+    def test_the_configured_switch_decides_the_webhook_when_the_caller_does_not_say(self, im_module, monkeypatch):
+        calls = self._channels(im_module, monkeypatch)
+
+        assert im_module.send_notification_channels("followers", "subject", "body")[1] is False
+        assert calls["posts"] == []
+        assert im_module.send_notification_channels("status", "subject", "body")[1] is True
+        assert len(calls["posts"]) == 1
+
+    # The embed the caller shaped reaches the webhook unchanged and the switch is not applied a second time
+    def test_the_embed_reaches_the_webhook_as_shaped(self, im_module, monkeypatch):
+        sent = {}
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: sent.update(args=args, kwargs=kwargs) or 0)
+        fields = [{"name": "Followers", "value": "10 -> 12", "inline": True}]
+
+        im_module.send_notification_channels("error", "subject", "body", webhook_title="Error for user", webhook_description="what happened", webhook_color=0xFF0000, webhook_fields=fields, image_url="https://example.test/pic.jpg", local_image_file="pic.jpg")
+
+        assert sent["args"] == ("Error for user", "what happened")
+        assert sent["kwargs"] == {"color": 0xFF0000, "fields": fields, "image_url": "https://example.test/pic.jpg", "local_image_file": "pic.jpg", "notification_type": "error", "force": True}
+
+    # Without an embed of its own the webhook carries the subject and body, the way the family's plain alerts do
+    def test_the_subject_and_body_stand_in_for_a_missing_embed(self, im_module, monkeypatch):
+        sent = {}
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: sent.update(args=args, kwargs=kwargs) or 0)
+
+        im_module.send_notification_channels("status", "subject", "body")
+
+        assert sent["args"] == ("subject", "body")
+        assert sent["kwargs"]["color"] == 0x7289DA
+
+    # An email with a picture hands the file and its name to the sender
+    def test_an_email_picture_reaches_the_sender(self, im_module, monkeypatch):
+        calls = self._channels(im_module, monkeypatch)
+
+        im_module.send_notification_channels("status", "subject", "body", "<b>body</b>", email_enabled=True, webhook_enabled=False, email_image_file="story.jpg", email_image_name="story_pic")
+
+        assert calls["email"] == [(("subject", "body", "<b>body</b>", True), {"image_file": "story.jpg", "image_name": "story_pic"})]
+
+
+class TestWebhookEventEnabled:
+    # The master switch gates every alert type, so switching webhooks off silences all of them at once
+    def test_the_master_switch_gates_every_alert_type(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_FOLLOWERS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", False)
+
+        assert [im_module.webhook_event_enabled(event) for event in ("status", "followers", "error")] == [False, False, False]
+
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+
+        assert [im_module.webhook_event_enabled(event) for event in ("status", "followers", "error")] == [True, True, True]
+
+    # Each alert type follows its own setting, so one can be on while the others are off
+    def test_each_alert_type_is_gated_by_its_own_setting(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_FOLLOWERS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", False)
+
+        assert [im_module.webhook_event_enabled(event) for event in ("status", "followers", "error")] == [False, True, False]
+
+    # An alert type the tool does not have is off rather than treated as enabled
+    def test_an_unknown_alert_type_is_off(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+
+        assert im_module.webhook_event_enabled("mastery") is False
+
+
+# A caller that already applied the switch says so, and the webhook then posts even though the switch is off
+def test_a_forced_webhook_skips_the_switch_it_was_already_given(im_module, monkeypatch):
+    posts = []
+    monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+    monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
+    monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", False)
+    monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: posts.append(kwargs) or _FakeResponse())
+
+    assert im_module.send_webhook("t", "b", notification_type="status", force=True) == 0
+    assert len(posts) == 1

@@ -8,6 +8,8 @@ class TestCountChangeWorkflows:
         webhooks = []
         logs = []
         monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: emails.append((args, kwargs)) or 0)
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: webhooks.append((args, kwargs)) or 0)
         monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: logs.append((args, kwargs)))
@@ -18,7 +20,9 @@ class TestCountChangeWorkflows:
         assert emails[0][0][0] == "Instagram user target posts number has changed! (5 -> 7)"
         assert webhooks[0][0][0].endswith("target Posts Count Changed")
         assert webhooks[0][0][1] == "User **target** posts count changed from **5** to **7** (+2)"
-        assert webhooks[0][1] == {"color": 0x34495e, "notification_type": "status"}
+        assert webhooks[0][1]["color"] == 0x34495e
+        assert webhooks[0][1]["notification_type"] == "status"
+        assert webhooks[0][1]["force"] is True
         assert logs[0][0] == ("Posts changed: 5 -> 7",)
         assert logs[0][1] == {"user": "target", "level": "update"}
 
@@ -40,6 +44,8 @@ class TestCountChangeWorkflows:
         emails = []
         webhooks = []
         monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", False)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: emails.append((args, kwargs)) or 0)
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: webhooks.append((args, kwargs)) or 0)
         monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
@@ -49,7 +55,9 @@ class TestCountChangeWorkflows:
         assert emails == []
         assert webhooks[0][0][0].endswith("target Reels Count Changed")
         assert webhooks[0][0][1] == "User **target** reels count changed from **5** to **2** (-3)"
-        assert webhooks[0][1] == {"color": 0x34495e, "notification_type": "status"}
+        assert webhooks[0][1]["color"] == 0x34495e
+        assert webhooks[0][1]["notification_type"] == "status"
+        assert webhooks[0][1]["force"] is True
 
 
 class TestLeakedCollabWorkflow:
@@ -72,6 +80,8 @@ class TestLeakedCollabWorkflow:
         monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "UTC")
         monkeypatch.setattr(im_module, "DOWNLOAD_THUMBNAILS", False)
         monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "OUTPUT_DIR", "")
         monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: emails.append((args, kwargs)) or 0)
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: webhooks.append((args, kwargs)) or 0)

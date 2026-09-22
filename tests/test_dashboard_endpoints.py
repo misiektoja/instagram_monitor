@@ -102,6 +102,59 @@ class TestDashboardSettings:
         assert response.status_code == 200
         assert im_module.WEBHOOK_PROVIDER == "ntfy"
 
+    # The connection card offers every transport and list surface the settings endpoint accepts
+    def test_settings_form_offers_the_connection_choices(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+
+        html = client.get("/").get_data(as_text=True)
+
+        assert 'id="http-backend"' in html and 'id="impersonate"' in html and 'id="follow-list-source"' in html
+        for backend in ("curl_cffi", "requests"):
+            assert f'<option value="{backend}">' in html
+        for source in im_module.FOLLOW_LIST_SOURCES:
+            assert f'<option value="{source}">' in html
+
+    # Settings GET reports what the installed curl_cffi can do, so the form cannot offer an unusable choice
+    def test_settings_get_reports_the_installed_transport_options(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
+        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"chrome", "edge"})
+
+        data = client.get("/api/settings").get_json()
+
+        assert data["curl_cffi_available"] is False
+        assert data["impersonate_targets"] == ["chrome", "edge"]
+        assert data["follow_list_sources"] == list(im_module.FOLLOW_LIST_SOURCES)
+
+    # Settings POST applies the connection choices the form sends
+    def test_settings_round_trip_the_connection_choices(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "requests")
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "auto")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "auto")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"chrome", "firefox"})
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
+
+        response = client.post("/api/settings", json={"http_backend": "curl_cffi", "impersonate": "firefox", "follow_list_source": "rest"})
+
+        assert response.status_code == 200
+        assert im_module.HTTP_BACKEND == "curl_cffi"
+        assert im_module.CURL_CFFI_IMPERSONATE == "firefox"
+        assert im_module.FOLLOW_LIST_SOURCE == "rest"
+
+    # Settings POST rejects a transport this machine cannot use instead of failing every later request
+    def test_settings_post_rejects_an_uninstalled_transport(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "requests")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
+
+        response = client.post("/api/settings", json={"http_backend": "curl_cffi"})
+
+        assert response.status_code == 400
+        assert im_module.HTTP_BACKEND == "requests"
+
     # Settings POST rejects a too-small interval without changing the live value
     def test_settings_post_rejects_too_small_check_interval(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)
@@ -159,19 +212,19 @@ class TestDashboardSettings:
         assert "cannot be greater" in response.get_json()["error"]
         assert im_module.MIN_H1 == 8
 
-    # Valid interval changes recompute the cycle-based liveness threshold
-    def test_settings_post_recomputes_liveness_counter(self, im_module, monkeypatch):
+    # Valid interval changes recompute the liveness reminder
+    def test_settings_post_recomputes_the_liveness_reminder(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "INSTA_CHECK_INTERVAL", 3600)
         monkeypatch.setattr(im_module, "LIVENESS_CHECK_INTERVAL", 43200)
-        monkeypatch.setattr(im_module, "LIVENESS_CHECK_COUNTER", 12)
+        monkeypatch.setattr(im_module, "LIVENESS_REMINDER_SECONDS", 12)
         monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
         monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
 
         response = client.post("/api/settings", json={"check_interval": 7200, "liveness_check_interval": 21600})
 
         assert response.status_code == 200
-        assert im_module.LIVENESS_CHECK_COUNTER == 3
+        assert im_module.LIVENESS_REMINDER_SECONDS == 21600
 
 
 class TestDashboardConfigAndSession:
@@ -314,6 +367,43 @@ class TestDashboardConfigAndSession:
         assert response.status_code == 400
         assert "not supported on Windows" in response.get_json()["error"]
 
+    # Both profile lists report which profile holds an Instagram session, so the dropdown is not a blind choice
+    def test_profile_listings_report_the_session_state(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "system", lambda: "Darwin")
+        monkeypatch.setattr(im_module, "list_firefox_profiles", lambda: [{"dir": "a.default", "name": "default", "path": "/u/a/cookies.sqlite", "install": ""}, {"dir": "b.default", "name": "default", "path": "/u/b/cookies.sqlite", "install": "Snap"}])
+        monkeypatch.setattr(im_module, "list_chromium_profiles", lambda browser: [{"dir": "Default", "name": "Your Chrome", "cookie_file": "/u/Default/Cookies"}])
+        monkeypatch.setattr(im_module, "cookie_file_has_instagram_session", lambda cookie_file, firefox=False: cookie_file in ("/u/b/cookies.sqlite", "/u/Default/Cookies"))
+
+        firefox = client.get("/api/session/firefox/profiles").get_json()["profiles"]
+
+        assert [p["signed_in"] for p in firefox] == [False, True]
+        assert [p["install"] for p in firefox] == ["", "Snap"], "two installs sharing a profile name are told apart in the dropdown"
+
+        chromium = client.get("/api/session/chromium/profiles?browser=chrome").get_json()["profiles"]
+
+        assert chromium[0]["signed_in"] is True
+
+    # An empty Chromium listing carries the reason, since the dropdown has nowhere else to explain it
+    def test_an_empty_chromium_listing_explains_why(self, im_module, monkeypatch, tmp_path):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "system", lambda: "Darwin")
+        monkeypatch.setattr(im_module, "get_chromium_user_data_dir", lambda browser: str(tmp_path))
+        (tmp_path / "Default").mkdir()
+
+        payload = client.get("/api/session/chromium/profiles?browser=chrome").get_json()
+
+        assert payload["profiles"] == []
+        assert "Default" in payload["note"] and "cookie database" in payload["note"]
+
+    # An unreadable cookie database leaves the state unknown rather than claiming the profile is signed out
+    def test_an_unreadable_profile_reports_an_unknown_state(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "list_firefox_profiles", lambda: [{"dir": "a.default", "name": "default", "path": "/u/a/cookies.sqlite", "install": ""}])
+        monkeypatch.setattr(im_module, "cookie_file_has_instagram_session", lambda cookie_file, firefox=False: None)
+
+        assert client.get("/api/session/firefox/profiles").get_json()["profiles"][0]["signed_in"] is None
+
     # Dashboard profile failures retain the filesystem detail the local operator needs to troubleshoot them
     def test_profile_listing_failure_returns_exception_details(self, im_module, monkeypatch):
         client = _dashboard_client(im_module, monkeypatch)
@@ -338,7 +428,7 @@ class TestDashboardTestNotifications:
 
         assert response.status_code == 200
         assert response.get_json() == {"success": True}
-        assert calls[0][0][0] == "instagram_monitor: test email"
+        assert calls[0][0][0] == "Instagram Monitor test email"
 
     # Test webhook route temporarily enables webhooks and restores the previous value
     def test_test_webhook_uses_stubbed_sender(self, im_module, monkeypatch):
@@ -353,7 +443,7 @@ class TestDashboardTestNotifications:
 
         assert response.status_code == 200
         assert response.get_json() == {"success": True}
-        assert calls[0][0][0] == "instagram_monitor: test webhook"
+        assert calls[0][0][0] == "Instagram Monitor test webhook"
         assert im_module.WEBHOOK_ENABLED is False
 
 
@@ -734,3 +824,133 @@ class TestDashboardCredentialBoundary:
 
         assert response.status_code == 400
         assert "must end with .conf" in response.get_json()["error"]
+
+
+class TestDashboardEffectiveIdentity:
+    # The read-only config view has to report the transport that will really carry requests
+    def test_config_reports_the_transport_that_will_run(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+
+        assert im_module.get_dashboard_config_data()["http_backend"] == "curl_cffi"
+
+    # Claiming curl_cffi while the run falls back to requests would misreport what Instagram sees
+    def test_config_names_the_fallback_when_curl_cffi_is_missing(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
+
+        backend = im_module.get_dashboard_config_data()["http_backend"]
+
+        assert backend.startswith("requests")
+        assert "not installed" in backend
+
+    # A deliberate requests backend needs no fallback reason
+    def test_config_reports_a_chosen_requests_backend_plainly(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "requests")
+
+        assert im_module.get_dashboard_config_data()["http_backend"] == "requests"
+
+    # Auto is a setting, not an identity, so the view has to resolve it like the startup summary does
+    def test_config_resolves_the_impersonation_target(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "auto")
+        monkeypatch.setattr(im_module, "USER_AGENT", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15")
+
+        assert im_module.get_dashboard_config_data()["impersonate"] == "auto -> safari"
+
+    # A pinned target is already an identity and must be shown as itself
+    def test_config_leaves_a_pinned_target_alone(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "firefox")
+
+        assert im_module.get_dashboard_config_data()["impersonate"] == "firefox"
+
+    # The browser source hides its channel and window mode behind the bare setting name
+    def test_config_describes_the_follow_list_source(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "browser")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_HEADLESS", True)
+
+        assert im_module.get_dashboard_config_data()["follow_list_source"] == "browser (experimental, headless chromium)"
+
+    # The settings form edits configuration, so its payload must keep the raw values the selects need
+    def test_settings_keeps_the_configured_values_for_the_form(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", False)
+        monkeypatch.setattr(im_module, "CURL_CFFI_IMPERSONATE", "auto")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "browser")
+
+        data = client.get("/api/settings").get_json()
+
+        assert data["http_backend"] == "curl_cffi"
+        assert data["impersonate"] == "auto"
+        assert data["follow_list_source"] == "browser"
+
+
+class TestDashboardIdentityValidation:
+    # A live session must not be switched into the split identity monitoring refuses to start in
+    def test_a_mismatched_impersonation_is_refused(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "auto")
+        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"chrome", "firefox"})
+
+        response = client.post("/api/settings", json={"follow_list_source": "browser", "impersonate": "firefox"})
+
+        assert response.status_code == 400
+        assert "two different clients" in response.get_json()["error"]
+        assert im_module.FOLLOW_LIST_SOURCE == "auto"
+
+    # The stock transport cannot present a browser fingerprint, so it cannot back the browser source either
+    def test_the_browser_source_is_refused_on_the_requests_backend(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "auto")
+
+        response = client.post("/api/settings", json={"follow_list_source": "browser", "http_backend": "requests"})
+
+        assert response.status_code == 400
+        assert "requests" in response.get_json()["error"]
+        assert im_module.FOLLOW_LIST_SOURCE == "auto"
+
+    # A matching combination is the point of the check, so it has to save
+    def test_a_matching_identity_saves(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium")
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "auto")
+        monkeypatch.setattr(im_module, "curl_cffi_supported_impersonate_targets", lambda: {"chrome", "firefox"})
+
+        response = client.post("/api/settings", json={"follow_list_source": "browser", "impersonate": "chrome"})
+
+        assert response.status_code == 200
+        assert im_module.FOLLOW_LIST_SOURCE == "browser"
+
+    # Changing the backend alone must still be checked against the source already in effect
+    def test_a_backend_change_is_checked_against_the_saved_source(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "browser")
+
+        response = client.post("/api/settings", json={"http_backend": "requests"})
+
+        assert response.status_code == 400
+        assert im_module.HTTP_BACKEND == "curl_cffi"
+
+    # The check only applies to the browser source, so the HTTP sources keep every transport choice
+    def test_the_other_sources_are_left_alone(self, im_module, monkeypatch):
+        client = _dashboard_client(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        monkeypatch.setattr(im_module, "_CURL_CFFI_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_SOURCE", "rest")
+
+        assert client.post("/api/settings", json={"http_backend": "requests"}).status_code == 200
+        assert im_module.HTTP_BACKEND == "requests"

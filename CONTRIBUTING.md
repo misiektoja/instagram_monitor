@@ -43,6 +43,8 @@ pip install -e '.[lint]'
 
 It selects defect rules only (pyflakes and bugbear). Formatting and import order are deliberately not enforced, so keep following the surrounding code.
 
+CodeQL runs the extended security queries. For a verified false positive, put a `codeql[rule-id]` comment immediately above the reported line and explain why it is safe. For multiple rules on one line, use separate annotations on the same preceding comment, such as `# codeql[py/full-ssrf] codeql[py/request-without-cert-validation]`. Do not combine rule IDs inside one pair of brackets. The workflow filters results with accepted source suppressions before upload. Other findings remain reportable.
+
 The default suite is offline. It never contacts Instagram and network functions are replaced with local test doubles. See [Testing](https://misiektoja.github.io/instagram_monitor/testing/) for what it covers.
 
 Browser tests run as part of the default suite but skip when Chromium is absent, so a fresh clone still gets a green run. Install the browser to actually exercise them:
@@ -70,7 +72,7 @@ Pull requests target `dev`. The pull request template lists the checks to report
 
 The codebase favors complete implementations over minimal patches, explicit validation of anything Instagram supplies and one concise summary comment directly above each shared function. Follow the surrounding code rather than introducing a new style.
 
-Optional local hooks run the same linter, the whitespace rules and a private-key check before a commit is written:
+Optional local hooks run the same linter, the whitespace rules and a private-key check before a commit is written. The lint hook calls the Ruff installed by `.[lint]` above rather than a copy of its own, so it always matches the version CI runs:
 
 ```sh
 pip install pre-commit

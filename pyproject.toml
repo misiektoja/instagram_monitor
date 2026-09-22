@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "instagram_monitor"
-version = "3.9.1"
+version = "4.0"
 description = "Track Instagram users' activities, profile changes and capture content with beautiful dashboards and instant notifications"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -44,9 +44,11 @@ keywords = ["instagram", "monitoring", "tracking", "real-time", "osint", "instal
 test = ["build>=1.2", "pytest>=7.0", "pyyaml>=6.0", "setuptools>=61.0", "wheel"]
 e2e = ["playwright>=1.49", "pytest>=7.0"]
 # Pinned so a new ruff release cannot fail CI on a rule that did not exist when the change was written
-lint = ["ruff==0.16.4"]
+lint = ["ruff==0.16.8"]
 # Needed only to import Chrome/Brave/Chromium sessions (--browser chrome|brave|chromium); macOS and Linux only
 browser = ["pycookiecheat>=0.8"]
+# Needed only for FOLLOW_LIST_SOURCE = "browser"; also run: playwright install chromium
+playwright = ["playwright>=1.49"]
 
 [project.urls]
 Homepage = "https://github.com/misiektoja/instagram_monitor"

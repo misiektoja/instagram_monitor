@@ -1,5 +1,10 @@
 """Offline tests for restricted configuration file loading."""
 
+import subprocess as _subprocess
+import sys as _sys
+from pathlib import Path as _Path
+from unittest.mock import Mock
+
 import pytest
 
 
@@ -49,6 +54,14 @@ class TestParseConfigContent:
         im_module.parse_config_content("DISCORD_MAX_FIELDS = 25\nDISCORD_EMBED_TITLE_LIMIT = 256\n", "<legacy>", retired)
 
         assert retired == ["DISCORD_MAX_FIELDS", "DISCORD_EMBED_TITLE_LIMIT"]
+
+    # The counted error threshold gave way to a timed alert, so an older config naming it still loads
+    def test_the_retired_error_threshold_is_ignored(self, im_module):
+        retired = []
+        parsed = im_module.parse_config_content("ERROR_FAILURE_THRESHOLD = 3\nINSTA_CHECK_INTERVAL = 3600\n", "<legacy>", retired)
+
+        assert parsed == {"INSTA_CHECK_INTERVAL": 3600}
+        assert retired == ["ERROR_FAILURE_THRESHOLD"]
 
     # Allowing retired names must not weaken rejection of any other unknown setting
     def test_retired_allowance_does_not_accept_other_unknown_names(self, im_module):
@@ -142,6 +155,60 @@ class TestLoadConfigFile:
         assert namespace["OUTPUT_DIR"] == "C:\\Users\\monitor"
         assert "read literally" in capsys.readouterr().out
 
+    # A full-screen dashboard retains config upgrade guidance after replacing the normal terminal view
+    def test_retired_setting_note_is_retained_in_terminal_dashboard(self, im_module, monkeypatch):
+        activities = []
+        monkeypatch.setattr(im_module, "DASHBOARD_ENABLED", True)
+        monkeypatch.setattr(im_module, "RICH_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "log_activity", lambda message, **kwargs: activities.append((message, kwargs)))
+
+        im_module.retain_retired_settings_in_dashboard(["DISCORD_MAX_FIELDS"], "/data/instagram_monitor.conf")
+
+        assert activities == [("Configuration upgrade note: DISCORD_MAX_FIELDS was removed in a later version and is ignored. You can delete it from /data/instagram_monitor.conf.", {"level": "warning"})]
+
+    # Text mode keeps using its existing terminal note without adding a dashboard activity
+    def test_retired_setting_note_is_not_duplicated_without_terminal_dashboard(self, im_module, monkeypatch):
+        activities = []
+        monkeypatch.setattr(im_module, "DASHBOARD_ENABLED", False)
+        monkeypatch.setattr(im_module, "RICH_AVAILABLE", True)
+        monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: activities.append((args, kwargs)))
+
+        im_module.retain_retired_settings_in_dashboard(["DISCORD_MAX_FIELDS"], "/data/instagram_monitor.conf")
+
+        assert activities == []
+
+    # The normal CLI passes captured retired settings into the dashboard retention path after resolving --dashboard
+    def test_cli_retains_retired_setting_after_resolving_dashboard(self, im_module, monkeypatch, tmp_path):
+        config = tmp_path / "instagram_monitor.conf"
+        config.write_text("DISCORD_MAX_FIELDS = 25\nLOCAL_TIMEZONE = 'UTC'\n", encoding="utf-8")
+        retainer = Mock(side_effect=SystemExit(99))
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--dashboard", "--config-file", str(config), "--env-file", "none", "--no-color"])
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "check_internet", lambda: True)
+        monkeypatch.setattr(im_module, "retain_retired_settings_in_dashboard", retainer)
+
+        with pytest.raises(SystemExit) as exc:
+            im_module.run_main()
+
+        assert exc.value.code == 99
+        assert im_module.DASHBOARD_ENABLED is True
+        retainer.assert_called_once_with(["DISCORD_MAX_FIELDS"], str(config))
+
+    # The debug flag is active before startup connectivity runs, so failures retain request diagnostics
+    def test_debug_flag_applies_before_connectivity_check(self, im_module, monkeypatch):
+        observed_debug_modes = []
+        monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--debug", "--env-file", "none", "--no-color"])
+        monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+        monkeypatch.setattr(im_module, "find_config_file", lambda path=None: None)
+        monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        monkeypatch.setattr(im_module, "check_internet", lambda: observed_debug_modes.append(im_module.DEBUG_MODE) or False)
+
+        with pytest.raises(SystemExit) as exc:
+            im_module.run_main()
+
+        assert exc.value.code == 1
+        assert observed_debug_modes == [True]
+
 
 class TestEarlyOutputConfig:
     # Screen clearing happens before arguments are parsed, so the config value must still win
@@ -190,3 +257,51 @@ class TestEarlyOutputConfig:
     ])
     def test_config_file_argument_is_recovered(self, im_module, arguments, expected):
         assert im_module.early_config_file_argument(arguments) == expected
+
+
+class TestConfigDiscoverySentinel:
+    # `--config-file none` switches discovery off instead of being read as a missing file
+    def test_config_file_none_disables_discovery(self, tmp_path):
+        project_root = _Path(__file__).resolve().parents[1]
+        result = _subprocess.run([_sys.executable, str(project_root / "instagram_monitor.py"), "--config-file", "none", "--env-file", "none", "--no-color"], cwd=tmp_path, capture_output=True, text=True, check=False)
+
+        output = result.stdout + result.stderr
+        assert "Config file 'none' does not exist" not in output
+        assert "At least one TARGET_USERNAME argument is required" in output
+
+
+# Verifies the early peek carries the theme, since --help is printed and exited from inside argparse before the config load
+def test_the_early_output_config_carries_the_help_theme(im_module, monkeypatch, tmp_path):
+    (tmp_path / "instagram_monitor.conf").write_text('COLOR_THEME = {"help_heading": "bright_red"}\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(im_module, "COLOR_THEME", {})
+    monkeypatch.setattr(im_module, "CONFIG_DISCOVERY_DISABLED", False)
+    monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor", "--help"])
+
+    im_module.apply_early_output_config()
+
+    assert im_module.COLOR_THEME == {"help_heading": "bright_red"}
+
+
+# Verifies a run started with discovery off names the sentinel rather than a config file it deliberately ignored
+def test_a_printed_command_keeps_discovery_off(im_module, monkeypatch, tmp_path):
+    (tmp_path / "instagram_monitor.conf").write_text("DISABLE_LOGGING = True\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(im_module, "CONFIG_DISCOVERY_DISABLED", True)
+    monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+
+    assert im_module.find_config_file() is not None
+    assert im_module.resolved_command_config(None) == "none"
+    assert im_module.resolved_command_config("none") == "none"
+
+
+# Verifies discovery left on still names the file a printed command should carry
+def test_a_printed_command_names_the_discovered_config(im_module, monkeypatch, tmp_path):
+    config_path = tmp_path / "instagram_monitor.conf"
+    config_path.write_text("DISABLE_LOGGING = True\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(im_module, "CONFIG_DISCOVERY_DISABLED", False)
+    monkeypatch.setattr(im_module, "CLI_CONFIG_PATH", None)
+
+    assert str(im_module.resolved_command_config(None)) == str(config_path)
+    assert im_module.resolved_command_config("/given/path.conf") == "/given/path.conf"
