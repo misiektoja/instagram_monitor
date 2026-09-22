@@ -884,6 +884,16 @@ CONTAINER_FIREFOX_HOSTS = {
     "windows-powershell": ("Windows PowerShell", '"$env:APPDATA\\Mozilla\\Firefox\\Profiles:/home/instagram/.mozilla/firefox:ro"'),
     "windows-cmd": ("Windows Command Prompt", '"%APPDATA%\\Mozilla\\Firefox\\Profiles:/home/instagram/.mozilla/firefox:ro"'),
 }
+# Wizard-only prose for each supported Docker host, keyed by the same names as the mount table above so the menu
+# can be built from that table rather than from a second copy of its labels
+CONTAINER_FIREFOX_HOST_HINTS = {
+    "macos": "Use the Firefox profiles under Library/Application Support.",
+    "linux": "Use the profiles under ~/.mozilla/firefox.",
+    "linux-snap": "Use the profiles under ~/snap/firefox.",
+    "linux-flatpak": "Use the profiles under ~/.var/app/org.mozilla.firefox.",
+    "windows-powershell": "Use the profiles under $env:APPDATA\\Mozilla\\Firefox\\Profiles.",
+    "windows-cmd": "Use the profiles under %APPDATA%\\Mozilla\\Firefox\\Profiles.",
+}
 USER_AGENT = ""
 USER_AGENT_MOBILE = ""
 HTTP_BACKEND = "curl_cffi"
@@ -17096,22 +17106,17 @@ def _wizard_fall_back_to_no_login(state: WizardSetupState, reason: str) -> None:
 
 # Selects one supported Docker host and Firefox profile layout for deferred import
 def _wizard_select_container_firefox_host() -> Optional[str]:
-    options = [
-        ("macOS", "Use the Firefox profiles under Library/Application Support."),
-        ("Linux with a standard Firefox package", "Use the profiles under ~/.mozilla/firefox."),
-        ("Linux with Firefox from Snap", "Use the profiles under ~/snap/firefox."),
-        ("Linux with Firefox from Flatpak", "Use the profiles under ~/.var/app/org.mozilla.firefox."),
-        ("Windows PowerShell", "Use the profiles under $env:APPDATA\\Mozilla\\Firefox\\Profiles."),
-        ("Windows Command Prompt", "Use the profiles under %APPDATA%\\Mozilla\\Firefox\\Profiles."),
-        ("Another system", "Firefox import after Docker setup is not currently available for this host."),
-    ]
+    # Derived from the mount table so a host added there is offered here and maps back to the key naming its mount
+    hosts = list(CONTAINER_FIREFOX_HOSTS)
+    options = [(CONTAINER_FIREFOX_HOSTS[host][0], CONTAINER_FIREFOX_HOST_HINTS[host]) for host in hosts]
+    options.append(("Another system", "Firefox import after Docker setup is not currently available for this host."))
     selected = _wizard_ask_choice("Which host environment runs Docker?", options)
-    if selected == len(options) - 1:
+    if selected >= len(hosts):
         print()
         print("  Firefox import after Docker setup is not currently available for this host.")
         print("  Choose another login method or no login.")
         return None
-    return ("macos", "linux", "linux-snap", "linux-flatpak", "windows-powershell", "windows-cmd")[selected]
+    return hosts[selected]
 
 
 # Returns one declined section to the built-in template values, so nothing the user turned down is written
