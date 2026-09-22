@@ -10,7 +10,7 @@ authors:
     given-names: Michal
     alias: misiektoja
     email: misiektoja-github@rm-rf.ninja
-version: "4.0"
+version: "4.0.1"
 date-released: 2026-09-22
 license: GPL-3.0-or-later
 repository-code: "https://github.com/misiektoja/instagram_monitor"
