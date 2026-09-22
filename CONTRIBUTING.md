@@ -70,7 +70,7 @@ Pull requests target `dev`. The pull request template lists the checks to report
 
 The codebase favors complete implementations over minimal patches, explicit validation of anything Instagram supplies and one concise summary comment directly above each shared function. Follow the surrounding code rather than introducing a new style.
 
-Optional local hooks run the same linter, the whitespace rules and a private-key check before a commit is written:
+Optional local hooks run the same linter, the whitespace rules and a private-key check before a commit is written. The lint hook calls the Ruff installed by `.[lint]` above rather than a copy of its own, so it always matches the version CI runs:
 
 ```sh
 pip install pre-commit
