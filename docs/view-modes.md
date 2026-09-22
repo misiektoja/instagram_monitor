@@ -60,7 +60,11 @@ instagram_monitor target1 target2 --dashboard
 
 The Web Dashboard runs a small web server on your computer. By default, open `http://127.0.0.1:8000/` in a browser on the same computer. The `127.0.0.1` address is local, so other devices cannot connect unless you change the server and Docker settings.
 
-The dashboard has no login screen. Keep the host port bound to `127.0.0.1` and do not expose it through a public reverse proxy. Thumbnails use downloaded images only. Missing downloads show a placeholder. Saved webhook and proxy URLs are hidden. Enter a new URL only to replace the saved value.
+The dashboard has no login screen. Keep the host port bound to `127.0.0.1` and do not expose it through a public reverse proxy. Thumbnails and video playback use downloaded files only. Missing downloads show a placeholder. Saved webhook and proxy URLs are hidden. Enter a new URL only to replace the saved value.
+
+**View Story** and story **View** controls in the activity feeds require confirmation before opening Instagram. The story owner may see the account signed in to Instagram in your browser, which can differ from the monitor's session. Use **View Media** or **Play Video** for downloaded content instead.
+
+If the warning is missing, check **Templates** in the dashboard's Config view. An explicit `WEB_DASHBOARD_TEMPLATE_DIR` or `--web-dashboard-template-dir` takes priority. Otherwise, `templates/index.html` in the working directory takes priority over the installed template. Update that copy with the matching release, restart the dashboard and reload the page.
 
 <a id="request-protection"></a>
 ### Request Protection
