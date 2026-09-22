@@ -42,6 +42,7 @@ Every failure is reported in the same three-part shape: what went wrong, a `To f
 | Symptom | Likely cause | Where to look |
 | --- | --- | --- |
 | Instagram answers `Try Again Later` | A temporary limit on the account or address | [Instagram Says Try Again Later](#instagram-says-try-again-later) |
+| A run without a session answers `Please wait a few minutes` | Anonymous requests from this IP address are rate limited | [Anonymous Runs Are Rate Limited](#anonymous-runs-are-rate-limited) |
 | Stories, reels or follower details are missing | The run has no logged in session | [Logged-In Mode](configuration.md#logged-in-mode-with-session-login) |
 | Follower and following lists stop working | The session was invalidated or rate limited | [Follower and Following Lists Stop Working](#follower-and-following-lists-stop-working) |
 | The dashboard does not open in a container | The port is not published | [Container Dashboard Does Not Open](#container-dashboard-does-not-open) |
@@ -77,7 +78,7 @@ ping www.instagram.com
 
 If that fails too, fix DNS first. When you use a VPN or a proxy, confirm it is running and allowed to resolve names. Monitoring recovers on its own once lookups succeed, so no action is needed inside Instagram Monitor.
 
-Other connection errors point elsewhere. `Max retries exceeded` or a timeout usually means the connection dropped or a proxy is unreachable, see [routing traffic through a proxy](usage.md#routing-traffic-through-a-proxy). `429` or `Too Many Requests` means Instagram is rate-limiting you, see [keep the polling interval reasonable](anti-detection.md#keep-the-polling-interval-reasonable). A `429` on the very first request of a run is usually a blocked TLS fingerprint rather than a rate limit, see [use a browser transport fingerprint](anti-detection.md#use-a-browser-transport-fingerprint). A message about a redirect, a login or wrong credentials means the saved session expired, see [session import](configuration.md).
+Other connection errors point elsewhere. `Max retries exceeded` or a timeout usually means the connection dropped or a proxy is unreachable, see [routing traffic through a proxy](usage.md#routing-traffic-through-a-proxy). `429` or `Too Many Requests` means Instagram is rate-limiting you, see [keep the polling interval reasonable](anti-detection.md#keep-the-polling-interval-reasonable). On a run without a session, `Please wait a few minutes before you try again` means the limit is on your IP address, see [anonymous runs are rate limited](#anonymous-runs-are-rate-limited). A `429` on the very first request of a run is usually a blocked TLS fingerprint rather than a rate limit, see [use a browser transport fingerprint](anti-detection.md#use-a-browser-transport-fingerprint). A message about a redirect, a login or wrong credentials means the saved session expired, see [session import](configuration.md).
 
 For the underlying transport detail behind any of these, add `--debug`. Normal output omits it because it names internal HTTP library errors rather than anything you can act on.
 
@@ -87,6 +88,13 @@ For the underlying transport detail behind any of these, add `--debug`. Normal o
 A `400 Bad Request` naming `feedback_required` means Instagram is limiting what the logged-in account or your IP address may do for a while. Instagram shows this as a "Try Again Later" notice. It is not a checkpoint: Instagram in your browser may keep working, there is nothing to clear there and re-importing the session does not lift it. The circuit breaker stops the account so no further request is made and `--exposure` counts it as `action_block`.
 
 Make no requests from that account and that network for several hours, then run `instagram_monitor --doctor` again. If the same session works from another network, such as a mobile connection, the limit is on your IP address rather than the account. Once it passes, raise `INSTA_CHECK_INTERVAL`, monitor fewer users and follow the [anti-detection guidance](anti-detection.md). A limit that returns soon after monitoring resumes means the account is still being watched, so wait longer before the next attempt.
+
+<a id="anonymous-runs-are-rate-limited"></a>
+## Anonymous Runs Are Rate Limited
+
+A `401 Unauthorized` naming `Please wait a few minutes before you try again` on a run without a session means Instagram is rate-limiting anonymous requests from your IP address. The limit is per address, so it counts every device and tool behind it, and it is often reached on the very first request of a run. Raising the check interval does not lift a limit the run did not cause.
+
+A session login is limited per account instead, so [importing a session](configuration.md#option-3-session-login-using-browser-cookies-recommended) usually works from the same address. Otherwise wait for the limit to pass or run from another network. If the same run works over a mobile connection, the limit is on the home address rather than on anything in the configuration.
 
 <a id="profile-lookups-report-a-retired-endpoint"></a>
 ## Profile Lookups Report a Retired Endpoint
