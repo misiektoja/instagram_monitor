@@ -1020,6 +1020,7 @@ PROXY_GUIDE_URL = DOCS_BASE_URL + "/usage/#routing-traffic-through-a-proxy"
 CIRCUIT_BREAKER_GUIDE_URL = DOCS_BASE_URL + "/usage/#identity-budget-and-circuit-breaker"
 TLS_GUIDE_URL = DOCS_BASE_URL + "/configuration/#tls-verification"
 FOLLOW_LIST_SOURCE_GUIDE_URL = DOCS_BASE_URL + "/usage/#follower-list-source"
+BROWSER_FOLLOW_LIST_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#follower-and-following-lists-stop-working"
 HTTP_BACKEND_GUIDE_URL = DOCS_BASE_URL + "/usage/#http-transport-backend"
 ANTI_DETECTION_INTERVAL_GUIDE_URL = DOCS_BASE_URL + "/anti-detection/#keep-the-polling-interval-reasonable"
 ANTI_DETECTION_SESSION_GUIDE_URL = DOCS_BASE_URL + "/anti-detection/#sign-in-using-session-mode-with-browser-cookies"
@@ -11126,7 +11127,7 @@ def is_account_level_failure(failure_class: str) -> bool:
 
 # Every recovery category the tool can report, kept closed so a message is testable, deduplicable and translatable later
 RECOVERY_CODES = frozenset({
-    "instagram.rate_limited", "instagram.endpoint_retired", "instagram.action_blocked", "instagram.challenge", "instagram.empty_data",
+    "instagram.rate_limited", "instagram.endpoint_retired", "instagram.action_blocked", "instagram.challenge", "instagram.empty_data", "instagram.browser_dialog",
     "session.missing", "session.expired",
     "target.missing", "target.not_found",
     "config.missing", "config.invalid", "config.insecure", "config.impersonate_unsupported",
@@ -11408,6 +11409,9 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
     # Network or connectivity problems
     if any(t in m for t in FAILURE_TERMS['network']):
         return "network.unavailable", "Instagram could not be reached", "Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings. Check the proxy first if --enable-proxy is set", CONNECTION_GUIDE_URL, True
+
+    if "follower list dialog" in m:
+        return "instagram.browser_dialog", "Instagram's browser follower list dialog could not be read", "Set FOLLOW_LIST_BROWSER_HEADLESS to False to inspect the page. If the list loads slowly, raise FOLLOW_LIST_BROWSER_TIMEOUT. If it opens normally but the tool still fails, update instagram_monitor and report the browser layout error if it persists", BROWSER_FOLLOW_LIST_GUIDE_URL, True
 
     # Deprecated GraphQL doc_id returning null data, or a temporary block
     if any(t in m for t in FAILURE_TERMS['schema_change']):
@@ -13134,9 +13138,13 @@ BROWSER_INTERRUPTION_PAGES = (
 BROWSER_DIALOG_NAMES_JS = """() => {
   const dialog = document.querySelector('div[role="dialog"]');
   if (!dialog) return null;
+  const suggestions = [...dialog.querySelectorAll('h2, h3, h4, [role="heading"]')]
+    .find(element => /^suggested for you$/i.test(element.textContent.trim()));
   const names = [];
   const seen = new Set();
   for (const anchor of dialog.querySelectorAll('a[href^="/"]')) {
+    // Recommendations below the list are unrelated accounts with the same profile-link markup
+    if (suggestions && (suggestions.compareDocumentPosition(anchor) & Node.DOCUMENT_POSITION_FOLLOWING)) break;
     const match = (anchor.getAttribute('href') || '').match(/^\\/([A-Za-z0-9._]+)\\/$/);
     if (match && !seen.has(match[1])) { seen.add(match[1]); names.push(match[1]); }
   }
@@ -13340,6 +13348,23 @@ def browser_follow_list_readiness() -> Tuple[bool, str, str]:
     return True, detail, ""
 
 
+# Opens the requested follow list and waits for its first rendered profile link
+def open_browser_follow_list_dialog(page, target: str, kind: str) -> None:
+    detail = f"the profile's {kind} control could not be clicked"
+    try:
+        direct_link = page.locator(f'a[href="/{target}/{kind}/"]')
+        # Newer layouts use href="#" for count links, so their accessible names identify the list
+        count_link = page.get_by_role("link", name=re.compile(rf"^\d[\d.,\s]*[KMB]?\s+{kind}$", re.IGNORECASE))
+        direct_link.or_(count_link).first.click()
+        detail = f"no profile links appeared after clicking the {kind} control"
+        page.wait_for_selector('div[role="dialog"] a[href^="/"]')
+    except Exception as dialog_error:
+        # Account interruptions take priority over a missing control or an unreadable dialog
+        guard_browser_page_state(page)
+        raise BrowserFollowListError(f"Instagram's follower list dialog could not be read for {target}: {detail}") from dialog_error
+    guard_browser_page_state(page)
+
+
 # Drives a real browser through Instagram's web app and yields each new batch of rendered names
 def browser_follow_list_batches(bot, profile, kind: str, stop_event=None):
     if kind not in ('followers', 'following'):
@@ -13367,15 +13392,7 @@ def browser_follow_list_batches(bot, profile, kind: str, stop_event=None):
             page.goto(f"https://www.instagram.com/{target}/", wait_until="domcontentloaded")
             guard_browser_page_state(page)
 
-            try:
-                page.click(f'a[href="/{target}/{kind}/"]')
-                page.wait_for_selector('div[role="dialog"] a[href^="/"]')
-            except Exception as dialog_error:
-                # A challenge is the more useful explanation when both could apply, so it is reported first
-                guard_browser_page_state(page)
-                raise BrowserFollowListError(f"Instagram's follower list dialog did not open for {target}, so the page layout may have changed") from dialog_error
-
-            guard_browser_page_state(page)
+            open_browser_follow_list_dialog(page, target, kind)
             yield from harvest_follow_list_dialog(page, FOLLOW_LIST_BROWSER_SCROLL_DELAY, stop_event=stop_event)
         finally:
             try:
