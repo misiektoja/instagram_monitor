@@ -352,6 +352,8 @@ Webhook and avatar URLs must be complete HTTPS links with a hostname and no embe
 
 `WEBHOOK_TRANSFORMS` applies configured string methods before the template and headers are rendered. Invalid templates, avatar URLs, transforms or expanded headers fail before any request is attempted. Dictionary payloads always replace `allowed_mentions` with `{"parse": []}` so notification text cannot trigger `@everyone`, `@here` or user mentions.
 
+A `WEBHOOK_HEADERS` value that contains emoji or other non-ASCII text after placeholder expansion is sent in RFC 2047 encoded form (`=?UTF-8?B?...?=`). Alert titles start with an emoji, so `{title}` in a header always produces an encoded value. The message body is unchanged. A receiver that does not decode RFC 2047 sees the encoded form in that header. ASCII values are sent exactly as configured.
+
 Webhook delivery uses an isolated session with a 10-second timeout and at most two attempts. It accepts every HTTP 2xx response, retries HTTP 429 according to a server delay capped at 5 seconds and retries HTTP 5xx once. Other HTTP 4xx responses fail immediately.
 
 <a id="proxy-ip-lookup-endpoints"></a>
