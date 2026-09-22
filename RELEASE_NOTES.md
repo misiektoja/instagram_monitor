@@ -4,13 +4,14 @@ This is a high-level summary of the most important changes.
 
 # Changes in 4.0.1 (TBD)
 
-Version **4.0.1** reports unavailable email and webhook settings at startup and skips automatic alerts through those channels until their settings are corrected. It also fixes **browser session import**: a profile whose Instagram session has expired is no longer marked as signed in, and a failed import names the cause you have to fix.
+Version **4.0.1** reports unavailable email and webhook settings at startup and skips automatic alerts through those channels until their settings are corrected. It also fixes **browser session import**: a profile whose Instagram session has expired is no longer marked as signed in, and a failed import names the cause you have to fix. The startup summary now always says whether reels are monitored.
 
 **Bug fixes**:
 
 - **BUGFIX:** **Unavailable alert channels** - Selected email and webhook alerts show as unavailable when local delivery settings are missing or invalid. Automatic alerts skip those channels without printing delivery errors. Explicit test commands still report configuration errors. A missing SMTP user or password now points to those credentials instead of unrelated settings.
 - **BUGFIX:** **The profile marked as signed in actually is** - The `*` marker, the preselected default and the Web Dashboard listing looked only for a session cookie, so a profile signed out months ago was still offered as the one to import from. Expiry is now read as well, in whichever unit the browser records it. A profile holding only an **expired session** says so and gives the date, from the cookie database, instead of spending an Instagram request to fail
 - **BUGFIX:** **Failed imports name what to fix** - A locked Linux keyring reported that the browser was not signed in, sending you to the wrong place. It now says the **keyring is locked**, or that **no keyring backend is installed** and points at Firefox, which needs none. A cookie database that cannot be decrypted or opened is named as that rather than as a missing login. The other profiles a failure lists are named the way the picker showed them
+- **BUGFIX:** **The startup summary says whether reels are monitored** - Reels are off by default, but the **`Fetch reels`** row was printed only when they were on, so an ordinary run never showed it. The row is always there now, so a run upgraded from an earlier version can see why its reels stopped arriving
 
 # Changes in 4.0 (22 Sep 2026)
 
