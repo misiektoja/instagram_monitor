@@ -194,13 +194,15 @@ Every supported browser can have several profiles with separate cookies. Use one
     instagram_monitor --import-browser-session --browser firefox --browser-profile "default-release"
     ```
 
-- **Let it prompt you.** If you do not pass `--browser-profile` and several profiles exist, the tool lists them so you can choose. Profiles signed in to Instagram are marked with `*`, so you do not have to guess which one holds the session. When exactly one is signed in it is the default and Enter selects it.
+- **Let it prompt you.** If you do not pass `--browser-profile` and several profiles exist, the tool lists them so you can choose. Profiles holding a current Instagram session are marked with `*`, so you do not have to guess which one holds the session. A session that has expired is not marked, since importing it would fail. When exactly one profile is marked it is the default and Enter selects it.
 - **On the [Web Dashboard](view-modes.md#web-dashboard)**, pick the browser, click **Import** and select a profile if prompted. Profiles signed in to Instagram are marked with `*` and the only signed-in one is preselected. The dashboard imports only from the profiles it detected, so it cannot be pointed at another file or profile on your computer. Use `--cookie-file PATH` on the command line when you deliberately want a database from somewhere else.
 - **Advanced:** point `--cookie-file` at a specific cookie database (Firefox `cookies.sqlite` or a Chromium `Cookies` file). This overrides `--browser-profile`.
 
 For Chromium-based browsers, the tool finds the cookie database inside the selected profile. It supports both `<profile>/Cookies` and `<profile>/Network/Cookies` layouts. On Linux it looks for the distribution install first, then Snap and Flatpak builds of Chromium and Brave.
 
 Chromium-based browsers encrypt their cookies with a key held in your keychain or keyring. If you deny that prompt or the keyring is locked, the import says so instead of blaming a missing login.
+
+If the selected profile holds an Instagram session that has expired, the import says so and gives the date it expired, without contacting Instagram. Sign in again in that browser, then re-run the import.
 
 Chromium-based import does not work inside Docker. Use Firefox as shown under [Import Firefox into the Container Session](usage.md#import-firefox-into-the-container-session). To import from Chromium, run a local PyPI or manual installation instead.
 
