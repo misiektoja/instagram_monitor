@@ -20710,7 +20710,9 @@ def run_main():
     summary_rows.append(StartupSummaryRow("Skip stories details", str(SKIP_GETTING_STORY_DETAILS), concise=bool(SKIP_GETTING_STORY_DETAILS)))
     summary_rows.append(StartupSummaryRow("Skip posts details", str(SKIP_GETTING_POSTS_DETAILS), concise=bool(SKIP_GETTING_POSTS_DETAILS)))
     summary_rows.append(StartupSummaryRow("Get more posts details", str(GET_MORE_POST_DETAILS), concise=bool(GET_MORE_POST_DETAILS)))
-    summary_rows.append(StartupSummaryRow("Fetch reels", str(FETCH_REELS), concise=bool(FETCH_REELS)))
+    # Reels used to be monitored unconditionally, so a run that no longer fetches them says so rather than leaving
+    # the reader to wonder where they went
+    summary_rows.append(StartupSummaryRow("Fetch reels", str(FETCH_REELS), concise=True))
     summary_rows.append(StartupSummaryRow("Detect collab posts", str(DETECT_COLLAB_POSTS), concise=not DETECT_COLLAB_POSTS))
 
     churn_status = str(FOLLOWERS_CHURN_DETECTION)
