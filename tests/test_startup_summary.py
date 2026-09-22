@@ -178,3 +178,13 @@ def test_banner_dynamic_version_line(im_module, monkeypatch, capsys):
     im_module.print_startup_banner()
 
     assert capsys.readouterr().out == im_module.STARTUP_BANNER + "\n" + (" " * BODY_COLUMN) + "v9.9-test\n\n"
+
+
+# Verifies the default view names the reels setting either way, since a run that no longer fetches them has to say so
+@pytest.mark.parametrize("flag,expected", [("--no-fetch-reels", "False"), ("--fetch-reels", "True")])
+def test_the_concise_view_names_the_reels_setting(im_module, monkeypatch, capsys, tmp_path, flag, expected):
+    output = rendered_summary(im_module, monkeypatch, capsys, tmp_path, flag)
+
+    rows = [line for line in output.splitlines() if line.startswith("* Fetch reels:")]
+    assert len(rows) == 1, output
+    assert rows[0].split(":", 1)[1].strip() == expected
