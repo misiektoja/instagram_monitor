@@ -410,6 +410,8 @@ instagram_monitor --set-smtp-password
 
 Enter the password at the hidden prompt after configuring `SMTP_HOST`, `SMTP_USER`, `SENDER_EMAIL` and `RECEIVER_EMAIL`. The command checks mail sign-in before saving `SMTP_PASSWORD` to `.env`. No email is sent. An exported `SMTP_PASSWORD` overrides the saved value at startup.
 
+When email alerts are selected but an SMTP setting is missing or invalid, the startup summary shows `Notifications (email): Unavailable` and names the setting. The host and recipient rows show configured values, not a successful mail sign-in. Run `instagram_monitor --doctor` to check the sign-in or `instagram_monitor --send-test-email` to check delivery.
+
 You can use operating system environment variables instead of a file. Set them with `export` on Linux, Unix, macOS or WSL:
 
 ```sh
