@@ -4996,6 +4996,20 @@ def webhook_channel_configured() -> bool:
     return bool(normalized_webhook_provider()) and not is_placeholder_setting(WEBHOOK_URL)
 
 
+# Names the first local webhook setting that prevents automatic alert delivery
+def webhook_settings_problem() -> Optional[str]:
+    if is_placeholder_setting(WEBHOOK_URL):
+        return "WEBHOOK_URL is empty or still set to its placeholder"
+    if not validate_webhook_url(WEBHOOK_URL):
+        return "WEBHOOK_URL must contain a complete HTTPS link"
+    provider = normalized_webhook_provider()
+    if not provider:
+        return "WEBHOOK_PROVIDER must be discord or ntfy"
+    if validate_webhook_customization(provider) is not None:
+        return "Webhook customization is invalid"
+    return validate_webhook_headers(provider)
+
+
 # Reports the mail server and the recipient an alert would reach, without the account that signs in to the server
 def _startup_email_detail_rows() -> List["StartupSummaryRow"]:
     transport = f"{SMTP_HOST}:{SMTP_PORT} ({'STARTTLS' if SMTP_SSL else 'TLS off'})" if smtp_server_configured() else "Not configured"
@@ -5015,21 +5029,21 @@ def _startup_webhook_detail_rows() -> List["StartupSummaryRow"]:
     return [StartupSummaryRow("Webhook provider", provider), StartupSummaryRow("Delivery confirmations", str(DELIVERY_CONFIRMATIONS))]
 
 
-# Renders one channel rollup from the alert types it would send and whether it has a destination at all
-def _startup_channel_state(categories: Sequence[str], configured: bool) -> str:
+# Renders one channel rollup from its selected alert types and the first unusable setting
+def _startup_channel_state(categories: Sequence[str], problem: Optional[str]) -> str:
     if not categories:
         return "Off"
-    return "On (" + ", ".join(categories) + ")" if configured else "Off (not configured)"
+    return f"Unavailable ({problem})" if problem else "On (" + ", ".join(categories) + ")"
 
 
 # Builds notification summary rows shared by concise, verbose and logged views
 def _startup_notification_summary_rows() -> List["StartupSummaryRow"]:
     email_categories = _startup_email_notification_categories()
     webhook_categories = _startup_webhook_notification_categories()
-    # The concise view prints only the rollup, so it must name SMTP settings that prevent selected alerts from sending
     email_problem = email_settings_problem() if email_categories else None
-    email_state = f"Unavailable ({email_problem[0]})" if email_problem else _startup_channel_state(email_categories, True)
-    webhook_state = _startup_channel_state(webhook_categories, webhook_channel_configured())
+    webhook_problem = webhook_settings_problem() if webhook_categories else None
+    email_state = _startup_channel_state(email_categories, email_problem[0] if email_problem else None)
+    webhook_state = _startup_channel_state(webhook_categories, webhook_problem)
     return [StartupSummaryRow("Notifications (email)", email_state, concise=True), *_startup_email_detail_rows(), StartupSummaryRow("Notifications (webhook)", webhook_state, concise=True), *_startup_webhook_detail_rows()]
 
 
@@ -6648,10 +6662,21 @@ def webhook_event_enabled(notification_type):
     return bool(WEBHOOK_ENABLED and settings.get(notification_type, False))
 
 
+# Returns whether local SMTP settings permit an automatic email alert attempt
+def email_alert_configured() -> bool:
+    return email_settings_problem() is None
+
+
+# Returns whether enabled webhooks have locally valid settings for automatic alerts
+def webhook_alert_configured() -> bool:
+    return bool(WEBHOOK_ENABLED and webhook_settings_problem() is None)
+
+
 # Sends one alert through the enabled email and webhook channels, the webhook as the embed the caller shaped
 def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, email_image_file="", email_image_name="image1", webhook_title=None, webhook_description=None, webhook_color=0x7289DA, webhook_fields=None, image_url=None, local_image_file=None):
-    email_attempted = bool(email_enabled)
-    webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    email_attempted = bool(email_enabled and email_alert_configured())
+    webhook_selected = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    webhook_attempted = bool(webhook_selected and webhook_alert_configured())
     email_delivered = False
     webhook_delivered = False
     if email_attempted:
@@ -11863,12 +11888,14 @@ def monitoring_missed_body_html(target: str, lasted: int, summary: str = "") -> 
 # Tells every channel that carried the failure alert that the outage is over and tells a channel that never got one
 # about the whole outage at once, so nobody is left acting on a run that recovered
 def notify_monitoring_recovery(user, alert_state) -> bool:
-    email_pending = bool(alert_state.email_sent) and bool(ERROR_NOTIFICATION)
-    webhook_pending = bool(alert_state.webhook_sent) and webhook_event_enabled("error")
+    email_enabled = bool(ERROR_NOTIFICATION and email_alert_configured())
+    webhook_enabled = bool(webhook_event_enabled("error") and webhook_alert_configured())
+    email_pending = bool(alert_state.email_sent) and email_enabled
+    webhook_pending = bool(alert_state.webhook_sent) and webhook_enabled
     # A channel whose failure alert never got through hears about the outage and its end together, rather than
     # nothing at all, which is what a channel blocked for the length of the outage would otherwise receive
-    email_missed = alert_state.missed("email", ERROR_NOTIFICATION)
-    webhook_missed = alert_state.missed("webhook", webhook_event_enabled("error"))
+    email_missed = alert_state.missed("email", email_enabled)
+    webhook_missed = alert_state.missed("webhook", webhook_enabled)
     if not (email_pending or webhook_pending or email_missed or webhook_missed):
         return False
     lasted = max(0, int(time.time()) - alert_state.failing_since) if alert_state.failing_since else 0
@@ -11890,8 +11917,8 @@ def notify_monitoring_error(user, advice, failed_since, failure_count, check_int
     # Attempted again on a later failing check rather than only once the alert is due, so a channel that failed is
     # tried again, after a wait that grows with each failed attempt
     now = int(time.time())
-    email_pending = alert_state.pending("email", ERROR_NOTIFICATION, now)
-    webhook_pending = alert_state.pending("webhook", webhook_event_enabled("error"), now)
+    email_pending = alert_state.pending("email", ERROR_NOTIFICATION and email_alert_configured(), now)
+    webhook_pending = alert_state.pending("webhook", webhook_event_enabled("error") and webhook_alert_configured(), now)
     # Recorded on every due check rather than only on a delivery, so a channel still retrying its alert still earns a recovery notice
     alert_state.remember(advice, failed_since)
     if not (email_pending or webhook_pending):
@@ -16204,8 +16231,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 alert_body_html = f"A BeHuman simulation error occurred for user <b>{escape(str(user))}</b> ({escape(streak)}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
                 # Tried again on a later failing simulation once the alert is due, after a wait that grows with each failed attempt
                 now = int(time.time())
-                behuman_email_pending = behuman_alert.pending("email", ERROR_NOTIFICATION, now)
-                behuman_webhook_pending = behuman_alert.pending("webhook", webhook_event_enabled("error"), now)
+                behuman_email_pending = behuman_alert.pending("email", ERROR_NOTIFICATION and email_alert_configured(), now)
+                behuman_webhook_pending = behuman_alert.pending("webhook", webhook_event_enabled("error") and webhook_alert_configured(), now)
                 email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=behuman_email_pending, webhook_enabled=behuman_webhook_pending, webhook_title=f"BeHuman Error for {user}", webhook_description=f"{error_msg}\n({streak})", webhook_color=0xFF0000)
                 behuman_alert.record("email", behuman_email_pending, email_delivered, now)
                 behuman_alert.record("webhook", behuman_webhook_pending, webhook_delivered, now)
@@ -20542,14 +20569,11 @@ def run_main():
     if STATUS_NOTIFICATION is False:
         FOLLOWERS_NOTIFICATION = False
 
-    if SMTP_HOST.startswith("your_smtp_server_"):
+    if SMTP_HOST.startswith("your_smtp_server_") and not STATUS_NOTIFICATION:
         verbose_print("Email notifications are off because SMTP_HOST is still the shipped placeholder")
         STATUS_NOTIFICATION = False
         FOLLOWERS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
-    if WEBHOOK_ENABLED and not validate_webhook_url(WEBHOOK_URL):
-        verbose_print("Webhook notifications are off because WEBHOOK_URL is not a complete HTTPS link")
-        WEBHOOK_ENABLED = False
 
     # Build the run summary as StartupSummaryRow entries, in the order every sibling monitor prints
     # The concise terminal view leads with the targets and hides off/default rows; the full view (every row) is written to the log and also shown on the terminal under --verbose/--debug
