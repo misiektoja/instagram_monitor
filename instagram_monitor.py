@@ -9176,6 +9176,31 @@ def resolve_chromium_profile(browser, requested):
     raise CookieImportError(f"{browser_label(browser)} profile '{wanted}' not found (available: {available})")
 
 
+# Text the keyring libraries use when no backend is installed at all. Telling somebody to unlock a keyring that does
+# not exist sends them to fix the wrong thing, so this cause is separated before the locked one
+KEYRING_MISSING_TERMS = ("no recommended backend", "no such keyring backend", "no backend available", "secretstorage required", "libsecret required", "python-dbus not installed")
+
+# Text the keyring libraries use when a backend exists but will not release the key. Several of these name neither the
+# keyring nor the keychain, so matching the wording they do use is what keeps the advice correct
+KEYRING_LOCKED_TERMS = ("keyring", "keychain", "safe storage", "secretservice", "secret service", "libsecret", "kwallet", "failed to unlock", "collection", "cancelled by user")
+
+
+# Names the real cause of a Chromium cookie read failure, since a keyring problem has nothing to do with being
+# signed in and the generic advice sends the reader to the wrong place
+def chromium_cookie_failure_message(browser, error) -> str:
+    label = browser_label(browser)
+    text = str(error).lower()
+    if any(term in text for term in KEYRING_MISSING_TERMS):
+        return f"Could not read the {label} encryption key: {error}\nTo fix: no OS keyring backend is available, install one such as gnome-keyring or kwallet, or import from Firefox, which needs none"
+    if any(term in text for term in KEYRING_LOCKED_TERMS):
+        return f"Could not read the {label} encryption key: {error}\nTo fix: allow the keychain or keyring prompt, unlock it if it is locked, then run the import again"
+    if any(term in text for term in ("decrypt", "invalidtag", "encryption")):
+        return f"Could not decrypt {label} cookies: {error}\nTo fix: close {label}, then run the import again, or import from Firefox instead"
+    if any(term in text for term in ("permission", "denied", "unable to open", "readonly", "is locked")):
+        return f"Could not open the {label} cookie database: {error}\nTo fix: close {label}, check the file permissions, then run the import again"
+    return f"Could not read {label} cookies: {error}\nMake sure {label} is installed and you are logged in to Instagram in it"
+
+
 # Reads Instagram session cookies from a Chromium-based browser via pycookiecheat and returns them as a name to value dict
 def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
     label = browser_label(browser)
@@ -9227,22 +9252,14 @@ def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
     try:
         cookies = get_cookies("https://www.instagram.com", browser=browser_type, cookie_file=cookie_file)
     except Exception as e:
-        # Chromium encrypts its cookies with a key held in the OS keyring, so a denied prompt or a locked keyring
-        # fails here for a reason that has nothing to do with being signed in
-        if "Safe Storage" in str(e) or "keychain" in str(e).lower() or "keyring" in str(e).lower():
-            raise CookieImportError(
-                f"Could not read the {label} encryption key: {e}\nTo fix: allow the keychain or keyring prompt, unlock it if it is locked, then run the import again"
-            )
-        raise CookieImportError(
-            f"Could not read {label} cookies: {e}\nMake sure {label} is installed and you are logged in to Instagram in it"
-        )
+        raise CookieImportError(chromium_cookie_failure_message(browser, e))
 
     # get_cookies returns a name to value dict by default (as_cookies is False), coerce defensively to keep a plain dict
     cookie_dict = cookies if isinstance(cookies, dict) else {c.name: c.value for c in cookies}
 
     if not cookie_dict:
         where = f" (profile '{profile}')" if profile else ""
-        others = [p["dir"] for p in list_chromium_profiles(browser) if p["dir"] != profile]
+        others = [chromium_profile_description(p) for p in list_chromium_profiles(browser) if p["dir"] != profile]
         alternatives = f" (other profiles: {', '.join(others)})" if others else ""
         raise CookieImportError(f"No Instagram cookies found in {label}{where}{alternatives} - are you logged in to Instagram in {label}?")
 
