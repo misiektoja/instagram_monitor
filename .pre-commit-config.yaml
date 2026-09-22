@@ -1,6 +1,7 @@
 # Optional local hooks that catch what CI would reject, before a commit is written.
 # Enable them once with:
 #     pip install pre-commit
+#     pip install -e '.[lint]'
 #     pre-commit install
 # Check the whole repository at any time with:
 #     pre-commit run --all-files
@@ -26,10 +27,13 @@ repos:
       # where it needs no Go toolchain on a contributor's machine
       - id: detect-private-key
 
-  # The same linter and version CI runs
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.4
+  # Runs the ruff already installed from the [lint] extra rather than a second copy pinned here.
+  # One pin in pyproject.toml is what keeps the hook and CI on the same version
+  - repo: local
     hooks:
       - id: ruff-check
+        name: ruff check
+        entry: ruff check
         args: [--no-fix]
+        language: system
         files: '^(instagram_monitor\.py|tests/.*\.py)$'
