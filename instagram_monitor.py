@@ -14549,6 +14549,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             'caption': story_item.caption[:50] + "..." if story_item.caption and len(story_item.caption) > 50 else (story_item.caption or ""),
                             'url': story_item.url,
                             'post_url': f"https://www.instagram.com/stories/{user}/",
+                            'is_story': True,
                             'timestamp': get_short_date_from_ts(local_dt, show_year=True),
                             'timestamp_ts': int(local_dt.timestamp()) if isinstance(local_dt, datetime) else None
                         }
@@ -14620,6 +14621,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                             'video_url': dashboard_media['video_url'],
                             'file_path': dashboard_media['file_path'],
                             'post_url': f"https://www.instagram.com/stories/{user}/",
+                            'is_story': True,
                             'timestamp': get_short_date_from_ts(local_dt),
                             'timestamp_ts': int(local_dt.timestamp()) if isinstance(local_dt, datetime) else None
                         }

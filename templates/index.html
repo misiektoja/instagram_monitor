@@ -1638,6 +1638,29 @@
         </div>
     </div>
 
+    <!-- Anonymity Confirmation Modal -->
+    <div id="modal-anonymity" class="modal-overlay">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="anonymity-title" style="border-top: 4px solid #fbbf24;">
+            <div class="modal-header">
+                <h2 id="anonymity-title" class="modal-title">&#9888; Anonymity Warning</h2>
+                <button class="modal-close" onclick="hideModal('anonymity')" aria-label="Close warning">&times;</button>
+            </div>
+            <p style="margin-bottom: 24px; line-height: 1.6; color: #ccc;">
+                You are about to view a story on Instagram.
+                <br><br>
+                <b>Warning:</b> The story owner may see that you viewed it using the Instagram account signed in
+                to this browser. This can differ from the monitor's session account.
+                <br><br>
+                Use <b>"View Media"</b> or <b>"Play Video"</b> to view downloaded content without opening Instagram.
+            </p>
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="hideModal('anonymity')">Cancel</button>
+                <a id="anonymity-confirm-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-danger"
+                    onclick="hideModal('anonymity')">I Understand, Proceed</a>
+            </div>
+        </div>
+    </div>
+
     <script>
         // State
         let targets = {};
@@ -1958,7 +1981,8 @@
                 // before they enter an attribute, exactly as the activity feed does
                 const thumbnailUrl = sameOriginUrl(u.url);
                 const postUrl = safeUrl(u.post_url);
-                const videoUrl = safeUrl(u.video_url);
+                const isStory = isStoryLink(postUrl, u.is_story);
+                const videoUrl = sameOriginUrl(u.video_url);
                 const userPrefix = u.user ? `<span style="color: #888; margin-right: 4px;">[${escapeHtml(u.user)}]</span>` : '';
 
                 return `
@@ -1973,7 +1997,7 @@
                                 </div>
                                 <div style="font-size: 13px; margin-bottom: 8px; color: #e0e0e0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${caption}</div>
                                 <div style="display: flex; gap: 12px; align-items: center;">
-                                    ${postUrl ? `<a href="${escapeHtml(postUrl)}" target="_blank" ${u.is_story ? 'onclick="confirmAnonymity(event, this.href)"' : ''} style="font-size: 12px; color: #e94560; font-weight: 600; text-decoration: underline;">${u.is_story ? 'View Story' : 'View Post'}</a>` : ''}
+                                    ${renderContentLink(postUrl, isStory ? 'View Story' : 'View Post', isStory)}
                                     ${videoUrl ? `
                                         <a href="${escapeHtml(videoUrl)}" target="_blank" onclick="playVideo(event, this.href)" style="font-size: 12px; color: #4ade80; text-decoration: underline; font-weight: 600;">Play Video</a>
                                     ` : (thumbnailUrl ? `<a href="${escapeHtml(thumbnailUrl)}" target="_blank" style="font-size: 12px; color: #bbb; text-decoration: underline;">View Media</a>` : '')}
@@ -2131,9 +2155,8 @@
                 const levelClass = a.level ? `log-${a.level}` : 'log-system';
                 let msgHtml = escapeHtml(a.message);
                 if (a.details && a.details.url) {
-                    const isStory = a.details.is_story === true;
                     const activityUrl = safeUrl(a.details.url);
-                    if (activityUrl) msgHtml += ` <a href="${escapeHtml(activityUrl)}" target="_blank" ${isStory ? 'onclick="confirmAnonymity(event, this.href)"' : ''} class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
+                    msgHtml += renderContentLink(activityUrl, 'View', isStoryLink(activityUrl, a.details.is_story), true);
                 }
                 return `
                 <div class="activity-item ${levelClass}">
@@ -2276,9 +2299,8 @@
                 const levelClass = a.level ? `log-${a.level}` : 'log-system';
                 let msgHtml = escapeHtml(a.message);
                 if (a.details && a.details.url) {
-                    const isStory = a.details.is_story === true;
                     const activityUrl = safeUrl(a.details.url);
-                    if (activityUrl) msgHtml += ` <a href="${escapeHtml(activityUrl)}" target="_blank" ${isStory ? 'onclick="confirmAnonymity(event, this.href)"' : ''} class="badge badge-success" style="text-decoration: none; margin-left: 8px;">View</a>`;
+                    msgHtml += renderContentLink(activityUrl, 'View', isStoryLink(activityUrl, a.details.is_story), true);
                 }
                 return `
                 <div class="activity-item ${levelClass}">
@@ -3036,6 +3058,7 @@
 
         // Returns only browser-safe HTTP and HTTPS URLs
         function safeUrl(value) {
+            if (typeof value !== 'string' || !value.trim()) return '';
             try {
                 const url = new URL(String(value), window.location.origin);
                 if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
@@ -3055,12 +3078,37 @@
             else if (action === 'remove') removeTarget(username);
         }
 
+        // Recognizes story URLs even when older records omit the story flag
+        function isStoryLink(value, isStory) {
+            if (isStory === true) return true;
+            const safe = safeUrl(value);
+            if (!safe) return false;
+            const url = new URL(safe);
+            return (url.hostname === 'instagram.com' || url.hostname.endsWith('.instagram.com')) && url.pathname.startsWith('/stories/');
+        }
+
+        // Keeps story destinations off navigable links until the viewer confirms
+        function renderContentLink(url, label, isStory, activity = false) {
+            if (!url) return '';
+            const className = activity ? 'badge badge-success' : '';
+            const style = activity ? 'text-decoration: none; margin-left: 8px;' : 'background: none; padding: 0; font-size: 12px; color: #e94560; font-weight: 600; text-decoration: underline;';
+            const appearance = `class="${className}" style="border: 0; cursor: pointer; font-family: inherit; ${style}"`;
+            if (isStory) {
+                return `<button type="button" data-story-url="${escapeHtml(url)}" onclick="confirmAnonymity(event, this.dataset.storyUrl)" onauxclick="if (event.button === 1) confirmAnonymity(event, this.dataset.storyUrl)" aria-haspopup="dialog" aria-controls="modal-anonymity" ${appearance}>${escapeHtml(label)}</button>`;
+            }
+            return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" ${appearance}>${escapeHtml(label)}</a>`;
+        }
+
+        // Shows the viewer warning before making the story destination available
         function confirmAnonymity(event, url) {
             if (event) event.preventDefault();
+            const destination = safeUrl(url);
+            if (!destination) return;
             const modal = document.getElementById('modal-anonymity');
             const confirmLink = document.getElementById('anonymity-confirm-link');
-            confirmLink.href = url;
+            confirmLink.href = destination;
             modal.classList.add('active');
+            modal.querySelector('.btn-secondary').focus();
         }
 
         function playVideo(event, videoUrl) {
@@ -3106,29 +3154,6 @@
         // Also fetch session details periodically (less frequently)
         setInterval(fetchSessionDetails, 30000); // Every 30 seconds
     </script>
-    <!-- Anonymity Confirmation Modal -->
-    <div id="modal-anonymity" class="modal-overlay">
-        <div class="modal" style="border-top: 4px solid #fbbf24;">
-            <div class="modal-header">
-                <h2 class="modal-title">⚠️ Anonymity Warning</h2>
-                <button class="modal-close" onclick="hideModal('anonymity')">&times;</button>
-            </div>
-            <p style="margin-bottom: 24px; line-height: 1.6; color: #ccc;">
-                You are about to visit Instagram directly.
-                <br><br>
-                <b>Warning:</b> This identifies you to the user as having viewed their content.
-                <br><br>
-                To stay anonymous, use the <b>"View Media"</b> or <b>"Play Video"</b> link instead, as it uses locally
-                downloaded content.
-            </p>
-            <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                <button class="btn btn-secondary" onclick="hideModal('anonymity')">Cancel</button>
-                <a id="anonymity-confirm-link" href="#" target="_blank" class="btn btn-danger"
-                    onclick="hideModal('anonymity')">I Understand, Proceed</a>
-            </div>
-        </div>
-    </div>
-
     <!-- Video Player Modal -->
     <div id="modal-video-player" class="modal-overlay">
         <div class="modal"
