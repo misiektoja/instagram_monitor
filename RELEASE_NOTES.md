@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 4.0.1 (TBD)
+# Changes in 4.0.1 (22 Sep 2026)
 
 Version **4.0.1** reports unavailable email and webhook settings at startup and skips automatic alerts through those channels until their settings are corrected. It also fixes **browser session import**: a profile whose Instagram session has expired is no longer marked as signed in, and a failed import names the cause you have to fix. The startup summary now always says whether reels are monitored, a run without a session that Instagram rate limits is told the limit is on its IP address and a failed first check no longer prints its timestamp twice.
 
