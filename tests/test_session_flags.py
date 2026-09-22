@@ -39,6 +39,12 @@ def _raiser(message):
     return _inner
 
 
+# Configures usable local delivery settings for tests that replace the network transports
+def _configure_delivery_settings(im_module, monkeypatch):
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "ops@example.com"), ("WEBHOOK_URL", "https://discord.com/api/webhooks/1/token"), ("WEBHOOK_PROVIDER", "discord")):
+        monkeypatch.setattr(im_module, name, value)
+
+
 class TestFormatErrorMessage:
     def test_keyerror_data_maps_to_challenge_message(self, im_module):
         msg = im_module.format_error_message(KeyError("data"))
@@ -89,6 +95,7 @@ class TestNotifyMonitoringError:
     # Captures thresholded channel delivery without contacting SMTP or webhook endpoints, each channel answering as told
     def _capture(self, im_module, monkeypatch, email_results=(0,), webhook_results=(0,)):
         calls = {"email": [], "webhook": []}
+        _configure_delivery_settings(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "send_email", lambda *a, **k: calls["email"].append((a, k)) or email_results[min(len(calls["email"]), len(email_results)) - 1])
         monkeypatch.setattr(im_module, "send_webhook", lambda *a, **k: calls["webhook"].append((a, k)) or webhook_results[min(len(calls["webhook"]), len(webhook_results)) - 1])
         monkeypatch.setattr(im_module, "ERROR_ALERT_AFTER_SECONDS", 300)
@@ -119,6 +126,27 @@ class TestNotifyMonitoringError:
         assert "Failed checks in a row: 3" in calls["email"][0][0][1]
         assert "Failing since: " in calls["email"][0][0][1]
         assert "To fix:" in calls["email"][0][0][1]
+
+    # An unavailable channel is not recorded as a failed attempt and can send when its settings are corrected
+    def test_unavailable_channels_wait_silently_for_valid_settings(self, im_module, monkeypatch, capsys):
+        calls = self._capture(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "")
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "")
+        state = im_module.ErrorAlertState()
+
+        assert self._notify(im_module, state, "401 Unauthorized", 1) is False
+        assert calls == {"email": [], "webhook": []}
+        assert (state.email_failures, state.webhook_failures) == (0, 0)
+        assert capsys.readouterr().out == ""
+
+        monkeypatch.setattr(im_module, "SMTP_PASSWORD", "test-password")
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
+
+        assert self._notify(im_module, state, "401 Unauthorized", 2) is True
+        assert len(calls["email"]) == len(calls["webhook"]) == 1
 
     # A failure that cannot clear on its own, such as an expired session, is alerted on the first failing check
     def test_a_failure_the_tool_cannot_retry_away_alerts_at_once(self, im_module, monkeypatch):
@@ -256,6 +284,7 @@ class TestOneOutageIsOneAlertWhateverItsSubtype:
     def _run(im_module, monkeypatch, errors, delivered=True):
         clock = {"now": 1_000_000}
         sent = []
+        _configure_delivery_settings(im_module, monkeypatch)
         monkeypatch.setattr(im_module.time, "time", lambda: clock["now"])
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "ERROR_ALERT_AFTER_SECONDS", 0)
@@ -300,6 +329,7 @@ class TestNotifySessionFlagged:
     # Replaces send_email/send_webhook with recorders and gives the email path valid-looking globals
     def _capture(self, im_module, monkeypatch):
         calls = {"email": [], "webhook": []}
+        _configure_delivery_settings(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "send_email", lambda *a, **k: calls["email"].append((a, k)))
         monkeypatch.setattr(im_module, "send_webhook", lambda *a, **k: calls["webhook"].append((a, k)))
         monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "ops@example.com", raising=False)
@@ -483,6 +513,7 @@ class TestMonitoringRecoveryAlert:
     @staticmethod
     def _capture(im_module, monkeypatch):
         sent = {"email": [], "webhook": []}
+        _configure_delivery_settings(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "send_email", lambda *a, **k: sent["email"].append(a) or 0)
         monkeypatch.setattr(im_module, "send_webhook", lambda *a, **k: sent["webhook"].append(a) or 0)
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)

@@ -38,7 +38,7 @@ class TestStartupNotificationSummary:
         assert not any(concise for label, (_, concise, _full) in rows.items() if label.startswith(("Email ", "Webhook ", "Delivery ")))
 
     # Verifies selected alerts with unusable settings do not appear live in the concise summary
-    @pytest.mark.parametrize("label,unset,expected", [("Notifications (email)", {"SMTP_HOST": "your_smtp_server_ssl"}, "Unavailable (SMTP_HOST is empty or still set to its placeholder)"), ("Notifications (email)", {"RECEIVER_EMAIL": "your_receiver_email"}, "Unavailable (SENDER_EMAIL or RECEIVER_EMAIL is not an email address)"), ("Notifications (webhook)", {"WEBHOOK_URL": "your_webhook_url"}, "Off (not configured)")])
+    @pytest.mark.parametrize("label,unset,expected", [("Notifications (email)", {"SMTP_HOST": "your_smtp_server_ssl"}, "Unavailable (SMTP_HOST is empty or still set to its placeholder)"), ("Notifications (email)", {"RECEIVER_EMAIL": "your_receiver_email"}, "Unavailable (SENDER_EMAIL or RECEIVER_EMAIL is not an email address)"), ("Notifications (webhook)", {"WEBHOOK_URL": "your_webhook_url"}, "Unavailable (WEBHOOK_URL is empty or still set to its placeholder)")])
     def test_a_channel_without_a_destination_is_not_reported_as_live(self, im_module, monkeypatch, label, unset, expected):
         _configure_channel_destinations(im_module, monkeypatch)
         for name in ("STATUS_NOTIFICATION", "FOLLOWERS_NOTIFICATION", "ERROR_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_FOLLOWERS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"):
@@ -50,6 +50,18 @@ class TestStartupNotificationSummary:
         rows = {row.label: row.value for row in im_module._startup_notification_summary_rows()}
 
         assert rows[label] == expected
+
+    # Invalid webhook settings cannot make selected alerts appear live in the startup summary
+    @pytest.mark.parametrize("setting,value,reason", [("WEBHOOK_URL", "http://example.com/hook", "WEBHOOK_URL must contain a complete HTTPS link"), ("WEBHOOK_PROVIDER", "unknown", "WEBHOOK_PROVIDER must be discord or ntfy"), ("WEBHOOK_HEADERS", {"bad header": "value"}, "WEBHOOK_HEADERS contains an invalid HTTP header name")])
+    def test_an_invalid_webhook_setting_is_unavailable(self, im_module, monkeypatch, setting, value, reason):
+        _configure_channel_destinations(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, setting, value)
+
+        rows = {row.label: row.value for row in im_module._startup_notification_summary_rows()}
+
+        assert rows["Notifications (webhook)"] == f"Unavailable ({reason})"
 
     # A server and recipient cannot make email available without the credential required by the sender
     @pytest.mark.parametrize("password", ["", "your_smtp_password"])
@@ -250,6 +262,7 @@ class TestFollowerChangeEmbed:
     # The embed is what the channels helper hands to the webhook, under the follower switch
     def test_the_embed_reaches_the_webhook_as_a_follower_alert(self, im_module, monkeypatch):
         calls = []
+        _configure_channel_destinations(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_FOLLOWERS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: calls.append((args, kwargs)) or 0)
@@ -268,6 +281,7 @@ class TestWhichSwitchGatesAFollowChange:
     @staticmethod
     def _delivered(im_module, monkeypatch, channel, email_enabled):
         sent = []
+        _configure_channel_destinations(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "send_email", lambda *args, **kwargs: sent.append("email") or 0)
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: sent.append("webhook") or 0)
         im_module.send_notification_channels(channel, "subject", "body", "", email_enabled=email_enabled)
@@ -344,6 +358,7 @@ class TestAccountFlagIdentity:
     @pytest.fixture
     def flagged_alert(self, im_module, monkeypatch):
         captured: dict = {}
+        _configure_channel_destinations(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
@@ -400,6 +415,7 @@ class TestAccountFlagIdentity:
     # These messages leave the machine, so routine failures must not publish the identity on every threshold hit
     def test_a_routine_error_alert_carries_no_identity(self, im_module, monkeypatch):
         captured: dict = {}
+        _configure_channel_destinations(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
@@ -417,6 +433,7 @@ class TestAccountFlagIdentity:
     # The guide link sits under the fix in the HTML body too, since HTML renders the newline the fix carries as a space
     def test_the_guide_link_keeps_its_own_line_in_the_html_body(self, im_module, monkeypatch):
         captured: dict = {}
+        _configure_channel_destinations(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "ERROR_ALERT_AFTER_SECONDS", 0)
         monkeypatch.setattr(im_module, "send_email", lambda subject, body, html, ssl, *args, **kwargs: captured.update(html=html))

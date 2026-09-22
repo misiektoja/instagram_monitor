@@ -130,7 +130,7 @@ class TestWebhookDestination:
     # Drives the real command line up to the monitoring call and returns the webhook state startup settled on
     def webhook_state_after_startup(self, im_module, monkeypatch, tmp_path, webhook_url):
         config = tmp_path / "instagram_monitor.conf"
-        config.write_text('LOCAL_TIMEZONE = "UTC"\nDISABLE_LOGGING = True\nWEBHOOK_ENABLED = True\nWEBHOOK_PROVIDER = "ntfy"\n' + f'WEBHOOK_URL = "{webhook_url}"\n', encoding="utf-8")
+        config.write_text('LOCAL_TIMEZONE = "UTC"\nDISABLE_LOGGING = True\nWEBHOOK_ENABLED = True\nWEBHOOK_STATUS_NOTIFICATION = True\nWEBHOOK_PROVIDER = "ntfy"\n' + f'WEBHOOK_URL = "{webhook_url}"\n', encoding="utf-8")
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", "target.user", "--config-file", str(config), "--env-file", "none", "--no-color"])
         monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
         monkeypatch.setattr(im_module, "check_internet", lambda *args, **kwargs: True)
@@ -142,9 +142,11 @@ class TestWebhookDestination:
         assert exc.value.code == 99
         return im_module.WEBHOOK_ENABLED
 
-    # Verifies an unedited webhook destination switches the channel off instead of being treated as configured
-    def test_a_placeholder_webhook_url_switches_the_channel_off(self, im_module, monkeypatch, tmp_path, restored_globals):
-        assert self.webhook_state_after_startup(im_module, monkeypatch, tmp_path, "your_webhook_url") is False
+    # A selected webhook with a placeholder destination remains visible as unavailable
+    def test_a_placeholder_webhook_url_keeps_the_channel_unavailable(self, im_module, monkeypatch, tmp_path, restored_globals):
+        assert self.webhook_state_after_startup(im_module, monkeypatch, tmp_path, "your_webhook_url") is True
+        rows = {row.label: row.value for row in im_module._startup_notification_summary_rows()}
+        assert rows["Notifications (webhook)"] == "Unavailable (WEBHOOK_URL is empty or still set to its placeholder)"
 
     # Verifies a real destination still leaves the webhook channel on
     def test_a_configured_webhook_url_keeps_the_channel_on(self, im_module, monkeypatch, tmp_path, restored_globals):

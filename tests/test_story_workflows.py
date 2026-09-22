@@ -41,6 +41,12 @@ def _patch_startup_monitor_defaults(im_module, monkeypatch) -> None:
     monkeypatch.setattr(im_module.time, "sleep", lambda seconds: None)
 
 
+# Configures local delivery settings for story tests with recording transports
+def _configure_delivery_settings(im_module, monkeypatch) -> None:
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com"), ("WEBHOOK_URL", "https://discord.com/api/webhooks/1/token"), ("WEBHOOK_PROVIDER", "discord")):
+        monkeypatch.setattr(im_module, name, value)
+
+
 class TestStoryWorkflows:
     # Startup story loading writes one CSV row and publishes last story dashboard metadata
     def test_startup_story_item_writes_csv_and_ui_update(self, im_module, monkeypatch, tmp_path):
@@ -95,6 +101,7 @@ class TestStoryWorkflows:
     def test_story_item_webhook_is_independent_from_email(self, im_module, monkeypatch):
         emails = []
         webhooks = []
+        _configure_delivery_settings(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", False)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
@@ -114,6 +121,7 @@ class TestStoryWorkflows:
         emails = []
         webhooks = []
         hostile_text = '<img src=x onerror="alert(1)">\nsecond line'
+        _configure_delivery_settings(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)

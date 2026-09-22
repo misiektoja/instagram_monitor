@@ -37,6 +37,12 @@ def _patch_quiet_output(im_module, monkeypatch) -> None:
     monkeypatch.setattr(im_module, "print_cur_ts", lambda *args, **kwargs: None)
 
 
+# Configures local delivery settings for profile picture tests with recording transports
+def _configure_delivery_settings(im_module, monkeypatch) -> None:
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com"), ("WEBHOOK_URL", "https://discord.com/api/webhooks/1/token"), ("WEBHOOK_PROVIDER", "discord")):
+        monkeypatch.setattr(im_module, name, value)
+
+
 class TestProfilePictureWorkflows:
     # Missing profile pictures are saved, copied and recorded in CSV
     def test_initial_profile_picture_download_writes_csv_and_copy(self, im_module, monkeypatch):
@@ -72,6 +78,7 @@ class TestProfilePictureWorkflows:
         logs = []
         _write_payload(profile_pic, b"old-picture", 1700000000)
         _patch_quiet_output(im_module, monkeypatch)
+        _configure_delivery_settings(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "RECEIVER_EMAIL", "receiver@example.com", raising=False)
         monkeypatch.setattr(im_module, "SMTP_SSL", True, raising=False)
         monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: logs.append((args, kwargs)))
@@ -110,6 +117,7 @@ class TestProfilePictureWorkflows:
         _write_payload(profile_pic, b"old-picture", 1700000000)
         _write_payload(empty_template, b"empty-template", 1690000000)
         _patch_quiet_output(im_module, monkeypatch)
+        _configure_delivery_settings(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: logs.append((args, kwargs)))
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
@@ -143,6 +151,7 @@ class TestProfilePictureWorkflows:
         _write_payload(profile_pic, b"empty-template", 1700000000)
         _write_payload(empty_template, b"empty-template", 1690000000)
         _patch_quiet_output(im_module, monkeypatch)
+        _configure_delivery_settings(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: logs.append((args, kwargs)))
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)

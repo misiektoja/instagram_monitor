@@ -611,6 +611,8 @@ class TestSendNotificationChannels:
     # Puts a real webhook destination behind a recording post and a recording email sender, each answering as told
     def _channels(self, im_module, monkeypatch, email_result=0, post_status=204):
         calls = {"email": [], "posts": []}
+        for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "alerts@example.test")):
+            monkeypatch.setattr(im_module, name, value)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
         monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
@@ -658,6 +660,45 @@ class TestSendNotificationChannels:
         assert calls["email"] == []
         assert calls["posts"] == []
 
+    # Automatic email alerts make no attempt and print nothing while local SMTP settings are unusable
+    @pytest.mark.parametrize("setting,value", [("SMTP_PASSWORD", ""), ("SMTP_PORT", 0), ("SENDER_EMAIL", "your_sender_email")])
+    def test_unavailable_email_is_silently_skipped(self, im_module, monkeypatch, capsys, setting, value):
+        calls = self._channels(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, setting, value)
+
+        assert im_module.send_notification_channels("status", "subject", "body", email_enabled=True, webhook_enabled=False) == (False, False)
+        assert calls["email"] == []
+        assert calls["posts"] == []
+        assert capsys.readouterr().out == ""
+
+    # Automatic webhooks make no attempt and print nothing while local webhook settings are unusable
+    @pytest.mark.parametrize("setting,value", [("WEBHOOK_ENABLED", False), ("WEBHOOK_URL", ""), ("WEBHOOK_URL", "http://example.com/hook"), ("WEBHOOK_PROVIDER", "unknown"), ("WEBHOOK_TRANSFORMS", [("title", "_hidden")]), ("WEBHOOK_HEADERS", {"bad header": "value"})])
+    def test_unavailable_webhook_is_silently_skipped(self, im_module, monkeypatch, capsys, setting, value):
+        calls = self._channels(im_module, monkeypatch)
+        monkeypatch.setattr(im_module, setting, value)
+        monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: pytest.fail("The webhook sender was called"))
+
+        assert im_module.send_notification_channels("status", "subject", "body", email_enabled=False, webhook_enabled=True) == (False, False)
+        assert calls["email"] == []
+        assert calls["posts"] == []
+        assert capsys.readouterr().out == ""
+
+    # An unavailable channel does not block a configured peer from receiving the same alert
+    @pytest.mark.parametrize("unavailable,expected", [("email", (False, True)), ("webhook", (True, False))])
+    def test_one_unavailable_channel_does_not_block_the_other(self, im_module, monkeypatch, capsys, unavailable, expected):
+        calls = self._channels(im_module, monkeypatch)
+        if unavailable == "email":
+            monkeypatch.setattr(im_module, "SMTP_PASSWORD", "")
+        else:
+            monkeypatch.setattr(im_module, "WEBHOOK_URL", "")
+
+        assert im_module.send_notification_channels("status", "subject", "body", email_enabled=True) == expected
+        assert len(calls["email"]) == int(unavailable == "webhook")
+        assert len(calls["posts"]) == int(unavailable == "email")
+        output = capsys.readouterr().out
+        assert ("Sending email notification" in output) == (unavailable == "webhook")
+        assert ("Sending webhook notification" in output) == (unavailable == "email")
+
     # The configured switch decides the webhook channel when the caller does not say
     def test_the_configured_switch_decides_the_webhook_when_the_caller_does_not_say(self, im_module, monkeypatch):
         calls = self._channels(im_module, monkeypatch)
@@ -670,6 +711,7 @@ class TestSendNotificationChannels:
     # The embed the caller shaped reaches the webhook unchanged and the switch is not applied a second time
     def test_the_embed_reaches_the_webhook_as_shaped(self, im_module, monkeypatch):
         sent = {}
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ERROR_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: sent.update(args=args, kwargs=kwargs) or 0)
@@ -683,6 +725,7 @@ class TestSendNotificationChannels:
     # Without an embed of its own the webhook carries the subject and body, the way the family's plain alerts do
     def test_the_subject_and_body_stand_in_for_a_missing_embed(self, im_module, monkeypatch):
         sent = {}
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://discord.com/api/webhooks/1/token")
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "send_webhook", lambda *args, **kwargs: sent.update(args=args, kwargs=kwargs) or 0)
