@@ -160,7 +160,7 @@ instagram_monitor <target_insta_user> --follow-list-source graphql
 
 Report which source works at [Discussions](https://github.com/misiektoja/instagram_monitor/discussions). Do not leave a failing source running: every retry adds requests to an account that is already getting errors.
 
-There is a third, experimental source that reads the lists out of a real browser instead of calling the API. It is slow, needs Playwright and carries a real risk to the logged-in account, so try it only if you accept that. See [Browser Source](usage.md#browser-source-experimental).
+There is a third, experimental source that reads the lists out of a real browser instead of calling the API. It excludes the suggested accounts shown below the list. It is slow, needs Playwright and carries a real risk to the logged-in account, so try it only if you accept that. See [Browser Source](usage.md#browser-source-experimental).
 
 Common browser source errors:
 
@@ -168,6 +168,8 @@ Common browser source errors:
 - **The browser could not start**: Playwright is installed but the browser is not. Run `playwright install chromium` or set `FOLLOW_LIST_BROWSER_CHANNEL` to a browser already installed here, such as `chrome`.
 - **The login page, so this session is not logged in**: the cookies handed to the browser are no longer valid. Refresh the session and try again.
 - **A challenge page**: complete account verification in an ordinary browser, then restart or re-import the session. The circuit breaker checks recovery without requiring a separate clearing command.
+- **The profile's followers or following control could not be clicked**: set `FOLLOW_LIST_BROWSER_HEADLESS = False` to inspect the profile. The browser source supports both direct list links and count links that open a dialog. If the counts open normally but the tool still fails, update it and report the layout error.
+- **No profile links appeared after clicking the control**: the list did not finish loading. Inspect it with `FOLLOW_LIST_BROWSER_HEADLESS = False` and raise `FOLLOW_LIST_BROWSER_TIMEOUT` if it loads slowly. This browser error does not mean an API query returned empty data.
 - **Rendered only N of about M**: the dialog stopped growing early, usually from a slow connection. Raise `FOLLOW_LIST_BROWSER_SCROLL_DELAY` and `FOLLOW_LIST_BROWSER_TIMEOUT`. The short list is discarded, not saved over your baseline.
 
 Run `instagram_monitor --doctor` to confirm Playwright and the browser are installed before a real run.
