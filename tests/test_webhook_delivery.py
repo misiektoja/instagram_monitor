@@ -272,6 +272,22 @@ class TestSendWebhook:
         assert all(value.isascii() for value in headers.values())
         assert_http_client_sends_headers(headers)
 
+    # A custom header already written in RFC 2047 form, as ntfy documents for emoji tags, is not encoded a second time
+    def test_ntfy_pre_encoded_custom_header_is_sent_unchanged(self, im_module, monkeypatch):
+        calls = []
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "ntfy")
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.sh/private-topic")
+        monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_HEADERS", {"X-Tags": "=?UTF-8?B?8J+HqfCfh6o=?="})
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append(kwargs) or _FakeResponse(200))
+
+        assert im_module.send_webhook("\U0001f4c8 KK Followers Changed", "Body") == 0
+        headers = calls[0]["headers"]
+        assert headers["X-Tags"] == "=?UTF-8?B?8J+HqfCfh6o=?="
+        assert decode_rfc2047_header(headers["X-Title"]) == "\U0001f4c8 KK Followers Changed"
+        assert_http_client_sends_headers(headers)
+
     # An ntfy image upload sends its title and multi-line message in headers that ntfy decodes back to UTF-8
     def test_ntfy_image_alert_encodes_title_and_message_headers(self, im_module, monkeypatch):
         with make_test_directory() as directory_name:
