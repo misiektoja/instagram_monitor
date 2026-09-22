@@ -21,8 +21,8 @@ def make_test_directory():
     return tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT)
 
 
-# Decodes one ntfy header value the way the ntfy server reads RFC 2047 words
-def decode_ntfy_header(value):
+# Decodes the RFC 2047 words in one header value the way ntfy and other receivers read them
+def decode_rfc2047_header(value):
     return str(make_header(decode_header(value)))
 
 
@@ -238,7 +238,7 @@ class TestSendWebhook:
         assert args == ("https://ntfy.sh/private-topic?auth=private-value",)
         assert kwargs["data"] == "Body: Bj\u00f6rk\n\nCount: 3\n\nImage: https://example.com/image.jpg".encode("utf-8")
         assert kwargs["headers"]["X-Title"].startswith("=?UTF-8?B?")
-        assert decode_ntfy_header(kwargs["headers"]["X-Title"]) == "Instagram title za\u017c\u00f3\u0142\u0107"
+        assert decode_rfc2047_header(kwargs["headers"]["X-Title"]) == "Instagram title za\u017c\u00f3\u0142\u0107"
         assert_http_client_sends_headers(kwargs["headers"])
         # Alert content must never travel in the query string, where servers and proxies log it
         assert "params" not in kwargs
@@ -263,9 +263,9 @@ class TestSendWebhook:
 
         assert rc == 0
         headers = calls[0]["headers"]
-        assert decode_ntfy_header(headers["X-Title"]) == title
+        assert decode_rfc2047_header(headers["X-Title"]) == title
         # A custom header built from the title carries the same emoji, so it is encoded the same way
-        assert decode_ntfy_header(headers["X-Tags"]) == title
+        assert decode_rfc2047_header(headers["X-Tags"]) == title
         assert headers["X-Priority"] == "high"
         assert headers["Authorization"] == "Bearer tk_private"
         assert headers["User-Agent"] == f"InstagramMonitor/{im_module.VERSION}"
@@ -290,11 +290,43 @@ class TestSendWebhook:
             assert len(calls) == 1
             headers = calls[0]["headers"]
             assert calls[0]["data"] == b"fake-image"
-            assert decode_ntfy_header(headers["X-Title"]) == "\U0001f5bc\ufe0f KK Profile Picture Changed"
+            assert decode_rfc2047_header(headers["X-Title"]) == "\U0001f5bc\ufe0f KK Profile Picture Changed"
             # ntfy turns each literal backslash-n into a line break only after decoding the RFC 2047 word
-            assert decode_ntfy_header(headers["X-Message"]) == "Bio: Bj\u00f6rk \u0436\u0438\u0437\u043d\u044c \U0001f3b5\\n\\nCount: 3"
+            assert decode_rfc2047_header(headers["X-Message"]) == "Bio: Bj\u00f6rk \u0436\u0438\u0437\u043d\u044c \U0001f3b5\\n\\nCount: 3"
             assert headers["X-Filename"] == "profile.jpg"
             assert_http_client_sends_headers(headers)
+
+    # A custom header built from an emoji alert title no longer drops the whole alert for a Discord-format receiver
+    def test_discord_custom_header_with_emoji_title_is_sent_encoded(self, im_module, monkeypatch):
+        calls = []
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "discord")
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://example.com/hook")
+        monkeypatch.setattr(im_module, "WEBHOOK_FOLLOWERS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_HEADERS", {"X-Title": "{title}", "X-Static": "plain =?value?=", "Authorization": "Basic dXNlcjpwYXNz"})
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append(kwargs) or _FakeResponse(204))
+        embed = im_module.follower_change_embed("KK", "followers", 10, 11, "- new_follower\n", "")
+
+        rc = im_module.send_webhook(embed["webhook_title"], embed["webhook_description"], color=embed["webhook_color"], fields=embed["webhook_fields"], notification_type="followers")
+
+        assert rc == 0
+        headers = calls[0]["headers"]
+        assert decode_rfc2047_header(headers["X-Title"]) == "\U0001f4c8 KK Followers Changed"
+        # A generic receiver may not decode RFC 2047, so ASCII values stay exactly as configured
+        assert headers["X-Static"] == "plain =?value?="
+        assert headers["Authorization"] == "Basic dXNlcjpwYXNz"
+        assert calls[0]["json"]["embeds"][0]["title"] == "\U0001f4c8 KK Followers Changed"
+        assert_http_client_sends_headers(headers)
+
+    # Generic header encoding leaves every ASCII value alone and encodes only text a raw header cannot carry
+    @pytest.mark.parametrize("value,encoded", [("Plain title", False), ("tab\there", False), ("=?UTF-8?B?aGk=?=", False), ("Björk", True), ("\U0001f4c8 KK Followers Changed", True)])
+    def test_encode_non_ascii_header_value(self, im_module, value, encoded):
+        result = im_module.encode_non_ascii_header_value(value)
+
+        assert result.isascii()
+        assert (result != value) is encoded
+        if encoded:
+            assert decode_rfc2047_header(result) == value
 
     # Plain ASCII passes through unchanged and anything a raw header would break or ntfy would misread is encoded
     @pytest.mark.parametrize("value,encoded", [("Plain title", False), ("Bj\u00f6rk", True), ("\U0001f4c8 KK Followers Changed", True), ("tab\there", True), ("=?UTF-8?B?aGk=?=", True)])
@@ -303,7 +335,7 @@ class TestSendWebhook:
 
         assert result.isascii()
         assert (result != value) is encoded
-        assert decode_ntfy_header(result) == value
+        assert decode_rfc2047_header(result) == value
 
     # A known ntfy URL corrects a stale configured provider and sends native text
     def test_runtime_provider_detection_corrects_config_mismatch(self, im_module, monkeypatch, capsys):
