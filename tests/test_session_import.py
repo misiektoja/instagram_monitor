@@ -748,6 +748,43 @@ class TestChromiumKeyringFailure:
         assert "allow the keychain or keyring prompt" in str(failure.value)
         assert "logged in to Instagram" not in str(failure.value)
 
+    # Verifies each failure is attributed to the cause the reader must actually fix. The strings are taken verbatim
+    # from the installed keyring backends and from pycookiecheat, several of which name neither the keyring nor the
+    # keychain, so a classifier keyed on those two words alone sends most of them to the wrong advice
+    @pytest.mark.parametrize("error_text,expected", [
+        ("Failed to unlock the collection!", "allow the keychain or keyring prompt"),
+        ("Failed to unlock the item!", "allow the keychain or keyring prompt"),
+        ("Failed to unlock the keyring!", "allow the keychain or keyring prompt"),
+        ("Can't get password from keychain: (-25293, 'Unknown Error')", "allow the keychain or keyring prompt"),
+        ("Can't open a session to the secret service", "allow the keychain or keyring prompt"),
+        ("No recommended backend was available. Install a recommended 3rd party backend package", "no OS keyring backend is available"),
+        ("SecretStorage required", "no OS keyring backend is available"),
+        ("InvalidTag", "close Chrome, then run the import again"),
+        ("unable to open database file", "check the file permissions"),
+        ("Could not find local state file", "Make sure Chrome is installed"),
+    ])
+    def test_each_failure_names_the_cause_to_fix(self, im_module, error_text, expected):
+        assert expected in im_module.chromium_cookie_failure_message("chrome", Exception(error_text))
+
+    # Verifies the alternatives name the profile the way the picker showed it. A bare directory such as "Profile 3"
+    # is not what the reader chose from, and the Firefox path already names its profiles the same way
+    def test_the_alternatives_name_profiles_the_way_the_picker_did(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "system", lambda: "Darwin")
+        monkeypatch.setattr(im_module, "list_chromium_profiles", lambda browser: [{"dir": "Default", "name": "Default"}, {"dir": "Profile 3", "name": "Work"}])
+        monkeypatch.setitem(sys.modules, "pycookiecheat", fake_pycookiecheat(lambda *arguments, **keywords: {}))
+
+        with pytest.raises(im_module.CookieImportError) as failure:
+            im_module.get_chromium_cookie_dict("chrome", profile="Default", cookie_file=__file__)
+
+        assert "other profiles: Profile 3 (Work)" in str(failure.value)
+
+    # Verifies a missing backend is never told to unlock one, which is advice that cannot be followed
+    def test_a_missing_backend_is_not_told_to_unlock_one(self, im_module):
+        message = im_module.chromium_cookie_failure_message("brave", Exception("No recommended backend was available"))
+
+        assert "unlock" not in message
+        assert "logged in to Instagram" not in message
+
 
 class TestDashboardChromiumImport:
     # The dashboard states that it only imports databases it enumerated itself, and that guarantee was previously
