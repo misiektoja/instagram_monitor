@@ -25,6 +25,8 @@ installed copy of the package.
 
 | File | Area under test |
 | --- | --- |
+| `test_codeql_workflow.py` | CodeQL source suppression filtering, preserved findings and upload ordering |
+| `test_codeql_boundaries.py` | Long input formatting, profile path validation, private dashboard errors and secret presence diagnostics |
 | `test_notification_receipts.py` | SMTP acceptance despite cleanup failures, receipt controls and unchanged notification content |
 | `test_configuration_notification_boundaries.py` | Invalid output settings, CLI precedence and strict webhook fields with legacy JSON support |
 | `test_boundary_regressions.py` | Real notification transports, literal secret resolution and malformed startup paths |
