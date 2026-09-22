@@ -43,7 +43,7 @@ pip install -e '.[lint]'
 
 It selects defect rules only (pyflakes and bugbear). Formatting and import order are deliberately not enforced, so keep following the surrounding code.
 
-CodeQL runs the extended security queries. For a verified false positive, put a `codeql[rule-id]` comment immediately above the reported line and explain why it is safe. The workflow filters results with accepted source suppressions before upload. Other findings remain reportable.
+CodeQL runs the extended security queries. For a verified false positive, put a `codeql[rule-id]` comment immediately above the reported line and explain why it is safe. For multiple rules on one line, use separate annotations on the same preceding comment, such as `# codeql[py/full-ssrf] codeql[py/request-without-cert-validation]`. Do not combine rule IDs inside one pair of brackets. The workflow filters results with accepted source suppressions before upload. Other findings remain reportable.
 
 The default suite is offline. It never contacts Instagram and network functions are replaced with local test doubles. See [Testing](https://misiektoja.github.io/instagram_monitor/testing/) for what it covers.
 
