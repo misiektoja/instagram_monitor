@@ -456,19 +456,27 @@ def test_line_ending_policy_is_declared():
         assert pattern in attributes
 
 
-# Verifies the optional local hooks run the same linter version CI installs, or a clean commit still fails CI
-def test_local_hooks_match_the_pinned_linter():
-    pyproject = read_asset("pyproject.toml")
-    pinned = re.search(r'lint = \["ruff==([^"]+)"\]', pyproject)
-    assert pinned is not None
+# Verifies the optional local hooks run the ruff the pinned extra installs, since a second pin here would drift
+# apart from it every time one side is bumped and a locally clean commit would still fail CI
+def test_local_hooks_run_the_pinned_linter():
+    assert re.search(r'lint = \["ruff==([^"]+)"\]', read_asset("pyproject.toml")) is not None
 
-    hooks = read_yaml_asset(".pre-commit-config.yaml")["repos"]
-    ruff_hook = next(entry for entry in hooks if "ruff-pre-commit" in entry["repo"])
-    assert ruff_hook["rev"] == f"v{pinned.group(1)}"
+    repos = read_yaml_asset(".pre-commit-config.yaml")["repos"]
+    assert not any("ruff" in entry["repo"] for entry in repos), "ruff must not be pinned a second time in the hook configuration"
 
-    workflow = read_yaml_asset(".github/workflows/tests.yml")
-    lint_steps = workflow["jobs"]["lint"]["steps"]
-    assert any("ruff check" in step.get("run", "") for step in lint_steps)
+    ruff_hook = next(hook for entry in repos if entry["repo"] == "local" for hook in entry["hooks"] if hook["id"] == "ruff-check")
+    assert ruff_hook["language"] == "system"
+    assert ruff_hook["entry"].split() == ["ruff", "check"]
+
+    lint_steps = read_yaml_asset(".github/workflows/tests.yml")["jobs"]["lint"]["steps"]
+    assert any("[lint]" in step.get("run", "") for step in lint_steps)
+    lint_command = next(step["run"] for step in lint_steps if "ruff check" in step.get("run", ""))
+
+    # Both sides must also reach the same files, or the hook stays quiet about code CI rejects
+    covered = re.compile(ruff_hook["files"])
+    assert covered.match("instagram_monitor.py")
+    assert covered.match("tests/test_documentation.py")
+    assert "instagram_monitor.py tests" in lint_command
 
 
 # Verifies published archives stay verifiable, since an unsigned download cannot be told apart from a tampered one
