@@ -6623,7 +6623,7 @@ def build_ntfy_local_image(local_image_file=None):
         return None
 
 
-# Posts to an operator-configured HTTPS webhook while preserving certificate checks and refusing redirects
+# Posts to an operator-configured HTTPS webhook with the selected TLS verification policy and no redirects
 def post_webhook_request(webhook_url, verify, proxies, **request_kwargs):
     destination = str(webhook_url or "").strip()
     if not validate_webhook_url(destination):
@@ -6634,7 +6634,8 @@ def post_webhook_request(webhook_url, verify, proxies, **request_kwargs):
 
     # A caller that forgets the deadline would hang the delivery, so the configured one is the floor
     request_kwargs.setdefault("timeout", WEBHOOK_TIMEOUT_SECONDS)
-    # codeql[py/full-ssrf, py/request-without-cert-validation]
+    # VERIFY_SSL defaults to True and only the local operator can disable certificate verification
+    # codeql[py/full-ssrf] codeql[py/request-without-cert-validation]
     return WEBHOOK_SESSION.post(destination, verify=verify, proxies=proxies, allow_redirects=False, **request_kwargs)
 
 
