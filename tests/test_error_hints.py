@@ -231,7 +231,7 @@ class TestGuideLinkRelevance:
 
 class TestErrorSummary:
     @pytest.mark.parametrize("msg, summary", [
-        ("ConnectionException: 429 Too Many Requests", "Instagram is rate-limiting this account or IP"),
+        ("ConnectionException: 429 Too Many Requests", "Instagram is rate-limiting anonymous requests from this IP"),
         ("JSONDecodeError: challenge_required", "Instagram is asking this session or IP to pass a challenge"),
         ('AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required" when accessing https://www.instagram.com/api/v1/users/web_profile_info/?username=x', "Instagram no longer answers the profile endpoint this lookup used"),
         ("FileNotFoundError: Instagram session file for me not found", "No saved Instagram session was found"),
@@ -291,6 +291,38 @@ class TestSmtpErrorSummary:
     ])
     def test_smtp_failures_get_a_stable_summary(self, im_module, error, summary):
         assert im_module.classify_smtp_error(error)[0] == summary
+
+
+class TestAnonymousRateLimits:
+    THROTTLE = 'ConnectionException: JSON Query to api/v1/users/web_profile_info/?username=x: 401 Unauthorized - "fail" status, message "Please wait a few minutes before you try again."'
+
+    # An anonymous limit sits on the address and is often hit before the first request, so a slower run cannot clear it
+    def test_an_anonymous_limit_points_at_the_address_and_a_session_login(self, im_module):
+        advice = im_module.classify_recovery_error(self.THROTTLE, is_logged_in=False)
+
+        assert advice.code == "instagram.rate_limited"
+        assert "IP address" in advice.fix and "session login" in advice.fix
+        assert "INSTA_CHECK_INTERVAL" not in advice.fix
+        assert im_module.ANONYMOUS_RATE_LIMIT_GUIDE_URL in advice.fix
+        assert advice.retryable is True
+
+    # A signed-in run is limited per account, so the advice that reduces its own traffic still applies
+    def test_a_signed_in_limit_keeps_the_interval_advice(self, im_module):
+        advice = im_module.classify_recovery_error(self.THROTTLE, is_logged_in=True)
+
+        assert advice.code == "instagram.rate_limited"
+        assert "INSTA_CHECK_INTERVAL" in advice.fix
+        assert im_module.ANTI_DETECTION_INTERVAL_GUIDE_URL in advice.fix
+
+    # The advice is chosen by the run's mode, not by the address the request went to
+    def test_the_run_mode_decides_the_advice(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "")
+        monkeypatch.setattr(im_module, "SKIP_SESSION", True)
+        assert "IP address" in im_module.classify_recovery_error(self.THROTTLE).fix
+
+        monkeypatch.setattr(im_module, "SESSION_USERNAME", "someone")
+        monkeypatch.setattr(im_module, "SKIP_SESSION", False)
+        assert "INSTA_CHECK_INTERVAL" in im_module.classify_recovery_error(self.THROTTLE).fix
 
 
 class TestOutageReporting:
@@ -685,7 +717,7 @@ class TestRecoveryCodeSet:
         rows = _rule_table_rows(im_module)
         calls = _context_advice_calls(im_module)
 
-        assert len(rows) == 14, "the runtime rule table lost or gained a row"
+        assert len(rows) == 15, "the runtime rule table lost or gained a row"
         assert all(len(row.elts) == 5 for row in rows)
         assert len(calls) >= 15, "the context table lost branches"
         assert all(len(call.args) == 5 for call in calls)

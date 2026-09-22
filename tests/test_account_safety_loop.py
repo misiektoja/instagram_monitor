@@ -21,6 +21,9 @@ ARTIFACT_ROOT = PROJECT_ROOT / "local" / "test_artifacts"
 # Captured before the autouse ledger-isolation fixture can patch it, so the loop writes a real file under tmp_path
 _REAL_EXPOSURE_STATE_PATH = im.exposure_state_path
 
+# Captured before the loop fixture silences it, for the one test that reads the report the loop prints
+_REAL_PRINT_CUR_TS = im.print_cur_ts
+
 
 # Returns an isolated local artifact directory for one loop test
 def _artifact_dir() -> Path:
@@ -218,3 +221,21 @@ def test_periodic_list_failure_is_recorded_once(monitored_account, kind, challen
         im.instagram_monitor_user(*args)
     assert len(fetches) == 2
     assert im.exposure_snapshot()["failures"] == {"challenge" if challenge else "rate_limit": 1}
+
+
+# Verifies a first check that fails closes its report with one timestamp footer rather than two
+def test_a_failed_first_check_closes_its_report_once(monitored_account, capsys):
+    monitored_account.setattr(im, "print_cur_ts", _REAL_PRINT_CUR_TS)
+    monitored_account.setattr(im, "instaloader_client", lambda **kwargs: SimpleNamespace(context=SimpleNamespace(is_logged_in=True)))
+    throttle = im.instaloader.exceptions.ConnectionException('JSON Query to api/v1/users/web_profile_info/?username=target: 401 Unauthorized - "fail" status, message "Please wait a few minutes before you try again."')
+
+    def lookup(*args):
+        raise throttle
+
+    monitored_account.setattr(im, "profile_from_username_resilient", lookup)
+    with pytest.raises(SystemExit):
+        im.instagram_monitor_user("target", "", False, True, True, True, True, False)
+
+    output = capsys.readouterr().out
+    assert "* Error: " in output and "To fix: " in output
+    assert output.count("Timestamp:") == 1

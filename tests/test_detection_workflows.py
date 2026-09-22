@@ -1,12 +1,19 @@
 """Offline tests for user-visible detection workflows."""
 
 
+# Configures local delivery settings for detection tests with recording transports
+def _configure_delivery_settings(im_module, monkeypatch):
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com"), ("WEBHOOK_URL", "https://discord.com/api/webhooks/1/token"), ("WEBHOOK_PROVIDER", "discord")):
+        monkeypatch.setattr(im_module, name, value)
+
+
 class TestCountChangeWorkflows:
     # Post count changes send email, webhook, activity log and return one
     def test_posts_count_change_notifies_and_logs(self, im_module, monkeypatch):
         emails = []
         webhooks = []
         logs = []
+        _configure_delivery_settings(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", True)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
@@ -43,6 +50,7 @@ class TestCountChangeWorkflows:
     def test_reels_count_change_sends_webhook_without_email(self, im_module, monkeypatch):
         emails = []
         webhooks = []
+        _configure_delivery_settings(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "STATUS_NOTIFICATION", False)
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
         monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
@@ -66,6 +74,7 @@ class TestLeakedCollabWorkflow:
         emails = []
         webhooks = []
         logs = []
+        _configure_delivery_settings(im_module, monkeypatch)
         post = {
             "shortcode": "ABC123",
             "owner": "public_owner",
@@ -122,6 +131,7 @@ class TestLeakedCollabWorkflow:
     # Collab email HTML escapes hostile API text in labels links and captions
     def test_leaked_collab_email_escapes_instagram_text(self, im_module, monkeypatch):
         emails = []
+        _configure_delivery_settings(im_module, monkeypatch)
         hostile_text = '<img src=x onerror="alert(1)">'
         post = {"shortcode": 'ABC\" onclick=\"alert(2)', "owner": hostile_text, "is_video": False, "ts": 1710000000, "caption": hostile_text, "collaborators": [hostile_text]}
         monkeypatch.setattr(im_module, "LOCAL_TIMEZONE", "UTC")

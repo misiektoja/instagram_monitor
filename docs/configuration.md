@@ -194,13 +194,15 @@ Every supported browser can have several profiles with separate cookies. Use one
     instagram_monitor --import-browser-session --browser firefox --browser-profile "default-release"
     ```
 
-- **Let it prompt you.** If you do not pass `--browser-profile` and several profiles exist, the tool lists them so you can choose. Profiles signed in to Instagram are marked with `*`, so you do not have to guess which one holds the session. When exactly one is signed in it is the default and Enter selects it.
+- **Let it prompt you.** If you do not pass `--browser-profile` and several profiles exist, the tool lists them so you can choose. Profiles holding a current Instagram session are marked with `*`, so you do not have to guess which one holds the session. A session that has expired is not marked, since importing it would fail. When exactly one profile is marked it is the default and Enter selects it.
 - **On the [Web Dashboard](view-modes.md#web-dashboard)**, pick the browser, click **Import** and select a profile if prompted. Profiles signed in to Instagram are marked with `*` and the only signed-in one is preselected. The dashboard imports only from the profiles it detected, so it cannot be pointed at another file or profile on your computer. Use `--cookie-file PATH` on the command line when you deliberately want a database from somewhere else.
 - **Advanced:** point `--cookie-file` at a specific cookie database (Firefox `cookies.sqlite` or a Chromium `Cookies` file). This overrides `--browser-profile`.
 
 For Chromium-based browsers, the tool finds the cookie database inside the selected profile. It supports both `<profile>/Cookies` and `<profile>/Network/Cookies` layouts. On Linux it looks for the distribution install first, then Snap and Flatpak builds of Chromium and Brave.
 
-Chromium-based browsers encrypt their cookies with a key held in your keychain or keyring. If you deny that prompt or the keyring is locked, the import says so instead of blaming a missing login.
+Chromium-based browsers encrypt their cookies with a key held in your keychain or keyring. If you deny that prompt or the keyring is locked, the import says so instead of blaming a missing login. On Linux with no keyring backend installed at all, it names that instead and points you at Firefox, which needs none.
+
+If the selected profile holds an Instagram session that has expired, the import says so and gives the date it expired, without contacting Instagram. Sign in again in that browser, then re-run the import.
 
 Chromium-based import does not work inside Docker. Use Firefox as shown under [Import Firefox into the Container Session](usage.md#import-firefox-into-the-container-session). To import from Chromium, run a local PyPI or manual installation instead.
 
@@ -337,7 +339,7 @@ instagram_monitor <target_insta_user> --webhook
 instagram_monitor <target_insta_user> --no-webhook
 ```
 
-Webhook and avatar URLs must be complete HTTPS links with a hostname and no embedded credentials. Root endpoints work with or without a trailing slash. Known Discord and `ntfy.sh` destinations correct a stale configured provider at runtime. A URL passed through `--webhook-url` may remain visible in shell history or process listings, so prefer `--set-webhook-url` for normal setup. A `WEBHOOK_URL` left unset, or left at its `your_webhook_url` placeholder, switches webhook alerts off at startup instead of failing at the first alert, and `--verbose` reports why.
+Webhook and avatar URLs must be complete HTTPS links with a hostname and no embedded credentials. Root endpoints work with or without a trailing slash. Known Discord and `ntfy.sh` destinations correct a stale configured provider at runtime. A URL passed through `--webhook-url` may remain visible in shell history or process listings, so prefer `--set-webhook-url` for normal setup. When webhook alerts are selected but local settings are missing or invalid, the startup summary shows `Notifications (webhook): Unavailable` and names the setting. Automatic webhook alerts are skipped silently until the settings are corrected.
 
 <a id="advanced-discord-format-customization"></a>
 ### Advanced Discord-format customization
@@ -409,6 +411,8 @@ instagram_monitor --set-smtp-password
 ```
 
 Enter the password at the hidden prompt after configuring `SMTP_HOST`, `SMTP_USER`, `SENDER_EMAIL` and `RECEIVER_EMAIL`. The command checks mail sign-in before saving `SMTP_PASSWORD` to `.env`. No email is sent. An exported `SMTP_PASSWORD` overrides the saved value at startup.
+
+When email alerts are selected but an SMTP setting is missing or invalid, the startup summary shows `Notifications (email): Unavailable` and names the setting. Automatic email alerts are skipped silently until the settings are corrected. The host and recipient rows show configured values, not a successful mail sign-in. Run `instagram_monitor --doctor` to check the sign-in or `instagram_monitor --send-test-email` to check delivery.
 
 You can use operating system environment variables instead of a file. Set them with `export` on Linux, Unix, macOS or WSL:
 

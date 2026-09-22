@@ -5,6 +5,7 @@ import sqlite3
 import stat
 import sys
 import tempfile
+import time
 from contextlib import closing
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -307,6 +308,113 @@ class TestInstagramSessionProbe:
 
         assert "No Instagram cookies found" in str(failure.value)
         assert "other profiles: work" in str(failure.value), "the failure names where else the session might be"
+
+
+class TestBrowserProfileStub:
+    # Builds a synthetic Firefox and Chromium tree holding one profile each, so the guards below fail wherever they
+    # run rather than only on a machine with a browser installed
+    @staticmethod
+    def synthetic_roots(im_module, monkeypatch, tmp_path):
+        firefox_profile = tmp_path / "firefox" / "abc.default"
+        firefox_profile.mkdir(parents=True)
+        (firefox_profile / "cookies.sqlite").touch()
+        chromium_profile = tmp_path / "chromium" / "Default"
+        chromium_profile.mkdir(parents=True)
+        (chromium_profile / "Cookies").touch()
+        monkeypatch.setattr(im_module, "firefox_cookie_patterns", lambda: (str(tmp_path / "firefox" / "*" / "cookies.sqlite"),))
+        monkeypatch.setattr(im_module, "get_chromium_user_data_dir", lambda browser: str(tmp_path / "chromium"))
+
+    # Verifies the suite never enumerates the browser profiles of whoever runs it. Without the shared stub a listing
+    # differs per machine, costs a SQLite open per profile and waits on the browsers that are running
+    def test_browser_profile_discovery_is_stubbed_by_default(self, im_module, monkeypatch, tmp_path):
+        self.synthetic_roots(im_module, monkeypatch, tmp_path)
+
+        assert im_module.list_firefox_profiles() == []
+        assert im_module.list_chromium_profiles("chrome") == []
+
+    # Verifies the real enumerators are one fixture away, so stubbing them by default does not leave them untested
+    def test_the_real_enumerators_are_available_on_request(self, im_module, monkeypatch, tmp_path, real_browser_profiles):
+        self.synthetic_roots(im_module, monkeypatch, tmp_path)
+
+        assert [profile["dir"] for profile in im_module.list_firefox_profiles()] == ["abc.default"]
+        assert [profile["dir"] for profile in im_module.list_chromium_profiles("chrome")] == ["Default"]
+
+
+class TestSessionExpiry:
+    # Builds one cookie database holding a single Instagram session cookie with the given raw expiry
+    @staticmethod
+    def write_session(cookie_path, expiry, firefox):
+        with sqlite3.connect(cookie_path) as connection:
+            if firefox:
+                connection.execute("CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT, expiry INTEGER)")
+                connection.execute("INSERT INTO moz_cookies VALUES (?, ?, ?, ?)", (".instagram.com", "sessionid", "v", expiry))
+            else:
+                connection.execute("CREATE TABLE cookies (host_key TEXT, name TEXT, encrypted_value BLOB, expires_utc INTEGER)")
+                connection.execute("INSERT INTO cookies VALUES (?, ?, ?, ?)", (".instagram.com", "sessionid", b"v10", expiry))
+
+    # Verifies an expired session is not marked as signed in, whichever unit the profile records expiry in. Current
+    # Firefox writes milliseconds and older profiles write seconds, and nothing in the schema says which
+    @pytest.mark.parametrize("firefox,scale", [(True, 1), (True, 1000), (False, None)])
+    def test_an_expired_session_is_not_called_signed_in(self, im_module, tmp_path, firefox, scale):
+        now = 1_790_000_000.0
+        expired = now - 86400
+        raw = int(expired * scale) if scale else int((expired + im_module.CHROMIUM_EPOCH_OFFSET_SECONDS) * 1_000_000)
+        cookie_path = tmp_path / ("cookies.sqlite" if firefox else "Cookies")
+        self.write_session(cookie_path, raw, firefox)
+
+        assert im_module.cookie_file_has_instagram_session(str(cookie_path), firefox=firefox, now=now) is False
+
+    # Verifies a session still valid is marked, so adding the expiry check does not hide the profiles worth choosing
+    @pytest.mark.parametrize("firefox,scale", [(True, 1), (True, 1000), (False, None)])
+    def test_a_current_session_is_still_called_signed_in(self, im_module, tmp_path, firefox, scale):
+        now = 1_790_000_000.0
+        valid = now + 86400
+        raw = int(valid * scale) if scale else int((valid + im_module.CHROMIUM_EPOCH_OFFSET_SECONDS) * 1_000_000)
+        cookie_path = tmp_path / ("cookies.sqlite" if firefox else "Cookies")
+        self.write_session(cookie_path, raw, firefox)
+
+        assert im_module.cookie_file_has_instagram_session(str(cookie_path), firefox=firefox, now=now) is True
+
+    # Verifies a cookie kept only for the browser run counts as current, since it records no expiry at all
+    def test_a_session_cookie_without_an_expiry_counts_as_current(self, im_module, tmp_path):
+        cookie_path = tmp_path / "cookies.sqlite"
+        self.write_session(cookie_path, 0, True)
+
+        assert im_module.cookie_file_has_instagram_session(str(cookie_path), firefox=True, now=1_790_000_000.0) is True
+
+    # Verifies a Firefox profile holding only an expired session says so from the database, instead of spending an
+    # Instagram request to be told what the expiry already recorded
+    def test_an_expired_firefox_profile_fails_before_any_request(self, im_module, tmp_path, monkeypatch):
+        cookie_path = tmp_path / "cookies.sqlite"
+        self.write_session(cookie_path, int(time.time() - 86400), True)
+        monkeypatch.setattr(im_module, "list_firefox_profiles", lambda: [{"dir": "a.default", "name": "default", "path": str(cookie_path), "install": ""}])
+        monkeypatch.setattr(im_module, "instaloader_client", lambda **keywords: pytest.fail("an expired profile reached Instagram"))
+
+        with pytest.raises(im_module.CookieImportError) as failure:
+            im_module.get_firefox_cookie_dict(str(cookie_path))
+
+        assert "Instagram session expired on" in str(failure.value)
+        assert "sign in to Instagram in Firefox again" in str(failure.value)
+
+    # Verifies a Chromium profile holding only an expired session is refused before the encryption key is requested,
+    # so the failure costs neither a keyring prompt nor a request
+    def test_an_expired_chromium_profile_fails_before_the_keyring(self, im_module, tmp_path, monkeypatch):
+        cookie_path = tmp_path / "Cookies"
+        self.write_session(cookie_path, int((time.time() - 86400 + im_module.CHROMIUM_EPOCH_OFFSET_SECONDS) * 1_000_000), False)
+        monkeypatch.setitem(sys.modules, "pycookiecheat", fake_pycookiecheat(lambda *arguments, **keywords: pytest.fail("the encryption key was requested for an expired session")))
+
+        with pytest.raises(im_module.CookieImportError) as failure:
+            im_module.get_chromium_cookie_dict("chrome", cookie_file=str(cookie_path))
+
+        assert "Instagram session expired on" in str(failure.value)
+
+    # Verifies a profile holding a current session is still read normally, so the new check gates only expired ones
+    def test_a_current_chromium_profile_is_still_read(self, im_module, tmp_path, monkeypatch):
+        cookie_path = tmp_path / "Cookies"
+        self.write_session(cookie_path, int((time.time() + 86400 + im_module.CHROMIUM_EPOCH_OFFSET_SECONDS) * 1_000_000), False)
+        monkeypatch.setitem(sys.modules, "pycookiecheat", fake_pycookiecheat(lambda *arguments, **keywords: {"sessionid": "live"}))
+
+        assert im_module.get_chromium_cookie_dict("chrome", cookie_file=str(cookie_path)) == {"sessionid": "live"}
 
 
 class TestProfileSelection:
@@ -669,6 +777,43 @@ class TestChromiumKeyringFailure:
         assert "encryption key" in str(failure.value)
         assert "allow the keychain or keyring prompt" in str(failure.value)
         assert "logged in to Instagram" not in str(failure.value)
+
+    # Verifies each failure is attributed to the cause the reader must actually fix. The strings are taken verbatim
+    # from the installed keyring backends and from pycookiecheat, several of which name neither the keyring nor the
+    # keychain, so a classifier keyed on those two words alone sends most of them to the wrong advice
+    @pytest.mark.parametrize("error_text,expected", [
+        ("Failed to unlock the collection!", "allow the keychain or keyring prompt"),
+        ("Failed to unlock the item!", "allow the keychain or keyring prompt"),
+        ("Failed to unlock the keyring!", "allow the keychain or keyring prompt"),
+        ("Can't get password from keychain: (-25293, 'Unknown Error')", "allow the keychain or keyring prompt"),
+        ("Can't open a session to the secret service", "allow the keychain or keyring prompt"),
+        ("No recommended backend was available. Install a recommended 3rd party backend package", "no OS keyring backend is available"),
+        ("SecretStorage required", "no OS keyring backend is available"),
+        ("InvalidTag", "close Chrome, then run the import again"),
+        ("unable to open database file", "check the file permissions"),
+        ("Could not find local state file", "Make sure Chrome is installed"),
+    ])
+    def test_each_failure_names_the_cause_to_fix(self, im_module, error_text, expected):
+        assert expected in im_module.chromium_cookie_failure_message("chrome", Exception(error_text))
+
+    # Verifies the alternatives name the profile the way the picker showed it. A bare directory such as "Profile 3"
+    # is not what the reader chose from, and the Firefox path already names its profiles the same way
+    def test_the_alternatives_name_profiles_the_way_the_picker_did(self, im_module, monkeypatch):
+        monkeypatch.setattr(im_module, "system", lambda: "Darwin")
+        monkeypatch.setattr(im_module, "list_chromium_profiles", lambda browser: [{"dir": "Default", "name": "Default"}, {"dir": "Profile 3", "name": "Work"}])
+        monkeypatch.setitem(sys.modules, "pycookiecheat", fake_pycookiecheat(lambda *arguments, **keywords: {}))
+
+        with pytest.raises(im_module.CookieImportError) as failure:
+            im_module.get_chromium_cookie_dict("chrome", profile="Default", cookie_file=__file__)
+
+        assert "other profiles: Profile 3 (Work)" in str(failure.value)
+
+    # Verifies a missing backend is never told to unlock one, which is advice that cannot be followed
+    def test_a_missing_backend_is_not_told_to_unlock_one(self, im_module):
+        message = im_module.chromium_cookie_failure_message("brave", Exception("No recommended backend was available"))
+
+        assert "unlock" not in message
+        assert "logged in to Instagram" not in message
 
 
 class TestDashboardChromiumImport:

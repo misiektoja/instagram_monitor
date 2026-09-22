@@ -13,6 +13,8 @@ from unittest.mock import Mock
 import signal
 import pytest
 
+import instagram_monitor as im
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT_ROOT = PROJECT_ROOT / "local" / "test_artifacts"
@@ -390,15 +392,33 @@ class TestBrowserOnboarding:
             assert state.import_browser == "firefox"
             assert state.container_host == "macos"
 
-    @pytest.mark.parametrize("choice,expected", [(0, "macos"), (1, "linux"), (2, "linux-snap"), (3, "linux-flatpak"), (4, "windows-powershell"), (5, "windows-cmd")])
-    def test_container_firefox_host_selection(self, im_module, monkeypatch, choice, expected):
-        monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: choice)
-        assert im_module._wizard_select_container_firefox_host() == expected
+    # Derived from the mount table rather than restating it, so a host added there is covered here without editing
+    # this test and cannot be offered under another host's key
+    @pytest.mark.parametrize("choice", range(len(im.CONTAINER_FIREFOX_HOSTS)))
+    def test_container_firefox_host_selection(self, im_module, monkeypatch, choice):
+        captured = []
 
+        def choose(question, options, **keywords):
+            captured.extend(options)
+            return choice
+
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", choose)
+        host = list(im_module.CONTAINER_FIREFOX_HOSTS)[choice]
+
+        assert im_module._wizard_select_container_firefox_host() == host
+        assert captured[choice] == (im_module.CONTAINER_FIREFOX_HOSTS[host][0], im_module.CONTAINER_FIREFOX_HOST_HINTS[host]), "the menu offered text neither table holds for that host"
+
+    # The "Another system" entry sits after every host in the table, so its index is read from the table rather than
+    # written as a literal that stops meaning "the last entry" as soon as a host is added
     def test_unsupported_container_firefox_host_is_not_assumed(self, im_module, monkeypatch, capsys):
-        monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: 6)
+        monkeypatch.setattr(im_module, "_wizard_ask_choice", lambda *args, **kwargs: len(im_module.CONTAINER_FIREFOX_HOSTS))
         assert im_module._wizard_select_container_firefox_host() is None
         assert "not currently available for this host" in capsys.readouterr().out
+
+    # Verifies every host in the mount table carries the wizard prose the menu needs, since a host present in one
+    # and missing from the other would raise while the menu is being drawn
+    def test_every_mounted_host_has_a_menu_hint(self, im_module):
+        assert list(im_module.CONTAINER_FIREFOX_HOST_HINTS) == list(im_module.CONTAINER_FIREFOX_HOSTS)
 
 
 class TestPromptWording:
@@ -2371,6 +2391,19 @@ class TestExistingInstaloaderSession:
 
         assert state.config_values["SKIP_SESSION"] is False
         assert state.config_values["SESSION_USERNAME"] == "login.user"
+
+
+# Leaves the browser session cache populated, so the next test proves the shared fixture empties it again. A cache
+# carried into a later test changes what that test sees and fails only in a full run, never when it runs alone
+def test_the_wizard_browser_cache_can_be_left_populated():
+    im._WIZARD_BROWSER_SESSION_COUNTS["firefox"] = (1, 1)
+
+    assert im._WIZARD_BROWSER_SESSION_COUNTS
+
+
+# Verifies the shared fixture resets the browser session cache, so the test above cannot bias this one
+def test_the_wizard_browser_cache_is_reset_between_tests():
+    assert im._WIZARD_BROWSER_SESSION_COUNTS == {}
 
 
 # Stubs the profile listings so the login menu describes a known set of browsers

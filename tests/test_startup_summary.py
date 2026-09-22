@@ -73,6 +73,22 @@ def test_the_concise_view_points_at_the_diagnostic_modes(im_module, monkeypatch,
     assert "* Secrets from dotenv:" not in output
 
 
+# Selected channels stay visible as unavailable when startup finds unusable local settings
+@pytest.mark.parametrize("email_setting,value,email_reason", [("SMTP_PASSWORD", "", "SMTP_PASSWORD is empty or still set to its placeholder"), ("SMTP_HOST", "your_smtp_server_ssl", "SMTP_HOST is empty or still set to its placeholder")])
+def test_selected_channels_remain_unavailable_during_startup(im_module, monkeypatch, capsys, tmp_path, email_setting, value, email_reason):
+    for name, setting_value in (("STATUS_NOTIFICATION", True), ("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "ops@example.com"), ("WEBHOOK_ENABLED", True), ("WEBHOOK_STATUS_NOTIFICATION", True), ("WEBHOOK_URL", "http://example.com/hook"), ("WEBHOOK_PROVIDER", "discord")):
+        monkeypatch.setattr(im_module, name, setting_value)
+    monkeypatch.setattr(im_module, email_setting, value)
+
+    output = rendered_summary(im_module, monkeypatch, capsys, tmp_path)
+
+    assert "Notifications (email):" in output
+    assert f"Unavailable ({email_reason})" in output
+    assert "Notifications (webhook):" in output
+    assert "Unavailable (WEBHOOK_URL must contain a complete HTTPS link)" in output
+    assert im_module.WEBHOOK_ENABLED is True
+
+
 # Verifies a run without a target reports the shared three-line block rather than dumping the whole help screen
 def test_a_missing_target_reports_the_shared_error_block(im_module, tmp_path):
     project_root = Path(__file__).resolve().parents[1]
@@ -162,3 +178,13 @@ def test_banner_dynamic_version_line(im_module, monkeypatch, capsys):
     im_module.print_startup_banner()
 
     assert capsys.readouterr().out == im_module.STARTUP_BANNER + "\n" + (" " * BODY_COLUMN) + "v9.9-test\n\n"
+
+
+# Verifies the default view names the reels setting either way, since a run that no longer fetches them has to say so
+@pytest.mark.parametrize("flag,expected", [("--no-fetch-reels", "False"), ("--fetch-reels", "True")])
+def test_the_concise_view_names_the_reels_setting(im_module, monkeypatch, capsys, tmp_path, flag, expected):
+    output = rendered_summary(im_module, monkeypatch, capsys, tmp_path, flag)
+
+    rows = [line for line in output.splitlines() if line.startswith("* Fetch reels:")]
+    assert len(rows) == 1, output
+    assert rows[0].split(":", 1)[1].strip() == expected

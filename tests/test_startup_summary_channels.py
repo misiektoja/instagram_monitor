@@ -13,6 +13,9 @@ import instagram_monitor as monitor
 def configured_channels(monkeypatch):
     monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.com")
     monkeypatch.setattr(monitor, "SMTP_PORT", 587)
+    monkeypatch.setattr(monitor, "SMTP_USER", "sender@example.com")
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "test-password")
+    monkeypatch.setattr(monitor, "SENDER_EMAIL", "sender@example.com")
     monkeypatch.setattr(monitor, "SMTP_SSL", True)
     monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "michal.k@example.com")
     monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)

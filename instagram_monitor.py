@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v4.0
+v4.0.1
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -25,7 +25,7 @@ rich (optional - for terminal dashboard)
 # keeps the supported Python floor enforceable regardless of where an import sits in the file
 from __future__ import annotations
 
-VERSION = "4.0"
+VERSION = "4.0.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -884,6 +884,16 @@ CONTAINER_FIREFOX_HOSTS = {
     "windows-powershell": ("Windows PowerShell", '"$env:APPDATA\\Mozilla\\Firefox\\Profiles:/home/instagram/.mozilla/firefox:ro"'),
     "windows-cmd": ("Windows Command Prompt", '"%APPDATA%\\Mozilla\\Firefox\\Profiles:/home/instagram/.mozilla/firefox:ro"'),
 }
+# Wizard-only prose for each supported Docker host, keyed by the same names as the mount table above so the menu
+# can be built from that table rather than from a second copy of its labels
+CONTAINER_FIREFOX_HOST_HINTS = {
+    "macos": "Use the Firefox profiles under Library/Application Support.",
+    "linux": "Use the profiles under ~/.mozilla/firefox.",
+    "linux-snap": "Use the profiles under ~/snap/firefox.",
+    "linux-flatpak": "Use the profiles under ~/.var/app/org.mozilla.firefox.",
+    "windows-powershell": "Use the profiles under $env:APPDATA\\Mozilla\\Firefox\\Profiles.",
+    "windows-cmd": "Use the profiles under %APPDATA%\\Mozilla\\Firefox\\Profiles.",
+}
 USER_AGENT = ""
 USER_AGENT_MOBILE = ""
 HTTP_BACKEND = "curl_cffi"
@@ -1028,6 +1038,7 @@ CONNECTION_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#connection-problems"
 DESCRIPTOR_LIMIT_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#too-many-open-files"
 DOCTOR_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#doctor-preflight"
 ACTION_BLOCK_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#instagram-says-try-again-later"
+ANONYMOUS_RATE_LIMIT_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#anonymous-runs-are-rate-limited"
 RETIRED_ENDPOINT_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#profile-lookups-report-a-retired-endpoint"
 SECRETS_GUIDE_URL = DOCS_BASE_URL + "/configuration/#storing-secrets"
 DIAGNOSTICS_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#choosing-the-right-logging-level"
@@ -4804,7 +4815,7 @@ _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
 # The TLS row reports a word rather than a boolean, and its off state is the one setting that weakens
 # a security property, so the state word is coloured like a boolean
 _TLS_STATE_RE = re.compile(r"^(\* TLS verification:\s+)(On|Off)(.*)$")
-_NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
+_NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off|Unavailable)(.*)$")
 _STORY_URL_RE = re.compile(r"(https?://\S+)")
 # A received signal is an event rather than a problem, so it gets its own whole-line colour
 _SIGNAL_LINE_RE = re.compile(r"^\s*\*\s*signal\b.*\breceived\b", re.IGNORECASE)
@@ -4991,14 +5002,23 @@ def smtp_server_configured() -> bool:
     return bool(SMTP_HOST) and bool(SMTP_PORT) and not is_placeholder_setting(SMTP_HOST)
 
 
-# Returns whether an email alert has both a server to send through and an address to reach
-def email_channel_configured() -> bool:
-    return smtp_server_configured() and not is_placeholder_setting(RECEIVER_EMAIL)
-
-
 # Returns whether a webhook alert has a destination to post to
 def webhook_channel_configured() -> bool:
     return bool(normalized_webhook_provider()) and not is_placeholder_setting(WEBHOOK_URL)
+
+
+# Names the first local webhook setting that prevents automatic alert delivery
+def webhook_settings_problem() -> Optional[str]:
+    if is_placeholder_setting(WEBHOOK_URL):
+        return "WEBHOOK_URL is empty or still set to its placeholder"
+    if not validate_webhook_url(WEBHOOK_URL):
+        return "WEBHOOK_URL must contain a complete HTTPS link"
+    provider = normalized_webhook_provider()
+    if not provider:
+        return "WEBHOOK_PROVIDER must be discord or ntfy"
+    if validate_webhook_customization(provider) is not None:
+        return "Webhook customization is invalid"
+    return validate_webhook_headers(provider)
 
 
 # Reports the mail server and the recipient an alert would reach, without the account that signs in to the server
@@ -5020,21 +5040,21 @@ def _startup_webhook_detail_rows() -> List["StartupSummaryRow"]:
     return [StartupSummaryRow("Webhook provider", provider), StartupSummaryRow("Delivery confirmations", str(DELIVERY_CONFIRMATIONS))]
 
 
-# Renders one channel rollup from the alert types it would send and whether it has a destination at all
-def _startup_channel_state(categories: Sequence[str], configured: bool) -> str:
+# Renders one channel rollup from its selected alert types and the first unusable setting
+def _startup_channel_state(categories: Sequence[str], problem: Optional[str]) -> str:
     if not categories:
         return "Off"
-    return "On (" + ", ".join(categories) + ")" if configured else "Off (not configured)"
+    return f"Unavailable ({problem})" if problem else "On (" + ", ".join(categories) + ")"
 
 
 # Builds notification summary rows shared by concise, verbose and logged views
 def _startup_notification_summary_rows() -> List["StartupSummaryRow"]:
     email_categories = _startup_email_notification_categories()
     webhook_categories = _startup_webhook_notification_categories()
-    # A selected alert type cannot make a channel live while its destination is unset, and the rollup is the only
-    # line the concise view prints, so it has to carry that rather than contradict the detail rows below it
-    email_state = _startup_channel_state(email_categories, email_channel_configured())
-    webhook_state = _startup_channel_state(webhook_categories, webhook_channel_configured())
+    email_problem = email_settings_problem() if email_categories else None
+    webhook_problem = webhook_settings_problem() if webhook_categories else None
+    email_state = _startup_channel_state(email_categories, email_problem[0] if email_problem else None)
+    webhook_state = _startup_channel_state(webhook_categories, webhook_problem)
     return [StartupSummaryRow("Notifications (email)", email_state, concise=True), *_startup_email_detail_rows(), StartupSummaryRow("Notifications (webhook)", webhook_state, concise=True), *_startup_webhook_detail_rows()]
 
 
@@ -6059,8 +6079,10 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         print_recovery_error("Cannot send email because SENDER_EMAIL or RECEIVER_EMAIL is not a valid address", context="smtp_config")
         return 1
 
-    if not SMTP_USER or not isinstance(SMTP_USER, str) or SMTP_USER == "your_smtp_user" or not SMTP_PASSWORD or not isinstance(SMTP_PASSWORD, str) or SMTP_PASSWORD == "your_smtp_password":
-        print_recovery_error("Cannot send email because SMTP_USER or SMTP_PASSWORD is unset or still a placeholder", context="smtp_config")
+    unset_credentials = [name for name, value in (("SMTP_USER", SMTP_USER), ("SMTP_PASSWORD", SMTP_PASSWORD)) if is_placeholder_setting(value)]
+    if unset_credentials:
+        verb = "is" if len(unset_credentials) == 1 else "are"
+        print_recovery_error(f"Cannot send email because {join_setting_names(unset_credentials, 'or')} {verb} unset or still a placeholder", context="smtp_credentials")
         return 1
 
     if not subject or not isinstance(subject, str):
@@ -6651,10 +6673,21 @@ def webhook_event_enabled(notification_type):
     return bool(WEBHOOK_ENABLED and settings.get(notification_type, False))
 
 
+# Returns whether local SMTP settings permit an automatic email alert attempt
+def email_alert_configured() -> bool:
+    return email_settings_problem() is None
+
+
+# Returns whether enabled webhooks have locally valid settings for automatic alerts
+def webhook_alert_configured() -> bool:
+    return bool(WEBHOOK_ENABLED and webhook_settings_problem() is None)
+
+
 # Sends one alert through the enabled email and webhook channels, the webhook as the embed the caller shaped
 def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, email_image_file="", email_image_name="image1", webhook_title=None, webhook_description=None, webhook_color=0x7289DA, webhook_fields=None, image_url=None, local_image_file=None):
-    email_attempted = bool(email_enabled)
-    webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    email_attempted = bool(email_enabled and email_alert_configured())
+    webhook_selected = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    webhook_attempted = bool(webhook_selected and webhook_alert_configured())
     email_delivered = False
     webhook_delivered = False
     if email_attempted:
@@ -8882,23 +8915,79 @@ INSTAGRAM_COOKIE_HOSTS = ("instagram.com", ".instagram.com", "www.instagram.com"
 INSTAGRAM_SESSION_COOKIE = "sessionid"
 
 
-# Reports whether a cookie database holds an Instagram session cookie, returning None when it cannot be read.
-# Only the cookie name and host are read, so a Chromium database answers this without being decrypted
-def cookie_file_has_instagram_session(cookie_file, firefox: bool = False) -> Optional[bool]:
+# Expiry at or above this is recorded in milliseconds. Current Firefox stores milliseconds and older profiles store
+# seconds, and nothing in the schema says which, so the unit is taken from the magnitude
+COOKIE_EXPIRY_MILLISECOND_THRESHOLD = 1e11
+
+# Chromium records cookie expiry as microseconds since 1601, the epoch its own storage layer uses
+CHROMIUM_EPOCH_OFFSET_SECONDS = 11644473600
+
+
+# Converts an optional SQLite cookie field into a comparable number
+def numeric_cookie_field(value) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+# Converts one Firefox cookie expiry into epoch seconds whichever unit the profile stores it in
+def firefox_cookie_expiry_seconds(value) -> float:
+    expiry = numeric_cookie_field(value)
+    return expiry / 1000.0 if expiry >= COOKIE_EXPIRY_MILLISECOND_THRESHOLD else expiry
+
+
+# Converts one Chromium cookie expiry into epoch seconds, treating a session cookie as never expiring
+def chromium_cookie_expiry_seconds(value) -> float:
+    expiry = numeric_cookie_field(value)
+    return 0.0 if expiry <= 0 else expiry / 1_000_000 - CHROMIUM_EPOCH_OFFSET_SECONDS
+
+
+# Returns the expiry of every Instagram session cookie in one database, or None when it cannot be read. Only the
+# cookie name, host and expiry are read, all stored in the clear, so a Chromium database answers without its key
+def instagram_session_expiries(cookie_file, firefox: bool = False) -> Optional[List[float]]:
     if not cookie_file or not os.path.isfile(os.path.expanduser(str(cookie_file))):
         return None
     table, column = ("moz_cookies", "host") if firefox else ("cookies", "host_key")
     placeholders = ", ".join("?" * len(INSTAGRAM_COOKIE_HOSTS))
+    to_seconds = firefox_cookie_expiry_seconds if firefox else chromium_cookie_expiry_seconds
     try:
         conn = open_cookie_database(os.path.expanduser(str(cookie_file)))
     except sqlite3.DatabaseError:
         return None
     try:
-        return conn.execute(f"SELECT 1 FROM {table} WHERE name = ? AND {column} IN ({placeholders}) LIMIT 1", (INSTAGRAM_SESSION_COOKIE, *INSTAGRAM_COOKIE_HOSTS)).fetchone() is not None
+        # Old Firefox profiles predate the expiry column, and a schema without one is read as recording no expiry
+        # rather than as unreadable, since the cookie is still there to import
+        columns = {str(row[1]).lower() for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        expiry_column = ("expiry" if firefox else "expires_utc") if ("expiry" if firefox else "expires_utc") in columns else "0"
+        rows = conn.execute(f"SELECT {expiry_column} FROM {table} WHERE name = ? AND {column} IN ({placeholders})", (INSTAGRAM_SESSION_COOKIE, *INSTAGRAM_COOKIE_HOSTS)).fetchall()
     except sqlite3.DatabaseError:
         return None
     finally:
         conn.close()
+    return [to_seconds(row[0]) for row in rows]
+
+
+# Reports whether a cookie database holds an Instagram session that has not expired, returning None when it cannot
+# be read. A session cookie kept only for the browser run records no expiry and counts as current
+def cookie_file_has_instagram_session(cookie_file, firefox: bool = False, now: Optional[float] = None) -> Optional[bool]:
+    expiries = instagram_session_expiries(cookie_file, firefox=firefox)
+    if expiries is None:
+        return None
+    moment = time.time() if now is None else now
+    return any(expiry <= 0 or expiry > moment for expiry in expiries)
+
+
+# Describes an Instagram session that has expired, so the import can say so from the database instead of spending
+# a request on it. Returns an empty string while a current session is present or none is stored at all
+def expired_instagram_session_note(cookie_file, firefox: bool = False, now: Optional[float] = None) -> str:
+    expiries = instagram_session_expiries(cookie_file, firefox=firefox)
+    if not expiries:
+        return ""
+    moment = time.time() if now is None else now
+    if any(expiry <= 0 or expiry > moment for expiry in expiries):
+        return ""
+    return f"its Instagram session expired on {get_date_from_ts(max(expiries))}"
 
 
 # Prompts for one profile, re-asking on invalid input instead of aborting and defaulting to the only one signed in
@@ -8970,6 +9059,9 @@ def get_firefox_cookie_dict(cookiefile):
     # Instagram request, which is what the Chromium reader already does
     if not cookie_dict:
         raise CookieImportError(f"No Instagram cookies found in the Firefox profile at '{cookiefile}'{firefox_profile_alternatives(cookiefile)} - are you logged in to Instagram in Firefox?")
+    expired = expired_instagram_session_note(cookiefile, firefox=True)
+    if expired:
+        raise CookieImportError(f"The Firefox profile at '{cookiefile}' holds Instagram cookies but {expired}{firefox_profile_alternatives(cookiefile)} - sign in to Instagram in Firefox again, then re-run the import")
     return cookie_dict
 
 
@@ -9095,6 +9187,31 @@ def resolve_chromium_profile(browser, requested):
     raise CookieImportError(f"{browser_label(browser)} profile '{wanted}' not found (available: {available})")
 
 
+# Text the keyring libraries use when no backend is installed at all. Telling somebody to unlock a keyring that does
+# not exist sends them to fix the wrong thing, so this cause is separated before the locked one
+KEYRING_MISSING_TERMS = ("no recommended backend", "no such keyring backend", "no backend available", "secretstorage required", "libsecret required", "python-dbus not installed")
+
+# Text the keyring libraries use when a backend exists but will not release the key. Several of these name neither the
+# keyring nor the keychain, so matching the wording they do use is what keeps the advice correct
+KEYRING_LOCKED_TERMS = ("keyring", "keychain", "safe storage", "secretservice", "secret service", "libsecret", "kwallet", "failed to unlock", "collection", "cancelled by user")
+
+
+# Names the real cause of a Chromium cookie read failure, since a keyring problem has nothing to do with being
+# signed in and the generic advice sends the reader to the wrong place
+def chromium_cookie_failure_message(browser, error) -> str:
+    label = browser_label(browser)
+    text = str(error).lower()
+    if any(term in text for term in KEYRING_MISSING_TERMS):
+        return f"Could not read the {label} encryption key: {error}\nTo fix: no OS keyring backend is available, install one such as gnome-keyring or kwallet, or import from Firefox, which needs none"
+    if any(term in text for term in KEYRING_LOCKED_TERMS):
+        return f"Could not read the {label} encryption key: {error}\nTo fix: allow the keychain or keyring prompt, unlock it if it is locked, then run the import again"
+    if any(term in text for term in ("decrypt", "invalidtag", "encryption")):
+        return f"Could not decrypt {label} cookies: {error}\nTo fix: close {label}, then run the import again, or import from Firefox instead"
+    if any(term in text for term in ("permission", "denied", "unable to open", "readonly", "is locked")):
+        return f"Could not open the {label} cookie database: {error}\nTo fix: close {label}, check the file permissions, then run the import again"
+    return f"Could not read {label} cookies: {error}\nMake sure {label} is installed and you are logged in to Instagram in it"
+
+
 # Reads Instagram session cookies from a Chromium-based browser via pycookiecheat and returns them as a name to value dict
 def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
     label = browser_label(browser)
@@ -9136,25 +9253,24 @@ def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
                 raise CookieImportError(f"{label} profile '{profile}' not found (available: {available})")
         # if base is unknown or Default is missing, leave cookie_file None and let pycookiecheat try its own default
 
+    # Answered from the database before the key is requested, so an expired session costs neither a keyring prompt
+    # nor an Instagram request to discover
+    expired = expired_instagram_session_note(cookie_file) if cookie_file else ""
+    if expired:
+        where = f" (profile '{profile}')" if profile else ""
+        raise CookieImportError(f"{label}{where} holds Instagram cookies but {expired} - sign in to Instagram in {label} again, then re-run the import")
+
     try:
         cookies = get_cookies("https://www.instagram.com", browser=browser_type, cookie_file=cookie_file)
     except Exception as e:
-        # Chromium encrypts its cookies with a key held in the OS keyring, so a denied prompt or a locked keyring
-        # fails here for a reason that has nothing to do with being signed in
-        if "Safe Storage" in str(e) or "keychain" in str(e).lower() or "keyring" in str(e).lower():
-            raise CookieImportError(
-                f"Could not read the {label} encryption key: {e}\nTo fix: allow the keychain or keyring prompt, unlock it if it is locked, then run the import again"
-            )
-        raise CookieImportError(
-            f"Could not read {label} cookies: {e}\nMake sure {label} is installed and you are logged in to Instagram in it"
-        )
+        raise CookieImportError(chromium_cookie_failure_message(browser, e))
 
     # get_cookies returns a name to value dict by default (as_cookies is False), coerce defensively to keep a plain dict
     cookie_dict = cookies if isinstance(cookies, dict) else {c.name: c.value for c in cookies}
 
     if not cookie_dict:
         where = f" (profile '{profile}')" if profile else ""
-        others = [p["dir"] for p in list_chromium_profiles(browser) if p["dir"] != profile]
+        others = [chromium_profile_description(p) for p in list_chromium_profiles(browser) if p["dir"] != profile]
         alternatives = f" (other profiles: {', '.join(others)})" if others else ""
         raise CookieImportError(f"No Instagram cookies found in {label}{where}{alternatives} - are you logged in to Instagram in {label}?")
 
@@ -11366,6 +11482,9 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
     if context == "smtp_config":
         return advice("smtp.invalid", "The SMTP configuration is incomplete or invalid", "Check SMTP_HOST, SMTP_PORT, SENDER_EMAIL and RECEIVER_EMAIL in the configuration file", False, SMTP_GUIDE_URL)
 
+    if context == "smtp_credentials":
+        return advice("smtp.invalid", "The SMTP credentials are missing", "Set the missing SMTP_USER or SMTP_PASSWORD value, then run --send-test-email", False, SMTP_GUIDE_URL)
+
     if context == "email":
         code, summary, fix, retryable = classify_smtp_parts(error, message)
         return advice(code, summary, fix, retryable, SMTP_GUIDE_URL)
@@ -11407,6 +11526,11 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
 
     # Rate limiting or TLS-fingerprint blocks
     if any(t in m for t in FAILURE_TERMS['rate_limit']):
+        # Anonymous requests are limited per IP address rather than per account, so the limit counts everything
+        # behind that address and is often reached before this run makes its first request. Slowing the run down
+        # cannot lift a limit it did not cause, while a session login is limited per account instead
+        if not is_logged_in:
+            return "instagram.rate_limited", "Instagram is rate-limiting anonymous requests from this IP", "Instagram is rate-limiting anonymous requests from this IP address, which counts everything behind it and is often hit on the very first request. Wait for it to pass or use another address. A session login is limited per account instead, so importing one usually works from here", ANONYMOUS_RATE_LIMIT_GUIDE_URL, True
         return "instagram.rate_limited", "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
 
     # An endpoint Instagram retired answers feedback_required whatever the account is doing, so its reply describes
@@ -11863,12 +11987,14 @@ def monitoring_missed_body_html(target: str, lasted: int, summary: str = "") -> 
 # Tells every channel that carried the failure alert that the outage is over and tells a channel that never got one
 # about the whole outage at once, so nobody is left acting on a run that recovered
 def notify_monitoring_recovery(user, alert_state) -> bool:
-    email_pending = bool(alert_state.email_sent) and bool(ERROR_NOTIFICATION)
-    webhook_pending = bool(alert_state.webhook_sent) and webhook_event_enabled("error")
+    email_enabled = bool(ERROR_NOTIFICATION and email_alert_configured())
+    webhook_enabled = bool(webhook_event_enabled("error") and webhook_alert_configured())
+    email_pending = bool(alert_state.email_sent) and email_enabled
+    webhook_pending = bool(alert_state.webhook_sent) and webhook_enabled
     # A channel whose failure alert never got through hears about the outage and its end together, rather than
     # nothing at all, which is what a channel blocked for the length of the outage would otherwise receive
-    email_missed = alert_state.missed("email", ERROR_NOTIFICATION)
-    webhook_missed = alert_state.missed("webhook", webhook_event_enabled("error"))
+    email_missed = alert_state.missed("email", email_enabled)
+    webhook_missed = alert_state.missed("webhook", webhook_enabled)
     if not (email_pending or webhook_pending or email_missed or webhook_missed):
         return False
     lasted = max(0, int(time.time()) - alert_state.failing_since) if alert_state.failing_since else 0
@@ -11890,8 +12016,8 @@ def notify_monitoring_error(user, advice, failed_since, failure_count, check_int
     # Attempted again on a later failing check rather than only once the alert is due, so a channel that failed is
     # tried again, after a wait that grows with each failed attempt
     now = int(time.time())
-    email_pending = alert_state.pending("email", ERROR_NOTIFICATION, now)
-    webhook_pending = alert_state.pending("webhook", webhook_event_enabled("error"), now)
+    email_pending = alert_state.pending("email", ERROR_NOTIFICATION and email_alert_configured(), now)
+    webhook_pending = alert_state.pending("webhook", webhook_event_enabled("error") and webhook_alert_configured(), now)
     # Recorded on every due check rather than only on a delivery, so a channel still retrying its alert still earns a recovery notice
     alert_state.remember(advice, failed_since)
     if not (email_pending or webhook_pending):
@@ -14158,8 +14284,6 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation, reload_session=False):
                 return
             return _MonitorRestart(csv_file_name, manual_recheck)
-        else:
-            print_cur_ts(newline=True)
 
         if WEB_DASHBOARD_ENABLED:
             update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
@@ -16204,8 +16328,8 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 alert_body_html = f"A BeHuman simulation error occurred for user <b>{escape(str(user))}</b> ({escape(streak)}):<br><br><b>{escape(str(error_msg))}</b><br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}"
                 # Tried again on a later failing simulation once the alert is due, after a wait that grows with each failed attempt
                 now = int(time.time())
-                behuman_email_pending = behuman_alert.pending("email", ERROR_NOTIFICATION, now)
-                behuman_webhook_pending = behuman_alert.pending("webhook", webhook_event_enabled("error"), now)
+                behuman_email_pending = behuman_alert.pending("email", ERROR_NOTIFICATION and email_alert_configured(), now)
+                behuman_webhook_pending = behuman_alert.pending("webhook", webhook_event_enabled("error") and webhook_alert_configured(), now)
                 email_delivered, webhook_delivered = send_notification_channels("error", alert_subject, alert_body, alert_body_html, email_enabled=behuman_email_pending, webhook_enabled=behuman_webhook_pending, webhook_title=f"BeHuman Error for {user}", webhook_description=f"{error_msg}\n({streak})", webhook_color=0xFF0000)
                 behuman_alert.record("email", behuman_email_pending, email_delivered, now)
                 behuman_alert.record("webhook", behuman_webhook_pending, webhook_delivered, now)
@@ -16986,22 +17110,17 @@ def _wizard_fall_back_to_no_login(state: WizardSetupState, reason: str) -> None:
 
 # Selects one supported Docker host and Firefox profile layout for deferred import
 def _wizard_select_container_firefox_host() -> Optional[str]:
-    options = [
-        ("macOS", "Use the Firefox profiles under Library/Application Support."),
-        ("Linux with a standard Firefox package", "Use the profiles under ~/.mozilla/firefox."),
-        ("Linux with Firefox from Snap", "Use the profiles under ~/snap/firefox."),
-        ("Linux with Firefox from Flatpak", "Use the profiles under ~/.var/app/org.mozilla.firefox."),
-        ("Windows PowerShell", "Use the profiles under $env:APPDATA\\Mozilla\\Firefox\\Profiles."),
-        ("Windows Command Prompt", "Use the profiles under %APPDATA%\\Mozilla\\Firefox\\Profiles."),
-        ("Another system", "Firefox import after Docker setup is not currently available for this host."),
-    ]
+    # Derived from the mount table so a host added there is offered here and maps back to the key naming its mount
+    hosts = list(CONTAINER_FIREFOX_HOSTS)
+    options = [(CONTAINER_FIREFOX_HOSTS[host][0], CONTAINER_FIREFOX_HOST_HINTS[host]) for host in hosts]
+    options.append(("Another system", "Firefox import after Docker setup is not currently available for this host."))
     selected = _wizard_ask_choice("Which host environment runs Docker?", options)
-    if selected == len(options) - 1:
+    if selected >= len(hosts):
         print()
         print("  Firefox import after Docker setup is not currently available for this host.")
         print("  Choose another login method or no login.")
         return None
-    return ("macos", "linux", "linux-snap", "linux-flatpak", "windows-powershell", "windows-cmd")[selected]
+    return hosts[selected]
 
 
 # Returns one declined section to the built-in template values, so nothing the user turned down is written
@@ -20542,14 +20661,11 @@ def run_main():
     if STATUS_NOTIFICATION is False:
         FOLLOWERS_NOTIFICATION = False
 
-    if SMTP_HOST.startswith("your_smtp_server_"):
+    if SMTP_HOST.startswith("your_smtp_server_") and not STATUS_NOTIFICATION:
         verbose_print("Email notifications are off because SMTP_HOST is still the shipped placeholder")
         STATUS_NOTIFICATION = False
         FOLLOWERS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
-    if WEBHOOK_ENABLED and not validate_webhook_url(WEBHOOK_URL):
-        verbose_print("Webhook notifications are off because WEBHOOK_URL is not a complete HTTPS link")
-        WEBHOOK_ENABLED = False
 
     # Build the run summary as StartupSummaryRow entries, in the order every sibling monitor prints
     # The concise terminal view leads with the targets and hides off/default rows; the full view (every row) is written to the log and also shown on the terminal under --verbose/--debug
@@ -20598,7 +20714,9 @@ def run_main():
     summary_rows.append(StartupSummaryRow("Skip stories details", str(SKIP_GETTING_STORY_DETAILS), concise=bool(SKIP_GETTING_STORY_DETAILS)))
     summary_rows.append(StartupSummaryRow("Skip posts details", str(SKIP_GETTING_POSTS_DETAILS), concise=bool(SKIP_GETTING_POSTS_DETAILS)))
     summary_rows.append(StartupSummaryRow("Get more posts details", str(GET_MORE_POST_DETAILS), concise=bool(GET_MORE_POST_DETAILS)))
-    summary_rows.append(StartupSummaryRow("Fetch reels", str(FETCH_REELS), concise=bool(FETCH_REELS)))
+    # Reels used to be monitored unconditionally, so a run that no longer fetches them says so rather than leaving
+    # the reader to wonder where they went
+    summary_rows.append(StartupSummaryRow("Fetch reels", str(FETCH_REELS), concise=True))
     summary_rows.append(StartupSummaryRow("Detect collab posts", str(DETECT_COLLAB_POSTS), concise=not DETECT_COLLAB_POSTS))
 
     churn_status = str(FOLLOWERS_CHURN_DETECTION)
