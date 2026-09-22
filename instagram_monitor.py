@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v4.0
+v4.0.1
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -25,7 +25,7 @@ rich (optional - for terminal dashboard)
 # keeps the supported Python floor enforceable regardless of where an import sits in the file
 from __future__ import annotations
 
-VERSION = "4.0"
+VERSION = "4.0.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -4804,7 +4804,7 @@ _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
 # The TLS row reports a word rather than a boolean, and its off state is the one setting that weakens
 # a security property, so the state word is coloured like a boolean
 _TLS_STATE_RE = re.compile(r"^(\* TLS verification:\s+)(On|Off)(.*)$")
-_NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
+_NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off|Unavailable)(.*)$")
 _STORY_URL_RE = re.compile(r"(https?://\S+)")
 # A received signal is an event rather than a problem, so it gets its own whole-line colour
 _SIGNAL_LINE_RE = re.compile(r"^\s*\*\s*signal\b.*\breceived\b", re.IGNORECASE)
@@ -4991,11 +4991,6 @@ def smtp_server_configured() -> bool:
     return bool(SMTP_HOST) and bool(SMTP_PORT) and not is_placeholder_setting(SMTP_HOST)
 
 
-# Returns whether an email alert has both a server to send through and an address to reach
-def email_channel_configured() -> bool:
-    return smtp_server_configured() and not is_placeholder_setting(RECEIVER_EMAIL)
-
-
 # Returns whether a webhook alert has a destination to post to
 def webhook_channel_configured() -> bool:
     return bool(normalized_webhook_provider()) and not is_placeholder_setting(WEBHOOK_URL)
@@ -5031,9 +5026,9 @@ def _startup_channel_state(categories: Sequence[str], configured: bool) -> str:
 def _startup_notification_summary_rows() -> List["StartupSummaryRow"]:
     email_categories = _startup_email_notification_categories()
     webhook_categories = _startup_webhook_notification_categories()
-    # A selected alert type cannot make a channel live while its destination is unset, and the rollup is the only
-    # line the concise view prints, so it has to carry that rather than contradict the detail rows below it
-    email_state = _startup_channel_state(email_categories, email_channel_configured())
+    # The concise view prints only the rollup, so it must name SMTP settings that prevent selected alerts from sending
+    email_problem = email_settings_problem() if email_categories else None
+    email_state = f"Unavailable ({email_problem[0]})" if email_problem else _startup_channel_state(email_categories, True)
     webhook_state = _startup_channel_state(webhook_categories, webhook_channel_configured())
     return [StartupSummaryRow("Notifications (email)", email_state, concise=True), *_startup_email_detail_rows(), StartupSummaryRow("Notifications (webhook)", webhook_state, concise=True), *_startup_webhook_detail_rows()]
 
@@ -6059,8 +6054,10 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         print_recovery_error("Cannot send email because SENDER_EMAIL or RECEIVER_EMAIL is not a valid address", context="smtp_config")
         return 1
 
-    if not SMTP_USER or not isinstance(SMTP_USER, str) or SMTP_USER == "your_smtp_user" or not SMTP_PASSWORD or not isinstance(SMTP_PASSWORD, str) or SMTP_PASSWORD == "your_smtp_password":
-        print_recovery_error("Cannot send email because SMTP_USER or SMTP_PASSWORD is unset or still a placeholder", context="smtp_config")
+    unset_credentials = [name for name, value in (("SMTP_USER", SMTP_USER), ("SMTP_PASSWORD", SMTP_PASSWORD)) if is_placeholder_setting(value)]
+    if unset_credentials:
+        verb = "is" if len(unset_credentials) == 1 else "are"
+        print_recovery_error(f"Cannot send email because {join_setting_names(unset_credentials, 'or')} {verb} unset or still a placeholder", context="smtp_credentials")
         return 1
 
     if not subject or not isinstance(subject, str):
@@ -11365,6 +11362,9 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
 
     if context == "smtp_config":
         return advice("smtp.invalid", "The SMTP configuration is incomplete or invalid", "Check SMTP_HOST, SMTP_PORT, SENDER_EMAIL and RECEIVER_EMAIL in the configuration file", False, SMTP_GUIDE_URL)
+
+    if context == "smtp_credentials":
+        return advice("smtp.invalid", "The SMTP credentials are missing", "Set the missing SMTP_USER or SMTP_PASSWORD value, then run --send-test-email", False, SMTP_GUIDE_URL)
 
     if context == "email":
         code, summary, fix, retryable = classify_smtp_parts(error, message)
