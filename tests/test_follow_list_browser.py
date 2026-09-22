@@ -137,6 +137,53 @@ class TestPageStateGuard:
         assert im_module.failure_class_group(failure_class) == "B"
 
 
+class TestDialogOpening:
+    # Browser layout errors give browser advice without claiming the API returned empty data
+    def test_a_dialog_error_has_browser_recovery_advice(self, im_module):
+        error = im_module.BrowserFollowListError("Instagram's follower list dialog could not be read for target.user: the profile's followers control could not be clicked")
+
+        advice = im_module.classify_recovery_error(im_module.format_error_message(error))
+
+        assert advice.code == "instagram.browser_dialog"
+        assert "FOLLOW_LIST_BROWSER_HEADLESS" in advice.fix
+        assert "FOLLOW_LIST_BROWSER_TIMEOUT" in advice.fix
+        assert im_module.BROWSER_FOLLOW_LIST_GUIDE_URL in advice.fix
+        assert "empty data" not in advice.fix
+
+    # A click failure and a dialog that never renders names identify different failed steps
+    @pytest.mark.parametrize("click_fails", [False, True])
+    def test_the_failed_step_is_reported(self, im_module, click_fails):
+        page = Mock(url="https://www.instagram.com/target.user/")
+        cause = RuntimeError("selector did not become ready")
+        if click_fails:
+            page.locator.return_value.or_.return_value.first.click.side_effect = cause
+        else:
+            page.wait_for_selector.side_effect = cause
+
+        with pytest.raises(im_module.BrowserFollowListError) as raised:
+            im_module.open_browser_follow_list_dialog(page, "target.user", "following")
+
+        assert ("control could not be clicked" if click_fails else "no profile links appeared") in str(raised.value)
+        assert "following" in str(raised.value)
+        assert raised.value.__cause__ is cause
+        assert im_module.classify_failure_class(str(raised.value)) == "schema_change"
+
+    # A redirect during either opening step retains the account-level failure instead of layout advice
+    @pytest.mark.parametrize("click_fails", [False, True])
+    @pytest.mark.parametrize("path, failure_class", [("challenge/", "challenge"), ("accounts/login/", "auth_expired")])
+    def test_account_interruptions_take_priority(self, im_module, click_fails, path, failure_class):
+        page = Mock(url=f"https://www.instagram.com/{path}")
+        if click_fails:
+            page.locator.return_value.or_.return_value.first.click.side_effect = RuntimeError("selector failed")
+        else:
+            page.wait_for_selector.side_effect = RuntimeError("selector failed")
+
+        with pytest.raises(im_module.BrowserFollowListError) as raised:
+            im_module.open_browser_follow_list_dialog(page, "target.user", "followers")
+
+        assert im_module.classify_failure_class(str(raised.value)) == failure_class
+
+
 class TestBrowserProvider:
     # Each rendered batch is counted against the account as it arrives
     def test_batches_are_counted_as_they_arrive(self, im_module, monkeypatch):

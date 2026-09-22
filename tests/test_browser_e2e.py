@@ -379,6 +379,49 @@ def test_follow_list_dialog_is_harvested_in_chromium(im_module):
     assert len(batches) > 1
 
 
+# Keeps suggested accounts out of a follow list even when both sections contain profile links
+@pytest.mark.e2e
+def test_follow_list_suggestions_are_excluded_in_chromium(im_module):
+    with playwright_sync.sync_playwright() as playwright:
+        browser = launch_chromium(playwright)
+        page = browser.new_page()
+        page.set_content('<div role="dialog"><div><a href="/actual.user/">actual.user</a><a href="/actual.user/"><img alt="profile"></a></div><div><h4>Suggested for you</h4></div><div><a href="/suggested.user/">suggested.user</a></div><a href="/explore/people/">See All Suggestions</a></div>')
+
+        names = [name for batch in im_module.harvest_follow_list_dialog(page, 0) for name in batch]
+
+        assert names == ["actual.user"]
+        browser.close()
+
+
+# Opens count links from both profile layouts and waits for asynchronously rendered names
+@pytest.mark.e2e
+@pytest.mark.parametrize("kind", ["followers", "following"])
+@pytest.mark.parametrize("legacy", [False, True])
+def test_follow_list_count_links_open_in_chromium(im_module, kind, legacy):
+    with playwright_sync.sync_playwright() as playwright:
+        browser = launch_chromium(playwright)
+        page = browser.new_page()
+        page.set_default_timeout(1000)
+        href = f"/target.user/{kind}/" if legacy else "#"
+        # The direct URL also covers accounts whose display language differs from the browser locale
+        label = "localized count" if legacy else f"6 {kind}"
+        page.set_content(f'<button onclick="window.wrongControl = true">Following</button><a href="#">About followers</a><a href="#">6 {"following" if kind == "followers" else "followers"}</a><a id="count" href="{href}" role="link"><span>{label}</span></a>')
+        page.locator("#count").evaluate("""link => link.addEventListener('click', event => {
+          event.preventDefault();
+          const dialog = document.createElement('div');
+          dialog.setAttribute('role', 'dialog');
+          document.body.appendChild(dialog);
+          setTimeout(() => { dialog.innerHTML = '<a href="/first.user/">first.user</a><a href="/second.user/">second.user</a>'; }, 100);
+        })""")
+
+        im_module.open_browser_follow_list_dialog(page, "target.user", kind)
+        names = [name for batch in im_module.harvest_follow_list_dialog(page, 0) for name in batch]
+
+        assert names == ["first.user", "second.user"]
+        assert page.evaluate("window.wrongControl") is None
+        browser.close()
+
+
 # Verifies the dialog scripts report a page with no follower dialog instead of harvesting the rest of it
 @pytest.mark.e2e
 def test_a_page_without_a_dialog_is_reported_in_chromium(im_module):

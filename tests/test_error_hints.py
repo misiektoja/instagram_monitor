@@ -610,7 +610,7 @@ class TestTheLoopFailurePaths:
 class TestRecoveryCodeSet:
     def test_recovery_codes_are_stable(self, im_module):
         assert im_module.RECOVERY_CODES == frozenset({
-            "instagram.rate_limited", "instagram.endpoint_retired", "instagram.action_blocked", "instagram.challenge", "instagram.empty_data",
+            "instagram.rate_limited", "instagram.endpoint_retired", "instagram.action_blocked", "instagram.challenge", "instagram.empty_data", "instagram.browser_dialog",
             "session.missing", "session.expired",
             "target.missing", "target.not_found",
             "config.missing", "config.invalid", "config.insecure", "config.impersonate_unsupported",
@@ -645,6 +645,7 @@ class TestRecoveryCodeSet:
             ("ConnectionException: Could not resolve host: www.instagram.com", "runtime"),
             ("ConnectionException: HTTPSConnectionPool max retries exceeded", "runtime"),
             ("RuntimeError: Instagram returned empty data for posts", "runtime"),
+            ("BrowserFollowListError: Instagram's follower list dialog could not be read", "runtime"),
             ("SomethingElse: totally unknown error", "runtime"),
             ("PROXY_URL is not set", "config_missing"),
             ("--identity-budget cannot be negative", "config"),
@@ -684,7 +685,7 @@ class TestRecoveryCodeSet:
         rows = _rule_table_rows(im_module)
         calls = _context_advice_calls(im_module)
 
-        assert len(rows) == 13, "the runtime rule table lost or gained a row"
+        assert len(rows) == 14, "the runtime rule table lost or gained a row"
         assert all(len(row.elts) == 5 for row in rows)
         assert len(calls) >= 15, "the context table lost branches"
         assert all(len(call.args) == 5 for call in calls)
