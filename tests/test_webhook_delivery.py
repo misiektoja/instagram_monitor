@@ -1,5 +1,7 @@
 """Offline workflow tests for send_webhook delivery formatting."""
 
+from email.header import decode_header, make_header
+import http.client
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -17,6 +19,22 @@ ARTIFACT_ROOT = PROJECT_ROOT / "local" / "test_artifacts"
 def make_test_directory():
     ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
     return tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT)
+
+
+# Decodes one ntfy header value the way the ntfy server reads RFC 2047 words
+def decode_ntfy_header(value):
+    return str(make_header(decode_header(value)))
+
+
+# Runs header values through the http.client encoding that requests uses, which a mocked post never reaches
+def assert_http_client_sends_headers(headers):
+    connection = http.client.HTTPConnection("127.0.0.1")
+    try:
+        connection.putrequest("POST", "/")
+        for name, value in headers.items():
+            connection.putheader(name, value)
+    finally:
+        connection.close()
 
 
 class _FakeResponse:
@@ -204,7 +222,7 @@ class TestSendWebhook:
         assert im_module.send_webhook("Title", "desc") == 1
         post.assert_called_once()
 
-    # A native ntfy call sends UTF-8 text, field details and the title query parameter
+    # A native ntfy call sends UTF-8 text and field details in the body and the title in an encoded header
     def test_ntfy_payload_uses_native_topic_api(self, im_module, monkeypatch):
         calls = []
         monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
@@ -219,12 +237,73 @@ class TestSendWebhook:
         args, kwargs = calls[0]
         assert args == ("https://ntfy.sh/private-topic?auth=private-value",)
         assert kwargs["data"] == "Body: Bj\u00f6rk\n\nCount: 3\n\nImage: https://example.com/image.jpg".encode("utf-8")
-        assert kwargs["headers"]["X-Title"] == "Instagram title za\u017c\u00f3\u0142\u0107"
+        assert kwargs["headers"]["X-Title"].startswith("=?UTF-8?B?")
+        assert decode_ntfy_header(kwargs["headers"]["X-Title"]) == "Instagram title za\u017c\u00f3\u0142\u0107"
+        assert_http_client_sends_headers(kwargs["headers"])
         # Alert content must never travel in the query string, where servers and proxies log it
         assert "params" not in kwargs
         assert kwargs["allow_redirects"] is False
         assert kwargs["headers"]["Content-Type"] == "text/plain; charset=utf-8"
         assert "json" not in kwargs
+
+    # A real follower alert starts its title with an emoji that a raw HTTP header cannot carry
+    @pytest.mark.parametrize("change_type,new_count,title", [("followers", 11, "\U0001f4c8 KK Followers Changed"), ("followers", 9, "\U0001f4c9 KK Followers Changed"), ("followings", 11, "\U0001f4ca KK Followings Changed")])
+    def test_ntfy_follow_alert_title_is_sent_encoded(self, im_module, monkeypatch, change_type, new_count, title):
+        calls = []
+        monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+        monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "ntfy")
+        monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.sh/private-topic")
+        monkeypatch.setattr(im_module, "WEBHOOK_FOLLOWERS_NOTIFICATION", True)
+        monkeypatch.setattr(im_module, "NTFY_ACCESS_TOKEN", "tk_private")
+        monkeypatch.setattr(im_module, "WEBHOOK_HEADERS", {"X-Tags": "{title}", "X-Priority": "high"})
+        monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append(kwargs) or _FakeResponse(200))
+        embed = im_module.follower_change_embed("KK", change_type, 10, new_count, "- new_follower\n", "")
+
+        rc = im_module.send_webhook(embed["webhook_title"], embed["webhook_description"], color=embed["webhook_color"], fields=embed["webhook_fields"], notification_type="followers")
+
+        assert rc == 0
+        headers = calls[0]["headers"]
+        assert decode_ntfy_header(headers["X-Title"]) == title
+        # A custom header built from the title carries the same emoji, so it is encoded the same way
+        assert decode_ntfy_header(headers["X-Tags"]) == title
+        assert headers["X-Priority"] == "high"
+        assert headers["Authorization"] == "Bearer tk_private"
+        assert headers["User-Agent"] == f"InstagramMonitor/{im_module.VERSION}"
+        assert all(value.isascii() for value in headers.values())
+        assert_http_client_sends_headers(headers)
+
+    # An ntfy image upload sends its title and multi-line message in headers that ntfy decodes back to UTF-8
+    def test_ntfy_image_alert_encodes_title_and_message_headers(self, im_module, monkeypatch):
+        with make_test_directory() as directory_name:
+            image_path = Path(directory_name) / "profile.jpg"
+            image_path.write_bytes(b"fake-image")
+            calls = []
+            monkeypatch.setattr(im_module, "WEBHOOK_ENABLED", True)
+            monkeypatch.setattr(im_module, "WEBHOOK_PROVIDER", "ntfy")
+            monkeypatch.setattr(im_module, "WEBHOOK_URL", "https://ntfy.example.test/private-topic")
+            monkeypatch.setattr(im_module, "WEBHOOK_STATUS_NOTIFICATION", True)
+            monkeypatch.setattr(im_module.WEBHOOK_SESSION, "post", lambda *args, **kwargs: calls.append(kwargs) or _FakeResponse(200))
+
+            rc = im_module.send_webhook("\U0001f5bc\ufe0f KK Profile Picture Changed", "Bio: Bj\u00f6rk \u0436\u0438\u0437\u043d\u044c \U0001f3b5", fields=[{"name": "Count", "value": "3"}], local_image_file=str(image_path))
+
+            assert rc == 0
+            assert len(calls) == 1
+            headers = calls[0]["headers"]
+            assert calls[0]["data"] == b"fake-image"
+            assert decode_ntfy_header(headers["X-Title"]) == "\U0001f5bc\ufe0f KK Profile Picture Changed"
+            # ntfy turns each literal backslash-n into a line break only after decoding the RFC 2047 word
+            assert decode_ntfy_header(headers["X-Message"]) == "Bio: Bj\u00f6rk \u0436\u0438\u0437\u043d\u044c \U0001f3b5\\n\\nCount: 3"
+            assert headers["X-Filename"] == "profile.jpg"
+            assert_http_client_sends_headers(headers)
+
+    # Plain ASCII passes through unchanged and anything a raw header would break or ntfy would misread is encoded
+    @pytest.mark.parametrize("value,encoded", [("Plain title", False), ("Bj\u00f6rk", True), ("\U0001f4c8 KK Followers Changed", True), ("tab\there", True), ("=?UTF-8?B?aGk=?=", True)])
+    def test_encode_ntfy_header_value(self, im_module, value, encoded):
+        result = im_module.encode_ntfy_header_value(value)
+
+        assert result.isascii()
+        assert (result != value) is encoded
+        assert decode_ntfy_header(result) == value
 
     # A known ntfy URL corrects a stale configured provider and sends native text
     def test_runtime_provider_detection_corrects_config_mismatch(self, im_module, monkeypatch, capsys):
