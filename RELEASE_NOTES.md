@@ -4,7 +4,7 @@ This is a high-level summary of the most important changes.
 
 # Changes in 4.0.1 (TBD)
 
-Version **4.0.1** reports unavailable email and webhook settings at startup and skips automatic alerts through those channels until their settings are corrected. It also fixes **browser session import**: a profile whose Instagram session has expired is no longer marked as signed in, and a failed import names the cause you have to fix. The startup summary now always says whether reels are monitored.
+Version **4.0.1** reports unavailable email and webhook settings at startup and skips automatic alerts through those channels until their settings are corrected. It also fixes **browser session import**: a profile whose Instagram session has expired is no longer marked as signed in, and a failed import names the cause you have to fix. The startup summary now always says whether reels are monitored, a run without a session that Instagram rate limits is told the limit is on its IP address and a failed first check no longer prints its timestamp twice.
 
 **Bug fixes**:
 
@@ -12,6 +12,8 @@ Version **4.0.1** reports unavailable email and webhook settings at startup and 
 - **BUGFIX:** **The profile marked as signed in actually is** - The `*` marker, the preselected default and the Web Dashboard listing looked only for a session cookie, so a profile signed out months ago was still offered as the one to import from. Expiry is now read as well, in whichever unit the browser records it. A profile holding only an **expired session** says so and gives the date, from the cookie database, instead of spending an Instagram request to fail
 - **BUGFIX:** **Failed imports name what to fix** - A locked Linux keyring reported that the browser was not signed in, sending you to the wrong place. It now says the **keyring is locked**, or that **no keyring backend is installed** and points at Firefox, which needs none. A cookie database that cannot be decrypted or opened is named as that rather than as a missing login. The other profiles a failure lists are named the way the picker showed them
 - **BUGFIX:** **The startup summary says whether reels are monitored** - Reels are off by default, but the **`Fetch reels`** row was printed only when they were on, so an ordinary run never showed it. The row is always there now, so a run upgraded from an earlier version can see why its reels stopped arriving
+- **BUGFIX:** **Anonymous rate limits get the right advice** - A run without a session that Instagram answers with `Please wait a few minutes before you try again` was told to raise the check interval. That limit is on the **IP address**, counts everything behind it and is often hit on the very first request, so slowing the run down cannot lift it. The advice now says so, points at a session login, which is limited per account instead, and links a new troubleshooting section
+- **BUGFIX:** **A failed first check prints one timestamp** - The report closing a first check that failed, for example on a rate limit, ended with the timestamp and separator printed twice
 
 # Changes in 4.0 (22 Sep 2026)
 
