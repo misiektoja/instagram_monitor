@@ -14284,8 +14284,6 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             if not handle_flagged_session(user, error_msg, bot, stop_event, session_refresh_generation, reload_session=False):
                 return
             return _MonitorRestart(csv_file_name, manual_recheck)
-        else:
-            print_cur_ts(newline=True)
 
         if WEB_DASHBOARD_ENABLED:
             update_ui_data(targets={user: {'status': 'Error: ' + error_msg}})
