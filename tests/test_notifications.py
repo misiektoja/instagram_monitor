@@ -141,10 +141,10 @@ class TestMaskUrlCredentials:
     def test_user_only_masked(self, im_module):
         assert im_module.mask_url_credentials("http://user@host") == "http://***@host"
 
+    # Verifies masking preserves the complete destination and path without retaining credentials
     def test_host_and_port_preserved(self, im_module):
         masked = im_module.mask_url_credentials("https://u:p@proxy.example.com:8080/path")
-        assert "proxy.example.com:8080" in masked
-        assert "u:p" not in masked
+        assert masked == "https://***:***@proxy.example.com:8080/path"
 
 
 class TestFormatPayload:
