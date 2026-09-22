@@ -2,6 +2,8 @@
 
 import copy
 import json
+import re
+import tokenize
 import subprocess
 import sys
 from pathlib import Path
@@ -100,3 +102,19 @@ def test_workflow_filters_before_upload():
     assert steps.index(analyze) < steps.index(apply) < steps.index(upload)
     assert "if" not in upload
     assert not any(step.get("continue-on-error") for step in (analyze, apply, upload))
+
+
+# Keeps each suppression scoped to one query ID on the line immediately before the affected code
+def test_source_suppressions_use_individual_rule_ids():
+    annotations = []
+    for source in PROJECT_ROOT.glob("*.py"):
+        lines = source.read_text(encoding="utf-8").splitlines()
+        with tokenize.open(source) as stream:
+            comments = [token for token in tokenize.generate_tokens(stream.readline) if token.type == tokenize.COMMENT]
+        for comment in comments:
+            for rule_id in re.findall(r"\bcodeql\[([^\]]*)\]", comment.string):
+                assert re.fullmatch(r"py/[a-z0-9/-]+", rule_id), f"{source.name}:{comment.start[0]}: use a separate codeql annotation for each rule"
+                assert not lines[comment.start[0] - 1][:comment.start[1]].strip()
+                assert lines[comment.end[0]].strip() and not lines[comment.end[0]].lstrip().startswith("#")
+                annotations.append(rule_id)
+    assert annotations
