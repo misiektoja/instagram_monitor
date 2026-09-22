@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 4.0.2 (TBD)
+# Changes in 4.0.2 (22 Sep 2026)
 
 Version **4.0.2** fixes **ntfy alerts**. Since version 3.9 almost every ntfy alert failed to send because its title starts with an emoji. It also fixes Discord-format alerts that were dropped when a custom header used a placeholder such as `{title}`.
 
