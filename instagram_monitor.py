@@ -8904,23 +8904,79 @@ INSTAGRAM_COOKIE_HOSTS = ("instagram.com", ".instagram.com", "www.instagram.com"
 INSTAGRAM_SESSION_COOKIE = "sessionid"
 
 
-# Reports whether a cookie database holds an Instagram session cookie, returning None when it cannot be read.
-# Only the cookie name and host are read, so a Chromium database answers this without being decrypted
-def cookie_file_has_instagram_session(cookie_file, firefox: bool = False) -> Optional[bool]:
+# Expiry at or above this is recorded in milliseconds. Current Firefox stores milliseconds and older profiles store
+# seconds, and nothing in the schema says which, so the unit is taken from the magnitude
+COOKIE_EXPIRY_MILLISECOND_THRESHOLD = 1e11
+
+# Chromium records cookie expiry as microseconds since 1601, the epoch its own storage layer uses
+CHROMIUM_EPOCH_OFFSET_SECONDS = 11644473600
+
+
+# Converts an optional SQLite cookie field into a comparable number
+def numeric_cookie_field(value) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+# Converts one Firefox cookie expiry into epoch seconds whichever unit the profile stores it in
+def firefox_cookie_expiry_seconds(value) -> float:
+    expiry = numeric_cookie_field(value)
+    return expiry / 1000.0 if expiry >= COOKIE_EXPIRY_MILLISECOND_THRESHOLD else expiry
+
+
+# Converts one Chromium cookie expiry into epoch seconds, treating a session cookie as never expiring
+def chromium_cookie_expiry_seconds(value) -> float:
+    expiry = numeric_cookie_field(value)
+    return 0.0 if expiry <= 0 else expiry / 1_000_000 - CHROMIUM_EPOCH_OFFSET_SECONDS
+
+
+# Returns the expiry of every Instagram session cookie in one database, or None when it cannot be read. Only the
+# cookie name, host and expiry are read, all stored in the clear, so a Chromium database answers without its key
+def instagram_session_expiries(cookie_file, firefox: bool = False) -> Optional[List[float]]:
     if not cookie_file or not os.path.isfile(os.path.expanduser(str(cookie_file))):
         return None
     table, column = ("moz_cookies", "host") if firefox else ("cookies", "host_key")
     placeholders = ", ".join("?" * len(INSTAGRAM_COOKIE_HOSTS))
+    to_seconds = firefox_cookie_expiry_seconds if firefox else chromium_cookie_expiry_seconds
     try:
         conn = open_cookie_database(os.path.expanduser(str(cookie_file)))
     except sqlite3.DatabaseError:
         return None
     try:
-        return conn.execute(f"SELECT 1 FROM {table} WHERE name = ? AND {column} IN ({placeholders}) LIMIT 1", (INSTAGRAM_SESSION_COOKIE, *INSTAGRAM_COOKIE_HOSTS)).fetchone() is not None
+        # Old Firefox profiles predate the expiry column, and a schema without one is read as recording no expiry
+        # rather than as unreadable, since the cookie is still there to import
+        columns = {str(row[1]).lower() for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        expiry_column = ("expiry" if firefox else "expires_utc") if ("expiry" if firefox else "expires_utc") in columns else "0"
+        rows = conn.execute(f"SELECT {expiry_column} FROM {table} WHERE name = ? AND {column} IN ({placeholders})", (INSTAGRAM_SESSION_COOKIE, *INSTAGRAM_COOKIE_HOSTS)).fetchall()
     except sqlite3.DatabaseError:
         return None
     finally:
         conn.close()
+    return [to_seconds(row[0]) for row in rows]
+
+
+# Reports whether a cookie database holds an Instagram session that has not expired, returning None when it cannot
+# be read. A session cookie kept only for the browser run records no expiry and counts as current
+def cookie_file_has_instagram_session(cookie_file, firefox: bool = False, now: Optional[float] = None) -> Optional[bool]:
+    expiries = instagram_session_expiries(cookie_file, firefox=firefox)
+    if expiries is None:
+        return None
+    moment = time.time() if now is None else now
+    return any(expiry <= 0 or expiry > moment for expiry in expiries)
+
+
+# Describes an Instagram session that has expired, so the import can say so from the database instead of spending
+# a request on it. Returns an empty string while a current session is present or none is stored at all
+def expired_instagram_session_note(cookie_file, firefox: bool = False, now: Optional[float] = None) -> str:
+    expiries = instagram_session_expiries(cookie_file, firefox=firefox)
+    if not expiries:
+        return ""
+    moment = time.time() if now is None else now
+    if any(expiry <= 0 or expiry > moment for expiry in expiries):
+        return ""
+    return f"its Instagram session expired on {get_date_from_ts(max(expiries))}"
 
 
 # Prompts for one profile, re-asking on invalid input instead of aborting and defaulting to the only one signed in
@@ -8992,6 +9048,9 @@ def get_firefox_cookie_dict(cookiefile):
     # Instagram request, which is what the Chromium reader already does
     if not cookie_dict:
         raise CookieImportError(f"No Instagram cookies found in the Firefox profile at '{cookiefile}'{firefox_profile_alternatives(cookiefile)} - are you logged in to Instagram in Firefox?")
+    expired = expired_instagram_session_note(cookiefile, firefox=True)
+    if expired:
+        raise CookieImportError(f"The Firefox profile at '{cookiefile}' holds Instagram cookies but {expired}{firefox_profile_alternatives(cookiefile)} - sign in to Instagram in Firefox again, then re-run the import")
     return cookie_dict
 
 
@@ -9157,6 +9216,13 @@ def get_chromium_cookie_dict(browser, profile=None, cookie_file=None):
                 available = ", ".join(chromium_profile_description(p) for p in list_chromium_profiles(browser)) or "none found"
                 raise CookieImportError(f"{label} profile '{profile}' not found (available: {available})")
         # if base is unknown or Default is missing, leave cookie_file None and let pycookiecheat try its own default
+
+    # Answered from the database before the key is requested, so an expired session costs neither a keyring prompt
+    # nor an Instagram request to discover
+    expired = expired_instagram_session_note(cookie_file) if cookie_file else ""
+    if expired:
+        where = f" (profile '{profile}')" if profile else ""
+        raise CookieImportError(f"{label}{where} holds Instagram cookies but {expired} - sign in to Instagram in {label} again, then re-run the import")
 
     try:
         cookies = get_cookies("https://www.instagram.com", browser=browser_type, cookie_file=cookie_file)
