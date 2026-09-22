@@ -349,6 +349,8 @@ instagram_monitor --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-pr
 
 A test notification is always delivered when the URL and provider are valid. It does not require the event switches above, so you can confirm delivery before deciding which notifications to enable.
 
+The startup summary shows `Unavailable` when a selected email or webhook channel has missing or invalid local settings. Automatic alerts skip that channel silently. Fix the settings and future alerts can use it. Explicit test commands still report configuration errors.
+
 <a id="follower-churn-detection"></a>
 ## Follower Churn Detection
 

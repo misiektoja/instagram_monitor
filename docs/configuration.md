@@ -337,7 +337,7 @@ instagram_monitor <target_insta_user> --webhook
 instagram_monitor <target_insta_user> --no-webhook
 ```
 
-Webhook and avatar URLs must be complete HTTPS links with a hostname and no embedded credentials. Root endpoints work with or without a trailing slash. Known Discord and `ntfy.sh` destinations correct a stale configured provider at runtime. A URL passed through `--webhook-url` may remain visible in shell history or process listings, so prefer `--set-webhook-url` for normal setup. A `WEBHOOK_URL` left unset, or left at its `your_webhook_url` placeholder, switches webhook alerts off at startup instead of failing at the first alert, and `--verbose` reports why.
+Webhook and avatar URLs must be complete HTTPS links with a hostname and no embedded credentials. Root endpoints work with or without a trailing slash. Known Discord and `ntfy.sh` destinations correct a stale configured provider at runtime. A URL passed through `--webhook-url` may remain visible in shell history or process listings, so prefer `--set-webhook-url` for normal setup. When webhook alerts are selected but local settings are missing or invalid, the startup summary shows `Notifications (webhook): Unavailable` and names the setting. Automatic webhook alerts are skipped silently until the settings are corrected.
 
 <a id="advanced-discord-format-customization"></a>
 ### Advanced Discord-format customization
@@ -410,7 +410,7 @@ instagram_monitor --set-smtp-password
 
 Enter the password at the hidden prompt after configuring `SMTP_HOST`, `SMTP_USER`, `SENDER_EMAIL` and `RECEIVER_EMAIL`. The command checks mail sign-in before saving `SMTP_PASSWORD` to `.env`. No email is sent. An exported `SMTP_PASSWORD` overrides the saved value at startup.
 
-When email alerts are selected but an SMTP setting is missing or invalid, the startup summary shows `Notifications (email): Unavailable` and names the setting. The host and recipient rows show configured values, not a successful mail sign-in. Run `instagram_monitor --doctor` to check the sign-in or `instagram_monitor --send-test-email` to check delivery.
+When email alerts are selected but an SMTP setting is missing or invalid, the startup summary shows `Notifications (email): Unavailable` and names the setting. Automatic email alerts are skipped silently until the settings are corrected. The host and recipient rows show configured values, not a successful mail sign-in. Run `instagram_monitor --doctor` to check the sign-in or `instagram_monitor --send-test-email` to check delivery.
 
 You can use operating system environment variables instead of a file. Set them with `export` on Linux, Unix, macOS or WSL:
 
