@@ -279,6 +279,8 @@ Instagram Monitor sends the alert subject as the ntfy title. The alert text and 
 
 The title and message are sent as request headers or as the request body, never as query parameters. Alert text can contain follower names, captions and biographies, and servers and proxies commonly record full URLs in their access logs. Webhook requests also do not follow redirects, so a moved destination cannot receive headers meant for the address you configured.
 
+A header cannot carry emoji or most non-Latin letters as plain text, so Instagram Monitor sends any ntfy header value that is not plain ASCII in [RFC 2047](https://docs.ntfy.sh/publish/#message-title) encoded form. ntfy decodes it back to the original text. This covers alert titles, which start with an emoji. A self-hosted server needs ntfy 2.4.0 or newer to decode titles and messages and 2.6.2 or newer to decode custom `WEBHOOK_HEADERS` values.
+
 For a protected topic, the setup wizard asks for the ntfy access token in a hidden prompt and stores it in `.env`. For manual setup, add:
 
 ```ini
