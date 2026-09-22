@@ -6611,10 +6611,9 @@ def build_webhook_headers(provider: str, payload: dict) -> dict[str, str]:
         if token:
             headers = {name: value for name, value in headers.items() if name.casefold() != "authorization"}
             headers["Authorization"] = f"Bearer {token}"
-    else:
-        # ntfy headers are encoded per request instead, because the title and message headers are added there
-        headers = {name: encode_non_ascii_header_value(value) for name, value in headers.items()}
-    return headers
+    # ASCII values stay as written, so a value already encoded as RFC 2047, as ntfy documents for emoji tags,
+    # is not encoded a second time
+    return {name: encode_non_ascii_header_value(value) for name, value in headers.items()}
 
 
 # Returns webhook diagnostic text with configured private values removed
@@ -6691,11 +6690,6 @@ def encode_ntfy_header_value(value: str) -> str:
     if text.isascii() and text.isprintable() and "=?" not in text:
         return text
     return rfc2047_encoded_word(text)
-
-
-# Returns ntfy request headers with every value encoded for HTTP transport
-def encode_ntfy_headers(headers: dict[str, str]) -> dict[str, str]:
-    return {name: encode_ntfy_header_value(value) for name, value in headers.items()}
 
 
 # Sends one webhook notification through the selected provider
@@ -6864,10 +6858,10 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                 # rather than the query string, which servers and proxies routinely record in access logs
                 if use_ntfy_image and ntfy_image is not None:
                     image_bytes, image_filename, image_content_type = ntfy_image
-                    attachment_headers = encode_ntfy_headers({**final_headers, "Content-Type": image_content_type, "X-Filename": image_filename, "X-Title": ntfy_title, "X-Message": encode_ntfy_header_text(ntfy_message)})
+                    attachment_headers = {**final_headers, "Content-Type": image_content_type, "X-Filename": encode_ntfy_header_value(image_filename), "X-Title": encode_ntfy_header_value(ntfy_title), "X-Message": encode_ntfy_header_value(encode_ntfy_header_text(ntfy_message))}
                     response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers=attachment_headers, data=image_bytes, timeout=WEBHOOK_TIMEOUT_SECONDS)
                 else:
-                    response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers=encode_ntfy_headers({**final_headers, "X-Title": ntfy_title}), data=ntfy_message.encode("utf-8"), timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers={**final_headers, "X-Title": encode_ntfy_header_value(ntfy_title)}, data=ntfy_message.encode("utf-8"), timeout=WEBHOOK_TIMEOUT_SECONDS)
             else:
                 if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
                     filename = os.path.basename(local_image_file)
