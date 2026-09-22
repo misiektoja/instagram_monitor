@@ -2,6 +2,15 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 4.0.2 (22 Sep 2026)
+
+Version **4.0.2** fixes **ntfy alerts**. Since version 3.9 almost every ntfy alert failed to send because its title starts with an emoji. It also fixes Discord-format alerts that were dropped when a custom header used a placeholder such as `{title}`.
+
+**Bug fixes**:
+
+- **BUGFIX:** **ntfy alerts are delivered again** - Follower, profile, story, bio and error alerts sent to ntfy failed with `'latin-1' codec can't encode character`. The title was sent as a plain HTTP header, which cannot carry emoji or most non-Latin letters. The test webhook still worked because its title has no emoji. Titles, the alert text sent with an image and `WEBHOOK_HEADERS` values are now sent **RFC 2047 encoded** when they contain such characters. ntfy shows them as written. A self-hosted server needs ntfy 2.4.0 or newer for titles and alert text and 2.6.2 or newer for custom headers
+- **BUGFIX:** **Custom headers with emoji no longer drop Discord-format alerts** - With the Discord provider, a **`WEBHOOK_HEADERS`** value built from an alert placeholder such as `{title}` failed the whole alert with the same error. Such values are now sent RFC 2047 encoded (`=?UTF-8?B?...?=`) and the alert is delivered. A receiver that does not decode RFC 2047 sees the encoded form in that header. ASCII header values and alerts without custom headers are unchanged
+
 # Changes in 4.0.1 (22 Sep 2026)
 
 Version **4.0.1** reports unavailable email and webhook settings at startup and skips automatic alerts through those channels until their settings are corrected. It also fixes **browser session import**: a profile whose Instagram session has expired is no longer marked as signed in, and a failed import names the cause you have to fix. The startup summary now always says whether reels are monitored, a run without a session that Instagram rate limits is told the limit is on its IP address and a failed first check no longer prints its timestamp twice.

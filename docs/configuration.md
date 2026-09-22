@@ -279,6 +279,8 @@ Instagram Monitor sends the alert subject as the ntfy title. The alert text and 
 
 The title and message are sent as request headers or as the request body, never as query parameters. Alert text can contain follower names, captions and biographies, and servers and proxies commonly record full URLs in their access logs. Webhook requests also do not follow redirects, so a moved destination cannot receive headers meant for the address you configured.
 
+A header cannot carry emoji or most non-Latin letters as plain text, so Instagram Monitor sends any ntfy header value that is not plain ASCII in [RFC 2047](https://docs.ntfy.sh/publish/#message-title) encoded form. ntfy decodes it back to the original text. This covers alert titles, which start with an emoji. A `WEBHOOK_HEADERS` value you already wrote in encoded form, such as an emoji tag from the ntfy documentation, is sent unchanged. A self-hosted server needs ntfy 2.4.0 or newer to decode titles and messages and 2.6.2 or newer to decode custom `WEBHOOK_HEADERS` values.
+
 For a protected topic, the setup wizard asks for the ntfy access token in a hidden prompt and stores it in `.env`. For manual setup, add:
 
 ```ini
@@ -349,6 +351,8 @@ Webhook and avatar URLs must be complete HTTPS links with a hostname and no embe
 `WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` apply only to Discord and are ignored when `WEBHOOK_PROVIDER` is `"ntfy"`. The ntfy provider needs no template: it sends the alert body as a native ntfy message with the subject as its title. Customize ntfy delivery through `WEBHOOK_HEADERS` (for example `X-Priority` or `X-Tags`).
 
 `WEBHOOK_TRANSFORMS` applies configured string methods before the template and headers are rendered. Invalid templates, avatar URLs, transforms or expanded headers fail before any request is attempted. Dictionary payloads always replace `allowed_mentions` with `{"parse": []}` so notification text cannot trigger `@everyone`, `@here` or user mentions.
+
+A `WEBHOOK_HEADERS` value that contains emoji or other non-ASCII text after placeholder expansion is sent in RFC 2047 encoded form (`=?UTF-8?B?...?=`). Alert titles start with an emoji, so `{title}` in a header always produces an encoded value. The message body is unchanged. A receiver that does not decode RFC 2047 sees the encoded form in that header. ASCII values are sent exactly as configured.
 
 Webhook delivery uses an isolated session with a 10-second timeout and at most two attempts. It accepts every HTTP 2xx response, retries HTTP 429 according to a server delay capped at 5 seconds and retries HTTP 5xx once. Other HTTP 4xx responses fail immediately.
 

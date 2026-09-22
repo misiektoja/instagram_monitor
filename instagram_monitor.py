@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v4.0.1
+v4.0.2
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -25,7 +25,7 @@ rich (optional - for terminal dashboard)
 # keeps the supported Python floor enforceable regardless of where an import sits in the file
 from __future__ import annotations
 
-VERSION = "4.0.1"
+VERSION = "4.0.2"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -1181,6 +1181,7 @@ if sys.version_info[:2] < MINIMUM_PYTHON_VERSION:
 
 import time
 import json
+import base64
 import os
 import tempfile
 import getpass
@@ -6610,7 +6611,9 @@ def build_webhook_headers(provider: str, payload: dict) -> dict[str, str]:
         if token:
             headers = {name: value for name, value in headers.items() if name.casefold() != "authorization"}
             headers["Authorization"] = f"Bearer {token}"
-    return headers
+    # ASCII values stay as written, so a value already encoded as RFC 2047, as ntfy documents for emoji tags,
+    # is not encoded a second time
+    return {name: encode_non_ascii_header_value(value) for name, value in headers.items()}
 
 
 # Returns webhook diagnostic text with configured private values removed
@@ -6664,6 +6667,29 @@ def post_webhook_request(webhook_url, verify, proxies, **request_kwargs):
 # Encodes one ntfy message for an HTTP header, where ntfy expects a literal backslash-n for each line break
 def encode_ntfy_header_text(message: str) -> str:
     return str(message).replace("\\", "\\\\").replace("\r\n", "\\n").replace("\r", "\\n").replace("\n", "\\n")
+
+
+# Returns one text value as a base64 RFC 2047 UTF-8 encoded word
+def rfc2047_encoded_word(text: str) -> str:
+    return "=?UTF-8?B?" + base64.b64encode(text.encode("utf-8")).decode("ascii") + "?="
+
+
+# Encodes one HTTP header value as an RFC 2047 UTF-8 word when it contains non-ASCII text
+def encode_non_ascii_header_value(value: str) -> str:
+    text = str(value)
+    # requests sends header values as Latin-1, which cannot carry emoji or most non-Latin letters.
+    # Plain ASCII stays unchanged because a generic receiver may not decode RFC 2047
+    return text if text.isascii() else rfc2047_encoded_word(text)
+
+
+# Encodes one ntfy header value as an RFC 2047 UTF-8 word unless it can travel as plain ASCII
+def encode_ntfy_header_value(value: str) -> str:
+    text = str(value)
+    # ntfy decodes RFC 2047 words in every header it reads, so ASCII text containing "=?" is encoded
+    # too, keeping a bio or caption that looks like an encoded word from being decoded by the server
+    if text.isascii() and text.isprintable() and "=?" not in text:
+        return text
+    return rfc2047_encoded_word(text)
 
 
 # Sends one webhook notification through the selected provider
@@ -6832,10 +6858,10 @@ def send_webhook(title, description, color=0x7289DA, fields=None, image_url=None
                 # rather than the query string, which servers and proxies routinely record in access logs
                 if use_ntfy_image and ntfy_image is not None:
                     image_bytes, image_filename, image_content_type = ntfy_image
-                    attachment_headers = {**final_headers, "Content-Type": image_content_type, "X-Filename": image_filename, "X-Title": ntfy_title, "X-Message": encode_ntfy_header_text(ntfy_message)}
+                    attachment_headers = {**final_headers, "Content-Type": image_content_type, "X-Filename": encode_ntfy_header_value(image_filename), "X-Title": encode_ntfy_header_value(ntfy_title), "X-Message": encode_ntfy_header_value(encode_ntfy_header_text(ntfy_message))}
                     response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers=attachment_headers, data=image_bytes, timeout=WEBHOOK_TIMEOUT_SECONDS)
                 else:
-                    response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers={**final_headers, "X-Title": ntfy_title}, data=ntfy_message.encode("utf-8"), timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = post_webhook_request(destination, final_post_proxy_ssl, final_post_proxy, headers={**final_headers, "X-Title": encode_ntfy_header_value(ntfy_title)}, data=ntfy_message.encode("utf-8"), timeout=WEBHOOK_TIMEOUT_SECONDS)
             else:
                 if local_image_file and os.path.isfile(local_image_file) and isinstance(final_payload, dict) and "embeds" in final_payload:
                     filename = os.path.basename(local_image_file)
