@@ -42,6 +42,7 @@ Version **4.0** reads follower lists over **less than half the Instagram request
 
 **Security and privacy**:
 
+- **SECURITY:** **Private follow-analysis errors** - Unexpected Web Dashboard analysis failures no longer return local file details. Use `--debug` to see the diagnostic locally
 - **SECURITY:** **Container security updates** - Published rebuilds refresh Debian security updates instead of reusing cached package layers
 
 Smaller fixes and development changes are listed in the [full change history](https://github.com/misiektoja/instagram_monitor/compare/v3.9.1...v4.0).
