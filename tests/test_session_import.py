@@ -310,6 +310,36 @@ class TestInstagramSessionProbe:
         assert "other profiles: work" in str(failure.value), "the failure names where else the session might be"
 
 
+class TestBrowserProfileStub:
+    # Builds a synthetic Firefox and Chromium tree holding one profile each, so the guards below fail wherever they
+    # run rather than only on a machine with a browser installed
+    @staticmethod
+    def synthetic_roots(im_module, monkeypatch, tmp_path):
+        firefox_profile = tmp_path / "firefox" / "abc.default"
+        firefox_profile.mkdir(parents=True)
+        (firefox_profile / "cookies.sqlite").touch()
+        chromium_profile = tmp_path / "chromium" / "Default"
+        chromium_profile.mkdir(parents=True)
+        (chromium_profile / "Cookies").touch()
+        monkeypatch.setattr(im_module, "firefox_cookie_patterns", lambda: (str(tmp_path / "firefox" / "*" / "cookies.sqlite"),))
+        monkeypatch.setattr(im_module, "get_chromium_user_data_dir", lambda browser: str(tmp_path / "chromium"))
+
+    # Verifies the suite never enumerates the browser profiles of whoever runs it. Without the shared stub a listing
+    # differs per machine, costs a SQLite open per profile and waits on the browsers that are running
+    def test_browser_profile_discovery_is_stubbed_by_default(self, im_module, monkeypatch, tmp_path):
+        self.synthetic_roots(im_module, monkeypatch, tmp_path)
+
+        assert im_module.list_firefox_profiles() == []
+        assert im_module.list_chromium_profiles("chrome") == []
+
+    # Verifies the real enumerators are one fixture away, so stubbing them by default does not leave them untested
+    def test_the_real_enumerators_are_available_on_request(self, im_module, monkeypatch, tmp_path, real_browser_profiles):
+        self.synthetic_roots(im_module, monkeypatch, tmp_path)
+
+        assert [profile["dir"] for profile in im_module.list_firefox_profiles()] == ["abc.default"]
+        assert [profile["dir"] for profile in im_module.list_chromium_profiles("chrome")] == ["Default"]
+
+
 class TestSessionExpiry:
     # Builds one cookie database holding a single Instagram session cookie with the given raw expiry
     @staticmethod

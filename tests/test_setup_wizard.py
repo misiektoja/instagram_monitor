@@ -2393,6 +2393,19 @@ class TestExistingInstaloaderSession:
         assert state.config_values["SESSION_USERNAME"] == "login.user"
 
 
+# Leaves the browser session cache populated, so the next test proves the shared fixture empties it again. A cache
+# carried into a later test changes what that test sees and fails only in a full run, never when it runs alone
+def test_the_wizard_browser_cache_can_be_left_populated():
+    im._WIZARD_BROWSER_SESSION_COUNTS["firefox"] = (1, 1)
+
+    assert im._WIZARD_BROWSER_SESSION_COUNTS
+
+
+# Verifies the shared fixture resets the browser session cache, so the test above cannot bias this one
+def test_the_wizard_browser_cache_is_reset_between_tests():
+    assert im._WIZARD_BROWSER_SESSION_COUNTS == {}
+
+
 # Stubs the profile listings so the login menu describes a known set of browsers
 def stub_browser_profiles(im_module, monkeypatch, firefox, chromium):
     monkeypatch.setattr(im_module, "list_firefox_profiles", lambda: [{"dir": f"x.{name}", "name": name, "path": f"/f/{name}", "install": ""} for name in firefox])
