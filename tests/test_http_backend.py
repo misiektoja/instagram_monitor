@@ -249,3 +249,56 @@ class TestInstagramWebHeaders:
         assert "zstd" in received["Accept-Encoding"]
         assert "sec-ch-ua" in received
 
+
+class TestKeptConnection:
+    # Requests from one session travel over one connection, as a browser's do
+    def test_a_session_reuses_its_connection(self, im_module, keepalive_server):
+        base, seen = keepalive_server
+        session = _adapter_session(im_module)
+
+        session.get(f"{base}/one", timeout=10)
+        session.get(f"{base}/two", timeout=10)
+
+        assert seen[0][0] == seen[1][0]
+
+    # Instaloader's per-request copies share the connection, and closing one leaves it open for the session
+    def test_a_copy_shares_the_connection_and_closing_it_keeps_it(self, im_module, keepalive_server):
+        from instaloader import instaloadercontext
+
+        base, seen = keepalive_server
+        source = _adapter_session(im_module)
+        source.get(f"{base}/source", timeout=10)
+
+        copy = instaloadercontext.copy_session(source)
+        copy.get(f"{base}/copy", timeout=10)
+        copy.close()
+        source.get(f"{base}/after", timeout=10)
+
+        assert seen[0][0] == seen[1][0] == seen[2][0]
+
+    # Closing the session releases its connection, so the next request opens a new one
+    def test_closing_the_session_releases_the_connection(self, im_module, keepalive_server):
+        base, seen = keepalive_server
+        session = _adapter_session(im_module)
+
+        session.get(f"{base}/before", timeout=10)
+        session.close()
+        session.get(f"{base}/after", timeout=10)
+
+        assert seen[0][0] != seen[1][0]
+
+    # A cookie the server set is sent once from the requests jar, and never by another session on its own connection
+    def test_cookies_stay_with_their_session(self, im_module, keepalive_server):
+        base, seen = keepalive_server
+        first = _adapter_session(im_module)
+        first.cookies.set("sessionid", "first")
+        second = _adapter_session(im_module)
+        second.cookies.set("sessionid", "second")
+
+        first.get(f"{base}/set", timeout=10)
+        first.get(f"{base}/again", timeout=10)
+        second.get(f"{base}/other", timeout=10)
+
+        assert seen[1][1].get_all("Cookie") == ["sessionid=first; rur=fresh"]
+        assert seen[2][1].get_all("Cookie") == ["sessionid=second"]
+        assert seen[2][0] != seen[0][0]
