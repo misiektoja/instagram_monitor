@@ -648,6 +648,8 @@ See the [curl_cffi documentation](https://github.com/lexiforest/curl_cffi) for t
 
 The target is checked against that list at startup and when saved from the Web Dashboard. An unrecognized value stops the tool with a message naming supported targets, rather than letting every Instagram request fail later as a connection error.
 
+With `curl_cffi`, requests to Instagram's web API carry the headers the impersonated browser sends for the site's own background requests, rather than the headers of a page typed into the address bar. Each Instagram session also keeps its connection open between requests, as a browser does, instead of opening a new one every time.
+
 <a id="privacy-substitutions"></a>
 ## Privacy Substitutions
 
