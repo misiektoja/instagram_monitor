@@ -2,6 +2,14 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 4.0.3 (TBD)
+
+Version **4.0.3** makes requests to Instagram look more like a browser's. Calls to the web API no longer carry headers that only a page typed into the address bar would have, and each Instagram session keeps its connection open instead of opening a new one per request.
+
+**Features and improvements**:
+
+- **IMPROVE:** **Requests closer to a browser's** - With the default `curl_cffi` backend, calls to Instagram's web API went out with the headers of a page typed into the address bar, plus a few headers no browser sends, and every request opened a new connection. They now carry the **headers the impersonated browser sends for the site's own background requests**, and each Instagram session **keeps one connection open** between requests. The `requests` backend is unchanged
+
 # Changes in 4.0.2 (22 Sep 2026)
 
 Version **4.0.2** fixes **ntfy alerts**. Since version 3.9 almost every ntfy alert failed to send because its title starts with an emoji. It also fixes Discord-format alerts that were dropped when a custom header used a placeholder such as `{title}`.
