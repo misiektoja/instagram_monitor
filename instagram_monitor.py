@@ -2280,6 +2280,7 @@ from requests.adapters import HTTPAdapter as _HTTPAdapter
 from requests.cookies import extract_cookies_to_jar as _extract_cookies_to_jar
 from requests.structures import CaseInsensitiveDict as _CaseInsensitiveDict
 from requests.utils import get_encoding_from_headers as _get_encoding_from_headers
+from urllib.parse import parse_qs as _parse_qs, urlsplit as _urlsplit
 
 try:
     from curl_cffi import requests as _curl_requests
@@ -2360,6 +2361,70 @@ def http_backend_display() -> str:
     return "requests (curl_cffi is not installed)" if str(HTTP_BACKEND).strip().lower() == "curl_cffi" else "requests"
 
 
+# Hosts serving Instagram's web app. curl_cffi's default headers describe a page typed into the address bar, so
+# requests to these hosts are given the headers the impersonated browser sends for the app's own requests
+INSTAGRAM_WEB_HOSTS = frozenset({"www.instagram.com", "instagram.com"})
+
+# Path prefixes of the endpoints the web app calls from an open page rather than loads as a page
+INSTAGRAM_WEB_API_PREFIXES = ("/api/", "/graphql", "/web/", "/ajax/")
+
+# Headers Instaloader adds that no browser sends or that contradict the impersonated one. The first two are HTTP/2
+# pseudo-headers copied as ordinary headers, and the other two would replace the browser's own values
+INSTALOADER_NON_BROWSER_HEADERS = frozenset({"authority", "scheme", "accept-encoding", "accept-language"})
+
+# First Chrome target curl_cffi sends a priority header for. Older targets send none, so none is set for them
+CHROME_PRIORITY_HEADER_MIN_VERSION = 124
+
+
+# Returns whether a request to Instagram's web app is a call the open page makes rather than a page load
+def is_instagram_web_api_request(path: str, query: str) -> bool:
+    return path.startswith(INSTAGRAM_WEB_API_PREFIXES) or "/ajax/" in path or _parse_qs(query).get("__a") == ["1"]
+
+
+# Returns whether a curl_cffi impersonation target sends Chrome's priority header
+def impersonates_chrome_priority(target: str) -> bool:
+    found = re.fullmatch(r"chrome(\d*)[a-z_]*", str(target or "").strip().lower())
+    if found is None:
+        return False
+    # The unversioned aliases follow the newest Chrome curl_cffi ships
+    return not found.group(1) or int(found.group(1)) >= CHROME_PRIORITY_HEADER_MIN_VERSION
+
+
+# Sets one header whatever the case of an existing entry, where None removes curl_cffi's default of that name
+def _replace_header(headers: Dict[str, Optional[str]], name: str, value: Optional[str]) -> None:
+    for key in [k for k in headers if k.lower() == name.lower()]:
+        del headers[key]
+    headers[name] = value
+
+
+# Returns the headers to hand curl_cffi for one request, matching what the impersonated browser sends Instagram's web app
+def curl_cffi_request_headers(method: str, url: str, headers: Any, has_body: bool, target: str) -> Dict[str, Optional[str]]:
+    result: Dict[str, Optional[str]] = dict(headers)
+    parts = _urlsplit(url)
+    if (parts.hostname or "").lower() not in INSTAGRAM_WEB_HOSTS:
+        return result
+
+    for key in [k for k in result if k.lower() in INSTALOADER_NON_BROWSER_HEADERS]:
+        del result[key]
+    if (method or "GET").upper() in ("GET", "HEAD") and not has_body:
+        # A browser sends no length on a read without a body, and no Origin on a same-origin read
+        for key in [k for k in result if k.lower() in ("content-length", "origin")]:
+            del result[key]
+    elif not any(k.lower() == "origin" for k in result):
+        result["Origin"] = f"{parts.scheme}://{parts.hostname}"
+
+    if is_instagram_web_api_request(parts.path, parts.query):
+        # The app's own requests, as fetch() sends them from an open instagram.com page
+        _replace_header(result, "Sec-Fetch-Site", "same-origin")
+        _replace_header(result, "Sec-Fetch-Mode", "cors")
+        _replace_header(result, "Sec-Fetch-Dest", "empty")
+        _replace_header(result, "Sec-Fetch-User", None)
+        _replace_header(result, "Upgrade-Insecure-Requests", None)
+        if impersonates_chrome_priority(target):
+            _replace_header(result, "priority", "u=1, i")
+    return result
+
+
 # Minimal urllib3-style raw wrapper exposing the read/stream surface requests and instaloader downloads rely on
 class _CurlCffiRaw:
     def __init__(self, body: bytes, header_pairs, status: int, reason: str):
@@ -2399,14 +2464,15 @@ class _CurlCffiHTTPAdapter(_HTTPAdapter):
         if not _curl_cffi_backend_active():
             return super().send(request, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
         curl_proxies = proxies if proxies else None
-        headers = dict(request.headers)
+        target = _curl_cffi_impersonate_target()
+        headers = curl_cffi_request_headers(request.method or "GET", request.url or "", request.headers, bool(request.body), target)
         # Never let the stock python-requests default UA ride on top of a browser TLS fingerprint
         # (an obvious mismatch); drop it so curl_cffi supplies its coherent impersonation UA instead
         for ua_key in [k for k in headers if k.lower() == "user-agent"]:
             if str(headers[ua_key]).lower().startswith("python-requests"):
                 del headers[ua_key]
         try:
-            curl_resp = _curl_requests.request(request.method or "GET", request.url, headers=headers, data=request.body, impersonate=_curl_cffi_impersonate_target(), proxies=curl_proxies, verify=verify, timeout=timeout, allow_redirects=False, stream=False)  # type: ignore
+            curl_resp = _curl_requests.request(request.method or "GET", request.url, headers=headers, data=request.body, impersonate=target, proxies=curl_proxies, verify=verify, timeout=timeout, allow_redirects=False, stream=False)  # type: ignore
         except _curl_exceptions.RequestException as err:  # type: ignore
             raise req.exceptions.ConnectionError(str(err), request=request) from err
         return self._build_response(request, curl_resp)
