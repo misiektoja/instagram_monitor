@@ -77,7 +77,7 @@ installed copy of the package.
 | `test_account_safety_loop.py` | The real monitoring loop stopping an account Instagram keeps refusing, and leaving a transient fault alone |
 | `test_human_simulation.py` | The BeHuman activity simulation guards |
 | `test_impersonate_validation.py` | curl_cffi impersonation target validation |
-| `test_http_backend.py` | The curl_cffi transport adapter driven against a loopback server |
+| `test_http_backend.py` | The curl_cffi transport adapter driven against a loopback server, including the browser headers sent to Instagram and the kept connection |
 | `test_concurrency_and_caches.py` | Shared cache eviction and probe deduplication |
 | `test_monitor_restart.py` | The monitoring restart loop used when live settings change |
 | `test_follow_list_source.py` | The follower and following list sources: the web REST endpoints and the GraphQL fallback |
