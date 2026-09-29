@@ -2458,21 +2458,67 @@ class _CurlCffiRaw:
         return self._buffer.closed
 
 
+# One curl_cffi session kept for an Instagram session and the copies Instaloader makes of it, so its requests reuse
+# a connection as a browser's do rather than each opening a new TLS connection
+class _CurlCffiConnection:
+    # Starts without a curl_cffi session, which is opened by the first request
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._session: Any = None
+
+    # Sends one request over the kept session. Requests are serialized because a curl handle serves one thread at a time
+    def request(self, method: str, url: str, **kwargs: Any) -> Any:
+        with self._lock:
+            if self._session is None:
+                self._session = _curl_requests.Session()  # type: ignore[union-attr]
+            return self._session.request(method, url, **kwargs)
+
+    # Closes the kept session and its connections, leaving the next request to open a new one
+    def close(self) -> None:
+        with self._lock:
+            session, self._session = self._session, None
+        if session is not None:
+            try:
+                session.close()
+            except Exception:
+                pass
+
+
 # requests transport adapter that sends through curl_cffi browser impersonation when the backend is active
 class _CurlCffiHTTPAdapter(_HTTPAdapter):
+    # Starts with a connection of its own, or with the one of the session it was copied from
+    def __init__(self, connection: Optional[_CurlCffiConnection] = None) -> None:
+        super().__init__()
+        self._owns_connection = connection is None
+        self._connection = connection if connection is not None else _CurlCffiConnection()
+
+    # Returns an adapter for a copied session that shares this adapter's connection
+    def shared(self) -> "_CurlCffiHTTPAdapter":
+        return _CurlCffiHTTPAdapter(self._connection)
+
+    # Closes the adapter, keeping a shared connection open for the session that owns it
+    def close(self) -> None:
+        super().close()
+        # Instaloader closes each copy once one request is done, while the session it came from keeps working
+        if self._owns_connection:
+            self._connection.close()
+
     def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):
         if not _curl_cffi_backend_active():
             return super().send(request, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
         curl_proxies = proxies if proxies else None
         target = _curl_cffi_impersonate_target()
-        headers = curl_cffi_request_headers(request.method or "GET", request.url or "", request.headers, bool(request.body), target)
+        url = request.url or ""
+        headers = curl_cffi_request_headers(request.method or "GET", url, request.headers, bool(request.body), target)
         # Never let the stock python-requests default UA ride on top of a browser TLS fingerprint
         # (an obvious mismatch); drop it so curl_cffi supplies its coherent impersonation UA instead
         for ua_key in [k for k in headers if k.lower() == "user-agent"]:
             if str(headers[ua_key]).lower().startswith("python-requests"):
                 del headers[ua_key]
         try:
-            curl_resp = _curl_requests.request(request.method or "GET", request.url, headers=headers, data=request.body, impersonate=target, proxies=curl_proxies, verify=verify, timeout=timeout, allow_redirects=False, stream=False)  # type: ignore
+            # Cookies come from the requests jar in the Cookie header. The kept curl_cffi session must not store its
+            # own, or it would send them beside that header and carry one session's cookies into the next
+            curl_resp = self._connection.request(request.method or "GET", url, headers=headers, data=request.body, impersonate=target, proxies=curl_proxies, verify=verify, timeout=timeout, allow_redirects=False, stream=False, discard_cookies=True)
         except _curl_exceptions.RequestException as err:  # type: ignore
             raise req.exceptions.ConnectionError(str(err), request=request) from err
         return self._build_response(request, curl_resp)
@@ -2549,6 +2595,10 @@ def _install_copy_session_proxy_patch() -> None:
             new.verify = getattr(session, "verify", True)
         except Exception:
             pass
+        # A copy made for one request keeps the connection of the session it came from, as a browser tab would
+        for prefix, adapter in list((getattr(session, "adapters", None) or {}).items()):
+            if isinstance(adapter, _CurlCffiHTTPAdapter):
+                new.mount(prefix, adapter.shared())
         wrapper = globals().get('ensure_instagram_session_wrapped')
         if callable(wrapper):
             wrapper(new)
