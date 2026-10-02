@@ -4,11 +4,15 @@ This is a high-level summary of the most important changes.
 
 # Changes in 4.0.3 (TBD)
 
-Version **4.0.3** makes requests to Instagram look more like a browser's. Calls to the web API no longer carry headers that only a page typed into the address bar would have, and each Instagram session keeps its connection open instead of opening a new one per request.
+Version **4.0.3** makes requests to Instagram look more like a browser's. Calls to the web API no longer carry headers that only a page typed into the address bar would have, and each Instagram session keeps its connection open instead of opening a new one per request. Privacy substitutions also leave generated setup and recovery commands unchanged so they can be copied and run.
 
 **Features and improvements**:
 
 - **IMPROVE:** **Requests closer to a browser's** - With the default `curl_cffi` backend, calls to Instagram's web API went out with the headers of a page typed into the address bar, plus a few headers no browser sends, and every request opened a new connection. They now carry the **headers the impersonated browser sends for the site's own background requests**, and each Instagram session **keeps one connection open** between requests. The `requests` backend is unchanged
+
+**Bug fixes**:
+
+- **BUGFIX:** **Privacy substitutions preserve commands** - Doctor and recovery instructions keep the original file paths, usernames and flags in generated commands. Setup commands and logged recovery commands do the same. Other messages still apply privacy substitutions and diagnostic details still redact credentials
 
 # Changes in 4.0.2 (22 Sep 2026)
 
