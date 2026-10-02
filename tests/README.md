@@ -25,6 +25,7 @@ installed copy of the package.
 
 | File | Area under test |
 | --- | --- |
+| `test_setting_persistence.py` | Setting lifetime in help, Doctor CLI options, disabled switches and private-value placeholders |
 | `test_recovery_command_privacy.py` | Generated commands, credential redaction and output stream handling |
 | `test_codeql_workflow.py` | CodeQL source suppression filtering, preserved findings and upload ordering |
 | `test_codeql_boundaries.py` | Long input formatting, profile path validation, private dashboard errors and secret presence diagnostics |
