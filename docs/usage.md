@@ -663,6 +663,8 @@ PRIVACY_SUBSTITUTIONS = [ ("a.username", "Sarah"), ("some.other.user", "XXX") ]
 
 The replacement happens before output is displayed, logged or sent. Internal keys and file paths do not change, so the tool still uses the original usernames to find data. Invalid entries are ignored with a warning.
 
+Generated setup and recovery commands keep their original paths and usernames so they can be copied and run. These command arguments also remain unchanged in logs.
+
 <a id="terminal-output"></a>
 ## Terminal Output
 
