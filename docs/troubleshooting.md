@@ -13,6 +13,8 @@ instagram_monitor --doctor
 
 Doctor writes no files. Before the checks start it states how many Instagram requests it will make: one for connectivity, one for the saved session and one for each monitored profile. Results use `[PASS]`, `[WARN]`, `[FAIL]` and `[SKIP]`. Checks cover **Environment**, **Configuration**, **Session**, **Connectivity**, **Targets** and **Notifications**. Secret values are not displayed. Follow the reported fixes then use **Next steps** to start monitoring.
 
+The start command keeps the files and explicit monitoring options selected for Doctor. Repeat the options on later runs or save the corresponding settings. Command-line credentials appear as uppercase placeholders. Replace those placeholders before running or save the credentials and remove their flags.
+
 Missing optional packages are warnings you can ignore when you do not use those features. Login checks apply only to Logged-In Mode. An empty target list is valid for the Web Dashboard. Other modes need at least one target.
 
 A configuration file Instagram Monitor cannot accept is reported by Doctor as a `FAIL` naming the line and the reason, instead of stopping the command before the checks run. This means you can point Doctor at a configuration you are still fixing. A proxy setting that would stop every request is handled the same way, so Doctor reports it and carries on with the proxy switched off while a monitoring run still stops. See [Routing Traffic Through a Proxy](usage.md#routing-traffic-through-a-proxy) for the commands that behave this way. Settings that a later release removed are reported as a `WARN` and ignored, so an older configuration file still runs.
@@ -37,7 +39,7 @@ For more detail, add `--debug` to Doctor or a normal run. Debug output includes 
 <a id="common-problems"></a>
 ## Common Problems
 
-Every failure is reported in the same three-part shape: what went wrong, a `To fix:` action and a `Guide:` link to the page that covers it. The fix command matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is. `--debug` appends a `Technical detail:` line for bug reports. Generated commands preserve their paths, targets and flags. They refer to credential files or hidden entry instead of including credential values. Error summaries and technical details still redact credentials. Privacy substitutions do not alter generated commands, including command arguments written to logs.
+Every failure is reported in the same three-part shape: what went wrong, a `To fix:` action and a `Guide:` link to the page that covers it. The fix command matches how you installed the tool and carries the `--config-file` or `--env-file` you started with. `--debug` appends a `Technical detail:` line for bug reports. Generated commands preserve their paths, targets and flags. They refer to credential files or hidden entry instead of including credential values. Error summaries and technical details still redact credentials. Privacy substitutions do not alter generated commands, including command arguments written to logs.
 
 | Symptom | Likely cause | Where to look |
 | --- | --- | --- |
@@ -60,7 +62,7 @@ A continuing outage produces a `* Monitoring degraded` reminder once an hour, ev
 <a id="connection-errors-during-monitoring"></a>
 ## Connection Errors During Monitoring
 
-When a check fails, Instagram Monitor prints the error, a `To fix:` action and a `Guide:` link where one applies, then retries automatically at the next interval. You do not need to restart the tool. A command in the fix text matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is.
+When a check fails, Instagram Monitor prints the error, a `To fix:` action and a `Guide:` link where one applies, then retries automatically at the next interval. You do not need to restart the tool. A command in the fix text matches how you installed the tool and carries the `--config-file` or `--env-file` you started with.
 
 `Instagram could not be reached` means a check got no answer from Instagram, and `Instagram's address could not be resolved` means the lookup of the name failed before any request was made. Both are retried on their own and the report names how long until the next check, so a short outage needs no action. A failure that lasts produces the hourly `Monitoring degraded` reminder and `Monitoring recovered` when it clears.
 
