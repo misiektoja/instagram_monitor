@@ -1818,7 +1818,7 @@ def print_secret_command_error(error):
     print(f"* Error: {error}")
     fix = getattr(error, "fix", "")
     if fix:
-        print(colorize("info", f"To fix: {fix}"))
+        print(CommandOutput(colorize("info", f"To fix: {fix}")))
     guide = getattr(error, "guide", "")
     if guide:
         print(f"Guide: {guide}")
@@ -5655,7 +5655,7 @@ class Logger(object):
         global last_output
         with STDOUT_LOCK:
             # Apply color for terminal
-            message = sanitize_terminal_text(apply_privacy_substitutions(message))
+            message = sanitize_console_text(message)
 
             if message != '\n':
                 last_output.append(message)
@@ -5697,7 +5697,7 @@ class Logger(object):
     # Writes a message to the terminal only (honouring colour), bypassing all log files
     def terminal_only(self, message):
         with STDOUT_LOCK:
-            message = sanitize_terminal_text(apply_privacy_substitutions(message))
+            message = sanitize_console_text(message)
             colorized_message = apply_color_to_text(self._truncate_terminal(message))
             self.terminal.write(colorized_message)
             self.terminal.flush()
@@ -5705,7 +5705,7 @@ class Logger(object):
     # Writes a message to the log file(s) only (ANSI stripped), bypassing the terminal
     def log_only(self, message):
         with STDOUT_LOCK:
-            message = sanitize_terminal_text(apply_privacy_substitutions(message))
+            message = sanitize_console_text(message)
             colorized_message = apply_color_to_text(message)
             clean_message = normalize_log_separators(ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8))
             if self.main_log:
@@ -5782,7 +5782,7 @@ class ColorStream(object):
         self.terminal = stream
 
     def write(self, message):
-        message = sanitize_terminal_text(apply_privacy_substitutions(message))
+        message = sanitize_console_text(message)
         coloured = apply_color_to_text(truncate_string_per_line(message, TRUNCATE_CHARS) if TRUNCATE_CHARS else message)
         self.terminal.write(coloured)
         self.terminal.flush()
@@ -9585,7 +9585,7 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
             print(summary)
             for line in lines:
                 print(line)
-            print(colorize("info", f"To fix: {fix}"))
+            print(CommandOutput(colorize("info", f"To fix: {fix}")))
             print(f"Guide: {CONFIG_GUIDE_URL}")
         return False
 
@@ -11449,6 +11449,19 @@ RECOVERY_CODES = frozenset({
 SECRET_ASSIGNMENT_RE = re.compile(r"(?im)(\b(?:" + "|".join(SECRET_KEYS) + r")\b\s*=\s*)[^\r\n]*")
 
 
+# Marks generated instructions combined only with already-redacted diagnostic fields
+class CommandOutput(str):
+    # Preserves the output marker when print converts its argument to text
+    def __str__(self) -> str:
+        return self
+
+
+# Keeps generated instructions intact while filtering ordinary output and terminal controls
+def sanitize_console_text(message):
+    filtered = message if isinstance(message, CommandOutput) else apply_privacy_substitutions(message)
+    return sanitize_terminal_text(filtered)
+
+
 # Removes private values and secret assignments from error text before it reaches the console, a log or an alert
 def sanitize_error_text(text: Any, *extra_private_values: str) -> str:
     sanitized = apply_privacy_substitutions(str(text or ""))
@@ -11480,11 +11493,12 @@ class RecoveryError(Exception):
         super().__init__(advice.summary)
 
 
-# Builds one piece of recovery advice, refusing any code outside the closed set and sanitizing every field
+# Builds validated recovery advice with private diagnostics and unchanged generated instructions
 def make_recovery_advice(code: str, summary: str, fix: str, retryable: bool = False, detail: str = "") -> RecoveryAdvice:
     if code not in RECOVERY_CODES:
         raise ValueError(f"Unsupported recovery code: {code}")
-    return RecoveryAdvice(code, sanitize_error_text(summary), sanitize_error_text(fix), bool(retryable), sanitize_error_text(detail) if detail else "")
+    # Fixes contain generated instructions and non-secret arguments, so redaction must not rewrite them
+    return RecoveryAdvice(code, sanitize_error_text(summary), fix, bool(retryable), sanitize_error_text(detail) if detail else "")
 
 
 # Adds a directly relevant documentation link on its own line
@@ -11882,14 +11896,14 @@ def caller_summary(error: Any) -> str:
 
 # Renders one built advice as the shared Error, To fix and optional Technical detail block
 def render_recovery_advice(advice: RecoveryAdvice, debug: Optional[bool] = None, retry_note: str = "", with_fix: bool = True, label: str = "Error", summary: str = "") -> str:
-    headline = sanitize_error_text(summary) if summary else advice.summary
-    lines = [f"* {label}: {headline}" + (f" ({retry_note})" if retry_note else "")]
+    headline = sanitize_error_text(summary or advice.summary)
+    lines = [f"* {sanitize_error_text(label)}: {headline}" + (f" ({sanitize_error_text(retry_note)})" if retry_note else "")]
     if with_fix and advice.fix:
         lines.extend(colorize_fix_line(fix_line) for fix_line in f"To fix: {advice.fix}".splitlines())
     # A detail that only repeats a line already printed spends a line saying nothing
     if with_fix and (DEBUG_MODE if debug is None else debug) and advice.detail and advice.detail not in (headline, advice.summary):
         lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
-    return "\n".join(lines)
+    return CommandOutput("\n".join(lines))
 
 
 # Classifies one failure and renders it through the shared recovery block
@@ -11929,7 +11943,7 @@ def print_recovery_fix(error: Any = None, context: str = "runtime", detail: str 
     advice = classify_recovery_error(error, context, detail)
     if advice.fix:
         note_console_output()
-        print(colorize("info", f"To fix: {advice.fix}"))
+        print(CommandOutput(colorize("info", f"To fix: {advice.fix}")))
         if DEBUG_MODE and advice.detail and advice.detail != advice.summary:
             print(f"Technical detail: {sanitize_error_text(advice.detail)}")
     return advice
@@ -12714,7 +12728,7 @@ def recover_account_on_startup(retry: bool = False) -> bool:
             else:
                 fix = classify_recovery_error(error, is_logged_in=True).fix
             print(f"* Monitoring remains paused for {account}: {message}")
-            print(f"* To fix: {fix}")
+            print(CommandOutput(f"* To fix: {fix}"))
             return False
         finally:
             if bot is not None:
@@ -12804,7 +12818,7 @@ def trip_circuit_breaker(failure_class: str, user: str = "", error_msg: str = ""
     if tripped:
         account = exposure_account_name()
         print(f"\n* Circuit breaker: Instagram acted against session account {account} ({failure_class}). Stopping all Instagram requests for this account")
-        print(f"* {breaker_recovery_hint(failure_class)}")
+        print(CommandOutput(f"* {breaker_recovery_hint(failure_class)}"))
         log_activity(f"Circuit breaker tripped for {account}: {failure_class}", user=user or account, level='system')
     return bool(tripped)
 
@@ -13918,8 +13932,10 @@ def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, tota
     # stops save_username_baseline from overwriting a good baseline with a truncated one
     breaker = circuit_breaker_state()
     if breaker:
-        msg = f"Skipping name fetch: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')}). {breaker_recovery_hint(breaker.get('failure_class', ''))}"
-        print(f"* {msg}")
+        summary = f"Skipping name fetch: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')})."
+        fix = breaker_recovery_hint(breaker.get('failure_class', ''))
+        msg = f"{summary} {fix}"
+        print(CommandOutput(f"* {sanitize_error_text(summary)} {fix}"))
         log_activity(msg, user=user, level='system')
         return results
 
@@ -14143,7 +14159,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         if breaker:
             update_ui_data(targets={user: {'status': 'Stopped (breaker)'}})
             print(f"* Monitoring paused for {user}: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')})")
-            print(f"* {breaker_recovery_hint(breaker.get('failure_class', ''))}")
+            print(CommandOutput(f"* {breaker_recovery_hint(breaker.get('failure_class', ''))}"))
             if signal_loading_complete is not None:
                 signal_loading_complete.set()
             return
@@ -15331,7 +15347,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         if breaker:
             update_ui_data(targets={user: {'status': 'Stopped (breaker)'}})
             print(f"* Monitoring paused for {user}: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')})")
-            print(f"* {breaker_recovery_hint(breaker.get('failure_class', ''))}\n")
+            print(CommandOutput(f"* {breaker_recovery_hint(breaker.get('failure_class', ''))}\n"))
             print_cur_ts()
             return
 
@@ -15505,7 +15521,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 # A redirect or a rejected request usually means the session, so name it when the classifier had no fix of its own
                 # A generic fix is not an answer for a failure whose text points at the session, so the specific advice still follows it
                 if (not fix_hint_printed or advice.code == "unknown") and outage_outcome == "full" and ('Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e)):
-                    print(colorize("info", f"To fix: The saved session may no longer be valid. Re-import it with '{session_recovery_command()}'{session_recovery_browser_hint()} or from the Web Dashboard Session page"))
+                    print(CommandOutput(colorize("info", f"To fix: The saved session may no longer be valid. Re-import it with '{session_recovery_command()}'{session_recovery_browser_hint()} or from the Web Dashboard Session page")))
 
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
@@ -15528,7 +15544,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 redirect_advice = classify_recovery_error(error_msg, is_logged_in=bool(SESSION_USERNAME) and not skip_session)
                 outage.failed(redirect_advice)
                 print(f"* Error: The saved Instagram session may no longer be valid (retrying in {display_time(r_sleep_time)})")
-                print(colorize("info", f"To fix: Re-import the session with '{session_recovery_command()}'{session_recovery_browser_hint()} or from the Web Dashboard Session page"))
+                print(CommandOutput(colorize("info", f"To fix: Re-import the session with '{session_recovery_command()}'{session_recovery_browser_hint()} or from the Web Dashboard Session page")))
                 notify_monitoring_error(user, redirect_advice, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
@@ -16739,7 +16755,7 @@ def _wizard_notification_categories(config_values, prefix: str = "") -> List[str
 # Prints one labelled next-step command indented under its label
 def _wizard_print_command(label: str, command: str, suffix: str = "") -> None:
     print(label)
-    print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
+    print(CommandOutput(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n"))
 
 
 # Prints the command that starts monitoring with the files this run checked, so a report read on its own
@@ -16891,7 +16907,7 @@ def _wizard_install_chromium_dependency(method: str) -> bool:
     executable = sys.executable or ("python" if system() == "Windows" else "python3")
     command = [executable, "-m", "pip", "install", requirement]
     display_command = ["python" if platform.system() == "Windows" else "python3", *command[1:]]
-    print(f"Installing Chromium browser support with:\n    {_wizard_render_command(display_command)}\n")
+    print(CommandOutput(f"Installing Chromium browser support with:\n    {_wizard_render_command(display_command)}\n"))
     try:
         result = subprocess.run(command, check=False)
     except OSError as exc:
@@ -17421,7 +17437,7 @@ def _wizard_confirm_existing_session(state: WizardSetupState) -> bool:
     print(colorize("info", f"  Looked in: {', '.join(candidates)}"))
     # The shared reader returns a visible username here, never a password
     # codeql[py/clear-text-logging-sensitive-data]
-    print(colorize("info", f"  To fix: run 'instaloader --login {state.session_username}' to create one, or choose a browser import instead."))
+    print(CommandOutput(colorize("info", f"  To fix: run 'instaloader --login {state.session_username}' to create one, or choose a browser import instead.")))
     return _wizard_ask_yes_no("Keep using an existing Instaloader session anyway?", default=False)
 
 
@@ -17654,7 +17670,7 @@ def _wizard_smtp_sign_in_accepted(values: dict, password: str) -> Optional[bool]
         return True
     summary, detail, fix, retryable = problem
     print(f"  {summary}: {detail}" if detail else f"  {summary}")
-    print(f"  To fix: {fix}")
+    print(CommandOutput(f"  To fix: {fix}"))
     if _wizard_offer_retry("mail server settings"):
         return False
     if retryable:
@@ -19385,7 +19401,7 @@ def render_doctor_sections(report: DoctorReport) -> None:
             if check.status != "PASS" and check.advice is not None:
                 # The fix carries its own guide line, so each line is indented and styled on its own
                 for advice_line in f"To fix: {check.advice.fix}".splitlines():
-                    print(f"  {colorize_fix_line(advice_line)}")
+                    print(CommandOutput(f"  {colorize_fix_line(advice_line)}"))
 
 
 # Prints the closing summary for one rendered report
@@ -20154,7 +20170,7 @@ def run_main():
             doctor_config_errors.append({"summary": summary, "detail": "", "fix": fix})
         else:
             print(f"* Error: {summary}")
-            print(colorize("info", f"To fix: {fix}"))
+            print(CommandOutput(colorize("info", f"To fix: {fix}")))
             print(f"Guide: {CONFIG_GUIDE_URL}")
             sys.exit(1)
 
@@ -20336,7 +20352,7 @@ def run_main():
         identity_mismatch = browser_identity_mismatch()
         if identity_mismatch is not None:
             print(f"* Error: {identity_mismatch[0]}")
-            print(f"* To fix: {identity_mismatch[1]}")
+            print(CommandOutput(f"* To fix: {identity_mismatch[1]}"))
             print(f"Guide: {FOLLOW_LIST_SOURCE_GUIDE_URL}")
             sys.exit(1)
 
@@ -20582,7 +20598,7 @@ def run_main():
     # Allow empty targets with specific flags
     if not targets and not WEB_DASHBOARD_ENABLED and not args.doctor and not args.analyze_follows:
         print("* Error: At least one TARGET_USERNAME argument is required")
-        print(colorize("info", f"To fix: {NO_TARGET_FIX}"))
+        print(CommandOutput(colorize("info", f"To fix: {NO_TARGET_FIX}")))
         print(f"Guide: {QUICK_START_GUIDE_URL}")
         sys.exit(1)
 
