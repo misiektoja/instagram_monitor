@@ -1047,7 +1047,7 @@ WEB_DASHBOARD_GUIDE_URL = DOCS_BASE_URL + "/view-modes/#web-dashboard"
 OUTPUT_GUIDE_URL = DOCS_BASE_URL + "/usage/#output-directory"
 
 # The fix named when nothing is being monitored, shared by the startup gate and the Doctor target check
-NO_TARGET_FIX = "Pass a target on the command line, set TARGET_USERNAMES in the config or enable the Web Dashboard"
+NO_TARGET_FIX = "Save TARGET_USERNAMES in the configuration file or include the target on each run. Alternatively, enable the Web Dashboard to add targets there"
 
 # Label of the Doctor check that reports a fully validated webhook, shared with the sibling monitors
 SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
@@ -11612,7 +11612,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not an Instagram problem", "Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", False, DESCRIPTOR_LIMIT_GUIDE_URL)
 
     if context == "config_missing":
-        return advice("config.missing", "A required setting has no value", "Set it in the configuration file, in the environment or with its command-line flag, then re-run the tool", False, CONFIG_GUIDE_URL)
+        return advice("config.missing", "A required setting has no value", "Save it in the configuration file or provide it through the environment. Command-line setting flags must be included on each run", False, CONFIG_GUIDE_URL)
 
     if context == "config":
         return advice("config.invalid", "A configured value cannot be used", "Correct the value in the configuration file or on the command line, then re-run the tool", False, CONFIG_GUIDE_URL)
@@ -11630,7 +11630,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return advice("file.unreadable", "A file the tool reads could not be opened", "Check the path and its permissions, and that the file is readable UTF-8 text", False, OUTPUT_GUIDE_URL)
 
     if context == "file_write":
-        return advice("file.unwritable", "A file the tool writes could not be opened", "Check that the output directory exists and is writable, or choose another with --output-dir", False, OUTPUT_GUIDE_URL)
+        return advice("file.unwritable", "A file the tool writes could not be opened", "Check that the output directory exists and is writable. Save a different OUTPUT_DIR in the configuration file or include --output-dir PATH on each run", False, OUTPUT_GUIDE_URL)
 
     if context == "config_write":
         return advice("file.unwritable", "The configuration file could not be written", "Check that the directory exists and is writable, or choose another path with --config-file", False, CONFIG_GUIDE_URL)
@@ -11661,7 +11661,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return advice("config.invalid", "The proxy settings cannot be used", "Check PROXY_URL and any proxy certificate path, then re-run the tool", False, PROXY_GUIDE_URL)
 
     if context == "dashboard":
-        return advice("dashboard.unavailable", "The Web Dashboard could not start", "Free the configured port or start the server on a different one with --web-dashboard-port, then confirm the installation is complete", False, WEB_DASHBOARD_GUIDE_URL)
+        return advice("dashboard.unavailable", "The Web Dashboard could not start", "Free the configured port or save a different WEB_DASHBOARD_PORT in the configuration file. To override it without saving, include --web-dashboard-port PORT on each run. Confirm the installation is complete", False, WEB_DASHBOARD_GUIDE_URL)
 
     if context == "setup":
         return advice("config.invalid", "Setup cannot run with the current settings", "Correct the named setting or path, then run --setup again", False, QUICK_START_GUIDE_URL)
@@ -11687,7 +11687,7 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
         # cannot lift a limit it did not cause, while a session login is limited per account instead
         if not is_logged_in:
             return "instagram.rate_limited", "Instagram is rate-limiting anonymous requests from this IP", "Instagram is rate-limiting anonymous requests from this IP address, which counts everything behind it and is often hit on the very first request. Wait for it to pass or use another address. A session login is limited per account instead, so importing one usually works from here", ANONYMOUS_RATE_LIMIT_GUIDE_URL, True
-        return "instagram.rate_limited", "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
+        return "instagram.rate_limited", "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise INSTA_CHECK_INTERVAL and set ENABLE_JITTER = True in the configuration file, then restart and monitor fewer users. To use command-line settings instead, include --check-interval SECONDS --enable-jitter on each run", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
 
     # An endpoint Instagram retired answers feedback_required whatever the account is doing, so its reply describes
     # the endpoint. Reading it as an account block would stop a session every other endpoint still answers
@@ -11720,7 +11720,7 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
 
     # An unsupported impersonation target surfaces as a connection error, so name the real cause before the network hint
     if any(t in m for t in FAILURE_TERMS['impersonate_unsupported']):
-        return "config.impersonate_unsupported", "The configured browser profile cannot be impersonated", "The configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto' or pick a supported target such as chrome, safari, edge or firefox", HTTP_BACKEND_GUIDE_URL, False
+        return "config.impersonate_unsupported", "The configured browser profile cannot be impersonated", "The configured browser profile is not one curl_cffi can impersonate. Save CURL_CFFI_IMPERSONATE = 'auto' in the configuration file or include --impersonate auto on each run. A supported target such as chrome, safari, edge or firefox also works", HTTP_BACKEND_GUIDE_URL, False
 
     # An unresolvable proxy hostname is a proxy configuration problem, so it is the one resolution failure the proxy guide fits
     if any(t in m for t in FAILURE_TERMS['proxy_unresolved']):
@@ -11739,7 +11739,7 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
 
     # Deprecated GraphQL doc_id returning null data, or a temporary block
     if any(t in m for t in FAILURE_TERMS['schema_change']):
-        return "instagram.empty_data", "Instagram returned empty data for this query", "Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version and report it at https://github.com/misiektoja/instagram_monitor/issues if you are already current)", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
+        return "instagram.empty_data", "Instagram returned empty data for this query", "Instagram returned empty data for this query. This is usually a temporary block (raise INSTA_CHECK_INTERVAL and set ENABLE_JITTER = True in the configuration file, then restart) or an Instagram API change (update instagram_monitor to the latest version and report it at https://github.com/misiektoja/instagram_monitor/issues if you are already current)", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
 
     return "unknown", "An unexpected error stopped the requested action", unknown_failure_fix(), DIAGNOSTICS_GUIDE_URL, True
 
@@ -16758,12 +16758,40 @@ def _wizard_print_command(label: str, command: str, suffix: str = "") -> None:
     print(CommandOutput(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n"))
 
 
-# Prints the command that starts monitoring with the files this run checked, so a report read on its own
-# ends with the next action rather than leaving the reader to assemble the command
-def print_doctor_next_steps(targets=(), config_path=None, env_path=None, saved_targets=(), doctor_exit: int = 0) -> None:
-    command = _wizard_action_command(_wizard_install_method(), "", config_path, env_path, _wizard_command_targets(targets, saved_targets)[1], web_dashboard=WEB_DASHBOARD_ENABLED)
+# Rebuilds explicit monitoring options while replacing private values with named placeholders
+def doctor_monitoring_overrides(args):
+    parts = []
+    value_options = (("session_username", "--session-username"), ("session_file", "--session-file"), ("webhook_provider", "--webhook-provider"), ("check_interval", "--check-interval"), ("check_interval_random_diff_low", "--random-diff-low"), ("check_interval_random_diff_high", "--random-diff-high"), ("targets_stagger", "--targets-stagger"), ("targets_stagger_jitter", "--targets-stagger-jitter"), ("user_agent", "--user-agent"), ("user_agent_mobile", "--user-agent-mobile"), ("http_backend", "--http-backend"), ("impersonate", "--impersonate"), ("follow_list_source", "--follow-list-source"), ("identity_budget", "--identity-budget"), ("proxy_cert_path", "--proxy-cert"), ("web_dashboard_port", "--web-dashboard-port"), ("web_dashboard_template_dir", "--web-dashboard-template-dir"), ("csv_file", "--csv-file"), ("output_dir", "--output-dir"), ("truncate", "--truncate"))
+    for name, option in value_options:
+        value = getattr(args, name, None)
+        if value is not None:
+            # An equals sign keeps a value beginning with a dash from being parsed as another option
+            if str(value).startswith("-"):
+                parts.append(f"{option}={value}")
+            else:
+                parts.extend((option, str(value)))
+    switches = (("status_notification", "--notify-status", True), ("followers_notification", "--notify-followers", True), ("error_notification", "--no-error-notify", False), ("webhook_enabled", "--webhook", True), ("no_webhook", "--no-webhook", True), ("webhook_status", "--webhook-status", True), ("webhook_followers", "--webhook-followers", True), ("webhook_errors", "--webhook-errors", True), ("skip_session", "--skip-session", True), ("skip_followers", "--skip-followers", True), ("skip_followings", "--skip-followings", True), ("followers_churn", "--followers-churn", True), ("skip_follow_changes", "--skip-follow-changes", True), ("skip_getting_story_details", "--skip-story-details", True), ("skip_getting_posts_details", "--skip-post-details", True), ("get_more_post_details", "--more-post-details", True), ("be_human", "--be-human", True), ("enable_jitter", "--enable-jitter", True), ("proxy_enabled", "--enable-proxy", True), ("proxy_webhooks", "--enable-proxy-webhooks", True), ("dashboard", "--dashboard", True), ("disable_dashboard", "--no-dashboard", True), ("web_dashboard", "--web-dashboard", True), ("no_web_dashboard", "--no-web-dashboard", True), ("do_not_detect_changed_profile_pic", "--no-profile-pic-detect", False), ("fetch_reels", "--fetch-reels", True), ("fetch_reels", "--no-fetch-reels", False), ("detect_collab_posts", "--no-detect-collab-posts", False), ("disable_logging", "--disable-logging", True), ("no_color", "--no-color", True), ("verbose_mode", "--verbose", True), ("debug_mode", "--debug", True))
+    for name, option, selected in switches:
+        if getattr(args, name, None) is selected:
+            parts.append(option)
+    private_options = (("session_password", "--session-password", "SESSION_PASSWORD"), ("webhook_url", "--webhook-url", "WEBHOOK_URL"), ("proxy_url", "--proxy-url", "PROXY_URL"))
+    has_private_values = False
+    for name, option, placeholder in private_options:
+        if getattr(args, name, None) is not None:
+            parts.extend((option, placeholder))
+            has_private_values = True
+    return parts, has_private_values
+
+
+# Prints the monitoring command with the settings selected for Doctor
+def print_doctor_next_steps(targets=(), config_path=None, env_path=None, saved_targets=(), doctor_exit: int = 0, cli_args=None) -> None:
+    overrides, private_values = doctor_monitoring_overrides(cli_args)
+    action = " ".join(_wizard_quote_argument(value) for value in overrides)
+    command = _wizard_action_command(_wizard_install_method(), action, config_path, env_path, _wizard_command_targets(targets, saved_targets)[1], web_dashboard=WEB_DASHBOARD_ENABLED)
     print(colorize("header", "\nNext steps\n"))
     _wizard_print_command("After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:", command)
+    if private_values:
+        print("Replace the uppercase credential placeholders before running. Doctor does not repeat private command-line values.\n")
     print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}")
 
 
@@ -16966,7 +16994,8 @@ def _build_help_epilog() -> str:
             ("Trace what the tool is doing", f"{prefix} <target_insta_user> --debug"),
         )),
     )
-    return _render_help_examples(groups, QUICK_START_GUIDE_URL)
+    notice = "Setting options apply to the current run and do not update the configuration file.\nInclude them on each run or save the settings through --setup or in a configuration file.\n\n"
+    return notice + _render_help_examples(groups, QUICK_START_GUIDE_URL)
 
 
 # Reads one input line, letting a cancelled prompt reach the handler that knows what was written
@@ -19245,7 +19274,7 @@ def doctor_check_targets(report: DoctorReport, targets, progress: Optional[Calla
         if WEB_DASHBOARD_ENABLED and FLASK_AVAILABLE:
             return [make_doctor_check("Targets", "PASS", "No targets configured yet", "The Web Dashboard is enabled, so targets can be added there")]
         if WEB_DASHBOARD_ENABLED:
-            advice = make_recovery_advice("dependency.missing", "No targets configured and the Web Dashboard cannot start", recovery_fix_with_guide(f"Install Flask with: {pip_install_command('flask')}, or pass a target on the command line or set TARGET_USERNAMES in the config", INSTALLATION_GUIDE_URL), False)
+            advice = make_recovery_advice("dependency.missing", "No targets configured and the Web Dashboard cannot start", recovery_fix_with_guide(f"Install Flask with: {pip_install_command('flask')}, or save TARGET_USERNAMES in the configuration file or include a target on each run", INSTALLATION_GUIDE_URL), False)
             return [make_doctor_check("Targets", "FAIL", advice.summary, "Nothing will be monitored and there is no dashboard to add a target in", advice)]
         advice = make_recovery_advice("target.missing", "No targets configured", recovery_fix_with_guide(NO_TARGET_FIX, QUICK_START_GUIDE_URL), False)
         return [make_doctor_check("Targets", "WARN", advice.summary, "Nothing will be monitored", advice)]
@@ -20418,7 +20447,7 @@ def run_main():
             sys.exit(1)
         if not exposure_ledger_is_writable():
             print("* Error: The account safety ledger cannot be saved, so monitoring stops this account on its first identity scan")
-            print("To fix: Restore write access to that path, or choose a writable location with --output-dir")
+            print("To fix: Restore write access to that path. Save a writable OUTPUT_DIR in the configuration file or include --output-dir PATH on each run")
             sys.exit(1)
         sys.exit(0)
 
@@ -20517,7 +20546,7 @@ def run_main():
     if args.send_test_webhook:
         if not WEBHOOK_URL:
             print("* Error: No webhook destination is configured")
-            print(colorize("info", "To fix: Save one with --set-webhook-url, pass --webhook-url or set WEBHOOK_URL in the config file"))
+            print(colorize("info", "To fix: Save one with --set-webhook-url or include --webhook-url URL on each run"))
             print(f"Guide: {WEBHOOK_GUIDE_URL}")
             sys.exit(1)
 
@@ -20658,7 +20687,7 @@ def run_main():
         # Targets already saved in the config file are left out, so the command stays as short as the wizard's
         # Both "none" sentinels are carried, since the printed command monitors with the setup doctor just checked
         next_env_path = "none" if DOTENV_FILE and str(DOTENV_FILE).casefold() == "none" else env_path
-        print_doctor_next_steps([] if not args.usernames else targets, cfg_path or active_config_path(), next_env_path, TARGET_USERNAMES, doctor_failures)
+        print_doctor_next_steps(targets, cfg_path or active_config_path(), next_env_path, TARGET_USERNAMES, doctor_failures, cli_args=args)
         sys.exit(1 if doctor_failures else 0)
 
     boolean_errors = runtime_boolean_errors()
