@@ -37,7 +37,7 @@ For more detail, add `--debug` to Doctor or a normal run. Debug output includes 
 <a id="common-problems"></a>
 ## Common Problems
 
-Every failure is reported in the same three-part shape: what went wrong, a `To fix:` action and a `Guide:` link to the page that covers it. The fix command matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is. `--debug` appends a `Technical detail:` line for bug reports. Secrets are redacted from all three.
+Every failure is reported in the same three-part shape: what went wrong, a `To fix:` action and a `Guide:` link to the page that covers it. The fix command matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is. `--debug` appends a `Technical detail:` line for bug reports. Generated commands preserve their paths, targets and flags. They refer to credential files or hidden entry instead of including credential values. Error summaries and technical details still redact credentials. Privacy substitutions do not alter generated commands, including command arguments written to logs.
 
 | Symptom | Likely cause | Where to look |
 | --- | --- | --- |
