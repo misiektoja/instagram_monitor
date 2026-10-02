@@ -4,7 +4,7 @@ This is a high-level summary of the most important changes.
 
 # Changes in 4.0.3 (TBD)
 
-Version **4.0.3** makes requests to Instagram look more like a browser's. Calls to the web API no longer carry headers that only a page typed into the address bar would have, and each Instagram session keeps its connection open instead of opening a new one per request. Privacy substitutions also leave generated setup and recovery commands unchanged so they can be copied and run.
+Version **4.0.3** sends web API requests with the headers a browser uses and reuses each Instagram session's connection. Recovery guidance distinguishes saved settings from repeated command-line options. Doctor keeps those options and the selected targets in its monitoring command. Generated commands stay usable when their arguments match stored credentials.
 
 **Features and improvements**:
 
@@ -12,7 +12,7 @@ Version **4.0.3** makes requests to Instagram look more like a browser's. Calls 
 
 **Bug fixes**:
 
-- **BUGFIX:** **Privacy substitutions preserve commands** - Doctor and recovery instructions keep the original file paths, usernames and flags in generated commands. Setup commands and logged recovery commands do the same. Other messages still apply privacy substitutions and diagnostic details still redact credentials
+- **BUGFIX:** **Recovery commands and saved settings** - Guidance distinguishes saved settings from command-line options needed on each run. Doctor's monitoring command retains the selected options and shows placeholders for private values. Generated commands keep paths, targets and flags intact when they match stored credentials. Error summaries and technical details still redact credentials. Targets supplied through **`--targets`** also carry into Doctor's monitoring command
 
 # Changes in 4.0.2 (22 Sep 2026)
 
