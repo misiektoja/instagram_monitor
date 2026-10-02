@@ -5,7 +5,7 @@ Examples on this page use the PyPI command `instagram_monitor`. If you chose ano
 <a id="configuration-file"></a>
 ## Configuration File
 
-You can pass most settings as command-line options or save them in a configuration file for later runs.
+Command-line setting options apply to the current run and do not update the configuration file. Include them on every run that needs those settings. To reuse settings without repeating the options, save them through `--setup` or edit the configuration file. Commands such as `--setup` and `--set-smtp-password` save the values they collect.
 
 The easiest way to create this file is `instagram_monitor --setup`.
 
