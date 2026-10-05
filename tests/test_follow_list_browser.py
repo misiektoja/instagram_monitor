@@ -1,10 +1,13 @@
 """Offline tests for the experimental browser follower list source, with no browser started."""
 
+import io
+import sys
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import instaloader
 import pytest
+from tqdm import tqdm
 
 
 # Stands in for a Playwright page, answering the two scripts the harvester evaluates
@@ -48,6 +51,118 @@ CHROME_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.
 FIREFOX_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0"
 SAFARI_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 EDGE_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0"
+
+
+@pytest.fixture
+# Gives each browser progress test a real terminal bar isolated from other fetches
+def browser_progress_bar(im_module, monkeypatch):
+    output = io.StringIO()
+    with tqdm(total=4, file=output, bar_format="{n_fmt}/{total_fmt} [{unit}]", unit="Initializing...") as bar:
+        monkeypatch.setattr(im_module._thread_local, "pbar", bar, raising=False)
+        yield bar, output
+
+
+class TestBrowserProgress:
+    # Browser names advance the bar while the generator is still running
+    def test_batches_advance_before_the_scan_finishes(self, im_module, monkeypatch, browser_progress_bar):
+        bar, output = browser_progress_bar
+        monkeypatch.setattr(im_module, "browser_follow_list_batches", lambda *args, **kwargs: iter([["a", "b"], ["c", "d"]]))
+        entries = im_module.iter_browser_follow_list(fake_bot(), fake_profile(followers=4), "followers")
+
+        assert next(entries).username == "a"
+        assert bar.n == 2
+        assert "2/4 [Reading names" in output.getvalue()
+        assert [entry.username for entry in entries] == ["b", "c", "d"]
+        assert bar.n == 4
+
+    # Scroll waits remain visible even when the next frame contains no new names
+    def test_stalled_scrolling_updates_the_status(self, im_module, browser_progress_bar):
+        bar, output = browser_progress_bar
+        page = FakePage([["a"]] * 4)
+
+        assert list(im_module.harvest_follow_list_dialog(page, 0)) == [["a"]]
+        assert "Waiting after scroll" in output.getvalue()
+        assert "Reading names" in bar.unit
+        assert bar.n == 0
+
+    # Names excluded by the daily budget are also excluded from the displayed count
+    def test_the_budget_caps_displayed_progress(self, im_module, monkeypatch, browser_progress_bar):
+        bar, _ = browser_progress_bar
+        monkeypatch.setattr(im_module, "IDENTITY_BUDGET_PER_DAY", 3)
+        monkeypatch.setattr(im_module, "browser_follow_list_batches", lambda *args, **kwargs: iter([["a", "b"], ["c", "d"], ["e"]]))
+
+        names = list(im_module.iter_browser_follow_list(fake_bot(), fake_profile(followers=5), "followers", record_exposure=True))
+
+        assert len(names) == bar.n == 3
+
+    # Counts can grow during a slow scan without sending the bar past its total
+    def test_a_changed_count_expands_the_total(self, im_module, browser_progress_bar):
+        bar, _ = browser_progress_bar
+
+        im_module.browser_follow_list_progress("Reading names", 5)
+
+        assert bar.n == bar.total == 5
+
+    # A fetch without the terminal lock never changes another thread's global bar
+    def test_a_fetch_without_a_bar_leaves_the_global_bar_alone(self, im_module, monkeypatch):
+        other_bar = Mock()
+        monkeypatch.setattr(im_module, "pbar", other_bar)
+        monkeypatch.setattr(im_module._thread_local, "pbar", None, raising=False)
+
+        im_module.browser_follow_list_progress("Reading names", 5)
+
+        assert other_bar.mock_calls == []
+
+
+class TestBrowserCertificateErrors:
+    # Browser certificate errors give trust guidance and never trip the account breaker
+    @pytest.mark.parametrize("error_code", ["ERR_CERT_AUTHORITY_INVALID", "ERR_CERT_DATE_INVALID", "ERR_CERT_COMMON_NAME_INVALID", "ERR_PROXY_CERTIFICATE_INVALID"])
+    def test_certificate_failures_have_specific_recovery_advice(self, im_module, error_code):
+        error = f"Page.goto: net::{error_code} at https://www.instagram.com/target/"
+
+        advice = im_module.classify_recovery_error(error)
+
+        assert advice.code == "network.browser_certificate"
+        assert "PROXY_CERT_PATH" in advice.fix
+        assert "browser's certificate store" in advice.fix
+        assert im_module.BROWSER_FOLLOW_LIST_GUIDE_URL in advice.fix
+        assert advice.retryable is False
+        assert im_module.classify_failure_class(error) == "network"
+        assert im_module.is_account_level_failure("network") is False
+
+
+class TestBrowserLifecycle:
+    # Persistent contexts receive TLS options before navigation and close after failures
+    @pytest.mark.parametrize("navigation_fails", [False, True])
+    def test_startup_status_and_cleanup(self, im_module, monkeypatch, tmp_path, navigation_fails):
+        driver = MagicMock()
+        driver.__enter__.return_value = driver
+        context = driver.chromium.launch_persistent_context.return_value
+        page = Mock(url="https://www.instagram.com/target.user/")
+        context.pages = [page]
+        if navigation_fails:
+            page.goto.side_effect = RuntimeError("net::ERR_CERT_AUTHORITY_INVALID")
+        monkeypatch.setitem(sys.modules, "playwright.sync_api", SimpleNamespace(sync_playwright=lambda: driver))
+        monkeypatch.setattr(im_module, "playwright_available", lambda: True)
+        monkeypatch.setattr(im_module, "browser_profile_dir", lambda: str(tmp_path / "browser-profile"))
+        monkeypatch.setattr(im_module, "browser_session_cookies", lambda bot: [])
+        monkeypatch.setattr(im_module, "VERIFY_SSL", False)
+        monkeypatch.setattr(im_module, "harvest_follow_list_dialog", lambda *args, **kwargs: iter([["a"]]))
+        progress = Mock()
+        monkeypatch.setattr(im_module, "browser_follow_list_progress", progress)
+
+        if navigation_fails:
+            with pytest.raises(RuntimeError, match="ERR_CERT_AUTHORITY_INVALID"):
+                list(im_module.browser_follow_list_batches(fake_bot(), fake_profile(), "followers"))
+        else:
+            assert list(im_module.browser_follow_list_batches(fake_bot(), fake_profile(), "followers")) == [["a"]]
+
+        options = driver.chromium.launch_persistent_context.call_args.kwargs
+        assert options["ignore_https_errors"] is True
+        assert "--ignore-certificate-errors" in options["args"]
+        expected_stages = ["Starting browser", "Opening profile"] + ([] if navigation_fails else ["Opening list"])
+        assert [call.args[0] for call in progress.call_args_list] == expected_stages
+        context.close.assert_called_once()
 
 
 class TestDialogHarvest:
@@ -269,6 +384,21 @@ class TestBrowserProvider:
 
 
 class TestBrowserSetup:
+    # Only an explicit opt-out disables both page and HTTPS proxy certificate checks
+    @pytest.mark.parametrize("verify", [True, False])
+    @pytest.mark.parametrize("proxy_enabled", [True, False])
+    def test_certificate_checks_follow_verify_ssl(self, im_module, monkeypatch, verify, proxy_enabled):
+        monkeypatch.setattr(im_module, "VERIFY_SSL", verify)
+        monkeypatch.setattr(im_module, "PROXY_ENABLED", proxy_enabled)
+        monkeypatch.setattr(im_module, "PROXY_URL", "https://proxy.example:8443")
+        monkeypatch.setattr(im_module, "PROXY_CERT_PATH", "proxy-ca.pem")
+
+        options = im_module.browser_launch_options()
+
+        assert options.get("ignore_https_errors", False) is (not verify)
+        assert ("--ignore-certificate-errors" in options["args"]) is (not verify)
+        assert not any(arg.startswith("--ignore-certificate-errors-spki-list") for arg in options["args"])
+
     # Session cookies are handed to the browser for the Instagram domain
     def test_session_cookies_are_scoped_to_instagram(self, im_module):
         import requests
@@ -369,6 +499,20 @@ class TestSourceSelection:
 
 
 class TestDoctorReadiness:
+    # A configured CA file is never presented as proof that browser traffic trusts it
+    @pytest.mark.parametrize("verify, proxy_enabled, cert_path, expected", [(True, True, "ca.pem", True), (False, True, "ca.pem", False), (True, False, "ca.pem", False), (True, True, "", False)])
+    def test_proxy_ca_trust_is_explained(self, im_module, monkeypatch, verify, proxy_enabled, cert_path, expected):
+        monkeypatch.setattr(im_module, "playwright_available", lambda: True)
+        monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_CHANNEL", "chrome")
+        monkeypatch.setattr(im_module, "VERIFY_SSL", verify)
+        monkeypatch.setattr(im_module, "PROXY_ENABLED", proxy_enabled)
+        monkeypatch.setattr(im_module, "PROXY_CERT_PATH", cert_path)
+
+        ready, detail, fix = im_module.browser_follow_list_readiness()
+
+        assert ready is True and fix == ""
+        assert ("proxy CA must also be trusted by the browser" in detail) is expected
+
     # Doctor names the install commands when the browser source is selected without Playwright
     def test_a_missing_playwright_is_reported(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "playwright_available", lambda: False)
