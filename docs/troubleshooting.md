@@ -176,6 +176,7 @@ Common browser source errors:
 
 - **The browser source runs a chrome browser, but ...**: the browser channel and the rest of the session name different browsers. Set `HTTP_BACKEND` to `curl_cffi`, `CURL_CFFI_IMPERSONATE` to `auto` and `USER_AGENT` to a browser from the channel's family or leave `USER_AGENT` empty. See [Browser Source](usage.md#browser-source-experimental).
 - **The browser could not start**: Playwright is installed but the browser is not. Run `playwright install chromium` or set `FOLLOW_LIST_BROWSER_CHANNEL` to a browser already installed here, such as `chrome`.
+- **`ERR_CERT_AUTHORITY_INVALID` or `ERR_PROXY_CERTIFICATE_INVALID`**: the browser does not trust a certificate presented by the site or proxy. See [Browser Proxy Certificates](#browser-proxy-certificates).
 - **The login page, so this session is not logged in**: the cookies handed to the browser are no longer valid. Refresh the session and try again.
 - **A challenge page**: complete account verification in an ordinary browser, then restart or re-import the session. The circuit breaker checks recovery without requiring a separate clearing command.
 - **The profile's followers or following control could not be clicked**: set `FOLLOW_LIST_BROWSER_HEADLESS = False` to inspect the profile. The browser source supports both direct list links and count links that open a dialog. If the counts open normally but the tool still fails, update it and report the layout error.
@@ -183,6 +184,23 @@ Common browser source errors:
 - **Rendered only N of about M**: the dialog stopped growing early, usually from a slow connection. Raise `FOLLOW_LIST_BROWSER_SCROLL_DELAY` and `FOLLOW_LIST_BROWSER_TIMEOUT`. The short list is discarded, not saved over your baseline.
 
 Run `instagram_monitor --doctor` to confirm Playwright and the browser are installed before a real run.
+
+<a id="browser-proxy-certificates"></a>
+### Browser Proxy Certificates
+
+`PROXY_CERT_PATH` configures the HTTP clients used by `auto`, `rest` and `graphql`. Playwright does not provide a CA-file option for browser traffic. Chromium verifies certificates through its own trust configuration, so `auto` can work while `browser` reports `ERR_CERT_AUTHORITY_INVALID`.
+
+On Windows, Chromium reads the current user's **Trusted Root Certification Authorities** store. If your proxy provider supplies a CA you trust, import that CA under the Windows account running the monitor:
+
+```powershell
+certutil -user -addstore Root "C:\certs\proxy-ca.crt"
+```
+
+Replace the example path with the actual CA file path, which may be the same file named by `PROXY_CERT_PATH`. Restart the monitor after the import and keep `VERIFY_SSL = True`. The import persists and affects other applications using that user's trust store. The monitor does not install certificates automatically. See [Chromium's trust-store documentation](https://chromium.googlesource.com/chromium/src/+/main/net/data/ssl/chrome_root_store/faq.md) and [Microsoft's certutil reference](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/certutil).
+
+On other platforms, add the CA through the trust configuration used by the selected browser. For date or hostname errors, check the system clock and the certificate's validity and hostname.
+
+`VERIFY_SSL = False` disables certificate checks for both browser pages and HTTPS proxies. It removes protection against intercepted connections. [`NODE_EXTRA_CA_CERTS`](https://playwright.dev/python/docs/browsers#install-behind-a-firewall-or-a-proxy) affects Playwright's browser download, not Chromium's page certificate trust.
 
 <a id="too-many-open-files"></a>
 ## Too Many Open Files

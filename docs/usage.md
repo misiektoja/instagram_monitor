@@ -506,7 +506,8 @@ What to expect:
 - Headless still means a real browser, not the stripped-down headless shell. Set `FOLLOW_LIST_BROWSER_HEADLESS = False` to watch it work, which needs a desktop session.
 - The browser reuses one profile per session account, so cookies and browser state stay stable between runs instead of arriving as a brand new machine every time. Each account gets its own directory.
 - The logged-in session cookies are handed to the browser. It never signs in, and it never asks for your password.
-- Your configured proxy is used if you have one.
+- Your configured proxy is used if you have one. `PROXY_CERT_PATH` applies to HTTP clients. The browser needs the proxy CA in its own trust store. See [Browser Proxy Certificates](troubleshooting.md#browser-proxy-certificates).
+- The terminal progress bar shows browser startup, page loading and scroll waits. Its count advances as new names are read.
 - A challenge, a suspended or disabled account, or a page that is not signed in stops the fetch and is reported. It is not clicked through.
 - If the dialog stops growing well short of the follower count Instagram reports, the fetch fails rather than saving a short list over a complete baseline. A smaller gap is returned, but it still cannot shrink a saved list that agrees with the reported count.
 
@@ -599,7 +600,7 @@ instagram_monitor <target_insta_user> --enable-proxy --proxy-url "http://user:pa
 
 Additional options:
 
-- `PROXY_CERT_PATH` or `--proxy-cert` selects a local certificate used to verify the proxy connection. It applies only while [TLS verification](configuration.md#tls-verification) is on
+- `PROXY_CERT_PATH` or `--proxy-cert` selects a local CA certificate for HTTP clients. It applies only while [TLS verification](configuration.md#tls-verification) is on. Browser follower lists use the browser's trust store instead, as described under [Browser Proxy Certificates](troubleshooting.md#browser-proxy-certificates)
 - `PROXY_WEBHOOKS` or `--enable-proxy-webhooks` also sends webhook requests through the proxy. It is off by default because some proxies do not allow these requests
 - `IP_ADDRESS_URL` selects one trusted IP lookup URL or an ordered non-empty list of fallback URLs
 

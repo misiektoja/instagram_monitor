@@ -475,3 +475,5 @@ Instagram Monitor verifies the TLS certificate of every server it contacts: Inst
 Set `VERIFY_SSL` to `False` only on a network that intercepts TLS with its own certificate authority, such as a corporate proxy. With verification off, an intercepted connection cannot be told apart from the real service, and `PROXY_CERT_PATH` is ignored because there is nothing left to check the certificate against.
 
 The startup summary shows `TLS verification` and [`--doctor`](troubleshooting.md#doctor-preflight) reports a warning while it is off.
+
+The experimental browser source also follows `VERIFY_SSL`, including the TLS connection to an HTTPS proxy. With verification on, `PROXY_CERT_PATH` applies to HTTP clients only. Chromium needs the proxy CA installed in a trust store it reads. See [Browser Proxy Certificates](troubleshooting.md#browser-proxy-certificates).
