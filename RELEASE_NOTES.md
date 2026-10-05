@@ -4,7 +4,7 @@ This is a high-level summary of the most important changes.
 
 # Changes in 4.0.3 (TBD)
 
-Version **4.0.3** sends web API requests with the headers a browser uses and reuses each Instagram session's connection. Recovery guidance distinguishes saved settings from repeated command-line options. Doctor keeps those options and the selected targets in its monitoring command. Generated commands stay usable when their arguments match stored credentials.
+Version **4.0.3** sends web API requests with the headers a browser uses and reuses each Instagram session's connection. Browser follower lists show progress and honor disabled certificate verification for HTTPS proxies. Recovery guidance distinguishes saved settings from repeated command-line options. Doctor keeps those options and the selected targets in its monitoring command. Generated commands stay usable when their arguments match stored credentials.
 
 **Features and improvements**:
 
@@ -12,6 +12,7 @@ Version **4.0.3** sends web API requests with the headers a browser uses and reu
 
 **Bug fixes**:
 
+- **BUGFIX:** **Browser follower lists** - The progress bar advances as names arrive and shows startup, page loading and scroll waits. `VERIFY_SSL = False` also disables certificate checks on HTTPS proxy connections. Verification stays on by default. Certificate failures explain how to trust the proxy CA in the browser, since `PROXY_CERT_PATH` applies only to HTTP clients. See [Browser Proxy Certificates](https://misiektoja.github.io/instagram_monitor/troubleshooting/#browser-proxy-certificates)
 - **BUGFIX:** **Recovery commands and saved settings** - Guidance distinguishes saved settings from command-line options needed on each run. Doctor's monitoring command retains the selected options and shows placeholders for private values. Generated commands keep paths, targets and flags intact when they match stored credentials. Error summaries and technical details still redact credentials. Targets supplied through **`--targets`** also carry into Doctor's monitoring command
 
 # Changes in 4.0.2 (22 Sep 2026)
