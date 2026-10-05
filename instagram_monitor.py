@@ -445,7 +445,7 @@ PROXY_ENABLED = False
 # Proxy URL required when PROXY_ENABLED is True
 PROXY_URL = ""
 
-# Optional local TLS certificate used by the proxy
+# Optional proxy CA certificate for HTTP clients, browser traffic uses its own trust store
 PROXY_CERT_PATH = ""
 
 # Whether to verify TLS certificates on every outbound connection, email delivery included
@@ -11361,7 +11361,7 @@ FAILURE_TERMS = {
     'impersonate_unsupported': ("impersonat",),
     'proxy_unresolved': ("could not resolve proxy",),
     'dns_failure': ("could not resolve host", "temporary failure in name resolution", "name or service not known", "nodename nor servname", "curl: (6)"),
-    'network': ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl"),
+    'network': ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl", "net::err_cert_", "net::err_proxy_certificate_invalid"),
     'schema_change': ("empty data for posts", "fetching post metadata failed", "not subscriptable", "unexpected follower list reply", "follower list dialog"),
 }
 
@@ -11436,7 +11436,7 @@ RECOVERY_CODES = frozenset({
     "dependency.missing",
     "secret.missing",
     "proxy.unresolved",
-    "network.dns", "network.unavailable",
+    "network.dns", "network.unavailable", "network.browser_certificate",
     "smtp.invalid", "smtp.authentication", "smtp.connection",
     "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
     "file.unreadable", "file.unwritable", "file.exists",
@@ -11729,6 +11729,9 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
     # DNS failures are resolver-side, so they need their own fix before the generic network branch swallows them
     if any(t in m for t in FAILURE_TERMS['dns_failure']):
         return "network.dns", "Instagram's address could not be resolved", "Your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com') and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again", CONNECTION_GUIDE_URL, True
+
+    if "net::err_cert_" in m or "net::err_proxy_certificate_invalid" in m:
+        return "network.browser_certificate", "The browser rejected a TLS certificate", "Check the certificate validity, hostname and system clock. If your proxy intercepts TLS, trust its CA in the browser's certificate store and restart the monitor. PROXY_CERT_PATH applies to HTTP clients and does not add browser trust", BROWSER_FOLLOW_LIST_GUIDE_URL, False
 
     # Network or connectivity problems
     if any(t in m for t in FAILURE_TERMS['network']):
@@ -13567,7 +13570,22 @@ def browser_launch_options() -> Dict[str, Any]:
         options['proxy'] = proxy
     if not VERIFY_SSL:
         options['ignore_https_errors'] = True
+        # The context option does not cover the TLS connection to an HTTPS proxy
+        options['args'].append("--ignore-certificate-errors")
     return options
+
+
+# Updates the current thread's browser scan status and count without HTTP response hooks
+def browser_follow_list_progress(stage: str, increment: int = 0) -> None:
+    thread_pbar = getattr(_thread_local, 'pbar', None)
+    if thread_pbar is None:
+        return
+    if thread_pbar.total is not None and thread_pbar.n + increment > thread_pbar.total:
+        thread_pbar.total = thread_pbar.n + increment
+    elapsed_minutes = thread_pbar.format_dict['elapsed'] / 60
+    thread_pbar.unit = f"{stage}, mins={elapsed_minutes:.1f}"
+    thread_pbar.update(increment)
+    thread_pbar.refresh()
 
 
 # Stops the scan when Instagram answered with a challenge, a login page or an account notice
@@ -13588,6 +13606,7 @@ def harvest_follow_list_dialog(page, scroll_delay: float, stall_limit: int = BRO
         if stop_event is not None and stop_event.is_set():
             return
 
+        browser_follow_list_progress("Reading names")
         rendered = page.evaluate(BROWSER_DIALOG_NAMES_JS)
         if rendered is None:
             raise BrowserFollowListError("Instagram's follower list dialog closed before the list was read")
@@ -13608,6 +13627,7 @@ def harvest_follow_list_dialog(page, scroll_delay: float, stall_limit: int = BRO
 
         if not page.evaluate(BROWSER_DIALOG_SCROLL_JS):
             return
+        browser_follow_list_progress("Waiting after scroll")
         page.wait_for_timeout(max(0, int(float(scroll_delay) * 1000)))
 
 
@@ -13665,6 +13685,8 @@ def browser_follow_list_readiness() -> Tuple[bool, str, str]:
 
     channel = str(FOLLOW_LIST_BROWSER_CHANNEL or "chromium")
     detail = f"Channel: {channel}, {'headless' if FOLLOW_LIST_BROWSER_HEADLESS else 'windowed'}, profile: {browser_profile_dir()}"
+    if VERIFY_SSL and PROXY_ENABLED and PROXY_CERT_PATH:
+        detail += ". PROXY_CERT_PATH applies to HTTP clients, so the proxy CA must also be trusted by the browser"
     if channel != "chromium":
         return True, f"{detail}. A '{channel}' installation on this machine is used, which is only checked when a scan runs", ""
 
@@ -13709,6 +13731,7 @@ def browser_follow_list_batches(bot, profile, kind: str, stop_event=None):
     # codeql[py/path-injection]
     os.makedirs(user_data_dir, exist_ok=True)
 
+    browser_follow_list_progress("Starting browser")
     with sync_playwright() as driver:
         try:
             browser_context = driver.chromium.launch_persistent_context(user_data_dir, **browser_launch_options())
@@ -13720,9 +13743,11 @@ def browser_follow_list_batches(bot, profile, kind: str, stop_event=None):
             browser_context.add_cookies(browser_session_cookies(bot))
             page = browser_context.pages[0] if browser_context.pages else browser_context.new_page()
 
+            browser_follow_list_progress("Opening profile")
             page.goto(f"https://www.instagram.com/{target}/", wait_until="domcontentloaded")
             guard_browser_page_state(page)
 
+            browser_follow_list_progress("Opening list")
             open_browser_follow_list_dialog(page, target, kind)
             yield from harvest_follow_list_dialog(page, FOLLOW_LIST_BROWSER_SCROLL_DELAY, stop_event=stop_event)
         finally:
@@ -13750,6 +13775,7 @@ def iter_browser_follow_list(bot, profile, kind: str, record_exposure: bool = Fa
             record_identities_returned(len(batch))
 
         harvested += len(batch)
+        browser_follow_list_progress("Reading names", len(batch))
         debug_print("Instagram browser follow list batch", kind=kind, accounts=len(batch), total=harvested)
 
         for name in batch:
@@ -19982,7 +20008,7 @@ def run_main():
         dest="proxy_cert_path",
         metavar="PROXY_CERT_PATH",
         type=str,
-        help="Set optional PATH to local certificate to be used for proxy traffic"
+        help="Set optional CA certificate PATH for HTTP clients (browser traffic uses the browser's trust store)"
     )
     session_opts.add_argument(
         "--enable-proxy-webhooks",
