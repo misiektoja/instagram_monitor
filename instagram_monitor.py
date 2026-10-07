@@ -7261,15 +7261,10 @@ TPrivacyContent = TypeVar("TPrivacyContent")
 
 # Apply PRIVACY_SUBSTITUTIONS to any content type
 def apply_privacy_substitutions(content: TPrivacyContent) -> TPrivacyContent:
-    """
-    - Recurses into dict values and list items
-    - For strings, performs search/replace using PRIVACY_SUBSTITUTIONS
-    - Preserves dict keys so JSON and object keys stay stable for API
-      consumers. Callers that display a key (e.g. terminal target tables)
-      must substitute it explicitly at the point of display
-    - Ignores invalid substitution entries to avoid runtime crashes
-    - Non-string primitives are returned unchanged
-    """
+    """Substitute strings in dictionary values and list items.
+
+    Dictionary keys stay unchanged for API consumers. Substitute displayed keys
+    at the display boundary. Invalid substitution entries are ignored."""
     global PRIVACY_SUBSTITUTIONS_INVALID_WARNED
     if not PRIVACY_SUBSTITUTIONS:
         return content
@@ -7298,7 +7293,7 @@ def apply_privacy_substitutions(content: TPrivacyContent) -> TPrivacyContent:
     return content
 
 
-# Debug print helper - only prints if DEBUG_MODE is enabled
+# Formats an operation and its available diagnostic fields
 def format_diagnostic_line(operation, fields):
     rendered = ", ".join(f"{key}={value}" for key, value in fields.items() if value is not None)
     return f"{operation}: {rendered}" if rendered else str(operation)
@@ -9510,13 +9505,7 @@ def argparse_color_kwargs() -> dict[str, Any]:
 
 # Finds an optional config file
 def find_config_file(cli_path=None):
-    """
-    Search for an optional config file in:
-      1) CLI-provided path (must exist if given)
-      2) ./{DEFAULT_CONFIG_FILENAME}
-      3) ~/.{DEFAULT_CONFIG_FILENAME}
-      4) script-directory/{DEFAULT_CONFIG_FILENAME}
-    """
+    """Return the first config file, without fallback for a missing explicit path."""
 
     if cli_path:
         p = Path(os.path.expanduser(cli_path))
@@ -13932,22 +13921,12 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
 
 # Fetches one serialized username scan and marks whether its baseline is complete
 def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user, stop_event=None, identities_counted_at_source=False):
-    """Fetch usernames in batches using a fresh generator per call.
+    """Fetch usernames with a fresh generator and mark complete only on exhaustion.
 
-    Args:
-        get_generator_fn: Callable that returns a new instaloader generator (e.g. lambda: profile.get_followers())
-        max_per_batch:    Max accounts to pull per iteration (FOLLOWERS_PER_BATCH / FOLLOWEES_PER_BATCH). 0 = no limit
-        total_limit:      Stop after this many total accounts (FOLLOWER_LIMIT_TO_FETCH / FOLLOWEE_LIMIT_TO_FETCH). 0 = no limit.
-        fetch_delay:      Seconds to sleep between batches.
-        advanced_fetch:   Indicates if advanced_fetch is enabled (valid configuration of above 3 items)
-        estimated_limit:  Estimated number of items to fetch. Used for messaging.
-        user:             Instagram username, forwarded to log_activity.
-        stop_event:       Optional threading.Event from the caller. If set, the inter-batch wait is
-                          aborted and the function returns whatever has been fetched so far.
-
-    Returns:
-        List-like username result whose complete flag is true only after generator exhaustion.
-    """
+    Zero batch and total limits are unlimited. advanced_fetch enables batching
+    with fetch_delay seconds between batches. estimated_limit sizes progress
+    and budget checks. stop_event interrupts waits and returns an incomplete
+    result containing the names collected so far."""
     results = PaginatedUsernameResult()
     results.complete = False
 
