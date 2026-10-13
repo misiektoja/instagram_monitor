@@ -13,6 +13,8 @@ instagram_monitor --doctor
 
 Doctor writes no files. Before the checks start it states how many Instagram requests it will make: one for connectivity, one for the saved session and one for each monitored profile. Results use `[PASS]`, `[WARN]`, `[FAIL]` and `[SKIP]`. Checks cover **Environment**, **Configuration**, **Session**, **Connectivity**, **Targets** and **Notifications**. Secret values are not displayed. Follow the reported fixes then use **Next steps** to start monitoring.
 
+The start command keeps the files and explicit monitoring options selected for Doctor. Repeat the options on later runs or save the corresponding settings. Command-line credentials appear as uppercase placeholders. Replace those placeholders before running or save the credentials and remove their flags.
+
 Missing optional packages are warnings you can ignore when you do not use those features. Login checks apply only to Logged-In Mode. An empty target list is valid for the Web Dashboard. Other modes need at least one target.
 
 A configuration file Instagram Monitor cannot accept is reported by Doctor as a `FAIL` naming the line and the reason, instead of stopping the command before the checks run. This means you can point Doctor at a configuration you are still fixing. A proxy setting that would stop every request is handled the same way, so Doctor reports it and carries on with the proxy switched off while a monitoring run still stops. See [Routing Traffic Through a Proxy](usage.md#routing-traffic-through-a-proxy) for the commands that behave this way. Settings that a later release removed are reported as a `WARN` and ignored, so an older configuration file still runs.
@@ -37,7 +39,7 @@ For more detail, add `--debug` to Doctor or a normal run. Debug output includes 
 <a id="common-problems"></a>
 ## Common Problems
 
-Every failure is reported in the same three-part shape: what went wrong, a `To fix:` action and a `Guide:` link to the page that covers it. The fix command matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is. `--debug` appends a `Technical detail:` line for bug reports. Secrets are redacted from all three.
+Every failure is reported in the same three-part shape: what went wrong, a `To fix:` action and a `Guide:` link to the page that covers it. The fix command matches how you installed the tool and carries the `--config-file` or `--env-file` you started with. `--debug` appends a `Technical detail:` line for bug reports. Generated commands preserve their paths, targets and flags. They refer to credential files or hidden entry instead of including credential values. Error summaries and technical details still redact credentials. Privacy substitutions do not alter generated commands, including command arguments written to logs.
 
 | Symptom | Likely cause | Where to look |
 | --- | --- | --- |
@@ -60,7 +62,7 @@ A continuing outage produces a `* Monitoring degraded` reminder once an hour, ev
 <a id="connection-errors-during-monitoring"></a>
 ## Connection Errors During Monitoring
 
-When a check fails, Instagram Monitor prints the error, a `To fix:` action and a `Guide:` link where one applies, then retries automatically at the next interval. You do not need to restart the tool. A command in the fix text matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is.
+When a check fails, Instagram Monitor prints the error, a `To fix:` action and a `Guide:` link where one applies, then retries automatically at the next interval. You do not need to restart the tool. A command in the fix text matches how you installed the tool and carries the `--config-file` or `--env-file` you started with.
 
 `Instagram could not be reached` means a check got no answer from Instagram, and `Instagram's address could not be resolved` means the lookup of the name failed before any request was made. Both are retried on their own and the report names how long until the next check, so a short outage needs no action. A failure that lasts produces the hourly `Monitoring degraded` reminder and `Monitoring recovered` when it clears.
 
@@ -174,6 +176,7 @@ Common browser source errors:
 
 - **The browser source runs a chrome browser, but ...**: the browser channel and the rest of the session name different browsers. Set `HTTP_BACKEND` to `curl_cffi`, `CURL_CFFI_IMPERSONATE` to `auto` and `USER_AGENT` to a browser from the channel's family or leave `USER_AGENT` empty. See [Browser Source](usage.md#browser-source-experimental).
 - **The browser could not start**: Playwright is installed but the browser is not. Run `playwright install chromium` or set `FOLLOW_LIST_BROWSER_CHANNEL` to a browser already installed here, such as `chrome`.
+- **`ERR_CERT_AUTHORITY_INVALID` or `ERR_PROXY_CERTIFICATE_INVALID`**: the browser does not trust a certificate presented by the site or proxy. See [Browser Proxy Certificates](#browser-proxy-certificates).
 - **The login page, so this session is not logged in**: the cookies handed to the browser are no longer valid. Refresh the session and try again.
 - **A challenge page**: complete account verification in an ordinary browser, then restart or re-import the session. The circuit breaker checks recovery without requiring a separate clearing command.
 - **The profile's followers or following control could not be clicked**: set `FOLLOW_LIST_BROWSER_HEADLESS = False` to inspect the profile. The browser source supports both direct list links and count links that open a dialog. If the counts open normally but the tool still fails, update it and report the layout error.
@@ -181,6 +184,23 @@ Common browser source errors:
 - **Rendered only N of about M**: the dialog stopped growing early, usually from a slow connection. Raise `FOLLOW_LIST_BROWSER_SCROLL_DELAY` and `FOLLOW_LIST_BROWSER_TIMEOUT`. The short list is discarded, not saved over your baseline.
 
 Run `instagram_monitor --doctor` to confirm Playwright and the browser are installed before a real run.
+
+<a id="browser-proxy-certificates"></a>
+### Browser Proxy Certificates
+
+`PROXY_CERT_PATH` configures the HTTP clients used by `auto`, `rest` and `graphql`. Playwright does not provide a CA-file option for browser traffic. Chromium verifies certificates through its own trust configuration, so `auto` can work while `browser` reports `ERR_CERT_AUTHORITY_INVALID`.
+
+On Windows, Chromium reads the current user's **Trusted Root Certification Authorities** store. If your proxy provider supplies a CA you trust, import that CA under the Windows account running the monitor:
+
+```powershell
+certutil -user -addstore Root "C:\certs\proxy-ca.crt"
+```
+
+Replace the example path with the actual CA file path, which may be the same file named by `PROXY_CERT_PATH`. Restart the monitor after the import and keep `VERIFY_SSL = True`. The import persists and affects other applications using that user's trust store. The monitor does not install certificates automatically. See [Chromium's trust-store documentation](https://chromium.googlesource.com/chromium/src/+/main/net/data/ssl/chrome_root_store/faq.md) and [Microsoft's certutil reference](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/certutil).
+
+On other platforms, add the CA through the trust configuration used by the selected browser. For date or hostname errors, check the system clock and the certificate's validity and hostname.
+
+`VERIFY_SSL = False` disables certificate checks for both browser pages and HTTPS proxies. It removes protection against intercepted connections. [`NODE_EXTRA_CA_CERTS`](https://playwright.dev/python/docs/browsers#install-behind-a-firewall-or-a-proxy) affects Playwright's browser download, not Chromium's page certificate trust.
 
 <a id="too-many-open-files"></a>
 ## Too Many Open Files

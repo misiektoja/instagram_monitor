@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v4.0.2
+v4.0.3
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -25,7 +25,7 @@ rich (optional - for terminal dashboard)
 # keeps the supported Python floor enforceable regardless of where an import sits in the file
 from __future__ import annotations
 
-VERSION = "4.0.2"
+VERSION = "4.0.3"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -445,7 +445,7 @@ PROXY_ENABLED = False
 # Proxy URL required when PROXY_ENABLED is True
 PROXY_URL = ""
 
-# Optional local TLS certificate used by the proxy
+# Optional proxy CA certificate for HTTP clients, browser traffic uses its own trust store
 PROXY_CERT_PATH = ""
 
 # Whether to verify TLS certificates on every outbound connection, email delivery included
@@ -1047,7 +1047,7 @@ WEB_DASHBOARD_GUIDE_URL = DOCS_BASE_URL + "/view-modes/#web-dashboard"
 OUTPUT_GUIDE_URL = DOCS_BASE_URL + "/usage/#output-directory"
 
 # The fix named when nothing is being monitored, shared by the startup gate and the Doctor target check
-NO_TARGET_FIX = "Pass a target on the command line, set TARGET_USERNAMES in the config or enable the Web Dashboard"
+NO_TARGET_FIX = "Save TARGET_USERNAMES in the configuration file or include the target on each run. Alternatively, enable the Web Dashboard to add targets there"
 
 # Label of the Doctor check that reports a fully validated webhook, shared with the sibling monitors
 SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
@@ -1818,7 +1818,7 @@ def print_secret_command_error(error):
     print(f"* Error: {error}")
     fix = getattr(error, "fix", "")
     if fix:
-        print(colorize("info", f"To fix: {fix}"))
+        print(CommandOutput(colorize("info", f"To fix: {fix}")))
     guide = getattr(error, "guide", "")
     if guide:
         print(f"Guide: {guide}")
@@ -2280,6 +2280,7 @@ from requests.adapters import HTTPAdapter as _HTTPAdapter
 from requests.cookies import extract_cookies_to_jar as _extract_cookies_to_jar
 from requests.structures import CaseInsensitiveDict as _CaseInsensitiveDict
 from requests.utils import get_encoding_from_headers as _get_encoding_from_headers
+from urllib.parse import parse_qs as _parse_qs, urlsplit as _urlsplit
 
 try:
     from curl_cffi import requests as _curl_requests
@@ -2360,6 +2361,70 @@ def http_backend_display() -> str:
     return "requests (curl_cffi is not installed)" if str(HTTP_BACKEND).strip().lower() == "curl_cffi" else "requests"
 
 
+# Hosts serving Instagram's web app. curl_cffi's default headers describe a page typed into the address bar, so
+# requests to these hosts are given the headers the impersonated browser sends for the app's own requests
+INSTAGRAM_WEB_HOSTS = frozenset({"www.instagram.com", "instagram.com"})
+
+# Path prefixes of the endpoints the web app calls from an open page rather than loads as a page
+INSTAGRAM_WEB_API_PREFIXES = ("/api/", "/graphql", "/web/", "/ajax/")
+
+# Headers Instaloader adds that no browser sends or that contradict the impersonated one. The first two are HTTP/2
+# pseudo-headers copied as ordinary headers, and the other two would replace the browser's own values
+INSTALOADER_NON_BROWSER_HEADERS = frozenset({"authority", "scheme", "accept-encoding", "accept-language"})
+
+# First Chrome target curl_cffi sends a priority header for. Older targets send none, so none is set for them
+CHROME_PRIORITY_HEADER_MIN_VERSION = 124
+
+
+# Returns whether a request to Instagram's web app is a call the open page makes rather than a page load
+def is_instagram_web_api_request(path: str, query: str) -> bool:
+    return path.startswith(INSTAGRAM_WEB_API_PREFIXES) or "/ajax/" in path or _parse_qs(query).get("__a") == ["1"]
+
+
+# Returns whether a curl_cffi impersonation target sends Chrome's priority header
+def impersonates_chrome_priority(target: str) -> bool:
+    found = re.fullmatch(r"chrome(\d*)[a-z_]*", str(target or "").strip().lower())
+    if found is None:
+        return False
+    # The unversioned aliases follow the newest Chrome curl_cffi ships
+    return not found.group(1) or int(found.group(1)) >= CHROME_PRIORITY_HEADER_MIN_VERSION
+
+
+# Sets one header whatever the case of an existing entry, where None removes curl_cffi's default of that name
+def _replace_header(headers: Dict[str, Optional[str]], name: str, value: Optional[str]) -> None:
+    for key in [k for k in headers if k.lower() == name.lower()]:
+        del headers[key]
+    headers[name] = value
+
+
+# Returns the headers to hand curl_cffi for one request, matching what the impersonated browser sends Instagram's web app
+def curl_cffi_request_headers(method: str, url: str, headers: Any, has_body: bool, target: str) -> Dict[str, Optional[str]]:
+    result: Dict[str, Optional[str]] = dict(headers)
+    parts = _urlsplit(url)
+    if (parts.hostname or "").lower() not in INSTAGRAM_WEB_HOSTS:
+        return result
+
+    for key in [k for k in result if k.lower() in INSTALOADER_NON_BROWSER_HEADERS]:
+        del result[key]
+    if (method or "GET").upper() in ("GET", "HEAD") and not has_body:
+        # A browser sends no length on a read without a body, and no Origin on a same-origin read
+        for key in [k for k in result if k.lower() in ("content-length", "origin")]:
+            del result[key]
+    elif not any(k.lower() == "origin" for k in result):
+        result["Origin"] = f"{parts.scheme}://{parts.hostname}"
+
+    if is_instagram_web_api_request(parts.path, parts.query):
+        # The app's own requests, as fetch() sends them from an open instagram.com page
+        _replace_header(result, "Sec-Fetch-Site", "same-origin")
+        _replace_header(result, "Sec-Fetch-Mode", "cors")
+        _replace_header(result, "Sec-Fetch-Dest", "empty")
+        _replace_header(result, "Sec-Fetch-User", None)
+        _replace_header(result, "Upgrade-Insecure-Requests", None)
+        if impersonates_chrome_priority(target):
+            _replace_header(result, "priority", "u=1, i")
+    return result
+
+
 # Minimal urllib3-style raw wrapper exposing the read/stream surface requests and instaloader downloads rely on
 class _CurlCffiRaw:
     def __init__(self, body: bytes, header_pairs, status: int, reason: str):
@@ -2393,20 +2458,67 @@ class _CurlCffiRaw:
         return self._buffer.closed
 
 
+# One curl_cffi session kept for an Instagram session and the copies Instaloader makes of it, so its requests reuse
+# a connection as a browser's do rather than each opening a new TLS connection
+class _CurlCffiConnection:
+    # Starts without a curl_cffi session, which is opened by the first request
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._session: Any = None
+
+    # Sends one request over the kept session. Requests are serialized because a curl handle serves one thread at a time
+    def request(self, method: str, url: str, **kwargs: Any) -> Any:
+        with self._lock:
+            if self._session is None:
+                self._session = _curl_requests.Session()  # type: ignore[union-attr]
+            return self._session.request(method, url, **kwargs)
+
+    # Closes the kept session and its connections, leaving the next request to open a new one
+    def close(self) -> None:
+        with self._lock:
+            session, self._session = self._session, None
+        if session is not None:
+            try:
+                session.close()
+            except Exception:
+                pass
+
+
 # requests transport adapter that sends through curl_cffi browser impersonation when the backend is active
 class _CurlCffiHTTPAdapter(_HTTPAdapter):
+    # Starts with a connection of its own, or with the one of the session it was copied from
+    def __init__(self, connection: Optional[_CurlCffiConnection] = None) -> None:
+        super().__init__()
+        self._owns_connection = connection is None
+        self._connection = connection if connection is not None else _CurlCffiConnection()
+
+    # Returns an adapter for a copied session that shares this adapter's connection
+    def shared(self) -> "_CurlCffiHTTPAdapter":
+        return _CurlCffiHTTPAdapter(self._connection)
+
+    # Closes the adapter, keeping a shared connection open for the session that owns it
+    def close(self) -> None:
+        super().close()
+        # Instaloader closes each copy once one request is done, while the session it came from keeps working
+        if self._owns_connection:
+            self._connection.close()
+
     def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):
         if not _curl_cffi_backend_active():
             return super().send(request, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
         curl_proxies = proxies if proxies else None
-        headers = dict(request.headers)
+        target = _curl_cffi_impersonate_target()
+        url = request.url or ""
+        headers = curl_cffi_request_headers(request.method or "GET", url, request.headers, bool(request.body), target)
         # Never let the stock python-requests default UA ride on top of a browser TLS fingerprint
         # (an obvious mismatch); drop it so curl_cffi supplies its coherent impersonation UA instead
         for ua_key in [k for k in headers if k.lower() == "user-agent"]:
             if str(headers[ua_key]).lower().startswith("python-requests"):
                 del headers[ua_key]
         try:
-            curl_resp = _curl_requests.request(request.method or "GET", request.url, headers=headers, data=request.body, impersonate=_curl_cffi_impersonate_target(), proxies=curl_proxies, verify=verify, timeout=timeout, allow_redirects=False, stream=False)  # type: ignore
+            # Cookies come from the requests jar in the Cookie header. The kept curl_cffi session must not store its
+            # own, or it would send them beside that header and carry one session's cookies into the next
+            curl_resp = self._connection.request(request.method or "GET", url, headers=headers, data=request.body, impersonate=target, proxies=curl_proxies, verify=verify, timeout=timeout, allow_redirects=False, stream=False, discard_cookies=True)
         except _curl_exceptions.RequestException as err:  # type: ignore
             raise req.exceptions.ConnectionError(str(err), request=request) from err
         return self._build_response(request, curl_resp)
@@ -2483,6 +2595,10 @@ def _install_copy_session_proxy_patch() -> None:
             new.verify = getattr(session, "verify", True)
         except Exception:
             pass
+        # A copy made for one request keeps the connection of the session it came from, as a browser tab would
+        for prefix, adapter in list((getattr(session, "adapters", None) or {}).items()):
+            if isinstance(adapter, _CurlCffiHTTPAdapter):
+                new.mount(prefix, adapter.shared())
         wrapper = globals().get('ensure_instagram_session_wrapped')
         if callable(wrapper):
             wrapper(new)
@@ -5539,7 +5655,7 @@ class Logger(object):
         global last_output
         with STDOUT_LOCK:
             # Apply color for terminal
-            message = sanitize_terminal_text(apply_privacy_substitutions(message))
+            message = sanitize_console_text(message)
 
             if message != '\n':
                 last_output.append(message)
@@ -5581,7 +5697,7 @@ class Logger(object):
     # Writes a message to the terminal only (honouring colour), bypassing all log files
     def terminal_only(self, message):
         with STDOUT_LOCK:
-            message = sanitize_terminal_text(apply_privacy_substitutions(message))
+            message = sanitize_console_text(message)
             colorized_message = apply_color_to_text(self._truncate_terminal(message))
             self.terminal.write(colorized_message)
             self.terminal.flush()
@@ -5589,7 +5705,7 @@ class Logger(object):
     # Writes a message to the log file(s) only (ANSI stripped), bypassing the terminal
     def log_only(self, message):
         with STDOUT_LOCK:
-            message = sanitize_terminal_text(apply_privacy_substitutions(message))
+            message = sanitize_console_text(message)
             colorized_message = apply_color_to_text(message)
             clean_message = normalize_log_separators(ANSI_ESCAPE_RE.sub("", colorized_message).expandtabs(8))
             if self.main_log:
@@ -5666,7 +5782,7 @@ class ColorStream(object):
         self.terminal = stream
 
     def write(self, message):
-        message = sanitize_terminal_text(apply_privacy_substitutions(message))
+        message = sanitize_console_text(message)
         coloured = apply_color_to_text(truncate_string_per_line(message, TRUNCATE_CHARS) if TRUNCATE_CHARS else message)
         self.terminal.write(coloured)
         self.terminal.flush()
@@ -7145,15 +7261,10 @@ TPrivacyContent = TypeVar("TPrivacyContent")
 
 # Apply PRIVACY_SUBSTITUTIONS to any content type
 def apply_privacy_substitutions(content: TPrivacyContent) -> TPrivacyContent:
-    """
-    - Recurses into dict values and list items
-    - For strings, performs search/replace using PRIVACY_SUBSTITUTIONS
-    - Preserves dict keys so JSON and object keys stay stable for API
-      consumers. Callers that display a key (e.g. terminal target tables)
-      must substitute it explicitly at the point of display
-    - Ignores invalid substitution entries to avoid runtime crashes
-    - Non-string primitives are returned unchanged
-    """
+    """Substitute strings in dictionary values and list items.
+
+    Dictionary keys stay unchanged for API consumers. Substitute displayed keys
+    at the display boundary. Invalid substitution entries are ignored."""
     global PRIVACY_SUBSTITUTIONS_INVALID_WARNED
     if not PRIVACY_SUBSTITUTIONS:
         return content
@@ -7182,7 +7293,7 @@ def apply_privacy_substitutions(content: TPrivacyContent) -> TPrivacyContent:
     return content
 
 
-# Debug print helper - only prints if DEBUG_MODE is enabled
+# Formats an operation and its available diagnostic fields
 def format_diagnostic_line(operation, fields):
     rendered = ", ".join(f"{key}={value}" for key, value in fields.items() if value is not None)
     return f"{operation}: {rendered}" if rendered else str(operation)
@@ -9394,13 +9505,7 @@ def argparse_color_kwargs() -> dict[str, Any]:
 
 # Finds an optional config file
 def find_config_file(cli_path=None):
-    """
-    Search for an optional config file in:
-      1) CLI-provided path (must exist if given)
-      2) ./{DEFAULT_CONFIG_FILENAME}
-      3) ~/.{DEFAULT_CONFIG_FILENAME}
-      4) script-directory/{DEFAULT_CONFIG_FILENAME}
-    """
+    """Return the first config file, without fallback for a missing explicit path."""
 
     if cli_path:
         p = Path(os.path.expanduser(cli_path))
@@ -9469,7 +9574,7 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
             print(summary)
             for line in lines:
                 print(line)
-            print(colorize("info", f"To fix: {fix}"))
+            print(CommandOutput(colorize("info", f"To fix: {fix}")))
             print(f"Guide: {CONFIG_GUIDE_URL}")
         return False
 
@@ -11245,7 +11350,7 @@ FAILURE_TERMS = {
     'impersonate_unsupported': ("impersonat",),
     'proxy_unresolved': ("could not resolve proxy",),
     'dns_failure': ("could not resolve host", "temporary failure in name resolution", "name or service not known", "nodename nor servname", "curl: (6)"),
-    'network': ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl"),
+    'network': ("connection", "timed out", "timeout", "temporary failure", "name resolution", "network is unreachable", "max retries", "ssl", "net::err_cert_", "net::err_proxy_certificate_invalid"),
     'schema_change': ("empty data for posts", "fetching post metadata failed", "not subscriptable", "unexpected follower list reply", "follower list dialog"),
 }
 
@@ -11320,7 +11425,7 @@ RECOVERY_CODES = frozenset({
     "dependency.missing",
     "secret.missing",
     "proxy.unresolved",
-    "network.dns", "network.unavailable",
+    "network.dns", "network.unavailable", "network.browser_certificate",
     "smtp.invalid", "smtp.authentication", "smtp.connection",
     "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
     "file.unreadable", "file.unwritable", "file.exists",
@@ -11331,6 +11436,19 @@ RECOVERY_CODES = frozenset({
 
 # Matches a secret assignment so error text quoting a configuration line cannot carry the value with it
 SECRET_ASSIGNMENT_RE = re.compile(r"(?im)(\b(?:" + "|".join(SECRET_KEYS) + r")\b\s*=\s*)[^\r\n]*")
+
+
+# Marks generated instructions combined only with already-redacted diagnostic fields
+class CommandOutput(str):
+    # Preserves the output marker when print converts its argument to text
+    def __str__(self) -> str:
+        return self
+
+
+# Keeps generated instructions intact while filtering ordinary output and terminal controls
+def sanitize_console_text(message):
+    filtered = message if isinstance(message, CommandOutput) else apply_privacy_substitutions(message)
+    return sanitize_terminal_text(filtered)
 
 
 # Removes private values and secret assignments from error text before it reaches the console, a log or an alert
@@ -11364,11 +11482,12 @@ class RecoveryError(Exception):
         super().__init__(advice.summary)
 
 
-# Builds one piece of recovery advice, refusing any code outside the closed set and sanitizing every field
+# Builds validated recovery advice with private diagnostics and unchanged generated instructions
 def make_recovery_advice(code: str, summary: str, fix: str, retryable: bool = False, detail: str = "") -> RecoveryAdvice:
     if code not in RECOVERY_CODES:
         raise ValueError(f"Unsupported recovery code: {code}")
-    return RecoveryAdvice(code, sanitize_error_text(summary), sanitize_error_text(fix), bool(retryable), sanitize_error_text(detail) if detail else "")
+    # Fixes contain generated instructions and non-secret arguments, so redaction must not rewrite them
+    return RecoveryAdvice(code, sanitize_error_text(summary), fix, bool(retryable), sanitize_error_text(detail) if detail else "")
 
 
 # Adds a directly relevant documentation link on its own line
@@ -11482,7 +11601,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not an Instagram problem", "Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", False, DESCRIPTOR_LIMIT_GUIDE_URL)
 
     if context == "config_missing":
-        return advice("config.missing", "A required setting has no value", "Set it in the configuration file, in the environment or with its command-line flag, then re-run the tool", False, CONFIG_GUIDE_URL)
+        return advice("config.missing", "A required setting has no value", "Save it in the configuration file or provide it through the environment. Command-line setting flags must be included on each run", False, CONFIG_GUIDE_URL)
 
     if context == "config":
         return advice("config.invalid", "A configured value cannot be used", "Correct the value in the configuration file or on the command line, then re-run the tool", False, CONFIG_GUIDE_URL)
@@ -11500,7 +11619,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return advice("file.unreadable", "A file the tool reads could not be opened", "Check the path and its permissions, and that the file is readable UTF-8 text", False, OUTPUT_GUIDE_URL)
 
     if context == "file_write":
-        return advice("file.unwritable", "A file the tool writes could not be opened", "Check that the output directory exists and is writable, or choose another with --output-dir", False, OUTPUT_GUIDE_URL)
+        return advice("file.unwritable", "A file the tool writes could not be opened", "Check that the output directory exists and is writable. Save a different OUTPUT_DIR in the configuration file or include --output-dir PATH on each run", False, OUTPUT_GUIDE_URL)
 
     if context == "config_write":
         return advice("file.unwritable", "The configuration file could not be written", "Check that the directory exists and is writable, or choose another path with --config-file", False, CONFIG_GUIDE_URL)
@@ -11531,7 +11650,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return advice("config.invalid", "The proxy settings cannot be used", "Check PROXY_URL and any proxy certificate path, then re-run the tool", False, PROXY_GUIDE_URL)
 
     if context == "dashboard":
-        return advice("dashboard.unavailable", "The Web Dashboard could not start", "Free the configured port or start the server on a different one with --web-dashboard-port, then confirm the installation is complete", False, WEB_DASHBOARD_GUIDE_URL)
+        return advice("dashboard.unavailable", "The Web Dashboard could not start", "Free the configured port or save a different WEB_DASHBOARD_PORT in the configuration file. To override it without saving, include --web-dashboard-port PORT on each run. Confirm the installation is complete", False, WEB_DASHBOARD_GUIDE_URL)
 
     if context == "setup":
         return advice("config.invalid", "Setup cannot run with the current settings", "Correct the named setting or path, then run --setup again", False, QUICK_START_GUIDE_URL)
@@ -11557,7 +11676,7 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
         # cannot lift a limit it did not cause, while a session login is limited per account instead
         if not is_logged_in:
             return "instagram.rate_limited", "Instagram is rate-limiting anonymous requests from this IP", "Instagram is rate-limiting anonymous requests from this IP address, which counts everything behind it and is often hit on the very first request. Wait for it to pass or use another address. A session login is limited per account instead, so importing one usually works from here", ANONYMOUS_RATE_LIMIT_GUIDE_URL, True
-        return "instagram.rate_limited", "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise the check interval (-c / INSTA_CHECK_INTERVAL), add jitter (--enable-jitter) and monitor fewer users", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
+        return "instagram.rate_limited", "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise INSTA_CHECK_INTERVAL and set ENABLE_JITTER = True in the configuration file, then restart and monitor fewer users. To use command-line settings instead, include --check-interval SECONDS --enable-jitter on each run", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
 
     # An endpoint Instagram retired answers feedback_required whatever the account is doing, so its reply describes
     # the endpoint. Reading it as an account block would stop a session every other endpoint still answers
@@ -11590,7 +11709,7 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
 
     # An unsupported impersonation target surfaces as a connection error, so name the real cause before the network hint
     if any(t in m for t in FAILURE_TERMS['impersonate_unsupported']):
-        return "config.impersonate_unsupported", "The configured browser profile cannot be impersonated", "The configured browser profile is not one curl_cffi can impersonate. Set CURL_CFFI_IMPERSONATE (or --impersonate) back to 'auto' or pick a supported target such as chrome, safari, edge or firefox", HTTP_BACKEND_GUIDE_URL, False
+        return "config.impersonate_unsupported", "The configured browser profile cannot be impersonated", "The configured browser profile is not one curl_cffi can impersonate. Save CURL_CFFI_IMPERSONATE = 'auto' in the configuration file or include --impersonate auto on each run. A supported target such as chrome, safari, edge or firefox also works", HTTP_BACKEND_GUIDE_URL, False
 
     # An unresolvable proxy hostname is a proxy configuration problem, so it is the one resolution failure the proxy guide fits
     if any(t in m for t in FAILURE_TERMS['proxy_unresolved']):
@@ -11599,6 +11718,9 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
     # DNS failures are resolver-side, so they need their own fix before the generic network branch swallows them
     if any(t in m for t in FAILURE_TERMS['dns_failure']):
         return "network.dns", "Instagram's address could not be resolved", "Your machine cannot resolve Instagram's address, so this is a DNS problem rather than an Instagram block. Check that the machine has working DNS (try 'ping www.instagram.com') and if you use a VPN or proxy make sure it is up and allowed to resolve names. Monitoring resumes on its own once DNS works again", CONNECTION_GUIDE_URL, True
+
+    if "net::err_cert_" in m or "net::err_proxy_certificate_invalid" in m:
+        return "network.browser_certificate", "The browser rejected a TLS certificate", "Check the certificate validity, hostname and system clock. If your proxy intercepts TLS, trust its CA in the browser's certificate store and restart the monitor. PROXY_CERT_PATH applies to HTTP clients and does not add browser trust", BROWSER_FOLLOW_LIST_GUIDE_URL, False
 
     # Network or connectivity problems
     if any(t in m for t in FAILURE_TERMS['network']):
@@ -11609,7 +11731,7 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
 
     # Deprecated GraphQL doc_id returning null data, or a temporary block
     if any(t in m for t in FAILURE_TERMS['schema_change']):
-        return "instagram.empty_data", "Instagram returned empty data for this query", "Instagram returned empty data for this query. This is usually a temporary block (raise the check interval with -c and add --enable-jitter) or an Instagram API change (update instagram_monitor to the latest version and report it at https://github.com/misiektoja/instagram_monitor/issues if you are already current)", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
+        return "instagram.empty_data", "Instagram returned empty data for this query", "Instagram returned empty data for this query. This is usually a temporary block (raise INSTA_CHECK_INTERVAL and set ENABLE_JITTER = True in the configuration file, then restart) or an Instagram API change (update instagram_monitor to the latest version and report it at https://github.com/misiektoja/instagram_monitor/issues if you are already current)", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
 
     return "unknown", "An unexpected error stopped the requested action", unknown_failure_fix(), DIAGNOSTICS_GUIDE_URL, True
 
@@ -11766,14 +11888,14 @@ def caller_summary(error: Any) -> str:
 
 # Renders one built advice as the shared Error, To fix and optional Technical detail block
 def render_recovery_advice(advice: RecoveryAdvice, debug: Optional[bool] = None, retry_note: str = "", with_fix: bool = True, label: str = "Error", summary: str = "") -> str:
-    headline = sanitize_error_text(summary) if summary else advice.summary
-    lines = [f"* {label}: {headline}" + (f" ({retry_note})" if retry_note else "")]
+    headline = sanitize_error_text(summary or advice.summary)
+    lines = [f"* {sanitize_error_text(label)}: {headline}" + (f" ({sanitize_error_text(retry_note)})" if retry_note else "")]
     if with_fix and advice.fix:
         lines.extend(colorize_fix_line(fix_line) for fix_line in f"To fix: {advice.fix}".splitlines())
     # A detail that only repeats a line already printed spends a line saying nothing
     if with_fix and (DEBUG_MODE if debug is None else debug) and advice.detail and advice.detail not in (headline, advice.summary):
         lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
-    return "\n".join(lines)
+    return CommandOutput("\n".join(lines))
 
 
 # Classifies one failure and renders it through the shared recovery block
@@ -11813,7 +11935,7 @@ def print_recovery_fix(error: Any = None, context: str = "runtime", detail: str 
     advice = classify_recovery_error(error, context, detail)
     if advice.fix:
         note_console_output()
-        print(colorize("info", f"To fix: {advice.fix}"))
+        print(CommandOutput(colorize("info", f"To fix: {advice.fix}")))
         if DEBUG_MODE and advice.detail and advice.detail != advice.summary:
             print(f"Technical detail: {sanitize_error_text(advice.detail)}")
     return advice
@@ -12598,7 +12720,7 @@ def recover_account_on_startup(retry: bool = False) -> bool:
             else:
                 fix = classify_recovery_error(error, is_logged_in=True).fix
             print(f"* Monitoring remains paused for {account}: {message}")
-            print(f"* To fix: {fix}")
+            print(CommandOutput(f"* To fix: {fix}"))
             return False
         finally:
             if bot is not None:
@@ -12688,7 +12810,7 @@ def trip_circuit_breaker(failure_class: str, user: str = "", error_msg: str = ""
     if tripped:
         account = exposure_account_name()
         print(f"\n* Circuit breaker: Instagram acted against session account {account} ({failure_class}). Stopping all Instagram requests for this account")
-        print(f"* {breaker_recovery_hint(failure_class)}")
+        print(CommandOutput(f"* {breaker_recovery_hint(failure_class)}"))
         log_activity(f"Circuit breaker tripped for {account}: {failure_class}", user=user or account, level='system')
     return bool(tripped)
 
@@ -13437,7 +13559,22 @@ def browser_launch_options() -> Dict[str, Any]:
         options['proxy'] = proxy
     if not VERIFY_SSL:
         options['ignore_https_errors'] = True
+        # The context option does not cover the TLS connection to an HTTPS proxy
+        options['args'].append("--ignore-certificate-errors")
     return options
+
+
+# Updates the current thread's browser scan status and count without HTTP response hooks
+def browser_follow_list_progress(stage: str, increment: int = 0) -> None:
+    thread_pbar = getattr(_thread_local, 'pbar', None)
+    if thread_pbar is None:
+        return
+    if thread_pbar.total is not None and thread_pbar.n + increment > thread_pbar.total:
+        thread_pbar.total = thread_pbar.n + increment
+    elapsed_minutes = thread_pbar.format_dict['elapsed'] / 60
+    thread_pbar.unit = f"{stage}, mins={elapsed_minutes:.1f}"
+    thread_pbar.update(increment)
+    thread_pbar.refresh()
 
 
 # Stops the scan when Instagram answered with a challenge, a login page or an account notice
@@ -13458,6 +13595,7 @@ def harvest_follow_list_dialog(page, scroll_delay: float, stall_limit: int = BRO
         if stop_event is not None and stop_event.is_set():
             return
 
+        browser_follow_list_progress("Reading names")
         rendered = page.evaluate(BROWSER_DIALOG_NAMES_JS)
         if rendered is None:
             raise BrowserFollowListError("Instagram's follower list dialog closed before the list was read")
@@ -13478,6 +13616,7 @@ def harvest_follow_list_dialog(page, scroll_delay: float, stall_limit: int = BRO
 
         if not page.evaluate(BROWSER_DIALOG_SCROLL_JS):
             return
+        browser_follow_list_progress("Waiting after scroll")
         page.wait_for_timeout(max(0, int(float(scroll_delay) * 1000)))
 
 
@@ -13535,6 +13674,8 @@ def browser_follow_list_readiness() -> Tuple[bool, str, str]:
 
     channel = str(FOLLOW_LIST_BROWSER_CHANNEL or "chromium")
     detail = f"Channel: {channel}, {'headless' if FOLLOW_LIST_BROWSER_HEADLESS else 'windowed'}, profile: {browser_profile_dir()}"
+    if VERIFY_SSL and PROXY_ENABLED and PROXY_CERT_PATH:
+        detail += ". PROXY_CERT_PATH applies to HTTP clients, so the proxy CA must also be trusted by the browser"
     if channel != "chromium":
         return True, f"{detail}. A '{channel}' installation on this machine is used, which is only checked when a scan runs", ""
 
@@ -13579,6 +13720,7 @@ def browser_follow_list_batches(bot, profile, kind: str, stop_event=None):
     # codeql[py/path-injection]
     os.makedirs(user_data_dir, exist_ok=True)
 
+    browser_follow_list_progress("Starting browser")
     with sync_playwright() as driver:
         try:
             browser_context = driver.chromium.launch_persistent_context(user_data_dir, **browser_launch_options())
@@ -13590,9 +13732,11 @@ def browser_follow_list_batches(bot, profile, kind: str, stop_event=None):
             browser_context.add_cookies(browser_session_cookies(bot))
             page = browser_context.pages[0] if browser_context.pages else browser_context.new_page()
 
+            browser_follow_list_progress("Opening profile")
             page.goto(f"https://www.instagram.com/{target}/", wait_until="domcontentloaded")
             guard_browser_page_state(page)
 
+            browser_follow_list_progress("Opening list")
             open_browser_follow_list_dialog(page, target, kind)
             yield from harvest_follow_list_dialog(page, FOLLOW_LIST_BROWSER_SCROLL_DELAY, stop_event=stop_event)
         finally:
@@ -13620,6 +13764,7 @@ def iter_browser_follow_list(bot, profile, kind: str, record_exposure: bool = Fa
             record_identities_returned(len(batch))
 
         harvested += len(batch)
+        browser_follow_list_progress("Reading names", len(batch))
         debug_print("Instagram browser follow list batch", kind=kind, accounts=len(batch), total=harvested)
 
         for name in batch:
@@ -13776,22 +13921,12 @@ def fetch_usernames_paginated(bot, get_generator_fn, max_per_batch, total_limit,
 
 # Fetches one serialized username scan and marks whether its baseline is complete
 def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, total_limit, fetch_delay, advanced_fetch, estimated_limit, user, stop_event=None, identities_counted_at_source=False):
-    """Fetch usernames in batches using a fresh generator per call.
+    """Fetch usernames with a fresh generator and mark complete only on exhaustion.
 
-    Args:
-        get_generator_fn: Callable that returns a new instaloader generator (e.g. lambda: profile.get_followers())
-        max_per_batch:    Max accounts to pull per iteration (FOLLOWERS_PER_BATCH / FOLLOWEES_PER_BATCH). 0 = no limit
-        total_limit:      Stop after this many total accounts (FOLLOWER_LIMIT_TO_FETCH / FOLLOWEE_LIMIT_TO_FETCH). 0 = no limit.
-        fetch_delay:      Seconds to sleep between batches.
-        advanced_fetch:   Indicates if advanced_fetch is enabled (valid configuration of above 3 items)
-        estimated_limit:  Estimated number of items to fetch. Used for messaging.
-        user:             Instagram username, forwarded to log_activity.
-        stop_event:       Optional threading.Event from the caller. If set, the inter-batch wait is
-                          aborted and the function returns whatever has been fetched so far.
-
-    Returns:
-        List-like username result whose complete flag is true only after generator exhaustion.
-    """
+    Zero batch and total limits are unlimited. advanced_fetch enables batching
+    with fetch_delay seconds between batches. estimated_limit sizes progress
+    and budget checks. stop_event interrupts waits and returns an incomplete
+    result containing the names collected so far."""
     results = PaginatedUsernameResult()
     results.complete = False
 
@@ -13802,8 +13937,10 @@ def _fetch_usernames_paginated_locked(bot, get_generator_fn, max_per_batch, tota
     # stops save_username_baseline from overwriting a good baseline with a truncated one
     breaker = circuit_breaker_state()
     if breaker:
-        msg = f"Skipping name fetch: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')}). {breaker_recovery_hint(breaker.get('failure_class', ''))}"
-        print(f"* {msg}")
+        summary = f"Skipping name fetch: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')})."
+        fix = breaker_recovery_hint(breaker.get('failure_class', ''))
+        msg = f"{summary} {fix}"
+        print(CommandOutput(f"* {sanitize_error_text(summary)} {fix}"))
         log_activity(msg, user=user, level='system')
         return results
 
@@ -14027,7 +14164,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         if breaker:
             update_ui_data(targets={user: {'status': 'Stopped (breaker)'}})
             print(f"* Monitoring paused for {user}: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')})")
-            print(f"* {breaker_recovery_hint(breaker.get('failure_class', ''))}")
+            print(CommandOutput(f"* {breaker_recovery_hint(breaker.get('failure_class', ''))}"))
             if signal_loading_complete is not None:
                 signal_loading_complete.set()
             return
@@ -15215,7 +15352,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         if breaker:
             update_ui_data(targets={user: {'status': 'Stopped (breaker)'}})
             print(f"* Monitoring paused for {user}: circuit breaker tripped for {exposure_account_name()} ({breaker.get('failure_class', 'unknown')})")
-            print(f"* {breaker_recovery_hint(breaker.get('failure_class', ''))}\n")
+            print(CommandOutput(f"* {breaker_recovery_hint(breaker.get('failure_class', ''))}\n"))
             print_cur_ts()
             return
 
@@ -15389,7 +15526,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 # A redirect or a rejected request usually means the session, so name it when the classifier had no fix of its own
                 # A generic fix is not an answer for a failure whose text points at the session, so the specific advice still follows it
                 if (not fix_hint_printed or advice.code == "unknown") and outage_outcome == "full" and ('Redirected' in str(e) or 'login' in str(e) or 'Forbidden' in str(e) or 'Wrong' in str(e) or 'Bad Request' in str(e)):
-                    print(colorize("info", f"To fix: The saved session may no longer be valid. Re-import it with '{session_recovery_command()}'{session_recovery_browser_hint()} or from the Web Dashboard Session page"))
+                    print(CommandOutput(colorize("info", f"To fix: The saved session may no longer be valid. Re-import it with '{session_recovery_command()}'{session_recovery_browser_hint()} or from the Web Dashboard Session page")))
 
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
@@ -15412,7 +15549,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 redirect_advice = classify_recovery_error(error_msg, is_logged_in=bool(SESSION_USERNAME) and not skip_session)
                 outage.failed(redirect_advice)
                 print(f"* Error: The saved Instagram session may no longer be valid (retrying in {display_time(r_sleep_time)})")
-                print(colorize("info", f"To fix: Re-import the session with '{session_recovery_command()}'{session_recovery_browser_hint()} or from the Web Dashboard Session page"))
+                print(CommandOutput(colorize("info", f"To fix: Re-import the session with '{session_recovery_command()}'{session_recovery_browser_hint()} or from the Web Dashboard Session page")))
                 notify_monitoring_error(user, redirect_advice, outage.since, consecutive_main_errors, r_sleep_time, error_alert)
                 # Respect hour-range gating for retries as well
                 now = now_local_naive()
@@ -16623,15 +16760,43 @@ def _wizard_notification_categories(config_values, prefix: str = "") -> List[str
 # Prints one labelled next-step command indented under its label
 def _wizard_print_command(label: str, command: str, suffix: str = "") -> None:
     print(label)
-    print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
+    print(CommandOutput(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n"))
 
 
-# Prints the command that starts monitoring with the files this run checked, so a report read on its own
-# ends with the next action rather than leaving the reader to assemble the command
-def print_doctor_next_steps(targets=(), config_path=None, env_path=None, saved_targets=(), doctor_exit: int = 0) -> None:
-    command = _wizard_action_command(_wizard_install_method(), "", config_path, env_path, _wizard_command_targets(targets, saved_targets)[1], web_dashboard=WEB_DASHBOARD_ENABLED)
+# Rebuilds explicit monitoring options while replacing private values with named placeholders
+def doctor_monitoring_overrides(args):
+    parts = []
+    value_options = (("session_username", "--session-username"), ("session_file", "--session-file"), ("webhook_provider", "--webhook-provider"), ("check_interval", "--check-interval"), ("check_interval_random_diff_low", "--random-diff-low"), ("check_interval_random_diff_high", "--random-diff-high"), ("targets_stagger", "--targets-stagger"), ("targets_stagger_jitter", "--targets-stagger-jitter"), ("user_agent", "--user-agent"), ("user_agent_mobile", "--user-agent-mobile"), ("http_backend", "--http-backend"), ("impersonate", "--impersonate"), ("follow_list_source", "--follow-list-source"), ("identity_budget", "--identity-budget"), ("proxy_cert_path", "--proxy-cert"), ("web_dashboard_port", "--web-dashboard-port"), ("web_dashboard_template_dir", "--web-dashboard-template-dir"), ("csv_file", "--csv-file"), ("output_dir", "--output-dir"), ("truncate", "--truncate"))
+    for name, option in value_options:
+        value = getattr(args, name, None)
+        if value is not None:
+            # An equals sign keeps a value beginning with a dash from being parsed as another option
+            if str(value).startswith("-"):
+                parts.append(f"{option}={value}")
+            else:
+                parts.extend((option, str(value)))
+    switches = (("status_notification", "--notify-status", True), ("followers_notification", "--notify-followers", True), ("error_notification", "--no-error-notify", False), ("webhook_enabled", "--webhook", True), ("no_webhook", "--no-webhook", True), ("webhook_status", "--webhook-status", True), ("webhook_followers", "--webhook-followers", True), ("webhook_errors", "--webhook-errors", True), ("skip_session", "--skip-session", True), ("skip_followers", "--skip-followers", True), ("skip_followings", "--skip-followings", True), ("followers_churn", "--followers-churn", True), ("skip_follow_changes", "--skip-follow-changes", True), ("skip_getting_story_details", "--skip-story-details", True), ("skip_getting_posts_details", "--skip-post-details", True), ("get_more_post_details", "--more-post-details", True), ("be_human", "--be-human", True), ("enable_jitter", "--enable-jitter", True), ("proxy_enabled", "--enable-proxy", True), ("proxy_webhooks", "--enable-proxy-webhooks", True), ("dashboard", "--dashboard", True), ("disable_dashboard", "--no-dashboard", True), ("web_dashboard", "--web-dashboard", True), ("no_web_dashboard", "--no-web-dashboard", True), ("do_not_detect_changed_profile_pic", "--no-profile-pic-detect", False), ("fetch_reels", "--fetch-reels", True), ("fetch_reels", "--no-fetch-reels", False), ("detect_collab_posts", "--no-detect-collab-posts", False), ("disable_logging", "--disable-logging", True), ("no_color", "--no-color", True), ("verbose_mode", "--verbose", True), ("debug_mode", "--debug", True))
+    for name, option, selected in switches:
+        if getattr(args, name, None) is selected:
+            parts.append(option)
+    private_options = (("session_password", "--session-password", "SESSION_PASSWORD"), ("webhook_url", "--webhook-url", "WEBHOOK_URL"), ("proxy_url", "--proxy-url", "PROXY_URL"))
+    has_private_values = False
+    for name, option, placeholder in private_options:
+        if getattr(args, name, None) is not None:
+            parts.extend((option, placeholder))
+            has_private_values = True
+    return parts, has_private_values
+
+
+# Prints the monitoring command with the settings selected for Doctor
+def print_doctor_next_steps(targets=(), config_path=None, env_path=None, saved_targets=(), doctor_exit: int = 0, cli_args=None) -> None:
+    overrides, private_values = doctor_monitoring_overrides(cli_args)
+    action = " ".join(_wizard_quote_argument(value) for value in overrides)
+    command = _wizard_action_command(_wizard_install_method(), action, config_path, env_path, _wizard_command_targets(targets, saved_targets)[1], web_dashboard=WEB_DASHBOARD_ENABLED)
     print(colorize("header", "\nNext steps\n"))
     _wizard_print_command("After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:", command)
+    if private_values:
+        print("Replace the uppercase credential placeholders before running. Doctor does not repeat private command-line values.\n")
     print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}")
 
 
@@ -16775,7 +16940,7 @@ def _wizard_install_chromium_dependency(method: str) -> bool:
     executable = sys.executable or ("python" if system() == "Windows" else "python3")
     command = [executable, "-m", "pip", "install", requirement]
     display_command = ["python" if platform.system() == "Windows" else "python3", *command[1:]]
-    print(f"Installing Chromium browser support with:\n    {_wizard_render_command(display_command)}\n")
+    print(CommandOutput(f"Installing Chromium browser support with:\n    {_wizard_render_command(display_command)}\n"))
     try:
         result = subprocess.run(command, check=False)
     except OSError as exc:
@@ -16834,7 +16999,8 @@ def _build_help_epilog() -> str:
             ("Trace what the tool is doing", f"{prefix} <target_insta_user> --debug"),
         )),
     )
-    return _render_help_examples(groups, QUICK_START_GUIDE_URL)
+    notice = "Setting options apply to the current run and do not update the configuration file.\nInclude them on each run or save the settings through --setup or in a configuration file.\n\n"
+    return notice + _render_help_examples(groups, QUICK_START_GUIDE_URL)
 
 
 # Reads one input line, letting a cancelled prompt reach the handler that knows what was written
@@ -17305,7 +17471,7 @@ def _wizard_confirm_existing_session(state: WizardSetupState) -> bool:
     print(colorize("info", f"  Looked in: {', '.join(candidates)}"))
     # The shared reader returns a visible username here, never a password
     # codeql[py/clear-text-logging-sensitive-data]
-    print(colorize("info", f"  To fix: run 'instaloader --login {state.session_username}' to create one, or choose a browser import instead."))
+    print(CommandOutput(colorize("info", f"  To fix: run 'instaloader --login {state.session_username}' to create one, or choose a browser import instead.")))
     return _wizard_ask_yes_no("Keep using an existing Instaloader session anyway?", default=False)
 
 
@@ -17538,7 +17704,7 @@ def _wizard_smtp_sign_in_accepted(values: dict, password: str) -> Optional[bool]
         return True
     summary, detail, fix, retryable = problem
     print(f"  {summary}: {detail}" if detail else f"  {summary}")
-    print(f"  To fix: {fix}")
+    print(CommandOutput(f"  To fix: {fix}"))
     if _wizard_offer_retry("mail server settings"):
         return False
     if retryable:
@@ -19113,7 +19279,7 @@ def doctor_check_targets(report: DoctorReport, targets, progress: Optional[Calla
         if WEB_DASHBOARD_ENABLED and FLASK_AVAILABLE:
             return [make_doctor_check("Targets", "PASS", "No targets configured yet", "The Web Dashboard is enabled, so targets can be added there")]
         if WEB_DASHBOARD_ENABLED:
-            advice = make_recovery_advice("dependency.missing", "No targets configured and the Web Dashboard cannot start", recovery_fix_with_guide(f"Install Flask with: {pip_install_command('flask')}, or pass a target on the command line or set TARGET_USERNAMES in the config", INSTALLATION_GUIDE_URL), False)
+            advice = make_recovery_advice("dependency.missing", "No targets configured and the Web Dashboard cannot start", recovery_fix_with_guide(f"Install Flask with: {pip_install_command('flask')}, or save TARGET_USERNAMES in the configuration file or include a target on each run", INSTALLATION_GUIDE_URL), False)
             return [make_doctor_check("Targets", "FAIL", advice.summary, "Nothing will be monitored and there is no dashboard to add a target in", advice)]
         advice = make_recovery_advice("target.missing", "No targets configured", recovery_fix_with_guide(NO_TARGET_FIX, QUICK_START_GUIDE_URL), False)
         return [make_doctor_check("Targets", "WARN", advice.summary, "Nothing will be monitored", advice)]
@@ -19269,7 +19435,7 @@ def render_doctor_sections(report: DoctorReport) -> None:
             if check.status != "PASS" and check.advice is not None:
                 # The fix carries its own guide line, so each line is indented and styled on its own
                 for advice_line in f"To fix: {check.advice.fix}".splitlines():
-                    print(f"  {colorize_fix_line(advice_line)}")
+                    print(CommandOutput(f"  {colorize_fix_line(advice_line)}"))
 
 
 # Prints the closing summary for one rendered report
@@ -19821,7 +19987,7 @@ def run_main():
         dest="proxy_cert_path",
         metavar="PROXY_CERT_PATH",
         type=str,
-        help="Set optional PATH to local certificate to be used for proxy traffic"
+        help="Set optional CA certificate PATH for HTTP clients (browser traffic uses the browser's trust store)"
     )
     session_opts.add_argument(
         "--enable-proxy-webhooks",
@@ -20038,7 +20204,7 @@ def run_main():
             doctor_config_errors.append({"summary": summary, "detail": "", "fix": fix})
         else:
             print(f"* Error: {summary}")
-            print(colorize("info", f"To fix: {fix}"))
+            print(CommandOutput(colorize("info", f"To fix: {fix}")))
             print(f"Guide: {CONFIG_GUIDE_URL}")
             sys.exit(1)
 
@@ -20220,7 +20386,7 @@ def run_main():
         identity_mismatch = browser_identity_mismatch()
         if identity_mismatch is not None:
             print(f"* Error: {identity_mismatch[0]}")
-            print(f"* To fix: {identity_mismatch[1]}")
+            print(CommandOutput(f"* To fix: {identity_mismatch[1]}"))
             print(f"Guide: {FOLLOW_LIST_SOURCE_GUIDE_URL}")
             sys.exit(1)
 
@@ -20286,7 +20452,7 @@ def run_main():
             sys.exit(1)
         if not exposure_ledger_is_writable():
             print("* Error: The account safety ledger cannot be saved, so monitoring stops this account on its first identity scan")
-            print("To fix: Restore write access to that path, or choose a writable location with --output-dir")
+            print("To fix: Restore write access to that path. Save a writable OUTPUT_DIR in the configuration file or include --output-dir PATH on each run")
             sys.exit(1)
         sys.exit(0)
 
@@ -20385,7 +20551,7 @@ def run_main():
     if args.send_test_webhook:
         if not WEBHOOK_URL:
             print("* Error: No webhook destination is configured")
-            print(colorize("info", "To fix: Save one with --set-webhook-url, pass --webhook-url or set WEBHOOK_URL in the config file"))
+            print(colorize("info", "To fix: Save one with --set-webhook-url or include --webhook-url URL on each run"))
             print(f"Guide: {WEBHOOK_GUIDE_URL}")
             sys.exit(1)
 
@@ -20466,7 +20632,7 @@ def run_main():
     # Allow empty targets with specific flags
     if not targets and not WEB_DASHBOARD_ENABLED and not args.doctor and not args.analyze_follows:
         print("* Error: At least one TARGET_USERNAME argument is required")
-        print(colorize("info", f"To fix: {NO_TARGET_FIX}"))
+        print(CommandOutput(colorize("info", f"To fix: {NO_TARGET_FIX}")))
         print(f"Guide: {QUICK_START_GUIDE_URL}")
         sys.exit(1)
 
@@ -20526,7 +20692,7 @@ def run_main():
         # Targets already saved in the config file are left out, so the command stays as short as the wizard's
         # Both "none" sentinels are carried, since the printed command monitors with the setup doctor just checked
         next_env_path = "none" if DOTENV_FILE and str(DOTENV_FILE).casefold() == "none" else env_path
-        print_doctor_next_steps([] if not args.usernames else targets, cfg_path or active_config_path(), next_env_path, TARGET_USERNAMES, doctor_failures)
+        print_doctor_next_steps(targets, cfg_path or active_config_path(), next_env_path, TARGET_USERNAMES, doctor_failures, cli_args=args)
         sys.exit(1 if doctor_failures else 0)
 
     boolean_errors = runtime_boolean_errors()

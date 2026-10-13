@@ -70,7 +70,7 @@ Pull requests target `dev`. The pull request template lists the checks to report
 
 ## Code style
 
-The codebase favors complete implementations over minimal patches, explicit validation of anything Instagram supplies and one concise summary comment directly above each shared function. Follow the surrounding code rather than introducing a new style.
+Use complete implementations and validate data supplied by Instagram. Place a concise comment immediately before every function and method, including private helpers. Summarize its purpose or contract. Use additional comments for non-obvious constraints and reasons. Follow the surrounding code.
 
 Optional local hooks run the same linter, the whitespace rules and a private-key check before a commit is written. The lint hook calls the Ruff installed by `.[lint]` above rather than a copy of its own, so it always matches the version CI runs:
 

@@ -43,6 +43,8 @@ The browser test starts the dashboard on an ephemeral loopback port. Chromium
 loads the rendered page, verifies target status, opens target management and
 adds a target without starting Instagram monitoring.
 
+HTTPS proxy tests use a local server with an untrusted certificate to check `VERIFY_SSL` in Chromium. They need OpenSSL to generate a temporary certificate and skip when it is unavailable.
+
 Install the optional browser dependencies:
 
 ```bash

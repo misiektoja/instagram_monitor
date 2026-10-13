@@ -25,6 +25,8 @@ installed copy of the package.
 
 | File | Area under test |
 | --- | --- |
+| `test_setting_persistence.py` | Setting lifetime in help, Doctor CLI options, disabled switches and private-value placeholders |
+| `test_recovery_command_privacy.py` | Generated commands, credential redaction and output stream handling |
 | `test_codeql_workflow.py` | CodeQL source suppression filtering, preserved findings and upload ordering |
 | `test_codeql_boundaries.py` | Long input formatting, profile path validation, private dashboard errors and secret presence diagnostics |
 | `test_notification_receipts.py` | SMTP acceptance despite cleanup failures, receipt controls and unchanged notification content |
@@ -77,19 +79,19 @@ installed copy of the package.
 | `test_account_safety_loop.py` | The real monitoring loop stopping an account Instagram keeps refusing, and leaving a transient fault alone |
 | `test_human_simulation.py` | The BeHuman activity simulation guards |
 | `test_impersonate_validation.py` | curl_cffi impersonation target validation |
-| `test_http_backend.py` | The curl_cffi transport adapter driven against a loopback server |
+| `test_http_backend.py` | The curl_cffi transport adapter driven against a loopback server, including the browser headers sent to Instagram and the kept connection |
 | `test_concurrency_and_caches.py` | Shared cache eviction and probe deduplication |
 | `test_monitor_restart.py` | The monitoring restart loop used when live settings change |
 | `test_follow_list_source.py` | The follower and following list sources: the web REST endpoints and the GraphQL fallback |
 | `test_request_backoff.py` | The jitter back-off giving up with the real cause, so a rate limit or a challenge is never read as a missing endpoint |
-| `test_follow_list_browser.py` | The experimental browser follower list source, with no browser started |
+| `test_follow_list_browser.py` | Browser follower lists, progress updates, TLS launch options and certificate recovery advice, with no browser started |
 | `test_follow_analysis.py` | The offline follow relationship analysis behind `--analyze-follows` |
 | `test_imgcat_display.py` | Terminal image display argument handling |
 | `test_notification_escaping.py` | Source-level sweep proving every value reaching an HTML notification body is escaped |
 | `test_email_html.py` | HTML notification bodies: escaping, the ntfy plain form and the plain-text match |
 | `test_documentation.py` | Semantic documentation contracts for commands, concepts and platform variants plus repository metadata: governance files, citation, funding, line endings, the declared editor style, the pinned linter and release integrity |
 | `test_packaging.py` | Wheel contents, installed console help/version and config generation |
-| `test_browser_e2e.py` | Real Chromium rendering, navigation and target creation against the local dashboard |
+| `test_browser_e2e.py` | Real Chromium rendering, navigation, target creation and HTTPS proxy certificate checks against local servers |
 | `test_moved_private_settings.py` | Kept credentials across dotenv destination changes and startup error handling |
 
 ## Conventions
@@ -109,7 +111,7 @@ could trigger security checks or account suspension.
 
 ## Browser E2E
 
-Install the optional browser dependencies and Chromium:
+Install the optional browser dependencies and Chromium. The HTTPS proxy tests also need OpenSSL to generate a temporary certificate and skip when it is unavailable:
 
 ```bash
 pip install -e '.[test,e2e]'

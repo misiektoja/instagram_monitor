@@ -649,7 +649,7 @@ class TestRecoveryCodeSet:
             "dependency.missing",
             "secret.missing",
             "proxy.unresolved",
-            "network.dns", "network.unavailable",
+            "network.dns", "network.unavailable", "network.browser_certificate",
             "smtp.invalid", "smtp.authentication", "smtp.connection",
             "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
             "file.unreadable", "file.unwritable", "file.exists",
@@ -676,6 +676,7 @@ class TestRecoveryCodeSet:
             ("ConnectionException: Could not resolve proxy: myproxy.local", "runtime"),
             ("ConnectionException: Could not resolve host: www.instagram.com", "runtime"),
             ("ConnectionException: HTTPSConnectionPool max retries exceeded", "runtime"),
+            ("Page.goto: net::ERR_CERT_AUTHORITY_INVALID", "runtime"),
             ("RuntimeError: Instagram returned empty data for posts", "runtime"),
             ("BrowserFollowListError: Instagram's follower list dialog could not be read", "runtime"),
             ("SomethingElse: totally unknown error", "runtime"),
@@ -717,7 +718,7 @@ class TestRecoveryCodeSet:
         rows = _rule_table_rows(im_module)
         calls = _context_advice_calls(im_module)
 
-        assert len(rows) == 15, "the runtime rule table lost or gained a row"
+        assert len(rows) == 16, "the runtime rule table lost or gained a row"
         assert all(len(row.elts) == 5 for row in rows)
         assert len(calls) >= 15, "the context table lost branches"
         assert all(len(call.args) == 5 for call in calls)

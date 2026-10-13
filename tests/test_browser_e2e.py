@@ -1,6 +1,10 @@
 """Browser-level dashboard tests using a real headless Chromium instance."""
 
 import re
+import shutil
+import socketserver
+import ssl
+import subprocess
 import threading
 from collections.abc import Iterator
 from pathlib import Path
@@ -23,6 +27,80 @@ def launch_chromium(playwright):
         if "executable doesn't exist" not in str(error).casefold():
             raise
         pytest.skip("Chromium is not installed, run 'python -m playwright install chromium'")
+
+
+@pytest.fixture
+# Serves a local HTTP response through an HTTPS proxy with an untrusted certificate
+def untrusted_https_proxy(tmp_path):
+    openssl = shutil.which("openssl")
+    if not openssl:
+        pytest.skip("OpenSSL is needed to create the local proxy certificate")
+    certificate = tmp_path / "proxy.crt"
+    key = tmp_path / "proxy.key"
+    subprocess.run([openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", str(key), "-out", str(certificate), "-days", "1", "-subj", "/CN=localhost"], check=True, capture_output=True, timeout=30)
+    tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls.load_cert_chain(certificate, key)
+    requests = []
+
+    class ProxyHandler(socketserver.BaseRequestHandler):
+        # Replies locally without connecting to the requested destination
+        def handle(self):
+            self.request.settimeout(5)
+            try:
+                with tls.wrap_socket(self.request, server_side=True) as connection:
+                    request = b""
+                    while b"\r\n\r\n" not in request:
+                        chunk = connection.recv(4096)
+                        if not chunk:
+                            return
+                        request += chunk
+                    requests.append(request.split(b"\r\n", 1)[0])
+                    body = b"<title>Local proxy response</title>"
+                    connection.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: " + str(len(body)).encode() + b"\r\nConnection: close\r\n\r\n" + body)
+            except OSError:
+                # Certificate rejection and idle browser connections can close before an HTTP request
+                return
+
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), ProxyHandler) as server:
+        server.daemon_threads = True
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"https://127.0.0.1:{server.server_address[1]}", certificate, requests
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("verify", [True, False])
+# Exercises Chromium's HTTPS proxy handshake through the browser provider's launch options
+def test_browser_source_https_proxy_verification(im_module, monkeypatch, tmp_path, untrusted_https_proxy, verify):
+    proxy_url, certificate, requests = untrusted_https_proxy
+    monkeypatch.setattr(im_module, "PROXY_ENABLED", True)
+    monkeypatch.setattr(im_module, "PROXY_URL", proxy_url)
+    monkeypatch.setattr(im_module, "PROXY_CERT_PATH", str(certificate))
+    monkeypatch.setattr(im_module, "VERIFY_SSL", verify)
+    monkeypatch.setattr(im_module, "FOLLOW_LIST_BROWSER_HEADLESS", True)
+    with playwright_sync.sync_playwright() as driver:
+        try:
+            context = driver.chromium.launch_persistent_context(str(tmp_path / "browser-profile"), **im_module.browser_launch_options())
+        except playwright_sync.Error as error:
+            if "executable doesn't exist" not in str(error).casefold():
+                raise
+            pytest.skip("Chromium is not installed")
+        try:
+            page = context.pages[0]
+            url = "http://browser-tls.invalid/"
+            if verify:
+                with pytest.raises(playwright_sync.Error, match="ERR_PROXY_CERTIFICATE_INVALID"):
+                    page.goto(url, timeout=10000)
+            else:
+                page.goto(url, wait_until="domcontentloaded", timeout=10000)
+                assert page.title() == "Local proxy response"
+                assert b"GET http://browser-tls.invalid/ HTTP/1.1" in requests
+        finally:
+            context.close()
 
 
 # Runs the real dashboard application on an ephemeral loopback port

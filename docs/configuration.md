@@ -5,7 +5,7 @@ Examples on this page use the PyPI command `instagram_monitor`. If you chose ano
 <a id="configuration-file"></a>
 ## Configuration File
 
-You can pass most settings as command-line options or save them in a configuration file for later runs.
+Command-line setting options apply to the current run and do not update the configuration file. Include them on every run that needs those settings. To reuse settings without repeating the options, save them through `--setup` or edit the configuration file. Commands such as `--setup` and `--set-smtp-password` save the values they collect.
 
 The easiest way to create this file is `instagram_monitor --setup`.
 
@@ -475,3 +475,5 @@ Instagram Monitor verifies the TLS certificate of every server it contacts: Inst
 Set `VERIFY_SSL` to `False` only on a network that intercepts TLS with its own certificate authority, such as a corporate proxy. With verification off, an intercepted connection cannot be told apart from the real service, and `PROXY_CERT_PATH` is ignored because there is nothing left to check the certificate against.
 
 The startup summary shows `TLS verification` and [`--doctor`](troubleshooting.md#doctor-preflight) reports a warning while it is off.
+
+The experimental browser source also follows `VERIFY_SSL`, including the TLS connection to an HTTPS proxy. With verification on, `PROXY_CERT_PATH` applies to HTTP clients only. Chromium needs the proxy CA installed in a trust store it reads. See [Browser Proxy Certificates](troubleshooting.md#browser-proxy-certificates).

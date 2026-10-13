@@ -1,5 +1,7 @@
 # Usage
 
+Setting flags in these examples apply to that run. Repeat them on later runs or [save the corresponding settings](configuration.md#configuration-file).
+
 <a id="command-format-by-installation-method"></a>
 ## Command Format by Installation Method
 
@@ -504,7 +506,8 @@ What to expect:
 - Headless still means a real browser, not the stripped-down headless shell. Set `FOLLOW_LIST_BROWSER_HEADLESS = False` to watch it work, which needs a desktop session.
 - The browser reuses one profile per session account, so cookies and browser state stay stable between runs instead of arriving as a brand new machine every time. Each account gets its own directory.
 - The logged-in session cookies are handed to the browser. It never signs in, and it never asks for your password.
-- Your configured proxy is used if you have one.
+- Your configured proxy is used if you have one. `PROXY_CERT_PATH` applies to HTTP clients. The browser needs the proxy CA in its own trust store. See [Browser Proxy Certificates](troubleshooting.md#browser-proxy-certificates).
+- The terminal progress bar shows browser startup, page loading and scroll waits. Its count advances as new names are read.
 - A challenge, a suspended or disabled account, or a page that is not signed in stops the fetch and is reported. It is not clicked through.
 - If the dialog stops growing well short of the follower count Instagram reports, the fetch fails rather than saving a short list over a complete baseline. A smaller gap is returned, but it still cannot shrink a saved list that agrees with the reported count.
 
@@ -597,7 +600,7 @@ instagram_monitor <target_insta_user> --enable-proxy --proxy-url "http://user:pa
 
 Additional options:
 
-- `PROXY_CERT_PATH` or `--proxy-cert` selects a local certificate used to verify the proxy connection. It applies only while [TLS verification](configuration.md#tls-verification) is on
+- `PROXY_CERT_PATH` or `--proxy-cert` selects a local CA certificate for HTTP clients. It applies only while [TLS verification](configuration.md#tls-verification) is on. Browser follower lists use the browser's trust store instead, as described under [Browser Proxy Certificates](troubleshooting.md#browser-proxy-certificates)
 - `PROXY_WEBHOOKS` or `--enable-proxy-webhooks` also sends webhook requests through the proxy. It is off by default because some proxies do not allow these requests
 - `IP_ADDRESS_URL` selects one trusted IP lookup URL or an ordered non-empty list of fallback URLs
 
@@ -648,6 +651,8 @@ See the [curl_cffi documentation](https://github.com/lexiforest/curl_cffi) for t
 
 The target is checked against that list at startup and when saved from the Web Dashboard. An unrecognized value stops the tool with a message naming supported targets, rather than letting every Instagram request fail later as a connection error.
 
+With `curl_cffi`, requests to Instagram's web API carry the headers the impersonated browser sends for the site's own background requests, rather than the headers of a page typed into the address bar. Each Instagram session also keeps its connection open between requests, as a browser does, instead of opening a new one every time.
+
 <a id="privacy-substitutions"></a>
 ## Privacy Substitutions
 
@@ -660,6 +665,8 @@ PRIVACY_SUBSTITUTIONS = [ ("a.username", "Sarah"), ("some.other.user", "XXX") ]
 ```
 
 The replacement happens before output is displayed, logged or sent. Internal keys and file paths do not change, so the tool still uses the original usernames to find data. Invalid entries are ignored with a warning.
+
+Generated setup and recovery commands keep their original paths and usernames so they can be copied and run. These command arguments also remain unchanged in logs.
 
 <a id="terminal-output"></a>
 ## Terminal Output
