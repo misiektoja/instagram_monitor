@@ -1181,6 +1181,7 @@ if sys.version_info[:2] < MINIMUM_PYTHON_VERSION:
 
 import time
 import json
+import unicodedata
 import base64
 import os
 import tempfile
@@ -2613,6 +2614,7 @@ _install_copy_session_proxy_patch()
 
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape, unescape
+from html.parser import HTMLParser
 from itertools import islice
 from typing import Optional, Sequence, Tuple, Any, Callable, Dict, List, TypeVar, cast
 from glob import glob
@@ -8220,9 +8222,261 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
             print_cur_ts(newline=True)
 
 
+# Collects inert script text; only JSON values inside it are read, never JavaScript.
+class _PublicEmbedScripts(HTMLParser):
+    # Starts a bounded document's script collection.
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.scripts = []
+        self.parts = None
+
+    # Starts collecting text at a script element.
+    def handle_starttag(self, tag, attrs):
+        if tag == "script":
+            self.parts = []
+
+    # Keeps script text without interpreting markup or executable expressions.
+    def handle_data(self, data):
+        if self.parts is not None:
+            self.parts.append(data)
+
+    # Completes one script for subsequent JSON decoding.
+    def handle_endtag(self, tag):
+        if tag == "script" and self.parts is not None:
+            self.scripts.append("".join(self.parts))
+            self.parts = None
+
+
+# Reads a matching public profile from embedded JSON with bounded input and traversal.
+def _parse_public_embed(username: str, html: str) -> Dict[str, Any]:
+    if len(html) > 4 * 1024 * 1024:
+        raise RuntimeError("Instagram public embed response is too large")
+    parser = _PublicEmbedScripts()
+    parser.feed(html)
+    decoder = json.JSONDecoder()
+    pending = []
+    try:
+        for script in parser.scripts:
+            try:
+                pending.append(json.loads(script))
+            except ValueError:
+                pass
+            for match in re.finditer(r"\.handle\(\s*", script):
+                try:
+                    value, _ = decoder.raw_decode(script, match.end())
+                    pending.append(value)
+                except ValueError:
+                    continue
+
+        for _ in range(100000):
+            if not pending:
+                break
+            value = pending.pop()
+            if isinstance(value, str) and '"graphql_media"' in value:
+                try:
+                    pending.append(json.loads(value))
+                except ValueError:
+                    pass
+            elif isinstance(value, list):
+                pending.extend(value)
+            elif isinstance(value, dict):
+                if str(value.get("username", "")).lower() == username and isinstance(value.get("graphql_media"), list):
+                    identifier = str(value.get("owner_id", ""))
+                    count = value.get("posts_count")
+                    followers = value.get("followers_count")
+                    if not identifier.isdigit() or type(count) is not int or count < 0 or (followers is not None and (type(followers) is not int or followers < 0)):
+                        raise ValueError("invalid profile counts or id")
+                    nodes = []
+                    for entry in value["graphql_media"]:
+                        node = entry.get("shortcode_media") if isinstance(entry, dict) else None
+                        if not isinstance(node, dict):
+                            raise ValueError("invalid media node")
+                        owner = node.get("owner") or {}
+                        if (owner.get("is_private") is not False or str(owner.get("id")) != identifier
+                                or str(owner.get("username", "")).lower() != username):
+                            raise ValueError("media owner is not the requested public account")
+                        if (type(node.get("taken_at_timestamp")) is not int or node["taken_at_timestamp"] <= 0
+                                or not re.fullmatch(r"[A-Za-z0-9_-]+", str(node.get("shortcode", "")))
+                                or not isinstance(node.get("display_url"), str) or not node["display_url"]):
+                            raise ValueError("invalid media metadata")
+                        nodes.append({"node": node})
+                    # An empty embed cannot establish public ownership and must not erase a baseline.
+                    if not nodes:
+                        raise ValueError("no public media in embed")
+                    return {"id": identifier, "pk": identifier, "username": username,
+                            "full_name": value.get("full_name", ""), "is_private": False, "followed_by_viewer": False,
+                            "profile_pic_url": value.get("profile_pic_url", ""),
+                            "profile_pic_url_hd": value.get("profile_pic_url", ""),
+                            "edge_followed_by": {"count": followers}, "edge_follow": {"count": None},
+                            "biography": None, "_public_web": "embed",
+                            "edge_owner_to_timeline_media": {"count": count, "edges": nodes}}
+                pending.extend(value.values())
+    except (ValueError, TypeError, AttributeError, RecursionError) as error:
+        raise RuntimeError("Instagram public embed contains invalid profile data") from error
+    raise RuntimeError("Instagram public embed contains no matching public profile data")
+
+
+# Fetches the public embed using the same anonymous session, transport, proxy, TLS and pacing as normal requests.
+def _fetch_public_embed(bot: instaloader.Instaloader, username: str) -> Dict[str, Any]:
+    ctx = bot.context
+    ctx.do_sleep()
+    ctx._rate_controller.wait_before_query("other")
+    session = ctx._session
+    ensure_instagram_session_wrapped(session)
+    response = session.get(f"https://www.instagram.com/{username}/embed/", allow_redirects=False,
+                           timeout=ctx.request_timeout, proxies=get_proxies(), verify=get_proxies_ssl(),
+                           headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                                    "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate",
+                                    "Sec-Fetch-Site": "none", "Sec-Fetch-User": "?1"})
+    try:
+        if response.status_code != 200:
+            raise RuntimeError(f"Instagram public embed unavailable (HTTP {response.status_code})")
+        return {"data": {"user": _parse_public_embed(username, response.text)}}
+    finally:
+        response.close()
+
+
+# Converts the page's iPhone-shaped media to the legacy fields the anonymous readers share.
+def _public_page_media(media: Dict[str, Any]) -> Dict[str, Any]:
+    if "shortcode" in media:
+        return dict(media)
+    node = dict(media)
+    node.update({"id": str(media.get("pk", "")), "shortcode": media.get("code"),
+                 "taken_at_timestamp": media.get("taken_at"), "is_video": media.get("media_type") == 2,
+                 "owner": media.get("user") or {},
+                 "edge_liked_by": {"count": media.get("like_count")},
+                 "edge_media_to_comment": {"count": media.get("comment_count")},
+                 "edge_media_to_caption": {"edges": [{"node": {"text": (media.get("caption") or {}).get("text", "")}}]}})
+    candidates = (media.get("image_versions2") or {}).get("candidates") or []
+    videos = media.get("video_versions") or []
+    node["display_url"] = candidates[0].get("url", "") if candidates else ""
+    if videos:
+        node["video_url"] = videos[0].get("url")
+    if media.get("carousel_media"):
+        node["edge_sidecar_to_children"] = {"edges": [{"node": _public_page_media(child)} for child in media["carousel_media"]]}
+    return node
+
+
+# Reads the public profile page through Instaloader while retaining the configured proxy, TLS and request wrapper.
+def _fetch_public_profile_page(bot: instaloader.Instaloader, username: str) -> Optional[Dict[str, Any]]:
+    ctx = bot.context
+    if not callable(getattr(ctx, "get_page_data", None)):
+        return None  # Instaloader before 4.15.4 has no page reader; the embed remains available.
+    page_ctx = copy.copy(ctx)
+    original_factory = ctx.get_anonymous_session
+
+    # Instaloader's fresh page session otherwise drops the operator's proxy and TLS policy.
+    def anonymous_session():
+        session = original_factory()
+        session.proxies.update(get_proxies())
+        session.verify = get_proxies_ssl()
+        ensure_instagram_session_wrapped(session)
+        return session
+
+    page_ctx.get_anonymous_session = anonymous_session
+    try:
+        page = page_ctx.get_page_data(f"{username}/")
+    except instaloader.exceptions.ConnectionException as error:
+        # A logged-out login redirect contains no profile. Limits and other connection errors must propagate.
+        if re.match(r"^302\b", str(error)):
+            return None
+        raise
+    user = {}
+    for query in page:
+        value = query.get("xig_user_by_username") if isinstance(query, dict) else None
+        if isinstance(value, dict):
+            user.update(value)
+    if not user or str(user.get("username", "")).lower() != username or user.get("is_private") is not False:
+        return None
+    identifier = str(user.get("pk", ""))  # The page's 'id' is an opaque query id, not the account id.
+    count = user.get("all_media_count", user.get("media_count"))
+    if not identifier.isdigit() or type(count) is not int or count < 0:
+        return None
+    timeline = user.get("polaris_ordered_timeline_connection")
+    if not isinstance(timeline, dict) or not isinstance(timeline.get("edges"), list):
+        return None
+    edges = []
+    for edge in timeline["edges"]:
+        media = edge.get("node") if isinstance(edge, dict) else None
+        if not isinstance(media, dict):
+            return None
+        node = _public_page_media(media)
+        if (type(node.get("taken_at_timestamp")) is not int or node["taken_at_timestamp"] <= 0
+                or not re.fullmatch(r"[A-Za-z0-9_-]+", str(node.get("shortcode") or ""))):
+            return None
+        edges.append({"node": node})
+    if count and not edges:
+        return None
+    normalized = dict(user, id=identifier, pk=identifier, username=username, followed_by_viewer=False,
+                      profile_pic_url_hd=user.get("profile_pic_url_hd") or user.get("profile_pic_url"),
+                      edge_owner_to_timeline_media={"count": count, "edges": edges},
+                      edge_followed_by={"count": user.get("follower_count")},
+                      edge_follow={"count": user.get("following_count")},
+                      biography=user.get("biography"), _public_web="page")
+    for key in ("edge_follow", "edge_followed_by"):
+        value = normalized[key]["count"]
+        if value is not None and (type(value) is not int or value < 0):
+            return None
+    return {"data": {"user": normalized}}
+
+
+# Fetches the selected anonymous web source, trying the embed only when the normal page has no usable profile.
+def _anonymous_web_info(bot: instaloader.Instaloader, username: str, source: str) -> Tuple[str, Dict[str, Any]]:
+    if source == "page":
+        data = _fetch_public_profile_page(bot, username)
+        if data is not None:
+            return "page", data
+    data = _fetch_public_embed(bot, username)
+    data["data"]["user"]["_public_web"] = "embed"
+    return "embed", data
+
+
+# Keeps healthy and signed-in requests unchanged; only anonymous HTTP 400 selects a per-target web fallback.
+def _anonymous_profile_info(bot: instaloader.Instaloader, username: str) -> Dict[str, Any]:
+    username = normalize_instagram_username(username)
+    ctx = bot.context
+    cached = getattr(ctx, "_monitor_anonymous_web", {})
+    if not ctx.is_logged_in and username in cached:
+        source, fetched_at, data = cached[username]
+        if time.monotonic() - fetched_at < 5:
+            return data
+        source, data = _anonymous_web_info(bot, username, source)
+        cached[username] = (source, time.monotonic(), data)
+        return data
+    try:
+        return ctx.get_iphone_json(f"api/v1/users/web_profile_info/?username={username}", {})
+    except instaloader.exceptions.QueryReturnedBadRequestException:
+        if ctx.is_logged_in:
+            raise
+        source, data = _anonymous_web_info(bot, username, "page")
+        cached[username] = (source, time.monotonic(), data)
+        ctx._monitor_anonymous_web = cached
+        print(f"* Using public profile {source}; only the displayed recent-post window is available. "
+              "Unavailable fields keep their last known comparison values.")
+        return data
+
+
+# Prevents missing page/embed attributes from lazily querying the failing API again.
+class _AnonymousWebProfile(instaloader.Profile):
+    # Returns known snapshot metadata or None, without starting another request.
+    def _metadata(self, *keys):
+        value = self._node
+        for key in keys:
+            if not isinstance(value, dict) or key not in value:
+                return None
+            value = value[key]
+        return value
+
+    # Unicode-normalizes a known biography while preserving an unavailable one as None.
+    @property
+    def biography(self):
+        value = self._node.get("biography")
+        return unicodedata.normalize("NFC", value) if isinstance(value, str) else None
+
+
 # Builds a Profile object from the mobile web_profile_info response
 def _profile_from_web_profile_info(bot: instaloader.Instaloader, username: str) -> Optional[instaloader.Profile]:
-    data = bot.context.get_iphone_json(f"api/v1/users/web_profile_info/?username={username}", {})
+    data = _anonymous_profile_info(bot, username)
     if not isinstance(data, dict):
         return None
 
@@ -8240,7 +8494,8 @@ def _profile_from_web_profile_info(bot: instaloader.Instaloader, username: str) 
     if "id" not in normalized and "pk" not in normalized:
         return None
 
-    return instaloader.Profile(bot.context, normalized)
+    profile_class = _AnonymousWebProfile if normalized.get("_public_web") else instaloader.Profile
+    return profile_class(bot.context, normalized)
 
 
 # Numeric user ids already resolved, so a monitored target is looked up once rather than once a cycle. They survive
@@ -8455,7 +8710,7 @@ def latest_post_mobile(user: str, bot: instaloader.Instaloader):
         video_url: Optional[str]
         mediaid: str
 
-    data = bot.context.get_iphone_json(f"api/v1/users/web_profile_info/?username={user}", {})
+    data = _anonymous_profile_info(bot, user)
 
     if not isinstance(data, dict):
         raise RuntimeError(f"Instagram returned unexpected response type: {type(data).__name__}")
@@ -8539,7 +8794,7 @@ def _extract_collaborators(node: Dict[str, Any], owner_username: str = "") -> Li
 
 # Returns posts leaking from a private account's timeline media via web_profile_info (collab posts shared with public accounts)
 def fetch_leaked_collab_posts(user: str, bot: instaloader.Instaloader) -> List[Dict[str, Any]]:
-    data = bot.context.get_iphone_json(f"api/v1/users/web_profile_info/?username={user}", {})
+    data = _anonymous_profile_info(bot, user)
     if not isinstance(data, dict):
         return []
     raw = data.get("data")
@@ -8841,9 +9096,7 @@ def get_post_location_mobile(last_post: instaloader.Post, bot: instaloader.Insta
 # Returns the true shortcode for the user's latest Reel via the mobile-web_profile_info endpoint
 def get_real_reel_code(bot: instaloader.Instaloader, username: str) -> Optional[str]:
     try:
-        ctx: Any = bot.context  # type: ignore
-
-        data = ctx.get_iphone_json(f"api/v1/users/web_profile_info/?username={username}", {})
+        data = _anonymous_profile_info(bot, username)
 
         if isinstance(data, dict) and data.get("status") == "fail":
             debug_print("Reel code lookup", user=username, outcome="failed", error=f"Instagram API error: {data.get('message', 'unknown')}")
@@ -8859,6 +9112,11 @@ def get_real_reel_code(bot: instaloader.Instaloader, username: str) -> Optional[
             return None
 
         edges = user.get("edge_reels_media", {}).get("edges", [])
+        if user.get("_public_web"):
+            # Only explicitly identified Reels in the visible timeline are known; ordinary videos are not guessed.
+            edges = [edge for edge in user.get("edge_owner_to_timeline_media", {}).get("edges", [])
+                     if edge.get("node", {}).get("product_type") == "clips"]
+            edges.sort(key=lambda edge: edge["node"].get("taken_at_timestamp", 0), reverse=True)
         if not edges:
             return None
         return edges[0]["node"].get("shortcode")
@@ -14489,13 +14747,13 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             print(f"\nFollowers:\t\t\t\t- (to be determined later)")
             print(f"Followings:\t\t\t\t- (to be determined later)")
         else:
-            print(f"\nFollowers:\t\t\t\t{followers_count}")
-            print(f"Followings:\t\t\t\t{followings_count}")
+            print(f"\nFollowers:\t\t\t\t{followers_count if followers_count is not None else 'Unavailable'}")
+            print(f"Followings:\t\t\t\t{followings_count if followings_count is not None else 'Unavailable'}")
 
         if bot.context.is_logged_in:
             print(f"\nStory available:\t\t\t{has_story}")
 
-        print(f"\nBio:\n\n{bio}\n")
+        print(f"\nBio:\n\n{bio if bio is not None else 'Unavailable'}\n")
         print_cur_ts()
 
     # Populate initial Dashboard data immediately after first fetch (regardless of print mode)
@@ -14567,7 +14825,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
             followers_followings_fetched = True
 
-    if followers_count != followers_old_count:
+    if followers_count is not None and followers_old_count is not None and followers_count != followers_old_count:
         followers_diff = followers_count - followers_old_count
         followers_diff_str = ""
         if followers_diff > 0:
@@ -14585,7 +14843,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             except Exception as e:
                 print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
-    if ((followers_count != followers_old_count) or (followers_count > 0 and not followers) or FOLLOWERS_CHURN_DETECTION) and not skip_session and not skip_followers and can_view:
+    if not skip_session and not skip_followers and can_view and followers_count is not None and ((followers_count != followers_old_count) or (followers_count > 0 and not followers) or FOLLOWERS_CHURN_DETECTION):
         # Fetch followers if count changed, list is empty or detailed logging is enabled
         if FOLLOWERS_CHURN_DETECTION and followers_count > 5000:
             warning = f"High follower count ({followers_count})! This may increase rate limit risk with detailed logging."
@@ -14709,7 +14967,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
             followers_followings_fetched = True
 
-    if followings_count != followings_old_count:
+    if followings_count is not None and followings_old_count is not None and followings_count != followings_old_count:
         followings_diff = followings_count - followings_old_count
         followings_diff_str = ""
         if followings_diff > 0:
@@ -14726,7 +14984,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
             except Exception as e:
                 print_recovery_error(e, context="file_write", summary=f"Could not write the CSV entry to '{csv_file_name}': {e}")
 
-    if ((followings_count != followings_old_count) or (followings_count > 0 and not followings) or FOLLOWERS_CHURN_DETECTION) and not skip_session and not skip_followings and can_view:
+    if not skip_session and not skip_followings and can_view and followings_count is not None and ((followings_count != followings_old_count) or (followings_count > 0 and not followings) or FOLLOWERS_CHURN_DETECTION):
         # Fetch followings if count changed, list is empty or detailed logging is enabled
         if FOLLOWERS_CHURN_DETECTION and followings_count > 5000:
             warning = f"High following count ({followings_count})! This may increase rate limit risk with detailed logging."
@@ -14845,7 +15103,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
     # Profile pic
 
-    if DETECT_CHANGED_PROFILE_PIC:
+    if DETECT_CHANGED_PROFILE_PIC and profile_image_url is not None:
 
         try:
             detect_changed_profile_picture(user, profile_image_url, profile_pic_file, profile_pic_file_tmp, profile_pic_file_old, PROFILE_PIC_FILE_EMPTY, csv_file_name, r_sleep_time, False, 1)
@@ -15416,6 +15674,13 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 followers_count = profile.followers
                 followings_count = profile.followees
                 bio = profile.biography
+                # Keep last known values across missing snapshots; the first known value establishes a baseline.
+                if followers_old_count is None:
+                    followers_old_count = followers_count
+                if followings_old_count is None:
+                    followings_old_count = followings_count
+                if bio_old is None:
+                    bio_old = bio
                 is_private = profile.is_private
                 followed_by_viewer = profile.followed_by_viewer
                 can_view = (not is_private) or followed_by_viewer
@@ -15560,7 +15825,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                     return
                 continue
 
-            if int(followings_count) != int(followings_old_count) or FOLLOWERS_CHURN_DETECTION:
+            if followings_count is not None and followings_old_count is not None and (int(followings_count) != int(followings_old_count) or FOLLOWERS_CHURN_DETECTION):
                 if FOLLOWERS_CHURN_DETECTION and followings_count > 5000:
                     warning = f"High following count ({followings_count})! Detailed logging may increase rate limit risk."
                     log_activity(warning, user=user, level='system')
@@ -15706,7 +15971,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
                 print_cur_ts()
 
-            if int(followers_count) != int(followers_old_count) or FOLLOWERS_CHURN_DETECTION:
+            if followers_count is not None and followers_old_count is not None and (int(followers_count) != int(followers_old_count) or FOLLOWERS_CHURN_DETECTION):
                 if FOLLOWERS_CHURN_DETECTION and followers_count > 5000:
                     warning = f"High follower count ({followers_count})! Detailed logging may increase rate limit risk."
                     log_activity(warning, user=user, level='system')
@@ -15855,14 +16120,14 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
 
             # Profile pic
 
-            if DETECT_CHANGED_PROFILE_PIC:
+            if DETECT_CHANGED_PROFILE_PIC and profile_image_url is not None:
 
                 try:
                     detect_changed_profile_picture(user, profile_image_url, profile_pic_file, profile_pic_file_tmp, profile_pic_file_old, PROFILE_PIC_FILE_EMPTY, csv_file_name, r_sleep_time, STATUS_NOTIFICATION, 2)
                 except Exception as e:
                     print_recovery_error(e, summary=f"Error while processing changed profile picture: {e}")
 
-            if bio != bio_old:
+            if bio is not None and bio_old is not None and bio != bio_old:
                 print(f"* Bio changed for user {user} !\n")
                 # Truncate bio for activity log
                 bio_old_short = (bio_old[:40] + '...') if len(bio_old) > 40 else bio_old
