@@ -308,7 +308,7 @@ class TestKeptConnection:
 # stubs usually replace. The loopback tests above show that local servers stay reachable
 class TestOfflineGuard:
     # A request to another host fails as a connection error before libcurl opens a connection
-    def test_a_request_to_another_host_is_refused(self, im_module, monkeypatch):
+    def test_a_request_to_another_host_is_refused(self, im_module, monkeypatch, offline_network):
         if not im_module._CURL_CFFI_AVAILABLE:
             pytest.skip("curl_cffi is not installed")
         monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
@@ -318,8 +318,11 @@ class TestOfflineGuard:
         with pytest.raises(requests.exceptions.ConnectionError, match="offline test suite refused"):
             session.get("https://instagram.invalid/api/v1/probe", timeout=5)
 
+        assert offline_network == ["curl_cffi request to 'instagram.invalid'"]
+        offline_network.clear()
+
     # A loopback request sent through a proxy on another host would still leave the machine, so it is refused too
-    def test_a_proxy_on_another_host_is_refused(self, im_module, monkeypatch, echo_server):
+    def test_a_proxy_on_another_host_is_refused(self, im_module, monkeypatch, echo_server, offline_network):
         if not im_module._CURL_CFFI_AVAILABLE:
             pytest.skip("curl_cffi is not installed")
         monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
@@ -328,3 +331,6 @@ class TestOfflineGuard:
 
         with pytest.raises(requests.exceptions.ConnectionError, match="offline test suite refused"):
             session.get(f"{echo_server}/", proxies={"http": "http://proxy.invalid:8080"}, timeout=5)
+
+        assert offline_network == ["curl_cffi request to 'proxy.invalid'"]
+        offline_network.clear()

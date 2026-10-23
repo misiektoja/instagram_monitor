@@ -24,6 +24,9 @@ import pytest
 
 import instagram_monitor as im
 
+# Runs a pytest session inside a test, which is how the network guard's teardown failure is checked
+pytest_plugins = ["pytester"]
+
 
 # Fails fast if pytest accidentally imported an installed copy instead of the working tree
 def _assert_in_repo_module() -> None:
@@ -89,10 +92,9 @@ def _is_loopback_host(host: str) -> bool:
         return False
 
 
-# Refuses curl_cffi requests to any host but this machine. The curl_cffi adapter overrides HTTPAdapter.send, so a test
-# that stubs only the requests transport would otherwise reach Instagram through libcurl
-@pytest.fixture(autouse=True)
-def offline_curl_cffi(monkeypatch):
+# Refuses curl_cffi requests to any host but this machine and records each one. The curl_cffi adapter overrides
+# HTTPAdapter.send, so a test that stubs only the requests transport would otherwise reach Instagram through libcurl
+def _guard_curl_cffi(monkeypatch, refused: list) -> None:
     curl_requests, curl_exceptions = im._curl_requests, im._curl_exceptions
     if curl_requests is None or curl_exceptions is None:
         return
@@ -102,12 +104,25 @@ def offline_curl_cffi(monkeypatch):
     def request(self, method, url, *args, **kwargs):
         proxies = kwargs.get("proxies") or {}
         addresses = [url, *(proxy for proxy in (kwargs.get("proxy"), *proxies.values()) if proxy)]
-        refused = [host for host in map(_address_host, addresses) if not _is_loopback_host(host)]
-        if refused:
-            raise curl_exceptions.ConnectionError(f"The offline test suite refused a curl_cffi request to {refused[0]!r}")
+        hosts = [host for host in map(_address_host, addresses) if not _is_loopback_host(host)]
+        if hosts:
+            refused.append(f"curl_cffi request to {hosts[0]!r}")
+            raise curl_exceptions.ConnectionError(f"The offline test suite refused a curl_cffi request to {hosts[0]!r}")
         return real_request(self, method, url, *args, **kwargs)
 
     monkeypatch.setattr(curl_requests.Session, "request", request)
+
+
+# Keeps every test off the network. A request to another host fails as a connection error, so the code under test
+# behaves as it would offline. The test still fails at teardown in case that code swallowed the error. A test that
+# expects a refusal requests this fixture and clears the list it yields
+@pytest.fixture(autouse=True)
+def offline_network(monkeypatch):
+    refused: list = []
+    _guard_curl_cffi(monkeypatch, refused)
+    yield refused
+    if refused:
+        pytest.fail(f"Refused network access during the test: {', '.join(refused)}. Stub the transport the code under test sends through", pytrace=False)
 
 
 # Resets the handful of module-level globals the helpers read so each test starts from a known, deterministic baseline
