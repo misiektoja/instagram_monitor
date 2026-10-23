@@ -5,8 +5,10 @@ These tests never touch the network. They import the single-file module
 out the few functions that would otherwise reach Instagram.
 """
 
+import ipaddress
 import os
 import sys
+from urllib.parse import urlsplit
 
 # The project ships an installable copy (``instagram_monitor.egg-info``) that may
 # also live in site-packages. Force the in-repo source onto the front of the
@@ -69,6 +71,43 @@ def isolated_exposure_ledger(monkeypatch, tmp_path):
     ledger_path = tmp_path / "exposure" / im.EXPOSURE_STATE_FILENAME
     monkeypatch.setattr(im, "exposure_state_path", lambda: str(ledger_path), raising=False)
     return ledger_path
+
+
+# Returns the host a URL or proxy address names, where a proxy may leave out its scheme
+def _address_host(address) -> str:
+    text = str(address)
+    return urlsplit(text if "://" in text else "//" + text).hostname or ""
+
+
+# Returns whether a host is this machine, the only place a test may send traffic
+def _is_loopback_host(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+# Refuses curl_cffi requests to any host but this machine. The curl_cffi adapter overrides HTTPAdapter.send, so a test
+# that stubs only the requests transport would otherwise reach Instagram through libcurl
+@pytest.fixture(autouse=True)
+def offline_curl_cffi(monkeypatch):
+    curl_requests, curl_exceptions = im._curl_requests, im._curl_exceptions
+    if curl_requests is None or curl_exceptions is None:
+        return
+    real_request = curl_requests.Session.request
+
+    # Lets requests to local test servers through and fails the rest as a connection error, checking any proxy too
+    def request(self, method, url, *args, **kwargs):
+        proxies = kwargs.get("proxies") or {}
+        addresses = [url, *(proxy for proxy in (kwargs.get("proxy"), *proxies.values()) if proxy)]
+        refused = [host for host in map(_address_host, addresses) if not _is_loopback_host(host)]
+        if refused:
+            raise curl_exceptions.ConnectionError(f"The offline test suite refused a curl_cffi request to {refused[0]!r}")
+        return real_request(self, method, url, *args, **kwargs)
+
+    monkeypatch.setattr(curl_requests.Session, "request", request)
 
 
 # Resets the handful of module-level globals the helpers read so each test starts from a known, deterministic baseline
