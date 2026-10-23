@@ -90,7 +90,7 @@ installed copy of the package.
 | `test_notification_escaping.py` | Source-level sweep proving every value reaching an HTML notification body is escaped |
 | `test_email_html.py` | HTML notification bodies: escaping, the ntfy plain form and the plain-text match |
 | `test_documentation.py` | Semantic documentation contracts for commands, concepts and platform variants plus repository metadata: governance files, citation, funding, line endings, the declared editor style, the pinned linter and release integrity |
-| `test_packaging.py` | Wheel contents, installed console help/version and config generation |
+| `test_packaging.py` | Wheel contents, an install that consults no package index, installed console help/version and config generation |
 | `test_browser_e2e.py` | Real Chromium rendering, navigation, target creation and HTTPS proxy certificate checks against local servers |
 | `test_moved_private_settings.py` | Kept credentials across dotenv destination changes and startup error handling |
 
