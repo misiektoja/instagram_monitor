@@ -44,7 +44,7 @@ def installed_package(package_test_directory: Path, built_wheel: Path) -> tuple[
     environment_directory = package_test_directory / "venv"
     venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment_directory)
     python_executable = environment_directory / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    result = subprocess.run([str(python_executable), "-m", "pip", "install", "--no-deps", str(built_wheel)], check=False, capture_output=True, text=True)
+    result = subprocess.run([str(python_executable), "-m", "pip", "install", "--no-deps", "--no-index", str(built_wheel)], check=False, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
     console_executable = environment_directory / ("Scripts/instagram_monitor.exe" if os.name == "nt" else "bin/instagram_monitor")
     assert console_executable.is_file()
