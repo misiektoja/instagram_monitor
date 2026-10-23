@@ -302,3 +302,29 @@ class TestKeptConnection:
         assert seen[1][1].get_all("Cookie") == ["sessionid=first; rur=fresh"]
         assert seen[2][1].get_all("Cookie") == ["sessionid=second"]
         assert seen[2][0] != seen[0][0]
+
+
+# The suite refuses curl_cffi traffic to other hosts, because the adapter overrides the HTTPAdapter.send that offline
+# stubs usually replace. The loopback tests above show that local servers stay reachable
+class TestOfflineGuard:
+    # A request to another host fails as a connection error before libcurl opens a connection
+    def test_a_request_to_another_host_is_refused(self, im_module, monkeypatch):
+        if not im_module._CURL_CFFI_AVAILABLE:
+            pytest.skip("curl_cffi is not installed")
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        session = requests.Session()
+        session.mount("https://", im_module._CurlCffiHTTPAdapter())
+
+        with pytest.raises(requests.exceptions.ConnectionError, match="offline test suite refused"):
+            session.get("https://instagram.invalid/api/v1/probe", timeout=5)
+
+    # A loopback request sent through a proxy on another host would still leave the machine, so it is refused too
+    def test_a_proxy_on_another_host_is_refused(self, im_module, monkeypatch, echo_server):
+        if not im_module._CURL_CFFI_AVAILABLE:
+            pytest.skip("curl_cffi is not installed")
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        session = requests.Session()
+        session.mount("http://", im_module._CurlCffiHTTPAdapter())
+
+        with pytest.raises(requests.exceptions.ConnectionError, match="offline test suite refused"):
+            session.get(f"{echo_server}/", proxies={"http": "http://proxy.invalid:8080"}, timeout=5)
