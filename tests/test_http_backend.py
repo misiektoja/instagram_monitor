@@ -3,6 +3,7 @@
 import gzip
 import http.server
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -304,6 +305,30 @@ class TestKeptConnection:
         assert seen[2][0] != seen[0][0]
 
 
+# Loads the suite's real conftest under another name, so an inner pytest session runs the same network guard
+GUARDED_SESSION_CONFTEST = """
+import importlib.util
+
+spec = importlib.util.spec_from_file_location("suite_conftest", {path!r})
+suite_conftest = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(suite_conftest)
+offline_network = suite_conftest.offline_network
+"""
+
+# Swallows a refused request the way Doctor turns a connection error into a report row
+SWALLOWED_REFUSAL_TEST = """
+from curl_cffi import requests as curl_requests
+from curl_cffi.requests import exceptions as curl_exceptions
+
+
+def test_swallows_the_refusal():
+    try:
+        curl_requests.Session().get("https://instagram.invalid/", timeout=5)
+    except curl_exceptions.ConnectionError:
+        pass
+"""
+
+
 # The suite refuses curl_cffi traffic to other hosts, because the adapter overrides the HTTPAdapter.send that offline
 # stubs usually replace. The loopback tests above show that local servers stay reachable
 class TestOfflineGuard:
@@ -334,3 +359,15 @@ class TestOfflineGuard:
 
         assert offline_network == ["curl_cffi request to 'proxy.invalid'"]
         offline_network.clear()
+
+    # A test that swallows the connection error still fails, so a missing stub cannot hide behind a report row
+    def test_a_swallowed_refusal_still_fails_the_test(self, im_module, pytester):
+        if not im_module._CURL_CFFI_AVAILABLE:
+            pytest.skip("curl_cffi is not installed")
+        pytester.makeconftest(GUARDED_SESSION_CONFTEST.format(path=str(Path(__file__).with_name("conftest.py"))))
+        pytester.makepyfile(SWALLOWED_REFUSAL_TEST)
+
+        result = pytester.runpytest_inprocess()
+
+        result.assert_outcomes(passed=1, errors=1)
+        result.stdout.fnmatch_lines(["*Refused network access during the test: curl_cffi request to 'instagram.invalid'*"])
