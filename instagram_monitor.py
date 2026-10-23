@@ -2608,8 +2608,38 @@ def _install_copy_session_proxy_patch() -> None:
     _ilc.copy_session = _patched_copy_session
 
 
+# Patches InstaloaderContext.get_anonymous_session so every session it builds carries the proxy, TLS-verify setting and request wrapper
+def _install_anonymous_session_proxy_patch() -> None:
+    try:
+        from instaloader.instaloadercontext import InstaloaderContext
+    except Exception:
+        return
+    original = getattr(InstaloaderContext, "get_anonymous_session", None)
+    if original is None or getattr(original, "_proxies_patched", False):
+        return
+
+    # Returns Instaloader's anonymous session with the settings this run applies to every Instagram session
+    def _patched_get_anonymous_session(self):
+        session = original(self)
+        # get_page_data, get_raw and head each build a new session that would otherwise go out without the proxy and
+        # leak the real IP. The settings are read on every call, so a proxy changed at runtime reaches the next session
+        get_proxies_fn = globals().get('get_proxies')
+        get_proxies_ssl_fn = globals().get('get_proxies_ssl')
+        if callable(get_proxies_fn) and callable(get_proxies_ssl_fn):
+            session.proxies.update(get_proxies_fn())
+            session.verify = get_proxies_ssl_fn()
+        wrapper = globals().get('ensure_instagram_session_wrapped')
+        if callable(wrapper):
+            wrapper(session)
+        return session
+
+    _patched_get_anonymous_session._proxies_patched = True  # type: ignore
+    InstaloaderContext.get_anonymous_session = _patched_get_anonymous_session  # type: ignore[method-assign]
+
+
 _install_http_backend()
 _install_copy_session_proxy_patch()
+_install_anonymous_session_proxy_patch()
 
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape, unescape
@@ -8412,8 +8442,9 @@ def profile_from_username_resilient(bot: instaloader.Instaloader, username: str)
             if profile is not None:
                 return profile
 
-    # Search does not list every account, so the retired endpoint stays as the last resort. Its refusal is
-    # classified as an endpoint failure, which is why reaching it cannot stop the session account
+    # Search does not list every account, so Instaloader's own lookup stays as the last resort. Up to Instaloader 4.15.3
+    # it asks the retired endpoint, whose refusal is classified as an endpoint failure and so cannot stop the session
+    # account. From 4.15.4 it reads the public profile page as a logged-out visitor, through the configured proxy
     return instaloader.Profile.from_username(ctx, username)
 
 
