@@ -7,6 +7,7 @@ import socket
 import sys
 
 import pytest
+import requests
 
 from dotenv import dotenv_values
 
@@ -68,12 +69,19 @@ def test_kept_file_credential_moves_with_setup(tmp_path, monkeypatch, capsys):
     assert "retained-private-value" not in "".join(transcript)
 
 
-# Refuses DNS at the network boundary so Doctor runs offline without replacing its implementation
+# Refuses DNS at the network boundary so Doctor runs offline without replacing its implementation. libcurl resolves
+# names without Python's resolver, so the curl_cffi transport is refused as well
 @pytest.fixture
 def offline(monkeypatch):
+    # Fails a name lookup as it would fail on a machine without a network
     def refuse(*_args, **_kwargs):
         raise socket.gaierror("offline")
     monkeypatch.setattr(socket, "getaddrinfo", refuse)
+
+    # Fails a curl_cffi request as it would fail on a machine without a network
+    def refuse_curl_cffi(self, request, **_kwargs):
+        raise requests.ConnectionError("offline", request=request)
+    monkeypatch.setattr(monitor._CurlCffiHTTPAdapter, "send", refuse_curl_cffi)
 
 
 # Writes a dotenv file whose bytes are not valid UTF-8
