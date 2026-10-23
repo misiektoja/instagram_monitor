@@ -2543,15 +2543,21 @@ class _CurlCffiHTTPAdapter(_HTTPAdapter):
         return response
 
 
-# Module-like proxy over `requests` that yields curl_cffi-mounted sessions while forwarding everything else
+# Module-like proxy over `requests` that yields curl_cffi-mounted sessions with the run's proxy and TLS settings
+# while forwarding everything else
 class _RequestsBackendShim:
     def __init__(self, real_requests):
         object.__setattr__(self, "_real_requests", real_requests)
 
+    # Returns a session that already carries the current proxy and TLS verification settings
     def Session(self, *args, **kwargs):
         session = self._real_requests.Session(*args, **kwargs)
         session.mount("https://", _CurlCffiHTTPAdapter())
         session.mount("http://", _CurlCffiHTTPAdapter())
+        # Instaloader builds a new session for each login, loaded session file and per-request copy. login() sends its
+        # page request and the password before it installs the session, so applying the settings later is too late
+        session.proxies.update(get_proxies())
+        session.verify = get_proxies_ssl()
         return session
 
     def __getattr__(self, name):
@@ -2608,8 +2614,34 @@ def _install_copy_session_proxy_patch() -> None:
     _ilc.copy_session = _patched_copy_session
 
 
+# Returns the context method extended to pass the session it installs through the request wrapper
+def _wrapping_installed_session(original):
+    # Runs the original method, then wraps the session it left in place. login()'s own requests go out before that,
+    # so login keeps Instaloader's pacing and errors and gets the proxy from the session factory instead
+    def _patched(self, *args, **kwargs):
+        result = original(self, *args, **kwargs)
+        ensure_instagram_session_wrapped(self._session)
+        return result
+
+    _patched._session_wrapper_patched = True  # type: ignore
+    return _patched
+
+
+# Patches the InstaloaderContext methods that replace the signed-in session, so the new session passes the request wrapper
+def _install_signed_in_session_wrapper_patch() -> None:
+    try:
+        from instaloader.instaloadercontext import InstaloaderContext
+    except Exception:
+        return
+    for name in ("load_session", "login", "two_factor_login"):
+        original = getattr(InstaloaderContext, name, None)
+        if original is not None and not getattr(original, "_session_wrapper_patched", False):
+            setattr(InstaloaderContext, name, _wrapping_installed_session(original))
+
+
 _install_http_backend()
 _install_copy_session_proxy_patch()
+_install_signed_in_session_wrapper_patch()
 
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape, unescape
