@@ -21,6 +21,8 @@ elif sys.path.index(_PROJECT_ROOT) != 0:
     sys.path.insert(0, _PROJECT_ROOT)
 
 import pytest
+import urllib3.connectionpool
+import urllib3.exceptions
 
 import instagram_monitor as im
 
@@ -113,6 +115,28 @@ def _guard_curl_cffi(monkeypatch, refused: list) -> None:
     monkeypatch.setattr(curl_requests.Session, "request", request)
 
 
+# Refuses urllib3 requests, which carry every requests call, to any host but this machine and records each one. The
+# guard sits below HTTPAdapter.send, so a test that stubs the requests transport still gets its stub's answer
+def _guard_urllib3(monkeypatch, refused: list) -> None:
+    real_urlopen = urllib3.connectionpool.HTTPConnectionPool.urlopen
+
+    # Checks the pool's host, the absolute URL a plain HTTP proxy receives and the proxy itself before sending
+    def urlopen(self, method, url, *args, **kwargs):
+        hosts = [str(self.host).strip("[]").lower()]
+        if "://" in str(url):
+            hosts.append(_address_host(url))
+        proxy = getattr(self, "proxy", None)
+        if proxy is not None:
+            hosts.append(str(proxy.host or "").strip("[]").lower())
+        outside = [host for host in hosts if not _is_loopback_host(host)]
+        if outside:
+            refused.append(f"requests call to {outside[0]!r}")
+            raise urllib3.exceptions.ProtocolError(f"The offline test suite refused a requests call to {outside[0]!r}")
+        return real_urlopen(self, method, url, *args, **kwargs)
+
+    monkeypatch.setattr(urllib3.connectionpool.HTTPConnectionPool, "urlopen", urlopen)
+
+
 # Keeps every test off the network. A request to another host fails as a connection error, so the code under test
 # behaves as it would offline. The test still fails at teardown in case that code swallowed the error. A test that
 # expects a refusal requests this fixture and clears the list it yields
@@ -120,6 +144,7 @@ def _guard_curl_cffi(monkeypatch, refused: list) -> None:
 def offline_network(monkeypatch):
     refused: list = []
     _guard_curl_cffi(monkeypatch, refused)
+    _guard_urllib3(monkeypatch, refused)
     yield refused
     if refused:
         pytest.fail(f"Refused network access during the test: {', '.join(refused)}. Stub the transport the code under test sends through", pytrace=False)
