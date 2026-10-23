@@ -329,8 +329,8 @@ def test_swallows_the_refusal():
 """
 
 
-# The suite refuses curl_cffi traffic to other hosts, because the adapter overrides the HTTPAdapter.send that offline
-# stubs usually replace. The loopback tests above show that local servers stay reachable
+# The suite refuses curl_cffi and requests traffic to other hosts. curl_cffi needs a guard of its own because its adapter
+# overrides the HTTPAdapter.send that offline stubs usually replace. The loopback tests above show local servers stay reachable
 class TestOfflineGuard:
     # A request to another host fails as a connection error before libcurl opens a connection
     def test_a_request_to_another_host_is_refused(self, im_module, monkeypatch, offline_network):
@@ -358,6 +358,22 @@ class TestOfflineGuard:
             session.get(f"{echo_server}/", proxies={"http": "http://proxy.invalid:8080"}, timeout=5)
 
         assert offline_network == ["curl_cffi request to 'proxy.invalid'"]
+        offline_network.clear()
+
+    # A requests call to another host fails as a connection error before urllib3 opens a connection
+    def test_a_requests_call_to_another_host_is_refused(self, offline_network):
+        with pytest.raises(requests.exceptions.ConnectionError, match="offline test suite refused"):
+            requests.get("https://instagram.invalid/api/v1/probe", timeout=5)
+
+        assert offline_network == ["requests call to 'instagram.invalid'"]
+        offline_network.clear()
+
+    # A loopback call sent through a proxy on another host would still leave the machine, so requests refuses it too
+    def test_a_requests_proxy_on_another_host_is_refused(self, echo_server, offline_network):
+        with pytest.raises(requests.exceptions.ConnectionError, match="offline test suite refused"):
+            requests.get(f"{echo_server}/", proxies={"http": "http://proxy.invalid:8080"}, timeout=5)
+
+        assert offline_network == ["requests call to 'proxy.invalid'"]
         offline_network.clear()
 
     # A test that swallows the connection error still fails, so a missing stub cannot hide behind a report row
