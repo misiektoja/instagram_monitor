@@ -62,7 +62,7 @@ installed copy of the package.
 | `test_parsing_and_useragents.py` | JSON username extraction, follow-string formatting, desktop/mobile user-agent shape |
 | `test_csv_and_files.py` | CSV init/append and byte-wise image comparison |
 | `test_followers.py` | Follower/following diffing, webhook escaping, CSV side effects |
-| `conftest.py` | Shared fixtures and import setup: module globals, exported secrets and stubbed dependencies are reset between tests. curl_cffi requests to other hosts are refused |
+| `conftest.py` | Shared fixtures and import setup: module globals, exported secrets and stubbed dependencies are reset between tests. curl_cffi requests to other hosts are refused and fail the test |
 | `test_config_loading.py` | Config files read as data, rejected content and the settings each released template still carries |
 | `test_config_effects.py` | Config-file settings reaching the code that consumes them |
 | `test_startup_summary.py` | The startup summary block driven through the real command-line path |
@@ -107,9 +107,12 @@ installed copy of the package.
   `monkeypatch` rather than skipping the test.
 * The default `curl_cffi` backend sends through `_CurlCffiHTTPAdapter`, which
   overrides `HTTPAdapter.send`. A test that stubs `HTTPAdapter.send` must stub
-  `_CurlCffiHTTPAdapter.send` as well. The autouse `offline_curl_cffi` fixture
-  in `conftest.py` fails any curl_cffi request to a host other than loopback
-  with a connection error, so a missing stub cannot reach Instagram.
+  `_CurlCffiHTTPAdapter.send` as well.
+* The autouse `offline_network` fixture in `conftest.py` fails any curl_cffi
+  request to a host other than loopback with a connection error. The test then
+  fails at teardown, even when the code under test swallowed that error. A test
+  that expects a refusal requests `offline_network` and clears the list it
+  yields.
 
 Online tests that log in to Instagram are excluded because automated test logins
 could trigger security checks or account suspension.
