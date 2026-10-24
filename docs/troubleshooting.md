@@ -101,20 +101,18 @@ A session login is limited per account instead, so [importing a session](configu
 <a id="anonymous-profile-http-400"></a>
 ## Anonymous Profile Lookup Returns HTTP 400
 
-Some public professional profiles make `web_profile_info` answer HTTP 400 to anonymous requests, for example with a message that the `ig_business_category_subvertical` schema has been deleted. When that happens the target is read from its public pages for the rest of the run and a notice is printed once. Signed-in monitoring and profiles the endpoint still answers keep their usual path. HTTP 401, 429 and connection failures never switch a target, since another request would only add to a limit.
+Instagram answers HTTP 400 to anonymous profile lookups for some public professional profiles. Such a target is then read from its public embed for the rest of the run. A notice is printed once. HTTP 401, 429 and connection errors never switch a target.
 
-The public embed at `instagram.com/<username>/embed/` is the main source. It gives the exact follower count, the post count and the six newest posts with likes and comments. Only the JSON inside the page is read and its JavaScript never runs. Collab posts owned by a partner account appear on the target's grid, so they are treated as the target's posts. The public profile page adds the following count and the bio, which the embed lacks. Nothing else is taken from it, because its follower count can be rounded and it has no post count. Reading the page needs Instaloader 4.15.4 or later.
+The embed gives the follower count, the post count and the six newest posts. The public profile page adds the following count and the bio when logged-out visitors can open it. This needs Instaloader 4.15.4 or later. A page that fails is skipped for six hours. Missing fields are never treated as zero or empty. Changes to them are reported once they return.
 
-The profile page can redirect logged-out visitors to the login page, depending on the network. When it does or fails in any other way, the following count and the bio stay unknown and the page is skipped for six hours. An unknown field is never treated as zero or as an empty bio. Its last known value is kept, no change is reported while it is missing and the next known value is compared with it. A target that never had the value starts its baseline from the first one.
+Each check costs one embed request and at most one page request. If the embed cannot be read, the check reports `Public embed fallback failed`.
 
-One snapshot serves every lookup of a check, so each check costs one embed request and at most one page request. If the embed fails, the check reports a `Public embed fallback failed` error and the next check tries the embed again without repeating the refused profile lookup. A private account has no public embed, so it cannot be monitored this way. Import a session to monitor it signed in.
+Limits:
 
-Limits of this fallback:
-
-- Only the six newest posts are visible, so a post published and deleted between two checks can be missed.
-- The embed serves the profile picture at 100x100 pixels. When a source switch changes the size of the same picture, it becomes the new baseline without an alert, so a real change at that same moment is not reported. Removing a picture is reported as a change, because the default avatar at that size does not match the stored empty template.
-- Reel codes and collab posts leaking from private accounts are not available through these pages.
-- A target that turns private while on the fallback reports errors instead of a visibility change.
+- Only the six newest posts are visible.
+- A private account has no public embed. Import a session to monitor it.
+- The embed picture is 100x100 pixels. A picture that only changes size becomes the new baseline without an alert. A removed picture is reported as a change.
+- Reel codes are not available. A target that turns private reports errors instead of a visibility change.
 
 <a id="profile-lookups-report-a-retired-endpoint"></a>
 ## Profile Lookups Report a Retired Endpoint
