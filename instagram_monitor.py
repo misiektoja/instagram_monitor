@@ -1040,6 +1040,7 @@ DOCTOR_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#doctor-preflight"
 ACTION_BLOCK_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#instagram-says-try-again-later"
 ANONYMOUS_RATE_LIMIT_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#anonymous-runs-are-rate-limited"
 RETIRED_ENDPOINT_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#profile-lookups-report-a-retired-endpoint"
+ANONYMOUS_PROFILE_FALLBACK_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#anonymous-profile-http-400"
 SECRETS_GUIDE_URL = DOCS_BASE_URL + "/configuration/#storing-secrets"
 DIAGNOSTICS_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#choosing-the-right-logging-level"
 MONITORING_GUIDE_URL = DOCS_BASE_URL + "/usage/#monitoring-mode"
@@ -11662,6 +11663,7 @@ def session_recovery_browser_hint() -> str:
 # Ordered match terms for every recognized failure, shared by the message and the failure-class lookups so the two cannot drift
 FAILURE_TERMS = {
     'rate_limit': ("429", "too many requests", "wait a few minutes", "rate limit", "please wait"),
+    'public_fallback': ("public embed fallback failed",),
     'endpoint_retired': RETIRED_ENDPOINT_TERMS,
     'action_block': ("feedback_required",),
     'challenge': ("challenge", "checkpoint", "automated", "shadow ban", "shadowban", "missing expected data"),
@@ -11676,7 +11678,7 @@ FAILURE_TERMS = {
 }
 
 # Evaluation order of FAILURE_TERMS, matching the branch order in classify_error_parts
-FAILURE_CLASS_ORDER = ('rate_limit', 'endpoint_retired', 'action_block', 'challenge', 'session_missing', 'auth_expired', 'target_unavailable', 'impersonate_unsupported', 'proxy_unresolved', 'dns_failure', 'network', 'schema_change')
+FAILURE_CLASS_ORDER = ('rate_limit', 'public_fallback', 'endpoint_retired', 'action_block', 'challenge', 'session_missing', 'auth_expired', 'target_unavailable', 'impersonate_unsupported', 'proxy_unresolved', 'dns_failure', 'network', 'schema_change')
 
 # Reliability group each failure class belongs to: A blocks the transport, B breaks on an Instagram API change, C acts against the session account
 FAILURE_CLASS_GROUPS = {
@@ -11740,6 +11742,7 @@ def is_account_level_failure(failure_class: str) -> bool:
 # Every recovery category the tool can report, kept closed so a message is testable, deduplicable and translatable later
 RECOVERY_CODES = frozenset({
     "instagram.rate_limited", "instagram.endpoint_retired", "instagram.action_blocked", "instagram.challenge", "instagram.empty_data", "instagram.browser_dialog",
+    "instagram.public_fallback_failed",
     "session.missing", "session.expired",
     "target.missing", "target.not_found",
     "config.missing", "config.invalid", "config.insecure", "config.impersonate_unsupported",
@@ -11998,6 +12001,11 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
         if not is_logged_in:
             return "instagram.rate_limited", "Instagram is rate-limiting anonymous requests from this IP", "Instagram is rate-limiting anonymous requests from this IP address, which counts everything behind it and is often hit on the very first request. Wait for it to pass or use another address. A session login is limited per account instead, so importing one usually works from here", ANONYMOUS_RATE_LIMIT_GUIDE_URL, True
         return "instagram.rate_limited", "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise INSTA_CHECK_INTERVAL and set ENABLE_JITTER = True in the configuration file, then restart and monitor fewer users. To use command-line settings instead, include --check-interval SECONDS --enable-jitter on each run", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
+
+    # A target whose anonymous profile lookup Instagram refuses with HTTP 400 is read from its public embed. When that
+    # fails too, the embed's status describes an IP limit or a private account, never the session it does not use
+    if any(t in m for t in FAILURE_TERMS['public_fallback']):
+        return "instagram.public_fallback_failed", "Instagram refuses this profile's lookup and its public embed could not be read", f"Instagram answers HTTP 400 to the anonymous profile lookup for this account, so the tool reads its public embed instead, and that failed too. HTTP 401 or a login redirect on the embed is usually a limit on this IP address that passes with time. A private account has no public embed, so it can only be monitored with a session. Importing one with '{session_recovery_command()}'{session_recovery_browser_hint()} reads profiles another way", ANONYMOUS_PROFILE_FALLBACK_GUIDE_URL, True
 
     # An endpoint Instagram retired answers feedback_required whatever the account is doing, so its reply describes
     # the endpoint. Reading it as an account block would stop a session every other endpoint still answers
