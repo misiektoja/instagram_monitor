@@ -8105,6 +8105,45 @@ def compare_images(file1, file2):
         return False
 
 
+# Returns the (width, height) of a JPEG file from its frame header or None for anything this reader cannot parse
+def jpeg_dimensions(path) -> Optional[Tuple[int, int]]:
+    try:
+        with open(path, 'rb') as handle:
+            data = handle.read(MEDIA_DOWNLOAD_MAX_BYTES)
+    except OSError:
+        return None
+    if data[:2] != b"\xff\xd8":
+        return None
+    index = 2
+    while index + 4 <= len(data):
+        if data[index] != 0xFF:
+            return None
+        marker = data[index + 1]
+        if marker == 0xFF:
+            index += 1
+            continue
+        if marker in (0x01, 0xD8) or 0xD0 <= marker <= 0xD7:
+            index += 2
+            continue
+        # Start-of-frame markers carry the size. 0xC4, 0xC8 and 0xCC share the range but are tables
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            if index + 9 > len(data):
+                return None
+            return int.from_bytes(data[index + 7:index + 9], "big"), int.from_bytes(data[index + 5:index + 7], "big")
+        length = int.from_bytes(data[index + 2:index + 4], "big")
+        if length < 2:
+            return None
+        index += 2 + length
+    return None
+
+
+# Reports whether two saved profile pictures differ only in size. A source switch, such as the public embed after a
+# signed-in run, serves the same picture at another size
+def profile_picture_resized(previous_file, current_file) -> bool:
+    previous, current = jpeg_dimensions(previous_file), jpeg_dimensions(current_file)
+    return previous is not None and current is not None and previous != current
+
+
 # Detects changed Instagram profile pictures
 def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, profile_pic_file_tmp, profile_pic_file_old, profile_pic_file_empty, csv_file_name, r_sleep_time, send_email_notification, func_ver):
 
@@ -8174,7 +8213,21 @@ def detect_changed_profile_picture(user, profile_image_url, profile_pic_file, pr
                 is_empty_profile_pic = compare_images(profile_pic_file, profile_pic_file_empty)
 
             debug_print("Comparing current profile picture with downloaded temporary one...")
-            if not compare_images(profile_pic_file, profile_pic_file_tmp) and profile_pic_mdate_dt != profile_pic_tmp_mdate_dt:
+            picture_differs = not compare_images(profile_pic_file, profile_pic_file_tmp) and profile_pic_mdate_dt != profile_pic_tmp_mdate_dt
+            # The same picture served at another size after a source switch becomes the new baseline without an alert.
+            # Neither file may be the empty template, so setting or removing a picture is still reported
+            if picture_differs and not is_empty_profile_pic and not (profile_pic_file_empty and compare_images(profile_pic_file_tmp, profile_pic_file_empty)) and profile_picture_resized(profile_pic_file, profile_pic_file_tmp):
+                try:
+                    os.replace(profile_pic_file_tmp, profile_pic_file)
+                    print(f"* Profile picture of user {user} is now served at a different size, saved as the new baseline{new_line}")
+                    log_activity("Profile picture size changed, saved as the new baseline", user=user, level='system')
+                except Exception as e:
+                    print_recovery_error(e, context="file_write", summary=f"Error while replacing/copying files: {e}")
+                if func_ver == 2:
+                    print(f"\nCheck interval:\t\t\t\t{check_window_text()}")
+                    print_cur_ts()
+
+            elif picture_differs:
                 if profile_pic_file_empty and os.path.isfile(profile_pic_file_empty):
                     is_empty_profile_pic_tmp = compare_images(profile_pic_file_tmp, profile_pic_file_empty)
 
