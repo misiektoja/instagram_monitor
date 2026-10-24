@@ -101,40 +101,25 @@ A session login is limited per account instead, so [importing a session](configu
 <a id="anonymous-profile-http-400"></a>
 ## Anonymous Profile Lookup Returns HTTP 400
 
-Some public professional profiles make `web_profile_info` return HTTP 400, for
-example a deleted `ig_business_category_subvertical` schema. Anonymous monitoring
-now tries the public profile page first, using Instaloader's browser-navigation
-headers and the configured HTTP transport, proxy and TLS policy. Instaloader
-4.15.4 or later supplies this page reader; older supported versions go directly
-to the public embed fallback.
+Some public professional profiles make `web_profile_info` answer HTTP 400 to anonymous requests, for example with a message that the `ig_business_category_subvertical` schema has been deleted. When that happens the target is read from its public pages for the rest of the run and a notice is printed once. Signed-in monitoring and profiles the endpoint still answers keep their usual path. HTTP 401, 429 and connection failures never switch a target, since another request would only add to a limit.
 
-When the page redirects to login or contains no usable profile and timeline,
-the public `/username/embed/` page is the last fallback. Only JSON is decoded;
-JavaScript is never executed. Each target remembers its working source for the
-rest of the run. A five-second snapshot cache lets profile, latest-post, Reel-code
-and collab lookups share one response. Subsequent checks refresh that source.
-Healthy mobile requests and signed-in monitoring keep their existing paths.
-HTTP 401, 429 and other connection failures do **not** trigger another source.
+The public embed at `instagram.com/<username>/embed/` is the main source. It gives the exact follower count, the post count and the six newest posts with likes and comments. Only the JSON inside the page is read and its JavaScript never runs. Collab posts owned by a partner account appear on the target's grid, so they are treated as the target's posts. The public profile page adds the following count and the bio, which the embed lacks. Nothing else is taken from it, because its follower count can be rounded and it has no post count. Reading the page needs Instaloader 4.15.4 or later.
 
-These sources expose only the visible recent-post window, normally twelve on the
-profile page and six on the embed. Older posts and changes beyond that window
-cannot be recovered. The reported posts count is the profile's count, not the
-number of displayed entries. Missing following/follower counts or biography are
-unavailable, never zero or an empty biography. Their last known comparison values
-are retained; checks skip notifications for missing fields and compare against
-those values when the fields return. A first known value establishes a baseline.
-Missing profile attributes do not lazily retry the failing API.
+The profile page can redirect logged-out visitors to the login page, depending on the network. When it does or fails in any other way, the following count and the bio stay unknown and the page is skipped for six hours. An unknown field is never treated as zero or as an empty bio. Its last known value is kept, no change is reported while it is missing and the next known value is compared with it. A target that never had the value starts its baseline from the first one.
 
-Latest-post lookup and visible collab metadata share the recovered timeline.
-The Reel shortcode helper returns only an explicitly identified Reel in that
-window; it does not guess that every video is a Reel. A dedicated Reels list,
-complete Reel counts, full history and private-profile collab discovery remain
-unsupported through these public sources.
+One snapshot serves every lookup of a check, so each check costs one embed request and at most one page request. If the embed fails, the check reports a `Public embed fallback failed` error and the next check tries the embed again without repeating the refused profile lookup. A private account has no public embed, so it cannot be monitored this way. Import a session to monitor it signed in.
+
+Limits of this fallback:
+
+- Only the six newest posts are visible, so a post published and deleted between two checks can be missed.
+- The embed serves the profile picture at 100x100 pixels. When a source switch changes the size of the same picture, it becomes the new baseline without an alert, so a real change at that same moment is not reported. Removing a picture is reported as a change, because the default avatar at that size does not match the stored empty template.
+- Reel codes and collab posts leaking from private accounts are not available through these pages.
+- A target that turns private while on the fallback reports errors instead of a visibility change.
 
 <a id="profile-lookups-report-a-retired-endpoint"></a>
 ## Profile Lookups Report a Retired Endpoint
 
-In September 2026 Instagram retired `api/v1/users/web_profile_info/` for accounts that are signed in. It answers `400 feedback_required` no matter how healthy the account is, while GraphQL, search and the profile page keep working for the same session in the same second. Runs without a login normally read profiles from `i.instagram.com`; a separate anonymous HTTP 400 failure is handled by the [public profile fallback](#anonymous-profile-http-400).
+In September 2026 Instagram retired `api/v1/users/web_profile_info/` for accounts that are signed in. It answers `400 feedback_required` no matter how healthy the account is, while GraphQL, search and the profile page keep working for the same session in the same second. Runs without a login normally read profiles from `i.instagram.com`. A separate anonymous HTTP 400 failure is handled by the [public profile fallback](#anonymous-profile-http-400).
 
 Version 3.9.1 and earlier read every profile through that endpoint, so a signed-in run on those versions fails at the first lookup of every target. Re-importing the session does not help. Upgrade to 4.0 or later.
 
