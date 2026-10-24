@@ -4,7 +4,7 @@ This is a high-level summary of the most important changes.
 
 # Changes in 4.0.3 (TBD)
 
-Version **4.0.3** sends web API requests with the headers a browser uses and reuses each Instagram session's connection. Browser follower lists show progress and honor disabled certificate verification for HTTPS proxies. Recovery guidance distinguishes saved settings from repeated command-line options. Doctor keeps those options and the selected targets in its monitoring command. Generated commands stay usable when their arguments match stored credentials. Profile pages read by Instaloader 4.15.4 and later go through the configured proxy. The test suite no longer contacts Instagram.
+Version **4.0.3** sends web API requests with the headers a browser uses and reuses each Instagram session's connection. Browser follower lists show progress and honor disabled certificate verification for HTTPS proxies. Recovery guidance distinguishes saved settings from repeated command-line options. Doctor keeps those options and the selected targets in its monitoring command. Generated commands stay usable when their arguments match stored credentials. Profile pages read by Instaloader 4.15.4 and later go through the configured proxy. Logged-in mode sends its Instagram requests and the sign-in through the configured proxy. The test suite no longer contacts Instagram.
 
 **Features and improvements**:
 
@@ -19,6 +19,10 @@ Version **4.0.3** sends web API requests with the headers a browser uses and reu
 **Security and privacy**:
 
 - **SECURITY:** **Profile page reads use the proxy** - With Instaloader 4.15.4 or later, a profile that the mobile endpoint or the search could not resolve was read from its public page without the configured **proxy**. Without a system-wide proxy that request could reveal your real IP address. It also ignored `PROXY_CERT_PATH` and `VERIFY_SSL` and bypassed `ENABLE_JITTER` pacing and the account circuit breaker. It now goes through all of them like every other Instagram request. Raw downloads and HEAD requests that Instaloader sends the same way use the proxy too
+
+**Security and privacy**:
+
+- **SECURITY:** **Logged-in mode uses the proxy** - With a saved session or `SESSION_PASSWORD`, Instagram requests made with the signed-in session went out without the configured **proxy**. This included the sign-in request that sends the password. Unless `HTTP_PROXY` or `HTTPS_PROXY` was set, these requests could reveal your real IP address. They also ignored `PROXY_CERT_PATH` and `VERIFY_SSL`. They now use the proxy and TLS settings like every other Instagram request. Requests sent directly with the signed-in session also get `ENABLE_JITTER` pacing and the account circuit breaker
 
 # Changes in 4.0.2 (22 Sep 2026)
 
