@@ -5,8 +5,10 @@ These tests never touch the network. They import the single-file module
 out the few functions that would otherwise reach Instagram.
 """
 
+import ipaddress
 import os
 import sys
+from urllib.parse import urlsplit
 
 # The project ships an installable copy (``instagram_monitor.egg-info``) that may
 # also live in site-packages. Force the in-repo source onto the front of the
@@ -19,8 +21,13 @@ elif sys.path.index(_PROJECT_ROOT) != 0:
     sys.path.insert(0, _PROJECT_ROOT)
 
 import pytest
+import urllib3.connectionpool
+import urllib3.exceptions
 
 import instagram_monitor as im
+
+# Runs a pytest session inside a test, which is how the network guard's teardown failure is checked
+pytest_plugins = ["pytester"]
 
 
 # Fails fast if pytest accidentally imported an installed copy instead of the working tree
@@ -69,6 +76,78 @@ def isolated_exposure_ledger(monkeypatch, tmp_path):
     ledger_path = tmp_path / "exposure" / im.EXPOSURE_STATE_FILENAME
     monkeypatch.setattr(im, "exposure_state_path", lambda: str(ledger_path), raising=False)
     return ledger_path
+
+
+# Returns the host a URL or proxy address names, where a proxy may leave out its scheme
+def _address_host(address) -> str:
+    text = str(address)
+    return urlsplit(text if "://" in text else "//" + text).hostname or ""
+
+
+# Returns whether a host is this machine, the only place a test may send traffic
+def _is_loopback_host(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+# Refuses curl_cffi requests to any host but this machine and records each one. The curl_cffi adapter overrides
+# HTTPAdapter.send, so a test that stubs only the requests transport would otherwise reach Instagram through libcurl
+def _guard_curl_cffi(monkeypatch, refused: list) -> None:
+    curl_requests, curl_exceptions = im._curl_requests, im._curl_exceptions
+    if curl_requests is None or curl_exceptions is None:
+        return
+    real_request = curl_requests.Session.request
+
+    # Lets requests to local test servers through and fails the rest as a connection error, checking any proxy too
+    def request(self, method, url, *args, **kwargs):
+        proxies = kwargs.get("proxies") or {}
+        addresses = [url, *(proxy for proxy in (kwargs.get("proxy"), *proxies.values()) if proxy)]
+        hosts = [host for host in map(_address_host, addresses) if not _is_loopback_host(host)]
+        if hosts:
+            refused.append(f"curl_cffi request to {hosts[0]!r}")
+            raise curl_exceptions.ConnectionError(f"The offline test suite refused a curl_cffi request to {hosts[0]!r}")
+        return real_request(self, method, url, *args, **kwargs)
+
+    monkeypatch.setattr(curl_requests.Session, "request", request)
+
+
+# Refuses urllib3 requests, which carry every requests call, to any host but this machine and records each one. The
+# guard sits below HTTPAdapter.send, so a test that stubs the requests transport still gets its stub's answer
+def _guard_urllib3(monkeypatch, refused: list) -> None:
+    real_urlopen = urllib3.connectionpool.HTTPConnectionPool.urlopen
+
+    # Checks the pool's host, the absolute URL a plain HTTP proxy receives and the proxy itself before sending
+    def urlopen(self, method, url, *args, **kwargs):
+        hosts = [str(self.host).strip("[]").lower()]
+        if "://" in str(url):
+            hosts.append(_address_host(url))
+        proxy = getattr(self, "proxy", None)
+        if proxy is not None:
+            hosts.append(str(proxy.host or "").strip("[]").lower())
+        outside = [host for host in hosts if not _is_loopback_host(host)]
+        if outside:
+            refused.append(f"requests call to {outside[0]!r}")
+            raise urllib3.exceptions.ProtocolError(f"The offline test suite refused a requests call to {outside[0]!r}")
+        return real_urlopen(self, method, url, *args, **kwargs)
+
+    monkeypatch.setattr(urllib3.connectionpool.HTTPConnectionPool, "urlopen", urlopen)
+
+
+# Keeps every test off the network. A request to another host fails as a connection error, so the code under test
+# behaves as it would offline. The test still fails at teardown in case that code swallowed the error. A test that
+# expects a refusal requests this fixture and clears the list it yields
+@pytest.fixture(autouse=True)
+def offline_network(monkeypatch):
+    refused: list = []
+    _guard_curl_cffi(monkeypatch, refused)
+    _guard_urllib3(monkeypatch, refused)
+    yield refused
+    if refused:
+        pytest.fail(f"Refused network access during the test: {', '.join(refused)}. Stub the transport the code under test sends through", pytrace=False)
 
 
 # Resets the handful of module-level globals the helpers read so each test starts from a known, deterministic baseline

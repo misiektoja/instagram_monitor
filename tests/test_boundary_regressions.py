@@ -102,11 +102,13 @@ def run_with_invalid_path(tmp_path, monkeypatch, setting, command):
         args.extend(["--env-file", "none"])
     monkeypatch.setattr(sys, "argv", args)
 
-    # Fails unexpected connectivity checks at the requests transport boundary
+    # Fails unexpected connectivity checks at the transport boundary
     def offline_requests(self, request, **kwargs):
         raise requests.ConnectionError("Offline boundary check")
 
     monkeypatch.setattr(HTTPAdapter, "send", offline_requests)
+    # The curl_cffi adapter overrides send, so the requests stub alone never sees Doctor's Instagram requests
+    monkeypatch.setattr(monitor._CurlCffiHTTPAdapter, "send", offline_requests)
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     try:
         monitor.main()

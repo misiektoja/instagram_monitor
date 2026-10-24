@@ -56,13 +56,15 @@ installed copy of the package.
 | `test_story_workflows.py` | Startup story item CSV and dashboard metadata plus independent email/webhook gates and hostile story content |
 | `test_media_downloads.py` | Atomic media replacement, type validation, truncation, non-200 responses and download limits |
 | `test_request_scoping.py` | Instagram hostname classification, per-session jitter isolation and Instaloader copied sessions |
+| `test_anonymous_session_proxy.py` | Instaloader's own page, raw download and HEAD sessions using the configured proxy, TLS verification, the request wrapper and the curl_cffi transport |
+| `test_signed_in_session_proxy.py` | Sessions loaded from a file or created by login and two-factor login using the configured proxy, TLS verification, the request wrapper and the curl_cffi transport, and the single-request account recovery check |
 | `test_session_import.py` | Firefox cookie-domain filtering and canonical session path discovery |
 | `test_scheduling.py` | `CHECK_POSTS_IN_HOURS_RANGE` window logic, next-check computation, cycle probability, interval randomization |
 | `test_session_flags.py` | Error classification and session/IP flag detection with a stubbed profile resolver |
 | `test_parsing_and_useragents.py` | JSON username extraction, follow-string formatting, desktop/mobile user-agent shape |
 | `test_csv_and_files.py` | CSV init/append and byte-wise image comparison |
 | `test_followers.py` | Follower/following diffing, webhook escaping, CSV side effects |
-| `conftest.py` | Shared fixtures and import setup: module globals, exported secrets and stubbed dependencies are reset between tests |
+| `conftest.py` | Shared fixtures and import setup: module globals, exported secrets and stubbed dependencies are reset between tests. Requests to other hosts are refused and fail the test |
 | `test_config_loading.py` | Config files read as data, rejected content and the settings each released template still carries |
 | `test_config_effects.py` | Config-file settings reaching the code that consumes them |
 | `test_startup_summary.py` | The startup summary block driven through the real command-line path |
@@ -79,7 +81,7 @@ installed copy of the package.
 | `test_account_safety_loop.py` | The real monitoring loop stopping an account Instagram keeps refusing, and leaving a transient fault alone |
 | `test_human_simulation.py` | The BeHuman activity simulation guards |
 | `test_impersonate_validation.py` | curl_cffi impersonation target validation |
-| `test_http_backend.py` | The curl_cffi transport adapter driven against a loopback server, including the browser headers sent to Instagram and the kept connection |
+| `test_http_backend.py` | The curl_cffi transport adapter driven against a loopback server, including the browser headers sent to Instagram, the kept connection and the suite's refusal of other hosts |
 | `test_concurrency_and_caches.py` | Shared cache eviction and probe deduplication |
 | `test_monitor_restart.py` | The monitoring restart loop used when live settings change |
 | `test_follow_list_source.py` | The follower and following list sources: the web REST endpoints and the GraphQL fallback |
@@ -90,7 +92,7 @@ installed copy of the package.
 | `test_notification_escaping.py` | Source-level sweep proving every value reaching an HTML notification body is escaped |
 | `test_email_html.py` | HTML notification bodies: escaping, the ntfy plain form and the plain-text match |
 | `test_documentation.py` | Semantic documentation contracts for commands, concepts and platform variants plus repository metadata: governance files, citation, funding, line endings, the declared editor style, the pinned linter and release integrity |
-| `test_packaging.py` | Wheel contents, installed console help/version and config generation |
+| `test_packaging.py` | Wheel contents, an install that consults no package index, installed console help/version and config generation |
 | `test_browser_e2e.py` | Real Chromium rendering, navigation, target creation and HTTPS proxy certificate checks against local servers |
 | `test_moved_private_settings.py` | Kept credentials across dotenv destination changes and startup error handling |
 
@@ -105,6 +107,14 @@ installed copy of the package.
   with `monkeypatch.setenv` inside that test.
 * Keep everything offline. If a code path needs network access, stub it with
   `monkeypatch` rather than skipping the test.
+* The default `curl_cffi` backend sends through `_CurlCffiHTTPAdapter`, which
+  overrides `HTTPAdapter.send`. A test that stubs `HTTPAdapter.send` must stub
+  `_CurlCffiHTTPAdapter.send` as well.
+* The autouse `offline_network` fixture in `conftest.py` fails any curl_cffi or
+  `requests` call to a host other than loopback with a connection error. The
+  test then fails at teardown, even when the code under test swallowed that
+  error. A test that expects a refusal requests `offline_network` and clears
+  the list it yields.
 
 Online tests that log in to Instagram are excluded because automated test logins
 could trigger security checks or account suspension.
