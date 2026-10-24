@@ -98,10 +98,26 @@ A `401 Unauthorized` naming `Please wait a few minutes before you try again` on 
 
 A session login is limited per account instead, so [importing a session](configuration.md#option-3-session-login-using-browser-cookies-recommended) usually works from the same address. Otherwise wait for the limit to pass or run from another network. If the same run works over a mobile connection, the limit is on the home address rather than on anything in the configuration.
 
+<a id="anonymous-profile-http-400"></a>
+## Anonymous Profile Lookup Returns HTTP 400
+
+Instagram answers HTTP 400 to anonymous profile lookups for some public professional profiles. Such a target is then read from its public embed for the rest of the run. A notice is printed once. HTTP 401, 429 and connection errors never switch a target.
+
+The embed gives the follower count, the post count and the six newest posts. The public profile page adds the following count and the bio when logged-out visitors can open it. This needs Instaloader 4.15.4 or later. A page that fails is skipped for six hours. Missing fields are never treated as zero or empty. Changes to them are reported once they return.
+
+Each check costs one embed request and at most one page request. If the embed cannot be read, the check reports `Public embed fallback failed`.
+
+Limits:
+
+- Only the six newest posts are visible.
+- A private account has no public embed. Import a session to monitor it.
+- The embed picture is 100x100 pixels. A picture that only changes size becomes the new baseline without an alert. A removed picture is reported as a change.
+- Reel codes are not available. A target that turns private reports errors instead of a visibility change.
+
 <a id="profile-lookups-report-a-retired-endpoint"></a>
 ## Profile Lookups Report a Retired Endpoint
 
-In September 2026 Instagram retired `api/v1/users/web_profile_info/` for accounts that are signed in. It answers `400 feedback_required` no matter how healthy the account is, while GraphQL, search and the profile page keep working for the same session in the same second. Runs without a login are unaffected, because they read profiles from `i.instagram.com` instead.
+In September 2026 Instagram retired `api/v1/users/web_profile_info/` for accounts that are signed in. It answers `400 feedback_required` no matter how healthy the account is, while GraphQL, search and the profile page keep working for the same session in the same second. Runs without a login normally read profiles from `i.instagram.com`. A separate anonymous HTTP 400 failure is handled by the [public profile fallback](#anonymous-profile-http-400).
 
 Version 3.9.1 and earlier read every profile through that endpoint, so a signed-in run on those versions fails at the first lookup of every target. Re-importing the session does not help. Upgrade to 4.0 or later.
 

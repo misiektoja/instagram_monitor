@@ -13,6 +13,7 @@ import pytest
 
 KNOWN_ERRORS = [
     ("ConnectionException: 429 Too Many Requests", "rate-limiting"),
+    ("RuntimeError: Public embed fallback failed for target: HTTP 401", "public embed instead"),
     ("JSONDecodeError: challenge_required", "challenge"),
     ("Instagram ... requires a challenge ... missing expected data", "challenge"),
     ("ConnectionException: Login required, redirected", "invalid or expired"),
@@ -643,6 +644,7 @@ class TestRecoveryCodeSet:
     def test_recovery_codes_are_stable(self, im_module):
         assert im_module.RECOVERY_CODES == frozenset({
             "instagram.rate_limited", "instagram.endpoint_retired", "instagram.action_blocked", "instagram.challenge", "instagram.empty_data", "instagram.browser_dialog",
+            "instagram.public_fallback_failed",
             "session.missing", "session.expired",
             "target.missing", "target.not_found",
             "config.missing", "config.invalid", "config.insecure", "config.impersonate_unsupported",
@@ -669,6 +671,7 @@ class TestRecoveryCodeSet:
             ("JSONDecodeError: challenge_required", "runtime"),
             ('AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required"', "runtime"),
             ('AbortDownloadException: 400 Bad Request - "fail" status, message "feedback_required" when accessing https://www.instagram.com/api/v1/users/web_profile_info/?username=x', "runtime"),
+            ("RuntimeError: Public embed fallback failed for target: HTTP 302", "runtime"),
             ("FileNotFoundError: Instagram session file for me not found", "runtime"),
             ("ConnectionException: Login required, redirected", "runtime"),
             ("ProfileNotExistsException: Profile xyz does not exist", "runtime"),
@@ -718,7 +721,7 @@ class TestRecoveryCodeSet:
         rows = _rule_table_rows(im_module)
         calls = _context_advice_calls(im_module)
 
-        assert len(rows) == 16, "the runtime rule table lost or gained a row"
+        assert len(rows) == 17, "the runtime rule table lost or gained a row"
         assert all(len(row.elts) == 5 for row in rows)
         assert len(calls) >= 15, "the context table lost branches"
         assert all(len(call.args) == 5 for call in calls)
