@@ -6,6 +6,8 @@ import io
 from unittest.mock import Mock, call
 
 import pytest
+import requests
+from requests.adapters import HTTPAdapter
 
 
 class _TTYBuffer(io.StringIO):
@@ -24,6 +26,11 @@ class _FakeBot:
 
 def _unreachable_smtp(*args, **kwargs):
     raise AssertionError("Doctor must not open an SMTP connection when the configuration cannot deliver")
+
+
+# Fails a request at the transport as it would fail on a machine without a network
+def _offline_transport(self, request, **kwargs):
+    raise requests.ConnectionError("Offline Doctor check", request=request)
 
 
 def _setup_no_network(monkeypatch, im):
@@ -1001,6 +1008,9 @@ class TestASettingOfTheWrongType:
     def _run(im_module, monkeypatch, capsys, argv_tail):
         monkeypatch.setattr(im_module.sys, "argv", ["instagram_monitor.py", *argv_tail, "--config-file", "none", "--env-file", "none", "--no-color"])
         monkeypatch.setattr(im_module, "clear_screen", lambda *args, **kwargs: None)
+        # Doctor checks connectivity through both transports. The curl_cffi adapter overrides send, so each needs a stub
+        monkeypatch.setattr(HTTPAdapter, "send", _offline_transport)
+        monkeypatch.setattr(im_module._CurlCffiHTTPAdapter, "send", _offline_transport)
         with pytest.raises(SystemExit) as exit_call:
             im_module.run_main()
         return exit_call.value.code, capsys.readouterr().out

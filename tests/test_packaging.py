@@ -1,11 +1,13 @@
 """Tests for the built wheel and its installed console command."""
 
+import http.server
 import os
 import re
 import site
 import subprocess
 import sys
 import tempfile
+import threading
 import venv
 import zipfile
 from collections.abc import Iterator
@@ -38,13 +40,42 @@ def built_wheel(package_test_directory: Path) -> Path:
     return wheels[0]
 
 
+# Answers every package index request with 404 and records its path, so a pip run that consults an index is caught
+class _RecordingIndexHandler(http.server.BaseHTTPRequestHandler):
+    seen: list = []
+
+    # Records the requested path and reports the package as missing
+    def do_GET(self):
+        type(self).seen.append(self.path)
+        self.send_response(404)
+        self.end_headers()
+
+    # Keeps index requests out of the test output
+    def log_message(self, format: str, *args) -> None:
+        return
+
+
+# Serves a loopback package index for the module, so a pip run that consults an index never reaches PyPI
+@pytest.fixture(scope="module")
+def recording_index() -> Iterator[tuple[str, list]]:
+    handler = type("Handler", (_RecordingIndexHandler,), {"seen": []})
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield f"http://127.0.0.1:{server.server_port}/simple", handler.seen
+    server.shutdown()
+    thread.join(timeout=5)
+
+
 # Installs the built wheel into an isolated command environment
 @pytest.fixture(scope="module")
-def installed_package(package_test_directory: Path, built_wheel: Path) -> tuple[Path, Path]:
+def installed_package(package_test_directory: Path, built_wheel: Path, recording_index: tuple[str, list]) -> tuple[Path, Path]:
     environment_directory = package_test_directory / "venv"
     venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment_directory)
     python_executable = environment_directory / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    result = subprocess.run([str(python_executable), "-m", "pip", "install", "--no-deps", str(built_wheel)], check=False, capture_output=True, text=True)
+    # A fresh pip cache stops pip from skipping its weekly check for a newer pip, so the loopback index would record that check
+    environment = dict(os.environ, PIP_INDEX_URL=recording_index[0], PIP_CACHE_DIR=str(package_test_directory / "pip-cache"))
+    result = subprocess.run([str(python_executable), "-m", "pip", "install", "--no-deps", "--no-index", str(built_wheel)], env=environment, check=False, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
     console_executable = environment_directory / ("Scripts/instagram_monitor.exe" if os.name == "nt" else "bin/instagram_monitor")
     assert console_executable.is_file()
@@ -80,6 +111,11 @@ def test_wheel_contains_entry_point_and_runtime_assets(built_wheel: Path):
     assert any(name.endswith("instagram_monitor_data/templates/index.html") for name in names)
     assert any(name.endswith("instagram_monitor_data/instagram_profile_pic_empty.jpg") for name in names)
     assert "instagram_monitor = instagram_monitor:main" in entry_points
+
+
+# Installs the wheel without consulting a package index, which keeps the suite offline
+def test_installing_the_wheel_consults_no_index(installed_package: tuple[Path, Path], recording_index: tuple[str, list]):
+    assert recording_index[1] == []
 
 
 # Verifies the installed console exposes version and complete argument help

@@ -2544,15 +2544,21 @@ class _CurlCffiHTTPAdapter(_HTTPAdapter):
         return response
 
 
-# Module-like proxy over `requests` that yields curl_cffi-mounted sessions while forwarding everything else
+# Module-like proxy over `requests` that yields curl_cffi-mounted sessions with the run's proxy and TLS settings
+# while forwarding everything else
 class _RequestsBackendShim:
     def __init__(self, real_requests):
         object.__setattr__(self, "_real_requests", real_requests)
 
+    # Returns a session that already carries the current proxy and TLS verification settings
     def Session(self, *args, **kwargs):
         session = self._real_requests.Session(*args, **kwargs)
         session.mount("https://", _CurlCffiHTTPAdapter())
         session.mount("http://", _CurlCffiHTTPAdapter())
+        # Instaloader builds a new session for each login, loaded session file and per-request copy. login() sends its
+        # page request and the password before it installs the session, so applying the settings later is too late
+        session.proxies.update(get_proxies())
+        session.verify = get_proxies_ssl()
         return session
 
     def __getattr__(self, name):
@@ -2609,8 +2615,64 @@ def _install_copy_session_proxy_patch() -> None:
     _ilc.copy_session = _patched_copy_session
 
 
+# Patches InstaloaderContext.get_anonymous_session so every session it builds carries the proxy, TLS-verify setting and request wrapper
+def _install_anonymous_session_proxy_patch() -> None:
+    try:
+        from instaloader.instaloadercontext import InstaloaderContext
+    except Exception:
+        return
+    original = getattr(InstaloaderContext, "get_anonymous_session", None)
+    if original is None or getattr(original, "_proxies_patched", False):
+        return
+
+    # Returns Instaloader's anonymous session with the settings this run applies to every Instagram session
+    def _patched_get_anonymous_session(self):
+        session = original(self)
+        # get_page_data, get_raw and head each build a new session that would otherwise go out without the proxy and
+        # leak the real IP. The settings are read on every call, so a proxy changed at runtime reaches the next session
+        get_proxies_fn = globals().get('get_proxies')
+        get_proxies_ssl_fn = globals().get('get_proxies_ssl')
+        if callable(get_proxies_fn) and callable(get_proxies_ssl_fn):
+            session.proxies.update(get_proxies_fn())
+            session.verify = get_proxies_ssl_fn()
+        wrapper = globals().get('ensure_instagram_session_wrapped')
+        if callable(wrapper):
+            wrapper(session)
+        return session
+
+    _patched_get_anonymous_session._proxies_patched = True  # type: ignore
+    InstaloaderContext.get_anonymous_session = _patched_get_anonymous_session  # type: ignore[method-assign]
+
+
+# Returns the context method extended to pass the session it installs through the request wrapper
+def _wrapping_installed_session(original):
+    # Runs the original method, then wraps the session it left in place. login()'s own requests go out before that,
+    # so login keeps Instaloader's pacing and errors and gets the proxy from the session factory instead
+    def _patched(self, *args, **kwargs):
+        result = original(self, *args, **kwargs)
+        ensure_instagram_session_wrapped(self._session)
+        return result
+
+    _patched._session_wrapper_patched = True  # type: ignore
+    return _patched
+
+
+# Patches the InstaloaderContext methods that replace the signed-in session, so the new session passes the request wrapper
+def _install_signed_in_session_wrapper_patch() -> None:
+    try:
+        from instaloader.instaloadercontext import InstaloaderContext
+    except Exception:
+        return
+    for name in ("load_session", "login", "two_factor_login"):
+        original = getattr(InstaloaderContext, name, None)
+        if original is not None and not getattr(original, "_session_wrapper_patched", False):
+            setattr(InstaloaderContext, name, _wrapping_installed_session(original))
+
+
 _install_http_backend()
 _install_copy_session_proxy_patch()
+_install_anonymous_session_proxy_patch()
+_install_signed_in_session_wrapper_patch()
 
 from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape, unescape
@@ -8667,8 +8729,9 @@ def profile_from_username_resilient(bot: instaloader.Instaloader, username: str)
             if profile is not None:
                 return profile
 
-    # Search does not list every account, so the retired endpoint stays as the last resort. Its refusal is
-    # classified as an endpoint failure, which is why reaching it cannot stop the session account
+    # Search does not list every account, so Instaloader's own lookup stays as the last resort. Up to Instaloader 4.15.3
+    # it asks the retired endpoint, whose refusal is classified as an endpoint failure and so cannot stop the session
+    # account. From 4.15.4 it reads the public profile page as a logged-out visitor, through the configured proxy
     return instaloader.Profile.from_username(ctx, username)
 
 

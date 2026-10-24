@@ -3,6 +3,7 @@
 import gzip
 import http.server
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -302,3 +303,87 @@ class TestKeptConnection:
         assert seen[1][1].get_all("Cookie") == ["sessionid=first; rur=fresh"]
         assert seen[2][1].get_all("Cookie") == ["sessionid=second"]
         assert seen[2][0] != seen[0][0]
+
+
+# Loads the suite's real conftest under another name, so an inner pytest session runs the same network guard
+GUARDED_SESSION_CONFTEST = """
+import importlib.util
+
+spec = importlib.util.spec_from_file_location("suite_conftest", {path!r})
+suite_conftest = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(suite_conftest)
+offline_network = suite_conftest.offline_network
+"""
+
+# Swallows a refused request the way Doctor turns a connection error into a report row
+SWALLOWED_REFUSAL_TEST = """
+from curl_cffi import requests as curl_requests
+from curl_cffi.requests import exceptions as curl_exceptions
+
+
+def test_swallows_the_refusal():
+    try:
+        curl_requests.Session().get("https://instagram.invalid/", timeout=5)
+    except curl_exceptions.ConnectionError:
+        pass
+"""
+
+
+# The suite refuses curl_cffi and requests traffic to other hosts. curl_cffi needs a guard of its own because its adapter
+# overrides the HTTPAdapter.send that offline stubs usually replace. The loopback tests above show local servers stay reachable
+class TestOfflineGuard:
+    # A request to another host fails as a connection error before libcurl opens a connection
+    def test_a_request_to_another_host_is_refused(self, im_module, monkeypatch, offline_network):
+        if not im_module._CURL_CFFI_AVAILABLE:
+            pytest.skip("curl_cffi is not installed")
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        session = requests.Session()
+        session.mount("https://", im_module._CurlCffiHTTPAdapter())
+
+        with pytest.raises(requests.exceptions.ConnectionError, match="offline test suite refused"):
+            session.get("https://instagram.invalid/api/v1/probe", timeout=5)
+
+        assert offline_network == ["curl_cffi request to 'instagram.invalid'"]
+        offline_network.clear()
+
+    # A loopback request sent through a proxy on another host would still leave the machine, so it is refused too
+    def test_a_proxy_on_another_host_is_refused(self, im_module, monkeypatch, echo_server, offline_network):
+        if not im_module._CURL_CFFI_AVAILABLE:
+            pytest.skip("curl_cffi is not installed")
+        monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")
+        session = requests.Session()
+        session.mount("http://", im_module._CurlCffiHTTPAdapter())
+
+        with pytest.raises(requests.exceptions.ConnectionError, match="offline test suite refused"):
+            session.get(f"{echo_server}/", proxies={"http": "http://proxy.invalid:8080"}, timeout=5)
+
+        assert offline_network == ["curl_cffi request to 'proxy.invalid'"]
+        offline_network.clear()
+
+    # A requests call to another host fails as a connection error before urllib3 opens a connection
+    def test_a_requests_call_to_another_host_is_refused(self, offline_network):
+        with pytest.raises(requests.exceptions.ConnectionError, match="offline test suite refused"):
+            requests.get("https://instagram.invalid/api/v1/probe", timeout=5)
+
+        assert offline_network == ["requests call to 'instagram.invalid'"]
+        offline_network.clear()
+
+    # A loopback call sent through a proxy on another host would still leave the machine, so requests refuses it too
+    def test_a_requests_proxy_on_another_host_is_refused(self, echo_server, offline_network):
+        with pytest.raises(requests.exceptions.ConnectionError, match="offline test suite refused"):
+            requests.get(f"{echo_server}/", proxies={"http": "http://proxy.invalid:8080"}, timeout=5)
+
+        assert offline_network == ["requests call to 'proxy.invalid'"]
+        offline_network.clear()
+
+    # A test that swallows the connection error still fails, so a missing stub cannot hide behind a report row
+    def test_a_swallowed_refusal_still_fails_the_test(self, im_module, pytester):
+        if not im_module._CURL_CFFI_AVAILABLE:
+            pytest.skip("curl_cffi is not installed")
+        pytester.makeconftest(GUARDED_SESSION_CONFTEST.format(path=str(Path(__file__).with_name("conftest.py"))))
+        pytester.makepyfile(SWALLOWED_REFUSAL_TEST)
+
+        result = pytester.runpytest_inprocess()
+
+        result.assert_outcomes(passed=1, errors=1)
+        result.stdout.fnmatch_lines(["*Refused network access during the test: curl_cffi request to 'instagram.invalid'*"])
