@@ -56,6 +56,7 @@ installed copy of the package.
 | `test_story_workflows.py` | Startup story item CSV and dashboard metadata plus independent email/webhook gates and hostile story content |
 | `test_media_downloads.py` | Atomic media replacement, type validation, truncation, non-200 responses and download limits |
 | `test_request_scoping.py` | Instagram hostname classification, per-session jitter isolation and Instaloader copied sessions |
+| `test_anonymous_session_proxy.py` | Instaloader's own page, raw download and HEAD sessions using the configured proxy, TLS verification, the request wrapper and the curl_cffi transport |
 | `test_session_import.py` | Firefox cookie-domain filtering and canonical session path discovery |
 | `test_scheduling.py` | `CHECK_POSTS_IN_HOURS_RANGE` window logic, next-check computation, cycle probability, interval randomization |
 | `test_session_flags.py` | Error classification and session/IP flag detection with a stubbed profile resolver |
