@@ -861,7 +861,9 @@ This behavior was inspired by [InstagramPrivSniffer](https://github.com/obitouka
 
 To do this, set the path to your `imgcat` binary in the `IMGCAT_PATH` configuration option.
 
-If you set only the command name, Instagram Monitor searches for it in `PATH`.
+If you set only the command name, Instagram Monitor searches for it in `PATH`. The current directory is never searched, even on Windows.
+
+A path is accepted from a config file named with `--config-file`, from `~/.instagram_monitor.conf` and from the package directory. A config file found in the current directory may only name the command. A path set there is ignored with a warning at startup and reported by [`--doctor`](troubleshooting.md#doctor-preflight), because that directory may be writable by other users.
 
 Leave `IMGCAT_PATH` empty to disable terminal images.
 
