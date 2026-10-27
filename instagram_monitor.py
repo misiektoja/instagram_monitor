@@ -231,7 +231,8 @@ DOWNLOAD_THUMBNAILS = True
 PROFILE_PIC_FILE_EMPTY = "instagram_profile_pic_empty.jpg"
 
 # If you have 'imgcat' installed, you can set its path below to display profile pictures directly in your terminal
-# If you specify only the binary name, it will be auto-searched in your PATH
+# If you specify only the binary name, it will be auto-searched in your PATH (never in the current directory)
+# A config file found in the current directory may only name the command. A path set there is ignored
 # Leave empty to disable this feature
 IMGCAT_PATH = "imgcat"
 
@@ -1012,6 +1013,9 @@ CLI_CONFIG_PATH = None
 
 # Set when --config-file none switches discovery off, so no later lookup can find a file the run rejected
 CONFIG_DISCOVERY_DISABLED = False
+# True when the loaded config was picked up from the current directory rather than named with --config-file or kept
+# in the home or package directory. Anyone who can write that directory could have planted such a file
+CONFIG_DISCOVERED_IN_CWD = False
 
 # The settings a configuration file actually assigned, so a built-in default is never mistaken for a choice
 CONFIGURED_SETTING_NAMES = set()
@@ -9994,15 +9998,40 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
         return reject(f"* Error loading config file '{config_path}': {exc}", (), "A config file may only assign settings, such as INSTA_CHECK_INTERVAL = 5400. It cannot import modules, call functions or run other code. Regenerate a clean config with 'instagram_monitor --generate-config instagram_monitor.conf' or 'instagram_monitor --setup'")
 
 
-# Resolves an executable path by checking if it's a valid file or searching in $PATH
+# Tells whether a program setting names a file by path rather than a command looked up on PATH
+def names_program_by_path(value) -> bool:
+    text = str(value or "")
+    return text.startswith("~") or os.sep in text or bool(os.altsep and os.altsep in text)
+
+
+# Tells whether a config path is the candidate find_config_file() takes from the current directory
+def config_path_is_in_cwd(config_path) -> bool:
+    try:
+        return Path(config_path).resolve() == (Path.cwd() / DEFAULT_CONFIG_FILENAME).resolve()
+    except OSError:
+        return False
+
+
+# Explains why a program path set by a config found in the current directory is not used
+def imgcat_path_ignored_summary(value, config_path) -> str:
+    return f"IMGCAT_PATH '{value}' is ignored because '{config_path}' was found in the current directory, where it may only name a command on PATH"
+
+
+IMGCAT_PATH_IGNORED_FIX = "Use the command name so it is looked up on PATH, pass the file with --config-file or move it to ~/.instagram_monitor.conf"
+
+
+# Resolves a program setting to an executable. A path must be an executable file. A bare name is looked up on PATH
+# only and never taken from the current directory, which Windows searches by default and which others may write
 def resolve_executable(path):
-    if os.path.isfile(path) and os.access(path, os.X_OK):
-        return path
-
-    found = shutil.which(path)
-    if found:
+    text = str(path)
+    if names_program_by_path(text):
+        candidate = os.path.expanduser(text)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+        raise FileNotFoundError(f"Could not find executable '{path}'")
+    found = shutil.which(text)
+    if found and os.path.normcase(os.path.dirname(os.path.abspath(found))) != os.path.normcase(os.getcwd()):
         return found
-
     raise FileNotFoundError(f"Could not find executable '{path}'")
 
 
@@ -19471,6 +19500,9 @@ def doctor_check_configuration(targets, config_errors: Sequence[dict] = (), reti
     if retired_settings:
         advice = make_recovery_advice("config.invalid", "Config file contains removed settings", recovery_fix_with_guide("Delete the reported settings or regenerate the file with --generate-config", CONFIG_GUIDE_URL), False)
         checks.append(make_doctor_check("Configuration", "WARN", advice.summary, describe_retired_settings(retired_settings, cfg), advice))
+    if CONFIG_DISCOVERED_IN_CWD and names_program_by_path(IMGCAT_PATH):
+        advice = make_recovery_advice("config.invalid", "IMGCAT_PATH names a program by path in a config found in the current directory", recovery_fix_with_guide(IMGCAT_PATH_IGNORED_FIX, CONFIG_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "WARN", advice.summary, imgcat_path_ignored_summary(IMGCAT_PATH, cfg), advice))
 
     if env_path and str(env_path) in DOTENV_STARTUP_ERRORS:
         detail, fix = DOTENV_STARTUP_ERRORS[str(env_path)]
@@ -19898,7 +19930,7 @@ def apply_session_identity_cli_overrides(args: argparse.Namespace) -> None:
 
 # Parses configuration and command-line options then starts the selected operation
 def run_main():
-    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_REMINDER_SECONDS, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, FETCH_REELS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE, IDENTITY_BUDGET_PER_DAY, CIRCUIT_BREAKER, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
+    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, CONFIG_DISCOVERED_IN_CWD, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_REMINDER_SECONDS, SESSION_USERNAME, SESSION_PASSWORD, CSV_FILE, DISABLE_LOGGING, INSTA_LOGFILE, OUTPUT_DIR, STATUS_NOTIFICATION, FOLLOWERS_NOTIFICATION, ERROR_NOTIFICATION, INSTA_CHECK_INTERVAL, DETECT_CHANGED_PROFILE_PIC, RANDOM_SLEEP_DIFF_LOW, RANDOM_SLEEP_DIFF_HIGH, imgcat_exe, SKIP_SESSION, SKIP_FOLLOWERS, SKIP_FOLLOWINGS, SKIP_FOLLOW_CHANGES, SKIP_GETTING_STORY_DETAILS, SKIP_GETTING_POSTS_DETAILS, GET_MORE_POST_DETAILS, DETECT_COLLAB_POSTS, FETCH_REELS, SMTP_PASSWORD, stdout_bck, PROFILE_PIC_FILE_EMPTY, USER_AGENT, USER_AGENT_MOBILE, HTTP_BACKEND, CURL_CFFI_IMPERSONATE, FOLLOW_LIST_SOURCE, IDENTITY_BUDGET_PER_DAY, CIRCUIT_BREAKER, BE_HUMAN, ENABLE_JITTER, START_TIME_SCRIPT
     global DEBUG_MODE, VERBOSE_MODE, HOURS_VERBOSE, DASHBOARD_MODE, DASHBOARD_ENABLED, WEB_DASHBOARD_ENABLED, FOLLOWERS_CHURN_DETECTION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_FOLLOWERS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, DASHBOARD_CONSOLE, DASHBOARD_DATA, FOLLOWERS_CHURN_AUTODISABLED, FOLLOWERS_CHURN_AUTODISABLED_REASON
     global WEB_DASHBOARD_HOST, WEB_DASHBOARD_PORT, WEB_DASHBOARD_TEMPLATE_DIR, mode_of_the_tool, DOWNLOAD_THUMBNAILS, THUMBNAILS_FORCED_BY_WEB, COLORED_OUTPUT, COLOR_THEME, TIME_FORMAT_12H, TRUNCATE_CHARS
     global PROXY_ENABLED, PROXY_URL, PROXY_CERT_PATH, PROXY_WEBHOOKS, ADVANCED_FOLLOWER_FETCH, ADVANCED_FOLLOWEE_FETCH
@@ -20579,6 +20611,9 @@ def run_main():
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
 
     cfg_path = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
+    # A file named with --config-file is the operator's choice. One picked up from the current directory could have
+    # been written by anyone who can write that directory, so the settings that name a program trust it less
+    CONFIG_DISCOVERED_IN_CWD = bool(cfg_path) and not args.config_file and config_path_is_in_cwd(cfg_path)
 
     if cfg_path:
         CLI_CONFIG_PATH = cfg_path  # Update global for dashboard display
@@ -21175,7 +21210,13 @@ def run_main():
         DOWNLOAD_THUMBNAILS = True
         THUMBNAILS_FORCED_BY_WEB = True
 
-    if IMGCAT_PATH:
+    if IMGCAT_PATH and CONFIG_DISCOVERED_IN_CWD and names_program_by_path(IMGCAT_PATH):
+        # The one setting that names a program to run, so a planted config must not be able to choose it
+        print(f"* Warning: {imgcat_path_ignored_summary(IMGCAT_PATH, cfg_path)}")
+        print(CommandOutput(colorize("info", f"To fix: {IMGCAT_PATH_IGNORED_FIX}")))
+        if DASHBOARD_ENABLED and RICH_AVAILABLE:
+            log_activity(f"Configuration note: {imgcat_path_ignored_summary(IMGCAT_PATH, cfg_path)}", level="warning")
+    elif IMGCAT_PATH:
         try:
             imgcat_exe = resolve_executable(IMGCAT_PATH)
         except Exception:
