@@ -89,7 +89,7 @@ installed copy of the package.
 | `test_request_backoff.py` | The jitter back-off giving up with the real cause, so a rate limit or a challenge is never read as a missing endpoint |
 | `test_follow_list_browser.py` | Browser follower lists, progress updates, TLS launch options and certificate recovery advice, with no browser started |
 | `test_follow_analysis.py` | The offline follow relationship analysis behind `--analyze-follows` |
-| `test_imgcat_display.py` | Terminal image display argument handling |
+| `test_imgcat_display.py` | Terminal image display argument handling, viewer resolution from `PATH` only and the program path a config found in the current directory may not set |
 | `test_notification_escaping.py` | Source-level sweep proving every value reaching an HTML notification body is escaped |
 | `test_email_html.py` | HTML notification bodies: escaping, the ntfy plain form and the plain-text match |
 | `test_documentation.py` | Semantic documentation contracts for commands, concepts and platform variants plus repository metadata: governance files, citation, funding, line endings, the declared editor style, the pinned linter and release integrity |
