@@ -3990,8 +3990,11 @@ def create_web_dashboard_app():
             # reach an arbitrary file. The --cookie-file flag remains available for deliberate local use
             if browser == 'firefox':
                 cookiefile = resolve_offered_firefox_cookiefile(cookiefile)
-            elif profile:
-                profile = resolve_chromium_profile(browser, profile)
+            else:
+                # A Chromium import reads the enumerated profile's own database and never a submitted path
+                cookiefile = None
+                if profile:
+                    profile = resolve_chromium_profile(browser, profile)
             username = normalize_instagram_username(import_browser_session_dashboard(browser, cookiefile, profile=profile))
         except CookieImportError as e:
             # CookieImportError messages are authored operational guidance for the local dashboard user
