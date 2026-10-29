@@ -21,7 +21,7 @@ rich (optional - for terminal dashboard)
 """
 
 # This module imports typing and other names well below the first annotated definition, which on Python
-# 3.9 through 3.13 would evaluate those annotations before the names exist. Deferring annotation evaluation
+# 3.10 through 3.13 would evaluate those annotations before the names exist. Deferring annotation evaluation
 # keeps the supported Python floor enforceable regardless of where an import sits in the file
 from __future__ import annotations
 
@@ -1175,7 +1175,7 @@ def read_secret_privately(hidden_prompt, prompt_text):
 signal.signal(signal.SIGINT, _startup_sigint_handler)
 
 # Oldest interpreter this tool supports, shared by the startup gate and the Doctor environment check
-MINIMUM_PYTHON_VERSION = (3, 9)
+MINIMUM_PYTHON_VERSION = (3, 10)
 MINIMUM_PYTHON_VERSION_TEXT = ".".join(str(part) for part in MINIMUM_PYTHON_VERSION)
 
 if sys.version_info[:2] < MINIMUM_PYTHON_VERSION:
