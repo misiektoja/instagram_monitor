@@ -2683,7 +2683,7 @@ from instaloader.exceptions import PrivateProfileNotFollowedException
 from html import escape, unescape
 from html.parser import HTMLParser
 from itertools import islice
-from typing import Optional, Sequence, Tuple, Any, Callable, Dict, List, TypeVar, cast
+from typing import Optional, Sequence, Set, Tuple, Any, Callable, Dict, List, TypeVar, cast
 from glob import glob
 import sqlite3
 from sqlite3 import OperationalError, connect
@@ -8629,6 +8629,9 @@ USER_ID_CACHE_LOCK = threading.Lock()
 USER_ID_CACHE_FILENAME = "instagram_monitor_user_ids.json"
 USER_ID_CACHE_VERSION = 1
 USER_ID_CACHE_LOADED = False
+# Set once the search path answers HTTP 404, which Instagram sent signed-in sessions by late October 2026, so the
+# rest of the run resolves names through profile pages without spending a request on the retired path
+USER_SEARCH_RETIRED = False
 
 
 # Returns the path of the file holding resolved user ids
@@ -8708,9 +8711,19 @@ def forget_user_id(username: str) -> None:
 
 
 # Returns the numeric user id Instagram's search reports for a username, or None when the search does not list that
-# exact account. Search answers with near matches too, so only the name that was asked for is accepted
+# exact account or the path is retired. Search answers with near matches too, so only the name that was asked for is
+# accepted
 def user_id_from_search(ctx, username: str) -> Optional[str]:
-    data = ctx.get_json("web/search/topsearch/", {'context': 'blended', 'query': username, 'include_reel': False})
+    global USER_SEARCH_RETIRED
+    if USER_SEARCH_RETIRED:
+        return None
+    try:
+        data = ctx.get_json("web/search/topsearch/", {'context': 'blended', 'query': username, 'include_reel': False})
+    except instaloader.exceptions.QueryReturnedNotFoundException:
+        # A 404 means the path is gone rather than the account. Every later name would get the same answer
+        USER_SEARCH_RETIRED = True
+        debug_print("Instagram search answered HTTP 404, resolving user ids from profile pages for the rest of this run")
+        return None
     wanted = username.strip().lower()
     for entry in (data.get('users') or []) if isinstance(data, dict) else []:
         user = entry.get('user') if isinstance(entry, dict) else None
@@ -8767,9 +8780,9 @@ def _profile_by_user_id(ctx, username: str, user_id: str) -> Optional[instaloade
 
 
 # Resolves a profile by username. Instagram retired web_profile_info for accounts that are signed in, answering
-# feedback_required however healthy the account is, so a signed-in run resolves the id through search and reads the
-# profile with the GraphQL query Instaloader already uses. Anonymous runs keep the mobile endpoint and switch a target
-# to its public embed and profile page when that endpoint answers HTTP 400
+# feedback_required however healthy the account is, so a signed-in run resolves the id through search or the public
+# profile page and reads the profile with the GraphQL query Instaloader already uses. Anonymous runs keep the mobile
+# endpoint and switch a target to its public embed and profile page when that endpoint answers HTTP 400
 def profile_from_username_resilient(bot: instaloader.Instaloader, username: str) -> instaloader.Profile:
     ctx = bot.context
     if not ctx.is_logged_in:
@@ -8778,24 +8791,36 @@ def profile_from_username_resilient(bot: instaloader.Instaloader, username: str)
             return fallback_profile
         return instaloader.Profile.from_username(ctx, username)
 
+    # Ids already read in this lookup that answered to another name, so none is read twice
+    tried: Set[str] = set()
     user_id = resolve_user_id(ctx, username)
     if user_id is not None:
+        tried.add(user_id)
         profile = _profile_by_user_id(ctx, username, user_id)
         if profile is not None:
             return profile
         # The id answers to another name now, so it is dropped and the name looked up again
         forget_user_id(username)
         refreshed = user_id_from_search(ctx, username.strip().lower())
-        if refreshed is not None and refreshed != user_id:
+        if refreshed is not None and refreshed not in tried:
+            tried.add(refreshed)
             remember_user_id(username, refreshed)
             profile = _profile_by_user_id(ctx, username, refreshed)
             if profile is not None:
                 return profile
 
-    # Search does not list every account, so Instaloader's own lookup stays as the last resort. Up to Instaloader 4.15.3
-    # it asks the retired endpoint, whose refusal is classified as an endpoint failure and so cannot stop the session
-    # account. From 4.15.4 it reads the public profile page as a logged-out visitor, through the configured proxy
-    return instaloader.Profile.from_username(ctx, username)
+    # Search is retired or does not list the account, so Instaloader reads the public profile page as a logged-out
+    # visitor through the configured proxy. A missing target raises ProfileNotExistsException there. The page names
+    # the id, which is then read over GraphQL with the session like any other, so session probes through this lookup
+    # still make a signed-in request. The id is kept so later checks skip both lookups
+    page_profile = instaloader.Profile.from_username(ctx, username)
+    page_id = str(page_profile.userid)
+    if page_id not in tried:
+        profile = _profile_by_user_id(ctx, username, page_id)
+        if profile is not None:
+            remember_user_id(username, page_id)
+            return profile
+    return page_profile
 
 
 # Return the most recent post and/or reel for the user (GraphQL helper when logged in)
