@@ -8719,6 +8719,10 @@ def user_id_from_search(ctx, username: str) -> Optional[str]:
     global USER_SEARCH_RETIRED
     if USER_SEARCH_RETIRED:
         return None
+    # Asked once, since Instaloader would retry a 404 that answers the same every time. Each client is used by a
+    # single thread, so lowering its limit for this request affects no other request
+    attempts = ctx.max_connection_attempts
+    ctx.max_connection_attempts = 1
     try:
         data = ctx.get_json("web/search/topsearch/", {'context': 'blended', 'query': username, 'include_reel': False})
     except instaloader.exceptions.QueryReturnedNotFoundException:
@@ -8726,6 +8730,8 @@ def user_id_from_search(ctx, username: str) -> Optional[str]:
         USER_SEARCH_RETIRED = True
         debug_print("Instagram search answered HTTP 404, resolving user ids from profile pages for the rest of this run")
         return None
+    finally:
+        ctx.max_connection_attempts = attempts
     wanted = username.strip().lower()
     for entry in (data.get('users') or []) if isinstance(data, dict) else []:
         user = entry.get('user') if isinstance(entry, dict) else None
