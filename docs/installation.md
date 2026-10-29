@@ -13,8 +13,8 @@ Choose either the Python path or the container path.
 
 **Python path**:
 
-- [Python](https://www.python.org/downloads/) 3.9 or higher
-- Core libraries: [instaloader](https://github.com/instaloader/instaloader), `requests`, [curl_cffi](https://github.com/lexiforest/curl_cffi), `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich`, `flask`, `jinja2`
+- [Python](https://www.python.org/downloads/) 3.10 or higher
+- Core libraries: [instaloader](https://github.com/instaloader/instaloader) 4.15.4 or later, `requests`, [curl_cffi](https://github.com/lexiforest/curl_cffi), `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich`, `flask`, `jinja2`
 - [pycookiecheat](https://github.com/n8henrie/pycookiecheat) is optional and is needed only to import cookies from Chrome, Brave or Chromium
 - [wcwidth](https://pypi.org/project/wcwidth/) is optional and is needed only to measure display width for `TRUNCATE_CHARS`
 - [Playwright](https://github.com/microsoft/playwright-python) is optional and is needed only for the experimental browser follower list source
@@ -45,7 +45,7 @@ It should work on other versions of macOS, Linux, Unix and Windows as well.
 <a id="new-to-python-check-and-install"></a>
 ## New to Python: check and install
 
-Use this section if you are new to Python or do not know what is already installed. The platform sections only prepare Python and `pip`. Everyone then uses the same Instagram Monitor installation and setup commands. Instagram Monitor requires Python 3.9 or newer and is currently tested through Python 3.14.
+Use this section if you are new to Python or do not know what is already installed. The platform sections only prepare Python and `pip`. Everyone then uses the same Instagram Monitor installation and setup commands. Instagram Monitor requires Python 3.10 or newer and is currently tested through Python 3.14.
 
 ### Check whether Instagram Monitor is already installed
 
@@ -64,7 +64,7 @@ Check Python and `pip`:
     python --version
     pip --version
 
-If both commands work and Python reports version 3.9 or newer, skip to [Install Instagram Monitor](#install-instagram-monitor).
+If both commands work and Python reports version 3.10 or newer, skip to [Install Instagram Monitor](#install-instagram-monitor).
 
 If either command fails:
 
@@ -92,7 +92,7 @@ Check Python and `pip`:
     python3 --version
     pip --version
 
-If both commands work and Python reports version 3.9 or newer, skip to [Install Instagram Monitor](#install-instagram-monitor).
+If both commands work and Python reports version 3.10 or newer, skip to [Install Instagram Monitor](#install-instagram-monitor).
 
 If either command fails:
 
@@ -118,7 +118,7 @@ Open Terminal then check Python and `pip`:
     python3 --version
     pip --version
 
-If both commands work and Python reports version 3.9 or newer, skip to [Install Instagram Monitor](#install-instagram-monitor).
+If both commands work and Python reports version 3.10 or newer, skip to [Install Instagram Monitor](#install-instagram-monitor).
 
 If either command fails, install the missing packages:
 
@@ -132,7 +132,7 @@ Check both commands again:
     python3 --version
     pip --version
 
-If Python reports a version older than 3.9, follow your distribution's instructions to install a supported Python version before continuing. For another Linux distribution, install Python 3.9 or newer plus `pip` through its package manager.
+If Python reports a version older than 3.10, follow your distribution's instructions to install a supported Python version before continuing. For another Linux distribution, install Python 3.10 or newer plus `pip` through its package manager.
 
 <a id="install-instagram-monitor"></a>
 ### Install Instagram Monitor

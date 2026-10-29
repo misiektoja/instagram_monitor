@@ -55,7 +55,7 @@ python -m playwright install chromium
 python -m pytest tests/test_browser_e2e.py
 ```
 
-CI additionally runs the suite on Python 3.9 through 3.14, a Windows setup-wizard smoke test and container checks that build the image and exercise Docker Compose. The supported Python floor is 3.9, so avoid syntax and standard-library features added after it.
+CI additionally runs the suite on Python 3.10 through 3.14, a Windows setup-wizard smoke test and container checks that build the image and exercise Docker Compose. The supported Python floor is 3.10, so avoid syntax and standard-library features added after it.
 
 A change to monitoring, session handling or detection is not verified by the offline suite alone. Exercise it against a real account and say so in the pull request, without usernames or credentials.
 
