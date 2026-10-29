@@ -4,7 +4,7 @@ This is a high-level summary of the most important changes.
 
 # Changes in 4.1 (29 Oct 2026)
 
-Version **4.1** fixes signed-in monitoring after Instagram retired its search for signed-in sessions. It requires **Python 3.10** and **Instaloader 4.15.4** or later. Logged-in requests now use the configured proxy. Anonymous runs can read professional profiles that Instagram refuses with HTTP 400.
+Version **4.1** fixes signed-in monitoring after Instagram retired its search for signed-in sessions and signed-in post checks with Instaloader 4.16. It requires **Python 3.10** and **Instaloader 4.15.4** or later. Logged-in requests now use the configured proxy. Anonymous runs can read professional profiles that Instagram refuses with HTTP 400.
 
 **Features and improvements**:
 
@@ -15,6 +15,7 @@ Version **4.1** fixes signed-in monitoring after Instagram retired its search fo
 
 - **BUGFIX:** **Anonymous professional profiles** - When the anonymous lookup answers HTTP 400, the target is read from its **public embed**, with bio and following count from the profile page when available. Only the six newest posts are visible and private accounts cannot be read. See [anonymous profile HTTP 400](https://misiektoja.github.io/instagram_monitor/troubleshooting/#anonymous-profile-http-400) (thanks [@VusalAbdurahmanovX](https://github.com/VusalAbdurahmanovX) for reporting [#150](https://github.com/misiektoja/instagram_monitor/issues/150) and the fix in [#151](https://github.com/misiektoja/instagram_monitor/pull/151))
 - **BUGFIX:** **Signed-in lookups after Instagram retired search** - Search answers HTTP 404 to signed-in sessions, so 4.0 to 4.0.2 failed to load targets without a saved id (`QueryReturnedNotFoundException`). The id now comes from the target's **public profile page** and is saved for later runs. See [Profile Lookups Report a Retired Endpoint](https://misiektoja.github.io/instagram_monitor/troubleshooting/#profile-lookups-report-a-retired-endpoint) (thanks [@SENAJavierZamora](https://github.com/SENAJavierZamora) for reporting [#154](https://github.com/misiektoja/instagram_monitor/issues/154))
+- **BUGFIX:** **Signed-in post checks with Instaloader 4.16** - Every latest post and reel check failed with `Instagram returned empty data for posts/reels` because a tool patch rejected an argument that Instaloader 4.16 added
 - **BUGFIX:** **Browser follower lists** - The progress bar moves as names arrive. `VERIFY_SSL = False` also covers HTTPS proxies. See [Browser Proxy Certificates](https://misiektoja.github.io/instagram_monitor/troubleshooting/#browser-proxy-certificates)
 - **BUGFIX:** **Recovery commands** - Guidance separates saved settings from options needed on each run. Doctor's monitoring command keeps your options and **`--targets`**, with placeholders for private values
 - **BUGFIX:** **Offline test suite** - `python -m pytest` no longer contacts Instagram or PyPI
