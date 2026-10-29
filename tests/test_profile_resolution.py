@@ -20,15 +20,31 @@ def _session_of(user_id):
     return session
 
 
+# Returns the error Instaloader raises when Instagram answers the search path with HTTP 404
+def _search_gone(im_module):
+    return im_module.instaloader.exceptions.QueryReturnedNotFoundException("JSON Query to web/search/topsearch/: 404 Not Found")
+
+
+# Stands in for Instaloader's lookup through the public profile page, which names the account's id
+def _page_lookup(user_id, seen=None):
+    def from_username(cls, ctx, name):
+        if seen is not None:
+            seen.append(name)
+        return SimpleNamespace(username=name, userid=user_id, page=True)
+    return classmethod(from_username)
+
+
 # Builds a context that records every request and answers from a scripted reply table. The GraphQL reply is a
 # mutable dict shared with the caller, so a test can change a field and read the profile again
-def _context(im_module, logged_in=True, search_users=(), graphql=None, username=None, session=None):
+def _context(im_module, logged_in=True, search_users=(), graphql=None, username=None, session=None, search_error=None):
     calls = []
     graphql_user = graphql if graphql is not None else {"data": {"user": {"username": "target", "pk": "77", "follower_count": 5, "following_count": 6, "media_count": 7, "is_private": False}}}
 
     def get_json(path, params, *args, **kwargs):
         calls.append((path, dict(params or {})))
         if "topsearch" in path:
+            if search_error is not None:
+                raise search_error
             return {"users": list(search_users)}
         raise AssertionError(f"unexpected request to {path}")
 
@@ -36,7 +52,7 @@ def _context(im_module, logged_in=True, search_users=(), graphql=None, username=
         calls.append((f"graphql/{doc_id}", dict(variables)))
         return graphql_user
 
-    return SimpleNamespace(is_logged_in=logged_in, username=username, get_json=get_json, doc_id_graphql_query=doc_id_graphql_query, request_timeout=30, iphone_support=False, profile_id_cache={}, _session=session), calls
+    return SimpleNamespace(is_logged_in=logged_in, username=username, get_json=get_json, doc_id_graphql_query=doc_id_graphql_query, request_timeout=30, max_connection_attempts=3, iphone_support=False, profile_id_cache={}, _session=session), calls
 
 
 class TestSearchResolvesTheUserId:
@@ -91,15 +107,20 @@ class TestASignedInLookupAvoidsTheRetiredEndpoint:
         assert [path for path, _ in calls] == ["web/search/topsearch/", "graphql/27937681195819736"]
         assert calls[1][1]["id"] == "77"
 
-    # Search does not list every account, so a target it cannot find still falls back rather than being reported gone
-    def test_a_name_search_cannot_find_falls_back(self, im_module, monkeypatch):
+    # Search does not list every account, so a target it cannot find is read by the id its profile page names
+    # rather than being reported gone. The id is kept, so the next check reads the profile without either lookup
+    def test_a_name_search_cannot_find_is_read_by_its_page_id(self, im_module, monkeypatch):
         context, calls = _context(im_module, search_users=[])
-        monkeypatch.setattr(im_module.instaloader.Profile, "from_username", classmethod(lambda cls, ctx, name: SimpleNamespace(username=name, fallback=True)))
+        monkeypatch.setattr(im_module.instaloader.Profile, "from_username", _page_lookup(77))
+        bot = SimpleNamespace(context=context)
 
-        profile = im_module.profile_from_username_resilient(SimpleNamespace(context=context), "target")
+        profile = im_module.profile_from_username_resilient(bot, "target")
+        im_module.profile_from_username_resilient(bot, "target")
 
-        assert profile.fallback is True
-        assert [path for path, _ in calls] == ["web/search/topsearch/"]
+        assert isinstance(profile, im_module.instaloader.Profile)
+        assert profile.userid == 77
+        assert [path for path, _ in calls] == ["web/search/topsearch/", "graphql/27937681195819736", "graphql/27937681195819736"]
+        assert im_module.stored_user_id("target") == "77"
 
     # Runs without a login still read the mobile endpoint, which Instagram kept answering
     def test_an_anonymous_lookup_keeps_the_mobile_endpoint(self, im_module, monkeypatch):
@@ -112,6 +133,86 @@ class TestASignedInLookupAvoidsTheRetiredEndpoint:
         assert profile.username == "target"
         assert seen == ["target"]
         assert calls == []
+
+
+class TestARetiredSearchFallsBackToTheProfilePage:
+    # Instagram answers HTTP 404 on the search path for signed-in sessions, which is the path being gone rather than
+    # the account missing, so it resolves to nothing instead of failing the lookup
+    def test_a_search_404_resolves_to_nothing(self, im_module):
+        context, calls = _context(im_module, search_error=_search_gone(im_module))
+
+        assert im_module.user_id_from_search(context, "target") is None
+        assert len(calls) == 1
+
+    # A path that answered 404 once answers it for every name, so the rest of the run does not ask it again
+    def test_search_is_not_asked_again_after_a_404(self, im_module):
+        context, calls = _context(im_module, search_error=_search_gone(im_module))
+
+        im_module.user_id_from_search(context, "target")
+        assert im_module.user_id_from_search(context, "other") is None
+        assert len(calls) == 1
+
+    # Instaloader retries a failed request up to the client's connection attempt limit, and the search path answers
+    # 404 every time, so it is asked once whatever limit the client uses. The limit is restored afterwards
+    @pytest.mark.parametrize("gone", [False, True], ids=["answered", "404"])
+    def test_search_is_asked_once_without_retries(self, im_module, gone):
+        context, _ = _context(im_module, search_error=_search_gone(im_module) if gone else None)
+        limits = []
+        ask = context.get_json
+
+        def get_json(path, params, *args, **kwargs):
+            limits.append(context.max_connection_attempts)
+            return ask(path, params, *args, **kwargs)
+
+        context.get_json = get_json
+        im_module.user_id_from_search(context, "target")
+
+        assert limits == [1]
+        assert context.max_connection_attempts == 3
+
+    # The profile page still names the id. The profile is then read over GraphQL with the session, so a session
+    # probe through this lookup still makes a signed-in request it can fail on
+    def test_the_profile_is_read_by_the_id_its_page_names(self, im_module, monkeypatch):
+        context, calls = _context(im_module, search_error=_search_gone(im_module))
+        seen = []
+        monkeypatch.setattr(im_module.instaloader.Profile, "from_username", _page_lookup(77, seen))
+        bot = SimpleNamespace(context=context)
+
+        profile = im_module.profile_from_username_resilient(bot, "target")
+        again = im_module.profile_from_username_resilient(bot, "target")
+
+        assert isinstance(profile, im_module.instaloader.Profile)
+        assert (profile.userid, again.userid) == (77, 77)
+        assert seen == ["target"]
+        assert [path for path, _ in calls] == ["web/search/topsearch/", "graphql/27937681195819736", "graphql/27937681195819736"]
+        assert im_module.stored_user_id("target") == "77"
+
+    # A target the page does not show is still reported as missing
+    def test_a_missing_page_profile_is_still_reported_missing(self, im_module, monkeypatch):
+        context, _ = _context(im_module, search_error=_search_gone(im_module))
+
+        def missing(cls, ctx, name):
+            raise im_module.instaloader.exceptions.ProfileNotExistsException(f"Profile {name} does not exist.")
+
+        monkeypatch.setattr(im_module.instaloader.Profile, "from_username", classmethod(missing))
+
+        with pytest.raises(im_module.instaloader.exceptions.ProfileNotExistsException):
+            im_module.profile_from_username_resilient(SimpleNamespace(context=context), "target")
+        assert im_module.stored_user_id("target") is None
+
+    # An id already read this lookup that answered to another name is not read again when the page names it too.
+    # The page's own profile is returned as Instaloader built it
+    def test_an_id_already_read_is_not_read_again(self, im_module, monkeypatch):
+        im_module.remember_user_id("target", "77")
+        renamed = {"data": {"user": {"username": "renamed", "pk": "77", "follower_count": 5, "following_count": 6, "media_count": 7, "is_private": False}}}
+        context, calls = _context(im_module, search_error=_search_gone(im_module), graphql=renamed)
+        monkeypatch.setattr(im_module.instaloader.Profile, "from_username", _page_lookup(77))
+
+        profile = im_module.profile_from_username_resilient(SimpleNamespace(context=context), "target")
+
+        assert profile.page is True
+        assert [path for path, _ in calls] == ["graphql/27937681195819736", "web/search/topsearch/"]
+        assert im_module.stored_user_id("target") is None
 
 
 class TestTheSignedInAccountIsNotSearchedFor:

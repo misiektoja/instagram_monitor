@@ -13,6 +13,8 @@ instagram_monitor --doctor
 
 Doctor writes no files. Before the checks start it states how many Instagram requests it will make: one for connectivity, one for the saved session and one for each monitored profile. Results use `[PASS]`, `[WARN]`, `[FAIL]` and `[SKIP]`. Checks cover **Environment**, **Configuration**, **Session**, **Connectivity**, **Targets** and **Notifications**. Secret values are not displayed. Follow the reported fixes then use **Next steps** to start monitoring.
 
+The start command keeps the files and explicit monitoring options selected for Doctor. Repeat the options on later runs or save the corresponding settings. Command-line credentials appear as uppercase placeholders. Replace those placeholders before running or save the credentials and remove their flags.
+
 Missing optional packages are warnings you can ignore when you do not use those features. Login checks apply only to Logged-In Mode. An empty target list is valid for the Web Dashboard. Other modes need at least one target.
 
 A configuration file Instagram Monitor cannot accept is reported by Doctor as a `FAIL` naming the line and the reason, instead of stopping the command before the checks run. This means you can point Doctor at a configuration you are still fixing. A proxy setting that would stop every request is handled the same way, so Doctor reports it and carries on with the proxy switched off while a monitoring run still stops. See [Routing Traffic Through a Proxy](usage.md#routing-traffic-through-a-proxy) for the commands that behave this way. Settings that a later release removed are reported as a `WARN` and ignored, so an older configuration file still runs.
@@ -37,7 +39,7 @@ For more detail, add `--debug` to Doctor or a normal run. Debug output includes 
 <a id="common-problems"></a>
 ## Common Problems
 
-Every failure is reported in the same three-part shape: what went wrong, a `To fix:` action and a `Guide:` link to the page that covers it. The fix command matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is. `--debug` appends a `Technical detail:` line for bug reports. Secrets are redacted from all three.
+Every failure is reported in the same three-part shape: what went wrong, a `To fix:` action and a `Guide:` link to the page that covers it. The fix command matches how you installed the tool and carries the `--config-file` or `--env-file` you started with. `--debug` appends a `Technical detail:` line for bug reports. Generated commands preserve their paths, targets and flags. They refer to credential files or hidden entry instead of including credential values. Error summaries and technical details still redact credentials. Privacy substitutions do not alter generated commands, including command arguments written to logs.
 
 | Symptom | Likely cause | Where to look |
 | --- | --- | --- |
@@ -60,7 +62,7 @@ A continuing outage produces a `* Monitoring degraded` reminder once an hour, ev
 <a id="connection-errors-during-monitoring"></a>
 ## Connection Errors During Monitoring
 
-When a check fails, Instagram Monitor prints the error, a `To fix:` action and a `Guide:` link where one applies, then retries automatically at the next interval. You do not need to restart the tool. A command in the fix text matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is.
+When a check fails, Instagram Monitor prints the error, a `To fix:` action and a `Guide:` link where one applies, then retries automatically at the next interval. You do not need to restart the tool. A command in the fix text matches how you installed the tool and carries the `--config-file` or `--env-file` you started with.
 
 `Instagram could not be reached` means a check got no answer from Instagram, and `Instagram's address could not be resolved` means the lookup of the name failed before any request was made. Both are retried on their own and the report names how long until the next check, so a short outage needs no action. A failure that lasts produces the hourly `Monitoring degraded` reminder and `Monitoring recovered` when it clears.
 
@@ -96,16 +98,32 @@ A `401 Unauthorized` naming `Please wait a few minutes before you try again` on 
 
 A session login is limited per account instead, so [importing a session](configuration.md#option-3-session-login-using-browser-cookies-recommended) usually works from the same address. Otherwise wait for the limit to pass or run from another network. If the same run works over a mobile connection, the limit is on the home address rather than on anything in the configuration.
 
+<a id="anonymous-profile-http-400"></a>
+## Anonymous Profile Lookup Returns HTTP 400
+
+Instagram answers HTTP 400 to anonymous profile lookups for some public professional profiles. Such a target is then read from its public embed for the rest of the run. A notice is printed once. HTTP 401, 429 and connection errors never switch a target.
+
+The embed gives the follower count, the post count and the six newest posts. The public profile page adds the following count and the bio when logged-out visitors can open it. A page that fails is skipped for six hours. Missing fields are never treated as zero or empty. Changes to them are reported once they return.
+
+Each check costs one embed request and at most one page request. If the embed cannot be read, the check reports `Public embed fallback failed`.
+
+Limits:
+
+- Only the six newest posts are visible.
+- A private account has no public embed. Import a session to monitor it.
+- The embed picture is 100x100 pixels. A picture that only changes size becomes the new baseline without an alert. A removed picture is reported as a change.
+- Reel codes are not available. A target that turns private reports errors instead of a visibility change.
+
 <a id="profile-lookups-report-a-retired-endpoint"></a>
 ## Profile Lookups Report a Retired Endpoint
 
-In September 2026 Instagram retired `api/v1/users/web_profile_info/` for accounts that are signed in. It answers `400 feedback_required` no matter how healthy the account is, while GraphQL, search and the profile page keep working for the same session in the same second. Runs without a login are unaffected, because they read profiles from `i.instagram.com` instead.
+In September 2026 Instagram retired `api/v1/users/web_profile_info/` for accounts that are signed in. It answers `400 feedback_required` no matter how healthy the account is, while GraphQL and the profile page keep working for the same session in the same second. Runs without a login normally read profiles from `i.instagram.com`. A separate anonymous HTTP 400 failure is handled by the [public profile fallback](#anonymous-profile-http-400).
 
-Version 3.9.1 and earlier read every profile through that endpoint, so a signed-in run on those versions fails at the first lookup of every target. Re-importing the session does not help. Upgrade to 4.0 or later.
+Version 3.9.1 and earlier read every profile through that endpoint, so a signed-in run on those versions fails at the first lookup of every target. Re-importing the session does not help. Upgrade to 4.1 or later.
 
-A signed-in run now resolves the target's user id through Instagram's search and reads the profile over GraphQL, so it does not use the retired endpoint at all. Resolved ids are saved to `instagram_monitor_user_ids.json` beside the other state files and reused by later runs, so an established target is not looked up again on every start. An id is dropped and resolved again if Instagram reports a different name for it. A target that is the signed-in account itself takes its id from the session and is never searched for.
+A signed-in run resolves the target's user id and reads the profile over GraphQL, so it does not use the retired endpoint at all. The id comes from Instagram's search. By late October 2026 search answered HTTP 404 to signed-in sessions, which made 4.0 to 4.0.2 fail with `QueryReturnedNotFoundException` for every target without a saved id. After the first 404 the run stops using search and reads the id from the target's public profile page as a logged-out visitor, through the configured proxy. Resolved ids are saved to `instagram_monitor_user_ids.json` beside the other state files and reused by later runs, so an established target is not looked up again on every start. An id is dropped and resolved again if Instagram reports a different name for it. A target that is the signed-in account itself takes its id from the session and is never searched for.
 
-Search does not list every account, so the retired endpoint is still tried for a target search cannot find. That failure is reported as `endpoint_retired` rather than `action_block`: it does not stop the account and it does not trip the circuit breaker. When you see it, check that the target name is spelled correctly and that the profile still exists.
+The profile page is also used for a target that search does not list. A target the page does not show is reported as missing with `ProfileNotExistsException`. Check that the target name is spelled correctly and that the profile still exists.
 
 The endpoint that reports a target's reels count directly, `api/v1/users/<id>/info/`, stopped answering around the same time, and it fails often enough that changing account or IP address does not help. Reels are therefore **not monitored by default**. Posts and stories are unaffected, and a reel counts towards the posts number either way, so a new reel still moves the posts count.
 
@@ -174,6 +192,7 @@ Common browser source errors:
 
 - **The browser source runs a chrome browser, but ...**: the browser channel and the rest of the session name different browsers. Set `HTTP_BACKEND` to `curl_cffi`, `CURL_CFFI_IMPERSONATE` to `auto` and `USER_AGENT` to a browser from the channel's family or leave `USER_AGENT` empty. See [Browser Source](usage.md#browser-source-experimental).
 - **The browser could not start**: Playwright is installed but the browser is not. Run `playwright install chromium` or set `FOLLOW_LIST_BROWSER_CHANNEL` to a browser already installed here, such as `chrome`.
+- **`ERR_CERT_AUTHORITY_INVALID` or `ERR_PROXY_CERTIFICATE_INVALID`**: the browser does not trust a certificate presented by the site or proxy. See [Browser Proxy Certificates](#browser-proxy-certificates).
 - **The login page, so this session is not logged in**: the cookies handed to the browser are no longer valid. Refresh the session and try again.
 - **A challenge page**: complete account verification in an ordinary browser, then restart or re-import the session. The circuit breaker checks recovery without requiring a separate clearing command.
 - **The profile's followers or following control could not be clicked**: set `FOLLOW_LIST_BROWSER_HEADLESS = False` to inspect the profile. The browser source supports both direct list links and count links that open a dialog. If the counts open normally but the tool still fails, update it and report the layout error.
@@ -181,6 +200,23 @@ Common browser source errors:
 - **Rendered only N of about M**: the dialog stopped growing early, usually from a slow connection. Raise `FOLLOW_LIST_BROWSER_SCROLL_DELAY` and `FOLLOW_LIST_BROWSER_TIMEOUT`. The short list is discarded, not saved over your baseline.
 
 Run `instagram_monitor --doctor` to confirm Playwright and the browser are installed before a real run.
+
+<a id="browser-proxy-certificates"></a>
+### Browser Proxy Certificates
+
+`PROXY_CERT_PATH` configures the HTTP clients used by `auto`, `rest` and `graphql`. Playwright does not provide a CA-file option for browser traffic. Chromium verifies certificates through its own trust configuration, so `auto` can work while `browser` reports `ERR_CERT_AUTHORITY_INVALID`.
+
+On Windows, Chromium reads the current user's **Trusted Root Certification Authorities** store. If your proxy provider supplies a CA you trust, import that CA under the Windows account running the monitor:
+
+```powershell
+certutil -user -addstore Root "C:\certs\proxy-ca.crt"
+```
+
+Replace the example path with the actual CA file path, which may be the same file named by `PROXY_CERT_PATH`. Restart the monitor after the import and keep `VERIFY_SSL = True`. The import persists and affects other applications using that user's trust store. The monitor does not install certificates automatically. See [Chromium's trust-store documentation](https://chromium.googlesource.com/chromium/src/+/main/net/data/ssl/chrome_root_store/faq.md) and [Microsoft's certutil reference](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/certutil).
+
+On other platforms, add the CA through the trust configuration used by the selected browser. For date or hostname errors, check the system clock and the certificate's validity and hostname.
+
+`VERIFY_SSL = False` disables certificate checks for both browser pages and HTTPS proxies. It removes protection against intercepted connections. [`NODE_EXTRA_CA_CERTS`](https://playwright.dev/python/docs/browsers#install-behind-a-firewall-or-a-proxy) affects Playwright's browser download, not Chromium's page certificate trust.
 
 <a id="too-many-open-files"></a>
 ## Too Many Open Files

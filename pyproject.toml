@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "instagram_monitor"
-version = "4.0.2"
+version = "4.1"
 description = "Track Instagram users' activities, profile changes and capture content with beautiful dashboards and instant notifications"
 readme = "README.md"
 license = "GPL-3.0-or-later"
 license-files = ["LICEN[CS]E*"]
 authors = [{ name = "Michal Szymanski", email = "misiektoja-pypi@rm-rf.ninja" }]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
-  "instaloader>=4.15.1",
+  "instaloader>=4.15.4",
   "requests>=2.0",
   "curl_cffi>=0.7",
   "python-dateutil>=2.8",
@@ -27,7 +27,6 @@ dependencies = [
 ]
 classifiers = [
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -44,7 +43,7 @@ keywords = ["instagram", "monitoring", "tracking", "real-time", "osint", "instal
 test = ["build>=1.2", "pytest>=7.0", "pyyaml>=6.0", "setuptools>=61.0", "wheel"]
 e2e = ["playwright>=1.49", "pytest>=7.0"]
 # Pinned so a new ruff release cannot fail CI on a rule that did not exist when the change was written
-lint = ["ruff==0.16.8"]
+lint = ["ruff==0.17.2"]
 # Needed only to import Chrome/Brave/Chromium sessions (--browser chrome|brave|chromium); macOS and Linux only
 browser = ["pycookiecheat>=0.8"]
 # Needed only for FOLLOW_LIST_SOURCE = "browser"; also run: playwright install chromium
@@ -68,7 +67,7 @@ include-package-data = true
 "instagram_monitor_data" = ["instagram_profile_pic_empty.jpg"]
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 # Defect rules only: syntax errors, pyflakes and bugbear. Formatting and import order are left

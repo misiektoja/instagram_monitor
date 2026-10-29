@@ -1,6 +1,6 @@
 # Testing
 
-The [tests directory](https://github.com/misiektoja/instagram_monitor/tree/main/tests/) contains a [pytest](https://docs.pytest.org/) suite for contributors. It checks configuration parsing, time formatting, scheduling, privacy substitutions, notifications, follower comparisons, CSV output, session error handling and user agent generation. It also builds the wheel, installs its console command and verifies documentation contracts. The tests do not contact Instagram. Network functions are replaced with local test doubles.
+The [tests directory](https://github.com/misiektoja/instagram_monitor/tree/main/tests/) contains a [pytest](https://docs.pytest.org/) suite for contributors. It checks configuration parsing, time formatting, scheduling, privacy substitutions, notifications, follower comparisons, CSV output, session error handling and user agent generation. It also builds the wheel, installs its console command and verifies documentation contracts. The tests do not contact Instagram. Network functions are replaced with local test doubles. A test fails when it sends a `requests` or `curl_cffi` request to a host other than the local machine.
 
 Install the test dependencies and run the suite:
 
@@ -42,6 +42,8 @@ actionlint
 The browser test starts the dashboard on an ephemeral loopback port. Chromium
 loads the rendered page, verifies target status, opens target management and
 adds a target without starting Instagram monitoring.
+
+HTTPS proxy tests use a local server with an untrusted certificate to check `VERIFY_SSL` in Chromium. They need OpenSSL to generate a temporary certificate and skip when it is unavailable.
 
 Install the optional browser dependencies:
 

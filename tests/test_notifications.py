@@ -347,7 +347,7 @@ def test_a_missing_webhook_destination_reports_the_shared_block(im_module, monke
     assert exc.value.code == 1
     output = capsys.readouterr().out
     assert "* Error: No webhook destination is configured" in output
-    assert "To fix: Save one with --set-webhook-url, pass --webhook-url or set WEBHOOK_URL in the config file" in output
+    assert "To fix: Save one with --set-webhook-url or include --webhook-url URL on each run" in output
     assert f"Guide: {im_module.WEBHOOK_GUIDE_URL}" in output
     # The run says nothing about sending, because it never got that far
     assert "Sending test webhook notification" not in output

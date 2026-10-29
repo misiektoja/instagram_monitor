@@ -8,7 +8,7 @@ The distributed package contains no vendored third-party source. It declares the
 
 | Component | Required version | License | Use |
 | --- | --- | --- | --- |
-| [instaloader](https://github.com/instaloader/instaloader) | >=4.15.1 | MIT | Instagram session handling, profile, post and story retrieval |
+| [instaloader](https://github.com/instaloader/instaloader) | >=4.15.4 | MIT | Instagram session handling, profile, post and story retrieval |
 | [requests](https://github.com/psf/requests) | >=2.0 | Apache-2.0 | HTTP for notifications, media downloads and proxy IP lookups |
 | [curl_cffi](https://github.com/lexiforest/curl_cffi) | >=0.7 | MIT | Browser TLS impersonation for the alternative HTTP backend |
 | [python-dateutil](https://github.com/dateutil/dateutil) | >=2.8 | Apache-2.0 or BSD-3-Clause | Timestamp parsing and relative date arithmetic |

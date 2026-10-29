@@ -55,7 +55,7 @@ python -m playwright install chromium
 python -m pytest tests/test_browser_e2e.py
 ```
 
-CI additionally runs the suite on Python 3.9 through 3.14, a Windows setup-wizard smoke test and container checks that build the image and exercise Docker Compose. The supported Python floor is 3.9, so avoid syntax and standard-library features added after it.
+CI additionally runs the suite on Python 3.10 through 3.14, a Windows setup-wizard smoke test and container checks that build the image and exercise Docker Compose. The supported Python floor is 3.10, so avoid syntax and standard-library features added after it.
 
 A change to monitoring, session handling or detection is not verified by the offline suite alone. Exercise it against a real account and say so in the pull request, without usernames or credentials.
 
@@ -70,7 +70,7 @@ Pull requests target `dev`. The pull request template lists the checks to report
 
 ## Code style
 
-The codebase favors complete implementations over minimal patches, explicit validation of anything Instagram supplies and one concise summary comment directly above each shared function. Follow the surrounding code rather than introducing a new style.
+Use complete implementations and validate data supplied by Instagram. Place a concise comment immediately before every function and method, including private helpers. Summarize its purpose or contract. Use additional comments for non-obvious constraints and reasons. Follow the surrounding code.
 
 Optional local hooks run the same linter, the whitespace rules and a private-key check before a commit is written. The lint hook calls the Ruff installed by `.[lint]` above rather than a copy of its own, so it always matches the version CI runs:
 
