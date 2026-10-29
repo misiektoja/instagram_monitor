@@ -50,6 +50,7 @@ installed copy of the package.
 | `test_webhook_delivery.py` | `send_webhook` payload formatting, gates and retry behavior with fake HTTP |
 | `test_paginated_fetching.py` | `fetch_usernames_paginated` batching, limits, completion state and stop-event behavior |
 | `test_profile_resolution.py` | Resolving a target through search (or its public profile page once search answers 404) and GraphQL instead of the retired profile endpoint, id caching and the failure class that keeps the account running |
+| `test_instaloader_compatibility.py` | The tool's patches on Instaloader methods passing through arguments that newer Instaloader releases add |
 | `test_public_embed_fallback.py` | Anonymous HTTP 400 recovery through the public embed with page details, remembered fallback, page back-off, collab posts, proxy/TLS settings, failure advice and last-known metadata comparisons |
 | `test_dashboard_endpoints.py` | Web Dashboard status, strict atomic settings, private values, media access and isolation, target validation, monitor ownership, session signaling and test-notification endpoints |
 | `test_detection_workflows.py` | Posts/reels count change notifications, leaked-collab notification workflows and hostile email content |
