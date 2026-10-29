@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.57a0d79d.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.fb2fffe2.min.css">
       
       
 
@@ -1476,6 +1476,7 @@
 
 
 <h1 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h1>
+<p>Setting flags in these examples apply to that run. Repeat them on later runs or <a href="../configuration/#configuration-file">save the corresponding settings</a>.</p>
 <p><a id="command-format-by-installation-method"></a></p>
 <h2 id="command-format-by-installation-method">Command Format by Installation Method<a class="headerlink" href="#command-format-by-installation-method" title="Permanent link">&para;</a></h2>
 <p>Most examples on this page use the PyPI command <code>instagram_monitor</code>. If you chose another installation, replace only that command with the prefix in this table. Keep the targets and options that follow it.</p>
@@ -1859,7 +1860,8 @@
 <li>Headless still means a real browser, not the stripped-down headless shell. Set <code>FOLLOW_LIST_BROWSER_HEADLESS = False</code> to watch it work, which needs a desktop session.</li>
 <li>The browser reuses one profile per session account, so cookies and browser state stay stable between runs instead of arriving as a brand new machine every time. Each account gets its own directory.</li>
 <li>The logged-in session cookies are handed to the browser. It never signs in, and it never asks for your password.</li>
-<li>Your configured proxy is used if you have one.</li>
+<li>Your configured proxy is used if you have one. <code>PROXY_CERT_PATH</code> applies to HTTP clients. The browser needs the proxy CA in its own trust store. See <a href="../troubleshooting/#browser-proxy-certificates">Browser Proxy Certificates</a>.</li>
+<li>The terminal progress bar shows browser startup, page loading and scroll waits. Its count advances as new names are read.</li>
 <li>A challenge, a suspended or disabled account, or a page that is not signed in stops the fetch and is reported. It is not clicked through.</li>
 <li>If the dialog stops growing well short of the follower count Instagram reports, the fetch fails rather than saving a short list over a complete baseline. A smaller gap is returned, but it still cannot shrink a saved list that agrees with the reported count.</li>
 </ul>
@@ -1924,7 +1926,7 @@
 </code></pre></div>
 <p>Additional options:</p>
 <ul>
-<li><code>PROXY_CERT_PATH</code> or <code>--proxy-cert</code> selects a local certificate used to verify the proxy connection. It applies only while <a href="../configuration/#tls-verification">TLS verification</a> is on</li>
+<li><code>PROXY_CERT_PATH</code> or <code>--proxy-cert</code> selects a local CA certificate for HTTP clients. It applies only while <a href="../configuration/#tls-verification">TLS verification</a> is on. Browser follower lists use the browser's trust store instead, as described under <a href="../troubleshooting/#browser-proxy-certificates">Browser Proxy Certificates</a></li>
 <li><code>PROXY_WEBHOOKS</code> or <code>--enable-proxy-webhooks</code> also sends webhook requests through the proxy. It is off by default because some proxies do not allow these requests</li>
 <li><code>IP_ADDRESS_URL</code> selects one trusted IP lookup URL or an ordered non-empty list of fallback URLs</li>
 </ul>
@@ -1959,6 +1961,7 @@
 </code></pre></div>
 <p>See the <a href="https://github.com/lexiforest/curl_cffi">curl_cffi documentation</a> for the full list of impersonation targets available in your installed version.</p>
 <p>The target is checked against that list at startup and when saved from the Web Dashboard. An unrecognized value stops the tool with a message naming supported targets, rather than letting every Instagram request fail later as a connection error.</p>
+<p>With <code>curl_cffi</code>, requests to Instagram's web API carry the headers the impersonated browser sends for the site's own background requests, rather than the headers of a page typed into the address bar. Each Instagram session also keeps its connection open between requests, as a browser does, instead of opening a new one every time.</p>
 <p><a id="privacy-substitutions"></a></p>
 <h2 id="privacy-substitutions">Privacy Substitutions<a class="headerlink" href="#privacy-substitutions" title="Permanent link">&para;</a></h2>
 <p>Privacy substitutions replace selected text in console output, logs, CSV files, notifications and dashboards. Use them to display a label instead of a real Instagram username or to mask other text.</p>
@@ -1966,6 +1969,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a><span class="na">PRIVACY_SUBSTITUTIONS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[ ("a.username", "Sarah"), ("some.other.user", "XXX") ]</span>
 </code></pre></div>
 <p>The replacement happens before output is displayed, logged or sent. Internal keys and file paths do not change, so the tool still uses the original usernames to find data. Invalid entries are ignored with a warning.</p>
+<p>Generated setup and recovery commands keep their original paths and usernames so they can be copied and run. These command arguments also remain unchanged in logs.</p>
 <p><a id="terminal-output"></a></p>
 <h2 id="terminal-output">Terminal Output<a class="headerlink" href="#terminal-output" title="Permanent link">&para;</a></h2>
 <p>Use <code>--help</code> for examples grouped by task and matched to your installation.</p>
@@ -2109,7 +2113,8 @@
 <h2 id="displaying-images-in-your-terminal">Displaying Images in Your Terminal<a class="headerlink" href="#displaying-images-in-your-terminal" title="Permanent link">&para;</a></h2>
 <p><code>imgcat</code> displays supported image files inside compatible terminals. If it is installed, Instagram Monitor can use it for profile pictures, stories, reels and posts.</p>
 <p>To do this, set the path to your <code>imgcat</code> binary in the <code>IMGCAT_PATH</code> configuration option.</p>
-<p>If you set only the command name, Instagram Monitor searches for it in <code>PATH</code>.</p>
+<p>If you set only the command name, Instagram Monitor searches for it in <code>PATH</code>. The current directory is never searched, even on Windows.</p>
+<p>A path is accepted from a config file named with <code>--config-file</code>, from <code>~/.instagram_monitor.conf</code> and from the package directory. A config file found in the current directory may only name the command. A path set there is ignored with a warning at startup and reported by <a href="../troubleshooting/#doctor-preflight"><code>--doctor</code></a>, because that directory may be writable by other users.</p>
 <p>Leave <code>IMGCAT_PATH</code> empty to disable terminal images.</p>
 <p>The published Docker image does not include <code>imgcat</code>. Use a local installation or add the tool in a custom image if terminal image display is required. Saved images remain available through the <code>/data</code> mount without <code>imgcat</code>.</p>
 <p><a id="check-intervals"></a></p>
@@ -2250,10 +2255,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../assets/javascripts/bundle.c21346df.min.js"></script>
       
     
   </body>

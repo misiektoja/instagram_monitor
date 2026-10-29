@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.57a0d79d.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.fb2fffe2.min.css">
       
       
 
@@ -566,6 +566,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#anonymous-profile-lookup-returns-http-400" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anonymous Profile Lookup Returns HTTP 400
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#profile-lookups-report-a-retired-endpoint" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -606,6 +617,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Follower and Following Lists Stop Working">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#browser-proxy-certificates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browser Proxy Certificates
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -819,6 +847,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#anonymous-profile-lookup-returns-http-400" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anonymous Profile Lookup Returns HTTP 400
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#profile-lookups-report-a-retired-endpoint" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -859,6 +898,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Follower and Following Lists Stop Working">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#browser-proxy-certificates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browser Proxy Certificates
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -961,6 +1017,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>instagram_monitor<span class="w"> </span>--doctor
 </code></pre></div>
 <p>Doctor writes no files. Before the checks start it states how many Instagram requests it will make: one for connectivity, one for the saved session and one for each monitored profile. Results use <code>[PASS]</code>, <code>[WARN]</code>, <code>[FAIL]</code> and <code>[SKIP]</code>. Checks cover <strong>Environment</strong>, <strong>Configuration</strong>, <strong>Session</strong>, <strong>Connectivity</strong>, <strong>Targets</strong> and <strong>Notifications</strong>. Secret values are not displayed. Follow the reported fixes then use <strong>Next steps</strong> to start monitoring.</p>
+<p>The start command keeps the files and explicit monitoring options selected for Doctor. Repeat the options on later runs or save the corresponding settings. Command-line credentials appear as uppercase placeholders. Replace those placeholders before running or save the credentials and remove their flags.</p>
 <p>Missing optional packages are warnings you can ignore when you do not use those features. Login checks apply only to Logged-In Mode. An empty target list is valid for the Web Dashboard. Other modes need at least one target.</p>
 <p>A configuration file Instagram Monitor cannot accept is reported by Doctor as a <code>FAIL</code> naming the line and the reason, instead of stopping the command before the checks run. This means you can point Doctor at a configuration you are still fixing. A proxy setting that would stop every request is handled the same way, so Doctor reports it and carries on with the proxy switched off while a monitoring run still stops. See <a href="../usage/#routing-traffic-through-a-proxy">Routing Traffic Through a Proxy</a> for the commands that behave this way. Settings that a later release removed are reported as a <code>WARN</code> and ignored, so an older configuration file still runs.</p>
 <p>Each failure and warning includes a <code>To fix:</code> action and a <code>Guide:</code> link to the relevant documentation page where one applies. The command returns a nonzero exit status if a check or approved delivery test fails, so scripts can detect the failure. Doctor accepts normal login, target and file options. Use them to check the saved setup or one exact combination:</p>
@@ -974,7 +1031,7 @@
 <p>For more detail, add <code>--debug</code> to Doctor or a normal run. Debug output includes HTTP details and internal decisions. It may also contain private data. Remove cookies, passwords, tokens and webhook URLs before sharing it.</p>
 <p><a id="common-problems"></a></p>
 <h2 id="common-problems">Common Problems<a class="headerlink" href="#common-problems" title="Permanent link">&para;</a></h2>
-<p>Every failure is reported in the same three-part shape: what went wrong, a <code>To fix:</code> action and a <code>Guide:</code> link to the page that covers it. The fix command matches how you installed the tool and carries the <code>--config-file</code> or <code>--env-file</code> you started with, so it can be pasted as it is. <code>--debug</code> appends a <code>Technical detail:</code> line for bug reports. Secrets are redacted from all three.</p>
+<p>Every failure is reported in the same three-part shape: what went wrong, a <code>To fix:</code> action and a <code>Guide:</code> link to the page that covers it. The fix command matches how you installed the tool and carries the <code>--config-file</code> or <code>--env-file</code> you started with. <code>--debug</code> appends a <code>Technical detail:</code> line for bug reports. Generated commands preserve their paths, targets and flags. They refer to credential files or hidden entry instead of including credential values. Error summaries and technical details still redact credentials. Privacy substitutions do not alter generated commands, including command arguments written to logs.</p>
 <table>
 <thead>
 <tr>
@@ -1050,7 +1107,7 @@
 <p><a id="connection-problems"></a>
 <a id="connection-errors-during-monitoring"></a></p>
 <h2 id="connection-errors-during-monitoring">Connection Errors During Monitoring<a class="headerlink" href="#connection-errors-during-monitoring" title="Permanent link">&para;</a></h2>
-<p>When a check fails, Instagram Monitor prints the error, a <code>To fix:</code> action and a <code>Guide:</code> link where one applies, then retries automatically at the next interval. You do not need to restart the tool. A command in the fix text matches how you installed the tool and carries the <code>--config-file</code> or <code>--env-file</code> you started with, so it can be pasted as it is.</p>
+<p>When a check fails, Instagram Monitor prints the error, a <code>To fix:</code> action and a <code>Guide:</code> link where one applies, then retries automatically at the next interval. You do not need to restart the tool. A command in the fix text matches how you installed the tool and carries the <code>--config-file</code> or <code>--env-file</code> you started with.</p>
 <p><code>Instagram could not be reached</code> means a check got no answer from Instagram, and <code>Instagram's address could not be resolved</code> means the lookup of the name failed before any request was made. Both are retried on their own and the report names how long until the next check, so a short outage needs no action. A failure that lasts produces the hourly <code>Monitoring degraded</code> reminder and <code>Monitoring recovered</code> when it clears.</p>
 <p>Every other problem reads the same way: all print <code>* Error:</code> with what went wrong, a <code>To fix:</code> action and a <code>Guide:</code> link. A problem the run recovers from prints <code>* Warning:</code> with the same two lines under it.</p>
 <p>A failure the tool could not place still names an action: it asks you to re-run with <code>--debug</code> and links the page explaining the output modes.</p>
@@ -1069,12 +1126,24 @@
 <h2 id="anonymous-runs-are-rate-limited">Anonymous Runs Are Rate Limited<a class="headerlink" href="#anonymous-runs-are-rate-limited" title="Permanent link">&para;</a></h2>
 <p>A <code>401 Unauthorized</code> naming <code>Please wait a few minutes before you try again</code> on a run without a session means Instagram is rate-limiting anonymous requests from your IP address. The limit is per address, so it counts every device and tool behind it, and it is often reached on the very first request of a run. Raising the check interval does not lift a limit the run did not cause.</p>
 <p>A session login is limited per account instead, so <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">importing a session</a> usually works from the same address. Otherwise wait for the limit to pass or run from another network. If the same run works over a mobile connection, the limit is on the home address rather than on anything in the configuration.</p>
+<p><a id="anonymous-profile-http-400"></a></p>
+<h2 id="anonymous-profile-lookup-returns-http-400">Anonymous Profile Lookup Returns HTTP 400<a class="headerlink" href="#anonymous-profile-lookup-returns-http-400" title="Permanent link">&para;</a></h2>
+<p>Instagram answers HTTP 400 to anonymous profile lookups for some public professional profiles. Such a target is then read from its public embed for the rest of the run. A notice is printed once. HTTP 401, 429 and connection errors never switch a target.</p>
+<p>The embed gives the follower count, the post count and the six newest posts. The public profile page adds the following count and the bio when logged-out visitors can open it. A page that fails is skipped for six hours. Missing fields are never treated as zero or empty. Changes to them are reported once they return.</p>
+<p>Each check costs one embed request and at most one page request. If the embed cannot be read, the check reports <code>Public embed fallback failed</code>.</p>
+<p>Limits:</p>
+<ul>
+<li>Only the six newest posts are visible.</li>
+<li>A private account has no public embed. Import a session to monitor it.</li>
+<li>The embed picture is 100x100 pixels. A picture that only changes size becomes the new baseline without an alert. A removed picture is reported as a change.</li>
+<li>Reel codes are not available. A target that turns private reports errors instead of a visibility change.</li>
+</ul>
 <p><a id="profile-lookups-report-a-retired-endpoint"></a></p>
 <h2 id="profile-lookups-report-a-retired-endpoint">Profile Lookups Report a Retired Endpoint<a class="headerlink" href="#profile-lookups-report-a-retired-endpoint" title="Permanent link">&para;</a></h2>
-<p>In September 2026 Instagram retired <code>api/v1/users/web_profile_info/</code> for accounts that are signed in. It answers <code>400 feedback_required</code> no matter how healthy the account is, while GraphQL, search and the profile page keep working for the same session in the same second. Runs without a login are unaffected, because they read profiles from <code>i.instagram.com</code> instead.</p>
-<p>Version 3.9.1 and earlier read every profile through that endpoint, so a signed-in run on those versions fails at the first lookup of every target. Re-importing the session does not help. Upgrade to 4.0 or later.</p>
-<p>A signed-in run now resolves the target's user id through Instagram's search and reads the profile over GraphQL, so it does not use the retired endpoint at all. Resolved ids are saved to <code>instagram_monitor_user_ids.json</code> beside the other state files and reused by later runs, so an established target is not looked up again on every start. An id is dropped and resolved again if Instagram reports a different name for it. A target that is the signed-in account itself takes its id from the session and is never searched for.</p>
-<p>Search does not list every account, so the retired endpoint is still tried for a target search cannot find. That failure is reported as <code>endpoint_retired</code> rather than <code>action_block</code>: it does not stop the account and it does not trip the circuit breaker. When you see it, check that the target name is spelled correctly and that the profile still exists.</p>
+<p>In September 2026 Instagram retired <code>api/v1/users/web_profile_info/</code> for accounts that are signed in. It answers <code>400 feedback_required</code> no matter how healthy the account is, while GraphQL and the profile page keep working for the same session in the same second. Runs without a login normally read profiles from <code>i.instagram.com</code>. A separate anonymous HTTP 400 failure is handled by the <a href="#anonymous-profile-http-400">public profile fallback</a>.</p>
+<p>Version 3.9.1 and earlier read every profile through that endpoint, so a signed-in run on those versions fails at the first lookup of every target. Re-importing the session does not help. Upgrade to 4.1 or later.</p>
+<p>A signed-in run resolves the target's user id and reads the profile over GraphQL, so it does not use the retired endpoint at all. The id comes from Instagram's search. By late October 2026 search answered HTTP 404 to signed-in sessions, which made 4.0 to 4.0.2 fail with <code>QueryReturnedNotFoundException</code> for every target without a saved id. After the first 404 the run stops using search and reads the id from the target's public profile page as a logged-out visitor, through the configured proxy. Resolved ids are saved to <code>instagram_monitor_user_ids.json</code> beside the other state files and reused by later runs, so an established target is not looked up again on every start. An id is dropped and resolved again if Instagram reports a different name for it. A target that is the signed-in account itself takes its id from the session and is never searched for.</p>
+<p>The profile page is also used for a target that search does not list. A target the page does not show is reported as missing with <code>ProfileNotExistsException</code>. Check that the target name is spelled correctly and that the profile still exists.</p>
 <p>The endpoint that reports a target's reels count directly, <code>api/v1/users/&lt;id&gt;/info/</code>, stopped answering around the same time, and it fails often enough that changing account or IP address does not help. Reels are therefore <strong>not monitored by default</strong>. Posts and stories are unaffected, and a reel counts towards the posts number either way, so a new reel still moves the posts count.</p>
 <p>Turn reels on with <code>FETCH_REELS = True</code> or <code>--fetch-reels</code>, and off again with <code>--no-fetch-reels</code>. <code>--setup</code> asks as well. With reels on, the count is worked out by reading the target's whole reel list, which is many requests per check and is often refused, so expect repeated errors while Instagram is refusing it. A count is reused while the target's posts count stays where it was and read again when that number moves.</p>
 <p><a id="container-dashboard-does-not-open"></a></p>
@@ -1112,6 +1181,7 @@
 <ul>
 <li><strong>The browser source runs a chrome browser, but ...</strong>: the browser channel and the rest of the session name different browsers. Set <code>HTTP_BACKEND</code> to <code>curl_cffi</code>, <code>CURL_CFFI_IMPERSONATE</code> to <code>auto</code> and <code>USER_AGENT</code> to a browser from the channel's family or leave <code>USER_AGENT</code> empty. See <a href="../usage/#browser-source-experimental">Browser Source</a>.</li>
 <li><strong>The browser could not start</strong>: Playwright is installed but the browser is not. Run <code>playwright install chromium</code> or set <code>FOLLOW_LIST_BROWSER_CHANNEL</code> to a browser already installed here, such as <code>chrome</code>.</li>
+<li><strong><code>ERR_CERT_AUTHORITY_INVALID</code> or <code>ERR_PROXY_CERTIFICATE_INVALID</code></strong>: the browser does not trust a certificate presented by the site or proxy. See <a href="#browser-proxy-certificates">Browser Proxy Certificates</a>.</li>
 <li><strong>The login page, so this session is not logged in</strong>: the cookies handed to the browser are no longer valid. Refresh the session and try again.</li>
 <li><strong>A challenge page</strong>: complete account verification in an ordinary browser, then restart or re-import the session. The circuit breaker checks recovery without requiring a separate clearing command.</li>
 <li><strong>The profile's followers or following control could not be clicked</strong>: set <code>FOLLOW_LIST_BROWSER_HEADLESS = False</code> to inspect the profile. The browser source supports both direct list links and count links that open a dialog. If the counts open normally but the tool still fails, update it and report the layout error.</li>
@@ -1119,6 +1189,15 @@
 <li><strong>Rendered only N of about M</strong>: the dialog stopped growing early, usually from a slow connection. Raise <code>FOLLOW_LIST_BROWSER_SCROLL_DELAY</code> and <code>FOLLOW_LIST_BROWSER_TIMEOUT</code>. The short list is discarded, not saved over your baseline.</li>
 </ul>
 <p>Run <code>instagram_monitor --doctor</code> to confirm Playwright and the browser are installed before a real run.</p>
+<p><a id="browser-proxy-certificates"></a></p>
+<h3 id="browser-proxy-certificates">Browser Proxy Certificates<a class="headerlink" href="#browser-proxy-certificates" title="Permanent link">&para;</a></h3>
+<p><code>PROXY_CERT_PATH</code> configures the HTTP clients used by <code>auto</code>, <code>rest</code> and <code>graphql</code>. Playwright does not provide a CA-file option for browser traffic. Chromium verifies certificates through its own trust configuration, so <code>auto</code> can work while <code>browser</code> reports <code>ERR_CERT_AUTHORITY_INVALID</code>.</p>
+<p>On Windows, Chromium reads the current user's <strong>Trusted Root Certification Authorities</strong> store. If your proxy provider supplies a CA you trust, import that CA under the Windows account running the monitor:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">certutil</span> <span class="n">-user</span> <span class="n">-addstore</span> <span class="n">Root</span> <span class="s2">"C:\certs\proxy-ca.crt"</span>
+</code></pre></div>
+<p>Replace the example path with the actual CA file path, which may be the same file named by <code>PROXY_CERT_PATH</code>. Restart the monitor after the import and keep <code>VERIFY_SSL = True</code>. The import persists and affects other applications using that user's trust store. The monitor does not install certificates automatically. See <a href="https://chromium.googlesource.com/chromium/src/+/main/net/data/ssl/chrome_root_store/faq.md">Chromium's trust-store documentation</a> and <a href="https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/certutil">Microsoft's certutil reference</a>.</p>
+<p>On other platforms, add the CA through the trust configuration used by the selected browser. For date or hostname errors, check the system clock and the certificate's validity and hostname.</p>
+<p><code>VERIFY_SSL = False</code> disables certificate checks for both browser pages and HTTPS proxies. It removes protection against intercepted connections. <a href="https://playwright.dev/python/docs/browsers#install-behind-a-firewall-or-a-proxy"><code>NODE_EXTRA_CA_CERTS</code></a> affects Playwright's browser download, not Chromium's page certificate trust.</p>
 <p><a id="too-many-open-files"></a></p>
 <h2 id="too-many-open-files">Too Many Open Files<a class="headerlink" href="#too-many-open-files" title="Permanent link">&para;</a></h2>
 <p><code>This process ran out of file descriptors</code> means the operating system limit on open files was reached. It is a local limit and not an Instagram problem. Raise it with <code>ulimit -n 4096</code> in the shell that starts the tool or set <code>LimitNOFILE=</code> in the systemd unit, then restart the tool.</p>
@@ -1142,10 +1221,10 @@
 <p><a id="verbose-and-debug-output"></a></p>
 <h2 id="verbose-and-debug-output">Verbose and Debug Output<a class="headerlink" href="#verbose-and-debug-output" title="Permanent link">&para;</a></h2>
 <p><code>--verbose</code> adds the decisions a run made, in the same <code>*</code> lines as the rest of the output:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--verbose
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--verbose
 </code></pre></div>
 <p><code>--debug</code> traces what the tool is doing in timestamped <code>[DEBUG HH:MM:SS]</code> lines:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--debug
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>instagram_monitor<span class="w"> </span>&lt;target_insta_user&gt;<span class="w"> </span>--debug
 </code></pre></div>
 <p>Lines with details read <code>Operation: key=value, key=value</code>. Fields depend on the operation. Some results report <code>outcome=OK</code>, <code>failed</code> or <code>skipped</code>. Lines printed while a target is monitored carry its username in square brackets after the timestamp.</p>
 <p><a id="installation-and-command-problems"></a></p>
@@ -1218,10 +1297,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../assets/javascripts/bundle.c21346df.min.js"></script>
       
     
   </body>

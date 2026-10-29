@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.57a0d79d.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.fb2fffe2.min.css">
       
       
 
@@ -1147,7 +1147,7 @@
 <p>Examples on this page use the PyPI command <code>instagram_monitor</code>. If you chose another installation, replace that command with the matching <a href="../usage/#command-format-by-installation-method">command prefix</a>. Keep all options after the prefix. A container can see host files only through its mounts, so paths to files in the current directory must start with <code>/data</code>.</p>
 <p><a id="configuration-file"></a></p>
 <h2 id="configuration-file">Configuration File<a class="headerlink" href="#configuration-file" title="Permanent link">&para;</a></h2>
-<p>You can pass most settings as command-line options or save them in a configuration file for later runs.</p>
+<p>Command-line setting options apply to the current run and do not update the configuration file. Include them on every run that needs those settings. To reuse settings without repeating the options, save them through <code>--setup</code> or edit the configuration file. Commands such as <code>--setup</code> and <code>--set-smtp-password</code> save the values they collect.</p>
 <p>The easiest way to create this file is <code>instagram_monitor --setup</code>.</p>
 <p>To edit every available setting yourself, generate a default configuration file:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># On macOS, Linux or Windows Command Prompt (cmd.exe)</span>
@@ -1463,6 +1463,7 @@
 <p>Instagram Monitor verifies the TLS certificate of every server it contacts: Instagram, the connectivity check endpoint, the proxy IP lookup, downloaded media, the mail server that delivers email alerts and, when enabled, the webhook service.</p>
 <p>Set <code>VERIFY_SSL</code> to <code>False</code> only on a network that intercepts TLS with its own certificate authority, such as a corporate proxy. With verification off, an intercepted connection cannot be told apart from the real service, and <code>PROXY_CERT_PATH</code> is ignored because there is nothing left to check the certificate against.</p>
 <p>The startup summary shows <code>TLS verification</code> and <a href="../troubleshooting/#doctor-preflight"><code>--doctor</code></a> reports a warning while it is off.</p>
+<p>The experimental browser source also follows <code>VERIFY_SSL</code>, including the TLS connection to an HTTPS proxy. With verification on, <code>PROXY_CERT_PATH</code> applies to HTTP clients only. Chromium needs the proxy CA installed in a trust store it reads. See <a href="../troubleshooting/#browser-proxy-certificates">Browser Proxy Certificates</a>.</p>
 
 
 
@@ -1522,10 +1523,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../assets/javascripts/bundle.c21346df.min.js"></script>
       
     
   </body>

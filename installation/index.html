@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.57a0d79d.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.fb2fffe2.min.css">
       
       
 
@@ -1174,8 +1174,8 @@
 <p>Choose either the Python path or the container path.</p>
 <p><strong>Python path</strong>:</p>
 <ul>
-<li><a href="https://www.python.org/downloads/">Python</a> 3.9 or higher</li>
-<li>Core libraries: <a href="https://github.com/instaloader/instaloader">instaloader</a>, <code>requests</code>, <a href="https://github.com/lexiforest/curl_cffi">curl_cffi</a>, <code>python-dateutil</code>, <code>pytz</code>, <code>tzlocal</code>, <code>python-dotenv</code>, <code>tqdm</code>, <code>rich</code>, <code>flask</code>, <code>jinja2</code></li>
+<li><a href="https://www.python.org/downloads/">Python</a> 3.10 or higher</li>
+<li>Core libraries: <a href="https://github.com/instaloader/instaloader">instaloader</a> 4.15.4 or later, <code>requests</code>, <a href="https://github.com/lexiforest/curl_cffi">curl_cffi</a>, <code>python-dateutil</code>, <code>pytz</code>, <code>tzlocal</code>, <code>python-dotenv</code>, <code>tqdm</code>, <code>rich</code>, <code>flask</code>, <code>jinja2</code></li>
 <li><a href="https://github.com/n8henrie/pycookiecheat">pycookiecheat</a> is optional and is needed only to import cookies from Chrome, Brave or Chromium</li>
 <li><a href="https://pypi.org/project/wcwidth/">wcwidth</a> is optional and is needed only to measure display width for <code>TRUNCATE_CHARS</code></li>
 <li><a href="https://github.com/microsoft/playwright-python">Playwright</a> is optional and is needed only for the experimental browser follower list source</li>
@@ -1204,7 +1204,7 @@
 <p>It should work on other versions of macOS, Linux, Unix and Windows as well.</p>
 <p><a id="new-to-python-check-and-install"></a></p>
 <h2 id="new-to-python-check-and-install">New to Python: check and install<a class="headerlink" href="#new-to-python-check-and-install" title="Permanent link">&para;</a></h2>
-<p>Use this section if you are new to Python or do not know what is already installed. The platform sections only prepare Python and <code>pip</code>. Everyone then uses the same Instagram Monitor installation and setup commands. Instagram Monitor requires Python 3.9 or newer and is currently tested through Python 3.14.</p>
+<p>Use this section if you are new to Python or do not know what is already installed. The platform sections only prepare Python and <code>pip</code>. Everyone then uses the same Instagram Monitor installation and setup commands. Instagram Monitor requires Python 3.10 or newer and is currently tested through Python 3.14.</p>
 <h3 id="check-whether-instagram-monitor-is-already-installed">Check whether Instagram Monitor is already installed<a class="headerlink" href="#check-whether-instagram-monitor-is-already-installed" title="Permanent link">&para;</a></h3>
 <p>Open Windows PowerShell on Windows or Terminal on macOS and Linux then run:</p>
 <div class="highlight"><pre><span></span><code>instagram_monitor --version
@@ -1216,7 +1216,7 @@
 <div class="highlight"><pre><span></span><code>python --version
 pip --version
 </code></pre></div>
-<p>If both commands work and Python reports version 3.9 or newer, skip to <a href="#install-instagram-monitor">Install Instagram Monitor</a>.</p>
+<p>If both commands work and Python reports version 3.10 or newer, skip to <a href="#install-instagram-monitor">Install Instagram Monitor</a>.</p>
 <p>If either command fails:</p>
 <ol>
 <li>
@@ -1243,7 +1243,7 @@ pip --version
 <div class="highlight"><pre><span></span><code>python3 --version
 pip --version
 </code></pre></div>
-<p>If both commands work and Python reports version 3.9 or newer, skip to <a href="#install-instagram-monitor">Install Instagram Monitor</a>.</p>
+<p>If both commands work and Python reports version 3.10 or newer, skip to <a href="#install-instagram-monitor">Install Instagram Monitor</a>.</p>
 <p>If either command fails:</p>
 <ol>
 <li>
@@ -1271,7 +1271,7 @@ pip --version
 <div class="highlight"><pre><span></span><code>python3 --version
 pip --version
 </code></pre></div>
-<p>If both commands work and Python reports version 3.9 or newer, skip to <a href="#install-instagram-monitor">Install Instagram Monitor</a>.</p>
+<p>If both commands work and Python reports version 3.10 or newer, skip to <a href="#install-instagram-monitor">Install Instagram Monitor</a>.</p>
 <p>If either command fails, install the missing packages:</p>
 <div class="highlight"><pre><span></span><code>sudo apt update
 sudo apt install python3 python3-pip
@@ -1281,7 +1281,7 @@ sudo apt install python3 python3-pip
 <div class="highlight"><pre><span></span><code>python3 --version
 pip --version
 </code></pre></div>
-<p>If Python reports a version older than 3.9, follow your distribution's instructions to install a supported Python version before continuing. For another Linux distribution, install Python 3.9 or newer plus <code>pip</code> through its package manager.</p>
+<p>If Python reports a version older than 3.10, follow your distribution's instructions to install a supported Python version before continuing. For another Linux distribution, install Python 3.10 or newer plus <code>pip</code> through its package manager.</p>
 <p><a id="install-instagram-monitor"></a></p>
 <h3 id="install-instagram-monitor">Install Instagram Monitor<a class="headerlink" href="#install-instagram-monitor" title="Permanent link">&para;</a></h3>
 <p>Every operating system uses the same command:</p>
@@ -1524,10 +1524,10 @@ pipx install instagram_monitor
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../assets/javascripts/bundle.c21346df.min.js"></script>
       
     
   </body>
