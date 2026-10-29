@@ -103,7 +103,7 @@ A session login is limited per account instead, so [importing a session](configu
 
 Instagram answers HTTP 400 to anonymous profile lookups for some public professional profiles. Such a target is then read from its public embed for the rest of the run. A notice is printed once. HTTP 401, 429 and connection errors never switch a target.
 
-The embed gives the follower count, the post count and the six newest posts. The public profile page adds the following count and the bio when logged-out visitors can open it. This needs Instaloader 4.15.4 or later. A page that fails is skipped for six hours. Missing fields are never treated as zero or empty. Changes to them are reported once they return.
+The embed gives the follower count, the post count and the six newest posts. The public profile page adds the following count and the bio when logged-out visitors can open it. A page that fails is skipped for six hours. Missing fields are never treated as zero or empty. Changes to them are reported once they return.
 
 Each check costs one embed request and at most one page request. If the embed cannot be read, the check reports `Public embed fallback failed`.
 
@@ -117,13 +117,13 @@ Limits:
 <a id="profile-lookups-report-a-retired-endpoint"></a>
 ## Profile Lookups Report a Retired Endpoint
 
-In September 2026 Instagram retired `api/v1/users/web_profile_info/` for accounts that are signed in. It answers `400 feedback_required` no matter how healthy the account is, while GraphQL, search and the profile page keep working for the same session in the same second. Runs without a login normally read profiles from `i.instagram.com`. A separate anonymous HTTP 400 failure is handled by the [public profile fallback](#anonymous-profile-http-400).
+In September 2026 Instagram retired `api/v1/users/web_profile_info/` for accounts that are signed in. It answers `400 feedback_required` no matter how healthy the account is, while GraphQL and the profile page keep working for the same session in the same second. Runs without a login normally read profiles from `i.instagram.com`. A separate anonymous HTTP 400 failure is handled by the [public profile fallback](#anonymous-profile-http-400).
 
-Version 3.9.1 and earlier read every profile through that endpoint, so a signed-in run on those versions fails at the first lookup of every target. Re-importing the session does not help. Upgrade to 4.0 or later.
+Version 3.9.1 and earlier read every profile through that endpoint, so a signed-in run on those versions fails at the first lookup of every target. Re-importing the session does not help. Upgrade to 4.1 or later.
 
-A signed-in run now resolves the target's user id through Instagram's search and reads the profile over GraphQL, so it does not use the retired endpoint at all. Resolved ids are saved to `instagram_monitor_user_ids.json` beside the other state files and reused by later runs, so an established target is not looked up again on every start. An id is dropped and resolved again if Instagram reports a different name for it. A target that is the signed-in account itself takes its id from the session and is never searched for.
+A signed-in run resolves the target's user id and reads the profile over GraphQL, so it does not use the retired endpoint at all. The id comes from Instagram's search. By late October 2026 search answered HTTP 404 to signed-in sessions, which made 4.0 to 4.0.2 fail with `QueryReturnedNotFoundException` for every target without a saved id. After the first 404 the run stops using search and reads the id from the target's public profile page as a logged-out visitor, through the configured proxy. Resolved ids are saved to `instagram_monitor_user_ids.json` beside the other state files and reused by later runs, so an established target is not looked up again on every start. An id is dropped and resolved again if Instagram reports a different name for it. A target that is the signed-in account itself takes its id from the session and is never searched for.
 
-Search does not list every account, so the retired endpoint is still tried for a target search cannot find. That failure is reported as `endpoint_retired` rather than `action_block`: it does not stop the account and it does not trip the circuit breaker. When you see it, check that the target name is spelled correctly and that the profile still exists.
+The profile page is also used for a target that search does not list. A target the page does not show is reported as missing with `ProfileNotExistsException`. Check that the target name is spelled correctly and that the profile still exists.
 
 The endpoint that reports a target's reels count directly, `api/v1/users/<id>/info/`, stopped answering around the same time, and it fails often enough that changing account or IP address does not help. Reels are therefore **not monitored by default**. Posts and stories are unaffected, and a reel counts towards the posts number either way, so a new reel still moves the posts count.
 
