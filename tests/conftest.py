@@ -196,6 +196,8 @@ def deterministic_globals(monkeypatch, tmp_path):
     im.USER_ID_CACHE.clear()
     # Resolved ids outlive a run in a file, so each test is given its own rather than the working directory's
     im.USER_ID_CACHE_LOADED = False
+    # A search path one test saw retired must still be asked by the next
+    im.USER_SEARCH_RETIRED = False
     monkeypatch.setattr(im, "user_id_cache_path", lambda: str(tmp_path / "instagram_monitor_user_ids.json"), raising=False)
     # A reels count established for one test's posts count must not answer for another's
     im.REELS_COUNT_CACHE.clear()
