@@ -2078,13 +2078,15 @@ def _apply_instaloader_graphql_profile_patch() -> None:
         "enable_integrity_filters": True,
     }
 
-    def _patched_doc_id_graphql_query(self, doc_id, variables, referer=None):  # type: ignore[no-untyped-def]
+    # Rewrites the stale profile query and passes every other argument through, such as the web_api flag Instaloader
+    # 4.16 sends with each posts and reels page
+    def _patched_doc_id_graphql_query(self, doc_id, variables, *args, **kwargs):  # type: ignore[no-untyped-def]
         if str(doc_id) == stale_doc_id:
             doc_id = fixed_doc_id
             variables = {**(variables or {}), **extra_vars}
             if DEBUG_MODE:
                 debug_print("instaloader profile metadata doc_id patch fired (stale doc_id rewritten)")
-        return original(self, doc_id, variables, referer)
+        return original(self, doc_id, variables, *args, **kwargs)
 
     InstaloaderContext.doc_id_graphql_query = _patched_doc_id_graphql_query  # type: ignore[method-assign]
     _INSTALOADER_GRAPHQL_PROFILE_PATCH_APPLIED = True
