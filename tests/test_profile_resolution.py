@@ -52,7 +52,7 @@ def _context(im_module, logged_in=True, search_users=(), graphql=None, username=
         calls.append((f"graphql/{doc_id}", dict(variables)))
         return graphql_user
 
-    return SimpleNamespace(is_logged_in=logged_in, username=username, get_json=get_json, doc_id_graphql_query=doc_id_graphql_query, request_timeout=30, iphone_support=False, profile_id_cache={}, _session=session), calls
+    return SimpleNamespace(is_logged_in=logged_in, username=username, get_json=get_json, doc_id_graphql_query=doc_id_graphql_query, request_timeout=30, max_connection_attempts=3, iphone_support=False, profile_id_cache={}, _session=session), calls
 
 
 class TestSearchResolvesTheUserId:
@@ -151,6 +151,24 @@ class TestARetiredSearchFallsBackToTheProfilePage:
         im_module.user_id_from_search(context, "target")
         assert im_module.user_id_from_search(context, "other") is None
         assert len(calls) == 1
+
+    # Instaloader retries a failed request up to the client's connection attempt limit, and the search path answers
+    # 404 every time, so it is asked once whatever limit the client uses. The limit is restored afterwards
+    @pytest.mark.parametrize("gone", [False, True], ids=["answered", "404"])
+    def test_search_is_asked_once_without_retries(self, im_module, gone):
+        context, _ = _context(im_module, search_error=_search_gone(im_module) if gone else None)
+        limits = []
+        ask = context.get_json
+
+        def get_json(path, params, *args, **kwargs):
+            limits.append(context.max_connection_attempts)
+            return ask(path, params, *args, **kwargs)
+
+        context.get_json = get_json
+        im_module.user_id_from_search(context, "target")
+
+        assert limits == [1]
+        assert context.max_connection_attempts == 3
 
     # The profile page still names the id. The profile is then read over GraphQL with the session, so a session
     # probe through this lookup still makes a signed-in request it can fail on
