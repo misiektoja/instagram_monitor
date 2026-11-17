@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v4.1
+v4.2
 
 OSINT tool implementing real-time tracking of Instagram users activities and profile changes:
 https://github.com/misiektoja/instagram_monitor/
@@ -20,12 +20,10 @@ flask (optional - for web dashboard)
 rich (optional - for terminal dashboard)
 """
 
-# This module imports typing and other names well below the first annotated definition, which on Python
-# 3.10 through 3.13 would evaluate those annotations before the names exist. Deferring annotation evaluation
-# keeps the supported Python floor enforceable regardless of where an import sits in the file
+# Defers annotation evaluation, since typing names are imported below the first annotated definition
 from __future__ import annotations
 
-VERSION = "4.1"
+VERSION = "4.2"
 
 # ---------------------------
 # CONFIGURATION SECTION START
