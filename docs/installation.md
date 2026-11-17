@@ -14,7 +14,7 @@ Choose either the Python path or the container path.
 **Python path**:
 
 - [Python](https://www.python.org/downloads/) 3.10 or higher
-- Core libraries: [instaloader](https://github.com/instaloader/instaloader) 4.15.4 or later, `requests`, [curl_cffi](https://github.com/lexiforest/curl_cffi), `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich`, `flask`, `jinja2`
+- Core libraries: [instaloader](https://github.com/instaloader/instaloader) 4.16 or later, `requests`, [curl_cffi](https://github.com/lexiforest/curl_cffi), `python-dateutil`, `pytz`, `tzlocal`, `python-dotenv`, `tqdm`, `rich`, `flask`, `jinja2`
 - [pycookiecheat](https://github.com/n8henrie/pycookiecheat) is optional and is needed only to import cookies from Chrome, Brave or Chromium
 - [wcwidth](https://pypi.org/project/wcwidth/) is optional and is needed only to measure display width for `TRUNCATE_CHARS`
 - [Playwright](https://github.com/microsoft/playwright-python) is optional and is needed only for the experimental browser follower list source
