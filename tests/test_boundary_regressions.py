@@ -171,8 +171,7 @@ def test_an_unfillable_placeholder_is_named(monkeypatch):
     assert monitor.validate_webhook_customization("discord") == "WEBHOOK_TEMPLATE must be a dictionary or a JSON object string"
 
 
-# Doctor is also reachable by an argparse abbreviation, so the gate reads the parsed namespace rather than
-# the words that were typed. Matching the literal flag sent an abbreviated run to the stop it exists to avoid
+# Doctor is reachable by an argparse abbreviation, so the gate reads the parsed namespace, not the typed words
 def test_an_abbreviated_doctor_flag_still_reports_an_invalid_path(tmp_path, monkeypatch, capsys):
     run_with_invalid_path(tmp_path, monkeypatch, "CSV_FILE", "--doct")
     output = capsys.readouterr().out

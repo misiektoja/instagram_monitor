@@ -1,9 +1,4 @@
-"""Tests for follower/following diffing, logging and CSV side effects.
-
-compare_and_log_follower_changes prints and logs as a side effect; those are
-captured/ignored here. We assert on its returned formatting strings and on the
-CSV rows it writes.
-"""
+"""Tests for follower/following diffing: the returned formatting strings and the CSV rows written."""
 
 import csv
 

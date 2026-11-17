@@ -126,8 +126,7 @@ class TestGetRandomUserAgent:
 
         assert "Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0" in im_module.get_random_user_agent("edge")
 
-    # curl_cffi pins sec-ch-ua-platform per family and a User-Agent override does not change it, so the
-    # agent has to name the platform that header already claims
+    # curl_cffi pins sec-ch-ua-platform per family, so the agent has to name the same platform
     @pytest.mark.parametrize("family, platform", [("chrome", "Macintosh"), ("edge", "Windows NT 10.0")])
     def test_the_platform_follows_the_pinned_client_hint(self, im_module, monkeypatch, family, platform):
         monkeypatch.setattr(im_module, "HTTP_BACKEND", "curl_cffi")

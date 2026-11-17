@@ -1,9 +1,4 @@
-"""Offline tests that drive the real monitoring loop to check account safety reaches every failure path.
-
-The unit tests around the classifier cannot see these: each helper was correct on its own while the loop
-never called the one that records a failure, so the circuit breaker only ever armed inside the follow list
-fetch. These drive instagram_monitor_user itself and assert on the ledger it leaves behind.
-"""
+"""Offline tests that drive the real monitoring loop to check account safety reaches every failure path."""
 
 import json
 import threading
@@ -92,8 +87,7 @@ def _run_loop(monkeypatch, failure, cycles=4):
 
 
 class TestTheLoopStopsAnAccountItKeepsFailingAgainst:
-    # An expired session reported by an ordinary profile lookup never reached the classifier, so the loop
-    # retried a dead session for as long as it was left running
+    # An expired session from an ordinary profile lookup must reach the classifier, or the loop retries it forever
     def test_an_expired_session_arms_the_breaker_and_halts_the_loop(self, monitored_account):
         target_lookups = _run_loop(monitored_account, im.instaloader.exceptions.LoginRequiredException("login_required"))
 
@@ -104,8 +98,7 @@ class TestTheLoopStopsAnAccountItKeepsFailingAgainst:
         # The healthy check plus the one that failed. The breaker stops the loop before a third
         assert len(target_lookups) == 2
 
-    # A challenge on any endpoint is account level, so the breaker arms before the flagged session ends the run.
-    # Without the Web Dashboard there is nothing that can re-import a session, so the tool exits rather than waiting
+    # A challenge on any endpoint arms the breaker before the run ends. Without the Web Dashboard the tool exits
     def test_a_challenge_arms_the_breaker_before_the_flagged_session_ends_the_run(self, monitored_account):
         with pytest.raises(SystemExit):
             _run_loop(monitored_account, im.instaloader.exceptions.AbortDownloadException("400 checkpoint_required"))
@@ -126,11 +119,7 @@ class TestTheLoopStopsAnAccountItKeepsFailingAgainst:
 
 
 class TestATruncatedListDoesNotReplaceASavedBaseline:
-    """A browser dialog that stops rendering returns a short list with nothing to say it stopped early.
-
-    The shortfall tolerance lets a small gap through as a finished list, so a saved baseline of 100 was
-    replaced by the 90 that rendered and the ten missing accounts were reported as removals.
-    """
+    """A browser dialog that stops rendering early must not replace a larger saved baseline."""
 
     # Drives the real startup pass against a saved baseline and a follow list that comes back short
     @staticmethod
@@ -158,8 +147,7 @@ class TestATruncatedListDoesNotReplaceASavedBaseline:
         im.instagram_monitor_user("target", str(tmp_path / "events.csv"), False, False, True, True, True, False, skip_follow_changes=False)
         return json.loads(baseline.read_text(encoding="utf-8")), removals
 
-    # One new follower makes the tool refetch. The dialog stalls at 91 of the 101 Instagram reports, a
-    # shortfall inside the tolerance, so the list reads as finished and would drop ten saved accounts
+    # The dialog stalls at 91 of 101, inside the tolerance, so the list reads as finished and would drop ten accounts
     def test_a_render_short_of_the_count_keeps_the_saved_list(self, monitored_account, tmp_path, capsys):
         saved = [f"user{index}" for index in range(100)]
         stored, removals = self._run(monitored_account, tmp_path, saved, saved[:91], 101)

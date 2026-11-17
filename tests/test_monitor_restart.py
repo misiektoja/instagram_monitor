@@ -14,8 +14,7 @@ def stack_depth() -> int:
 
 
 class TestMonitorRestartLoop:
-    # Repeated live settings changes restart the monitor without consuming stack, so a long dashboard
-    # session cannot exhaust the recursion limit the way a re-entrant restart would
+    # Repeated live settings changes restart the monitor without consuming stack
     def test_repeated_restarts_do_not_grow_the_stack(self, im_module, monkeypatch):
         depths = []
         remaining = {"restarts": 400}

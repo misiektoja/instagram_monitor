@@ -82,8 +82,7 @@ class TestFetchUsernamesPaginated:
         assert im_module.is_complete_username_baseline(contradictory_empty, 1) is False
         assert im_module.is_complete_username_baseline(contradictory_empty, 0) is True
 
-    # A stalled browser dialog and a real unfollow both come back short. Instagram's own count is what
-    # separates them, and the saved list is the second witness
+    # A stalled dialog and a real unfollow both come back short. Instagram's count and the saved list tell them apart
     def test_a_list_short_of_the_count_may_not_shrink_the_saved_one(self, im_module, capsys):
         result = im_module.PaginatedUsernameResult([f"user{index}" for index in range(90)])
         result.complete = True

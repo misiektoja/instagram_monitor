@@ -93,7 +93,7 @@ def test_the_email_transport_row_reports_an_unconfigured_server(monkeypatch):
     assert summary_values()["Email transport"] == "Not configured"
 
 
-# Verifies a configuration still holding the shipped sample values reports no channel, rather than naming a server and a recipient no alert can reach
+# Verifies a configuration still holding the shipped sample values reports no channel
 @pytest.mark.parametrize("label,setting,placeholder,expected", [
     ("Email transport", "SMTP_HOST", "your_smtp_server_ssl", "Not configured"),
     ("Email recipient", "RECEIVER_EMAIL", "your_receiver_email", "Not configured"),
@@ -125,7 +125,7 @@ def test_the_email_recipient_row_is_masked():
     assert "michal.k" not in value
 
 
-# Verifies the row that explains a quiet run, since turning the confirmations off looks like a channel that stopped working
+# Verifies the row that explains a quiet run when delivery confirmations are off
 def test_the_delivery_confirmation_row_reports_the_setting(monkeypatch):
     monkeypatch.setattr(monitor, "DELIVERY_CONFIRMATIONS", False)
 
@@ -159,7 +159,7 @@ def test_the_new_detail_rows_stay_out_of_the_concise_view():
     assert not concise & detail_labels
 
 
-# Verifies the send line names the service in every mode, since a run with the delivery confirmations off has no other clue
+# Verifies the send line names the service in every mode
 @pytest.mark.parametrize("provider,expected", [("discord", "Discord"), ("ntfy", "ntfy")])
 def test_the_webhook_send_line_names_the_provider(monkeypatch, capsys, provider, expected):
     monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", provider)

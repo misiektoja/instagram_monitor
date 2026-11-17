@@ -14,8 +14,7 @@ class RecordingChannels:
         return bool(email_enabled), bool(webhook_enabled)
 
 
-# Verifies a channel whose failure alert never landed is told about the outage and its end together, since a
-# channel blocked for the length of the outage would otherwise hear nothing at all
+# Verifies a channel whose failure alert never landed is told about the outage and its end together
 def test_a_channel_that_missed_the_failure_alert_is_told_about_the_whole_outage(monkeypatch):
     channels = RecordingChannels()
     for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "ops@example.com"), ("WEBHOOK_ENABLED", True), ("WEBHOOK_URL", "https://discord.com/api/webhooks/1/token"), ("WEBHOOK_PROVIDER", "discord")):

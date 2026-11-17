@@ -16,8 +16,7 @@ def uncomment_block(source, first_line):
     return "\n".join(line[2:] if line.startswith("# ") else line[1:] for line in lines[start:end + 1])
 
 
-# Verifies the shipped config template and the built-in theme describe exactly the same colours, so
-# generating a config file cannot silently change how any part of the output looks
+# Verifies the shipped config template and the built-in theme describe the same colours
 def test_config_template_theme_matches_the_built_in_theme(im_module):
     commented = im_module.parse_config_content(uncomment_block(im_module.CONFIG_BLOCK, "# COLOR_THEME = {"), "<built-in-config>")
 
@@ -142,7 +141,7 @@ def test_block_styles_never_hide_a_name(im_module):
             assert resolved[name] != resolved[block], f"{name} is invisible inside a {block} line"
 
 
-# Verifies every part the shipped theme offers is actually looked up somewhere, so a documented setting cannot do nothing
+# Verifies every part the shipped theme offers is looked up somewhere
 def test_every_theme_part_is_used(im_module):
     import re
     from pathlib import Path
@@ -582,12 +581,7 @@ def test_no_setup_screen_prints_a_plain_link(im_module):
 
 
 class TestTheWidthCapAppliesToTheScreenOnly:
-    """The saved copy used to be derived from the line already cut to the terminal width.
-
-    `truncate_string_per_line` and `Logger.write` were each correct on their own, so the unit tests above
-    never saw it: setting a width silently shortened the log file too, against what the documentation
-    promises. These drive the real Logger and read the file it wrote.
-    """
+    """A terminal width cap shortens the screen output only, never the log file."""
 
     # Writes one long line through the real Logger and returns what the screen and the log file received
     @staticmethod
@@ -652,7 +646,7 @@ def test_a_fix_block_guide_line_is_a_link(im_module, monkeypatch):
     assert 'colorize("info", f"Guide:' not in Path(im_module.__file__).read_text(encoding="utf-8")
 
 
-# Verifies a settings row is never painted as an error, since a value such as the follow list source reads like a log keyword
+# Verifies a settings row is never painted as an error because its value reads like a log keyword
 def test_a_summary_row_is_not_painted_by_a_log_keyword(im_module, monkeypatch):
     monkeypatch.setattr(im_module, "COLOR_ENABLED", True)
     monkeypatch.setattr(im_module, "_COLOR_STYLES", {name: f"<{name}>" for name in im_module.DEFAULT_COLOR_THEME})

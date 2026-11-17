@@ -1,8 +1,4 @@
-"""Tests for error classification and session/IP flag detection.
-
-The flag probe normally resolves a canonical public account over the network.
-Here profile_from_username_resilient is stubbed so the logic runs fully offline.
-"""
+"""Offline tests for error classification and session/IP flag detection, with the profile lookup stubbed."""
 
 import threading
 import time
@@ -108,7 +104,7 @@ class TestNotifyMonitoringError:
         advice = im_module.classify_recovery_error(error, is_logged_in=True)
         return im_module.notify_monitoring_error("targetuser", advice, int(time.time()) - lasted, failure_count, 60, state)
 
-    # A failure the tool can retry away waits until it has lasted ERROR_ALERT_AFTER_SECONDS, then alerts each channel once
+    # A retryable failure waits until it has lasted ERROR_ALERT_AFTER_SECONDS, then alerts each channel once
     def test_email_and_webhook_send_once_after_the_alert_delay(self, im_module, monkeypatch):
         calls = self._capture(im_module, monkeypatch)
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
@@ -185,8 +181,7 @@ class TestNotifyMonitoringError:
         assert len(calls["email"]) == 1
         assert len(calls["webhook"]) == 2
 
-    # A channel that failed is held for five minutes, then for twice the previous wait, so a broken mail server is
-    # not dialled on every failing check of a long outage, and the hold is said once per failed attempt
+    # A failed channel is held for five minutes, then twice the previous wait. The hold is said once per attempt
     def test_a_failed_channel_backs_off_before_it_is_tried_again(self, im_module, monkeypatch, capsys):
         calls = self._capture(im_module, monkeypatch, email_results=(1, 1, 0), webhook_results=(0,))
         monkeypatch.setattr(im_module, "ERROR_NOTIFICATION", True)
@@ -272,12 +267,7 @@ class TestNotifyMonitoringError:
 
 
 class TestOneOutageIsOneAlertWhateverItsSubtype:
-    """The console groups every network failure of one outage through outage_family, the alert did not.
-
-    Comparing the exact code meant an internet outage alternating between an unresolved host and a timeout
-    earned a fresh alert on every check and cleared the hold of a channel that was failing to deliver, so a
-    broken mail server was dialled again on each one. The console reported a single outage throughout.
-    """
+    """Network failures of one outage share one alert, whichever exact code each check reports."""
 
     # Drives the console reporter and the alert over one run of failures, sharing a clock and an alert state
     @staticmethod
@@ -315,7 +305,7 @@ class TestOneOutageIsOneAlertWhateverItsSubtype:
         assert len(flapping_sent) == len(steady_sent)
         assert flapping_state.email_failures == steady_state.email_failures > 1
 
-    # A failure from another family is still the same outage, so the console reports the change while the alert is not repeated
+    # A failure from another family is the same outage: the console reports the change and the alert is not repeated
     def test_a_failure_from_another_family_is_reported_without_a_second_alert(self, im_module, monkeypatch):
         reports, sent, _ = self._run(im_module, monkeypatch, ["Temporary failure in name resolution", "The read operation timed out", "429 Too Many Requests"])
 
@@ -461,11 +451,7 @@ class TestHandleFlaggedSession:
 
 
 class TestAChallengeOnALowerEndpointIsNotSwallowed:
-    """The mobile reels helper falls back to an anonymous scan when its own endpoint fails.
-
-    A challenge is about the account, so falling back would send a second request while Instagram
-    is already refusing the session, and the caller would never see the challenge at all.
-    """
+    """A challenge on the mobile reels endpoint is reported instead of triggering the anonymous fallback."""
 
     # Builds a bot whose mobile endpoint fails with the given message and records every call made
     @staticmethod

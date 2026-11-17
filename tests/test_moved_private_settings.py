@@ -70,8 +70,8 @@ def test_kept_file_credential_moves_with_setup(tmp_path, monkeypatch, capsys):
     assert "retained-private-value" not in "".join(transcript)
 
 
-# Refuses DNS and both HTTP transports so Doctor runs offline without replacing its implementation. Refusing DNS alone
-# is not enough: libcurl resolves names itself and the suite's network guard fails a requests call that reaches urllib3
+# Refuses DNS and both HTTP transports, so Doctor runs offline. DNS alone is not enough, since libcurl resolves
+# names itself
 @pytest.fixture
 def offline(monkeypatch):
     # Fails a name lookup as it would fail on a machine without a network

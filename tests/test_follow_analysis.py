@@ -1,9 +1,4 @@
-"""Tests for the offline follow relationship analysis (--analyze-follows).
-
-The analysis reads the already-saved follower/following JSON lists and never
-touches the network. These tests write temporary list files and assert on the
-computed sets, the handling of missing/corrupt/partial data and the CLI output.
-"""
+"""Offline tests for the follow relationship analysis (--analyze-follows), which reads saved lists only."""
 
 import json
 import os

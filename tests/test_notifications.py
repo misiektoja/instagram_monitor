@@ -7,7 +7,7 @@ import time
 import pytest
 
 
-# Gives both channels a destination, since the rollup rows report a channel with none as off whatever its alert types are
+# Gives both channels a destination, since the rollup rows report a channel without one as off
 def _configure_channel_destinations(im_module, monkeypatch):
     monkeypatch.setattr(im_module, "SMTP_HOST", "smtp.example.com")
     monkeypatch.setattr(im_module, "SMTP_PORT", 587)
@@ -274,8 +274,7 @@ class TestFollowerChangeEmbed:
         assert calls[0][1]["notification_type"] == "followers"
 
 
-# A followings change is delivered on the status channel, so the follower switches never gate it. Setup used to
-# offer them as one answer, which promised control the switch does not have
+# A followings change is delivered on the status channel, so the follower switches never gate it
 class TestWhichSwitchGatesAFollowChange:
     # Runs the real dispatcher for one change and reports which channels it reached
     @staticmethod

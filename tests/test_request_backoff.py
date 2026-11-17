@@ -1,9 +1,4 @@
-"""Offline tests for the jitter and back-off wrapper around every Instagram request.
-
-The wrapper gives up after a few back-offs. What it raises then decides what every layer above does,
-so a rate limit reported as a missing endpoint sends the auto follow list source to GraphQL and scans
-the whole list again while Instagram is already throttling the account.
-"""
+"""Offline tests for the jitter and back-off wrapper around every Instagram request."""
 
 from types import SimpleNamespace
 
@@ -96,12 +91,7 @@ class TestASpentBackoffBudgetKeepsItsRealCause:
 
 
 class TestTheAutoListSourceSeesTheRealCause:
-    """The wrapper and the auto source were each correct on their own.
-
-    The wrapper reported a spent back-off budget as a missing endpoint and the auto source treated a
-    missing endpoint as reason to read the whole list over GraphQL, so a throttled or challenged
-    account was answered with a second full scan on the other surface.
-    """
+    """A spent back-off budget is a rate limit, so the auto source must not rescan the list over GraphQL."""
 
     # Drives the real wrapper underneath the real auto source and returns what came back
     @staticmethod

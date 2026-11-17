@@ -322,7 +322,7 @@ class TestDoctorChecks:
         assert warning.detail == "SMTP_PASSWORD is empty or still set to its placeholder"
         assert warning.advice.fix == im_module.recovery_fix_with_guide("Set SMTP_PASSWORD or turn the email alerts off", im_module.SMTP_GUIDE_URL)
 
-    # A malformed destination is a FAIL under the label every tool in the family uses, so a fix reads the same everywhere
+    # A malformed destination is a FAIL under the label every tool in the family uses
     def test_a_malformed_webhook_url_fails_under_the_family_label(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "SMTP_HOST", "your_smtp_server_ssl", raising=False)
         monkeypatch.setattr(im_module, "WEBHOOK_URL", "discord.com/api/webhooks/1/abc", raising=False)
@@ -1000,8 +1000,7 @@ def test_a_command_line_secret_is_reported_as_such(im_module, monkeypatch):
     assert "Secrets loaded from the configuration file or command line" not in labels
 
 
-# A setting holding the wrong type raises at the comparison or the format string that reads it, which is nowhere
-# near where the value was set. Doctor is the command asked to explain that setup, so it has to survive one
+# A setting of the wrong type raises where it is read, far from where it was set. Doctor has to survive one
 class TestASettingOfTheWrongType:
     # Runs one command line and returns its exit code and output, letting anything but SystemExit escape
     @staticmethod
@@ -1096,7 +1095,7 @@ class TestPythonRow:
         assert unsupported.detail == supported.detail
 
 
-# Verifies every doctor detail keeps to the agreed shapes: it never repeats its label, gives an instruction or joins values with a pipe
+# Verifies no doctor detail repeats its label, gives an instruction or joins values with a pipe
 def test_doctor_details_keep_to_the_agreed_shapes(im_module):
     import ast
     import inspect
@@ -1155,7 +1154,7 @@ def test_only_the_four_shared_markers_are_accepted(im_module):
         im_module.make_doctor_check("Configuration", "info", "a label")
 
 
-# Verifies one row reads as one block: the action lines sit under the marker at the detail indent while a pass row has none
+# Verifies the action lines sit under the marker at the detail indent, while a pass row has none
 def test_the_action_lines_sit_indented_under_their_marker(im_module, capsys, monkeypatch):
     monkeypatch.setattr(im_module, "colorize", lambda theme, text: text)
     report = im_module.DoctorReport()
@@ -1182,8 +1181,7 @@ def test_the_sections_render_in_the_declared_order(im_module, capsys, monkeypatc
     assert tuple(printed) == im_module.DOCTOR_SECTIONS
 
 
-# Verifies the two headers this tool names differently from its siblings stay in the shared slots. Session is
-# the Instagram term for the saved login the check reads, and Targets is plural because this tool monitors a list
+# Verifies the two headers this tool names differently from its siblings, Session and Targets, keep the shared slots
 def test_the_two_headers_this_tool_names_its_own_way_keep_the_shared_slots(im_module):
     assert im_module.DOCTOR_SECTIONS == ("Environment", "Configuration", "Session", "Connectivity", "Targets", "Notifications")
 
@@ -1256,7 +1254,7 @@ def test_a_failed_delivery_test_changes_the_exit_code(im_module, monkeypatch):
     assert "All checks passed" not in output
 
 
-# Verifies every doctor entry point renders its summary after the delivery tests, so the sentence and the exit code describe one run
+# Verifies every doctor entry point renders its summary after the delivery tests
 def test_the_summary_is_rendered_after_the_delivery_tests(im_module):
     import ast
     import inspect
@@ -1341,7 +1339,7 @@ def test_an_instaloader_that_cannot_be_built_is_one_failure_row(im_module, monke
     assert checks[0].advice.fix == im_module.recovery_fix_with_guide("Reinstall the instaloader package then run --doctor again", im_module.INSTALLATION_GUIDE_URL)
 
 
-# Verifies the live checks that need Instaloader are skipped with a reason when it could not be built, the way the sibling monitors skip a check that cannot run
+# Verifies the live checks that need Instaloader are skipped with a reason when it could not be built
 def test_the_live_checks_are_skipped_without_instaloader(im_module, monkeypatch):
     monkeypatch.setattr(im_module, "SESSION_USERNAME", "monitor_account")
     monkeypatch.setattr(im_module, "SKIP_SESSION", False)
@@ -1358,8 +1356,7 @@ def test_the_live_checks_are_skipped_without_instaloader(im_module, monkeypatch)
     assert all(row.detail.startswith("Instaloader could not be initialised") for row in (session[0], connectivity[-1], targets[0]))
 
 
-# One row shape and one advice shape across the family: the advice rides on the row and its fix carries the
-# guide, so a row or an advice copied from a sibling means the same thing here
+# One row shape and one advice shape across the family: the advice rides on the row and its fix carries the guide
 def test_the_doctor_row_and_its_advice_share_one_contract(im_module):
     row_parameters = list(inspect.signature(im_module.make_doctor_check).parameters.values())
     advice_parameters = list(inspect.signature(im_module.make_recovery_advice).parameters.values())

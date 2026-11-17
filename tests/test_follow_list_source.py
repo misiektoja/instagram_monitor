@@ -22,7 +22,7 @@ class FakeSession:
 
 # Scripted instaloader context that answers each get_json call from a prepared list of pages
 class FakeContext:
-    # Takes the pages to return in order, where a page may be a payload, a (payload, response headers) pair or an exception to raise
+    # Takes the pages to return in order: a payload, a (payload, response headers) pair or an exception to raise
     def __init__(self, pages, logged_in=True):
         self.pages = list(pages)
         self.is_logged_in = logged_in
@@ -342,7 +342,7 @@ class TestAutoFallback:
         assert names == ["from.graphql"]
         assert "reading the list over GraphQL instead" in capsys.readouterr().out
 
-    # A fetch that already returned names is never repeated on the other surface, since those names already cost the account
+    # A fetch that already returned names is never repeated on the other surface
     def test_partial_scan_is_never_retried(self, im_module, monkeypatch, rest_session):
         monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
         context = FakeContext([rest_page(["a"], "cursor-2"), instaloader.exceptions.QueryReturnedNotFoundException("404 Not Found")])

@@ -21,8 +21,7 @@ def _profile_page(username, pk):
 # Routes the run through a configured proxy with a dedicated certificate and records every request at the transport
 @pytest.fixture
 def proxied_transport(im_module, monkeypatch, tmp_path):
-    # requests lets *_proxy and CA bundle environment variables override a session's own proxies and verify setting,
-    # which would hide a missing one
+    # requests lets *_proxy and CA bundle variables override a session's own settings, which would hide a missing one
     for name in [name for name in os.environ if name.lower().endswith("_proxy") or name in ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE")]:
         monkeypatch.delenv(name, raising=False)
     certificate = tmp_path / "proxy-ca.pem"

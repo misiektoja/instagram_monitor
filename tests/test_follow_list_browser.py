@@ -326,16 +326,14 @@ class TestBrowserProvider:
         with pytest.raises(im_module.BrowserFollowListError):
             list(im_module.iter_browser_follow_list(fake_bot(), fake_profile(followers=500), "followers"))
 
-    # A small difference is ordinary churn during a slow scan, so the names are returned. Returning them is
-    # not the same as saving them: reject_shrinking_username_baseline decides whether they may replace a
-    # larger saved list, since a dialog that stalls this little looks identical to a drifting count
+    # A small difference is ordinary churn, so the names are returned. Whether they may replace a larger saved list
+    # is decided by reject_shrinking_username_baseline
     def test_a_small_shortfall_is_accepted(self, im_module, monkeypatch):
         monkeypatch.setattr(im_module, "browser_follow_list_batches", lambda *args, **kwargs: iter([[f"user{index}" for index in range(95)]]))
 
         assert len(list(im_module.iter_browser_follow_list(fake_bot(), fake_profile(followers=100), "followers"))) == 95
 
-    # The tolerated shortfall is only safe because a later guard refuses to shrink a saved list with it. Checking
-    # the generator alone says nothing about that, so this runs both halves of the decision
+    # The tolerated shortfall is safe only because a later guard refuses to shrink a saved list, so both halves run
     def test_a_tolerated_shortfall_still_cannot_replace_a_larger_saved_list(self, im_module, monkeypatch, capsys):
         monkeypatch.setattr(im_module, "browser_follow_list_batches", lambda *args, **kwargs: iter([[f"user{index}" for index in range(95)]]))
         monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: None)
