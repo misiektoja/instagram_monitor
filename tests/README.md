@@ -49,8 +49,8 @@ installed copy of the package.
 | `test_notifications.py` | Webhook URL validation, Discord markdown escaping, credential masking, payload templating |
 | `test_webhook_delivery.py` | `send_webhook` payload formatting, gates and retry behavior with fake HTTP |
 | `test_paginated_fetching.py` | `fetch_usernames_paginated` batching, limits, completion state and stop-event behavior |
-| `test_profile_resolution.py` | Resolving a target through search (or its public profile page once search answers 404) and GraphQL instead of the retired profile endpoint, id caching and the failure class that keeps the account running |
-| `test_instaloader_compatibility.py` | The tool's patches on Instaloader methods passing through arguments that newer Instaloader releases add |
+| `test_profile_resolution.py` | Resolving a target through search (or its public profile page once search answers 404) and GraphQL instead of the retired profile endpoint, id caching and the failure class that keeps the account running when a retired endpoint or the refused `graphql/query` answers `feedback_required` |
+| `test_instaloader_compatibility.py` | The tool's patches on Instaloader methods: arguments that newer Instaloader releases add pass through. Signed-in profile, post, reel, story and session check requests go to the web app endpoint instead of the refused `graphql/query` |
 | `test_public_embed_fallback.py` | Anonymous HTTP 400 recovery through the public embed with page details, remembered fallback, page back-off, collab posts, proxy/TLS settings, failure advice and last-known metadata comparisons |
 | `test_dashboard_endpoints.py` | Web Dashboard status, strict atomic settings, private values, media access and isolation, target validation, monitor ownership, session signaling and test-notification endpoints |
 | `test_detection_workflows.py` | Posts/reels count change notifications, leaked-collab notification workflows and hostile email content |
@@ -59,7 +59,7 @@ installed copy of the package.
 | `test_media_downloads.py` | Atomic media replacement, type validation, truncation, non-200 responses and download limits |
 | `test_request_scoping.py` | Instagram hostname classification, per-session jitter isolation and Instaloader copied sessions |
 | `test_anonymous_session_proxy.py` | Instaloader's own page, raw download and HEAD sessions using the configured proxy, TLS verification, the request wrapper and the curl_cffi transport |
-| `test_signed_in_session_proxy.py` | Sessions loaded from a file or created by login and two-factor login using the configured proxy, TLS verification, the request wrapper and the curl_cffi transport, and the single-request account recovery check |
+| `test_signed_in_session_proxy.py` | Sessions loaded from a file or created by login and two-factor login using the configured proxy, TLS verification, the request wrapper and the curl_cffi transport, and the two-request account recovery check |
 | `test_session_import.py` | Firefox cookie-domain filtering and canonical session path discovery |
 | `test_scheduling.py` | `CHECK_POSTS_IN_HOURS_RANGE` window logic, next-check computation, cycle probability, interval randomization |
 | `test_session_flags.py` | Error classification and session/IP flag detection with a stubbed profile resolver |
@@ -78,16 +78,16 @@ installed copy of the package.
 | `test_terminal_color.py` | The colour engine: theme resolution, line rules, quoted content and the shipped theme keys |
 | `test_tls_verification.py` | Every request honouring `VERIFY_SSL`, what is reported while it is off and its shipped default |
 | `test_exposure_ledger.py` | The identity exposure ledger, the daily budget and the account circuit breaker |
-| `test_account_recovery.py` | Single-request restart and import recovery, preserved counters, concurrent starts and dashboard resumption |
+| `test_account_recovery.py` | Restart and import recovery through the two requests of a session check, preserved counters, concurrent starts and dashboard resumption |
 | `test_missed_alert_recovery.py` | The recovery alert sent to a channel that never received the failure alert |
 | `test_account_safety_loop.py` | The real monitoring loop stopping an account Instagram keeps refusing, and leaving a transient fault alone |
-| `test_human_simulation.py` | The BeHuman activity simulation guards |
+| `test_human_simulation.py` | The BeHuman activity simulation: its guards, the REST Explore and followee actions and the hashtag action that signed-in sessions skip |
 | `test_impersonate_validation.py` | curl_cffi impersonation target validation |
 | `test_http_backend.py` | The curl_cffi transport adapter driven against a loopback server, including the browser headers sent to Instagram, the kept connection and the suite's refusal of other hosts |
 | `test_concurrency_and_caches.py` | Shared cache eviction and probe deduplication |
 | `test_monitor_restart.py` | The monitoring restart loop used when live settings change |
 | `test_follow_list_source.py` | The follower and following list sources: the web REST endpoints and the GraphQL fallback |
-| `test_request_backoff.py` | The jitter back-off giving up with the real cause, so a rate limit or a challenge is never read as a missing endpoint |
+| `test_request_backoff.py` | The jitter back-off giving up with the real cause, so a rate limit or a challenge is never read as a missing endpoint. Also the stop on a `graphql/query` query after it is refused |
 | `test_follow_list_browser.py` | Browser follower lists, progress updates, TLS launch options and certificate recovery advice, with no browser started |
 | `test_follow_analysis.py` | The offline follow relationship analysis behind `--analyze-follows` |
 | `test_imgcat_display.py` | Terminal image display argument handling, viewer resolution from `PATH` only and the program path a config found in the current directory may not set |
