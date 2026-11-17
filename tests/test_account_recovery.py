@@ -11,6 +11,20 @@ import requests
 
 import instagram_monitor as im
 
+# Start page of a signed-in session, with the web app tokens
+SIGNED_IN_PAGE = '<script>["DTSGInitialData",[],{"token":"dtsg-token"}],["LSD",[],{"token":"lsd-token"}],{"IG_USER_EIMU":"42"}</script>'
+
+# Start page of a visitor, without fb_dtsg
+SIGNED_OUT_PAGE = '<script>["LSD",[],{"token":"lsd-token"}],{"IG_USER_EIMU":"0"}</script>'
+
+# Cookies of a signed-in session
+SESSION_COOKIES = {"sessionid": "synthetic-cookie", "ds_user_id": "42", "csrftoken": "synthetic-token"}
+
+
+# Returns how many requests one login check sends for the outcome
+def check_requests(outcome):
+    return 1 if isinstance(outcome, (int, Exception)) else 2
+
 
 @pytest.fixture
 # Supplies a saved account and intercepts requests after real client and request-wrapper setup
@@ -21,13 +35,13 @@ def account(monkeypatch, tmp_path):
         monkeypatch.setattr(im, name, value)
     monkeypatch.setattr(im, "log_activity", lambda *args, **kwargs: None)
     monkeypatch.setattr(im, "update_ui_data", lambda *args, **kwargs: None)
-    monkeypatch.setattr(im, "get_browser_cookie_dict", lambda *args, **kwargs: {"sessionid": "synthetic-cookie"})
-    state = SimpleNamespace(calls=[], outcome="saved.account", saves=[], after_request=None)
+    monkeypatch.setattr(im, "get_browser_cookie_dict", lambda *args, **kwargs: dict(SESSION_COOKIES))
+    state = SimpleNamespace(calls=[], outcome="saved.account", saves=[], after_request=None, page=SIGNED_IN_PAGE)
 
     # Loads synthetic session identity without reading the machine's saved credentials
     def load(bot, username, filename=None):
         bot.context.username = username
-        bot.context._session.cookies.set("sessionid", "synthetic-cookie")
+        bot.context._session.cookies.update(SESSION_COOKIES)
 
     # Records the real prepared request and returns a controlled Instagram response
     def send(session, request, **kwargs):
@@ -39,9 +53,13 @@ def account(monkeypatch, tmp_path):
         response.url = request.url
         response.status_code = state.outcome if isinstance(state.outcome, int) else 200
         response.reason = "test response"
-        user = {"username": state.outcome} if isinstance(state.outcome, str) else None
-        data = {"status": "ok", "data": {"user": user}} if response.status_code == 200 else {"status": "fail", "message": "challenge_required" if state.outcome == 400 else "request failed"}
-        response._content = json.dumps(data).encode()
+        if response.status_code != 200:
+            body = json.dumps({"status": "fail", "message": "challenge_required" if state.outcome == 400 else "request failed"})
+        elif request.method == "GET":
+            body = state.page
+        else:
+            body = json.dumps({"data": {"user": {"username": state.outcome} if isinstance(state.outcome, str) else None}})
+        response._content = body.encode()
         if state.after_request:
             state.after_request()
         return response
@@ -66,12 +84,21 @@ def restart_with_stop():
 def test_restart_recovers_before_workers_and_keeps_budget(account):
     restart_with_stop()
     assert im.recover_account_on_startup()
-    assert len(account.calls) == 1
+    assert [(request.method, request.url) for request, _ in account.calls] == [("GET", "https://www.instagram.com/"), ("POST", "https://www.instagram.com/api/graphql")]
     assert account.calls[0][1]["timeout"] == 30
     assert im.exposure_snapshot()["identities"] == 17
     assert im.circuit_breaker_state() is None
     assert im.recover_account_on_startup()
-    assert len(account.calls) == 1
+    assert len(account.calls) == 2
+
+
+# A signed-out start page ends the check before the profile query
+def test_signed_out_start_page_stays_stopped_without_a_query(account):
+    restart_with_stop()
+    account.page = SIGNED_OUT_PAGE
+    assert not im.recover_account_on_startup()
+    assert [request.method for request, _ in account.calls] == ["GET"]
+    assert im.circuit_breaker_state() is not None
 
 
 @pytest.mark.parametrize("outcome", ["saved.account", None, 429])
@@ -82,7 +109,7 @@ def test_concurrent_starters_share_one_probe(account, outcome):
     with ThreadPoolExecutor(max_workers=6) as pool:
         results = list(pool.map(lambda _: im.recover_account_on_startup(), range(6)))
     assert results == [outcome == "saved.account"] * 6
-    assert len(account.calls) == 1
+    assert len(account.calls) == check_requests(outcome)
 
 
 @pytest.mark.parametrize("outcome", [None, "another.account", 302, 400, 401, 429, requests.Timeout("test connection timed out")])
@@ -92,7 +119,7 @@ def test_failed_probe_stays_stopped_until_restart_or_session_replacement(account
     account.outcome = outcome
     assert not im.recover_account_on_startup()
     assert not im.recover_account_on_startup()
-    assert len(account.calls) == 1
+    assert len(account.calls) == check_requests(outcome)
     assert im.circuit_breaker_state() is not None
     assert "Monitoring remains paused" in capsys.readouterr().out
 
@@ -140,7 +167,7 @@ def test_clear_failure_keeps_memory_stop(account, monkeypatch):
 
     monkeypatch.setattr(im, "_write_exposure_file", write)
     assert not im.recover_account_on_startup()
-    assert len(account.calls) == 1
+    assert len(account.calls) == 2
     assert im.circuit_breaker_state() is not None
 
 
@@ -155,7 +182,7 @@ def test_import_reuses_validation_to_recover(account, dashboard):
         username = im.import_session("firefox", "synthetic.sqlite", None)
     assert username == "saved.account"
     assert account.saves == [("saved.account", None)]
-    assert len(account.calls) == 1
+    assert len(account.calls) == 2
     assert im.circuit_breaker_state() is None
     assert im.exposure_snapshot()["identities"] == 17
 
@@ -184,8 +211,8 @@ def test_failed_session_save_does_not_clear_stop(account, monkeypatch):
     assert im.circuit_breaker_state() is not None
 
 
-# Recovery access belongs only to its checking thread and cannot authorize a second request
-def test_probe_permission_is_thread_local_and_single_use(account):
+# Recovery access belongs only to its checking thread and covers only the two requests of one login check
+def test_probe_permission_is_thread_local_and_limited_to_one_check(account):
     im.trip_circuit_breaker("challenge")
     calls = []
     request = im.instagram_wrap_request(lambda *args, **kwargs: calls.append(kwargs) or SimpleNamespace(status_code=200))
@@ -200,12 +227,13 @@ def test_probe_permission_is_thread_local_and_single_use(account):
         with ThreadPoolExecutor(max_workers=1) as pool:
             pool.submit(blocked).result()
         request("GET", "https://www.instagram.com/")
+        request("POST", "https://www.instagram.com/api/graphql")
         with pytest.raises(im.instaloader.exceptions.AbortDownloadException):
             request("GET", "https://www.instagram.com/")
         return "saved.account"
 
     assert im.check_account_login(SimpleNamespace(test_login=check)) == "saved.account"
-    assert len(calls) == 1
+    assert len(calls) == 2
     blocked()
 
 
@@ -262,8 +290,8 @@ def test_cli_recovery_precedes_target_start(account, monkeypatch, tmp_path, outc
     finally:
         sys.stdout = previous_stdout
     assert stopped.value.code == (0 if outcome else 1)
-    assert entered == ([(1, None)] if outcome else [])
-    assert len(account.calls) == 1
+    assert entered == ([(2, None)] if outcome else [])
+    assert len(account.calls) == 2
 
 
 # The dashboard import endpoint starts recovery automatically after the verified session is saved
@@ -282,7 +310,7 @@ def test_dashboard_import_resumes_without_another_action(account, monkeypatch):
     assert response.get_json()["success"]
     assert started.wait(timeout=2)
     assert im.circuit_breaker_state() is None
-    assert len(account.calls) == 1
+    assert len(account.calls) == 2
 
 
 # Importing a different account does not release the previous account's stop
