@@ -2,6 +2,20 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 4.2 (18 Nov 2026)
+
+Version **4.2** fixes signed-in monitoring, session import and **Be Human** mode after Instagram stopped answering most queries on its older GraphQL endpoint for signed-in sessions. It requires **Instaloader 4.16** or later.
+
+**Features and improvements**:
+
+- **IMPROVE:** **Instaloader 4.16 required** - The fix below needs the web app endpoint support added in Instaloader 4.16. `pip install -U instagram_monitor` installs it
+
+**Bug fixes**:
+
+- **BUGFIX:** **Signed-in monitoring after Instagram refused `graphql/query`** - Since the end of October 2026 every signed-in check on 4.1 failed at the first request with `400 feedback_required` on `graphql/query`. `--import-browser-session` failed with `HTTP 302`. Profiles, post details, reels, stories and the **session check** now use `api/graphql`, the endpoint Instagram's web app uses. A session check sends two requests instead of one. See [Profile Lookups Report a Retired Endpoint](https://misiektoja.github.io/instagram_monitor/troubleshooting/#profile-lookups-report-a-retired-endpoint) (thanks [@burdulixda](https://github.com/burdulixda) for reporting [#160](https://github.com/misiektoja/instagram_monitor/issues/160))
+- **BUGFIX:** **No account stop for a refused endpoint** - The refusal was read as a temporary limit on the account, so the **circuit breaker** stopped monitoring and advised waiting several hours, which never helped. It is now counted as an Instagram API change and the account keeps running. A query that `graphql/query` refused is not sent again until the tool is restarted, which affects the `graphql` follow list source. A stop recorded by 4.1 is cleared at the next start once the session check passes
+- **BUGFIX:** **Be Human actions for signed-in sessions** - The Explore and followee actions failed because Instagram no longer serves their older queries. They now use the REST endpoints of Instagram's web app, and the followee visit opens the profile by the id from the following list. The **hashtag action is no longer sent** by signed-in sessions, because Instagram answers them on none of the hashtag endpoints the tool knows, so `MY_HASHTAGS` has no effect for now. See [Use the Human Mode](https://misiektoja.github.io/instagram_monitor/anti-detection/#use-the-human-mode)
+
 # Changes in 4.1 (29 Oct 2026)
 
 Version **4.1** fixes signed-in monitoring after Instagram retired its search for signed-in sessions and signed-in post checks with Instaloader 4.16. It requires **Python 3.10** and **Instaloader 4.15.4** or later. Logged-in requests now use the configured proxy. Anonymous runs can read professional profiles that Instagram refuses with HTTP 400.
