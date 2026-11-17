@@ -16,11 +16,14 @@ PROXY_URL = "http://proxy.example.test:8080"
 PROXIES = {"http": PROXY_URL, "https": PROXY_URL}
 SESSION_COOKIES = {"csrftoken": "token", "sessionid": "session", "ds_user_id": "1"}
 
+# Start page of a signed-in session, with the web app tokens
+SIGNED_IN_PAGE = b'<script>["DTSGInitialData",[],{"token":"dtsg-token"}],["LSD",[],{"token":"lsd-token"}],{"IG_USER_EIMU":"1"}</script>'
+
 
 # Returns the JSON Instagram answers to each endpoint these tests reach, or None for an HTML page
 def _reply_body(url, two_factor):
-    if "graphql/query" in url:
-        return {"data": {"user": {"username": "someone"}}, "status": "ok"}
+    if "api/graphql" in url:
+        return {"data": {"user": {"username": "someone"}}}
     if "two_factor" in url:
         return {"status": "ok"}
     if "login/ajax" in url:
@@ -30,12 +33,11 @@ def _reply_body(url, two_factor):
     return None
 
 
-# Routes the run through a configured proxy with a dedicated certificate and records every request at the transport.
+# Routes the run through a proxy with a dedicated certificate and records every request at the transport.
 # Setting two_factor on the returned state makes the login reply ask for a second factor
 @pytest.fixture
 def proxied_transport(im_module, monkeypatch, tmp_path):
-    # requests lets *_proxy and CA bundle environment variables override a session's own proxies and verify setting,
-    # which would hide a missing one
+    # requests lets *_proxy and CA bundle variables override a session's own settings, which would hide a missing one
     for name in [name for name in os.environ if name.lower().endswith("_proxy") or name in ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE")]:
         monkeypatch.delenv(name, raising=False)
     certificate = tmp_path / "proxy-ca.pem"
@@ -59,7 +61,7 @@ def proxied_transport(im_module, monkeypatch, tmp_path):
             response.status_code = 200
             if body is None:
                 response.headers["Content-Type"] = "text/html; charset=utf-8"
-                response._content = b"<html></html>"
+                response._content = SIGNED_IN_PAGE
             else:
                 response.headers["Content-Type"] = "application/json"
                 response._content = json.dumps(body).encode()
@@ -90,7 +92,7 @@ def _loaded_client(im_module, tmp_path):
     return bot
 
 
-# Asserts that every recorded request went out through the curl_cffi transport, the proxy and the expected verify setting
+# Asserts that every recorded request used the curl_cffi transport, the proxy and the expected verify setting
 def _assert_proxied(sent, verify):
     assert sent
     for entry in sent:
@@ -118,7 +120,7 @@ class TestLoadedSession:
 
         assert bot.test_login() == "someone"
 
-        assert [entry["url"].split("?")[0] for entry in sent] == ["https://www.instagram.com/graphql/query"]
+        assert [entry["url"].split("?")[0] for entry in sent] == ["https://www.instagram.com/", "https://www.instagram.com/api/graphql"]
         _assert_proxied(sent, expected_verify)
         _assert_installed_session_configured(bot, expected_verify)
 
@@ -148,14 +150,14 @@ class TestLoadedSession:
 
         assert proxied_transport.sent == []
 
-    # The account recovery check still sends a single request when the loaded session is wrapped as well as its copy
-    def test_account_recovery_check_sends_one_request(self, im_module, proxied_transport, tmp_path):
+    # The recovery check sends only its two requests when the loaded session and its copy are both wrapped
+    def test_account_recovery_check_sends_two_requests(self, im_module, proxied_transport, tmp_path):
         sent = proxied_transport.sent
         bot = _loaded_client(im_module, tmp_path)
 
         assert im_module.check_account_login(bot) == "someone"
 
-        assert len(sent) == 1
+        assert len(sent) == 2
         _assert_proxied(sent, proxied_transport.certificate)
 
 
