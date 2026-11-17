@@ -969,17 +969,17 @@ EXPORTED_SECRET_KEYS: frozenset = frozenset()
 # Config values that must retain safe template defaults during generated output
 SENSITIVE_CONFIG_KEYS = frozenset((*SECRET_KEYS, "WEBHOOK_HEADERS"))
 
-# List of error substrings that unambiguously indicate the session account or IP has been flagged (challenge/checkpoint/shadowban)
+# Error substrings that mean the session account or IP has been flagged (challenge, checkpoint, shadowban)
 FLAGGED_TRIGGERS = ("detected automated checks", "checkpoint_required", "challenge_required", "feedback_required")
 
-# Error substrings naming an endpoint Instagram retired. It answers feedback_required for every logged-in session,
-# so reading that reply as a flag would stop an account whose other endpoints all still work
-RETIRED_ENDPOINT_TERMS = ("web_profile_info",)
+# Error substrings naming an endpoint Instagram retired. Its feedback_required reply is not an account flag.
+# The graphql/query term does not match api/graphql, which still answers
+RETIRED_ENDPOINT_TERMS = ("web_profile_info", "graphql/query")
 
-# Error substrings meaning a profile could not be found, which is ambiguous between a deleted/renamed target and a flagged session
+# Error substrings for a profile that was not found, which can mean a gone target or a flagged session
 PROFILE_NOT_FOUND_TRIGGERS = ("ProfileNotExistsException",)
 
-# Canonical always-present public account used to probe whether the session/IP is flagged rather than a target being genuinely gone
+# Always-present public account used to probe whether the session or IP is flagged
 FLAGGED_PROBE_USERNAME = "instagram"
 
 # Seconds to reuse a flag-probe verdict so simultaneous target failures do not each hit the network
@@ -12206,13 +12206,13 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
     if any(t in m for t in FAILURE_TERMS['public_fallback']):
         return "instagram.public_fallback_failed", "Instagram refuses this profile's lookup and its public embed could not be read", f"Instagram answers HTTP 400 to the anonymous profile lookup for this account, so the tool reads its public embed instead, and that failed too. HTTP 401 or a login redirect on the embed is usually a limit on this IP address that passes with time. A private account has no public embed, so it can only be monitored with a session. Importing one with '{session_recovery_command()}'{session_recovery_browser_hint()} reads profiles another way", ANONYMOUS_PROFILE_FALLBACK_GUIDE_URL, True
 
-    # An endpoint Instagram retired answers feedback_required whatever the account is doing, so its reply describes
-    # the endpoint. Reading it as an account block would stop a session every other endpoint still answers
+    # A retired endpoint answers feedback_required for any account, so its reply is not read as an account block
     if is_retired_endpoint_error(m):
+        if "graphql/query" in m:
+            return "instagram.endpoint_retired", "Instagram no longer answers the GraphQL endpoint this request used", "Instagram stopped answering its older 'graphql/query' endpoint for accounts that are signed in. Your account is not blocked, there is nothing to clear and waiting does not help. Profiles, posts, reels and stories are read from the endpoint the web app uses instead. Follower lists read with FOLLOW_LIST_SOURCE = 'graphql' still use the older endpoint, so set it to 'auto' or 'rest'", RETIRED_ENDPOINT_GUIDE_URL, False
         return "instagram.endpoint_retired", "Instagram no longer answers the profile endpoint this lookup used", "Instagram retired 'api/v1/users/web_profile_info/' for accounts that are signed in. Your account is not blocked and there is nothing to clear. Profiles are read over GraphQL instead, and this endpoint is tried only for a target the search does not list, so check that the target name is spelled correctly and still exists", RETIRED_ENDPOINT_GUIDE_URL, False
 
-    # A temporary limit, which Instagram reports as feedback_required with a "Try Again Later" notice. Only time
-    # clears it, so the checkpoint advice would send the reader to clear something that is not there
+    # A temporary limit ("Try Again Later") that only time clears, so the checkpoint advice does not apply
     if any(t in m for t in FAILURE_TERMS['action_block']):
         return "instagram.action_blocked", "Instagram is temporarily limiting this account or IP", "Instagram answered feedback_required, its 'Try Again Later' notice that limits what this account or this IP address may do for a while. It is not a checkpoint, so there is nothing to clear in the browser and re-importing the session does not lift it. Make no requests from this account and this network for several hours, then run --doctor again. If it works from another network, the limit is on your IP address. Once it passes, raise the check interval and monitor fewer users", ACTION_BLOCK_GUIDE_URL, False
 
