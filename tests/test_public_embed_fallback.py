@@ -79,11 +79,22 @@ def test_schema_failure_reads_embed_with_page_details(im_module, monkeypatch):
     response.close.assert_called_once()
 
 
-# The switch is announced once per target, on its own line even while a progress line is open.
+# Without verbose mode the switch is not announced, since every no-login target takes it.
+def test_fallback_is_silent_without_verbose_mode(im_module, monkeypatch, capsys):
+    bot, _ = _bot(im_module, monkeypatch)
+    logs = []
+    monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: logs.append((args, kwargs)))
+    im_module._anonymous_profile_info(bot, "target")
+    assert capsys.readouterr().out == ""
+    assert not logs
+
+
+# In verbose mode the switch is announced once per target, on its own line even while a progress line is open.
 def test_fallback_is_announced_once_on_its_own_line(im_module, monkeypatch, capsys):
     bot, _ = _bot(im_module, monkeypatch)
     clock = _clock(im_module, monkeypatch)
     logs = []
+    monkeypatch.setattr(im_module, "VERBOSE_MODE", True)
     monkeypatch.setattr(im_module, "log_activity", lambda *args, **kwargs: logs.append((args, kwargs)))
     monkeypatch.setattr(im_module._thread_local, "in_partial_line", True, raising=False)
     im_module._anonymous_profile_info(bot, "target")
