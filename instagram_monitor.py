@@ -297,7 +297,7 @@ SKIP_FOLLOW_CHANGES = False
 # Request Behavior
 # ----------------------------
 
-# Whether to simulate human activity with random feed, profile, hashtag and following actions
+# Whether to simulate human activity with random feed, profile and following actions
 # Only applies in logged-in mode
 BE_HUMAN = False
 
@@ -305,6 +305,7 @@ BE_HUMAN = False
 DAILY_HUMAN_HITS = 5
 
 # List of hashtags to browse
+# Not used at present, since Instagram no longer answers hashtag requests from logged-in sessions
 MY_HASHTAGS = ["travel", "food", "nature"]
 
 # Whether to show verbose output for simulated human actions
@@ -13633,8 +13634,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
     # Explore feed
     if ctx.is_logged_in and random.random() < prob:
         try:
-            posts = bot.get_explore_posts()
-            next(posts)
+            browse_explore_grid(bot)
             if DEBUG_MODE:
                 debug_print("BeHuman #1: explore feed peek OK")
             elif BE_HUMAN_VERBOSE:
@@ -13665,9 +13665,10 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
             elif BE_HUMAN_VERBOSE:
                 print(f"* BeHuman #2 error: cannot view own profile: {e})")
 
-    # Browse a random hashtag (skipped when no hashtags are configured, so the rest of the simulation still runs)
+    # Browse a random hashtag (skipped when no hashtags are configured, so the rest of the simulation still runs).
+    # Signed-in sessions skip it, since Instagram answers them on no known hashtag endpoint
     browsable_hashtags = [tag for tag in MY_HASHTAGS if isinstance(tag, str) and tag.strip()] if isinstance(MY_HASHTAGS, (list, tuple)) else []
-    if browsable_hashtags and random.random() < prob / 2:
+    if browsable_hashtags and not ctx.is_logged_in and random.random() < prob / 2:
         tag = random.choice(browsable_hashtags)
         try:
             posts = bot.get_hashtag_posts(tag)
@@ -13695,7 +13696,7 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
         try:
             me = instaloader.Profile.own_profile(ctx)
             # Take a small window, since paginating the whole followee list would be the largest request burst
-            followees = list(islice(me.get_followees(), BE_HUMAN_FOLLOWEE_SAMPLE))
+            followees = list(islice(iter_rest_follow_list(bot, me, 'following'), BE_HUMAN_FOLLOWEE_SAMPLE))
             if not followees:
                 if DEBUG_MODE:
                     debug_print("BeHuman #4 warning: you follow 0 accounts, skipping visit")
@@ -13703,7 +13704,8 @@ def simulate_human_actions(bot: instaloader.Instaloader, sleep_seconds: int) -> 
                     print("* BeHuman #4 warning: you follow 0 accounts, skipping visit")
             else:
                 someone = random.choice(followees)
-                _ = profile_from_username_resilient(bot, someone.username)
+                # The list entry carries the id, so the profile is read without a lookup by name
+                _ = _profile_by_user_id(ctx, someone.username, str(someone.userid))
                 if DEBUG_MODE:
                     debug_print("BeHuman action #4", action="visit followee", user=someone.username, outcome="OK")
                 elif BE_HUMAN_VERBOSE:
@@ -13803,11 +13805,11 @@ def remember_web_claim_token(source_session, response_headers) -> None:
     debug_print("Instagram web claim token updated")
 
 
-# Returns the headers the web app adds to a follower or following list request
-def rest_follow_list_headers(target_username: str, source_session) -> Dict[str, str]:
+# Returns the headers the web app adds to a REST request sent from one of its pages, named by its path
+def web_rest_headers(page_path: str, source_session) -> Dict[str, str]:
     return {
         'Accept': '*/*',
-        'Referer': f"https://www.instagram.com/{target_username}/",
+        'Referer': f"https://www.instagram.com/{page_path}/",
         'Sec-Fetch-Dest': 'empty',
         'Sec-Fetch-Mode': 'cors',
         'Sec-Fetch-Site': 'same-origin',
@@ -13844,6 +13846,37 @@ def profile_from_rest_node(context, node) -> Optional[instaloader.Profile]:
     return instaloader.Profile(context, normalized)
 
 
+# Query for the first page of the Explore grid
+EXPLORE_GRID_PARAMS = {
+    "is_prefetch": "false",
+    "omit_cover_media": "false",
+    "module": "explore_popular",
+    "use_sectional_payload": "true",
+    "include_fixed_destinations": "true",
+}
+
+
+# Reads the first page of the Explore grid over the web app's REST endpoint and returns how many sections it holds
+def browse_explore_grid(bot) -> int:
+    context = bot.context
+    source_session = context._session
+    session = instaloader_copy_session(source_session, context.request_timeout)
+    try:
+        session.headers.update(web_rest_headers("explore", source_session))
+        response_headers: Dict[str, Any] = {}
+        data = context.get_json("api/v1/discover/web/explore_grid/", EXPLORE_GRID_PARAMS, session=session, response_headers=response_headers)
+        remember_web_claim_token(source_session, response_headers)
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
+
+    if not isinstance(data, dict) or not isinstance(data.get('sectional_items'), list):
+        raise InstagramRestSchemaError("Unexpected Explore reply (no section list)")
+    return len(data['sectional_items'])
+
+
 # Yields profiles from REST while exposing each complete response page to the governor
 def iter_rest_follow_list(bot, profile, kind: str, record_exposure: bool = False, page_observer=None):
     if kind not in ('followers', 'following'):
@@ -13859,7 +13892,7 @@ def iter_rest_follow_list(bot, profile, kind: str, record_exposure: bool = False
     cursor = ""
 
     try:
-        session.headers.update(rest_follow_list_headers(profile.username, source_session))
+        session.headers.update(web_rest_headers(profile.username, source_session))
         while True:
             page_size = FOLLOW_LIST_REST_PAGE_SIZE
             if record_exposure:
@@ -20424,7 +20457,7 @@ def run_main():
         dest="be_human",
         action="store_true",
         default=None,
-        help="Make the tool behave more like a human by performing random feed / profile / hashtag / followee actions"
+        help="Make the tool behave more like a human by performing random feed / profile / followee actions"
     )
     session_opts.add_argument(
         "--enable-jitter",
