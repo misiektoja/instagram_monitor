@@ -8518,6 +8518,14 @@ PUBLIC_PAGE_RETRY_SECONDS = 6 * 3600
 # Largest public embed reply accepted, far above a real one, so only a broken or hostile reply is refused
 PUBLIC_EMBED_MAX_BYTES = 4 * 1024 * 1024
 
+# Set once the anonymous profile lookup answered HTTP 404 for an account its public pages show, so it is not sent again
+ANONYMOUS_PROFILE_LOOKUP_GONE = False
+
+
+# Raised when the embed shows no public profile for the account, as for a private or missing one
+class PublicEmbedUnavailable(RuntimeError):
+    pass
+
 
 # Collects inert script text; only JSON values inside it are read, never JavaScript.
 class _PublicEmbedScripts(HTMLParser):
@@ -8567,12 +8575,12 @@ def _public_embed_profile(username: str, value: Dict[str, Any]) -> Dict[str, Any
             owner = {}
         if str(owner.get("id")) == identifier and str(owner.get("username", "")).lower() == username:
             if owner.get("is_private") is not False:
-                raise ValueError("the account is not public")
+                raise PublicEmbedUnavailable(f"Public embed fallback failed for {username}: the account is not public")
             owns_public_post = True
         nodes.append({"node": node})
     # Without a public post of its own the embed cannot prove the account is public and must not erase a baseline
     if not owns_public_post:
-        raise ValueError("no public post owned by the account")
+        raise PublicEmbedUnavailable(f"Public embed fallback failed for {username}: the embed shows no public post owned by the account")
     picture = value.get("profile_pic_url")
     picture = picture if isinstance(picture, str) and picture else None
     return {"id": identifier, "pk": identifier, "username": username,
@@ -8621,7 +8629,7 @@ def _parse_public_embed(username: str, html: str) -> Dict[str, Any]:
                 pending.extend(value.values())
     except (ValueError, TypeError, AttributeError, RecursionError) as error:
         raise RuntimeError(f"Public embed fallback failed for {username}: the embed holds invalid profile data ({error})") from error
-    raise RuntimeError(f"Public embed fallback failed for {username}: the embed holds no public profile data")
+    raise PublicEmbedUnavailable(f"Public embed fallback failed for {username}: the embed holds no public profile data")
 
 
 # Fetches the public embed using the same anonymous session, transport, proxy, TLS and pacing as normal requests.
@@ -8637,6 +8645,8 @@ def _fetch_public_embed(bot: instaloader.Instaloader, username: str) -> Dict[str
                                     "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate",
                                     "Sec-Fetch-Site": "none", "Sec-Fetch-User": "?1"})
     try:
+        if response.status_code == 404:
+            raise PublicEmbedUnavailable(f"Public embed fallback failed for {username}: HTTP 404")
         if response.status_code != 200:
             raise RuntimeError(f"Public embed fallback failed for {username}: HTTP {response.status_code}")
         declared = str(response.headers.get("content-length") or "")
@@ -8647,17 +8657,55 @@ def _fetch_public_embed(bot: instaloader.Instaloader, username: str) -> Dict[str
         response.close()
 
 
-# Reads the following count and biography the embed lacks from the public profile page, or None when it has neither.
-# Nothing else is taken, since the page's follower count can be rounded
-def _public_page_details(bot: instaloader.Instaloader, username: str, identifier: str) -> Optional[Dict[str, Any]]:
-    ctx = bot.context
-    if not callable(getattr(ctx, "get_page_data", None)):
-        return None  # Instaloader before 4.15.4 has no page reader
+# Returns the profile the public profile page embeds as a logged-out visitor sees it, empty when it shows none
+def _public_page_user(bot: instaloader.Instaloader, username: str) -> Dict[str, Any]:
     user: Dict[str, Any] = {}
-    for query in ctx.get_page_data(f"{username}/") or []:
+    for query in bot.context.get_page_data(f"{username}/") or []:
         value = query.get("xig_user_by_username") if isinstance(query, dict) else None
         if isinstance(value, dict):
             user.update(value)
+    return user
+
+
+# Returns a count from the page, or None when it is missing or not a count
+def _public_page_count(user: Dict[str, Any], key: str) -> Optional[int]:
+    value = user.get(key)
+    return value if type(value) is int and value >= 0 else None
+
+
+# Builds an account the embed cannot show from its public profile page, in the web_profile_info shape.
+# The page has no post count and no posts. A page without the profile raises not found
+def _public_page_profile(bot: instaloader.Instaloader, username: str) -> Dict[str, Any]:
+    try:
+        user = _public_page_user(bot, username)
+    except instaloader.exceptions.QueryReturnedNotFoundException:
+        raise
+    except Exception as error:
+        raise RuntimeError(f"Public embed fallback failed for {username}: the profile page could not be read ({format_error_message(error)})") from error
+    # The page's 'id' is an opaque query id, so 'pk' is the user id
+    identifier = str(user.get("pk", ""))
+    if str(user.get("username", "")).lower() != username or not identifier.isdigit():
+        raise instaloader.exceptions.QueryReturnedNotFoundException(f"Profile {username} was not found on its public profile page")
+    if type(user.get("is_private")) is not bool:
+        raise RuntimeError(f"Public embed fallback failed for {username}: the profile page does not say whether the account is private")
+    picture = user.get("profile_pic_url")
+    picture = picture if isinstance(picture, str) and picture else None
+    return {"id": identifier, "pk": identifier, "username": username,
+            "full_name": user["full_name"] if isinstance(user.get("full_name"), str) else "",
+            "is_private": user["is_private"], "followed_by_viewer": False,
+            "profile_pic_url": picture, "profile_pic_url_hd": picture,
+            "edge_followed_by": {"count": _public_page_count(user, "follower_count")},
+            "edge_follow": {"count": _public_page_count(user, "following_count")},
+            "biography": user["biography"] if isinstance(user.get("biography"), str) else None, "_public_web": "page",
+            "edge_owner_to_timeline_media": {"count": None, "edges": []}}
+
+
+# Reads the following count and biography the embed lacks from the public profile page, or None when it has neither.
+# Nothing else is taken, since the page's follower count can be rounded
+def _public_page_details(bot: instaloader.Instaloader, username: str, identifier: str) -> Optional[Dict[str, Any]]:
+    if not callable(getattr(bot.context, "get_page_data", None)):
+        return None  # Instaloader before 4.15.4 has no page reader
+    user = _public_page_user(bot, username)
     # The page's 'id' is an opaque query id, so the account is matched on 'pk' against the embed's owner id
     if str(user.get("username", "")).lower() != username or str(user.get("pk", "")) != identifier or user.get("is_private") is not False:
         return None
@@ -8699,8 +8747,8 @@ def _public_web_targets(ctx) -> Dict[str, Dict[str, Any]]:
 
 
 # Tells the operator once per run and target that the profile is read from its public pages and what that costs
-def _announce_public_web_fallback(username: str) -> None:
-    message = f"Profile lookup for {username} answered HTTP 400, reading its public embed and profile page instead (recent posts only, following count and bio only when the page allows)"
+def _announce_public_web_fallback(username: str, status: int) -> None:
+    message = f"Instagram answers HTTP {status} to the anonymous profile lookup for {username}, reading its public embed and profile page instead (recent posts only, following count and bio only when the page allows)"
     # The notice can arrive while a progress line is still open, so it starts on a line of its own
     if getattr(_thread_local, 'in_partial_line', False):
         print()
@@ -8709,19 +8757,30 @@ def _announce_public_web_fallback(username: str) -> None:
     log_activity(message, user=username, level='system')
 
 
-# Reads one fresh snapshot for a target on the fallback: the embed as the base and the page for what the embed lacks
+# Reads one fresh snapshot for a target on the fallback: the embed as the base and the page for what the embed lacks.
+# An account the embed cannot show is read from the page alone, and a private one skips the embed at later checks
 def _public_web_snapshot(bot: instaloader.Instaloader, username: str, target: Dict[str, Any]) -> Dict[str, Any]:
-    user = _fetch_public_embed(bot, username)
-    _add_public_page_details(bot, username, user, target)
+    user = None
+    if not target["page_only"]:
+        try:
+            user = _fetch_public_embed(bot, username)
+        except PublicEmbedUnavailable as error:
+            debug_print("Public embed", user=username, outcome="no public profile", error=format_error_message(error))
+    if user is None:
+        user = _public_page_profile(bot, username)
+        target["page_only"] = user["is_private"]
+    else:
+        _add_public_page_details(bot, username, user, target)
     data = {"data": {"user": user}}
     target["data"] = data
     target["fetched_at"] = time.monotonic()
     return data
 
 
-# Reads the anonymous profile. An HTTP 400 moves the target to its public embed and profile page for the rest of
-# the run, so the refused request is never repeated. Every other failure propagates without another request
+# Reads the anonymous profile. An HTTP 400 or 404 moves the target to its public embed and profile page for the rest
+# of the run, so the refused request is never repeated. Every other failure propagates without another request
 def _anonymous_profile_info(bot: instaloader.Instaloader, username: str) -> Dict[str, Any]:
+    global ANONYMOUS_PROFILE_LOOKUP_GONE
     username = normalize_instagram_username(username)
     ctx = bot.context
     path = f"api/v1/users/web_profile_info/?username={username}"
@@ -8730,13 +8789,23 @@ def _anonymous_profile_info(bot: instaloader.Instaloader, username: str) -> Dict
     targets = _public_web_targets(ctx)
     target = targets.get(username)
     if target is None:
-        try:
-            return ctx.get_iphone_json(path, {})
-        except instaloader.exceptions.QueryReturnedBadRequestException:
-            target = {"data": None, "fetched_at": 0.0, "page_retry_at": 0.0}
-            targets[username] = target
-        _announce_public_web_fallback(username)
-    elif target["data"] is not None and time.monotonic() - target["fetched_at"] < PUBLIC_WEB_SNAPSHOT_SECONDS:
+        status = 404
+        if not ANONYMOUS_PROFILE_LOOKUP_GONE:
+            try:
+                return ctx.get_iphone_json(path, {})
+            except instaloader.exceptions.QueryReturnedBadRequestException:
+                status = 400
+            except instaloader.exceptions.QueryReturnedNotFoundException:
+                pass
+        target = {"data": None, "fetched_at": 0.0, "page_retry_at": 0.0, "page_only": False}
+        targets[username] = target
+        _announce_public_web_fallback(username, status)
+        data = _public_web_snapshot(bot, username, target)
+        # The account exists, so the 404 came from the lookup itself and other targets need not ask it
+        if status == 404:
+            ANONYMOUS_PROFILE_LOOKUP_GONE = True
+        return data
+    if target["data"] is not None and time.monotonic() - target["fetched_at"] < PUBLIC_WEB_SNAPSHOT_SECONDS:
         return target["data"]
     return _public_web_snapshot(bot, username, target)
 
@@ -8763,7 +8832,7 @@ class _AnonymousWebProfile(instaloader.Profile):
         return unicodedata.normalize("NFC", value) if isinstance(value, str) else None
 
 
-# Builds a Profile object from web_profile_info or from the public snapshot that replaces it after an anonymous HTTP 400
+# Builds a Profile object from web_profile_info or from the public snapshot that replaces it for an anonymous run
 def _profile_from_web_profile_info(bot: instaloader.Instaloader, username: str) -> Optional[instaloader.Profile]:
     data = _anonymous_profile_info(bot, username)
     if not isinstance(data, dict):
@@ -8940,7 +9009,7 @@ def _profile_by_user_id(ctx, username: str, user_id: str) -> Optional[instaloade
 
 
 # Resolves a profile by username. Signed-in runs find the id through search or the profile page and read it over
-# GraphQL. Anonymous runs use the mobile endpoint and fall back to the public embed and profile page on HTTP 400
+# GraphQL. Anonymous runs use the mobile endpoint and fall back to the public embed and profile page on HTTP 400 or 404
 def profile_from_username_resilient(bot: instaloader.Instaloader, username: str) -> instaloader.Profile:
     ctx = bot.context
     if not ctx.is_logged_in:
@@ -12235,9 +12304,9 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
             return "instagram.rate_limited", "Instagram is rate-limiting anonymous requests from this IP", "Instagram is rate-limiting anonymous requests from this IP address, which counts everything behind it and is often hit on the very first request. Wait for it to pass or use another address. A session login is limited per account instead, so importing one usually works from here", ANONYMOUS_RATE_LIMIT_GUIDE_URL, True
         return "instagram.rate_limited", "Instagram is rate-limiting this account or IP", "Instagram is rate-limiting you. Raise INSTA_CHECK_INTERVAL and set ENABLE_JITTER = True in the configuration file, then restart and monitor fewer users. To use command-line settings instead, include --check-interval SECONDS --enable-jitter on each run", ANTI_DETECTION_INTERVAL_GUIDE_URL, True
 
-    # A failed public embed fallback describes an IP limit or a private account, never the session it does not use
+    # A failed public fallback describes a limit on the IP address, never the session it does not use
     if any(t in m for t in FAILURE_TERMS['public_fallback']):
-        return "instagram.public_fallback_failed", "Instagram refuses this profile's lookup and its public embed could not be read", f"Instagram answers HTTP 400 to the anonymous profile lookup for this account, so the tool reads its public embed instead, and that failed too. HTTP 401 or a login redirect on the embed is usually a limit on this IP address that passes with time. A private account has no public embed, so it can only be monitored with a session. Importing one with '{session_recovery_command()}'{session_recovery_browser_hint()} reads profiles another way", ANONYMOUS_PROFILE_FALLBACK_GUIDE_URL, True
+        return "instagram.public_fallback_failed", "Instagram refuses this profile's lookup and its public pages could not be read", f"Instagram refuses the anonymous profile lookup for this account, so the tool reads its public embed and profile page instead, and that failed too. HTTP 401 or a login redirect is usually a limit on this IP address that passes with time. Importing a session with '{session_recovery_command()}'{session_recovery_browser_hint()} reads profiles another way", ANONYMOUS_PROFILE_FALLBACK_GUIDE_URL, True
 
     # A retired endpoint answers feedback_required for any account, so its reply is not read as an account block
     if is_retired_endpoint_error(m):
@@ -15015,7 +15084,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         print(f"\nProfile:\t\t\t\t{'public' if not is_private else 'private'}")
         print(f"Can view all contents:\t\t\t{'Yes' if can_view else 'No'}")
 
-        print(f"\nPosts:\t\t\t\t\t{posts_count}")
+        print(f"\nPosts:\t\t\t\t\t{posts_count if posts_count is not None else 'Unavailable'}")
         if not skip_session and can_view and FETCH_REELS:
             print(f"Reels:\t\t\t\t\t{reels_count}")
 
@@ -15561,7 +15630,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
     video_url = ""
     highest_collab_ts_old = 0
 
-    if int(posts_count + reels_count) >= 1 and can_view and not skip_getting_posts_details:
+    if int((posts_count or 0) + reels_count) >= 1 and can_view and not skip_getting_posts_details:
         if bot.context.is_logged_in:
             print("Fetching user's latest post/reel ...\n")
         else:
@@ -15715,7 +15784,7 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
         highestinsta_dt_old = now_local()
 
     # Baseline of leaked collab posts for private (otherwise not viewable) accounts; new ones are reported in the loop
-    if DETECT_COLLAB_POSTS and not can_view and int(posts_count + reels_count) >= 1:
+    if DETECT_COLLAB_POSTS and not can_view and int((posts_count or 0) + reels_count) >= 1:
         update_ui_data(targets={user: {'status': 'Probing Collab Posts'}})
         try:
             time.sleep(NEXT_OPERATION_DELAY)
@@ -15961,6 +16030,11 @@ def _run_instagram_monitor_pass(user, csv_file_name, skip_session, skip_follower
                 followed_by_viewer = profile.followed_by_viewer
                 can_view = (not is_private) or followed_by_viewer
                 posts_count = profile.mediacount
+                # An unknown post count keeps the last known one, so it is never reported as a change
+                if posts_count is None:
+                    posts_count = posts_count_old
+                elif posts_count_old is None:
+                    posts_count_old = posts_count
 
                 debug_print("Profile loaded", followers=followers_count, following=followings_count, posts=posts_count)
                 debug_print("Previous load", followers=followers_old_count, following=followings_old_count, posts=posts_count_old)
