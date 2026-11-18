@@ -172,6 +172,8 @@ def deterministic_globals(monkeypatch, tmp_path):
     monkeypatch.setattr(im, "CURL_CFFI_IMPERSONATE", "auto", raising=False)
     monkeypatch.setattr(im, "FOLLOW_LIST_SOURCE", "auto", raising=False)
     monkeypatch.setattr(im, "FOLLOW_LIST_BROWSER_CHANNEL", "chromium", raising=False)
+    # A query one test saw refused must still be sent by the next
+    im.GRAPHQL_QUERIES_REFUSED.clear()
     # Setup and the dashboard both write these, and the wizard snapshots the module to build its baseline
     monkeypatch.setattr(im, "SKIP_FOLLOWERS", False, raising=False)
     monkeypatch.setattr(im, "SKIP_FOLLOWINGS", False, raising=False)
