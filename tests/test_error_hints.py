@@ -13,7 +13,7 @@ import pytest
 
 KNOWN_ERRORS = [
     ("ConnectionException: 429 Too Many Requests", "rate-limiting"),
-    ("RuntimeError: Public embed fallback failed for target: HTTP 401", "public embed instead"),
+    ("RuntimeError: Public embed fallback failed for target: HTTP 401", "public embed and profile page instead"),
     ("JSONDecodeError: challenge_required", "challenge"),
     ("Instagram ... requires a challenge ... missing expected data", "challenge"),
     ("ConnectionException: Login required, redirected", "invalid or expired"),

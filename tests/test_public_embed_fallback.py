@@ -116,6 +116,121 @@ def test_other_failures_do_not_fall_back(im_module, monkeypatch, error_name, mes
     bot.context.get_page_data.assert_not_called()
 
 
+# Replaces the lookup failure with the HTTP 404 Instagram answers since it removed the anonymous lookup.
+def _not_found(im_module, bot):
+    bot.context.get_iphone_json.side_effect = im_module.instaloader.exceptions.QueryReturnedNotFoundException(
+        "404 Not Found when accessing https://i.instagram.com/api/v1/users/web_profile_info/?username=target")
+
+
+# Makes the embed answer without a public profile, as for a private or missing account.
+def _no_embed(response, variant):
+    if variant == "http_404":
+        response.status_code = 404
+    elif variant == "private_owner":
+        payload = _payload()
+        for entry in payload["graphql_media"]:
+            entry["shortcode_media"]["owner"]["is_private"] = True
+        response.text = _html(payload)
+    else:
+        response.text = "<html></html>"
+
+
+# An HTTP 404 from the removed lookup is answered from the public embed and page, like the HTTP 400.
+def test_not_found_lookup_reads_the_public_sources(im_module, monkeypatch):
+    bot, _ = _bot(im_module, monkeypatch)
+    _not_found(im_module, bot)
+    profile = im_module.profile_from_username_resilient(bot, "target")
+    assert (profile.userid, profile.followers, profile.followees, profile.biography, profile.mediacount) == (77, 12, 5, "Page biography", 20)
+    assert bot.context.get_iphone_json.call_count == 1
+
+
+# Once an account proves the lookup is gone, other targets go to the public sources without asking it.
+def test_removed_lookup_is_asked_once_per_run(im_module, monkeypatch):
+    bot, _ = _bot(im_module, monkeypatch)
+    _not_found(im_module, bot)
+    im_module.profile_from_username_resilient(bot, "target")
+    other, _ = _bot(im_module, monkeypatch)
+    _not_found(im_module, other)
+    assert im_module.profile_from_username_resilient(other, "target").followers == 12
+    other.context.get_iphone_json.assert_not_called()
+
+
+# An HTTP 400 concerns one account, so other targets still ask the lookup.
+def test_bad_request_keeps_the_lookup_for_other_targets(im_module, monkeypatch):
+    bot, _ = _bot(im_module, monkeypatch)
+    im_module.profile_from_username_resilient(bot, "target")
+    other, _ = _bot(im_module, monkeypatch)
+    im_module.profile_from_username_resilient(other, "target")
+    assert other.context.get_iphone_json.call_count == 1
+
+
+# An account the embed cannot show is read from its page, with the post count unknown. Later checks skip the embed.
+@pytest.mark.parametrize("variant", ["no_data", "private_owner", "http_404"])
+def test_private_account_is_read_from_the_page(im_module, monkeypatch, variant):
+    bot, response = _bot(im_module, monkeypatch)
+    clock = _clock(im_module, monkeypatch)
+    _not_found(im_module, bot)
+    _no_embed(response, variant)
+    bot.context.get_page_data.return_value = _page(is_private=True, follower_count=7)
+    profile = im_module.profile_from_username_resilient(bot, "target")
+    assert (profile.userid, profile.is_private, profile.followers, profile.followees, profile.biography, profile.mediacount) == (77, True, 7, 5, "Page biography", None)
+    clock[0] += im_module.PUBLIC_WEB_SNAPSHOT_SECONDS
+    im_module.profile_from_username_resilient(bot, "target")
+    assert (bot.context._session.get.call_count, bot.context.get_page_data.call_count) == (1, 2)
+
+
+# A private account that turns public is reported from the page first and read from the embed at the next check.
+def test_account_turning_public_returns_to_the_embed(im_module, monkeypatch):
+    bot, response = _bot(im_module, monkeypatch)
+    clock = _clock(im_module, monkeypatch)
+    _not_found(im_module, bot)
+    _no_embed(response, "no_data")
+    bot.context.get_page_data.return_value = _page(is_private=True)
+    im_module.profile_from_username_resilient(bot, "target")
+    response.text = _html(_payload())
+    bot.context.get_page_data.return_value = _page()
+    clock[0] += im_module.PUBLIC_WEB_SNAPSHOT_SECONDS
+    turned = im_module.profile_from_username_resilient(bot, "target")
+    assert (turned.is_private, turned.mediacount, bot.context._session.get.call_count) == (False, None, 1)
+    clock[0] += im_module.PUBLIC_WEB_SNAPSHOT_SECONDS
+    assert im_module.profile_from_username_resilient(bot, "target").mediacount == 20
+    assert bot.context._session.get.call_count == 2
+
+
+# A name no public source shows is reported as not found and proves nothing about the lookup.
+@pytest.mark.parametrize("page", [[], "other_account"])
+def test_missing_account_is_not_found(im_module, monkeypatch, page):
+    bot, response = _bot(im_module, monkeypatch)
+    _not_found(im_module, bot)
+    _no_embed(response, "no_data")
+    bot.context.get_page_data.return_value = _page(username="different") if page == "other_account" else page
+    with pytest.raises(im_module.instaloader.exceptions.QueryReturnedNotFoundException) as raised:
+        im_module.profile_from_username_resilient(bot, "target")
+    assert im_module.classify_recovery_error(im_module.format_error_message(raised.value), is_logged_in=False).code == "target.not_found"
+    other, _ = _bot(im_module, monkeypatch)
+    _not_found(im_module, other)
+    im_module.profile_from_username_resilient(other, "target")
+    assert other.context.get_iphone_json.call_count == 1
+
+
+# A page that cannot be read fails the check as a fallback error, never as a missing account or an expired session.
+@pytest.mark.parametrize("failure", ["redirect", "limit", "no_privacy"])
+def test_unreadable_page_fails_the_page_only_check(im_module, monkeypatch, failure):
+    bot, response = _bot(im_module, monkeypatch)
+    _not_found(im_module, bot)
+    _no_embed(response, "no_data")
+    exceptions = im_module.instaloader.exceptions
+    bot.context.get_page_data.side_effect = {
+        "redirect": exceptions.ConnectionException("302 Found when accessing https://www.instagram.com/target/"),
+        "limit": exceptions.TooManyRequestsException("429 Too Many Requests"),
+    }.get(failure)
+    bot.context.get_page_data.return_value = _page(is_private=None)
+    with pytest.raises(RuntimeError, match="Public embed fallback failed for target") as raised:
+        im_module.profile_from_username_resilient(bot, "target")
+    expected = "instagram.rate_limited" if failure == "limit" else "instagram.public_fallback_failed"
+    assert im_module.classify_recovery_error(im_module.format_error_message(raised.value), is_logged_in=False).code == expected
+
+
 # Healthy mobile responses and logged-in callers keep their existing source.
 def test_healthy_response_is_unchanged(im_module, monkeypatch):
     bot, _ = _bot(im_module, monkeypatch)
@@ -314,7 +429,7 @@ def test_failed_fallback_has_its_own_advice(im_module):
 
 
 # Drives startup and later checks with the monitor's own pass, reading profiles from the supplied sequence.
-def _drive_monitor(im_module, monkeypatch, profiles):
+def _drive_monitor(im_module, monkeypatch, profiles, posts=None):
     import threading
 
     stop = threading.Event()
@@ -325,12 +440,13 @@ def _drive_monitor(im_module, monkeypatch, profiles):
 
     # Supplies consecutive profiles and stops after the final profile has been processed.
     def profile(bot, username):
-        followers, following, bio = profiles[min(len(calls), len(profiles) - 1)]
+        index = min(len(calls), len(profiles) - 1)
+        followers, following, bio = profiles[index]
         calls.append(username)
         if len(calls) >= len(profiles):
             stop.set()
         return SimpleNamespace(username="target", userid=77, followers=followers, followees=following, biography=bio,
-                               is_private=False, followed_by_viewer=False, mediacount=20,
+                               is_private=False, followed_by_viewer=False, mediacount=posts[index] if posts else 20,
                                profile_pic_url_no_iphone="https://example.com/avatar.jpg")
 
     for name, value in (("INSTA_CHECK_INTERVAL", 1), ("RANDOM_SLEEP_DIFF_LOW", 0), ("RANDOM_SLEEP_DIFF_HIGH", 0),
@@ -370,3 +486,11 @@ def test_saved_count_survives_an_unknown_startup_count(im_module, monkeypatch, t
     alerts = _drive_monitor(im_module, monkeypatch, [(None, 5, "Bio"), (15, 5, "Bio")])
     assert len(alerts) == 1
     assert "12 -> 15" in alerts[0][1]
+
+
+# An unknown post count is neither a change nor a zero: the last known count stays the comparison value.
+@pytest.mark.parametrize("posts, change", [([None, None], None), ([None, 3], None), ([20, None, 20], None), ([20, None, 21], "20 -> 21")])
+def test_monitor_pass_tolerates_an_unknown_post_count(im_module, monkeypatch, tmp_path, posts, change):
+    monkeypatch.chdir(tmp_path)
+    alerts = _drive_monitor(im_module, monkeypatch, [(12, 5, "Bio")] * len(posts), posts=posts)
+    assert [change in alert[1] for alert in alerts] == ([True] if change else [])
