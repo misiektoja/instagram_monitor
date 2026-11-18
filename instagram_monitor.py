@@ -8746,8 +8746,10 @@ def _public_web_targets(ctx) -> Dict[str, Dict[str, Any]]:
     return targets
 
 
-# Tells the operator once per run and target that the profile is read from its public pages and what that costs
+# Tells the operator in verbose mode, once per run and target, that the profile is read from its public pages
 def _announce_public_web_fallback(username: str, status: int) -> None:
+    if not VERBOSE_MODE and not DEBUG_MODE:
+        return
     message = f"Instagram answers HTTP {status} to the anonymous profile lookup for {username}, reading its public embed and profile page instead (recent posts only, following count and bio only when the page allows)"
     # The notice can arrive while a progress line is still open, so it starts on a line of its own
     if getattr(_thread_local, 'in_partial_line', False):
