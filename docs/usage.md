@@ -850,6 +850,8 @@ This feature is enabled by default. To disable it, either:
 
 The check runs only when the session cannot normally view a target's posts, such as a private account that the session account does not follow.
 
+No-login runs find no collab posts at present. Instagram removed the profile lookup that returned them in November 2026. See [Anonymous Profile Lookup Returns HTTP 400 or 404](troubleshooting.md#anonymous-profile-http-400).
+
 On the first run, the tool shows the newest visible collaboration post and saves a baseline. It does not send later alerts for posts already in that baseline. When the post or reel count changes, the tool looks for newly visible collaboration posts. It reports their date, owner, collaborators, likes, comments, caption and media through enabled output channels. Media is saved like other post media.
 
 This behavior was inspired by [InstagramPrivSniffer](https://github.com/obitouka/InstagramPrivSniffer). The [Instagram collaboration help page](https://help.instagram.com/3526836317546926) describes how accepted collaboration posts also appear on a collaborator's profile. Use this feature only for legitimate research.

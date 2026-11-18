@@ -101,20 +101,25 @@ A `401 Unauthorized` naming `Please wait a few minutes before you try again` on 
 A session login is limited per account instead, so [importing a session](configuration.md#option-3-session-login-using-browser-cookies-recommended) usually works from the same address. Otherwise wait for the limit to pass or run from another network. If the same run works over a mobile connection, the limit is on the home address rather than on anything in the configuration.
 
 <a id="anonymous-profile-http-400"></a>
-## Anonymous Profile Lookup Returns HTTP 400
+## Anonymous Profile Lookup Returns HTTP 400 or 404
 
-Instagram answers HTTP 400 to anonymous profile lookups for some public professional profiles. Such a target is then read from its public embed for the rest of the run. A notice is printed once. HTTP 401, 429 and connection errors never switch a target.
+In November 2026 Instagram removed the profile lookup that no-login runs used. It now answers HTTP 404 for every account. Before that it answered HTTP 400 for some public professional profiles. In both cases the target is read from its public embed and profile page for the rest of the run. A notice is printed once per target. Once an account that exists has answered HTTP 404, the run does not send the lookup again. HTTP 401, 429 and connection errors never switch a target.
+
+Versions before 4.2 report the HTTP 404 as `QueryReturnedNotFoundException` and advise checking the username. Upgrade to 4.2 or later.
 
 The embed gives the follower count, the post count and the six newest posts. The public profile page adds the following count and the bio when logged-out visitors can open it. A page that fails is skipped for six hours. Missing fields are never treated as zero or empty. Changes to them are reported once they return.
 
-Each check costs one embed request and at most one page request. If the embed cannot be read, the check reports `Public embed fallback failed`.
+An account the embed cannot show is read from the profile page alone. This covers private accounts and public accounts without a post of their own. The page gives the name, the picture, the follower and following counts, the bio and whether the account is private. It gives no post count, so `Posts` shows `Unavailable`.
+
+Each check costs one embed request and at most one page request. A private account costs one page request. If the sources cannot be read, the check reports `Public embed fallback failed`. A name that neither source shows is reported as not found.
 
 Limits:
 
 - Only the six newest posts are visible.
-- A private account has no public embed. Import a session to monitor it.
+- A private account has no post count and its collab posts are not visible. Import a session to monitor them.
+- The profile page may round a large follower count.
 - The embed picture is 100x100 pixels. A picture that only changes size becomes the new baseline without an alert. A removed picture is reported as a change.
-- Reel codes are not available. A target that turns private reports errors instead of a visibility change.
+- Reel codes are not available.
 
 <a id="profile-lookups-report-a-retired-endpoint"></a>
 ## Profile Lookups Report a Retired Endpoint
