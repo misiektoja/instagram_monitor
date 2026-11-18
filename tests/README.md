@@ -51,7 +51,7 @@ installed copy of the package.
 | `test_paginated_fetching.py` | `fetch_usernames_paginated` batching, limits, completion state and stop-event behavior |
 | `test_profile_resolution.py` | Resolving a target through search (or its public profile page once search answers 404) and GraphQL instead of the retired profile endpoint, id caching and the failure class that keeps the account running when a retired endpoint or the refused `graphql/query` answers `feedback_required` |
 | `test_instaloader_compatibility.py` | The tool's patches on Instaloader methods: arguments that newer Instaloader releases add pass through. Signed-in profile, post, reel, story and session check requests go to the web app endpoint instead of the refused `graphql/query` |
-| `test_public_embed_fallback.py` | Anonymous HTTP 400 recovery through the public embed with page details, remembered fallback, page back-off, collab posts, proxy/TLS settings, failure advice and last-known metadata comparisons |
+| `test_public_embed_fallback.py` | Anonymous HTTP 400 and 404 recovery through the public embed with page details, page-only private accounts, missing accounts, an unknown post count, remembered fallback, page back-off, collab posts, proxy/TLS settings, failure advice and last-known metadata comparisons |
 | `test_dashboard_endpoints.py` | Web Dashboard status, strict atomic settings, private values, media access and isolation, target validation, monitor ownership, session signaling and test-notification endpoints |
 | `test_detection_workflows.py` | Posts/reels count change notifications, leaked-collab notification workflows and hostile email content |
 | `test_profile_picture_workflows.py` | Profile picture creation, removal, change notifications, CSV rows and file moves |
