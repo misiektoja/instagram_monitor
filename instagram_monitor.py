@@ -11466,8 +11466,35 @@ def close_pbar():
                 pass
 
 
-# Monkey-patches Instagram request to add human-like jitter and back-off
-def instagram_wrap_request(orig_request):
+# Queries graphql/query refused for a signed-in session in this run, by query hash or doc_id. They are not sent again
+GRAPHQL_QUERIES_REFUSED: set[str] = set()
+
+# Error raised in place of a refused query. Its wording classifies as a retired endpoint
+GRAPHQL_QUERY_REFUSED_ERROR = "Instagram answered feedback_required to this query on graphql/query earlier in this run, so it was not sent again"
+
+
+# Returns the query hash or doc_id of a signed-in request to the older graphql/query endpoint, or None for any other
+def signed_in_graphql_query_id(session, url, fields) -> Optional[str]:
+    if not isinstance(url, str) or urlsplit(url).path.strip("/") != "graphql/query" or not isinstance(fields, dict):
+        return None
+    cookies = getattr(session, "cookies", None)
+    if cookies is None or not cookies.get_dict().get("sessionid"):
+        return None
+    query_id = fields.get("query_hash") or fields.get("doc_id")
+    return str(query_id) if query_id else None
+
+
+# Remembers a query that graphql/query answered with feedback_required. Other queries on the endpoint still answer
+def note_graphql_query_reply(query_id: str, response) -> None:
+    if query_id in GRAPHQL_QUERIES_REFUSED or response.status_code != 400 or "feedback_required" not in response.text:
+        return
+    GRAPHQL_QUERIES_REFUSED.add(query_id)
+    debug_print("graphql/query refused a query", query=query_id, action="not sent again in this run")
+
+
+# Monkey-patches Instagram request to add human-like jitter and back-off. The session is passed in because
+# Instaloader replaces session.request with a partial, which does not name it
+def instagram_wrap_request(orig_request, session=None):
     @wraps(orig_request)
     def wrapper(*args, **kwargs):
         global NAME_COUNT, START_TIME, WRAPPER_COUNT, pbar
@@ -11477,6 +11504,9 @@ def instagram_wrap_request(orig_request):
         url = kwargs.get("url") or (args[1] if len(args) > 1 else None)
         if not is_instagram_request_url(url):
             return orig_request(*args, **kwargs)
+        query_id = signed_in_graphql_query_id(session, url, kwargs.get("params") or kwargs.get("data"))
+        if query_id in GRAPHQL_QUERIES_REFUSED:
+            raise instaloader.exceptions.AbortDownloadException(GRAPHQL_QUERY_REFUSED_ERROR)
         recovery = getattr(_thread_local, 'account_recovery', None)
         if recovery is not None:
             if recovery['remaining'] <= 0:
@@ -11652,8 +11682,12 @@ def instagram_wrap_request(orig_request):
 
         if MULTI_TARGET_SERIALIZE_HTTP:
             with HTTP_SERIAL_LOCK:
-                return _do_request()
-        return _do_request()
+                response = _do_request()
+        else:
+            response = _do_request()
+        if query_id:
+            note_graphql_query_reply(query_id, response)
+        return response
     return wrapper
 
 
@@ -11675,7 +11709,7 @@ def ensure_instagram_session_wrapped(session):
     with REQUESTS_PATCH_LOCK:
         if getattr(session, '_instagram_monitor_wrapped', False):
             return
-        session.request = instagram_wrap_request(session.request)
+        session.request = instagram_wrap_request(session.request, session)
         session._instagram_monitor_wrapped = True
 
 
@@ -12209,7 +12243,7 @@ def classify_error_parts(error_msg: str, is_logged_in: bool = False) -> Tuple[st
     # A retired endpoint answers feedback_required for any account, so its reply is not read as an account block
     if is_retired_endpoint_error(m):
         if "graphql/query" in m:
-            return "instagram.endpoint_retired", "Instagram no longer answers the GraphQL endpoint this request used", "Instagram stopped answering its older 'graphql/query' endpoint for accounts that are signed in. Your account is not blocked, there is nothing to clear and waiting does not help. Profiles, posts, reels and stories are read from the endpoint the web app uses instead. Follower lists read with FOLLOW_LIST_SOURCE = 'graphql' still use the older endpoint, so set it to 'auto' or 'rest'", RETIRED_ENDPOINT_GUIDE_URL, False
+            return "instagram.endpoint_retired", "Instagram no longer answers the GraphQL endpoint this request used", "Instagram stopped answering most queries on its older 'graphql/query' endpoint for accounts that are signed in. Your account is not blocked, there is nothing to clear and waiting does not help. Profiles, posts, reels and stories are read from the endpoint the web app uses instead. Follower lists read with FOLLOW_LIST_SOURCE = 'graphql' still use the older endpoint, so set it to 'auto' or 'rest'", RETIRED_ENDPOINT_GUIDE_URL, False
         return "instagram.endpoint_retired", "Instagram no longer answers the profile endpoint this lookup used", "Instagram retired 'api/v1/users/web_profile_info/' for accounts that are signed in. Your account is not blocked and there is nothing to clear. Profiles are read over GraphQL instead, and this endpoint is tried only for a target the search does not list, so check that the target name is spelled correctly and still exists", RETIRED_ENDPOINT_GUIDE_URL, False
 
     # A temporary limit ("Try Again Later") that only time clears, so the checkpoint advice does not apply
