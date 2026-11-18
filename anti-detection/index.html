@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
     
     
       
@@ -998,13 +998,12 @@
 <p>It works only in <a href="../configuration/#logged-in-mode-with-session-login">Logged-In Mode</a>.</p>
 <p>After a check cycle, the tool may perform one or more of these requests:</p>
 <ul>
-<li>fetch one post from the Explore feed</li>
+<li>read the first page of the Explore grid</li>
 <li>open the session account's profile</li>
-<li>fetch one post from a tag listed in <code>MY_HASHTAGS</code></li>
 <li>open the profile of an account followed by the session account</li>
 </ul>
-<p>Leaving <code>MY_HASHTAGS</code> empty simply skips the hashtag request. The other actions still run.</p>
-<p>The followee visit reads only the first page of accounts your session follows before picking one, so the simulation stays a few requests rather than paginating a large following list.</p>
+<p>The hashtag request is not sent at present. Instagram no longer answers signed-in sessions on the hashtag endpoints the tool knows, so <code>MY_HASHTAGS</code> has no effect for now.</p>
+<p>The followee visit reads only the first page of accounts your session follows before picking one, so the simulation stays a few requests rather than paginating a large following list. It opens the chosen profile by the id from that list.</p>
 <p>By default, it performs about five of these actions over 24 hours. Change the limit with <code>DAILY_HUMAN_HITS</code>.</p>
 <p>Set <code>BE_HUMAN_VERBOSE = True</code> to log each action.</p>
 <p><a id="set-an-identity-budget"></a></p>
@@ -1183,7 +1182,7 @@
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.c21346df.min.js"></script>
+      <script src="../assets/javascripts/bundle.a5f9d56c.min.js"></script>
       
     
   </body>

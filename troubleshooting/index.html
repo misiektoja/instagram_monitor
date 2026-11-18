@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
     
     
       
@@ -566,10 +566,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#anonymous-profile-lookup-returns-http-400" class="md-nav__link">
+  <a href="#anonymous-profile-lookup-returns-http-400-or-404" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Anonymous Profile Lookup Returns HTTP 400
+        Anonymous Profile Lookup Returns HTTP 400 or 404
       
     </span>
   </a>
@@ -847,10 +847,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#anonymous-profile-lookup-returns-http-400" class="md-nav__link">
+  <a href="#anonymous-profile-lookup-returns-http-400-or-404" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Anonymous Profile Lookup Returns HTTP 400
+        Anonymous Profile Lookup Returns HTTP 400 or 404
       
     </span>
   </a>
@@ -1121,28 +1121,35 @@
 <p><a id="instagram-says-try-again-later"></a></p>
 <h2 id="instagram-says-try-again-later">Instagram Says Try Again Later<a class="headerlink" href="#instagram-says-try-again-later" title="Permanent link">&para;</a></h2>
 <p>A <code>400 Bad Request</code> naming <code>feedback_required</code> means Instagram is limiting what the logged-in account or your IP address may do for a while. Instagram shows this as a "Try Again Later" notice. It is not a checkpoint: Instagram in your browser may keep working, there is nothing to clear there and re-importing the session does not lift it. The circuit breaker stops the account so no further request is made and <code>--exposure</code> counts it as <code>action_block</code>.</p>
+<p>The same reply naming <code>graphql/query</code> is not this limit. Instagram refuses most queries on that endpoint for every signed-in session. See <a href="#profile-lookups-report-a-retired-endpoint">Profile Lookups Report a Retired Endpoint</a>.</p>
 <p>Make no requests from that account and that network for several hours, then run <code>instagram_monitor --doctor</code> again. If the same session works from another network, such as a mobile connection, the limit is on your IP address rather than the account. Once it passes, raise <code>INSTA_CHECK_INTERVAL</code>, monitor fewer users and follow the <a href="../anti-detection/">anti-detection guidance</a>. A limit that returns soon after monitoring resumes means the account is still being watched, so wait longer before the next attempt.</p>
 <p><a id="anonymous-runs-are-rate-limited"></a></p>
 <h2 id="anonymous-runs-are-rate-limited">Anonymous Runs Are Rate Limited<a class="headerlink" href="#anonymous-runs-are-rate-limited" title="Permanent link">&para;</a></h2>
 <p>A <code>401 Unauthorized</code> naming <code>Please wait a few minutes before you try again</code> on a run without a session means Instagram is rate-limiting anonymous requests from your IP address. The limit is per address, so it counts every device and tool behind it, and it is often reached on the very first request of a run. Raising the check interval does not lift a limit the run did not cause.</p>
 <p>A session login is limited per account instead, so <a href="../configuration/#option-3-session-login-using-browser-cookies-recommended">importing a session</a> usually works from the same address. Otherwise wait for the limit to pass or run from another network. If the same run works over a mobile connection, the limit is on the home address rather than on anything in the configuration.</p>
 <p><a id="anonymous-profile-http-400"></a></p>
-<h2 id="anonymous-profile-lookup-returns-http-400">Anonymous Profile Lookup Returns HTTP 400<a class="headerlink" href="#anonymous-profile-lookup-returns-http-400" title="Permanent link">&para;</a></h2>
-<p>Instagram answers HTTP 400 to anonymous profile lookups for some public professional profiles. Such a target is then read from its public embed for the rest of the run. A notice is printed once. HTTP 401, 429 and connection errors never switch a target.</p>
+<h2 id="anonymous-profile-lookup-returns-http-400-or-404">Anonymous Profile Lookup Returns HTTP 400 or 404<a class="headerlink" href="#anonymous-profile-lookup-returns-http-400-or-404" title="Permanent link">&para;</a></h2>
+<p>In November 2026 Instagram removed the profile lookup that no-login runs used. It now answers HTTP 404 for every account. Before that it answered HTTP 400 for some public professional profiles. In both cases the target is read from its public embed and profile page for the rest of the run. In verbose mode a notice is printed once per target. Once an account that exists has answered HTTP 404, the run does not send the lookup again. HTTP 401, 429 and connection errors never switch a target.</p>
+<p>Versions before 4.2 report the HTTP 404 as <code>QueryReturnedNotFoundException</code> and advise checking the username. Upgrade to 4.2 or later.</p>
 <p>The embed gives the follower count, the post count and the six newest posts. The public profile page adds the following count and the bio when logged-out visitors can open it. A page that fails is skipped for six hours. Missing fields are never treated as zero or empty. Changes to them are reported once they return.</p>
-<p>Each check costs one embed request and at most one page request. If the embed cannot be read, the check reports <code>Public embed fallback failed</code>.</p>
+<p>An account the embed cannot show is read from the profile page alone. This covers private accounts and public accounts without a post of their own. The page gives the name, the picture, the follower and following counts, the bio and whether the account is private. It gives no post count, so <code>Posts</code> shows <code>Unavailable</code>.</p>
+<p>Each check costs one embed request and at most one page request. A private account costs one page request. If the sources cannot be read, the check reports <code>Public embed fallback failed</code>. A name that neither source shows is reported as not found.</p>
 <p>Limits:</p>
 <ul>
 <li>Only the six newest posts are visible.</li>
-<li>A private account has no public embed. Import a session to monitor it.</li>
+<li>A private account has no post count and its collab posts are not visible. Import a session to monitor them.</li>
+<li>The profile page may round a large follower count.</li>
 <li>The embed picture is 100x100 pixels. A picture that only changes size becomes the new baseline without an alert. A removed picture is reported as a change.</li>
-<li>Reel codes are not available. A target that turns private reports errors instead of a visibility change.</li>
+<li>Reel codes are not available.</li>
 </ul>
 <p><a id="profile-lookups-report-a-retired-endpoint"></a></p>
 <h2 id="profile-lookups-report-a-retired-endpoint">Profile Lookups Report a Retired Endpoint<a class="headerlink" href="#profile-lookups-report-a-retired-endpoint" title="Permanent link">&para;</a></h2>
 <p>In September 2026 Instagram retired <code>api/v1/users/web_profile_info/</code> for accounts that are signed in. It answers <code>400 feedback_required</code> no matter how healthy the account is, while GraphQL and the profile page keep working for the same session in the same second. Runs without a login normally read profiles from <code>i.instagram.com</code>. A separate anonymous HTTP 400 failure is handled by the <a href="#anonymous-profile-http-400">public profile fallback</a>.</p>
 <p>Version 3.9.1 and earlier read every profile through that endpoint, so a signed-in run on those versions fails at the first lookup of every target. Re-importing the session does not help. Upgrade to 4.1 or later.</p>
 <p>A signed-in run resolves the target's user id and reads the profile over GraphQL, so it does not use the retired endpoint at all. The id comes from Instagram's search. By late October 2026 search answered HTTP 404 to signed-in sessions, which made 4.0 to 4.0.2 fail with <code>QueryReturnedNotFoundException</code> for every target without a saved id. After the first 404 the run stops using search and reads the id from the target's public profile page as a logged-out visitor, through the configured proxy. Resolved ids are saved to <code>instagram_monitor_user_ids.json</code> beside the other state files and reused by later runs, so an established target is not looked up again on every start. An id is dropped and resolved again if Instagram reports a different name for it. A target that is the signed-in account itself takes its id from the session and is never searched for.</p>
+<p>At the end of October 2026 Instagram also stopped answering most queries on its older GraphQL endpoint, <code>graphql/query</code>, for accounts that are signed in. It first redirected to the start page and now answers <code>400 feedback_required</code>, on the first request after hours without one too. Version 4.1 and earlier read signed-in profiles, post details, reels and stories through that endpoint and checked sessions with it. On those versions every signed-in check fails at the first request, the circuit breaker stops the account as <code>action_block</code> and <code>--import-browser-session</code> fails with <code>HTTP 302</code>. The account is not limited and waiting does not help.</p>
+<p>Upgrade to 4.2 or later, which needs Instaloader 4.16. Then start the tool again. It reads the same data from <code>api/graphql</code>, the endpoint Instagram's web app uses. A stop recorded by the earlier version is cleared at startup once the session check passes. A session check now costs two requests: the start page, which shows whether the session is signed in, and one profile query. A refusal from <code>graphql/query</code> no longer stops the account and <code>--exposure</code> counts it under <strong>Instagram API changed</strong>. Follower lists read with <code>FOLLOW_LIST_SOURCE = "graphql"</code> still use the older endpoint. If they fail with this error, set the source to <code>auto</code> or <code>rest</code>.</p>
+<p>Instagram refuses single queries on <code>graphql/query</code>, not the whole endpoint. Once a query is refused the tool does not send it again until it is restarted. Later attempts are reported as the same error without a request. Queries that still answer, such as the post comments list, are sent as before.</p>
 <p>The profile page is also used for a target that search does not list. A target the page does not show is reported as missing with <code>ProfileNotExistsException</code>. Check that the target name is spelled correctly and that the profile still exists.</p>
 <p>The endpoint that reports a target's reels count directly, <code>api/v1/users/&lt;id&gt;/info/</code>, stopped answering around the same time, and it fails often enough that changing account or IP address does not help. Reels are therefore <strong>not monitored by default</strong>. Posts and stories are unaffected, and a reel counts towards the posts number either way, so a new reel still moves the posts count.</p>
 <p>Turn reels on with <code>FETCH_REELS = True</code> or <code>--fetch-reels</code>, and off again with <code>--no-fetch-reels</code>. <code>--setup</code> asks as well. With reels on, the count is worked out by reading the target's whole reel list, which is many requests per check and is often refused, so expect repeated errors while Instagram is refusing it. A count is reused while the target's posts count stays where it was and read again when that number moves.</p>
@@ -1300,7 +1307,7 @@
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.c21346df.min.js"></script>
+      <script src="../assets/javascripts/bundle.a5f9d56c.min.js"></script>
       
     
   </body>
