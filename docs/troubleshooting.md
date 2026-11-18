@@ -103,7 +103,7 @@ A session login is limited per account instead, so [importing a session](configu
 <a id="anonymous-profile-http-400"></a>
 ## Anonymous Profile Lookup Returns HTTP 400 or 404
 
-In November 2026 Instagram removed the profile lookup that no-login runs used. It now answers HTTP 404 for every account. Before that it answered HTTP 400 for some public professional profiles. In both cases the target is read from its public embed and profile page for the rest of the run. A notice is printed once per target. Once an account that exists has answered HTTP 404, the run does not send the lookup again. HTTP 401, 429 and connection errors never switch a target.
+In November 2026 Instagram removed the profile lookup that no-login runs used. It now answers HTTP 404 for every account. Before that it answered HTTP 400 for some public professional profiles. In both cases the target is read from its public embed and profile page for the rest of the run. In verbose mode a notice is printed once per target. Once an account that exists has answered HTTP 404, the run does not send the lookup again. HTTP 401, 429 and connection errors never switch a target.
 
 Versions before 4.2 report the HTTP 404 as `QueryReturnedNotFoundException` and advise checking the username. Upgrade to 4.2 or later.
 
